@@ -555,16 +555,16 @@ public static class AppBootstrap
                 if (mainWindow.TabForSession(session) is { } tab)
                     tab.Input.Input = PromptQueue.Restore(text, tab.Input.Input);
                 RemoveQueuedBlock();
-            });
+            }, "appBootstrap.DrainQueuedToComposer");
 
             // AND WHEN THE TURN TAKES IT, the stand-in has no referent. This was called from three
             // places that each had to remember; it is one subscription now, and the send path can no
             // longer leave the block above the real message.
-            session.Drained += _ => system.EnqueueOnUIThread(RemoveQueuedBlock);
+            session.Drained += _ => system.EnqueueOnUIThread(RemoveQueuedBlock, "appBootstrap.DrainQueuedToComposer");
 
             // MARSHALLED HERE, NOT RAISED THERE. Core has no dispatcher and a headless subscriber
             // should not pay for one — the same division Session.Changed already uses.
-            session.Pending += (whole, _) => system.EnqueueOnUIThread(() => ShowQueued(whole));
+            session.Pending += (whole, _) => system.EnqueueOnUIThread(() => ShowQueued(whole), "appBootstrap.DrainQueuedToComposer");
 
 
         // Tokens live beside config at 0600, never IN it. One HttpClient for the auth traffic, shared
@@ -2007,11 +2007,11 @@ public static class AppBootstrap
             // `_ = ...` on the Task, not an async-void lambda: EnqueueOnUIThread takes a plain Action,
             // and an async-void target would let an exception from either await escape as unobservable
             // (the one thing the render loop must never see) instead of surfacing through the Task.
-            system.EnqueueOnUIThread(() => _ = RunWizardThenAskTrustAsync());
+            system.EnqueueOnUIThread(() => _ = RunWizardThenAskTrustAsync(), "appBootstrap.AppBootstrap");
         }
         else
         {
-            system.EnqueueOnUIThread(() => _ = AskTrustThenLoadPluginsAsync());
+            system.EnqueueOnUIThread(() => _ = AskTrustThenLoadPluginsAsync(), "appBootstrap.AppBootstrap");
         }
 
         async Task RunWizardThenAskTrustAsync()
@@ -2040,7 +2040,7 @@ public static class AppBootstrap
         {
             // The panel is responsive in BOTH senses — whether it shows at all, and how wide it is —
             // so a resize has to re-run the same decision that startup did.
-            system.WindowResized += (_, _) => system.EnqueueOnUIThread(mainWindow.RefreshSessionPanel);
+            system.WindowResized += (_, _) => system.EnqueueOnUIThread(mainWindow.RefreshSessionPanel, "appBootstrap.AskTrustThenLoadPluginsAsync");
 
             mainWindow.SetPermissionRuleCount(
                 permissionRules.RulesFor(session.WorkingDirectory).Rules.Count);
@@ -2098,7 +2098,7 @@ public static class AppBootstrap
             // twice over.
             if (!options.Resume.Wanted)
                 StartupHint();
-        });
+        }, "appBootstrap.AskTrustThenLoadPluginsAsync");
 
 
 

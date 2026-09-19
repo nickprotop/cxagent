@@ -109,9 +109,10 @@ public static class WindowPermissionPrompt
             // control, so it cannot answer the prompt on its own — this is the one operation
             // Escape needs, and TryCancel is already the safe idempotent Deny the cancellation
             // registration below uses.
-            system.EnqueueOnUIThread(() => mw.ShowPermissionPrompt(content, prompt.TryCancel));
+            system.EnqueueOnUIThread(() => mw.ShowPermissionPrompt(content, prompt.TryCancel), "windowPermissionPrompt.ShowOneAtATime");
             return await AwaitAndRestore(prompt, ct,
-                () => system.EnqueueOnUIThread(() => mw.RestoreComposer(content)));
+                () => system.EnqueueOnUIThread(() => mw.RestoreComposer(content),
+                    "windowPermissionPrompt.RestoreComposer"));
         }
         finally
         {

@@ -339,7 +339,7 @@ public sealed class CommandMenu
 
                     Render([.. hits.Select(h => new Row(
                         h.Display, h.IsDirectory ? "directory" : "file", h.Path))]);
-                });
+                }, "commandMenu.Delay");
             }
             catch (OperationCanceledException)
             {

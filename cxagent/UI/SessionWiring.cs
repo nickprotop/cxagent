@@ -121,11 +121,11 @@ public static class SessionWiring
         // next re-wire (/model, resume), so a captured sink would keep reopening rows on a
         // transcript a newer sink now owns — and the newer sink would draw the same row again.
         session.SubAgents.SendBegan += agentId =>
-            system.EnqueueOnUIThread(() => tab.JobSink?.WorkerResumed(agentId));
+            system.EnqueueOnUIThread(() => tab.JobSink?.WorkerResumed(agentId), "sessionWiring.Subscribe");
         // The outcome word rides along for whoever records the run; a row only settles, so it is
         // ignored here rather than rendered — the finished header already states what the run cost.
         session.SubAgents.SendEnded += (agentId, _) =>
-            system.EnqueueOnUIThread(() => tab.JobSink?.WorkerSettled(agentId));
+            system.EnqueueOnUIThread(() => tab.JobSink?.WorkerSettled(agentId), "sessionWiring.Subscribe");
 
         session.TokensUpdated += (_, _) => system.EnqueueOnUIThread(() =>
         {
@@ -154,13 +154,13 @@ public static class SessionWiring
                 CostByInstance = spend.CostByInstance,
                 TotalCost = spend.TotalCost,
             });
-        });
+        }, "sessionWiring.Subscribe");
 
         session.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() =>
         {
             main.NoteSessionStats(session, spent: null, contextUsed: used);
             main.SetContextUsed(session, used);
-        });
+        }, "sessionWiring.SessionWiring");
 
         session.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() =>
             main.MarkContextStale(session, d.Before, d.After));
@@ -201,7 +201,7 @@ public static class SessionWiring
             main.SetSkills(session,
                 Core.Skills.SkillCatalog.Find(session.WorkingDirectory, configDir).Skills.Count,
                 session.LoadedSkills);
-        });
+        }, "sessionWiring.SessionWiring");
 
         // WHAT THE SESSION ITSELF ANNOUNCES — mode, model, a cleared context. Subscribed HERE rather
         // than once at startup: held over the startup session alone, a second session's /mode,
@@ -227,7 +227,7 @@ public static class SessionWiring
             // window it wiped whichever transcript was in front: /clear in a background session
             // erased the foreground session's history and left its own untouched.
             tab.Chat.Clear();
-        });
+        }, "sessionWiring.SessionWiring");
 
         // ONCE, AT WIRE-UP. The agent's id is fixed for its life, so there is nothing to wait for
         // and nothing to re-raise.

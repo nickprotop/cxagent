@@ -390,7 +390,7 @@ public static class PluginManagerDialog
         _ws!.EnqueueOnUIThread(() =>
         {
             if (_window is not null) Rebuild();
-        });
+        }, "pluginManagerDialog.OnSessionChanged");
     }
 
     /// <summary>Recomputes the rows from live config, disk, and the last catalog read.</summary>
@@ -436,7 +436,7 @@ public static class PluginManagerDialog
             _fetching = false;
             if (read.Error is null) _fetchedAt = DateTimeOffset.UtcNow;
             if (_window is not null) Rebuild();
-        });
+        }, "pluginManagerDialog.FetchCatalogAsync");
     }
 
     private static HorizontalGridControl BuildToolbar()
@@ -1294,7 +1294,7 @@ public static class PluginManagerDialog
                 Toast("refused — a turn is running", NotificationSeverity.Warning);
 
             if (_window is not null) Rebuild();
-        });
+        }, "pluginManagerDialog.RunAsync");
     }
 
     /// <summary>
@@ -1312,7 +1312,7 @@ public static class PluginManagerDialog
     {
         CloseForPrompt();
         await RunAsync(argument, did);
-        _ws!.EnqueueOnUIThread(Reopen);
+        _ws!.EnqueueOnUIThread(Reopen, "pluginManagerDialog.LoadAsync");
     }
 
     /// <summary>What /plugin load takes for this row: a configured NAME resolves through config,
@@ -1394,7 +1394,7 @@ public static class PluginManagerDialog
 
         if (result is InstallResult.Installed(var directory, var files))
         {
-            _ws!.EnqueueOnUIThread(Rebuild);
+            _ws!.EnqueueOnUIThread(Rebuild, "pluginManagerDialog.InstallFlowAsync");
 
             // "done" is this menu's own terminal choice — a synthetic Cancel beside it would offer
             // two names for the same outcome.
@@ -1407,7 +1407,7 @@ public static class PluginManagerDialog
             if (next == "load now")
                 await LoadAsync($"load {entry.File}", $"'{entry.Name}' loaded");
             else if (next == "add to config")
-                _ws.EnqueueOnUIThread(() => AddToConfig(entry));
+                _ws.EnqueueOnUIThread(() => AddToConfig(entry), "pluginManagerDialog.InstallFlowAsync");
             return;
         }
 
@@ -1445,7 +1445,7 @@ public static class PluginManagerDialog
             {
                 Toast($"'{entry.Name}' updated to {entry.Version}", NotificationSeverity.Success);
                 Rebuild();
-            });
+            }, "pluginManagerDialog.UpdateFlowAsync");
             return;
         }
 
@@ -1474,7 +1474,7 @@ public static class PluginManagerDialog
             return false;
         }
 
-        _ws!.EnqueueOnUIThread(CloseForPrompt);
+        _ws!.EnqueueOnUIThread(CloseForPrompt, "pluginManagerDialog.AskDownloadAsync");
         // STAMPED WITH THE SESSION'S POLICY, as the plugin load gate does for the same reason
         // (Session.RequestPluginLoad). The gate holds no session of its own, so a request arriving
         // without a policy has no root to check against and no edit mode to read: the decider
@@ -1488,7 +1488,7 @@ public static class PluginManagerDialog
                 AlwaysRule: null)
             { Policy = _session.Policy },
             CancellationToken.None);
-        _ws.EnqueueOnUIThread(Reopen);
+        _ws.EnqueueOnUIThread(Reopen, "pluginManagerDialog.AskDownloadAsync");
 
         return outcome.Allowed;
     }
@@ -1537,7 +1537,7 @@ public static class PluginManagerDialog
             }
 
             Rebuild();
-        });
+        }, "pluginManagerDialog.ShowInstallFailure");
 
     /// <summary>
     /// Where an install may go: the two built-in folders plus every configured pluginPaths entry.
@@ -1588,7 +1588,7 @@ public static class PluginManagerDialog
                 if (RemoveEntry(row.Name))
                     Toast($"'{row.Name}' removed from config.json", NotificationSeverity.Success);
                 Rebuild();
-            });
+            }, "pluginManagerDialog.AskDownloadAsync");
             return;
         }
 
@@ -1602,7 +1602,7 @@ public static class PluginManagerDialog
             {
                 _panelNote = (row.Name, [reason]);
                 Rebuild();
-            });
+            }, "pluginManagerDialog.UninstallFlowAsync");
             return;
         }
 
@@ -1626,7 +1626,7 @@ public static class PluginManagerDialog
                 Toast($"'{row.Name}' uninstalled", NotificationSeverity.Success);
 
             Rebuild();
-        });
+        }, "pluginManagerDialog.PluginManagerDialog");
     }
 
     /// <summary>
@@ -1675,7 +1675,7 @@ public static class PluginManagerDialog
                     $"Restart cxagent, then {verb}.",
                 });
             Rebuild();
-        });
+        }, "pluginManagerDialog.RefuseIfHeld");
         return true;
     }
 

@@ -120,7 +120,7 @@ public sealed class PluginGetCommand(
 
         var result = await new PluginInstaller().InstallAsync(entry, folder, CancellationToken.None);
 
-        system.EnqueueOnUIThread(() => Report(entry, result));
+        system.EnqueueOnUIThread(() => Report(entry, result), "pluginGetCommand.PluginGetCommand");
     }
 
     /// <summary>

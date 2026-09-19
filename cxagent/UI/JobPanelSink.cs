@@ -20,18 +20,18 @@ public sealed class JobPanelSink : IToolObserver
     }
 
     public void ToolsChanged(IReadOnlyList<Job> jobs) =>
-        _system.EnqueueOnUIThread(() => _panel.ToolsChanged(jobs));
+        _system.EnqueueOnUIThread(() => _panel.ToolsChanged(jobs), "panel.ToolsChanged");
 
     public void ToolUpdated(Job job) =>
-        _system.EnqueueOnUIThread(() => _panel.ToolUpdated(job));
+        _system.EnqueueOnUIThread(() => _panel.ToolUpdated(job), "panel.ToolUpdated");
 
     // The side panel redraws a whole row from the job it holds, so a progress tick is just an
     // update — there is no separate header to touch as there is in the inline transcript.
     public void ToolProgressed(Job job) =>
-        _system.EnqueueOnUIThread(() => _panel.ToolUpdated(job));
+        _system.EnqueueOnUIThread(() => _panel.ToolUpdated(job), "panel.ToolProgressed");
 
     public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot) =>
-        _system.EnqueueOnUIThread(() => _panel.ToolResourcesSampled(jobId, snapshot));
+        _system.EnqueueOnUIThread(() => _panel.ToolResourcesSampled(jobId, snapshot), "panel.ToolResourcesSampled");
 
     /// <summary>No-op: the side panel shows a job's outcome, not its prose as it generates. The
     /// inline transcript (InlineJobSink) is where live text belongs — it has the width for it.</summary>

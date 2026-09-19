@@ -117,7 +117,7 @@ internal static class ShellTab
             if (copyOnExit.Checked) Report(session, terminal);
 
             Close(main, title);
-        });
+        }, "shellTab.ShellTab");
 
         // ADVISORY, NOT A VETO. TabCloseRequested does not remove the tab — the handler does — so the
         // confirmation below is a plain question with no ordering to get wrong. The window's version

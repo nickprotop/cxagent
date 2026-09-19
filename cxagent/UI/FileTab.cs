@@ -645,7 +645,7 @@ public static class FileTab
     /// site says which thread it is on.</para>
     /// </summary>
     private static void OnChangedOffThread(EditorHost host, string path)
-        => host.System.EnqueueOnUIThread(() => OnChanged(host, path));
+        => host.System.EnqueueOnUIThread(() => OnChanged(host, path), "fileTab.OnChangedOffThread");
 
     private static void OnChanged(EditorHost host, string path)
     {

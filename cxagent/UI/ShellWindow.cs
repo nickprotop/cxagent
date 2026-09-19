@@ -227,7 +227,7 @@ internal static class ShellWindow
             //
             // AFTER Report, so the transcript is collected before the window goes.
             if (interactive) window.Close(force: true);
-        });
+        }, "shellWindow.ShellWindow");
     }
 
     /// <summary>

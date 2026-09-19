@@ -35,7 +35,7 @@ public sealed class TranscriptWriter(ConsoleWindowSystem system, Func<ChatTransc
     // both, rather than making one of the two writers wrong.
     public void Write(string markup) =>
         system.EnqueueOnUIThread(() =>
-            ChatTranscriptSink.Post(chat(), new ChatTranscriptSink.SystemRow(markup, false)));
+            ChatTranscriptSink.Post(chat(), new ChatTranscriptSink.SystemRow(markup, false)), "transcriptWriter.Write");
 
     public void WriteError(string message) =>
         system.EnqueueOnUIThread(() => ChatTranscriptSink.Post(chat(),

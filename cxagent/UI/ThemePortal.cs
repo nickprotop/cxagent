@@ -92,7 +92,7 @@ public sealed class ThemePortal
             {
                 Close();
                 ThemeChosen?.Invoke(this, name);
-            });
+            }, "themePortal.ThemePortal");
         };
 
         _content = new ThemePortalContent(list, bounds);

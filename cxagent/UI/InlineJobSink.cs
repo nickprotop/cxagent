@@ -54,7 +54,7 @@ public sealed class InlineJobSink : IToolObserver
     /// before any of it runs — and in copilot mode, before deciding whether to let it.
     /// </summary>
     public void ToolsChanged(IReadOnlyList<Job> jobs) =>
-        _system.EnqueueOnUIThread(() => ToolsChangedNow(jobs));
+        _system.EnqueueOnUIThread(() => ToolsChangedNow(jobs), $"inline.ToolsChanged({jobs.Count})");
 
     /// <summary>
     /// The add path's work, split from its marshalling for the same reason as
@@ -413,7 +413,7 @@ public sealed class InlineJobSink : IToolObserver
                     if (otherJob.DependsOn.Contains(job.Id)
                         && _lines.TryGetValue(otherId, out var otherLine))
                         _chat.SetStatus(otherLine, StatusText(otherJob), SeverityFor(otherJob.State));
-        });
+        }, "inline.ToolUpdated");
 
     /// <summary>
     /// The message body for a finished job: the model's text / the command's stdout, with the other
@@ -563,7 +563,7 @@ public sealed class InlineJobSink : IToolObserver
             // target the same message id at roughly 1 Hz, so whichever fired last was what the user
             // saw — the table and the progress prose alternating once a second.
             if (LiveBody(job) is { } body) _chat.UpdateMessage(id, body);
-        });
+        }, "inline.ToolProgressed");
 
     /// <summary>
     /// Re-renders the header of every row still running. Called once a second from the window's
@@ -589,7 +589,8 @@ public sealed class InlineJobSink : IToolObserver
     /// <para>Terminal jobs are skipped: their header carries a fixed duration off JobResult and
     /// rewriting it every second would be pure churn for an unchanging string.</para>
     /// </summary>
-    public void RefreshRunningHeaders() => _system.EnqueueOnUIThread(() => RefreshRunningHeadersNow());
+    public void RefreshRunningHeaders() =>
+        _system.EnqueueOnUIThread(() => RefreshRunningHeadersNow(), "inline.RefreshRunningHeaders");
 
     /// <summary>
     /// The tick's actual work, split out so it is reachable without a running UI loop.
@@ -668,7 +669,7 @@ public sealed class InlineJobSink : IToolObserver
             }
 
             _chat.Append(id, delta);
-        });
+        }, "inline.ToolOutputAppended");
 
     /// <summary>Jobs that have streamed at least one chunk, so the compact-mode switch happens once
     /// rather than on every delta.</summary>
@@ -1361,7 +1362,7 @@ public sealed class InlineJobSink : IToolObserver
         if (IsAChild(report.AgentId)) return;
 
         _roundDirty = true;
-        _system.EnqueueOnUIThread(ClaimRoundRowNow);
+        _system.EnqueueOnUIThread(ClaimRoundRowNow, "inline.ClaimRoundRow");
     }
 
     // ─── The round's tool row ────────────────────────────────────────────────────────────────────
@@ -1462,7 +1463,7 @@ public sealed class InlineJobSink : IToolObserver
     /// touches belongs to the UI thread — posting the intent is what keeps one writer. The previous
     /// build wrote them directly and raced its own paints.</para>
     /// </summary>
-    public void TurnBegan() => _system.EnqueueOnUIThread(SettleRoundNow);
+    public void TurnBegan() => _system.EnqueueOnUIThread(SettleRoundNow, "inline.TurnBegan");
 
     /// <summary>
     /// A model round ended: settle its row and open the next.
@@ -1476,7 +1477,7 @@ public sealed class InlineJobSink : IToolObserver
     /// round's assistant message already exists lands BELOW it and strands the prose above working
     /// that happened after it.</para>
     /// </summary>
-    public void RoundEnded() => _system.EnqueueOnUIThread(SettleRoundNow);
+    public void RoundEnded() => _system.EnqueueOnUIThread(SettleRoundNow, "inline.RoundEnded");
 
     /// <summary>
     /// Settles the round on screen and opens a fresh one. Must be on the UI thread.

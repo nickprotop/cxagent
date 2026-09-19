@@ -61,7 +61,7 @@ public sealed class ChatTranscriptSink : ISessionObserver
             var added = _chat.AddMessage(ChatRole.User, text);
             _chat.SetMessageRail(added, true);
             _map[id.Value] = added;
-        });
+        }, "chat.UserTurnAdded");
     }
 
     /// <summary>Run on the UI thread just before a user turn is written — see
@@ -118,7 +118,7 @@ public sealed class ChatTranscriptSink : ISessionObserver
         _system.EnqueueOnUIThread(() =>
         {
             if (_map.TryGetValue(id.Value, out var fwId)) _chat.SetHeader(fwId, header);
-        });
+        }, "chat.AssistantTurnBegan");
 
     public void AssistantTurnEnded(ChatMessageId id) =>
         _system.EnqueueOnUIThread(() =>
@@ -132,7 +132,7 @@ public sealed class ChatTranscriptSink : ISessionObserver
                 _chat.RemoveMessage(fwId);
                 _map.TryRemove(id.Value, out _);
             }
-        });
+        }, "chat.AssistantLabelled");
 
     /// <summary>
     /// Body text, NOT escaped — the Assistant role renders as MARKDOWN, which escapes for itself.
@@ -156,7 +156,7 @@ public sealed class ChatTranscriptSink : ISessionObserver
         _system.EnqueueOnUIThread(() =>
         {
             if (_map.TryGetValue(id.Value, out var fwId)) _chat.Append(fwId, token);
-        });
+        }, "chat.AssistantTurnEnded");
 
     /// <summary>
     /// Reasoning text: escaped, then coloured HERE — the sink owns how a kind of text looks.
@@ -171,7 +171,7 @@ public sealed class ChatTranscriptSink : ISessionObserver
         {
             if (_map.TryGetValue(id.Value, out var fwId))
                 _chat.Append(fwId, $"[{ColorScheme.ThinkingMarkup}]{Escape(text)}[/]");
-        });
+        }, "chat.AssistantTextAppended");
 
     /// <summary>
     /// Makes model text safe to hand a markup parser.
