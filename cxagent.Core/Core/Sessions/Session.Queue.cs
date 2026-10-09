@@ -187,6 +187,23 @@ public sealed partial class Session
         }
     }
 
+    /// <summary>
+    /// Takes the waiting steer as it is delivered: the user's words, plus whatever the app queued to
+    /// go with their next message.
+    ///
+    /// <para>THE QUEUED TEXT JOINS HERE, not when the steer was typed. Glued on at typing, it became
+    /// part of the queued block drawn as the user's and of what Escape returns to their composer; kept
+    /// apart until now, only the model ever sees the two together.</para>
+    /// </summary>
+    public Agents.SteerDelivery? TakeSteer()
+    {
+        if (TakePendingSteer() is not { Length: > 0 } shown) return null;
+
+        return TakeInjected() is { Length: > 0 } injected
+            ? new Agents.SteerDelivery(shown, injected + "\n\n" + shown)
+            : new Agents.SteerDelivery(shown, shown);
+    }
+
     /// <summary>What is waiting, or null. For the UI to render — takes nothing.</summary>
     public string? PendingSteer
     {

@@ -123,7 +123,7 @@ config kills it at the deadline instead. Sixteen background commands may run at 
 `background: true` is refused rather than queued — the refusal names `job_list` and `job_kill`, since
 ending one is what frees a slot.
 
-**`/jobs` lists every background command running, and `/jobs kill <pid>` stops one** — the pid
+**`F7` shows this session's background commands in the right-hand column, and `Enter` on one follows its output in a tab.** **`/jobs` lists every background command running, and `/jobs kill <pid>` stops one** — the pid
 completes in the palette, so nothing has to be retyped from a row you just read. The model has the
 same reach through `job_list` and `job_kill`, with one restriction a user does not have: the session
 agent may stop any job, but a sub-agent may stop only its own, and the refusal names who owns it.
@@ -391,6 +391,7 @@ the argument wins when both are present.
 | `F3` | Session panel (show / hide / automatic) |
 | `F4` | Put the cursor back in the composer |
 | `F6` | Focus the tab strip — then `←` `→` to change session, `F6` back to the composer |
+| `F7` | Jobs panel — background jobs in the right-hand column; `↑` `↓` and `Enter` open one. `F7` again hides it |
 | `F9` | Theme |
 | `Shift+Tab` | Cycle the edit mode — see [COMMANDS.md](COMMANDS.md) |
 | `Ctrl+Q` | Quit |

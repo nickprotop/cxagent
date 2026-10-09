@@ -50,7 +50,7 @@ public class SteeringTests
         var agent = NewAgent(provider, sink);
 
         var pending = "actually, check the tests first";
-        agent.TakePendingSteer = () => { var p = pending; pending = null; return p; };
+        agent.TakePendingSteer = () => { var p = pending; pending = null; return p is null ? null : new SteerDelivery(p, p); };
 
         await agent.SendAsync("do the thing", CancellationToken.None);
 
@@ -69,11 +69,31 @@ public class SteeringTests
         var agent = NewAgent(provider, sink);
 
         var pending = "stop and summarise";
-        agent.TakePendingSteer = () => { var p = pending; pending = null; return p; };
+        agent.TakePendingSteer = () => { var p = pending; pending = null; return p is null ? null : new SteerDelivery(p, p); };
 
         await agent.SendAsync("go", CancellationToken.None);
 
         Assert.Contains("stop and summarise", sink.Users);
+    }
+
+    // TWO TEXTS AT THE BARRIER. The model reads what the app queued with the steer; the transcript
+    // announces only what the user typed — a log copied for the model is not the user's message.
+    [Fact]
+    public async Task ASteer_GivesTheModelItsFullText_AndAnnouncesOnlyTheUsersWords()
+    {
+        var provider = ProviderThatCallsATool();
+        var sink = new RecordingSink();
+        var agent = NewAgent(provider, sink);
+
+        SteerDelivery? pending = new("look at this", "COPIED OUTPUT\n\nlook at this");
+        agent.TakePendingSteer = () => { var p = pending; pending = null; return p; };
+
+        await agent.SendAsync("go", CancellationToken.None);
+
+        Assert.Contains(provider.LastMessages!,
+            m => m.Role == "user" && m.Content == "COPIED OUTPUT\n\nlook at this");
+        Assert.Contains("look at this", sink.Users);
+        Assert.DoesNotContain(sink.Users, u => u.Contains("COPIED OUTPUT"));
     }
 
     // TAKEN ONCE. The hook clears as it reads, and a turn with several barriers must not deliver the
@@ -86,7 +106,7 @@ public class SteeringTests
         var agent = NewAgent(provider, sink);
 
         var pending = "once";
-        agent.TakePendingSteer = () => { var p = pending; pending = null; return p; };
+        agent.TakePendingSteer = () => { var p = pending; pending = null; return p is null ? null : new SteerDelivery(p, p); };
 
         await agent.SendAsync("go", CancellationToken.None);
 

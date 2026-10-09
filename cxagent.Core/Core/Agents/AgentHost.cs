@@ -444,7 +444,7 @@ public sealed class AgentHost : IDisposable
         /// <para>Null for a headless host and for every child. Steering is a conversation the user
         /// is having with THIS session, and a sub-agent spawned with a brief is not in it.</para>
         /// </summary>
-        public Func<string?>? TakePendingSteer { get; init; }
+        public Func<SteerDelivery?>? TakePendingSteer { get; init; }
 
         public string? Briefing { get; init; }
         public ISubAgentSpawner? Spawner { get; init; }

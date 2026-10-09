@@ -119,6 +119,97 @@ public class DetachedProcessTests
     }
 
     /// <summary>
+    /// KILLED MEANS THE KILL HAD SOMETHING TO KILL. A killed process's exit code is whatever the
+    /// signal left, which a row cannot tell from a crash — this flag is how it can.
+    /// </summary>
+    [Fact]
+    public void Kill_OnARunningProcess_IsRecordedAsKilled()
+    {
+        using var fixture = NewRegistry();
+        var detached = fixture.Detach("sleep 30");
+
+        detached.Kill();
+
+        Assert.True(detached.Finished);
+        Assert.True(detached.Killed);
+    }
+
+    [Fact]
+    public async Task ANaturalExit_IsNotKilled()
+    {
+        using var fixture = NewRegistry();
+        var exited = new TaskCompletionSource<int>();
+        var detached = fixture.Detach("exit 4");
+        detached.Exited += code => exited.TrySetResult(code);
+        if (detached.Finished) exited.TrySetResult(detached.ExitCode);
+
+        await exited.Task.WaitAsync(TimeSpan.FromSeconds(20));
+
+        Assert.False(detached.Killed);
+    }
+
+    /// <summary>
+    /// A KILL THAT ARRIVES AFTER THE PROCESS DIED IS NOT A KILL — including inside the window where
+    /// the OS has reaped it but the waiter is still draining output, so Finished is not yet true.
+    /// </summary>
+    [Fact]
+    public async Task Kill_AfterTheProcessAlreadyDied_IsNotKilled()
+    {
+        using var fixture = NewRegistry();
+        var detached = fixture.Detach("exit 0");
+
+        for (var i = 0; i < 400 && ProcessExists(detached.Pid) && !detached.Finished; i++)
+            await Task.Delay(10);
+
+        detached.Kill();
+
+        Assert.False(detached.Killed);
+    }
+
+    /// <summary>
+    /// DESCRIBED FIRES EVEN FOR A JOB THAT IS ALREADY GONE — the fast failure a board most needs to
+    /// show, and one the live list has already dropped.
+    /// </summary>
+    [Fact]
+    public async Task Describe_RaisesDescribed_ForALiveAndAnAlreadyExitedProcess()
+    {
+        using var fixture = NewRegistry();
+        var seen = new List<int>();
+        fixture.Registry.Described += (process, _) => { lock (seen) seen.Add(process.Pid); };
+
+        var live = fixture.Detach("sleep 30");
+        fixture.Registry.Describe(live,
+            new BackgroundJob(live.Pid, "A", "sleep 30", DateTimeOffset.UtcNow, null));
+
+        var gone = fixture.Detach("exit 0");
+        for (var i = 0; i < 400 && !gone.Finished; i++) await Task.Delay(10);
+        Assert.True(gone.Finished);
+        fixture.Registry.Describe(gone,
+            new BackgroundJob(gone.Pid, "A", "exit 0", DateTimeOffset.UtcNow, null));
+
+        Assert.Equal([live.Pid, gone.Pid], seen);
+    }
+
+    /// <summary>
+    /// A THROWING SUBSCRIBER COSTS NOTHING. Describe runs inside ArrangeTheReport before the exit
+    /// report is wired, so an exception escaping it would cost the agent its exit report.
+    /// </summary>
+    [Fact]
+    public void Describe_SurvivesAThrowingSubscriber_AndStillReachesTheNext()
+    {
+        using var fixture = NewRegistry();
+        var reached = false;
+        fixture.Registry.Described += (_, _) => throw new InvalidOperationException("boom");
+        fixture.Registry.Described += (_, _) => reached = true;
+
+        var detached = fixture.Detach("sleep 30");
+        fixture.Registry.Describe(detached,
+            new BackgroundJob(detached.Pid, "A", "sleep 30", DateTimeOffset.UtcNow, null));
+
+        Assert.True(reached);
+    }
+
+    /// <summary>
     /// SHUTDOWN REAPS WHAT IS STILL RUNNING. Nothing else will: a detached child has no plugin, so
     /// ChildProcessRecord cannot see it, and a process outliving the app is the failure this feature
     /// would otherwise introduce.

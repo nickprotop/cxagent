@@ -1391,6 +1391,26 @@ public static class AppBootstrap
                 return;
             }
 
+            // ↑ ↓ AND ENTER ON THE JOBS PANEL'S ROWS, only while they have the keyboard — the composer's
+            // own ↑ ↓ (history, the command list) never reach here, because the composer has the
+            // keyboard then. The panel keeps its own selection: see JobsPanel._selected for why the
+            // markup control's focused link cannot be it.
+            if (mainWindow is { JobsRowsHaveFocus: true } jobsWindow)
+            {
+                var handled = e.KeyInfo.Key switch
+                {
+                    ConsoleKey.UpArrow => jobsWindow.JobsPanel.MoveSelection(down: false),
+                    ConsoleKey.DownArrow => jobsWindow.JobsPanel.MoveSelection(down: true),
+                    ConsoleKey.Enter => jobsWindow.JobsPanel.ChooseSelected(),
+                    _ => false,
+                };
+                if (handled)
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
 
             // SHIFT+TAB CYCLES THE EDIT AXIS ONLY. Delegation changes what the model is offered and
             // what a turn may spend, so a keystroke beside the composer is the wrong weight for that
@@ -1702,6 +1722,12 @@ public static class AppBootstrap
 
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F2, "plugins",
             () => TogglePluginManager());
+
+        // F7 IS THE JOBS PANEL, as F3 is the info panel: the right-hand column shows one or the other.
+        // Declined while the plugin manager is open, as F6 is — a global takes its key from every
+        // window, and the dialog's own keys come first.
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F7, "background jobs",
+            () => !PluginManagerDialog.IsOpen && mainWindow.ToggleJobsPanel());
 
 
         // F9 OPENS THE THEME LIST, and the item at the left of the status bar opens the same one on a

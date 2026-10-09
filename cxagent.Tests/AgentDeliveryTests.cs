@@ -26,6 +26,9 @@ public class AgentDeliveryTests : IDisposable
     /// <summary>The session Wired built, for a test that must read its live busy state.</summary>
     private Session? _session;
 
+    /// <summary>The transcript Wired's session reports to, for a test that reads how a turn was drawn.</summary>
+    private BufferedChatSink? _sink;
+
     public AgentDeliveryTests() => Directory.CreateDirectory(_dir);
 
     /// <summary>
@@ -80,7 +83,7 @@ public class AgentDeliveryTests : IDisposable
     {
         _manager = SessionManager.Create(new AppPaths(_dir));
         var session = _manager.Open(_dir, ResolvedConfig.ForTesting(provider),
-            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+            new SessionPorts { Observer = _sink = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
         _session = session;
@@ -100,7 +103,7 @@ public class AgentDeliveryTests : IDisposable
         _manager = SessionManager.Create(new AppPaths(_dir));
         provider = new MockLlmProvider();
         var session = _manager.Open(_dir, ResolvedConfig.ForTesting(provider),
-            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+            new SessionPorts { Observer = _sink = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
         _session = session;
@@ -191,6 +194,184 @@ public class AgentDeliveryTests : IDisposable
             CompressAbove = 40_000,
             ContextWindow = 200_000,
         }).Create();
+    }
+
+    /// <summary>Waits for a turn nobody holds to finish.</summary>
+    private async Task Settled()
+    {
+        for (var i = 0; i < 200 && _session!.IsBusy; i++) await Task.Delay(20);
+    }
+
+    /// <summary>
+    /// AN EXIT NOTICE IS NOT THE USER SPEAKING. It wakes an idle session and the turn it starts is
+    /// drawn as a System note — the transcript must not attribute to the user words they never typed.
+    /// </summary>
+    [Fact]
+    public async Task ASystemWake_IsDrawnAsANote_NotAsTheUsersTurn()
+    {
+        var (delivery, _, _) = Wired(out var provider, out var sessionAgentId);
+        provider.EnqueueResponse(new LlmResponse { Text = "noted", StopReason = "end_turn" });
+
+        Assert.Equal(DeliveryOutcome.Woke, delivery.Tell(sessionAgentId, "the build finished"));
+        await Settled();
+
+        Assert.Contains("the build finished", _sink!.Notices);
+        Assert.DoesNotContain("> the build finished", _sink.Transcript);
+    }
+
+    [Fact]
+    public async Task AUserSubmit_IsStillTheUsersTurn()
+    {
+        Wired(out var provider, out _);
+        provider.EnqueueResponse(new LlmResponse { Text = "hi", StopReason = "end_turn" });
+
+        _session!.Submit("hello there");
+        await Settled();
+
+        Assert.Contains("> hello there", _sink!.Transcript);
+    }
+
+    /// <summary>Finished job rows clear on THIS, so it must mean the user — not a notice, not a plugin.</summary>
+    [Fact]
+    public async Task UserSpoke_IsRaisedForTheUser_AndNotForANoticeAPluginOrACommand()
+    {
+        var (delivery, _, _) = Wired(out var provider, out var sessionAgentId);
+        for (var i = 0; i < 3; i++)
+            provider.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn" });
+        var spoke = 0;
+        _session!.UserSpoke += () => Interlocked.Increment(ref spoke);
+
+        delivery.Tell(sessionAgentId, "the build finished");
+        await Settled();
+        _session.Submit("a plugin's goal", origin: TurnOriginator.Plugin("triggers"));
+        await Settled();
+        _session.Submit("/stats");
+        Assert.Equal(0, spoke);
+
+        _session.Submit("me, typing");
+        Assert.Equal(1, spoke);
+        await Settled();
+    }
+
+    /// <summary>A steer counts when it is SENT — the agent may take it minutes later, or never.</summary>
+    [Fact]
+    public async Task UserSpoke_IsRaisedForASteer_WhenItIsSent()
+    {
+        var gated = new GatedProvider();
+        var (delivery, _, sessionAgentId) = WiredOn(gated);
+        delivery.Tell(sessionAgentId, "start something");
+        for (var i = 0; i < 200 && !_session!.IsBusy; i++) await Task.Delay(20);
+        var spoke = 0;
+        _session!.UserSpoke += () => Interlocked.Increment(ref spoke);
+
+        _session.Submit("and also this");
+
+        Assert.Equal(1, spoke);
+        gated.Release();
+        await Settled();
+    }
+
+    /// <summary>
+    /// QUEUED TEXT WAITS FOR THE USER. Copy-to-transcript queues output "for the next message"; an exit
+    /// notice waking the session must not carry it off, hidden behind the notice's echo.
+    /// </summary>
+    [Fact]
+    public async Task InjectedText_WaitsForTheUser_NotForASystemWake()
+    {
+        var (delivery, _, _) = Wired(out var provider, out var sessionAgentId);
+        provider.EnqueueResponse(new LlmResponse { Text = "noted", StopReason = "end_turn" });
+        provider.EnqueueResponse(new LlmResponse { Text = "thanks", StopReason = "end_turn" });
+        _session!.Inject("COPIED OUTPUT");
+
+        delivery.Tell(sessionAgentId, "the build finished");
+        await Settled();
+        Assert.DoesNotContain("COPIED OUTPUT",
+            string.Join("\n", provider.LastMessages!.Select(m => m.Content)));
+
+        _session.Submit("look at this");
+        await Settled();
+        Assert.Contains("COPIED OUTPUT",
+            string.Join("\n", provider.LastMessages!.Select(m => m.Content)));
+    }
+
+    /// <summary>Starts a turn held open by a gated provider, so a submit afterwards is a steer.</summary>
+    private async Task<GatedProvider> Busy()
+    {
+        var gated = new GatedProvider();
+        var (delivery, _, sessionAgentId) = WiredOn(gated);
+        delivery.Tell(sessionAgentId, "start something");
+        for (var i = 0; i < 200 && !_session!.IsBusy; i++) await Task.Delay(20);
+        Assert.True(_session!.IsBusy, "the wake did not make the session busy");
+        return gated;
+    }
+
+    /// <summary>
+    /// A STEER SHOWS WHAT THE USER TYPED, NOTHING MORE. Queued Copy text goes to the model with it,
+    /// but the queued block on screen — and what Escape hands back to the composer — is the user's
+    /// own words; a log pasted into their message bar is words they did not type.
+    /// </summary>
+    [Fact]
+    public async Task ASteer_IsShownAsTheUsersWordsOnly_WhileInjectedTextWaits()
+    {
+        var gated = await Busy();
+        _session!.Inject("COPIED OUTPUT");
+
+        _session.Submit("look at this");
+
+        Assert.Equal("look at this", _session.PendingSteer);
+        gated.Release();
+        await Settled();
+    }
+
+    /// <summary>Escape takes back what the user typed; the copied text stays queued for their next message.</summary>
+    [Fact]
+    public async Task CancellingASteer_ReturnsOnlyTheUsersWords_AndKeepsTheCopyQueued()
+    {
+        var gated = await Busy();
+        _session!.Inject("COPIED OUTPUT");
+        _session.Submit("look at this");
+        string? returned = null;
+        _session.Cancelled += (text, _) => returned = text;
+
+        _session.CancelPending();
+
+        Assert.Equal("look at this", returned);
+        Assert.Equal("COPIED OUTPUT", _session.TakeInjected());
+        gated.Release();
+        await Settled();
+    }
+
+    /// <summary>
+    /// WHEN THE STEER IS DELIVERED the model receives the copy with it, and the transcript announces
+    /// only the user's words.
+    /// </summary>
+    [Fact]
+    public async Task ADeliveredSteer_CarriesTheCopyToTheModel_ButAnnouncesOnlyTheUsersWords()
+    {
+        var gated = await Busy();
+        _session!.Inject("COPIED OUTPUT");
+        _session.Submit("look at this");
+
+        gated.Release();
+        await Settled();
+
+        Assert.Contains("> look at this", _sink!.Transcript);
+        Assert.DoesNotContain("COPIED OUTPUT", _sink.Transcript);
+        Assert.Contains(_session.Host!.Context.Messages,
+            m => m.Content?.Contains("COPIED OUTPUT") == true && m.Content.Contains("look at this"));
+        Assert.Null(_session.TakeInjected());
+    }
+
+    /// <summary>A kept sub-agent's jobs are the session's to show — but it is not the session's agent.</summary>
+    [Fact]
+    public void AKeptSubAgent_IsOwned_ButIsNotTheSessionAgent()
+    {
+        Wired(out _, out _);
+        var child = Child();
+        _session!.SubAgents.Keep(child, "find thing");
+
+        Assert.True(_session.Owns(child.Agent.Id));
+        Assert.False(_session.IsSessionAgent(child.Agent.Id));
     }
 
     [Fact]

@@ -590,7 +590,7 @@ public sealed class Agent
     /// <para>A PROPERTY rather than a 17th constructor parameter, following <see cref="Mode"/>: the
     /// list is already long enough that one more would be read positionally by nobody.</para>
     /// </summary>
-    public Func<string?>? TakePendingSteer { get; set; }
+    public Func<SteerDelivery?>? TakePendingSteer { get; set; }
 
     /// <summary>
     /// Points this agent at a different model, keeping everything else.
@@ -1894,18 +1894,20 @@ public sealed class Agent
                 // BEFORE the loop's compression check rather than at the top of the next iteration:
                 // the correction is then part of what pressure is measured against, so it cannot be
                 // summarised away in the same turn it arrived, and PlaceTaskList runs after it.
-                if (TakePendingSteer?.Invoke() is { Length: > 0 } steer)
+                if (TakePendingSteer?.Invoke() is { } steer)
                 {
                     messages.Add(new ChatMessage
                     {
                         Role = "user",
-                        Content = steer,
+                        Content = steer.ForModel,
                         Timestamp = DateTimeOffset.UtcNow,
                     });
 
                     // ANNOUNCED, so the transcript can replace its "queued" placeholder with a real
                     // user turn. Without this the model changes direction for no visible reason.
-                    _sink.UserTurnAdded(NextTurnId(), steer);
+                    // WHAT THE USER TYPED, not what the model received: anything the app queued to go
+                    // with it is the model's to read, not words to put in the user's mouth.
+                    _sink.UserTurnAdded(NextTurnId(), steer.Shown);
 
                     // THE BUDGET GOES BACK. A correction arriving at turn 90 of a 100-turn cap would
                     // otherwise get ten turns to act on instructions it had never seen. The turn is

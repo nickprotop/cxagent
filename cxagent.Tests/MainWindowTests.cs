@@ -201,9 +201,12 @@ public class MainWindowTests
     /// the OLD design. Written as an ABSENCE check as well as a presence one, because a stale
     /// registration that still fires is exactly the kind of thing that survives a refactor unnoticed
     /// -- a dead key advertised in the bar is worse than no key.
+    ///
+    /// <para>F7 IS NOT ASSERTED HERE ANY MORE: it was taken again, by the jobs panel, which the bar does
+    /// advertise. F8 is still nobody's.</para>
     /// </summary>
     [Fact]
-    public void StatusBar_AdvertisesSettingsOnce_AndNoLongerAdvertisesF7OrF8()
+    public void StatusBar_DoesNotAdvertiseTheRetiredF8()
     {
         var res = ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock");
         var mw = new MainWindow(Sys(), res, Logs());
@@ -213,8 +216,18 @@ public class MainWindowTests
         // assert a layout choice rather than a binding. Absence is the load-bearing half: a retired
         // key still advertised is a key the user presses and gets nothing from.
         var items = mw.StatusBar.LeftItems.Concat(mw.StatusBar.RightItems).ToList();
-        Assert.DoesNotContain(items, i => i.Shortcut == "F7");
         Assert.DoesNotContain(items, i => i.Shortcut == "F8");
+    }
+
+    /// <summary>The jobs item counts this session's running jobs and the others' separately — short,
+    /// because a crowded bar runs its left items into the right group.</summary>
+    [Fact]
+    public void JobsItemLabel_CountsMineAndElsewhere()
+    {
+        Assert.Equal("Jobs", MainWindow.JobsItemLabel(mine: 0, elsewhere: 0));
+        Assert.Equal("Jobs 2", MainWindow.JobsItemLabel(mine: 2, elsewhere: 0));
+        Assert.Equal("Jobs 2+1", MainWindow.JobsItemLabel(mine: 2, elsewhere: 1));
+        Assert.Equal("Jobs 0+3", MainWindow.JobsItemLabel(mine: 0, elsewhere: 3));
     }
 
     [Fact]

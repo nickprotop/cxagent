@@ -143,6 +143,29 @@ public sealed partial class Session
     public string? SessionId => Host?.SessionId;
 
     /// <summary>
+    /// Every agent id this session's hosts have had.
+    ///
+    /// <para>A RE-WIRE MINTS A NEW AGENT, and with it a new id — but a background job started by the
+    /// previous agent is still running, still this session's, and reports its exit to the id it was
+    /// started under. The session has to recognise that id for as long as it lives, or the job falls
+    /// off the panel and its exit report is addressed to nobody.</para>
+    /// </summary>
+    private readonly HashSet<string> _agentIds = [];
+
+    /// <summary>Whether this id is, or was, this session's own agent — not a sub-agent's.</summary>
+    public bool IsSessionAgent(string agentId)
+    {
+        lock (_agentIds) return _agentIds.Contains(agentId);
+    }
+
+    /// <summary>
+    /// Whether work done under this agent id belongs to this session: its own agent, past or present,
+    /// or one of its kept sub-agents. The one rule the jobs panel, the status bar and F7 all ask.
+    /// </summary>
+    public bool Owns(string agentId) =>
+        IsSessionAgent(agentId) || SubAgents.FindByAgentId(agentId) is not null;
+
+    /// <summary>
     /// True when there is something to come back to.
     ///
     /// <para>A session is written per turn, so one where nothing was said was never stored — and
@@ -284,6 +307,9 @@ public sealed partial class Session
     {
         Host?.Dispose();
         Host = host;
+
+        // REMEMBERED, NOT REPLACED — see _agentIds.
+        if (host is not null) lock (_agentIds) _agentIds.Add(host.SessionId);
 
         // THE SESSION'S MINTER, HANDED DOWN. Turn ids number this session's transcript, so they must
         // come from one counter — and the sink calls moved here while the agent kept minting from the

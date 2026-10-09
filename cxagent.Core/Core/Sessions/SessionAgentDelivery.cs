@@ -42,10 +42,11 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
     {
         if (string.IsNullOrWhiteSpace(text)) return Agents.DeliveryOutcome.Refused;
 
-        // THE SESSION'S OWN AGENT FIRST, and Session.SessionId IS that agent's id — AgentHost exposes
-        // `_agent.Id` under that name. The cheaper test also settles the common case before searching
-        // every kept child for it.
-        if (agentId == session.SessionId)
+        // THE SESSION'S OWN AGENT FIRST — ANY AGENT IT HAS HAD, not only the current one. A re-wire
+        // mints a new id while a job the previous agent started is still running, and that job reports
+        // to the id it was started under. The cheaper test also settles the common case before
+        // searching every kept child for it.
+        if (session.IsSessionAgent(agentId))
         {
             // BUSY READ BEFORE THE SUBMIT, because the submit changes it: an idle session starts a
             // turn and is busy immediately after, so reading it later would report every wake as an

@@ -124,6 +124,26 @@ public sealed partial class Session
     }
 
     /// <summary>
+    /// The user's own text has just been sent to the model — a new turn, or a steer into a running one.
+    ///
+    /// <para>NOT <c>UserTurnAdded</c>. That announces a transcript row: it fires for a plugin's goal,
+    /// and for a steer only when the agent TAKES it at a tool barrier — minutes after it was sent, or
+    /// never, when the turn is cancelled first. What a listener here wants to know is that the person
+    /// spoke, at the moment they did. A delivery, a plugin's goal and a slash command are not that.</para>
+    ///
+    /// <para>Raised on the submitting thread.</para>
+    /// </summary>
+    public event Action? UserSpoke;
+
+    /// <summary>
+    /// Whether a submission is the user's own words to the model: typed, not delivered, and not a
+    /// plugin's goal. <see cref="UserSpoke"/> and the injected-text hand-off ask the same question,
+    /// and answering it in one place keeps them from drifting apart.
+    /// </summary>
+    private static bool IsTheUser(SubmitSource source, TurnOriginator? origin) =>
+        source is SubmitSource.User && (origin is null || origin == TurnOriginator.User);
+
+    /// <summary>
     /// Refuses an action that cannot run mid-turn, and says why.
     ///
     /// <para>ONE COPY OF THE SENTENCE, and it belongs here rather than in a front end: five call
@@ -277,29 +297,19 @@ public sealed partial class Session
             }
         }
 
-        // WHAT THE APP HAS TO SAY GOES FIRST, and only once the text is known to be heading for
-        // the model. Taking it above the command branch would destroy it: prepending turns "/clear"
-        // into prose that no longer starts with a slash, so the command silently becomes a message
-        // AND the transcript goes with it into a turn the user never asked for.
+        // WHAT THE APP HAS TO SAY GOES WITH THE USER'S NEXT MESSAGE, and only once the text is known to
+        // be heading for the model. Taking it above the command branch would destroy it: prepending
+        // turns "/clear" into prose that no longer starts with a slash, so the command silently becomes
+        // a message AND the transcript goes with it into a turn the user never asked for. A command
+        // therefore leaves it queued, which is right rather than merely safe — /clear and /stats are
+        // not the user speaking to the model.
         //
-        // A COMMAND THEREFORE LEAVES IT QUEUED, which is right rather than merely safe — /clear and
-        // /stats are not the user speaking to the model, so there is nothing yet for the transcript
-        // to arrive ahead of. It waits for something that is.
+        // AND ONLY FOR THE USER'S OWN MESSAGE. Injected text was queued to go with it; a delivery
+        // waking the session, or a plugin's goal, is not that message, and taking it there sends the
+        // queued text early, attached to words the user did not write, hidden behind their echo.
         //
-        // FIRST IN THE TEXT because it describes what already happened: the terminal closed before
-        // this was typed, and a reply that answers the question while ignoring the event preceding
-        // it reads as though the event never occurred.
-        //
-        // ECHOED AS THE USER'S WORDS ALONE, via the echo parameter that exists for exactly this —
-        // /init sends a briefing and displays "/init" so the log does not attribute to someone words
-        // they never typed. A transcript they did not write is the same problem.
-        if (TakeInjected() is { Length: > 0 } injected)
-        {
-            echo ??= text;
-            text = injected + "\n\n" + text;
-        }
-
-        return SubmitRaw(text, echo, tools, origin, source);
+        // WHERE IT IS ATTACHED depends on which arm Send takes — see Send.
+        return Send(new TurnRequest(text, echo, tools, origin, source), IsTheUser(source, origin));
     }
 
     /// <summary>
@@ -340,9 +350,29 @@ public sealed partial class Session
     /// </param>
     public SubmitOutcome SubmitRaw(string text, string? echo = null,
         Jobs.ToolSelection? tools = null, TurnOriginator? origin = null,
-        SubmitSource source = SubmitSource.User)
+        SubmitSource source = SubmitSource.User) =>
+        Send(new TurnRequest(text, echo, tools, origin, source), attachInjected: false);
+
+    /// <summary>
+    /// Sends, or steers into the running turn — <see cref="SubmitRaw"/>'s body, with one decision
+    /// added: whether text the app queued with <see cref="Inject"/> goes along.
+    ///
+    /// <para>ATTACHED PER ARM. Starting a turn, it is prepended here and the echo keeps the
+    /// transcript to the user's words. Steering, it is NOT glued to the steer: the steer queue is
+    /// what the screen draws as the user's queued block and what Escape hands back to the composer,
+    /// so a log pasted into it is both drawn as theirs and returned as if they had typed it. It stays
+    /// in its own queue and joins the steer when the steer is delivered — see
+    /// <see cref="TakeSteer"/>.</para>
+    /// </summary>
+    private SubmitOutcome Send(TurnRequest request, bool attachInjected)
     {
+        var (text, echo, tools, origin, source) = (request.Text, request.Echo, request.Tools,
+            request.Origin, request.Source);
         if (Host is null) return new SubmitOutcome.NoAgent();
+
+        // THE USER SPOKE, raised before either arm below: a steer counts when it is sent, not when the
+        // agent gets round to taking it.
+        if (IsTheUser(source, origin)) UserSpoke?.Invoke();
 
         // ISBUSY, NOT A CALLER'S FLAG. The host writes it as the turn begins and clears it however
         // the turn ends, including cancellation — so it cannot latch true the way a flag maintained
@@ -391,6 +421,12 @@ public sealed partial class Session
         // the same thing, and a composed value carries S1 and S2 terms the caller never wrote.
         _turnTools = tools;
 
+        if (attachInjected && TakeInjected() is { Length: > 0 } injected)
+        {
+            echo ??= text;
+            text = injected + "\n\n" + text;
+        }
+
         // RunContinuationsAsynchronously: without it, whoever completes the source — RunTurnAsync,
         // on the turn's own thread — runs the awaiter's continuation inline, which for a plugin
         // awaiting Result means the plugin's own work executes on the turn loop's thread before
@@ -426,7 +462,8 @@ public sealed partial class Session
         System.Threading.SynchronizationContext.SetSynchronizationContext(null);
         try
         {
-            return new SubmitOutcome.Started(RunTurnAsync(text, echo, tools, origin, result), result.Task);
+            return new SubmitOutcome.Started(
+                RunTurnAsync(new TurnRequest(text, echo, tools, origin, source), result), result.Task);
         }
         finally
         {
@@ -445,9 +482,17 @@ public sealed partial class Session
     /// <para>CANCELLATION IS NOT AN ERROR HERE. <see cref="CancelTurn"/> already said "Stopped." and
     /// handed the queue back; saying anything further would report one event twice.</para>
     /// </summary>
-    private async Task RunTurnAsync(string text, string? echo, Jobs.ToolSelection? tools,
-        TurnOriginator? origin, TaskCompletionSource<string?> result)
+    private async Task RunTurnAsync(TurnRequest request, TaskCompletionSource<string?> result)
     {
+        var text = request.Text;
+        var echo = request.Echo;
+        var tools = request.Tools;
+        var origin = request.Origin;
+
+        // ONLY THE FIRST LAP CAN BE THE APPLICATION'S. Every later lap is text the user typed while
+        // this turn ran, and is announced as theirs.
+        var announceAsNote = request.Source is SubmitSource.System;
+
         // A LOOP, NOT RECURSION. Text left over after a turn starts another one, and a caller queuing
         // faster than the model answers would grow the stack with a recursive call. This is also why
         // the drain stays inside this method rather than re-entering through a caller.
@@ -489,7 +534,14 @@ public sealed partial class Session
                 // row to stream into. echo is what the USER sees: /init sends paragraphs of briefing
                 // and displays "/init", because putting the briefing on the transcript as their own
                 // message attributes words to them they never wrote.
-                _sink?.UserTurnAdded(NextTurnId(), echo ?? text);
+                //
+                // A SYSTEM NOTE, NOT THE USER'S TURN, for what the application said — an exit notice
+                // waking the session is not the user speaking, and the rail would say it was. The model
+                // still receives it as a user-role message; only the attribution on screen differs.
+                // Nothing is lost by skipping UserTurnAdded here: the inline job rows settle on the
+                // round-ended callback AssistantTurnBegan raises on the next line, either way.
+                if (announceAsNote) _sink?.Said(new Message(echo ?? text, Severity.Info));
+                else _sink?.UserTurnAdded(NextTurnId(), echo ?? text);
 
                 var assistantId = NextTurnId();
                 _sink?.AssistantTurnBegan(assistantId);
@@ -553,7 +605,7 @@ public sealed partial class Session
 
             // WHOLE OR NOT AT ALL, and never an echo: what goes in on a later lap is exactly what the
             // user typed, so it is displayed as itself.
-            if (TakePendingSteer() is not { Length: > 0 } queued)
+            if (TakeSteer() is not { } queued)
             {
                 // THE LAST LAP'S TEXT IS THE ANSWER TO THIS Submit, not the first: a caller that
                 // queued mid-turn asked a follow-up, and the reply to the follow-up is what
@@ -579,10 +631,20 @@ public sealed partial class Session
                 return;
             }
 
-            text = queued;
-            echo = null;
+            text = queued.ForModel;
+            echo = queued.Shown;
+            announceAsNote = false;
         }
     }
+
+    /// <summary>
+    /// What one call to <see cref="RunTurnAsync"/> was asked to send, and on whose behalf.
+    ///
+    /// <para>A RECORD BECAUSE THE GROUP IS ONE THING: five positional parameters, three of them
+    /// nullable, is the shape where two get transposed and it still compiles.</para>
+    /// </summary>
+    private sealed record TurnRequest(string Text, string? Echo, Jobs.ToolSelection? Tools,
+        TurnOriginator? Origin, SubmitSource Source);
 
     /// <summary>
     /// Stops the running turn and hands back anything queued behind it. True when a turn was stopped.

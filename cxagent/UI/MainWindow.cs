@@ -10,6 +10,7 @@ using SharpConsoleUI.Layout;
 using SharpConsoleUI.Themes;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Helpers;
+using CxAgent.Core.Jobs;
 
 namespace CxAgent.UI;
 
@@ -659,6 +660,7 @@ public sealed class MainWindow : IDisposable
     public void NoteFirstSession(Core.Sessions.Session session)
     {
         _sessionTabs[0].NoteSession(session);
+        WatchJobs(session);
 
         // AND THE PANEL FOLLOWS ITS TALLY FROM THE START. ShowActiveSession does this on every tab
         // SWITCH, and the first tab never goes through one — so the panel counted the first
@@ -682,6 +684,7 @@ public sealed class MainWindow : IDisposable
     {
         var tab = new SessionTab(session, NewTranscript(), NewPrompt(), NewJobPanel());
         tab.Compose(BuildComposerFor(tab));
+        WatchJobs(session);
 
         _sessionTabs.Add(tab);
         WireOnce(tab.Input);
@@ -1348,6 +1351,41 @@ public sealed class MainWindow : IDisposable
     /// <summary>The right-hand session panel — context, model, session, location, permissions.</summary>
     public SessionPanel SessionPanel { get; } = new();
 
+    /// <summary>The jobs view of the right-hand column — see <see cref="SideView"/>.</summary>
+    public JobsPanel JobsPanel { get; } = new();
+
+    /// <summary>
+    /// Which of the two panels the right-hand column shows: F3's info panel or F7's jobs panel.
+    ///
+    /// <para>ONE COLUMN, TWO VIEWS, rather than a second column: the transcript is what the screen is
+    /// for, and a second column would take its width for the whole session to show something wanted
+    /// some of the time. Whether the column shows at all is still <see cref="_panelOverride"/>'s and
+    /// the terminal width's, exactly as before; this only chooses its content.</para>
+    /// </summary>
+    private enum SideView { Info, Jobs }
+
+    private SideView _sideView = SideView.Info;
+
+    /// <summary>
+    /// The column's content: both panels, one of them collapsed.
+    ///
+    /// <para>A ROW EACH, the hidden one at zero height. Visible=false alone stops a control painting
+    /// but leaves its row holding space — the lesson the column width below already learned.</para>
+    /// </summary>
+    private GridControl? _sideColumnGrid;
+
+    private GridControl _sideColumn => _sideColumnGrid ??= Controls.Grid()
+        .Columns(GridLength.Star(1))
+        .Rows(GridLength.Star(1), GridLength.Cells(0))
+        .Place(SessionPanel.Control, 0, 0)
+        .Place(JobsPanel.Control, 1, 0)
+        .WithVerticalAlignment(VerticalAlignment.Fill)
+        .WithAlignment(HorizontalAlignment.Stretch)
+        .Build();
+
+    /// <summary>Whether the right-hand column is showing at all, whichever panel is in it.</summary>
+    private bool ColumnVisible => _panelOverride ?? _system.DesktopDimensions.Width >= UI.SessionPanel.ResponsiveThreshold;
+
     /// <summary>
     /// Drives the panel's ELAPSED CLOCK. Everything else in the panel changes on an event — tokens
     /// when a turn ends, rules when one is granted — but elapsed time changes because time passed,
@@ -1597,6 +1635,16 @@ public sealed class MainWindow : IDisposable
         // in this file does, instead of being fixed once and left behind by a later switch.
         StartPanelClock();
 
+        // A JOB ROW IN THE JOBS PANEL OPENS ITS TAB, and closing a job tab only closes the view. Wired
+        // once here: the panel and the strip are the window's, however many sessions come and go.
+        JobsPanel.JobChosen += pid =>
+        {
+            if (JobsSession is { } session
+                && Jobs.For(session.Owns).FirstOrDefault(e => e.Job.Pid == pid) is { } entry)
+                OpenJobTab(entry, session);
+        };
+        Tabs.TabCloseRequested += OnJobTabCloseRequested;
+
         // EVERY ROLE RENDERS MARKDOWN. Core writes markdown — the same dialect the models write —
         // so the transcript has one dialect instead of two, and a command's `## heading` or pipe
         // table is a heading and a table rather than its own syntax on screen.
@@ -1829,7 +1877,7 @@ public sealed class MainWindow : IDisposable
             .Place(Tabs, 0, 0)
             .Place(_waitingBar, 1, 0)
             .Place(_statusStrip, 2, 0)
-            .Place(SessionPanel.Control, 0, 1, rowSpan: 3)
+            .Place(_sideColumn, 0, 1, rowSpan: 3)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
@@ -2361,7 +2409,8 @@ public sealed class MainWindow : IDisposable
         _panelClock = new System.Threading.Timer(
             _ => _system.EnqueueOnUIThread(() =>
             {
-                if (SessionPanel.Control.Visible) RefreshSessionPanel();
+                if (ColumnVisible || SessionPanel.Control.Visible || JobsPanel.Control.Visible)
+                    RefreshSessionPanel();
 
                 // OUTSIDE THE VISIBILITY GUARD ABOVE, and that is the point of putting it here rather
                 // than folding it into RefreshSessionPanel. The panel is a luxury of width and hides
@@ -2372,8 +2421,155 @@ public sealed class MainWindow : IDisposable
                 // This is the only thing that advances a running row's elapsed time — see
                 // InlineJobSink.RefreshRunningHeaders for why the header cannot tick itself.
                 JobSink?.RefreshRunningHeaders();
+
+                // OUTSIDE THE GUARD TOO: the jobs item exists for exactly the terminal too narrow to
+                // show the panel, and an open job tab follows its output whether the panel is up or not.
+                RefreshJobs();
             }),
             null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    /// <summary>
+    /// Where background jobs are read from: the process-wide board, unless a test hands in its own.
+    ///
+    /// <para>INITIALISED HERE, WHEN THE WINDOW IS BUILT, which is before any session opens — so the
+    /// board is listening before the first job can be described.</para>
+    /// </summary>
+    public BackgroundJobBoard Jobs { get; set; } = BackgroundJobBoard.Default;
+
+    /// <summary>
+    /// The open job tabs, by entry.
+    ///
+    /// <para>NOT BY TITLE, which changes when the job ends and repeats when two jobs run one command;
+    /// NOT BY PID, which the OS hands to a later process once this one is gone.</para>
+    /// </summary>
+    private readonly Dictionary<BackgroundJobEntry, JobTabSlot> _jobTabs = [];
+
+    /// <summary>A job tab and the strip page it sits on.</summary>
+    private sealed record JobTabSlot(JobTab Tab, SharpConsoleUI.Controls.TabPage Page);
+
+    private StatusBarItem? _jobsItem;
+
+    /// <summary>
+    /// The status item's text: the key's name, and while anything runs, how much.
+    ///
+    /// <para>RUNNING JOBS ONLY: a finished one is the panel's to show. Other sessions' are counted
+    /// apart — `Jobs 2+1` — because they are running in this process too and a narrow terminal has no
+    /// other way to say so. SHORT, because the bar has no gap to give: crowded, its left items run
+    /// straight into the right group.</para>
+    /// </summary>
+    public static string JobsItemLabel(int mine, int elsewhere) =>
+        mine == 0 && elsewhere == 0 ? "Jobs"
+        : elsewhere == 0 ? $"Jobs {mine}"
+        : $"Jobs {mine}+{elsewhere}";
+
+    /// <summary>
+    /// Whose jobs the panel and the status item show: the session in front — or, while a job tab is in
+    /// front, the session that owns that job, since a job tab is not a session tab and would otherwise
+    /// fall back to the first.
+    /// </summary>
+    private Session? JobsSession =>
+        _jobTabs.Values.FirstOrDefault(s => ReferenceEquals(s.Page, Tabs.GetTab(Tabs.ActiveTabIndex)))?.Tab.Session
+        ?? ActiveSession;
+
+    /// <summary>
+    /// Clears a session's finished jobs from the panel when its user speaks — see Session.UserSpoke
+    /// for why that, and not the transcript's user-turn callback. Raised on the submitting thread; the
+    /// board takes its own lock.
+    /// </summary>
+    private void WatchJobs(Session session) =>
+        session.UserSpoke += () => Jobs.ClearFinished(session.Owns);
+
+    /// <summary>The jobs panel, from the board, for the session whose jobs are in front.</summary>
+    private void RefreshJobsPanel()
+    {
+        IReadOnlyList<JobsPanel.JobRow> rows = JobsSession is not { } session ? [] :
+            [.. Jobs.For(session.Owns).Select(e => new JobsPanel.JobRow(
+                e.View(),
+                OutputTail.LastLines(e.Job.OutputPath, JobsPanel.TailLines),
+                AgentName(session, e.Job.AgentId)))];
+        JobsPanel.Refresh(rows, _panelWidth);
+    }
+
+    /// <summary>Null for the session's own agent; the sub-agent's name otherwise.</summary>
+    private static string? AgentName(Session session, string agentId) =>
+        session.IsSessionAgent(agentId) ? null
+        : session.SubAgents.FindByAgentId(agentId)?.Name ?? agentId;
+
+    /// <summary>The status item, and every open job tab, once a second.</summary>
+    private void RefreshJobs()
+    {
+        var owns = JobsSession is { } session ? session.Owns : (Func<string, bool>)(_ => false);
+        var label = JobsItemLabel(Jobs.For(owns).Count(e => !e.Finished), Jobs.RunningElsewhere(owns));
+
+        // CREATED ON THE FIRST TICK, not at build: a status-bar change during construction blocks on a
+        // render tick that does not exist yet (see ShowComposerHint).
+        _jobsItem ??= StatusBar.AddLeft(KeyHint("background jobs", "F7"), label, () => ToggleJobsPanel());
+        if (_jobsItem.Label != label) _jobsItem.Label = label;
+
+        foreach (var slot in _jobTabs.Values)
+        {
+            slot.Tab.Tick();
+            if (IndexOf(slot.Page) is { } index) SetTabTitleText(index, slot.Tab.Title());
+        }
+    }
+
+    /// <summary>
+    /// Opens a job's tab, or switches to it when it is already open, and puts the keyboard in it.
+    /// </summary>
+    /// <param name="session">The session that owns the job — where Copy to transcript queues.</param>
+    private void OpenJobTab(BackgroundJobEntry entry, Session session)
+    {
+        if (_jobTabs.TryGetValue(entry, out var open) && IndexOf(open.Page) is { } at)
+        {
+            Tabs.ActiveTabIndex = at;
+            FocusJobTab(open.Tab);
+            return;
+        }
+
+        var tab = new JobTab(entry, session, AgentName(session, entry.Job.AgentId));
+        AddTab(tab.Title(), tab.Content);
+        _jobTabs[entry] = new JobTabSlot(tab, Tabs.GetTab(Tabs.TabCount - 1)!);
+        FocusJobTab(tab);
+    }
+
+    /// <summary>
+    /// THE KEYBOARD GOES WITH THE TAB, as it does for a shell tab: switching to a non-session tab does
+    /// not move focus on its own, so PageUp would otherwise still be typing into a hidden composer.
+    /// </summary>
+    private void FocusJobTab(JobTab tab) =>
+        Window?.FocusManager.SetFocus(tab.Scroll, SharpConsoleUI.Controls.FocusReason.Programmatic);
+
+    /// <summary>
+    /// Closes a job's tab when its close is requested. The job keeps running — a tab is a view of it.
+    /// </summary>
+    private void OnJobTabCloseRequested(object? sender, SharpConsoleUI.Events.TabEventArgs e)
+    {
+        var slot = _jobTabs.FirstOrDefault(kv => ReferenceEquals(kv.Value.Page, e.TabPage));
+        if (slot.Value is null) return;
+
+        _jobTabs.Remove(slot.Key);
+        if (IndexOf(slot.Value.Page) is { } index) CloseTab(index);
+        ShowChatTab();
+    }
+
+    /// <summary>A page's position in the strip, or null when it is no longer there.</summary>
+    private int? IndexOf(SharpConsoleUI.Controls.TabPage page)
+    {
+        for (var i = 0; i < Tabs.TabCount; i++)
+            if (ReferenceEquals(Tabs.GetTab(i), page)) return i;
+        return null;
+    }
+
+    /// <summary>
+    /// Renames a tab, keeping <see cref="_tabTitles"/> in step — RefreshWaitingBar re-applies titles
+    /// from there, and a title set only on the control would be put back to the old one.
+    /// </summary>
+    private void SetTabTitleText(int index, string title)
+    {
+        if (index < 0 || index >= _tabTitles.Count || _tabTitles[index] == title) return;
+        _tabTitles[index] = title;
+        Tabs.SetTabTitle(index, _waitingTabs.Contains(index) ? title + " •" : title);
     }
 
     /// <summary>
@@ -2390,8 +2586,17 @@ public sealed class MainWindow : IDisposable
     public void RefreshSessionPanel()
     {
         var terminalWidth = _system.DesktopDimensions.Width;
-        var wide = terminalWidth >= UI.SessionPanel.ResponsiveThreshold;
-        SessionPanel.Control.Visible = _panelOverride ?? wide;
+        var column = ColumnVisible;
+        var jobs = column && _sideView == SideView.Jobs;
+        SessionPanel.Control.Visible = column && !jobs;
+        JobsPanel.Control.Visible = jobs;
+        if (_sideColumnGrid is { } side && side.RowDefinitions.Count == 2)
+        {
+            var info = jobs ? GridLength.Cells(0) : GridLength.Star(1);
+            var list = jobs ? GridLength.Star(1) : GridLength.Cells(0);
+            if (!Equals(side.RowDefinitions[0], info)) side.RowDefinitions[0] = info;
+            if (!Equals(side.RowDefinitions[1], list)) side.RowDefinitions[1] = list;
+        }
 
         // RE-WIDEN ON RESIZE. The column was fixed at construction, so a terminal that grew from 100
         // to 200 columns kept a 24-wide panel wrapping model ids and paths while a third of the new
@@ -2404,7 +2609,7 @@ public sealed class MainWindow : IDisposable
             // reserving its width, so hiding it left a 24-to-40 column strip of empty background and
             // the transcript still wrapping as though the panel were there. The width is the column's
             // to give back, not the control's.
-            var want = SessionPanel.Control.Visible ? UI.SessionPanel.WidthFor(terminalWidth) : 0;
+            var want = column ? UI.SessionPanel.WidthFor(terminalWidth) : 0;
             if (_panelWidth != want)
             {
                 _panelWidth = want;
@@ -2412,6 +2617,7 @@ public sealed class MainWindow : IDisposable
             }
         }
 
+        if (jobs) RefreshJobsPanel();
         if (!SessionPanel.Control.Visible) return;
 
         // DisplayName is the instance label ("openai-compatible qwen3.6-…"); ModelId is what the
@@ -2514,16 +2720,59 @@ public sealed class MainWindow : IDisposable
     /// <summary>F3 — show the panel, hide it, or hand it back to the terminal width.</summary>
     public void ToggleSessionPanel()
     {
+        // F3 OVER THE JOBS PANEL SWITCHES TO INFO rather than cycling: the column is up, and what was
+        // asked for is the info panel in it. Hiding it instead would answer a question nobody asked.
+        if (ColumnVisible && _sideView == SideView.Jobs)
+        {
+            _sideView = SideView.Info;
+            RefreshSessionPanel();
+            return;
+        }
+
         // Cycles through the THREE states rather than flipping two, so a user can get back to
         // responsive without restarting: shown -> hidden -> automatic.
+        _sideView = SideView.Info;
         _panelOverride = _panelOverride switch
         {
-            null => !SessionPanel.Control.Visible,
+            null => !ColumnVisible,
             true => false,
             false => null,
         };
         RefreshSessionPanel();
     }
+
+    /// <summary>
+    /// F7 — the jobs panel, or the column hidden when the jobs panel is what it already shows.
+    ///
+    /// <para>THE KEYBOARD GOES TO THE ROWS on the way in, so ↑ ↓ and Enter work at once; on the way out
+    /// it goes back to the composer, which is where it came from.</para>
+    ///
+    /// <para>SHOWN EVEN WITH NO JOBS. An empty panel that says what would appear there teaches the key;
+    /// a key that does nothing until something runs teaches that it is broken.</para>
+    /// </summary>
+    public bool ToggleJobsPanel()
+    {
+        if (ColumnVisible && _sideView == SideView.Jobs)
+        {
+            _panelOverride = false;
+            RefreshSessionPanel();
+            FocusComposer();
+            return true;
+        }
+
+        _sideView = SideView.Jobs;
+        _panelOverride = true;
+        RefreshSessionPanel();
+        Window?.FocusManager.SetFocus(JobsPanel.Rows, SharpConsoleUI.Controls.FocusReason.Keyboard);
+
+        // AGAIN, NOW THE ROWS HAVE THE KEYBOARD, so the selection is drawn at once rather than a tick
+        // later — the refresh above ran while focus was still in the composer.
+        JobsPanel.Redraw();
+        return true;
+    }
+
+    /// <summary>Whether the jobs panel's rows have the keyboard — for the window's ↑ ↓ forwarding.</summary>
+    public bool JobsRowsHaveFocus => JobsPanel.Control.Visible && JobsPanel.Rows.HasFocus;
 
     /// <summary>
     /// Raises the permission prompt onto its own surface.
@@ -2835,6 +3084,7 @@ public sealed class MainWindow : IDisposable
         // The session panel captured its own surfaces the same way this window did.
         ApplyRoleStyles();   // each style captured its Background by value
         SessionPanel.ReapplyTheme();
+        JobsPanel.ReapplyTheme();
 
         // OPEN FILES CAPTURED THEIR SURFACE THE SAME WAY. An editor built under one theme keeps its
         // colours until told otherwise, and a file left open across a switch is the most visible

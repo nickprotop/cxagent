@@ -27,6 +27,9 @@ public sealed class DetachedProcess : IDisposable
     private bool _finished;
     private int _exitCode;
 
+    /// <summary>Set by <see cref="Kill"/> when it found the process alive — see <see cref="Killed"/>.</summary>
+    private bool _killed;
+
     /// <summary>Whether <see cref="ProcessRunner.DetachAsync"/> has finished starting the output
     /// readers, before which the <see cref="Process"/> must not be disposed — see
     /// <see cref="ReleaseTheHandle"/>.</summary>
@@ -229,6 +232,19 @@ public sealed class DetachedProcess : IDisposable
     /// </summary>
     public void Kill()
     {
+        // DECIDED BEFORE SIGNALLING, FROM WHETHER THERE IS ANYTHING ALIVE TO SIGNAL. _finished is not
+        // "the process died": completion runs after the waiter has drained both streams, up to two
+        // seconds later, and the waiter can also complete before this method's own Complete() does.
+        // Reading _finished alone would call a process that exited on its own "killed" when the kill
+        // lands in that window, and miss a real kill the waiter completes first. HasExited answers the
+        // question actually being asked. It throws once the handle is released, which happens only
+        // after _finished is set — the short-circuit keeps it from being asked then.
+        lock (_gate)
+        {
+            try { if (!_finished && !_process.HasExited) _killed = true; }
+            catch (Exception) { /* released: already finished, so not a kill */ }
+        }
+
         try { if (!_process.HasExited) _process.Kill(entireProcessTree: true); }
         catch (Exception) { /* already gone, or never ours to signal: either way it is not running. */ }
 
@@ -332,6 +348,15 @@ public sealed class DetachedProcess : IDisposable
     /// <see cref="Finished"/>-then-read pair is how such a caller covers that gap.</para>
     /// </summary>
     public int ExitCode { get { lock (_gate) return _exitCode; } }
+
+    /// <summary>
+    /// Whether this process ended because <see cref="Kill"/> stopped it, rather than on its own.
+    ///
+    /// <para>A KILLED PROCESS'S EXIT CODE IS WHATEVER THE SIGNAL LEFT — 137, or −1 when the code could
+    /// not be read — and a reader shown only that cannot tell a stop someone asked for from a crash.
+    /// False for a kill that found the process already dead: that one exited on its own.</para>
+    /// </summary>
+    public bool Killed { get { lock (_gate) return _killed; } }
 
     /// <summary>
     /// Appends one output line to the file, if there is one.
@@ -468,10 +493,11 @@ public sealed class DetachedProcessRegistry
     /// <para>A SEPARATE CALL RATHER THAN AN Add ARGUMENT — see <see cref="Add"/>'s own comment for
     /// why the executor, not the runner, is the one that can supply <paramref name="job"/>.</para>
     ///
-    /// <para>A NO-OP WHEN THE PROCESS IS NOT FOUND. A command short enough to finish and be pruned
-    /// between <c>DetachAsync</c> returning and its caller annotating the entry is not an error —
-    /// there is nothing left to label, and the exit report the caller is about to build from
-    /// <paramref name="job"/> stands on its own regardless.</para>
+    /// <para>THE LIVE LIST IS LEFT ALONE WHEN THE PROCESS IS NOT FOUND. A command short enough to
+    /// finish and be pruned between <c>DetachAsync</c> returning and its caller annotating the entry
+    /// is not an error — there is no live entry left to label, and the exit report the caller is about
+    /// to build from <paramref name="job"/> stands on its own. <see cref="Described"/> is still
+    /// raised, because that finished job is still one a watcher wants to show.</para>
     /// </summary>
     public void Describe(DetachedProcess detached, BackgroundJob job)
     {
@@ -480,7 +506,25 @@ public sealed class DetachedProcessRegistry
             var index = _live.FindIndex(j => j.Process == detached);
             if (index >= 0) _live[index] = _live[index] with { Job = job };
         }
+
+        // OUTSIDE THE LOCK, EACH HANDLER ON ITS OWN, ITS EXCEPTION SWALLOWED — the shape Complete
+        // uses for Exited, for a sharper reason here: Describe runs inside ArrangeTheReport BEFORE the
+        // exit report is subscribed, so a subscriber that threw would cost the agent its exit report.
+        foreach (var handler in Described?.GetInvocationList() ?? [])
+        {
+            try { ((Action<DetachedProcess, BackgroundJob>)handler)(detached, job); }
+            catch (Exception) { /* a watcher's failure is not the job's */ }
+        }
     }
+
+    /// <summary>
+    /// Raised by every <see cref="Describe"/>, with the process and what it is.
+    ///
+    /// <para>EVEN WHEN THE ENTRY IS ALREADY GONE. Describe is the first moment a job has a command and
+    /// an owner, and a command that exited before it was described — a rejected argument, a failed
+    /// login — is exactly the result a watcher most needs, and the live list no longer holds it.</para>
+    /// </summary>
+    public event Action<DetachedProcess, BackgroundJob>? Described;
 
     /// <summary>
     /// Kills every detached process still running.

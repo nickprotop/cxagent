@@ -562,6 +562,23 @@ is not really there.
 same mechanism `/agents send` uses for a spawned agent's name — so nobody has to retype a pid they
 just read off a `/jobs` row.
 
+**You do not have to ask.** `F7` turns the right-hand column into the jobs panel, as `F3` is the info
+panel: each of this session's background commands with its state, how long it has run, and the last
+three lines it printed. A finished job stays there, marked `✓` or `✗` with its exit code and its last
+lines, until you next send a message. `F7` again hides the column; `F3` switches back to info.
+
+While the jobs panel has the keyboard, `↑` `↓` choose a job and `Enter` opens it in a tab — so does a
+click. The status bar shows `F7:Jobs`, with a count while any run, and other session tabs' running jobs
+as `+N` (`Jobs 2+1`).
+
+**The tab follows the output** as it is written, stops following when you scroll up, and starts again
+at the bottom. **Kill** stops the job; **Copy to transcript** queues its last 8,192 characters to go
+with your next message, without starting a turn — and if you send while a turn is running, the model
+gets the copy but your message shows only what you typed. Closing the tab leaves the job running.
+
+When a background command finishes while the session is idle, its notice starts a turn. The notice
+is shown as a System note, not as something you typed.
+
 The model has the same two operations as `job_list` and `job_kill`, not as a `/jobs` it can type — it
 already has tools for this, and a command that only led to "the model has no terminal to run this in"
 would be a dead end. **The session agent may stop any job; a sub-agent may stop only its own**, and is
