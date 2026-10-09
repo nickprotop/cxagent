@@ -316,6 +316,34 @@ overwritten by a program, and a program's file is never silently overwritten by 
 
 ---
 
+## Background jobs, and what they printed
+
+![The jobs panel beside the conversation: a finished Release build and a test suite still running](27-jobs-panel.png)
+
+This repository, building and testing itself: asked to run the suite and a Release build in the
+background, the agent started both and went quiet. `F7` turns the right-hand column into the jobs
+panel — each command, how long it has run, and its last three lines — while `F3` is still the info
+panel it replaces.
+
+The build finished first. Its notice is the `System` block in the transcript, not a message in the
+user's colour, because nobody typed it; the agent read the output it named and said so. The suite is
+still running above it, its newest lines arriving on the right.
+
+The prompt told it not to poll. Without that, a local model checks `job_list` every few seconds and
+asks to `sleep` in between — work the exit notice already does.
+
+![The test job open in a tab, ending in Passed! 3211](28-job-tab.png)
+
+`↓` and `Enter` on a row open the job in a tab: the full command, its pid and state, and the output as
+it was written — every line, not a summary. Here that ends in `Passed! … 3211`. A running job's tab
+follows its output until you scroll up, and has a `Kill` button; once the job has finished, only
+`Copy to transcript` is left, which sends the end of the output with your next message rather than
+starting a turn.
+
+Both finished rows stay in the panel, with their exit codes, until you next say something.
+
+---
+
 ## A second project, and a worker's receipts
 
 ![A session exploring a codebase, with two finished workers and the panel showing what it cost](session-overview.png)
