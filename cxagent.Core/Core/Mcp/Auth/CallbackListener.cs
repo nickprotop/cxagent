@@ -19,18 +19,53 @@ namespace CxAgent.Core.Mcp.Auth;
 /// </summary>
 public sealed class CallbackListener : IDisposable
 {
-    private readonly HttpListener _listener = new();
+    private HttpListener _listener = new();
 
     /// <summary>The redirect URI to register — the address the browser will return to.</summary>
     public string RedirectUri { get; }
 
-    public CallbackListener(int port = 0)
-    {
-        if (port == 0) port = FreePort();
+    /// <summary>
+    /// How many fresh ports a chosen-for-you bind tries before giving up.
+    ///
+    /// <para>A FEW, NOT ONE. <see cref="FreePort"/> learns a free port by binding it and letting go, and
+    /// anything on the machine may take it before the listener does — then <c>/mcp login</c> failed with
+    /// "Address already in use" for a reason the user can do nothing about. Five losses in a row would
+    /// mean something is binding loopback ports as fast as they are freed, which a retry cannot fix.</para>
+    /// </summary>
+    private const int MaxAttempts = 5;
 
-        RedirectUri = $"http://127.0.0.1:{port}/callback";
-        _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-        _listener.Start();
+    public CallbackListener(int port = 0) : this(port, FreePort) { }
+
+    /// <summary>
+    /// The listener on <paramref name="port"/>, or — when that is 0 — on whatever
+    /// <paramref name="pickPort"/> offers, retried on a fresh pick when the bind loses.
+    ///
+    /// <para>A PORT THE CALLER NAMED IS BOUND ONCE: they chose it, and silently moving would hand them
+    /// a redirect URI they did not ask for.</para>
+    ///
+    /// <para>A FRESH HttpListener PER ATTEMPT. A Start that throws can leave the listener disposed, or
+    /// registered in the process-wide endpoint map under the port it lost, and reusing it either throws
+    /// again or carries the stale registration into this login.</para>
+    /// </summary>
+    internal CallbackListener(int port, Func<int> pickPort)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            var chosen = port != 0 ? port : pickPort();
+            try
+            {
+                _listener.Prefixes.Add($"http://127.0.0.1:{chosen}/");
+                _listener.Start();
+                RedirectUri = $"http://127.0.0.1:{chosen}/callback";
+                return;
+            }
+            catch (Exception ex) when (port == 0 && attempt < MaxAttempts
+                                       && ex is HttpListenerException or ObjectDisposedException)
+            {
+                try { _listener.Close(); } catch (Exception) { /* the failed attempt's leftovers */ }
+                _listener = new HttpListener();
+            }
+        }
     }
 
     /// <summary>

@@ -21,7 +21,27 @@ public class PluginCommandRegistrationTests : IDisposable
         Path.Combine(Path.GetTempPath(), "plugin-cmd-" + Guid.NewGuid().ToString("N"));
 
     public PluginCommandRegistrationTests() => Directory.CreateDirectory(_dir);
-    public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
+
+    /// <summary>
+    /// Removes the temp root, tolerating a log write that is still landing in it.
+    ///
+    /// <para>A SESSION'S LOGS OUTLIVE THE TEST BODY by a moment: a write landing between the recursive
+    /// delete's scan and its rmdir makes a directory non-empty again, and the test then fails on its own
+    /// teardown — "Directory not empty", for a defect that does not exist. Retried, then ignored, as
+    /// AgentDeliveryTests.Dispose does: this is a temp folder the OS reaps anyway.</para>
+    /// </summary>
+    public void Dispose()
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
+                return;
+            }
+            catch (IOException) { Thread.Sleep(50); }
+        }
+    }
 
     private static JsonElement EmptySchema() => JsonSerializer.SerializeToElement(new { type = "object" });
 

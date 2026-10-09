@@ -263,7 +263,7 @@ public class DetachedProcessTests
 
         public DetachedProcess Detach(string command) =>
             ProcessRunner.DetachAsync(
-                new ProcessSpec("/bin/sh", ["-c", command], new RunOptions(SpillDir: _dir)),
+                new ProcessSpec("/bin/sh", ["-c", command], new RunOptions(WorkingDir: TestProcesses.WorkingDir, SpillDir: _dir)),
                 new CollectingContext(), Registry).GetAwaiter().GetResult();
 
         public void Dispose()
@@ -328,18 +328,20 @@ public class DetachedProcessTests
         // needs, and the same reason production pairs every subscription here with a Finished check.
         var owned = fixture.Detach("sleep 0.4");
 
-        var reachedAfterTheThrower = false;
+        var reachedAfterTheThrower = new ManualResetEventSlim();
         owned.Exited += _ => throw new InvalidOperationException("a subscriber's own failure");
-        owned.Exited += _ => reachedAfterTheThrower = true;
+        owned.Exited += _ => reachedAfterTheThrower.Set();
 
         // AND IF IT BEAT US ANYWAY, the test has proved nothing — say so rather than assert on
         // handlers that were never invited to run.
         Assert.False(owned.Finished, "the command exited before the handlers were attached");
 
-        for (var i = 0; i < 200 && !owned.Finished; i++) Thread.Sleep(25);
-
+        // WAITED ON THE HANDLER, NOT ON Finished. Complete sets Finished under its lock and raises
+        // Exited after leaving it, so polling Finished and asserting at once can look between the two
+        // and report a handler as skipped when it was about to run.
+        Assert.True(reachedAfterTheThrower.Wait(TimeSpan.FromSeconds(10)),
+            "a handler after the thrower did not run");
         Assert.True(owned.Finished);
-        Assert.True(reachedAfterTheThrower, "a handler after the thrower did not run");
     }
 
 

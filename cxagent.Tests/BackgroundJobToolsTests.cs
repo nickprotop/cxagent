@@ -112,7 +112,7 @@ public class BackgroundJobToolsTests
         public JobToolsFixture(string owner)
         {
             Process = ProcessRunner.DetachAsync(
-                new ProcessSpec("/bin/sh", ["-c", "sleep 5"], new RunOptions(SpillDir: _dir)),
+                new ProcessSpec("/bin/sh", ["-c", "sleep 5"], new RunOptions(WorkingDir: TestProcesses.WorkingDir, SpillDir: _dir)),
                 new CollectingContext(), Registry).GetAwaiter().GetResult();
 
             Registry.Describe(Process, new BackgroundJob(Process.Pid, owner, "sleep 5",

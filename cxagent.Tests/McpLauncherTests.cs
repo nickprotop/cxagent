@@ -249,7 +249,6 @@ public class McpLauncherTests : IDisposable
         // THE BOUND ORIGIN, not a 127.0.0.1 URL rebuilt from the port: BindLoopback binds
         // `localhost`, and HttpListener matches the host string rather than the address.
         var origin = prefix.TrimEnd('/');
-        using var _listenerScope = listener;
 
         // Answers every request with the 401 an unauthorized MCP server sends.
         _ = Task.Run(async () =>
@@ -281,6 +280,15 @@ public class McpLauncherTests : IDisposable
 
             await kept.DisposeAsync();
         }
-        finally { listener.Stop(); listener.Close(); }
+        finally
+        {
+            // GUARDED, as every other listener teardown in this suite is. A failed Start ANYWHERE in the
+            // process can leave a stale entry in HttpEndPointManager's port map (see TestPorts), and
+            // Close then throws "Address already in use" from it — failing a test whose body passed.
+            // Once, here: a `using` on the same listener closed it a second time, a second chance to
+            // throw the same thing.
+            try { listener.Stop(); } catch (Exception) { }
+            try { listener.Close(); } catch (Exception) { }
+        }
     }
 }

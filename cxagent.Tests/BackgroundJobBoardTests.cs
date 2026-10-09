@@ -28,7 +28,7 @@ public class BackgroundJobBoardTests : IDisposable
 
     private DetachedProcess Detach(string command) =>
         ProcessRunner.DetachAsync(
-            new ProcessSpec("/bin/sh", ["-c", command], new RunOptions(SpillDir: _dir)),
+            new ProcessSpec("/bin/sh", ["-c", command], new RunOptions(WorkingDir: TestProcesses.WorkingDir, SpillDir: _dir)),
             new CollectingContext(), _registry).GetAwaiter().GetResult();
 
     private DetachedProcess Start(string command, string agent, DateTimeOffset? started = null)
