@@ -2946,12 +2946,12 @@ public sealed class MainWindow : IDisposable
     ///
     /// <para>EXTRACTED SO A THEME CHANGE CAN RE-RUN IT. Each style captures its Background by VALUE
     /// when SetRoleStyle is called, so re-deriving the palette without re-running this leaves every
-    /// message in the transcript painted in the outgoing theme's surfaces while the chrome around
-    /// them moves. Reported live: the user and assistant replies keeping their dark grounds under a
-    /// light theme.</para>
+    /// message added afterwards in the outgoing theme's surfaces while the chrome around it moves.</para>
     ///
-    /// <para>Messages ALREADY on screen do re-paint from these styles, unlike their inline markup —
-    /// the surface is a property of the role, not text baked into the transcript.</para>
+    /// <para>THIS ALONE DOES NOT REPAINT WHAT IS ALREADY ON SCREEN. A message copies its role's
+    /// Background and renders its markdown colours when it is added, and SetRoleStyle never reaches
+    /// back to it. ReapplyTheme follows this with ChatTranscriptControl.RestyleMessages, which
+    /// re-applies the current styles to the messages already there.</para>
     /// </summary>
     private void ApplyRoleStyles() => ApplyRoleStyles(Chat);
 
@@ -3089,12 +3089,25 @@ public sealed class MainWindow : IDisposable
         // THE RAIL IS A PROPERTY, THE COMPOSER'S IS MARKUP. The rail takes a Color and re-colours by
         // assignment; the grip's colour is baked into the text of each row, so like the mode line
         // above it the content has to be regenerated rather than re-coloured.
-        Chat.MessageRailColor = ColorScheme.Grip;
         if (_promptGrip is not null)
             _promptGrip.SetContent([.. GripRows(GripColour(ActiveSessionTab.InAside))]);
 
+        // EVERY SESSION TAB, NOT THE ONE ON SCREEN. Each tab has its own transcript with its own
+        // role styles, so restyling only the active one leaves the others drawing new messages in the
+        // outgoing theme — visible the moment the user switches tab.
+        //
+        // AND THE MESSAGES ALREADY THERE. SetRoleStyle reaches only messages added after it;
+        // every block already on screen copied its Background and rendered its markdown colours when
+        // it was added, and would keep the old theme's ground until scrolled away. RestyleMessages
+        // re-applies the role style to those and re-renders their bodies.
+        foreach (var tab in _sessionTabs)
+        {
+            tab.Chat.MessageRailColor = ColorScheme.Grip;
+            ApplyRoleStyles(tab.Chat);   // each style captured its Background by value
+            tab.Chat.RestyleMessages();
+        }
+
         // The session panel captured its own surfaces the same way this window did.
-        ApplyRoleStyles();   // each style captured its Background by value
         SessionPanel.ReapplyTheme();
         JobsPanel.ReapplyTheme();
 
