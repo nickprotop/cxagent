@@ -344,6 +344,34 @@ Both finished rows stay in the panel, with their exit codes, until you next say 
 
 ---
 
+## A question on the side
+
+![An aside answering in its own block while the main agent is still working through the source files](29-btw-aside.png)
+
+[cxgpu](https://github.com/nickprotop/cxgpu) again, on a local model. The agent had just explained
+how the AMD backend falls back from sysfs to the CLI tools, and was off reading every file under
+`cxgpu/Gpu` for the next question. `/btw which of those fallbacks would run on a machine with no
+ROCm installed?` asked about the first answer without interrupting the second: the `glob` above the
+block and the 23 calls below it are the main turn, still running.
+
+The block is headed `aside · not in the agent's memory`, and that is literal. The side agent starts
+from what the main agent last sent, so it knows what the agent knows, but nothing it is asked or says
+goes into the conversation the agent re-reads every turn. Its spend is the panel's `workers` line,
+not `this agent`, so the main agent's cache rate still describes the main conversation.
+
+The composer's grip has changed colour and the line under it ends `btw · Esc to return`: Enter now
+talks to the aside, and a follow-up continues its thread. Nothing typed there runs as a command —
+`/clear` would be a question about `/clear`. The first Esc stops an answer, the next one leaves.
+
+![The session's permission prompt for a read outside the folder, asked for by the aside](30-btw-permission.png)
+
+A side agent can only read — `read_file`, `glob` and `grep` — and it reads under the session's own
+rules. Inside this folder an always-allow rule covers it, so it reads without asking. `/etc/hostname`
+is outside, so it gets the same prompt the main agent would, marked `asked for by: aside`. Esc
+answers it no and the aside carries on without the file.
+
+---
+
 ## A second project, and a worker's receipts
 
 ![A session exploring a codebase, with two finished workers and the panel showing what it cost](session-overview.png)

@@ -97,6 +97,7 @@
       <button type="button" class="exp-item" role="tab" id="tab-15-plugin-load" aria-controls="pane-15-plugin-load"><span class="exp-icon">&#128268;</span><span>Plugin load</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-14-plugin-lsp" aria-controls="pane-14-plugin-lsp"><span class="exp-icon">&#128270;</span><span>Plugin at work</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-23-shell-terminal" aria-controls="pane-23-shell-terminal"><span class="exp-icon">&#128421;&#65039;</span><span>A real terminal</span></button>
+      <button type="button" class="exp-item" role="tab" id="tab-29-btw-aside" aria-controls="pane-29-btw-aside"><span class="exp-icon">&#128172;</span><span>A side question</span></button>
       </div>
       <div class="exp-body" id="panels">
       <div class="exp-pane" role="tabpanel" id="pane-session-overview" aria-labelledby="tab-session-overview">
@@ -143,11 +144,15 @@
         <div class="exp-shot"><a href="screenshots/23-shell-terminal.png" title="Open the full-size capture"><img src="screenshots/23-shell-terminal.png" alt="A shell running in a window over the session, with its own toolbar" loading="lazy"></a></div>
         <div class="exp-text"><h3>A terminal, for what a tool cannot do</h3><p>A captured stream has nothing to type into, so a <code>sudo</code> password or a <code>git rebase -i</code> is where an agent stops and hands the job back. <code>/shell</code> opens a real PTY in a window over the session — the colours are the giveaway, since <code>ls</code> emits them only when it believes it is talking to a terminal.</p><p class="exp-aside">Afterwards the agent is told what happened, queued rather than delivered into a turn of its own — so it does not start talking while you are still reading.</p></div>
       </div>
+      <div class="exp-pane" role="tabpanel" id="pane-29-btw-aside" aria-labelledby="tab-29-btw-aside">
+        <div class="exp-shot"><a href="screenshots/29-btw-aside.png" title="Open the full-size capture"><img src="screenshots/29-btw-aside.png" alt="An aside answering in its own block while the main agent keeps working" loading="lazy"></a></div>
+        <div class="exp-text"><h3>A question on the side</h3><p><code>/btw</code> asks about what the agent knows without adding to what it remembers. The aside starts from the conversation as the agent last sent it and answers in its own block while the main turn carries on — the calls above and below it are the agent, still reading.</p><p class="exp-aside">It can read and nothing else, under the session's own permissions; a read the agent would be asked about is asked about here too.</p></div>
+      </div>
       </div>
     </div>
   </div>
 
-  <p class="note" style="margin-top:1rem"><a href="docs/walkthrough.html">Ten more, with the full walkthrough →</a></p>
+  <p class="note" style="margin-top:1rem"><a href="docs/walkthrough.html">Twenty more, with the full walkthrough →</a></p>
 </section>
 
 <section id="why">
