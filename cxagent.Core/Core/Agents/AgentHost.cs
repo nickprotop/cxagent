@@ -248,6 +248,28 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     public (int Input, int Output) OwnSpend => _agent.Spend;
 
+    /// <summary>What the agent last sent — see <see cref="Agent.Published"/>.</summary>
+    public PublishedContext? Published => _agent.Published;
+
+    // THE RESTORED CONVERSATION, for a side question asked before the first new request publishes
+    // anything. Copied once here, not read from Context later: by then a turn may be appending to
+    // it. What was saved is always whole — SaveTurn writes at a turn's end, never mid-tool-call.
+    private PublishedContext? _restored;
+
+    /// <summary>
+    /// Points the side-question fork at the context as it now stands. Called after the context is
+    /// rewritten outside a request — /clear, /compress — both of which refuse while a turn runs, so
+    /// nothing is appending to it here.
+    ///
+    /// <para>WITHOUT THIS an aside answers from the conversation the user just cleared, or forks the
+    /// larger, uncompressed copy that /compress was run to get rid of.</para>
+    /// </summary>
+    public void RepublishContext()
+    {
+        Volatile.Write(ref _restored, null);
+        _agent.Republish(Context.Snapshot());
+    }
+
     /// <summary>
     /// The skills whose bodies are still in THIS agent's window — the parent's, not the session's.
     /// A child's are reported on the child's own row, and a child is gone by the next turn.
@@ -539,6 +561,8 @@ public sealed class AgentHost : IDisposable
 
         Context = new AgentContext(runtime.ContextWindow);
         if (resume is not null) Context.Replace(resume.Context);
+        if (resume is { Context.Count: > 0 })
+            _restored = new PublishedContext([.. resume.Context], []);
         // Loaded FROM a stored row, so there is already something to come back to — see HasSavedTurn.
         _resumed = resume is not null;
         // LAST: BuildAgent reads Ledger and Context, so both must already be assigned.
@@ -826,14 +850,15 @@ public sealed class AgentHost : IDisposable
     /// by this type. A dispatcher would have to reach for all three separately and, having no job
     /// panel, could only print a line of prose after the fact.</para>
     /// </summary>
-    public Task<SessionCompressor.CompressResult> CompressNowAsync(CancellationToken ct) =>
+    public async Task<SessionCompressor.CompressResult> CompressNowAsync(CancellationToken ct)
+    {
         // THE AGENT'S CONTEXT, not the session conversation. That distinction is the whole bug: the
         // conversation holds only prompts and final answers, so compressing it freed nothing while
         // the list that was actually full went untouched.
         // THE AGENT'S ID, which is stable for the agent's whole life. Naming the row after whichever
         // goal last ran would leave a /compress issued before any prompt with no goal to name, filing
         // its row under a name no log directory has.
-        CompressionRun.RunAsync(
+        var result = await CompressionRun.RunAsync(
             new CompressionRun.CompressionWork(Context, _runtime.Provider, _agent.SkillToolOffered),
             new CompressionRun.CompressionReport(_jobPanel, _agent.Id, "compress context · requested",
                 usage =>
@@ -848,6 +873,50 @@ public sealed class AgentHost : IDisposable
                         _agent.Id, DateTimeOffset.UtcNow, b, a, "manual", _runtime.WorkingDir));
                 }),
             ct);
+
+        // THE FORK FOLLOWS THE COMPACTION — see RepublishContext.
+        RepublishContext();
+        return result;
+    }
+
+    /// <summary>
+    /// A side question forked from what the agent last sent, or null before its first request.
+    ///
+    /// <para>BOOKED AS WORKER SPEND. The cost is real and the session total says so, but the main
+    /// agent's own figures and cache rate describe its conversation, and a side thread's misses would
+    /// make that rate lie about it. The run row names it <c>aside</c> so /stats can list it, the same
+    /// row a sub-agent's run writes.</para>
+    ///
+    /// <para>NOTHING ELSE OF THE AGENT'S IS TOUCHED: no turn counter, no context log, no resume save.
+    /// Those describe the main conversation, and the aside is not part of it.</para>
+    /// </summary>
+    public AsideRunner? OpenAside(int number, IAsideObserver observer)
+    {
+        if ((_agent.Published ?? Volatile.Read(ref _restored)) is not { } from) return null;
+
+        // CAPTURED NOW, so a /model switch mid-aside changes the next aside, not this one's thread.
+        var provider = _runtime.Provider;
+        var label = SpendLabel;
+
+        return new AsideRunner(number, new AsideRuntime
+        {
+            Provider = provider,
+            From = from,
+            Observer = observer,
+            // THE SESSION'S OWN, as a sub-agent gets them: same gate, same policy, same prompt.
+            Executors = _runtime.Executors,
+            WorkingDir = _runtime.WorkingDir,
+            Spent = usage =>
+            {
+                Ledger.Record(usage, label, subAgent: true);
+                TokensUpdated?.Invoke(this, Ledger.TotalTokens);
+            },
+            Ran = run => _stores.History?.SaveRun(new RunRecord(
+                Helpers.UlidGenerator.NewId(), _agent.Id, "aside", label,
+                run.Spent.InputTokens, run.Spent.OutputTokens, run.Rounds + 1, run.ToolCalls,
+                run.End.ToString().ToLowerInvariant(), run.StartedAt, run.DurationMs, _runtime.WorkingDir)),
+        });
+    }
 
 
 

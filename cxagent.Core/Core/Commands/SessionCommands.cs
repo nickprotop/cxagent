@@ -151,6 +151,12 @@ public static class SessionCommands
             new("unwire <name>", "stop and deregister a loaded plugin", Completes: false,
                 Values: ValueSources.Plugins),
         ]),
+        // A SIDE QUESTION, answered by a read-only fork that never writes back. NeedsModel because the
+        // whole command is a model call.
+        new("/btw", "ask a side question about this conversation, without adding it to the conversation",
+        [
+            new("<question>", "what to ask — or nothing, and type it next", Completes: false),
+        ]) { NeedsModel = true },
         new("/help", "show keys and commands"),
     ];
 

@@ -102,7 +102,16 @@ public enum EscapeTarget
 
     /// <summary>Nothing to cancel: Escape does nothing.</summary>
     Nothing,
+
+    /// <summary>btw mode, the aside answering: stop that answer, and only that.</summary>
+    StopAside,
+
+    /// <summary>btw mode, the aside idle: the composer is the main agent's again.</summary>
+    LeaveAside,
 }
+
+/// <summary>Whether the composer is in btw mode, and if so whether the aside is answering.</summary>
+public enum AsideState { None, Idle, Answering }
 
 public static class EscapeRouting
 {
@@ -127,6 +136,14 @@ public static class EscapeRouting
     //
     // NOTHING BECOMES UNREACHABLE. The waiting bar shows a turn running from any tab and F4 returns
     // to chat, so the way to cancel is one key away and visible from where the user is standing.
-    public static EscapeTarget For(bool turnIsRunning, bool chatTabIsActive) =>
-        turnIsRunning && chatTabIsActive ? EscapeTarget.CancelTurn : EscapeTarget.Nothing;
+    //
+    // BTW MODE COMES BEFORE THE TURN. A user in btw mode is talking to the aside; an Esc that
+    // cancelled the main run behind it would destroy work they were not even looking at. Still the
+    // chat tab's key only, for the same reason a turn is.
+    public static EscapeTarget For(bool turnIsRunning, bool chatTabIsActive, AsideState aside = AsideState.None) =>
+        !chatTabIsActive ? EscapeTarget.Nothing
+        : aside is AsideState.Answering ? EscapeTarget.StopAside
+        : aside is AsideState.Idle ? EscapeTarget.LeaveAside
+        : turnIsRunning ? EscapeTarget.CancelTurn
+        : EscapeTarget.Nothing;
 }

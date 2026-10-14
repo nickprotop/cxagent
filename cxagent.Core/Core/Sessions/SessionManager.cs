@@ -166,6 +166,11 @@ public sealed class SessionManager : IDisposable
                 // THE COMMANDS TABLE, WHICH IS CORE'S. A front end with keys of its own registers
                 // over this and prepends them — last registration wins — but one with nothing to
                 // add needs no help command at all.
+                // THE AGENT AND ITS SNAPSHOT ARE THE SESSION'S, so the fork is too.
+                case "/btw":
+                    Commands.Register(command, (session, arguments) => session.Btw(arguments).Handled());
+                    break;
+
                 case "/help":
                     Commands.Register(command, (session, _) => session.ShowHelp().Handled());
                     break;
@@ -825,6 +830,10 @@ public sealed class SessionManager : IDisposable
     public bool Close(Session session)
     {
         if (session.IsBusy) return false;
+
+        // AN ASIDE IS NOT A TURN, so IsBusy does not hold the close for it — and left running, it
+        // would keep calling the model and raising permission prompts for a tab that is gone.
+        session.LeaveAside();
 
         SessionLifecycleLog.Write(Shared.Logs, "close", session);
         lock (_gate) _sessions.Remove(session);

@@ -236,6 +236,12 @@ public sealed partial class Session
         /// </summary>
         /// <param name="Status">What the command reported. <c>Unknown</c> when nothing serviced it.</param>
         public sealed record Handled(CommandStatus Status) : SubmitOutcome;
+
+        /// <summary>
+        /// The text went to the side agent, not the main one. <c>Answer</c> is null when the aside
+        /// was still answering and refused it.
+        /// </summary>
+        public sealed record Aside(Task? Answer) : SubmitOutcome;
     }
 
     /// <summary>
@@ -266,6 +272,14 @@ public sealed partial class Session
     public SubmitOutcome Submit(string text, string? echo = null, Jobs.ToolSelection? tools = null,
         TurnOriginator? origin = null, SubmitSource source = SubmitSource.User)
     {
+        // BTW MODE TAKES WHAT THE USER TYPES, ALL OF IT, and before commands: the mode is a
+        // conversation with the aside and nothing else, so "/clear what does this do?" is a question
+        // about /clear, not an instruction to clear. Esc leaves the mode, and commands work again.
+        //
+        // ONLY THE USER'S. A delivery or a plugin's goal arriving meanwhile is the main conversation's
+        // business, and sending it to the aside would lose it.
+        if (InAside && IsTheUser(source, origin)) return SendAside(text);
+
         if (Manager is { } manager && text.TrimStart().StartsWith('/'))
         {
             switch (manager.Commands.Run(this, text))

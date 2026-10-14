@@ -177,6 +177,12 @@ public sealed class CommandMenu
     /// </summary>
     public Func<int>? Caret { get; set; }
 
+    /// <summary>
+    /// True while the composer is in btw mode. A slash there is text for the aside, so the command
+    /// list does not open; an @ path still completes, because naming a file is a fair side question.
+    /// </summary>
+    public Func<bool>? CommandsOff { get; set; }
+
     /// <summary>Whether the menu is currently on screen.</summary>
     public bool IsOpen => _portal is not null;
 
@@ -220,7 +226,7 @@ public sealed class CommandMenu
 
         _at = null;
 
-        if (!text.StartsWith('/') || text.Contains('\n'))
+        if (!text.StartsWith('/') || text.Contains('\n') || CommandsOff?.Invoke() == true)
         {
             Close();
             return;

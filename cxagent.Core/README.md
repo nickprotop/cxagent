@@ -425,7 +425,8 @@ token nothing could classify is refused rather than allowed.
 ## Commands
 
 **`Submit` dispatches.** Text starting with `/` runs a command when one matches; anything else, and
-plain text always, goes to the model:
+plain text always, goes to the model — except in btw mode, where everything the user types goes to
+the side agent (see [Side questions](docs/api.md#side-questions)):
 
 ```csharp
 switch (session.Submit(input))
@@ -434,6 +435,7 @@ switch (session.Submit(input))
     case Session.SubmitOutcome.Handled:         break;   // it already said its result
     case Session.SubmitOutcome.Queued:          break;   // joined a running turn
     case Session.SubmitOutcome.NoAgent:         break;   // nothing wired
+    case Session.SubmitOutcome.Aside:           break;   // btw mode: the side agent has it
 }
 ```
 

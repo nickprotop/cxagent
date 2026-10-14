@@ -5,8 +5,8 @@ so they cost nothing — no request, no tokens.
 
 **Which means most of them work with no model configured.** A session opened before you have set up
 a provider can still run `/exit`, `/help`, `/stats`, `/sessions`, `/diff`, `/mode`, `/mcp`,
-`/skills`, `/agents`, `/clear` — and `/model`, the one that fixes it. Only `/compress` and `/init`
-need a model, because those two genuinely talk to it; both say so rather than doing nothing.
+`/skills`, `/agents`, `/clear` — and `/model`, the one that fixes it. Only `/compress`, `/init` and
+`/btw` need a model, because those genuinely talk to it; each says so rather than doing nothing.
 
 **Type `/` and the list appears.** Arrow to a command, Enter to fill it in. A command that takes
 arguments shows them as a hint — `/stats  usage: …  [<days>|all|clear]` — and typing a space
@@ -23,6 +23,7 @@ but not completed.
 | `/mode edits always-ask` · `/mode edits accept-edits` | Set when writes ask, live (Shift+Tab cycles) |
 | `/clear` | Wipe the conversation |
 | `/compress` | Summarise the conversation to free room |
+| `/btw [question]` | Ask a side question about the conversation without adding it to the conversation |
 | `/stats` | Usage: tokens, projects, agent types, what fills the context |
 | `/stats 30` · `/stats all` | Widen the window (default: 7 days) |
 | `/stats clear` | Delete all usage history, after confirming |
@@ -245,6 +246,47 @@ The compaction shows as a job row with its own spinner and an expandable summary
 running it later is a different operation from the one you asked for, and running it now would tear
 the list the agent is appending tool results to. Nothing is lost by refusing: compaction also happens
 automatically on measured pressure, so this costs a keystroke rather than a compaction.
+
+---
+
+## `/btw`
+
+Asks a side question — *what does this function do?*, *why did it pick that approach?* — without
+putting it in the conversation the agent re-reads every turn. The answer comes from a side agent that
+starts from what the main agent last sent, so it knows what the agent knows.
+
+```
+/btw why did it split the loader?   # ask at once
+/btw                                # enter btw mode and type the question next
+```
+
+**btw mode is a conversation.** After `/btw`, Enter keeps talking to the aside, and each follow-up
+sees the earlier ones. The composer's grip changes colour and the line under it says
+`btw · Esc to return`, so it is never unclear which agent Enter goes to. **No commands run in btw
+mode**: everything you type goes to the aside, a leading `/` included, and the command palette does
+not open. Press Esc to get commands back.
+
+**Esc stops the answer first, then leaves.** While the aside is answering, Esc stops that answer.
+When it is idle, Esc leaves btw mode and the composer is the main agent's again. Neither ever cancels
+the main turn. Leaving forgets the thread: a new `/btw`, typed after Esc, starts fresh.
+
+**It runs alongside the agent.** Asking while a turn is running does not pause it. On a one-slot
+local server the aside's block says `waiting for the model` until the server gets to it.
+
+**It reads and does nothing else.** Only `read_file`, `glob` and `grep` run, for at most 8 rounds;
+anything else — writes, the shell, sub-agents, plugin and MCP tools — is answered *not available in
+a side question*. Its reads follow this session's permissions exactly: the edit mode, stored rules
+and folder trust apply, and a read the main agent would be asked about shows the same prompt, marked
+`asked for by: aside`.
+
+**Nothing reaches the main agent.** Each aside is one block in the transcript, headed
+`aside · not in the agent's memory`. A follow-up asked after the agent has written below that block
+moves the block, whole, to the bottom, so the answer arrives where you are looking. None of it goes
+into the agent's context, the saved session or the next request, and it is gone after a restart. Its spend counts toward the session total and is
+listed by `/stats` as `aside`, but not in the main agent's own figures or cache rate.
+
+`/btw` before the first message is refused — there is nothing to ask about yet. After a resume it
+works straight away, from the restored conversation.
 
 ---
 
@@ -667,7 +709,8 @@ doing half of what was typed leaves no way to tell which half you got.
 ## Not commands
 
 **Escape** stops a running turn. Anything queued goes back into the composer rather than being
-discarded — it was never sent, so stopping must not eat what you typed.
+discarded — it was never sent, so stopping must not eat what you typed. In btw mode it stops the
+aside's answer instead, then leaves btw mode — see [`/btw`](#btw).
 
 **Enter during a running turn** queues the message rather than starting a second one. Several queued
 messages are joined into one prompt, newline-separated, and sent when the turn ends. They are

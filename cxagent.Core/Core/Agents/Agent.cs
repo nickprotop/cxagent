@@ -830,6 +830,29 @@ public sealed class Agent
     /// </summary>
     public (int Input, int Output) Spend => (Volatile.Read(ref _spentInput), Volatile.Read(ref _spentOutput));
 
+    private PublishedContext? _published;
+
+    /// <summary>
+    /// What this agent last sent, or null before its first request — see <see cref="PublishedContext"/>.
+    /// Read from any thread; written only by the turn loop.
+    /// </summary>
+    public PublishedContext? Published => Volatile.Read(ref _published);
+
+    // A COPY OF BOTH LISTS. The live message list keeps growing and is rewritten by compaction, so a
+    // reader holding it would see a conversation that changes under it.
+    private void Publish(List<ChatMessage> messages, List<ToolDefinition> tools) =>
+        Volatile.Write(ref _published, new PublishedContext([.. messages], [.. tools]));
+
+    /// <summary>
+    /// The context was rewritten between requests — cleared or compressed — so what was last sent no
+    /// longer describes it. The fork follows the rewrite, keeping the tools last offered; an empty
+    /// context leaves nothing to fork.
+    /// </summary>
+    internal void Republish(IReadOnlyList<ChatMessage> messages) =>
+        Volatile.Write(ref _published, messages.Count == 0
+            ? null
+            : new PublishedContext([.. messages], Volatile.Read(ref _published)?.Tools ?? []));
+
     private int _spentInput;
     private int _spentOutput;
 
@@ -1508,6 +1531,10 @@ public sealed class Agent
             // longer describes what the reading covers.
             var sentChars = _context.TotalChars();
 
+            // PUBLISHED AS SENT: this list, at this moment, is a valid conversation, so a side
+            // question forked from it never inherits an unanswered tool call.
+            Publish(messages, tools);
+
             LlmResponse response;
             try
             {
@@ -1653,6 +1680,10 @@ public sealed class Agent
                     // until this line existed.
                     PlaceTaskList();
                 }
+
+                // AND THE ANSWER WITH IT, so a side question asked after the turn sees what the agent
+                // concluded, not only what it was asked.
+                Publish(messages, tools);
 
                 // A turn with no tool calls is the model saying it is done. CHALLENGE IT if the goal
                 // asked for a change and nothing was written — the failure this mode exists to fix

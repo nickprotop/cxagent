@@ -427,7 +427,7 @@ public sealed class MainWindow : IDisposable
             // `[fg on bg]` is ONE tag in this parser — a bare `[on #…]` has no foreground and is not
             // the background form, so it painted nothing. Each run carries its own background, and
             // [fillwidth] carries the last one to the end of the row.
-            .AddLine(ModeLineText(_mode, model))
+            .AddLine(ModeLineText(_mode, model, tab.InAside))
             // STRETCH, so [fillwidth] has a full-width rect to fill INTO. The painter extends the
             // flagged cell's background to `bounds.Right`, and without stretch those bounds ended at
             // the last character — the fill was working, it simply had nothing to cross.
@@ -492,8 +492,7 @@ public sealed class MainWindow : IDisposable
                 // transient: it scrolls past, in a column shared with tool rows and
                 // worker reports, so it stays a drawn line. The grip is chrome that never leaves the
                 // screen and has nothing to compete with, so it can afford to be solid.
-                Enumerable.Repeat($"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]▌[/]",
-                    PromptRows + 1)))
+                GripRows(ColorScheme.Grip)))
             .WithAlignment(HorizontalAlignment.Left)
             .Build();
 
@@ -3030,6 +3029,21 @@ public sealed class MainWindow : IDisposable
             StartCollapsed = true,
             Header = static (_, author) => author ?? "Job",
         });
+
+        // THE ASIDE BLOCK RIDES ChatRole.Error. The library's roles are a fixed set and styles are per
+        // role, not per message, so a block drawn unlike the conversation needs a role of its own.
+        // This app never posts Error (failures are System notes with danger markup), which leaves it
+        // free to carry the aside's look without a library change.
+        chat.SetRoleStyle(ChatRole.Error, new ChatRoleStyle
+        {
+            Markdown = true,
+            ColorRole = ColorScheme.Structure,
+            HeaderStyle = CollapsibleHeaderStyle.Borderless,
+            Collapsible = true,
+            StartCollapsed = false,
+            Background = ColorScheme.PanelSurface,
+            Header = static (_, author) => author ?? AsideTranscriptSink.Header,
+        });
     }
 
     /// <summary>
@@ -3064,7 +3078,7 @@ public sealed class MainWindow : IDisposable
         if (_modeLine is not null)
         {
             _modeLine.BackgroundColor = ColorScheme.ComposerSurface;
-            _modeLine.SetContent([ModeLineText(_mode, ModelLabel)]);
+            _modeLine.SetContent([ModeLineText(_mode, ModelLabel, ActiveSessionTab.InAside)]);
         }
 
         // THE TWO GRIPS, which are the accent rather than a surface. Both captured ColorScheme.Grip
@@ -3077,9 +3091,7 @@ public sealed class MainWindow : IDisposable
         // above it the content has to be regenerated rather than re-coloured.
         Chat.MessageRailColor = ColorScheme.Grip;
         if (_promptGrip is not null)
-            _promptGrip.SetContent([.. Enumerable.Repeat(
-                $"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]▌[/]",
-                PromptRows + 1)]);
+            _promptGrip.SetContent([.. GripRows(GripColour(ActiveSessionTab.InAside))]);
 
         // The session panel captured its own surfaces the same way this window did.
         ApplyRoleStyles();   // each style captured its Background by value
@@ -3270,7 +3282,7 @@ public sealed class MainWindow : IDisposable
 
         // THE MODE LINE IS THE TAB'S OWN, so it is refreshed whether or not the tab is in front —
         // a background session's composer must not keep naming the model it used to have.
-        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, ModelLabelFor(resolution))]);
+        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, ModelLabelFor(resolution), tab.InAside)]);
 
         if (ReferenceEquals(tab, ActiveSessionTab)) SetResolution(resolution);
     }
@@ -3282,7 +3294,7 @@ public sealed class MainWindow : IDisposable
         // THE COMPOSER LINE TOO. It carries the model name, so a switch that refreshed only the
         // panel left "local:…" under the prompt while the session was talking to `small` — the same
         // stale-readout bug the panel's own window had, one line lower.
-        _modeLine?.SetContent([ModeLineText(_mode, ModelLabel)]);
+        _modeLine?.SetContent([ModeLineText(_mode, ModelLabel, ActiveSessionTab.InAside)]);
 
         RefreshSessionPanel();
         RefreshTokenItem();
@@ -3297,7 +3309,7 @@ public sealed class MainWindow : IDisposable
 
         tab.Mode = mode;
         tab.ModeLine?.SetContent(
-            [ModeLineText(mode, tab.Resolution is { } r ? ModelLabelFor(r) : ModelLabel)]);
+            [ModeLineText(mode, tab.Resolution is { } r ? ModelLabelFor(r) : ModelLabel, tab.InAside)]);
 
         if (ReferenceEquals(tab, ActiveSessionTab)) SetMode(mode);
     }
@@ -3308,7 +3320,7 @@ public sealed class MainWindow : IDisposable
         var model = ModelLabel;
         // SetContent rather than a rebuild: the control is already placed in the grid, and replacing
         // it would detach the instance the layout holds.
-        _modeLine?.SetContent([ModeLineText(_mode, model)]);
+        _modeLine?.SetContent([ModeLineText(_mode, model, ActiveSessionTab.InAside)]);
     }
 
     /// <summary>
@@ -3324,12 +3336,43 @@ public sealed class MainWindow : IDisposable
     ///
     /// <para>The model name is escaped (it comes from config); the mode words are ours.</para>
     /// </summary>
-    private static string ModeLineText(WorkingMode mode, string model) =>
+    private static string ModeLineText(WorkingMode mode, string model, bool aside) =>
         $"[{ColorScheme.AccentMarkup}]{AgentModes.Name(mode.Agent)}[/]"
       + $"[{ColorScheme.MutedMarkup}] · [/]"
       + $"[{EditModeMarkup(mode.Edits)}]{EditModes.Name(mode.Edits)}[/]"
       + $"[{ColorScheme.MutedMarkup}] (shift+tab to change · F4 focus)[/]"
-      + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]";
+      + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]"
+        // AFTER THE MODEL, where the eye ends the line. The grip's colour says something changed;
+        // this says what, and how to undo it.
+      + (aside ? $"[{ColorScheme.AsideMarkup}] · {AsideHint}[/]" : "");
+
+    public static string ModeLineTextForTest(WorkingMode mode, string model, bool aside) =>
+        ModeLineText(mode, model, aside);
+
+    public const string AsideHint = "btw · Esc to return";
+
+    // ONE PLACE BUILDS THE GRIP, so the theme refresh and btw mode cannot disagree about its rows.
+    private static string[] GripRows(Color colour) =>
+        [.. Enumerable.Repeat($"[#{colour.R:x2}{colour.G:x2}{colour.B:x2}]▌[/]", PromptRows + 1)];
+
+    private static Color GripColour(bool inAside) => inAside ? ColorScheme.AsideRgb : ColorScheme.Grip;
+
+    /// <summary>
+    /// btw mode on or off for one session's composer: the grip's colour and the hint after the model.
+    /// The tab's own, so a background session in btw mode does not recolour the one in front.
+    /// </summary>
+    public void SetAside(Core.Sessions.Session session, bool inAside)
+    {
+        var tab = TabFor(session);
+        if (tab is null) return;
+
+        tab.InAside = inAside;
+        tab.Grip?.SetContent([.. GripRows(GripColour(inAside))]);
+        tab.ModeLine?.SetContent(
+            [ModeLineText(tab.Mode, tab.Resolution is { } r ? ModelLabelFor(r) : ModelLabel, inAside)]);
+    }
+
+    public string GripTextForTest() => ActiveSessionTab.Grip?.Text ?? "";
 
     /// <summary>
     /// AUTO IS THE ONE WORTH NOTICING, so it alone is coloured. In the other two modes a human

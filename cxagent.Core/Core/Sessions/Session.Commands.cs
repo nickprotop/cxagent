@@ -389,6 +389,11 @@ public sealed partial class Session
 
         Host.Context.Clear();
 
+        // NOTHING LEFT TO ASK ABOUT: the fork follows the clear, and an aside forked from what was
+        // just wiped ends with it.
+        Host.RepublishContext();
+        LeaveAside();
+
         // ANNOUNCED BEFORE IT IS SAID, and this is the general rule rather than a quirk of clearing:
         // a watcher reacts to the signal by redrawing, and a message written first lands on a
         // surface the redraw is about to replace. Said last, it survives whatever the reaction did.

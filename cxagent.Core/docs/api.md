@@ -123,6 +123,7 @@ bool          RefuseIfBusy()
 | `Started` | `Task Turn` | a turn began. Await it, or attach a continuation |
 | `Queued` | — | a turn was already running; the text went to the queue and `Pending` fired |
 | `NoAgent` | — | no model is wired |
+| `Aside` | `Task? Answer` | the session is in btw mode and the text went to the side agent — null when it was still answering and refused it |
 
 **Raises:** `UserTurnAdded` then `AssistantTurnBegan` on your observer; `TokensUpdated` and
 `ContextUsedUpdated` as the turn proceeds; `TurnCompleted` at the end.
@@ -181,7 +182,7 @@ event EventHandler<int>? TurnCompleted;                    // turns the request 
 event Action<SessionChangeKind>? Changed;
 ```
 
-`SessionChangeKind`: `Mode`, `Model`, `Resumed`, `TurnCancelled`, `ContextCleared`.
+`SessionChangeKind`: `Mode`, `Model`, `Resumed`, `TurnCancelled`, `ContextCleared`, `Aside`.
 
 ```csharp
 TokenLedger? Ledger        // spend by model and by agent, cache rates, cost. Null before wiring
@@ -211,6 +212,7 @@ Each does the work, says its result through your observer, and returns a `Comman
 | `SayUsage(string)` | a day count | says the usage dashboard |
 | `ClearContext()` | — | empties the conversation, announces `ContextCleared` |
 | `CompressNow(ct)` | a token | summarises the context; returns a `Task` or null if refused |
+| `Btw(string)` | a question, or empty | forks the agent and enters btw mode — see [Side questions](#side-questions) |
 
 | `CommandStatus` | |
 |---|---|
@@ -220,6 +222,45 @@ Each does the work, says its result through your observer, and returns a `Comman
 | `Unknown` | nothing here services this |
 
 `.Handled()` → bool, for routing. `.Moved()` → whether a repaint is warranted.
+
+## Side questions
+
+`/btw` asks a side agent about the conversation without adding to it. The side agent starts from what
+the main agent last sent, can run only `read_file`, `glob` and `grep` — through the session's own
+gated executors, so your permission hook is asked exactly as it would be for the main agent — and
+reports to an observer of its own, never to `ISessionObserver`.
+
+```csharp
+IAsideObserver? AsideObserver { get; set; }   // where asides draw; null draws nowhere
+bool InAside                                  // btw mode is on
+bool AsideAnswering                           // an answer is streaming
+
+CommandStatus Btw(string question)   // fork and enter btw mode; asks at once when non-empty
+SubmitOutcome SendAside(string text) // what Submit calls in btw mode
+void          StopAside()            // stop the answer; stays in btw mode
+void          LeaveAside()           // stop it and leave; the thread is forgotten
+```
+
+**In btw mode `Submit` gives the user's text to the aside — all of it.** A leading `/` is text, not a
+command, and comes back as `SubmitOutcome.Aside`. A delivery or a plugin's goal still reaches the
+main agent. Entering and leaving raise `Changed(SessionChangeKind.Aside)`.
+
+`Btw` refuses until something has been sent (a resumed session counts what it restored). Clearing
+the context, replacing the host and closing the session all leave btw mode.
+
+```csharp
+public interface IAsideObserver
+{
+    void Asked(int aside, string question);      // the first call for an aside opens its block
+    void Waiting(int aside, bool waiting);       // true until the first chunk of a request
+    void AnswerAppended(int aside, string text); // visible text, reasoning stripped
+    void LookedUp(int aside, string row);        // one row per tool call, run or refused
+    void Finished(int aside, AsideEnd end, string? detail);   // Answered, Capped, Stopped, Failed
+}
+```
+
+Calls arrive on a pool thread; marshal to your own. Spend is recorded as worker spend, and each
+answer writes a run row typed `aside`.
 
 ## Plugins
 

@@ -89,6 +89,9 @@ public sealed class SessionTab
     /// </summary>
     public WorkingMode Mode { get; set; } = WorkingMode.Default;
 
+    /// <summary>btw mode on this tab's composer — the grip's colour and the hint follow it.</summary>
+    public bool InAside { get; set; }
+
     /// <summary>This session's own input and output totals, for the split the panel shows.</summary>
     public int LastInput { get; set; }
 

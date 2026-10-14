@@ -103,28 +103,28 @@ public class NoProviderCommandTests
     [Fact]
     public void EveryShippedCommandIsClassified()
     {
-        // A SIXTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
+        // A SEVENTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
         // not know, which reads as "not a command" — so a command added to the table but forgotten in
         // TheseRunWithNoModel silently becomes unavailable without a model. This fails when the
         // counts diverge.
         var commands = SessionCommands.All;
 
-        Assert.Equal(15, commands.Count);
+        Assert.Equal(16, commands.Count);
         Assert.All(commands, c => Assert.NotNull(SessionCommands.Match(c.Name)));
     }
 
     /// <summary>
-    /// EXACTLY TWO COMMANDS REACH THE MODEL. Every other command answers from state the process
+    /// EXACTLY THREE COMMANDS REACH THE MODEL. Every other command answers from state the process
     /// already holds, costing no tokens and no time — which is why a session with no provider
     /// must still run them. /model is the command that FIXES having no provider; blocking it
     /// leaves the window unusable except by killing it.
     /// </summary>
     [Fact]
-    public void OnlyCompressAndInit_NeedAModel()
+    public void OnlyCompressInitAndBtw_NeedAModel()
     {
         var needy = SessionCommands.All.Where(c => c.NeedsModel).Select(c => c.Name).ToList();
         needy.Sort(StringComparer.Ordinal);
 
-        Assert.Equal(new[] { "/compress", "/init" }, needy);
+        Assert.Equal(new[] { "/btw", "/compress", "/init" }, needy);
     }
 }

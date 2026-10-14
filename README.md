@@ -170,6 +170,11 @@ conversation with two views.
 session is waiting on a permission prompt says so, so a session that needs you cannot sit quietly
 behind the one you are reading.
 
+**`/btw <question>` asks a side question without adding it to the conversation.** A side agent that
+starts from what the main agent knows answers in its own block, under this session's permissions, and
+can only read. Enter keeps the side thread going; `Esc` stops an answer, then leaves. See
+[COMMANDS.md](COMMANDS.md#btw).
+
 ### Permissions
 
 Reading and writing inside the working folder is free, and so are commands that can only look —
@@ -386,7 +391,7 @@ the argument wins when both are present.
 | Key | Action |
 |-----|--------|
 | `Enter` | Send. During a running turn, queues instead — several queued messages go as one prompt |
-| `Esc` | Stop the running turn. Anything queued goes back into the composer rather than being lost |
+| `Esc` | Stop the running turn. Anything queued goes back into the composer rather than being lost. In btw mode: stop the aside's answer, then leave btw mode |
 | `F1` | Help |
 | `F3` | Session panel (show / hide / automatic) |
 | `F4` | Put the cursor back in the composer |

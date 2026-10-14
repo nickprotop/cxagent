@@ -207,9 +207,14 @@ public static class SessionWiring
         // than once at startup: held over the startup session alone, a second session's /mode,
         // /model and /clear reached no front end at all, so its mode line kept naming the provider
         // it had been opened with while its gate ran on another.
+        // THIS TAB'S TRANSCRIPT, set on every wire so a re-wire draws asides where the tab now draws.
+        session.AsideObserver = new AsideTranscriptSink(system, tab.Chat);
+
         session.Changed += kind => system.EnqueueOnUIThread(() =>
         {
             if (kind is SessionChangeKind.Mode) main.SetMode(session, session.Mode);
+
+            if (kind is SessionChangeKind.Aside) main.SetAside(session, session.InAside);
 
             if (kind is SessionChangeKind.Model && session.Resolution is { } current)
                 main.SetResolution(session, current);

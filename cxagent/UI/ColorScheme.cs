@@ -63,6 +63,7 @@ public static class ColorScheme
         // per-column gradient and the grip. Derived here rather than read at each site so it moves
         // with a theme change like everything else.
         AccentRgb = ColorRoleResolver.Resolve(Accent, theme).Text;
+        AsideRgb = ColorRoleResolver.Resolve(Structure, theme).Text;
 
         Separator = PaletteColors.Tint(PaletteColors.Mix(ChatSurface, ComposerSurface, 0.5), 0.08);
         UserSurface = Raised(ChatSurface, 0.10);
@@ -292,6 +293,17 @@ public static class ColorScheme
     /// palette name, so the value is spelled once here rather than inline at the one call site.</para>
     /// </summary>
     public static Color AccentRgb { get; private set; } = new(0xe8, 0x9e, 0x64);
+
+    /// <summary>
+    /// The aside's colour, for the composer grip in btw mode and the aside block.
+    ///
+    /// <para>THE STRUCTURE ROLE, NOT THE ACCENT. The grip's accent says "this is where you talk to the
+    /// agent"; in btw mode that is false, and the one mark the user's eye is already on has to say
+    /// so. Through a role so it stays legible on a light theme.</para>
+    /// </summary>
+    public static Color AsideRgb { get; private set; } = new(0x9a, 0x8c, 0xe0);
+
+    public static string AsideMarkup => Markup(Structure, "mediumpurple");
 
     /// <summary>
     /// Colour for a percentage readout, by how alarming it is. cxtop's thresholds — teal below 60,

@@ -305,6 +305,9 @@ public sealed partial class Session
     internal void ReplaceHost(AgentHost host, ILlmProvider provider, string? instanceName,
         JobRegistry executors)
     {
+        // THE ASIDE WAS FORKED FROM THE OUTGOING AGENT and talks to its provider; a /model switch
+        // that left it running would answer follow-ups on the model the screen no longer names.
+        LeaveAside();
         Host?.Dispose();
         Host = host;
 

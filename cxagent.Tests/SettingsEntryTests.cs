@@ -58,6 +58,23 @@ public class SettingsEntryTests
         Assert.Equal(EscapeTarget.Nothing,
             EscapeRouting.For(turnIsRunning: false, chatTabIsActive: false));
     }
+
+    /// <summary>In btw mode Esc stops the aside's answer, then leaves the mode, and never reaches the main turn.</summary>
+    [Theory]
+    [InlineData(true, AsideState.Answering, EscapeTarget.StopAside)]
+    [InlineData(false, AsideState.Answering, EscapeTarget.StopAside)]
+    [InlineData(true, AsideState.Idle, EscapeTarget.LeaveAside)]
+    [InlineData(false, AsideState.Idle, EscapeTarget.LeaveAside)]
+    [InlineData(true, AsideState.None, EscapeTarget.CancelTurn)]
+    public void InBtwMode_EscapeIsTheAsides(bool turnIsRunning, AsideState aside, EscapeTarget expected) =>
+        Assert.Equal(expected, EscapeRouting.For(turnIsRunning, chatTabIsActive: true, aside));
+
+    /// <summary>A shell or file tab keeps Escape in btw mode too.</summary>
+    [Theory]
+    [InlineData(AsideState.Answering)]
+    [InlineData(AsideState.Idle)]
+    public void OffTheChatTab_BtwModeDoesNotTakeEscape(AsideState aside) =>
+        Assert.Equal(EscapeTarget.Nothing, EscapeRouting.For(turnIsRunning: true, chatTabIsActive: false, aside));
 }
 
 /// <summary>The routing is a pure function; this pins that the window reports what it reads.</summary>

@@ -29,4 +29,7 @@ public enum SessionChangeKind
     /// <summary>A plugin loaded or unwired. The tool list a running turn was offered never changes —
     /// see <see cref="Session.LoadPlugin"/> — so this always describes something a NEW turn will see.</summary>
     Plugins,
+
+    /// <summary>btw mode began or ended — the composer's colour and hint follow it.</summary>
+    Aside,
 }

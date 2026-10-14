@@ -1350,6 +1350,10 @@ public static class AppBootstrap
             // gets no menu instead of a wrong one. Exposing the caret upstream would fix it; until
             // then, failing closed is the honest half.
             Caret = () => (mainWindow.Input.Input ?? string.Empty).Length,
+
+            // THE ACTIVE SESSION'S MODE, read per keystroke: btw mode belongs to one tab, and the
+            // palette must open normally in the tab beside it.
+            CommandsOff = () => mainWindow.ActiveSession?.InAside ?? false,
         };
         commandMenu.Chosen += (_, completion) =>
         {
@@ -1591,7 +1595,11 @@ public static class AppBootstrap
             // THE REGISTRY FIRST. Core seeds what it can service — including /compress, which
             // summarises through the model exactly as auto-compression does — and a command that
             // has finished moving here never reaches the goal path below.
-            if (manager.Commands.TryRun(target, goalText)) return;
+            //
+            // NOT IN BTW MODE. Everything typed there is the aside's, a leading slash included, and
+            // Session.Submit routes it there before its own command dispatch — which this line would
+            // otherwise pre-empt, running "/clear what does this do?" as a /clear.
+            if (!target.InAside && manager.Commands.TryRun(target, goalText)) return;
 
             var disposition = target.Submit(goalText);
             if (disposition is not Session.SubmitOutcome.Started started) return;
@@ -1884,7 +1892,7 @@ public static class AppBootstrap
         // Func<bool>, NOT Action: the Action overload is wrapped to always report the key consumed
         // (ConsoleWindowSystem.cs:1878-1879), and this handler must be able to yield to a dialog.
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.Escape,
-            "answer a prompt, or cancel the running turn from the chat tab", () =>
+            "answer a prompt, leave btw mode, or cancel the running turn from the chat tab", () =>
             {
                 // A DIALOG OWNS ESCAPE WHILE IT IS UP. Globals are consulted before the active window
                 // (InputCoordinator.cs:130-134), so without this the plugin manager could not be
@@ -1925,12 +1933,25 @@ public static class AppBootstrap
                 // second session's turn at all, and would cancel the FIRST session's work from a tab
                 // not even showing it. The window audit fixed the ChatTabIsActive half of this line
                 // and left the session half.
+                //
+                // THE SWITCH IS WHERE BTW MODE TAKES ESCAPE AHEAD OF THE TURN — after the prompt
+                // check above, so a prompt the aside raised is answered "no" like any other and the
+                // aside carries on.
                 var escaping = mainWindow.ActiveSession ?? session;
-                if (EscapeRouting.For(escaping.IsBusy, mainWindow.ChatTabIsActive)
-                    is EscapeTarget.CancelTurn)
+                var aside = !escaping.InAside ? AsideState.None
+                    : escaping.AsideAnswering ? AsideState.Answering
+                    : AsideState.Idle;
+                switch (EscapeRouting.For(escaping.IsBusy, mainWindow.ChatTabIsActive, aside))
                 {
-                    escaping.CancelTurn();
-                    return true;
+                    case EscapeTarget.StopAside:
+                        escaping.StopAside();
+                        return true;
+                    case EscapeTarget.LeaveAside:
+                        escaping.LeaveAside();
+                        return true;
+                    case EscapeTarget.CancelTurn:
+                        escaping.CancelTurn();
+                        return true;
                 }
 
                 // A FILE TAB'S TOOLBAR, WHICH NOTHING ELSE CAN REACH. The editor consumes Tab as
