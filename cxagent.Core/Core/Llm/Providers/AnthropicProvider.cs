@@ -96,9 +96,12 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
             if (line.Length == 0 || !line.StartsWith("data:")) continue;
             var data = line["data:".Length..].Trim();
 
-            var (textDelta, toolCall) = acc.Accept(data);
-            if (textDelta is not null || toolCall is not null)
-                yield return new LlmStreamChunk(textDelta, toolCall, IsFinal: false);
+            var item = acc.Accept(data);
+            if (item.Thinking is not null)
+                yield return new LlmStreamChunk(null, null, IsFinal: false, ThinkingDelta: item.Thinking,
+                    ThinkingRedacted: item.Redacted);
+            if (item.Text is not null || item.Call is not null)
+                yield return new LlmStreamChunk(item.Text, item.Call, IsFinal: false);
             if (acc.IsDone) break;
         }
         foreach (var call in acc.Flush())

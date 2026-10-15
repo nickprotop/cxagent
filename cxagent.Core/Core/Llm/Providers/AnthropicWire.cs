@@ -123,6 +123,14 @@ internal static class AnthropicWire
             last["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
     }
 
+    /// <summary>What one streamed event carried. <paramref name="Thinking"/> null is no thinking;
+    /// "" is a thinking block whose text is hidden (omitted display, or redacted).</summary>
+    /// <param name="Text">A text delta.</param>
+    /// <param name="Call">A tool call this event completed.</param>
+    /// <param name="Thinking">A thinking delta, or "" for a block with no readable text.</param>
+    /// <param name="Redacted">True when the thinking block was safety-redacted.</param>
+    public readonly record struct AnthropicStreamItem(string? Text, ToolCall? Call, string? Thinking = null, bool Redacted = false);
+
     /// <summary>
     /// Reassembles one streamed Anthropic message, fed one SSE data-line JSON at a time.
     ///
@@ -146,8 +154,9 @@ internal static class AnthropicWire
         /// count in <c>message_delta</c>; each later object overrides only the fields it carries.</summary>
         public LlmUsage? Usage { get; private set; }
 
-        /// <summary>Feeds one event. Returns its text delta and any tool call it completed.</summary>
-        public (string? textDelta, ToolCall? toolCall) Accept(string dataJson)
+        /// <summary>Feeds one event. Returns what it carried: a text delta, a thinking delta, or a
+        /// tool call it completed. The all-default item means the event carried nothing to show.</summary>
+        public AnthropicStreamItem Accept(string dataJson)
         {
             using var doc = JsonDocument.Parse(dataJson);
             var root = doc.RootElement;
@@ -160,34 +169,51 @@ internal static class AnthropicWire
                 case "message_start":
                     if (root.TryGetProperty("message", out var msg) && msg.TryGetProperty("usage", out var mu))
                         ReadUsage(mu);
-                    return (null, null);
+                    return default;
 
                 case "content_block_start":
-                    if (root.TryGetProperty("content_block", out var cb)
-                        && cb.TryGetProperty("type", out var cbt) && cbt.GetString() == "tool_use")
-                        _open[index] = (
-                            cb.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "",
-                            cb.TryGetProperty("id", out var id) ? id.GetString() : null,
-                            new System.Text.StringBuilder());
-                    return (null, null);
+                    if (root.TryGetProperty("content_block", out var cb) && cb.TryGetProperty("type", out var cbt))
+                        switch (cbt.GetString())
+                        {
+                            case "tool_use":
+                                _open[index] = (
+                                    cb.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "",
+                                    cb.TryGetProperty("id", out var id) ? id.GetString() : null,
+                                    new System.Text.StringBuilder());
+                                return default;
+                            // A BLOCK, EVEN EMPTY. With display "omitted" no thinking text ever arrives,
+                            // and the block start is the only sign the model thought — the transcript
+                            // still shows it happened.
+                            case "thinking":
+                                return new(null, null, Thinking: "");
+                            // SAFETY-REDACTED reasoning: encrypted, never readable, still a step that thought.
+                            case "redacted_thinking":
+                                return new(null, null, Thinking: "", Redacted: true);
+                        }
+                    return default;
 
                 case "content_block_delta":
                     if (!root.TryGetProperty("delta", out var d) || !d.TryGetProperty("type", out var dt))
-                        return (null, null);
+                        return default;
                     switch (dt.GetString())
                     {
                         case "text_delta":
-                            return (d.TryGetProperty("text", out var txt) ? txt.GetString() : null, null);
+                            return new(d.TryGetProperty("text", out var txt) ? txt.GetString() : null, null);
+                        case "thinking_delta":
+                            return new(null, null, Thinking: d.TryGetProperty("thinking", out var th) ? th.GetString() ?? "" : "");
+                        // The signature is what sends a block back unchanged; nothing here sends one back yet.
+                        case "signature_delta":
+                            return default;
                         case "input_json_delta":
                             if (_open.TryGetValue(index, out var acc) && d.TryGetProperty("partial_json", out var pj))
                                 acc.Json.Append(pj.GetString());
-                            return (null, null);
+                            return default;
                         default:
-                            return (null, null);
+                            return default;
                     }
 
                 case "content_block_stop":
-                    return (null, Close(index));
+                    return new(null, Close(index));
 
                 case "message_delta":
                     if (root.TryGetProperty("delta", out var md)
@@ -195,14 +221,14 @@ internal static class AnthropicWire
                         StopReason = NormalizeStopReason(sr.GetString());
                     if (root.TryGetProperty("usage", out var du))
                         ReadUsage(du);
-                    return (null, null);
+                    return default;
 
                 case "message_stop":
                     IsDone = true;
-                    return (null, null);
+                    return default;
 
                 default:
-                    return (null, null);
+                    return default;
             }
         }
 
@@ -271,6 +297,7 @@ internal static class AnthropicWire
     public static LlmResponse ParseResponse(JsonElement root)
     {
         string? text = null;
+        string? thinking = null;
         var calls = new List<ToolCall>();
         if (root.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
             foreach (var block in content.EnumerateArray())
@@ -278,6 +305,8 @@ internal static class AnthropicWire
                 var type = block.GetProperty("type").GetString();
                 if (type == "text")
                     text = (text ?? "") + (block.TryGetProperty("text", out var t) ? t.GetString() : "");
+                else if (type == "thinking")
+                    thinking = (thinking ?? "") + (block.TryGetProperty("thinking", out var th) ? th.GetString() : "");
                 else if (type == "tool_use")
                     calls.Add(new ToolCall
                     {
@@ -294,6 +323,7 @@ internal static class AnthropicWire
         return new LlmResponse
         {
             Text = text,
+            Thinking = thinking,
             ToolCalls = calls,
             StopReason = NormalizeStopReason(stop),
             Usage = usage

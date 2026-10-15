@@ -329,4 +329,63 @@ public class AnthropicProviderTests : IDisposable
         Assert.Equal("grep", Assert.Single(calls).Name);
         Assert.Equal("max_tokens", stop);
     }
+
+    [Fact]
+    public async Task ChatStream_SummarizedThinking_ArrivesAsThinkingDeltas_BeforeText()
+    {
+        _srv.EnqueueSse(
+            Ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"""),
+            Ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Check prices.py"}}"""),
+            Ev("""{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"EqQB"}}"""),
+            Ev("""{"type":"content_block_stop","index":0}"""),
+            Ev("""{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}"""),
+            Ev("""{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Fixed."}}"""),
+            Ev("""{"type":"content_block_stop","index":1}"""),
+            Ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":9}}"""),
+            Ev("""{"type":"message_stop"}"""));
+
+        var order = new List<string>();
+        await foreach (var c in Make().ChatStreamAsync(Msgs(), null, CancellationToken.None))
+        {
+            if (c.ThinkingDelta is not null) order.Add("think:" + c.ThinkingDelta);
+            if (c.TextDelta is not null) order.Add("text:" + c.TextDelta);
+        }
+        Assert.Equal(["think:", "think:Check prices.py", "text:Fixed."], order);
+    }
+
+    [Fact]
+    public async Task ChatStream_OmittedThinking_StillMarksABlock()
+    {
+        _srv.EnqueueSse(
+            Ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"""),
+            Ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}"""),
+            Ev("""{"type":"content_block_stop","index":0}"""),
+            Ev("""{"type":"message_stop"}"""));
+
+        var chunks = new List<LlmStreamChunk>();
+        await foreach (var c in Make().ChatStreamAsync(Msgs(), null, CancellationToken.None)) chunks.Add(c);
+        Assert.Contains(chunks, c => c.ThinkingDelta == "");
+    }
+
+    [Fact]
+    public async Task ChatStream_RedactedThinking_IsFlagged()
+    {
+        _srv.EnqueueSse(
+            Ev("""{"type":"content_block_start","index":0,"content_block":{"type":"redacted_thinking","data":"xyz"}}"""),
+            Ev("""{"type":"content_block_stop","index":0}"""),
+            Ev("""{"type":"message_stop"}"""));
+
+        var chunks = new List<LlmStreamChunk>();
+        await foreach (var c in Make().ChatStreamAsync(Msgs(), null, CancellationToken.None)) chunks.Add(c);
+        Assert.Contains(chunks, c => c.ThinkingDelta == "" && c.ThinkingRedacted);
+    }
+
+    [Fact]
+    public async Task ChatAsync_ThinkingBlock_IsReadIntoThinking_NotText()
+    {
+        _srv.EnqueueJson(200, """{"content":[{"type":"thinking","thinking":"6*7","signature":"s"},{"type":"text","text":"42"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}""");
+        var r = await Make().ChatAsync(Msgs(), null, CancellationToken.None);
+        Assert.Equal("42", r.Text);
+        Assert.Equal("6*7", r.Thinking);
+    }
 }
