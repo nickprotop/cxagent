@@ -211,4 +211,19 @@ public class ThinkingBlockTests
         Assert.False(chat.IsExpanded(block));
         Assert.Equal(0, sink.LiveBlocksForTest);
     }
+
+    // A BLOCK HOLDING TWO RUNS says what both took, not only the last.
+    [Fact]
+    public void TwoRunsInOneStep_AreTotalledInTheHeader()
+    {
+        var (sink, _) = Sink();
+        sink.AssistantTurnBegan(T1);
+        sink.AssistantThinkingAppended(T1, "a b c");
+        sink.AssistantThinkingEnded(T1, new(TimeSpan.FromSeconds(2), 3, false, false));
+        sink.AssistantTextAppended(T1, "text");
+        sink.AssistantThinkingAppended(T1, "d e f g h");
+        sink.AssistantThinkingEnded(T1, new(TimeSpan.FromSeconds(4), 5, false, false));
+
+        Assert.Equal("◆ Thought for 6s · 8 words", sink.BlockHeaderForTest(T1));
+    }
 }

@@ -131,6 +131,10 @@ public sealed class ChatTranscriptSink : ISessionObserver
             if (_map.TryGetValue(id.Value, out var fwId)) _chat.SetHeader(fwId, header);
         }, "chat.AssistantLabelled");
 
+    /// <summary>A step's folded header, for a test.</summary>
+    public string? BlockHeaderForTest(ChatMessageId id) =>
+        _blocks.TryGetValue(id.Value, out var b) ? b.Header : null;
+
     /// <summary>How many blocks are still receiving thinking, for a test.</summary>
     public int LiveBlocksForTest => _blocks.Values.Count(b => b.Live);
 
@@ -229,7 +233,15 @@ public sealed class ChatTranscriptSink : ISessionObserver
         {
             var block = BlockFor(id);
             block.Live = false;
-            _chat.SetHeader(block.Id, $"[{ColorScheme.ThinkingMarkup}]{Escape(FoldedHeader(summary))}[/]");
+
+            // THE BLOCK'S TOTAL, not this run's: a step whose thinking resumed after its text holds
+            // both runs in one body, and a header counting only the last would under-report it.
+            block.Total = block.Total is { } before
+                ? new Core.Llm.ThinkingSummary(before.Duration + summary.Duration, before.Words + summary.Words,
+                    Hidden: before.Words + summary.Words == 0, before.Redacted || summary.Redacted)
+                : summary;
+            block.Header = FoldedHeader(block.Total);
+            _chat.SetHeader(block.Id, $"[{ColorScheme.ThinkingMarkup}]{Escape(block.Header)}[/]");
             _chat.SetExpanded(block.Id, false);
         }, "chat.AssistantThinkingEnded");
 
@@ -278,6 +290,12 @@ public sealed class ChatTranscriptSink : ISessionObserver
         public FwChatId Id { get; } = id;
         public DateTimeOffset Started { get; set; }
         public bool Live { get; set; } = true;
+
+        /// <summary>Every finished run in this block, added together.</summary>
+        public Core.Llm.ThinkingSummary? Total { get; set; }
+
+        /// <summary>The folded header as last written, for a test — the control cannot read it back.</summary>
+        public string? Header { get; set; }
     }
 
     /// <summary>The header while thinking arrives.</summary>

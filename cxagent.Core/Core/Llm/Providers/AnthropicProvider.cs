@@ -96,9 +96,10 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog, IThinkingProvider
             req.Headers.TryAddWithoutValidation("x-api-key", _apiKey);
             req.Headers.TryAddWithoutValidation("anthropic-version", AnthropicVersion);
             using var resp = await _client.SendAsync(req, cts.Token).ConfigureAwait(false);
-            // A reply is an answer even when it says nothing useful: a non-2xx or a body without
-            // capabilities is cached as "none", so a gateway lacking this route is asked once.
-            // Only an exception or timeout (no reply) reaches the cache as null.
+            // A reply is an answer even when it says nothing useful: a lasting refusal or a body
+            // without capabilities is cached as "none", so a gateway lacking this route is asked
+            // once. A temporary refusal, an exception or a timeout reaches the cache as null.
+            if (ThinkingCapabilities.IsTemporary(resp.StatusCode)) return null;
             var unsaid = ThinkingOptions.None("the endpoint did not say what it accepts");
             return resp.IsSuccessStatusCode
                 ? ThinkingCapabilities.ParseAnthropic(await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false)) ?? unsaid

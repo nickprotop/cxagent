@@ -11,6 +11,15 @@ public static class ThinkingCapabilities
     /// <summary>Bounded like the window probe: an absent endpoint costs at most this, once.</summary>
     internal static readonly TimeSpan Timeout = TimeSpan.FromSeconds(3);
 
+    /// <summary>
+    /// A refusal that says nothing about the model: a server still loading it (llama.cpp answers 503
+    /// until its weights are in), a rate limit, an overloaded API. Asked again rather than kept —
+    /// kept, it would leave the session without levels until a restart. A 404 is different: the
+    /// route does not exist, and asking again would only ask again.
+    /// </summary>
+    internal static bool IsTemporary(System.Net.HttpStatusCode status) =>
+        (int)status is 408 or 429 or >= 500;
+
     private static readonly string[] EffortOrder = ["low", "medium", "high", "xhigh", "max"];
 
     /// <summary>

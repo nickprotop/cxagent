@@ -585,4 +585,29 @@ public class OpenAiCompatibleProviderTests : IDisposable
         });
         Assert.True((await p.GetThinkingOptionsAsync()).Any);
     }
+
+    // A SERVER STILL LOADING ITS MODEL answers 503; that is "ask again", not "no levels for good".
+    [Theory]
+    [InlineData(503)]
+    [InlineData(429)]
+    [InlineData(500)]
+    public async Task ATemporaryRefusal_IsAskedAgain(int status)
+    {
+        var p = (IThinkingProvider)Make();
+        _srv.Route("/props", status, """{"error":"Loading model"}""");
+        Assert.False((await p.GetThinkingOptionsAsync()).Any);
+
+        _srv.Route("/props", 200, """{"chat_template":"enable_thinking"}""");
+        Assert.Equal(["off", "on"], (await p.GetThinkingOptionsAsync()).Levels);
+    }
+
+    // A ROUTE THAT DOES NOT EXIST is a lasting answer: no levels, and not asked again.
+    [Fact]
+    public async Task ANotFound_IsKept()
+    {
+        var p = (IThinkingProvider)Make();
+        _srv.Route("/props", 404, "{}");
+        Assert.False((await p.GetThinkingOptionsAsync()).Any);
+        Assert.NotNull(p.KnownThinkingOptions);
+    }
 }

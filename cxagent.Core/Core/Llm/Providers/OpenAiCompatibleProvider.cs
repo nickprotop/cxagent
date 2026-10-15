@@ -93,8 +93,9 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
             if (!string.IsNullOrEmpty(_apiKey)) req.Headers.Authorization = new("Bearer", _apiKey);
             using var resp = await _client.SendAsync(req, cts.Token).ConfigureAwait(false);
             // A reply is an answer even when it says nothing useful: a server without /props (Ollama,
-            // OpenAI, most gateways) is cached as "none" and asked once. Only an exception or timeout
-            // (no reply) reaches the cache as null.
+            // OpenAI, most gateways) is cached as "none" and asked once. A temporary refusal — a
+            // llama.cpp server still loading its model — an exception or a timeout is asked again.
+            if (ThinkingCapabilities.IsTemporary(resp.StatusCode)) return null;
             var unsaid = ThinkingOptions.None("the endpoint did not say what it accepts");
             return resp.IsSuccessStatusCode
                 ? ThinkingCapabilities.ParseLlamaProps(await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false)) ?? unsaid

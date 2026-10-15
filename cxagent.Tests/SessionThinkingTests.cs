@@ -259,6 +259,57 @@ public class SessionThinkingTests : IDisposable
         Assert.True(await Task.WhenAny(turn, Task.Delay(2000)) == turn, "the first turn waited on a probe");
     }
 
+    /// <summary>A model whose answer about its levels arrives when the test says.</summary>
+    private sealed class LateModel : ILlmProvider, IThinkingProvider
+    {
+        public readonly TaskCompletionSource<ThinkingOptions> Answer = new();
+        public int Asked;
+        public string ProviderId => "late";
+        public string DisplayName => "Late";
+        public string ModelId => "late-1";
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => true;
+        public string? ThinkingLevel => null;
+        public ThinkingOptions? KnownThinkingOptions => Answer.Task.IsCompleted ? Answer.Task.Result : null;
+        public Task<ThinkingOptions> GetThinkingOptionsAsync(CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref Asked);
+            return Answer.Task;
+        }
+        public ILlmProvider WithThinking(string? level) => this;
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t, CancellationToken ct) =>
+            Task.FromResult(new LlmResponse { Text = "ok", StopReason = "end_turn" });
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> m, List<ToolDefinition>? t,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            yield return new LlmStreamChunk(null, null, IsFinal: true, new LlmUsage(), "end_turn");
+        }
+    }
+
+    // "TRY AGAIN IN A MOMENT" MEANS ONE: asking while the model has not said starts the question,
+    // and its answer redraws whatever shows the level.
+    [Fact]
+    public async Task F8BeforeTheModelHasSaid_AsksIt_AndAnnouncesTheAnswer()
+    {
+        var model = new LateModel();
+        var manager = SessionManager.Create(new AppPaths(_dir));
+        using var _m = manager;
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(model),
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+            AgentMode.Single);
+        var announced = new TaskCompletionSource();
+        session.Changed += kind => { if (kind == SessionChangeKind.Thinking) announced.TrySetResult(); };
+
+        var askedBefore = Volatile.Read(ref model.Asked);
+        Assert.Equal(CommandStatus.Reported, session.CycleThinking());
+        for (var i = 0; i < 200 && Volatile.Read(ref model.Asked) == askedBefore; i++) await Task.Delay(5);
+        Assert.True(Volatile.Read(ref model.Asked) > askedBefore, "F8 did not ask the model");
+
+        model.Answer.SetResult(new ThinkingOptions(["off", "on"]));
+        Assert.True(await Task.WhenAny(announced.Task, Task.Delay(2000)) == announced.Task);
+    }
+
     [Fact]
     public void TheClassifier_RunsAtTheLowestLevel()
     {

@@ -164,8 +164,29 @@ public sealed partial class Session
     /// started when the session is wired, and answers within seconds; until then the user is told
     /// to wait rather than made to.</para>
     /// </summary>
-    private ThinkingOptions KnownOptionsOrNotYet() =>
-        KnownThinkingOptions ?? ThinkingOptions.None("the model has not said yet which levels it offers — try again in a moment");
+    private ThinkingOptions KnownOptionsOrNotYet()
+    {
+        if (KnownThinkingOptions is { } known) return known;
+        AskForLevels();
+        return ThinkingOptions.None("the model has not said yet which levels it offers — try again in a moment");
+    }
+
+    /// <summary>
+    /// Asks the model again, on the pool, and announces the answer so the mode line shows it. "Try
+    /// again in a moment" has to be true: the probe that failed at startup — a server still loading
+    /// its model — is otherwise only retried by the next request, and nothing would redraw.
+    /// </summary>
+    private void AskForLevels()
+    {
+        if (Interlocked.Exchange(ref _askingForLevels, 1) == 1) return;
+        _ = Task.Run(ThinkingOptionsAsync).ContinueWith(_ =>
+        {
+            Volatile.Write(ref _askingForLevels, 0);
+            if (KnownThinkingOptions is not null) Announce(SessionChangeKind.Thinking);
+        }, TaskScheduler.Default);
+    }
+
+    private int _askingForLevels;
 
     /// <summary><c>/think</c>: the levels, or a level set for this session (and saved, with --save).</summary>
     public CommandStatus Think(string argument)

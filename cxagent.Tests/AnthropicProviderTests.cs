@@ -472,4 +472,16 @@ public class AnthropicProviderTests : IDisposable
         Assert.Null(p.ThinkingLevel);
         Assert.Equal("high", high.ThinkingLevel);
     }
+
+    // An overloaded or failing Models API is asked again; it says nothing about the model.
+    [Fact]
+    public async Task ATemporaryRefusal_FromTheModelsApi_IsAskedAgain()
+    {
+        var p = MakeThinking();
+        _srv.Route("/models/claude-x", 529, """{"type":"error"}""");
+        Assert.False((await p.GetThinkingOptionsAsync()).Any);
+
+        _srv.Route("/models/claude-x", 200, Caps);
+        Assert.True((await p.GetThinkingOptionsAsync()).Any);
+    }
 }
