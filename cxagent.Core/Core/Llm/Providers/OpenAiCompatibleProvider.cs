@@ -79,8 +79,14 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
 
     public string? ThinkingLevel => _options.Thinking;
     public ThinkingOptions? KnownThinkingOptions => _caps.Known;
-    public ILlmProvider WithThinking(string? level) =>
-        new OpenAiCompatibleProvider(_options with { Thinking = level }, _caps);
+    /// <summary>This provider at <paramref name="level"/>. VIRTUAL so a preset — Ollama — copies as
+    /// itself, keeping what it adds over the base; the copy shares what the model said it offers.</summary>
+    public virtual ILlmProvider WithThinking(string? level) => new OpenAiCompatibleProvider(this, level);
+
+    /// <summary>A copy of <paramref name="other"/> at <paramref name="level"/>, for a subclass's own
+    /// <see cref="WithThinking"/>.</summary>
+    protected OpenAiCompatibleProvider(OpenAiCompatibleProvider other, string? level)
+        : this(other._options with { Thinking = level }, other._caps) { }
 
     /// <summary>
     /// What this model offers, asked in the endpoint's own way: llama.cpp's <c>/props</c>,

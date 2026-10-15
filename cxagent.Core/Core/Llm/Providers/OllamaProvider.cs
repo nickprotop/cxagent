@@ -35,6 +35,15 @@ public sealed class OllamaProvider : OpenAiCompatibleProvider
         _client = client ?? Shared;
     }
 
+    private OllamaProvider(OllamaProvider other, string? level) : base(other, level)
+    {
+        _client = other._client;
+        _tagsUrl = other._tagsUrl;
+    }
+
+    /// <inheritdoc/>
+    public override ILlmProvider WithThinking(string? level) => new OllamaProvider(this, level);
+
     /// <inheritdoc/>
     public override async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct)
     {

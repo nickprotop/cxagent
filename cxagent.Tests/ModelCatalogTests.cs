@@ -43,6 +43,22 @@ public class ModelCatalogTests : IDisposable
         Assert.Equal(new[] { "llama3.1:latest", "qwen2.5" }, models);
     }
 
+    // A LEVEL IS A COPY OF THE SAME PROVIDER, Ollama's own included: a copy made as the base type
+    // would list models from /v1/models and stop being an OllamaProvider.
+    [Fact]
+    public async Task Ollama_AtALevel_IsStillOllama()
+    {
+        _srv.EnqueueJson(200, """{"models":[{"name":"llama3.1:latest"}]}""");
+        var p = new OllamaProvider("p", "d", "llama3.1",
+            baseUrl: _srv.BaseUrl.TrimEnd('/'), retryPolicy: RetryPolicy.NoDelay);
+
+        var levelled = ((IThinkingProvider)p).WithThinking(ThinkingLevels.Lowest);
+
+        var ollama = Assert.IsType<OllamaProvider>(levelled);
+        Assert.Equal(ThinkingLevels.Lowest, ollama.ThinkingLevel);
+        Assert.Equal(["llama3.1:latest"], await ollama.ListModelsAsync(default));
+    }
+
     [Fact]
     public async Task Anthropic_ListsModels_FromDataArray()
     {
