@@ -255,4 +255,13 @@ public class ThinkingBlockTests
 
         Assert.Equal("first run.\n\nsecond run.", sink.BlockBodyForTest(T1));
     }
+
+    // EVERY LINE CARRIES ITS OWN COLOUR: the transcript does not carry a colour across a line break,
+    // so text after a newline inside one scope renders uncoloured.
+    [Theory]
+    [InlineData("a\nb")]
+    [InlineData("a\n\nb")]
+    public void EachLine_IsColouredOnItsOwn(string text) =>
+        Assert.All(ChatTranscriptSink.ThinkingMarkup(text).Split('\n').Where(l => l.Length > 0),
+            line => Assert.Matches(@"^\[[^\]]+\].*\[/\]$", line));
 }

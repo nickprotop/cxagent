@@ -240,8 +240,16 @@ public sealed class ChatTranscriptSink : ISessionObserver
             var write = block.Pending + core;
             block.Pending = shown[core.Length..];
             block.Body.Append(write);
-            _chat.Append(block.Id, $"[{ColorScheme.ThinkingMarkup}]{Escape(write)}[/]");
+            _chat.Append(block.Id, ThinkingMarkup(write));
         }, "chat.AssistantThinkingAppended");
+
+    /// <summary>
+    /// Thinking text as markup, coloured LINE BY LINE: the transcript does not carry a colour scope
+    /// across a line break, so one scope around "a\nb" leaves "b" in the default colour.
+    /// </summary>
+    public static string ThinkingMarkup(string text) =>
+        string.Join("\n", text.Split('\n').Select(line =>
+            line.Length == 0 ? "" : $"[{ColorScheme.ThinkingMarkup}]{Escape(line)}[/]"));
 
     /// <summary>
     /// The run is over: the block's header says for how long and how much, and the block folds so
