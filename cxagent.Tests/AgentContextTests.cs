@@ -48,6 +48,46 @@ public class AgentContextTests
             Assert.Contains(kept, k => k.ToolCalls?.Any(c => c.Id == m.ToolCallId) == true);
     }
 
+    /// <summary>
+    /// A HUGE RESULT IN THE NEWER HALF IS SUMMARISED, not kept. Halving by count kept a 65,779-char
+    /// read verbatim, so the context stayed over its threshold and compacted again every turn.
+    /// </summary>
+    [Fact]
+    public void SafeCut_SummarisesALargeResult_ThatTheNewerHalfByCountWouldKeep()
+    {
+        var messages = new List<ChatMessage>
+        {
+            User("goal"),
+            Call("a"), Result("a"),
+            Call("b"), Result("b", new string('x', 65_000)),
+            Call("c"), Result("c"),
+        };
+
+        var cut = SessionCompressor.SafeCut(messages);
+        var kept = messages.Skip(cut).ToList();
+
+        Assert.DoesNotContain(kept, m => m.ToolCallId == "b");
+        // The newest call keeps its result: the model has not answered it yet.
+        Assert.Equal(new[] { "c", "c" }, kept.Select(m => m.ToolCallId ?? m.ToolCalls![0].Id));
+    }
+
+    /// <summary>The newest call and its result survive even when they are the large part.</summary>
+    [Fact]
+    public void SafeCut_KeepsTheNewestCall_EvenWhenItsResultIsTheLargePart()
+    {
+        var messages = new List<ChatMessage>
+        {
+            User("goal"),
+            Call("a"), Result("a"),
+            Call("b"), Result("b", new string('x', 65_000)),
+        };
+
+        var kept = messages.Skip(SessionCompressor.SafeCut(messages)).ToList();
+
+        Assert.Equal(2, kept.Count);
+        Assert.Equal("b", kept[1].ToolCallId);
+    }
+
     /// <summary>The cut still has to make progress, or compression would never free anything.</summary>
     [Fact]
     public void SafeCut_StillCutsSomething()

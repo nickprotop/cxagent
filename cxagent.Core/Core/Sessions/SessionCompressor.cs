@@ -61,6 +61,21 @@ public static class SessionCompressor
     public static int SafeCut(IReadOnlyList<ChatMessage> conversation)
     {
         var cut = conversation.Count - conversation.Count / 2;
+
+        // AND HALF THE SIZE, NOT ONLY HALF THE MESSAGES. Tool results vary by four orders of
+        // magnitude, so the newest half by count can hold nearly all the text: measured, a sub-agent
+        // kept one 65,779-character file read verbatim, came out at 43,824 tokens against a 40,000
+        // threshold, and compacted again on each of the next two turns — every pass a paid call that
+        // also rewrote the history the prompt cache was holding. The cut moves later until the kept
+        // tail is at most half the characters. Never past the last message: the walk-back below then
+        // keeps the newest call with its results, which the model has not yet answered.
+        var total = 0;
+        foreach (var m in conversation) total += m.Content?.Length ?? 0;
+        var tail = 0;
+        for (var i = cut; i < conversation.Count; i++) tail += conversation[i].Content?.Length ?? 0;
+        while (cut < conversation.Count - 1 && tail > total / 2)
+            tail -= conversation[cut++].Content?.Length ?? 0;
+
         while (cut > 0 && conversation[cut].ToolCallId is not null) cut--;
         return cut;
     }
