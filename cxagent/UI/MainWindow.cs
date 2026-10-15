@@ -3040,6 +3040,24 @@ public sealed class MainWindow : IDisposable
             Header = static (_, author) => author ?? "Job",
         });
 
+        // THINKING HAS A ROLE OF ITS OWN, so every block takes its look from one place and follows
+        // the theme with the rest: an amber rail down its left edge and a faintly amber ground, so a
+        // block of reasoning never reads as part of the answer beside it. Markup, not markdown: the
+        // sink colours the text itself. FOLDS LIKE A TOOL ROW — read on demand, opened by a click or
+        // Tab and Enter; the sink holds a block open only while its thinking streams.
+        chat.SetRoleStyle(ChatRole.Thinking, new ChatRoleStyle
+        {
+            Markdown = false,
+            ColorRole = ColorScheme.Caution,
+            HeaderStyle = CollapsibleHeaderStyle.Borderless,
+            Collapsible = true,
+            StartCollapsed = true,
+            Rail = true,
+            RailColor = ColorScheme.ThinkingRgb,
+            Background = ColorScheme.ThinkingSurface,
+            Header = static (_, author) => author ?? "Thinking",
+        });
+
         // THE ASIDE BLOCK RIDES ChatRole.Error. The library's roles are a fixed set and styles are per
         // role, not per message, so a block drawn unlike the conversation needs a role of its own.
         // This app never posts Error (failures are System notes with danger markup), which leaves it
@@ -3119,6 +3137,10 @@ public sealed class MainWindow : IDisposable
             tab.Chat.MessageRailColor = ColorScheme.Grip;
             ApplyRoleStyles(tab.Chat);   // each style captured its Background by value
             tab.Chat.RestyleMessages();
+
+            // THINKING TEXT CARRIES ITS COLOUR IN ITS MARKUP, written when it arrived, so a restyle
+            // cannot reach it: the sink rewrites each block from the plain text it kept.
+            tab.ChatSink?.Recolour();
         }
 
         // The session panel captured its own surfaces the same way this window did.

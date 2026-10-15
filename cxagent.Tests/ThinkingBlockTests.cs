@@ -24,7 +24,7 @@ public class ThinkingBlockTests
         new(TimeSpan.FromSeconds(seconds), words, Hidden: false, Redacted: false);
 
     private static IEnumerable<SharpConsoleUI.Controls.ChatMessageId> Blocks(ChatTranscriptControl chat) =>
-        chat.MessageIds.Where(i => chat.GetRole(i) == ChatRole.Tool);
+        chat.MessageIds.Where(i => chat.GetRole(i) == ChatRole.Thinking);
 
     [Fact]
     public void Thinking_TakesTheSpinnersPlace_AndTheAnswerLandsBelowIt()
@@ -38,7 +38,7 @@ public class ThinkingBlockTests
 
         var ids = chat.MessageIds;
         Assert.Equal(2, ids.Count);
-        Assert.Equal(ChatRole.Tool, chat.GetRole(ids[0]));
+        Assert.Equal(ChatRole.Thinking, chat.GetRole(ids[0]));
         Assert.Equal(ChatRole.Assistant, chat.GetRole(ids[1]));
         Assert.False(chat.IsExpanded(ids[0]));
     }
@@ -86,7 +86,7 @@ public class ThinkingBlockTests
         sink.AssistantTurnEnded(T1);
 
         var id = Assert.Single(chat.MessageIds);
-        Assert.Equal(ChatRole.Tool, chat.GetRole(id));
+        Assert.Equal(ChatRole.Thinking, chat.GetRole(id));
         Assert.False(chat.IsExpanded(id));
     }
 
@@ -210,6 +210,7 @@ public class ThinkingBlockTests
         var block = Assert.Single(Blocks(chat));
         Assert.False(chat.IsExpanded(block));
         Assert.Equal(0, sink.LiveBlocksForTest);
+        Assert.StartsWith("◆ Thought for", sink.BlockHeaderForTest(T1));   // kept, so a recolour keeps it
     }
 
     // A BLOCK HOLDING TWO RUNS says what both took, not only the last.
@@ -264,4 +265,22 @@ public class ThinkingBlockTests
     public void EachLine_IsColouredOnItsOwn(string text) =>
         Assert.All(ChatTranscriptSink.ThinkingMarkup(text).Split('\n').Where(l => l.Length > 0),
             line => Assert.Matches(@"^\[[^\]]+\].*\[/\]$", line));
+
+    // A THEME SWITCH RECOLOURS what is already there: the text and header carry their colour in
+    // markup written at the time, so they are rewritten from the plain text the sink kept.
+    [Fact]
+    public void Recolour_RewritesEveryBlocksTextAndHeader_InTheCurrentColour()
+    {
+        var (sink, _) = Sink();
+        sink.AssistantTurnBegan(T1);
+        sink.AssistantThinkingAppended(T1, "first\nsecond");
+        sink.AssistantThinkingEnded(T1, Sum());
+
+        var written = new List<(string Body, string Header)>();
+        sink.Recolour((body, header) => written.Add((body, header)));
+
+        var (b, h) = Assert.Single(written);
+        Assert.Equal(ChatTranscriptSink.ThinkingMarkup("first\nsecond"), b);
+        Assert.Contains(ChatTranscriptSink.FoldedHeader(Sum()), h);
+    }
 }

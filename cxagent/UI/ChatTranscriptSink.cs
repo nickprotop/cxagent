@@ -164,8 +164,9 @@ public sealed class ChatTranscriptSink : ISessionObserver
             if (_blocks.TryGetValue(id.Value, out var block) && block.Live)
             {
                 block.Live = false;
-                _chat.SetHeader(block.Id, $"[{ColorScheme.ThinkingMarkup}]{Escape(FoldedHeader(
-                    new Core.Llm.ThinkingSummary(DateTimeOffset.UtcNow - block.Started, 0, Hidden: true, Redacted: false)))}[/]");
+                block.Header = FoldedHeader(
+                    new Core.Llm.ThinkingSummary(DateTimeOffset.UtcNow - block.Started, 0, Hidden: true, Redacted: false));
+                _chat.SetHeader(block.Id, $"[{ColorScheme.ThinkingMarkup}]{Escape(block.Header)}[/]");
                 _chat.SetExpanded(block.Id, false);
             }
 
@@ -301,10 +302,8 @@ public sealed class ChatTranscriptSink : ISessionObserver
             _map.TryRemove(id.Value, out _);
         }
 
-        // A TOOL-ROLE MESSAGE because that role already folds; markup, not markdown, because the
-        // body is escaped text in a colour scope.
-        var added = _chat.AddMessage(ChatRole.Tool, "", author: "Thinking");
-        _chat.SetMarkdownMode(added, false);
+        // THE THINKING ROLE, whose style — rail, ground, plain markup body — is set once in MainWindow.
+        var added = _chat.AddMessage(ChatRole.Thinking, "");
         _chat.SetHeader(added, $"[{ColorScheme.ThinkingMarkup}]{LiveHeader(TimeSpan.Zero)}[/]");
         _chat.SetExpanded(added, true);
         _allBlocks.Add(added);
@@ -365,6 +364,25 @@ public sealed class ChatTranscriptSink : ISessionObserver
         foreach (var b in _blocks.Values.Where(b => b.Live))
             _chat.SetHeader(b.Id, $"[{ColorScheme.ThinkingMarkup}]{LiveHeader(DateTimeOffset.UtcNow - b.Started)}[/]");
     }, "chat.RefreshThinkingHeaders");
+
+    /// <summary>
+    /// Rewrites every block's text and header in the current theme's colour. Each was written as
+    /// markup carrying the colour of its day, which a role restyle cannot reach.
+    /// </summary>
+    /// <param name="observed">Told each block's new body and header — for a test.</param>
+    public void Recolour(Action<string, string>? observed = null) => _post(() =>
+    {
+        foreach (var block in _blocks.Values)
+        {
+            var body = ThinkingMarkup(block.Body.ToString());
+            var header = block.Live
+                ? $"[{ColorScheme.ThinkingMarkup}]{LiveHeader(DateTimeOffset.UtcNow - block.Started)}[/]"
+                : $"[{ColorScheme.ThinkingMarkup}]{Escape(block.Header ?? "")}[/]";
+            _chat.UpdateMessage(block.Id, body);
+            _chat.SetHeader(block.Id, header);
+            observed?.Invoke(body, header);
+        }
+    }, "chat.Recolour");
 
     /// <summary>The transcript was cleared: its blocks are gone, so stop pointing at them.</summary>
     public void Forget() => _post(() =>

@@ -68,6 +68,8 @@ public static class ColorScheme
         Separator = PaletteColors.Tint(PaletteColors.Mix(ChatSurface, ComposerSurface, 0.5), 0.08);
         UserSurface = Raised(ChatSurface, 0.10);
         AssistantSurface = Raised(ChatSurface, 0.05);
+        ThinkingRgb = ColorRoleResolver.Resolve(Caution, theme).Text;
+        ThinkingSurface = PaletteColors.Mix(ChatSurface, ThinkingRgb, ThinkingTint);
 
         // MARKDOWN FOLLOWS THE THEME, UNLESS THE THEME HAS ALREADY CHOSEN. A crimson theme must
         // give crimson headings, not a fixed purple wearing crimson chrome around it — so every
@@ -461,6 +463,19 @@ public static class ColorScheme
     /// picks a different one means it for the same reason. The literal stays as the fallback so a
     /// host with no theme renders the colour the screenshots were taken with.</para>
     public static string ThinkingMarkup => Markup(Caution, "#f5a742");
+
+    /// <summary>The thinking colour as channels, for the rail beside a thinking block — a place a
+    /// markup name cannot go.</summary>
+    public static Color ThinkingRgb { get; private set; } = new(0xf5, 0xa7, 0x42);
+
+    /// <summary>
+    /// A thinking block's ground: the chat surface with a trace of the thinking colour. Barely
+    /// raised — the block is read on demand, and a bright one beside every answer would outshout it.
+    /// </summary>
+    public static Color ThinkingSurface { get; private set; } =
+        PaletteColors.Mix(new Color(0x0d, 0x0d, 0x0d), new Color(0xf5, 0xa7, 0x42), ThinkingTint);
+
+    private const double ThinkingTint = 0.06;
 
     // --- Diff -------------------------------------------------------------------
     //
