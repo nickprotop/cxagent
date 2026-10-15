@@ -22,15 +22,37 @@ namespace CxAgent.UI;
 /// </summary>
 public sealed class ChatTranscriptSink : ISessionObserver
 {
-    private readonly ConsoleWindowSystem _system;
+    private readonly Action<Action, string> _post;
     private readonly ChatTranscriptControl _chat;
     private readonly ConcurrentDictionary<long, FwChatId> _map = new();
 
+    /// <summary>Each step's thinking block, by step id — kept after the step so a second run of
+    /// thinking in it rejoins its block.</summary>
+    private readonly ConcurrentDictionary<long, Block> _blocks = new();
+
+    /// <summary>Every block in creation order, for Ctrl+O. UI thread only.</summary>
+    private readonly List<FwChatId> _allBlocks = [];
+
+    /// <summary>A label given to a step before its answer message existed, for when it does.</summary>
+    private readonly ConcurrentDictionary<long, string> _labels = new();
+
+    private bool _showThinking;
+
     public ChatTranscriptSink(ConsoleWindowSystem system, ChatTranscriptControl chat)
+        : this(chat, (action, name) => system.EnqueueOnUIThread(action, name)) { }
+
+    private ChatTranscriptSink(ChatTranscriptControl chat, Action<Action, string> post)
     {
-        _system = system;
         _chat = chat;
+        _post = post;
     }
+
+    /// <summary>
+    /// Runs each write inline. Public with a ForTest suffix because this assembly grants no
+    /// InternalsVisibleTo, and a headless test cannot drain the UI queue a real sink writes through.
+    /// </summary>
+    public static ChatTranscriptSink ForTest(ChatTranscriptControl chat) =>
+        new(chat, static (action, _) => action());
 
     /// <summary>
     /// Adds what the user said, and marks it with a rail down the gutter.
@@ -49,7 +71,7 @@ public sealed class ChatTranscriptSink : ISessionObserver
     {
         OnUserTurnAdded?.Invoke();
 
-        _system.EnqueueOnUIThread(() =>
+        _post(() =>
         {
             // THE PLACEHOLDER GOES FIRST. A user turn arriving mid-run is a steer the agent has just
             // taken, and its "queued" block is a stand-in for exactly this message — leaving it up
@@ -95,33 +117,37 @@ public sealed class ChatTranscriptSink : ISessionObserver
         // after it. Closing at the start of the next round gives working, answer, working, answer.
         OnAssistantRoundEnded?.Invoke();
 
-        _system.EnqueueOnUIThread(() =>
-            _map[id.Value] = _chat.AddMessage(ChatRole.Assistant, "", thinking: true));
+        _post(() =>
+            _map[id.Value] = _chat.AddMessage(ChatRole.Assistant, "", thinking: true),
+            "chat.AssistantTurnBegan");
     }
 
     /// <summary>
-    /// Stops the turn's spinner. Writing an EMPTY body is what clears Thinking (the control clears it
-    /// on body creation, ChatTranscriptControl.cs:579), so a silent turn collapses to nothing visible
-    /// rather than animating forever.
+    /// The step's header. KEPT as well as set: a step whose spinner gave way to a thinking block has
+    /// no answer message yet, and the label belongs on the answer when it arrives.
     /// </summary>
+    public void AssistantLabelled(ChatMessageId id, string header) =>
+        _post(() =>
+        {
+            _labels[id.Value] = header;
+            if (_map.TryGetValue(id.Value, out var fwId)) _chat.SetHeader(fwId, header);
+        }, "chat.AssistantLabelled");
+
+    /// <summary>The label a step's answer carries, for a test.</summary>
+    public string? HeaderForTest(ChatMessageId id) => _labels.TryGetValue(id.Value, out var h) ? h : null;
+
     /// <summary>
     /// Closes an assistant turn, and REMOVES it entirely when it produced no text.
     ///
-    /// <para>Clearing the body was not enough: a turn that never received content left an empty
+    /// <para>Clearing the body is not enough: a turn that never received content would leave an empty
     /// "Assistant" block in the transcript, and the orchestrator opens one per consult round to show
-    /// its thinking spinner. A live screenshot showed four blank Assistant headers stacked between
-    /// real content — the spinner did its job while running and then left litter behind.</para>
+    /// its spinner — blank headers stacked between real content.</para>
     ///
-    /// <para>A turn that DID produce text is left alone; only the empty ones vanish.</para>
+    /// <para>A turn that DID produce text is left alone; only the empty ones vanish. A step whose
+    /// spinner gave way to its thinking block has nothing here to remove.</para>
     /// </summary>
-    public void AssistantLabelled(ChatMessageId id, string header) =>
-        _system.EnqueueOnUIThread(() =>
-        {
-            if (_map.TryGetValue(id.Value, out var fwId)) _chat.SetHeader(fwId, header);
-        }, "chat.AssistantTurnBegan");
-
     public void AssistantTurnEnded(ChatMessageId id) =>
-        _system.EnqueueOnUIThread(() =>
+        _post(() =>
         {
             if (!_map.TryGetValue(id.Value, out var fwId)) return;
 
@@ -132,7 +158,7 @@ public sealed class ChatTranscriptSink : ISessionObserver
                 _chat.RemoveMessage(fwId);
                 _map.TryRemove(id.Value, out _);
             }
-        }, "chat.AssistantLabelled");
+        }, "chat.AssistantTurnEnded");
 
     /// <summary>
     /// Body text, NOT escaped — the Assistant role renders as MARKDOWN, which escapes for itself.
@@ -153,28 +179,131 @@ public sealed class ChatTranscriptSink : ISessionObserver
     /// </para>
     /// </summary>
     public void AssistantTextAppended(ChatMessageId id, string token) =>
-        _system.EnqueueOnUIThread(() =>
+        _post(() =>
         {
-            if (_map.TryGetValue(id.Value, out var fwId)) _chat.Append(fwId, token);
-        }, "chat.AssistantTurnEnded");
+            if (_map.TryGetValue(id.Value, out var fwId)) { _chat.Append(fwId, token); return; }
+
+            // THE ANSWER, BELOW ITS THINKING. The step's spinner gave way to the thinking block, so
+            // the answer message is made now — after the block, which is the order they happened in.
+            if (!_blocks.ContainsKey(id.Value)) return;
+            var answer = _chat.AddMessage(ChatRole.Assistant, "");
+            if (_labels.TryGetValue(id.Value, out var label)) _chat.SetHeader(answer, label);
+            _map[id.Value] = answer;
+            _chat.Append(answer, token);
+        }, "chat.AssistantTextAppended");
 
     /// <summary>
-    /// Reasoning text: escaped, then coloured HERE — the sink owns how a kind of text looks.
+    /// Thinking text, in the step's own block: escaped, then coloured HERE — the sink owns how a kind
+    /// of text looks.
     ///
     /// <para>AMBER, not [dim]. Dim asks the terminal to render the SAME colour more faintly, which
     /// many terminals ignore and none render identically; against a dark background the ones that
     /// honour it produce grey mush. A colour of its own says "this is a different KIND of text"
-    /// rather than "this text matters less", which is what reasoning actually is.</para>
+    /// rather than "this text matters less", which is what thinking is.</para>
     /// </summary>
     public void AssistantThinkingAppended(ChatMessageId id, string text) =>
-        _system.EnqueueOnUIThread(() =>
+        _post(() =>
         {
-            if (_map.TryGetValue(id.Value, out var fwId))
-                _chat.Append(fwId, $"[{ColorScheme.ThinkingMarkup}]{Escape(text)}[/]");
-        }, "chat.AssistantTextAppended");
+            var block = BlockFor(id);
+            if (text.Length > 0) _chat.Append(block.Id, $"[{ColorScheme.ThinkingMarkup}]{Escape(text)}[/]");
+        }, "chat.AssistantThinkingAppended");
 
-    /// <summary>The block that folds on this lands with the transcript's thinking blocks.</summary>
-    public void AssistantThinkingEnded(ChatMessageId id, Core.Llm.ThinkingSummary summary) { }
+    /// <summary>
+    /// The run is over: the block's header says for how long and how much, and the block folds —
+    /// unless Ctrl+O has thinking showing, in which case it stays open with the rest.
+    /// </summary>
+    public void AssistantThinkingEnded(ChatMessageId id, Core.Llm.ThinkingSummary summary) =>
+        _post(() =>
+        {
+            var block = BlockFor(id);
+            block.Live = false;
+            _chat.SetHeader(block.Id, $"[{ColorScheme.ThinkingMarkup}]{Escape(FoldedHeader(summary))}[/]");
+            _chat.SetExpanded(block.Id, _showThinking);
+        }, "chat.AssistantThinkingEnded");
+
+    /// <summary>
+    /// The step's block, made on its first thinking. UI thread only.
+    ///
+    /// <para>IN THE SPINNER'S PLACE. The control only appends, and the step's message was made empty
+    /// before the request so the wait showed a spinner. Removing it and adding the block puts the
+    /// thinking first; the answer is made below it when text arrives. A run that resumes after the
+    /// step's text rejoins this same block — one block per step, as the step happened.</para>
+    /// </summary>
+    private Block BlockFor(ChatMessageId id)
+    {
+        if (_blocks.TryGetValue(id.Value, out var known))
+        {
+            if (!known.Live)
+            {
+                known.Live = true;
+                known.Started = DateTimeOffset.UtcNow;
+                _chat.SetExpanded(known.Id, true);
+            }
+            return known;
+        }
+
+        if (_map.TryGetValue(id.Value, out var spinner) && _chat.IsThinking(spinner))
+        {
+            _chat.RemoveMessage(spinner);
+            _map.TryRemove(id.Value, out _);
+        }
+
+        // A TOOL-ROLE MESSAGE because that role already folds; markup, not markdown, because the
+        // body is escaped text in a colour scope.
+        var added = _chat.AddMessage(ChatRole.Tool, "", author: "Thinking");
+        _chat.SetMarkdownMode(added, false);
+        _chat.SetHeader(added, $"[{ColorScheme.ThinkingMarkup}]{LiveHeader(TimeSpan.Zero)}[/]");
+        _chat.SetExpanded(added, true);
+        _allBlocks.Add(added);
+        var block = new Block(added) { Started = DateTimeOffset.UtcNow };
+        _blocks[id.Value] = block;
+        return block;
+    }
+
+    /// <summary>A step's thinking block, and whether thinking is arriving in it now.</summary>
+    private sealed class Block(FwChatId id)
+    {
+        public FwChatId Id { get; } = id;
+        public DateTimeOffset Started { get; set; }
+        public bool Live { get; set; } = true;
+    }
+
+    /// <summary>The header while thinking arrives.</summary>
+    public static string LiveHeader(TimeSpan elapsed) => $"◆ Thinking · {(int)elapsed.TotalSeconds}s";
+
+    /// <summary>
+    /// The header once the run is over. Never "0s": a run that finished inside a second still
+    /// happened. No word count when the provider hid the text — zero would read as "said nothing".
+    /// </summary>
+    public static string FoldedHeader(Core.Llm.ThinkingSummary s) =>
+        $"◆ Thought for {Math.Max(1, (int)Math.Round(s.Duration.TotalSeconds))}s"
+        + (s.Words > 0 ? $" · {s.Words} words" : "")
+        + (s.Redacted ? " (redacted)" : "");
+
+    /// <summary>Ctrl+O: every thinking block in this transcript open or folded, and new ones follow.</summary>
+    public void SetShowThinking(bool show) => _post(() =>
+    {
+        _showThinking = show;
+        foreach (var b in _allBlocks) _chat.SetExpanded(b, show);
+    }, "chat.SetShowThinking");
+
+    /// <summary>
+    /// Advances each live block's elapsed time. Driven by the window's one-second tick, because a
+    /// header cannot tick itself.
+    /// </summary>
+    public void RefreshThinkingHeaders() => _post(() =>
+    {
+        foreach (var b in _blocks.Values.Where(b => b.Live))
+            _chat.SetHeader(b.Id, $"[{ColorScheme.ThinkingMarkup}]{LiveHeader(DateTimeOffset.UtcNow - b.Started)}[/]");
+    }, "chat.RefreshThinkingHeaders");
+
+    /// <summary>The transcript was cleared: its blocks are gone, so stop pointing at them.</summary>
+    public void Forget() => _post(() =>
+    {
+        _blocks.Clear();
+        _allBlocks.Clear();
+        _labels.Clear();
+    }, "chat.Forget");
 
     /// <summary>
     /// Makes model text safe to hand a markup parser.
@@ -247,5 +376,5 @@ public sealed class ChatTranscriptSink : ISessionObserver
         chat.AddMessage(ChatRole.System, row.Text, null, null, null, row.Markdown);
 
     public void Said(Message message) =>
-        _system.EnqueueOnUIThread(() => Post(_chat, Row(message)));
+        _post(() => Post(_chat, Row(message)), "chat.Said");
 }

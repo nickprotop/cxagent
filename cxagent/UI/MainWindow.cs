@@ -2420,6 +2420,10 @@ public sealed class MainWindow : IDisposable
                 // InlineJobSink.RefreshRunningHeaders for why the header cannot tick itself.
                 JobSink?.RefreshRunningHeaders();
 
+                // EVERY TAB'S THINKING, not only the front one: a background session thinking for a
+                // minute should read a minute when the user switches to it, not the second they left.
+                foreach (var tab in _sessionTabs) tab.ChatSink?.RefreshThinkingHeaders();
+
                 // OUTSIDE THE GUARD TOO: the jobs item exists for exactly the terminal too narrow to
                 // show the panel, and an open job tab follows its output whether the panel is up or not.
                 RefreshJobs();

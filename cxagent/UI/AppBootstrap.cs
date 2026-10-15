@@ -1689,6 +1689,18 @@ public static class AppBootstrap
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F7, "background jobs",
             () => !PluginManagerDialog.IsOpen && mainWindow.ToggleJobsPanel());
 
+        // EVERY THINKING BLOCK IN THE TAB AT ONCE. One block opens with a click or Enter like any
+        // folded row; this is for reading back how a whole run reasoned. Ctrl+O because Ctrl+T is the
+        // library's window-cycle key, and it is Claude Code's key for expanding detail.
+        keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.O, "open or fold all thinking", () =>
+        {
+            if (PluginManagerDialog.IsOpen) return false;
+            var tab = mainWindow.ActiveTab;
+            tab.ShowThinking = !tab.ShowThinking;
+            tab.ChatSink?.SetShowThinking(tab.ShowThinking);
+            return true;
+        });
+
 
         // F9 OPENS THE THEME LIST, and the item at the left of the status bar opens the same one on a
         // click. One key for the whole registry rather than a key per theme: the list already knows
