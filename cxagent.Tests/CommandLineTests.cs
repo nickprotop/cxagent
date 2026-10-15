@@ -382,11 +382,20 @@ public class HeadlessCommandLineTests
         Assert.NotNull(CommandLine.Parse(["-p", "x", "--max-turns", "lots"]).Error);
     }
 
+    [Fact]
+    public void Thinking_MustBeAKnownLevel()
+    {
+        Assert.Equal("high", CommandLine.Parse(["-p", "x", "--thinking", "high"]).Headless!.Thinking);
+        foreach (string[] args in new string[][] { ["-p", "x", "--thinking"], ["-p", "x", "--thinking", "extreme"] })
+            Assert.Contains("off, on, low, medium, high, xhigh, max", CommandLine.Parse(args).Error);
+    }
+
     [Theory]
     [InlineData("--output-format", "json")]
     [InlineData("--trust", null)]
     [InlineData("--plugin", "a")]
     [InlineData("--max-turns", "3")]
+    [InlineData("--thinking", "high")]
     [InlineData("--dangerously-skip-permissions", null)]
     [InlineData("--include-partial-messages", null)]
     [InlineData("--permission-mode", "auto")]

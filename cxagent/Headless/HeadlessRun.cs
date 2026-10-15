@@ -160,6 +160,26 @@ public static class HeadlessRun
             Policy = policy,
         }, new WorkingMode(r.Options.Mode, edits));
 
+        // AFTER OPEN, which restores a resumed session's saved level: the flag is this run's own
+        // choice and overrides it. Refused up front, as a usage error, because a run that quietly
+        // went at another level would answer differently from what the caller asked for.
+        if (h.Thinking is { } level)
+        {
+            var offered = await session.ThinkingOptionsAsync();
+            if (!offered.Any)
+            {
+                r.Io.Err.WriteLine($"cxagent: --thinking: {offered.Why}.");
+                return 2;
+            }
+            if (!offered.Levels.Contains(level))
+            {
+                r.Io.Err.WriteLine($"cxagent: --thinking: '{level}' is not offered by this model. "
+                    + $"Levels: {string.Join(", ", offered.Levels)}.");
+                return 2;
+            }
+            session.SetThinking(level);
+        }
+
         gate.OnDecision = report =>
         {
             stores.History.SavePermission(new PermissionRecord(

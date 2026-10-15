@@ -244,6 +244,8 @@ public abstract class HeadlessOutput : ISessionObserver, IToolObserver
 internal sealed class TextOutput(HeadlessIo io, bool verbose) : HeadlessOutput(io)
 {
     private readonly HashSet<string> _shown = new(StringComparer.Ordinal);
+    private readonly Dictionary<ChatMessageId, StringBuilder> _thinking = new();
+
     protected override void OnStart(RunStart start)
     {
         if (!verbose) return;
@@ -261,6 +263,35 @@ internal sealed class TextOutput(HeadlessIo io, bool verbose) : HeadlessOutput(i
             if (message.Severity == Severity.Error) lock (_shown) _shown.Add(message.Text);
             Err(message.Text);
         }
+    }
+
+    public override void AssistantThinkingAppended(ChatMessageId id, string text)
+    {
+        if (!verbose) return;
+        lock (_thinking)
+        {
+            if (!_thinking.TryGetValue(id, out var sb)) _thinking[id] = sb = new StringBuilder();
+            sb.Append(text);
+        }
+    }
+
+    public override void AssistantThinkingEnded(ChatMessageId id, Core.Llm.ThinkingSummary summary)
+    {
+        if (!verbose) return;
+        string buffered;
+        lock (_thinking) buffered = _thinking.Remove(id, out var sb) ? sb.ToString() : "";
+        var seconds = Math.Max(1, (int)Math.Round(summary.Duration.TotalSeconds));
+        // A HIDDEN RUN HAS NO TEXT TO QUOTE: the provider kept it back, so the line says only that
+        // the model thought and for how long.
+        if (summary.Hidden || buffered.Trim().Length == 0)
+        {
+            Err($"◆ thought ({seconds}s)");
+            return;
+        }
+        // ONE LINE ON STDERR, the first with anything on it: a reasoning block runs to paragraphs and
+        // would bury the tool rows around it. The ellipsis says there was more.
+        var lines = buffered.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        Err($"◆ thinking ({seconds}s): {lines[0]}{(lines.Count > 1 ? "…" : "")}");
     }
 
     public override void ToolUpdated(Job job)
@@ -300,6 +331,7 @@ internal sealed class JsonOutput(HeadlessIo io) : HeadlessOutput(io)
 internal sealed class StreamOutput(HeadlessIo io, bool partial) : HeadlessOutput(io)
 {
     private readonly Dictionary<ChatMessageId, StringBuilder> _text = new();
+    private readonly Dictionary<ChatMessageId, StringBuilder> _thinking = new();
     private readonly HashSet<string> _announced = new(StringComparer.Ordinal);
     private string? _sessionId;
 
@@ -353,6 +385,39 @@ internal sealed class StreamOutput(HeadlessIo io, bool partial) : HeadlessOutput
                     ["delta"] = new JsonObject { ["type"] = "text_delta", ["text"] = token },
                 },
             });
+    }
+
+    public override void AssistantThinkingAppended(ChatMessageId id, string text)
+    {
+        lock (_thinking)
+        {
+            if (!_thinking.TryGetValue(id, out var sb)) _thinking[id] = sb = new StringBuilder();
+            sb.Append(text);
+        }
+        if (partial)
+            Emit(new JsonObject
+            {
+                ["type"] = "stream_event",
+                ["session_id"] = _sessionId,
+                ["parent_tool_use_id"] = null,
+                ["event"] = new JsonObject
+                {
+                    ["type"] = "content_block_delta",
+                    ["delta"] = new JsonObject { ["type"] = "thinking_delta", ["thinking"] = text },
+                },
+            });
+    }
+
+    // CLAUDE CODE'S SHAPE, one content block per event, so a consumer written for `claude -p` reads
+    // it unchanged. The session ends a step's thinking before its text, and the text is emitted only
+    // when the turn ends, so the thinking line always comes first. A hidden run has nothing buffered
+    // and goes out with an empty string rather than not at all: the consumer still sees the model
+    // thought.
+    public override void AssistantThinkingEnded(ChatMessageId id, Core.Llm.ThinkingSummary summary)
+    {
+        string buffered;
+        lock (_thinking) buffered = _thinking.Remove(id, out var sb) ? sb.ToString() : "";
+        Emit(Message("assistant", new JsonObject { ["type"] = "thinking", ["thinking"] = buffered }, null));
     }
 
     public override void AssistantTurnEnded(ChatMessageId id)

@@ -29,7 +29,7 @@ public class HeadlessRunTests : IDisposable
 
     private IReadOnlyDictionary<string, PluginConfig> _plugins = new Dictionary<string, PluginConfig>();
 
-    private async Task<Ran> Run(MockLlmProvider model, string? stdin, params string[] args)
+    private async Task<Ran> Run(ILlmProvider model, string? stdin, params string[] args)
     {
         var options = CommandLine.Parse(args);
         Assert.Null(options.Error);
@@ -49,6 +49,27 @@ public class HeadlessRunTests : IDisposable
         var m = new MockLlmProvider("m");
         foreach (var a in answers) m.EnqueueResponse(new LlmResponse { Text = a, StopReason = "end_turn" });
         return m;
+    }
+
+    [Fact]
+    public async Task Thinking_ALevelTheModelDoesNotOffer_IsAUsageError()
+    {
+        var model = new LevelledMock(["low", "high"]);
+        var (code, _, err) = await Run(model, null, "-p", "x", "--thinking", "max");
+
+        Assert.Equal(2, code);
+        Assert.Contains("low, high", err);
+        Assert.Empty(model.State.Seen);
+    }
+
+    [Fact]
+    public async Task Thinking_AnOfferedLevel_IsWhatTheRequestRunsAt()
+    {
+        var model = new LevelledMock(["low", "high"]);
+        var (code, _, _) = await Run(model, null, "-p", "x", "--thinking", "high");
+
+        Assert.Equal(0, code);
+        Assert.Equal("high", model.LastLevel);
     }
 
     [Fact]

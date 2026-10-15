@@ -159,6 +159,92 @@ public class HeadlessOutputTests
         Assert.Equal("result", lines[^1].GetProperty("type").GetString());
     }
 
+    private static readonly RunStart Started =
+        new("SESSION1", "/w", "local:m", "default", ["read_file"], [], [], RunSkipped.None, true);
+
+    private static List<JsonElement> LinesOf(StringWriter o) => o.ToString()
+        .Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => JsonDocument.Parse(l).RootElement).ToList();
+
+    [Fact]
+    public void StreamJson_ThinkingBlock_IsAnAssistantThinkingContent_BeforeTheText()
+    {
+        var (output, o, _) = Make(OutputFormat.StreamJson);
+        output.Start(Started);
+        var id = new ChatMessageId(1);
+        output.AssistantTurnBegan(id);
+        output.AssistantThinkingAppended(id, "check prices.py");
+        output.AssistantThinkingEnded(id, new(TimeSpan.FromSeconds(2), 2, false, false));
+        output.AssistantTextAppended(id, "done");
+        output.AssistantTurnEnded(id);
+        var lines = LinesOf(o);
+        var thinking = lines.Single(l => l.GetProperty("type").GetString() == "assistant"
+            && l.GetProperty("message").GetProperty("content")[0].GetProperty("type").GetString() == "thinking");
+        Assert.Equal("check prices.py", thinking.GetProperty("message").GetProperty("content")[0].GetProperty("thinking").GetString());
+        Assert.True(lines.IndexOf(thinking) < lines.FindIndex(l => l.ToString().Contains("\"done\"")));
+    }
+
+    [Fact]
+    public void StreamJson_Partial_EmitsThinkingDeltas()
+    {
+        var (output, o, _) = Make(OutputFormat.StreamJson, partial: true);
+        output.Start(Started);
+        var id = new ChatMessageId(1);
+        output.AssistantTurnBegan(id);
+        output.AssistantThinkingAppended(id, "x");
+
+        Assert.Contains("thinking_delta", o.ToString());
+    }
+
+    [Fact]
+    public void StreamJson_HiddenThinking_HasEmptyText()
+    {
+        var (output, o, _) = Make(OutputFormat.StreamJson);
+        output.Start(Started);
+        var id = new ChatMessageId(1);
+        output.AssistantTurnBegan(id);
+        output.AssistantThinkingEnded(id, new(TimeSpan.FromSeconds(3), 0, true, false));
+
+        var thinking = LinesOf(o).Single(l => l.GetProperty("type").GetString() == "assistant");
+        Assert.Equal("", thinking.GetProperty("message").GetProperty("content")[0].GetProperty("thinking").GetString());
+    }
+
+    [Fact]
+    public void Text_Verbose_PutsAThinkingLineOnStderr_NotStdout()
+    {
+        var (output, o, e) = Make(OutputFormat.Text, verbose: true);
+        var id = new ChatMessageId(1);
+        output.AssistantTurnBegan(id);
+        output.AssistantThinkingAppended(id, "first line\nmore");
+        output.AssistantThinkingEnded(id, new(TimeSpan.FromSeconds(4), 3, false, false));
+
+        Assert.Contains("◆ thinking (4s): first line…", e.ToString());
+        Assert.DoesNotContain("first line", o.ToString());
+    }
+
+    [Fact]
+    public void Text_Verbose_HiddenThinking_SaysThought()
+    {
+        var (output, _, e) = Make(OutputFormat.Text, verbose: true);
+        var id = new ChatMessageId(1);
+        output.AssistantTurnBegan(id);
+        output.AssistantThinkingEnded(id, new(TimeSpan.FromSeconds(0.2), 0, true, false));
+
+        Assert.Contains("◆ thought (1s)", e.ToString());
+    }
+
+    [Fact]
+    public void Text_NotVerbose_SaysNothingAboutThinking()
+    {
+        var (output, _, e) = Make(OutputFormat.Text);
+        var id = new ChatMessageId(1);
+        output.AssistantTurnBegan(id);
+        output.AssistantThinkingAppended(id, "private");
+        output.AssistantThinkingEnded(id, new(TimeSpan.FromSeconds(4), 1, false, false));
+
+        Assert.DoesNotContain("thinking", e.ToString());
+        Assert.DoesNotContain("thought", e.ToString());
+    }
+
     [Fact]
     public void StreamJson_ToolCalls_AreToolUse_ThenToolResult()
     {

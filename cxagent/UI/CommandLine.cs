@@ -1,3 +1,4 @@
+using CxAgent.Core.Llm;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Agents;
 
@@ -101,6 +102,9 @@ public sealed record HeadlessOptions
     /// <summary>The turn ceiling for this run, or null for the configured one.</summary>
     public int? MaxTurns { get; init; }
 
+    /// <summary>The thinking level for this run (<c>--thinking</c>), or null to keep the session's own.</summary>
+    public string? Thinking { get; init; }
+
     public HeadlessPermissions Permissions { get; init; } = HeadlessPermissions.Default;
     public bool Trust { get; init; }
 
@@ -158,6 +162,7 @@ public static class CommandLine
         var partial = false;
         var verbose = false;
         int? maxTurns = null;
+        string? thinking = null;
         var permissions = HeadlessPermissions.Default;
         var trust = false;
         var plugins = new List<string>();
@@ -354,6 +359,16 @@ public static class CommandLine
                 continue;
             }
 
+            if (arg == "--thinking")
+            {
+                headlessOnly ??= arg;
+                var given = i + 1 < args.Length ? args[++i] : null;
+                if (!ThinkingLevels.IsKnown(given))
+                    return new(useMock, mode, $"--thinking needs one of {string.Join(", ", ThinkingLevels.Known)}.");
+                thinking = given;
+                continue;
+            }
+
             if (arg == "--plugin")
             {
                 headlessOnly ??= arg;
@@ -394,7 +409,7 @@ public static class CommandLine
                 return new(useMock, mode,
                     $"unknown argument '{arg}'. Valid: --version, --help, --mock, --config-dir <dir>, "
                     + $"--theme <name>, --mode <{AgentModes.Valid}>, --model <instance>, --sessions, "
-                    + "-c, -r <id>, -p <goal>.");
+                    + "-c, -r <id>, -p <goal>, --thinking <level>.");
 
             if (string.IsNullOrWhiteSpace(value))
                 return new(useMock, mode, $"--mode needs a value. Valid: {AgentModes.Valid}.");
@@ -436,7 +451,7 @@ public static class CommandLine
             ? new HeadlessOptions
             {
                 Goal = goal, Output = output, IncludePartialMessages = partial, Verbose = verbose,
-                MaxTurns = maxTurns, Permissions = permissions, Trust = trust,
+                MaxTurns = maxTurns, Thinking = thinking, Permissions = permissions, Trust = trust,
                 Plugins = plugins, NoPlugins = noPlugins,
             }
             : null;
