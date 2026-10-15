@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using CxAgent.Core.Models;
 
 namespace CxAgent.Core.Llm.Providers;
@@ -81,38 +82,77 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
     public ILlmProvider WithThinking(string? level) =>
         new OpenAiCompatibleProvider(_options with { Thinking = level }, _caps);
 
-    /// <summary>llama.cpp serves <c>/props</c> at the server root, beside — not under — <c>/v1</c>.</summary>
+    /// <summary>
+    /// What this model offers, asked in the endpoint's own way: llama.cpp's <c>/props</c>,
+    /// OpenRouter's model list, or — for OpenAI, which cannot be asked — the configuration's word.
+    /// </summary>
     /// <param name="ct">Cancels the probe.</param>
     public Task<ThinkingOptions> GetThinkingOptionsAsync(CancellationToken ct = default) =>
-        _caps.GetAsync(async c =>
+        _options.Dialect switch
         {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(c);
-            cts.CancelAfter(ThinkingCapabilities.Timeout);
-            var root = _baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? _baseUrl[..^3] : _baseUrl;
-            using var req = new HttpRequestMessage(HttpMethod.Get, $"{root}/props");
-            if (!string.IsNullOrEmpty(_apiKey)) req.Headers.Authorization = new("Bearer", _apiKey);
-            using var resp = await _client.SendAsync(req, cts.Token).ConfigureAwait(false);
-            // A reply is an answer even when it says nothing useful: a server without /props (Ollama,
-            // OpenAI, most gateways) is cached as "none" and asked once. A temporary refusal — a
-            // llama.cpp server still loading its model — an exception or a timeout is asked again.
-            if (ThinkingCapabilities.IsTemporary(resp.StatusCode)) return null;
-            var unsaid = ThinkingOptions.None("the endpoint did not say what it accepts");
-            return resp.IsSuccessStatusCode
-                ? ThinkingCapabilities.ParseLlamaProps(await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false)) ?? unsaid
-                : unsaid;
-        }, ct);
+            ReasoningDialect.OpenAi => Task.FromResult(_options.Reasoning
+                ? new ThinkingOptions([ThinkingLevels.Minimal, ThinkingLevels.Low, ThinkingLevels.Medium, ThinkingLevels.High])
+                : ThinkingOptions.None("OpenAI cannot say which models reason — set \"reasoning\": true on this instance if this one does")),
+            ReasoningDialect.OpenRouter => _caps.GetAsync(c => ProbeAsync("/models", ThinkingCapabilities.ParseOpenRouterModels, c), ct),
+            _ => _caps.GetAsync(c => ProbeAsync("/props", (json, _) => ThinkingCapabilities.ParseLlamaProps(json), c), ct),
+        };
 
     /// <summary>
-    /// Null — send nothing — unless a level is set AND the server said it takes the switch: an
-    /// unknown field is a 400 on strict servers, so a guess is never sent.
+    /// One bounded GET for what the endpoint takes. llama.cpp serves <c>/props</c> at the server
+    /// root, beside — not under — <c>/v1</c>; OpenRouter's list sits under its API base.
     /// </summary>
-    private async Task<bool?> EnableThinkingAsync(CancellationToken ct)
+    private async Task<ThinkingOptions?> ProbeAsync(string path, Func<string, string?, ThinkingOptions?> parse,
+        CancellationToken c)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(c);
+        cts.CancelAfter(ThinkingCapabilities.Timeout);
+        var root = path == "/props" && _baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+            ? _baseUrl[..^3] : _baseUrl;
+        using var req = new HttpRequestMessage(HttpMethod.Get, $"{root}{path}");
+        if (!string.IsNullOrEmpty(_apiKey)) req.Headers.Authorization = new("Bearer", _apiKey);
+        using var resp = await _client.SendAsync(req, cts.Token).ConfigureAwait(false);
+        // A reply is an answer even when it says nothing useful: a server without the route (Ollama,
+        // most gateways) is cached as "none" and asked once. A temporary refusal — a llama.cpp
+        // server still loading its model — an exception or a timeout is asked again.
+        if (ThinkingCapabilities.IsTemporary(resp.StatusCode)) return null;
+        var unsaid = ThinkingOptions.None("the endpoint did not say what it accepts");
+        return resp.IsSuccessStatusCode
+            ? parse(await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false), _model) ?? unsaid
+            : unsaid;
+    }
+
+    /// <summary>
+    /// The fields that set the level, in this endpoint's dialect — or null, sending nothing, unless
+    /// a level is set AND the endpoint said it takes that level: an unknown field is a 400 on strict
+    /// servers, so a guess is never sent.
+    /// </summary>
+    private async Task<JsonObject?> ThinkingFieldsAsync(CancellationToken ct)
     {
         if (_options.Thinking is not { } level) return null;
         var options = await GetThinkingOptionsAsync(ct);
         if (!options.Any) return null;
         if (level == ThinkingLevels.Lowest) level = options.Levels[0];
-        return level switch { ThinkingLevels.Off => false, ThinkingLevels.On => true, _ => null };
+        if (!options.Levels.Contains(level)) return null;
+
+        return _options.Dialect switch
+        {
+            ReasoningDialect.OpenAi => new JsonObject { ["reasoning_effort"] = level },
+            ReasoningDialect.OpenRouter => new JsonObject
+            {
+                ["reasoning"] = level switch
+                {
+                    ThinkingLevels.Off => new JsonObject { ["effort"] = "none" },
+                    ThinkingLevels.On => new JsonObject { ["enabled"] = true },
+                    _ => new JsonObject { ["effort"] = level },
+                },
+            },
+            _ => level switch
+            {
+                ThinkingLevels.Off => new JsonObject { ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = false } },
+                ThinkingLevels.On => new JsonObject { ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = true } },
+                _ => null,
+            },
+        };
     }
 
     /// <inheritdoc/>
@@ -137,7 +177,7 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
         List<ToolDefinition>? tools, CancellationToken ct)
     {
         var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: false,
-            cacheSystemPrompt: _cacheControl, enableThinking: await EnableThinkingAsync(ct)).ToJsonString();
+            cacheSystemPrompt: _cacheControl, thinking: await ThinkingFieldsAsync(ct)).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         var json = await resp.Content.ReadAsStringAsync(ct);
@@ -149,7 +189,7 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
         List<ToolDefinition>? tools, [EnumeratorCancellation] CancellationToken ct)
     {
         var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: true,
-            cacheSystemPrompt: _cacheControl, enableThinking: await EnableThinkingAsync(ct)).ToJsonString();
+            cacheSystemPrompt: _cacheControl, thinking: await ThinkingFieldsAsync(ct)).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         using var stream = await resp.Content.ReadAsStreamAsync(ct);

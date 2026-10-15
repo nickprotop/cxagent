@@ -6,8 +6,8 @@ public enum ThinkingDisplay { Summarized, Omitted }
 /// <summary>The level names, one vocabulary across providers.</summary>
 public static class ThinkingLevels
 {
-    public const string Off = "off", On = "on", Low = "low", Medium = "medium", High = "high",
-        XHigh = "xhigh", Max = "max";
+    public const string Off = "off", On = "on", Minimal = "minimal", Low = "low", Medium = "medium",
+        High = "high", XHigh = "xhigh", Max = "max";
 
     /// <summary>
     /// Resolved per request to the lowest level the model accepts. The auto-mode classifier asks
@@ -17,7 +17,7 @@ public static class ThinkingLevels
     public const string Lowest = "lowest";
 
     /// <summary>Every name config and <c>/think</c> accept, in offering order.</summary>
-    public static readonly IReadOnlyList<string> Known = [Off, On, Low, Medium, High, XHigh, Max];
+    public static readonly IReadOnlyList<string> Known = [Off, On, Minimal, Low, Medium, High, XHigh, Max];
 
     /// <summary>Whether <paramref name="level"/> is one of <see cref="Known"/>.</summary>
     /// <param name="level">The name to check; null is not known.</param>
@@ -82,3 +82,32 @@ public interface IThinkingProvider
 /// <param name="Signature">The provider's signature over the block.</param>
 /// <param name="Data">A redacted block's encrypted content.</param>
 public sealed record ThinkingBlock(bool Redacted, string? Thinking, string? Signature, string? Data);
+
+/// <summary>Which way an OpenAI-compatible endpoint is told how hard to think.</summary>
+public enum ReasoningDialect
+{
+    /// <summary>llama.cpp: <c>chat_template_kwargs.enable_thinking</c>, when its template takes it.</summary>
+    LlamaCpp,
+
+    /// <summary>OpenRouter: a <c>reasoning</c> object, from what its model list says the model takes.</summary>
+    OpenRouter,
+
+    /// <summary>OpenAI: <c>reasoning_effort</c>, for a model the configuration says reasons.</summary>
+    OpenAi,
+}
+
+/// <summary>The dialect an endpoint speaks, from its host.</summary>
+public static class ReasoningDialects
+{
+    /// <summary>
+    /// OpenRouter and OpenAI by their hosts; anything else is treated as llama.cpp, whose probe
+    /// answers "none" for a server that is not one — so a gateway gets no levels rather than a guess.
+    /// </summary>
+    public static ReasoningDialect For(string? baseUrl) =>
+        Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) ? uri.Host.ToLowerInvariant() switch
+        {
+            "openrouter.ai" => ReasoningDialect.OpenRouter,
+            "api.openai.com" => ReasoningDialect.OpenAi,
+            _ => ReasoningDialect.LlamaCpp,
+        } : ReasoningDialect.LlamaCpp;
+}

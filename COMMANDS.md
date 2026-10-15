@@ -106,8 +106,8 @@ Thinking
 ```
 
 **The levels are the model's own.** An Anthropic model lists the effort levels it accepts — and
-`off` only where it accepts turning thinking off; a llama.cpp server whose template takes the switch
-offers `off` and `on`. A model with neither says why rather than offering levels it would refuse.
+`off` only where it accepts turning thinking off; a model on OpenRouter lists what OpenRouter's model
+list says it takes; a llama.cpp server whose template takes the switch offers `off` and `on`. A model with neither says why rather than offering levels it would refuse.
 `default` hands the choice back to the model, and sends nothing.
 
 **For this session.** `/think high --save` also writes `"thinking": "high"` to this instance in

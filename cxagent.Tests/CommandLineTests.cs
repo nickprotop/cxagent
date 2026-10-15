@@ -387,7 +387,7 @@ public class HeadlessCommandLineTests
     {
         Assert.Equal("high", CommandLine.Parse(["-p", "x", "--thinking", "high"]).Headless!.Thinking);
         foreach (string[] args in new string[][] { ["-p", "x", "--thinking"], ["-p", "x", "--thinking", "extreme"] })
-            Assert.Contains("off, on, low, medium, high, xhigh, max", CommandLine.Parse(args).Error);
+            Assert.Contains("off, on, minimal, low, medium, high, xhigh, max", CommandLine.Parse(args).Error);
     }
 
     [Theory]

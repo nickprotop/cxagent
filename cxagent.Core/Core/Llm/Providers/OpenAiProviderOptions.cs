@@ -52,8 +52,17 @@ public sealed record OpenAiProviderOptions
 
     /// <summary>
     /// The thinking level requests are sent at; null = the server's own default (nothing sent).
-    /// Only <c>off</c> and <c>on</c> mean anything to an OpenAI-compatible server, and only a
-    /// llama.cpp whose chat template takes <c>enable_thinking</c> acts on them.
+    /// What a level becomes depends on <see cref="Dialect"/>, and a level the endpoint did not
+    /// say it takes is never sent.
     /// </summary>
     public string? Thinking { get; init; }
+
+    /// <summary>How this endpoint is told how hard to think — see <see cref="ReasoningDialects.For"/>.</summary>
+    public ReasoningDialect Dialect { get; init; } = ReasoningDialect.LlamaCpp;
+
+    /// <summary>
+    /// The configuration says this model reasons. OpenAI cannot be asked, and a reasoning field on a
+    /// model that does not reason is a 400 — so its levels are offered only on this word.
+    /// </summary>
+    public bool Reasoning { get; init; }
 }

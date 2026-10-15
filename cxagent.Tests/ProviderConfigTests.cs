@@ -890,6 +890,21 @@ public class ProviderConfigTests : IDisposable
     {
         WriteConfig("""{"providers":{"p":{"kind":"anthropic","model":"m","thinking":"extreme"}},"defaultProvider":"p"}""");
         var ex = Assert.Throws<ProviderConfigException>(() => ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv));
-        Assert.Contains(ex.Errors, e => e.Contains("'thinking'") && e.Contains("off, on, low, medium, high, xhigh, max"));
+        Assert.Contains(ex.Errors, e => e.Contains("'thinking'") && e.Contains("off, on, minimal, low, medium, high, xhigh, max"));
+    }
+
+    [Fact]
+    public void Reasoning_IsReadFromConfig()
+    {
+        WriteConfig("""{"providers":{"p":{"kind":"openai-compatible","model":"gpt-5","baseUrl":"https://api.openai.com/v1","reasoning":true}},"defaultProvider":"p"}""");
+        Assert.True(ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).Providers["p"].Reasoning);
+    }
+
+    [Fact]
+    public void Reasoning_NotABoolean_IsAnError()
+    {
+        WriteConfig("""{"providers":{"p":{"kind":"openai-compatible","model":"gpt-5","baseUrl":"https://api.openai.com/v1","reasoning":"yes"}},"defaultProvider":"p"}""");
+        var ex = Assert.Throws<ProviderConfigException>(() => ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv));
+        Assert.Contains(ex.Errors, e => e.Contains("'reasoning'"));
     }
 }

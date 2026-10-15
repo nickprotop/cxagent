@@ -42,6 +42,10 @@ namespace CxAgent.Core.Llm;
 /// </param>
 /// <param name="ThinkingDisplay">Whether Anthropic returns thinking text (<c>summarized</c>) or empty blocks (<c>omitted</c>).</param>
 /// <param name="Thinking">The thinking level requests start at, or null for the model's own default.</param>
+/// <param name="Reasoning">
+/// The model reasons — for an OpenAI endpoint, which cannot be asked, this is what offers its levels.
+/// A reasoning field sent to a model that does not reason is a 400, so this is never assumed.
+/// </param>
 /// <param name="Kind">Which driver serves this instance — <c>anthropic</c>, <c>openai-compatible</c> or <c>ollama</c>.</param>
 /// <param name="Model">The model id sent to the endpoint.</param>
 /// <param name="ApiKey">The credential, or null for an endpoint that needs none.</param>
@@ -57,7 +61,8 @@ public record ProviderInstanceConfig(
     int? MaxConcurrentAgents = null,
     bool CacheControl = false,
     ThinkingDisplay ThinkingDisplay = ThinkingDisplay.Summarized,
-    string? Thinking = null);
+    string? Thinking = null,
+    bool Reasoning = false);
 
 public record RoutingTarget(string Provider, string Model);
 
@@ -674,6 +679,13 @@ public static class ProviderConfigLoader
                             default: errors.Add($"provider '{name}': 'thinkingDisplay' must be \"summarized\" or \"omitted\"."); break;
                         }
 
+                    bool reasoning = false;
+                    if (o.TryGetProperty("reasoning", out var rs))
+                    {
+                        if (rs.ValueKind is JsonValueKind.True or JsonValueKind.False) reasoning = rs.GetBoolean();
+                        else errors.Add($"provider '{name}': 'reasoning' must be true or false.");
+                    }
+
                     string? thinking = null;
                     if (o.TryGetProperty("thinking", out var tk))
                     {
@@ -701,7 +713,7 @@ public static class ProviderConfigLoader
                     ValidateEndpoint(name, kind, baseUrl, errors);
 
                     providers[name] = new ProviderInstanceConfig(kind, model, apiKey, baseUrl, extra, contextWindow,
-                        maxConcurrentAgents, cacheControl, thinkingDisplay, thinking);
+                        maxConcurrentAgents, cacheControl, thinkingDisplay, thinking, reasoning);
                 }
             else
                 errors.Add("config.json has no 'providers' object.");

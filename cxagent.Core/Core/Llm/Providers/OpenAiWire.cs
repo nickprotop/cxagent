@@ -18,9 +18,9 @@ public static class OpenAiWire
     /// <param name="tools">Tool definitions, or null/empty for none.</param>
     /// <param name="stream">Whether to request a streamed response (and its usage chunk).</param>
     /// <param name="cacheSystemPrompt">Mark the system prompt with a <c>cache_control</c> breakpoint.</param>
-    /// <param name="enableThinking">llama.cpp's thinking switch; null sends nothing.</param>
+    /// <param name="thinking">Top-level fields that set the thinking level, in the endpoint's own dialect; null sends nothing.</param>
     public static JsonObject BuildRequestBody(string model, List<ChatMessage> messages,
-        List<ToolDefinition>? tools, bool stream, bool cacheSystemPrompt = false, bool? enableThinking = null)
+        List<ToolDefinition>? tools, bool stream, bool cacheSystemPrompt = false, JsonObject? thinking = null)
     {
         var msgs = new JsonArray();
         var systemMarked = false;
@@ -101,10 +101,11 @@ public static class OpenAiWire
                 });
             body["tools"] = arr;
         }
-        // llama.cpp's per-request switch, passed to the chat template. Absent when null so every other
-        // server — which would reject or ignore an unknown field — sees the body it always did.
-        if (enableThinking is { } on)
-            body["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = on };
+        // THE LEVEL, IN THE ENDPOINT'S OWN DIALECT, decided by the provider from what the endpoint said
+        // it takes. Absent when null, so a server that would reject an unknown field sees the body it
+        // always did.
+        foreach (var (key, value) in thinking ?? [])
+            body[key] = value?.DeepClone();
         return body;
     }
 

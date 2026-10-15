@@ -69,4 +69,50 @@ public class ThinkingCapabilitiesTests
     [Fact]
     public void LlamaProps_TemplateWithout_OffersNothing() =>
         Assert.False(ThinkingCapabilities.ParseLlamaProps("""{"chat_template":"plain"}""")!.Any);
+
+    // --- OpenRouter: its model list says, per model, what reasoning it takes ---------------------
+
+    private static string OpenRouterList(string reasoning) =>
+        $$$"""{"data":[{"id":"other/model"},{"id":"vendor/m","reasoning":{{{reasoning}}}}]}""";
+
+    [Fact]
+    public void OpenRouter_EffortsAndMandatory_OffersTheEffortsOnly() =>
+        Assert.Equal(["minimal", "low", "medium", "high"], ThinkingCapabilities.ParseOpenRouterModels(
+            OpenRouterList("""{"mandatory":true,"supported_efforts":["high","medium","low","minimal"]}"""), "vendor/m")!.Levels);
+
+    [Fact]
+    public void OpenRouter_EffortsNotMandatory_OffersOffFirst() =>
+        Assert.Equal(["off", "low", "high"], ThinkingCapabilities.ParseOpenRouterModels(
+            OpenRouterList("""{"mandatory":false,"supported_efforts":["high","low"]}"""), "vendor/m")!.Levels);
+
+    [Fact]
+    public void OpenRouter_NoEffortsNotMandatory_OffersOffAndOn() =>
+        Assert.Equal(["off", "on"], ThinkingCapabilities.ParseOpenRouterModels(
+            OpenRouterList("""{"mandatory":false,"default_enabled":false}"""), "vendor/m")!.Levels);
+
+    [Fact]
+    public void OpenRouter_MandatoryWithoutEfforts_OffersNothing_AndSaysWhy()
+    {
+        var o = ThinkingCapabilities.ParseOpenRouterModels(OpenRouterList("""{"mandatory":true}"""), "vendor/m")!;
+        Assert.False(o.Any);
+        Assert.Contains("always reasons", o.Why);
+    }
+
+    [Fact]
+    public void OpenRouter_AModelWithoutReasoning_OffersNothing() =>
+        Assert.False(ThinkingCapabilities.ParseOpenRouterModels(OpenRouterList("null"), "other/model")!.Any);
+
+    [Fact]
+    public void OpenRouter_AModelNotListed_OffersNothing() =>
+        Assert.False(ThinkingCapabilities.ParseOpenRouterModels(OpenRouterList("null"), "nobody/x")!.Any);
+
+    // --- which dialect an endpoint speaks, from its host ------------------------------------------
+
+    [Theory]
+    [InlineData("https://openrouter.ai/api/v1", ReasoningDialect.OpenRouter)]
+    [InlineData("https://api.openai.com/v1", ReasoningDialect.OpenAi)]
+    [InlineData("http://localhost:8771/v1", ReasoningDialect.LlamaCpp)]
+    [InlineData("https://my-gateway.example/v1", ReasoningDialect.LlamaCpp)]
+    public void TheDialect_ComesFromTheHost(string baseUrl, ReasoningDialect dialect) =>
+        Assert.Equal(dialect, ReasoningDialects.For(baseUrl));
 }

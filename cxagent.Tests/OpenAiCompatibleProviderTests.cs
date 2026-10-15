@@ -610,4 +610,59 @@ public class OpenAiCompatibleProviderTests : IDisposable
         Assert.False((await p.GetThinkingOptionsAsync()).Any);
         Assert.NotNull(p.KnownThinkingOptions);
     }
+
+    private OpenAiCompatibleProvider MakeDialect(ReasoningDialect dialect, string? level, bool reasoning = false) =>
+        new(new OpenAiProviderOptions
+        {
+            ProviderId = "p", DisplayName = "P", Model = "vendor/m",
+            BaseUrl = _srv.BaseUrl, ApiKey = "sk-test", Retry = RetryPolicy.NoDelay,
+            Dialect = dialect, Reasoning = reasoning, Thinking = level,
+        });
+
+    private const string OpenRouterModels =
+        """{"data":[{"id":"vendor/m","reasoning":{"mandatory":false,"supported_efforts":["high","low"]}}]}""";
+
+    [Theory]
+    [InlineData("low", """{"effort":"low"}""")]
+    [InlineData("off", """{"effort":"none"}""")]
+    public async Task OpenRouter_ALevel_SendsTheReasoningObject(string level, string reasoning)
+    {
+        _srv.Route("/models", 200, OpenRouterModels);
+        _srv.EnqueueJson(200, ChatOk);
+        await MakeDialect(ReasoningDialect.OpenRouter, level).ChatAsync(Msgs(), null, CancellationToken.None);
+        Assert.Equal(reasoning, JsonNode.Parse(_srv.LastRequestBody!)!["reasoning"]!.ToJsonString());
+    }
+
+    [Fact]
+    public async Task OpenRouter_On_SendsEnabled()
+    {
+        _srv.Route("/models", 200, """{"data":[{"id":"vendor/m","reasoning":{"mandatory":false}}]}""");
+        _srv.EnqueueJson(200, ChatOk);
+        await MakeDialect(ReasoningDialect.OpenRouter, "on").ChatAsync(Msgs(), null, CancellationToken.None);
+        Assert.Equal("""{"enabled":true}""", JsonNode.Parse(_srv.LastRequestBody!)!["reasoning"]!.ToJsonString());
+    }
+
+    [Fact]
+    public async Task OpenAi_WithReasoningSet_SendsReasoningEffort_WithoutAskingAnything()
+    {
+        _srv.EnqueueJson(200, ChatOk);
+        await MakeDialect(ReasoningDialect.OpenAi, "high", reasoning: true).ChatAsync(Msgs(), null, CancellationToken.None);
+        Assert.Equal("high", (string?)JsonNode.Parse(_srv.LastRequestBody!)!["reasoning_effort"]);
+    }
+
+    // OPENAI CANNOT BE ASKED, and a reasoning field on a model that does not reason is a 400.
+    [Fact]
+    public async Task OpenAi_WithoutReasoningSet_OffersNoLevels_AndSendsNothing()
+    {
+        var p = MakeDialect(ReasoningDialect.OpenAi, "high");
+        Assert.False((await ((IThinkingProvider)p).GetThinkingOptionsAsync()).Any);
+        _srv.EnqueueJson(200, ChatOk);
+        await p.ChatAsync(Msgs(), null, CancellationToken.None);
+        Assert.Null(JsonNode.Parse(_srv.LastRequestBody!)!["reasoning_effort"]);
+    }
+
+    [Fact]
+    public async Task OpenAi_OffersMinimalToHigh() =>
+        Assert.Equal(["minimal", "low", "medium", "high"],
+            (await ((IThinkingProvider)MakeDialect(ReasoningDialect.OpenAi, null, reasoning: true)).GetThinkingOptionsAsync()).Levels);
 }

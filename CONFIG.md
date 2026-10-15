@@ -55,6 +55,8 @@ in cxagent:
 | Instance | Levels | Sent as |
 |---|---|---|
 | `anthropic`, a model that accepts adaptive thinking | `low` `medium` `high` `xhigh` `max` as the model offers them, and `off` where it accepts that | `output_config.effort`; `off` is `thinking: {type: "disabled"}` |
+| `openai-compatible` at `openrouter.ai` | the model's own, from OpenRouter's model list: its effort levels (`minimal` to `xhigh`) and `off`, or `off` `on` for a model with a switch but no efforts | `reasoning: {effort}`; `off` is `{effort: "none"}`, `on` is `{enabled: true}` |
+| `openai-compatible` at `api.openai.com`, with `"reasoning": true` | `minimal` `low` `medium` `high` | `reasoning_effort` |
 | `openai-compatible`, a llama.cpp server whose chat template takes `enable_thinking` | `off` `on` | `chat_template_kwargs.enable_thinking` |
 | anything else | none — the model's own behaviour | nothing |
 
@@ -62,6 +64,11 @@ Unset, nothing is sent and the model decides. A level the model does not offer i
 model's default used, so a config written for one model cannot break a session on another. Changing
 the level on an Anthropic conversation re-sends it uncached once, because the level is part of the
 cached prompt.
+
+**`reasoning: true` marks an `api.openai.com` model as a reasoning model.** OpenAI's model list
+does not say which models reason, and a model that does not refuses `reasoning_effort` outright, so
+cxagent offers levels only when you say so. OpenAI does not return the reasoning text, so these
+levels change how hard the model thinks without a thinking block to show for it.
 
 **`thinkingDisplay` is `"summarized"` (the default) or `"omitted"`**, for `anthropic` instances. Claude
 models that think hide the text unless asked for a summary; cxagent asks, so thinking shows in the
@@ -73,7 +80,9 @@ default anyway; Claude Opus 4.6–4.8 and Sonnet 4.6 do not, and now do. Set `"t
 level, or `"off"` where the model offers it, to spend less.
 
 **Thinking from a local server shows too**, whether it arrives as `reasoning_content`, `reasoning`
-or inline `<think>…</think>` text. It is shown, never sent back, and never saved.
+or inline `<think>…</think>` text. It is shown, never sent back, and never saved. Claude's thinking
+is sent back within the tool loop it belongs to, as Anthropic requires for the loop to keep thinking,
+and dropped once the next message starts; it is not saved either.
 
 **`apiKey` supports `${ENV_VAR}`**, so a config file can be committed or shared without carrying a
 secret. A key written literally is still forced to `0600`, but the variable form is better.

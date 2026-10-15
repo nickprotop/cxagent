@@ -22,6 +22,44 @@ public static class ThinkingCapabilities
 
     private static readonly string[] EffortOrder = ["low", "medium", "high", "xhigh", "max"];
 
+    /// <summary>OpenRouter's effort names in offering order; it also knows "minimal".</summary>
+    private static readonly string[] OpenRouterEffortOrder = ["minimal", "low", "medium", "high", "xhigh", "max"];
+
+    /// <summary>
+    /// What OpenRouter's <c>GET /api/v1/models</c> says <paramref name="model"/> takes. A
+    /// <c>reasoning</c> object marks a model that reasons: its <c>supported_efforts</c> are the
+    /// levels, <c>off</c> leads unless the model is <c>mandatory</c>, and with no efforts listed a
+    /// model that may stop reasoning offers <c>off</c> and <c>on</c>. Null when the body is not the list.
+    /// </summary>
+    public static ThinkingOptions? ParseOpenRouterModels(string json, string? model)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+                return null;
+            foreach (var m in data.EnumerateArray())
+            {
+                if (!m.TryGetProperty("id", out var id) || id.GetString() != model) continue;
+                if (!m.TryGetProperty("reasoning", out var r) || r.ValueKind != JsonValueKind.Object)
+                    return ThinkingOptions.None("this model does not reason");
+
+                var mandatory = r.TryGetProperty("mandatory", out var mand) && mand.ValueKind == JsonValueKind.True;
+                var efforts = r.TryGetProperty("supported_efforts", out var se) && se.ValueKind == JsonValueKind.Array
+                    ? se.EnumerateArray().Select(e => e.GetString()).ToHashSet()
+                    : [];
+                var levels = new List<string>();
+                if (!mandatory) levels.Add(ThinkingLevels.Off);
+                if (efforts.Count > 0) levels.AddRange(OpenRouterEffortOrder.Where(efforts.Contains));
+                else if (!mandatory) levels.Add(ThinkingLevels.On);
+                return levels.Count > 0 ? new ThinkingOptions(levels)
+                    : ThinkingOptions.None("this model always reasons, at a level OpenRouter does not let you choose");
+            }
+            return ThinkingOptions.None("OpenRouter does not list this model");
+        }
+        catch (JsonException) { return null; }
+    }
+
     /// <summary>
     /// The offered levels from Anthropic's <c>GET /v1/models/{id}</c>, or null when the response
     /// carries no capabilities (unknown is not "none": the request then sends nothing).

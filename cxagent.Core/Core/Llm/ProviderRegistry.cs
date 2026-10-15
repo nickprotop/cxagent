@@ -222,6 +222,9 @@ public sealed class ProviderRegistry
                 ExtraHeaders = cfg.ExtraHeaders,
                 Client = client,
                 CacheControl = cfg.CacheControl,
+                // HOW THIS ENDPOINT IS TOLD TO THINK, from its host — see ReasoningDialects.For.
+                Dialect = ReasoningDialects.For(cfg.BaseUrl),
+                Reasoning = cfg.Reasoning,
                 Thinking = cfg.Thinking,
             }),
             "ollama" => new OllamaProvider(

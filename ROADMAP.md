@@ -13,6 +13,8 @@ What is next. See [README](README.md) for what cxagent does and
 - **Skill scripts** — a skill that runs, not just one that is read.
 - **Per-type skill catalogs** — a planner that sees planning skills and nothing else.
 - **Sandboxed shell** — what stands between this loop and running tools in parallel.
+- **OpenAI's reasoning text** — the Responses API returns reasoning summaries; Chat Completions,
+  which cxagent speaks, returns none, so an OpenAI model's levels work but nothing shows.
 - **Narrow `SessionManager.Shared`** — read-facing accessors instead of live stores.
 
 ## Known
