@@ -100,6 +100,7 @@
       <button type="button" class="exp-item" role="tab" id="tab-29-btw-aside" aria-controls="pane-29-btw-aside"><span class="exp-icon">&#128172;</span><span>A side question</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-31-headless" aria-controls="pane-31-headless"><span class="exp-icon">&#9881;&#65039;</span><span>Headless</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-32-custom-commands" aria-controls="pane-32-custom-commands"><span class="exp-icon">&#128221;</span><span>Your commands</span></button>
+      <button type="button" class="exp-item" role="tab" id="tab-33-thinking" aria-controls="pane-33-thinking"><span class="exp-icon">&#128161;</span><span>Thinking</span></button>
       </div>
       <div class="exp-body" id="panels">
       <div class="exp-pane" role="tabpanel" id="pane-session-overview" aria-labelledby="tab-session-overview">
@@ -157,6 +158,10 @@
       <div class="exp-pane" role="tabpanel" id="pane-32-custom-commands" aria-labelledby="tab-32-custom-commands">
         <div class="exp-shot"><a href="screenshots/32-custom-commands.png" title="Open the full-size capture"><img src="screenshots/32-custom-commands.png" alt="A custom /review-branch command after it ran, with the / palette listing the project's commands" loading="lazy"></a></div>
         <div class="exp-text"><h3>A prompt you keep, as a command</h3><p>A markdown file in <code>.claude/commands</code> became <code>/review-branch</code>. The row shows what was typed; the model got the file, with the arguments filled in and the output of its <code>git diff</code> line — which asked first, as the agent's own shell calls do.</p><p class="exp-aside">Claude Code's commands and skills work as they are; the palette tags each one with where it came from, because the nearer file of a name wins.</p></div>
+      </div>
+      <div class="exp-pane" role="tabpanel" id="pane-33-thinking" aria-labelledby="tab-33-thinking">
+        <div class="exp-shot"><a href="screenshots/33-thinking.png" title="Open the full-size capture"><img src="screenshots/33-thinking.png" alt="Each step's thinking folded between its tool calls, the latest opened, and the thinking level on the mode line" loading="lazy"></a></div>
+        <div class="exp-text"><h3>What it thought, and how hard</h3><p>Each step that thought gets its own block, open while it streams and folded once the step moves on, so a run reads as thought, calls, thought, answer. <code>Ctrl+O</code> opens the latest; any other is a click away.</p><p class="exp-aside"><code>F8</code> and <code>/think</code> set the level the model offers — on or off for a llama.cpp server, low to max for Claude.</p></div>
       </div>
       </div>
     </div>
@@ -288,6 +293,13 @@
       <p class="u-body">A markdown file becomes <code>/review 42</code>: arguments filled in, shell
       lines and <code>@file</code> includes run through the same permission prompts as the agent's
       own calls. Your Claude Code commands and skills work as they are.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">18</div>
+      <p class="u-title">Thinking you can see, and set</p>
+      <p class="u-body">Each step's thinking is its own block, folded once the step moves on — from a
+      local llama.cpp model or from Claude. <code>/think</code> and <code>F8</code> choose how hard
+      it thinks, from the levels the model itself says it accepts.</p>
     </div>
   </div>
 </section>

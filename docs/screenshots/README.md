@@ -412,6 +412,24 @@ skipped and why.
 
 ---
 
+## What it thought, and how hard
+
+![A run on a local model with each step's thinking folded between its tool calls, the latest opened with Ctrl+O, and the mode line showing the thinking level](33-thinking.png)
+
+The same repository, on a local Qwen served by llama.cpp. Each step that thought has its own block,
+placed before what that step did: open while the thinking streams, folded to `◆ Thought for 1s · 35
+words` as soon as the step moves on. The run reads as thought, calls, thought, calls, answer.
+
+`Ctrl+O` opened the latest block — the reasoning behind the answer under it. The others open with a
+click, or Tab to one and Enter. The thinking is shown and nothing more: it is never sent back to the
+model and never saved.
+
+The mode line ends with `◆ on (F8)`: this server's chat template takes a thinking switch, so it offers
+`off` and `on`. `F8` steps through them, and `/think` lists them. A Claude model offers its effort
+levels instead — `low` to `max` — and shows its thinking the same way.
+
+---
+
 ## A second project, and a worker's receipts
 
 ![A session exploring a codebase, with two finished workers and the panel showing what it cost](session-overview.png)
