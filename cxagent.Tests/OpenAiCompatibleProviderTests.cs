@@ -602,6 +602,23 @@ public class OpenAiCompatibleProviderTests : IDisposable
     }
 
     // A ROUTE THAT DOES NOT EXIST is a lasting answer: no levels, and not asked again.
+    // THE PROBE CARRIES THE SAME HEADERS AS A CHAT REQUEST: a gateway that routes or admits by
+    // header otherwise refuses the probe, and the model is offered no levels at all.
+    [Fact]
+    public async Task TheLevelsProbe_SendsTheExtraHeaders()
+    {
+        using var srv = new LoopbackServer { AnswerProbesWith404 = false };   // records the probe's headers
+        var p = (IThinkingProvider)new OpenAiCompatibleProvider(new OpenAiProviderOptions
+        {
+            ProviderId = "p", DisplayName = "P", Model = "m", BaseUrl = srv.BaseUrl,
+            ExtraHeaders = new Dictionary<string, string> { ["X-Gateway-Key"] = "g1" },
+        });
+        srv.EnqueueJson(200, """{"chat_template":"enable_thinking"}""");
+
+        Assert.True((await p.GetThinkingOptionsAsync()).Any);
+        Assert.Equal("g1", srv.LastRequestHeaders["X-Gateway-Key"]);
+    }
+
     [Fact]
     public async Task ANotFound_IsKept()
     {

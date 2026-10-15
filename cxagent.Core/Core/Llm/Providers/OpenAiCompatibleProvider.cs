@@ -109,7 +109,7 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
         var root = path == "/props" && _baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
             ? _baseUrl[..^3] : _baseUrl;
         using var req = new HttpRequestMessage(HttpMethod.Get, $"{root}{path}");
-        if (!string.IsNullOrEmpty(_apiKey)) req.Headers.Authorization = new("Bearer", _apiKey);
+        Authorize(req);
         using var resp = await _client.SendAsync(req, cts.Token).ConfigureAwait(false);
         // A reply is an answer even when it says nothing useful: a server without the route (Ollama,
         // most gateways) is cached as "none" and asked once. A temporary refusal — a llama.cpp
@@ -166,11 +166,21 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
         {
             Content = new StringContent(bodyJson, Encoding.UTF8, "application/json")
         };
+        Authorize(req);
+        return req;
+    }
+
+    /// <summary>
+    /// The key and the configured headers, on every request this provider sends — the levels probe
+    /// as much as a chat. ONE PLACE because a request that misses them is refused by a gateway that
+    /// admits or routes by header — and a refused probe leaves the model offering no levels.
+    /// </summary>
+    private void Authorize(HttpRequestMessage req)
+    {
         if (!string.IsNullOrEmpty(_apiKey))
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
         if (_extraHeaders is not null)
             foreach (var h in _extraHeaders) req.Headers.TryAddWithoutValidation(h.Key, h.Value);
-        return req;
     }
 
     public async Task<LlmResponse> ChatAsync(List<ChatMessage> messages,
@@ -246,10 +256,7 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
         try
         {
             var req = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/models");
-            if (!string.IsNullOrEmpty(_apiKey))
-                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            if (_extraHeaders is not null)
-                foreach (var h in _extraHeaders) req.Headers.TryAddWithoutValidation(h.Key, h.Value);
+            Authorize(req);
 
             using var resp = await _client.SendAsync(req, ct);
             if (!resp.IsSuccessStatusCode) return Array.Empty<string>();
