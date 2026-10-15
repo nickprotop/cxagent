@@ -111,8 +111,9 @@ list says it takes; a llama.cpp server whose template takes the switch offers `o
 `default` hands the choice back to the model, and sends nothing.
 
 **For this session.** `/think high --save` also writes `"thinking": "high"` to this instance in
-`config.json`, the default for sessions after it; nothing else in the file changes. A resumed
-session comes back at the level it was left at.
+`config.json`, the default for sessions after it — a new tab, or `/model` back to this instance,
+gets it at once; nothing else in the file changes. A new tab starts at that saved default, not at the
+level of the tab it was opened from. A resumed session comes back at the level it was left at.
 
 **F8 steps to the next level**, wrapping around. The level sits on the line under the composer,
 after the model: `◆ medium (F8)`, or `◇ off (F8)`.

@@ -9,7 +9,10 @@ namespace CxAgent.Core.Llm;
 /// </summary>
 public sealed class ProviderRegistry
 {
-    private readonly Dictionary<string, ILlmProvider> _providers;
+    // REPLACED WHOLE, NEVER EDITED IN PLACE: SetThinkingDefault can run on one tab's thread while
+    // another reads, and a Dictionary written during a read is undefined. A reader holds either the
+    // old map or the new one.
+    private volatile Dictionary<string, ILlmProvider> _providers;
 
     /// <summary>Per-instance context windows, empty for a registry built without config (tests, the
     /// mock path) — where "unknown" is the honest answer anyway.
@@ -84,6 +87,27 @@ public sealed class ProviderRegistry
         if (_defaultName is not null) return _providers.TryGetValue(_defaultName, out provider!);
         provider = null!;
         return false;
+    }
+
+    /// <summary>
+    /// Makes <paramref name="level"/> this instance's level for every session that picks it from
+    /// here on — a <c>/model</c> switch to it, a new tab — after <c>/think --save</c> wrote it to
+    /// config. A session already on it keeps its own level.
+    ///
+    /// <para>WITHOUT THIS the file and the running list disagree until a restart: the list was built
+    /// from the file at startup, so a saved default reached nothing until the file was read again.
+    /// </para>
+    /// </summary>
+    public void SetThinkingDefault(string instanceName, string? level)
+    {
+        lock (_windowLock)
+        {
+            if (!_providers.TryGetValue(instanceName, out var provider) || provider is not IThinkingProvider thinker) return;
+            _providers = new Dictionary<string, ILlmProvider>(_providers, _providers.Comparer)
+            {
+                [instanceName] = thinker.WithThinking(level),
+            };
+        }
     }
 
     public ILlmProvider Default =>

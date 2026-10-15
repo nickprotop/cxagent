@@ -634,10 +634,11 @@ public static class AppBootstrap
                     // /model switch or a Shift+Tab before opening a tab was silently ignored: the new
                     // session came up on the old provider, in the mode the app had launched in, while
                     // the status bar it inherited said otherwise. Both live on the session, which is
-                    // where a re-wire updates them.
+                    // where a re-wire updates them. THE MODEL BUT NOT ITS LEVEL: a /think without
+                    // --save is this tab's, so the new one starts at the instance's saved level.
                     (current, arguments) => new NewSessionCommand(new NewSessionCommand.Host(
                         system, mainWindow, manager, permissionRules,
-                        current.Resolution ?? resolution, current.Mode, paths.ConfigDir))
+                        current.NewSessionResolution ?? resolution, current.Mode, paths.ConfigDir))
                         .Run(current, NewSessionCommand.FolderFrom(arguments)));
 
             if (declared.Name == "/stats")

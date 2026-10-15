@@ -55,8 +55,11 @@ public sealed partial class Session
             Say(new Message($"'{level}' is not offered by {ModelName}. Levels: {string.Join(", ", options.Levels)}."));
             return CommandStatus.Refused;
         }
-        if (save && SaveThinkingDefault?.Invoke(level) == false)
-            Say(new Message("The level was not saved to config.", Severity.Warning));
+        if (save && SaveThinkingDefault?.Invoke(level) is { } saved)
+        {
+            if (!saved) Say(new Message("The level was not saved to config.", Severity.Warning));
+            else if (InstanceName is { } instance) _catalog?.SetThinkingDefault(instance, level);
+        }
 
         // NEVER INSIDE A TURN. Anthropic silently turns thinking off for a request whose level
         // differs from the rest of its tool loop, so a change made while the model works waits for
@@ -208,6 +211,24 @@ public sealed partial class Session
             ? [.. options.Levels.Select(l => new CompletionValue(l, l == ThinkingLevel ? "in use" : "")),
                new CompletionValue(ThinkCommand.Default, ThinkingLevel is null ? "in use" : "the model's own")]
             : [];
+
+    /// <summary>
+    /// What a session opened from this one starts on: this session's model, at that instance's
+    /// saved level rather than this session's.
+    ///
+    /// <para>NOT <see cref="Resolution"/> AS IT STANDS. That carries the level <c>/think</c> set
+    /// here, and <c>/think</c> without <c>--save</c> is for this session — a new tab inheriting it
+    /// would make "this session" mean "this session and every tab opened from it".</para>
+    ///
+    /// <para>THE PROVIDER ONLY, NOT <c>ProviderRegistry.Use</c>: that may ask an endpoint for its
+    /// context window, synchronously, and a new tab is opened on the UI thread. The window and names
+    /// are this session's already.</para>
+    /// </summary>
+    public ResolvedConfig? NewSessionResolution =>
+        Resolution is { Model: { } model } resolution && InstanceName is { } instance
+            && _catalog?.TryGet(instance, out var saved) == true
+            ? resolution.WithModel(model with { Provider = saved })
+            : Resolution;
 
     private string ModelName => Resolution?.Model?.Label ?? Provider?.ModelId ?? "this model";
 }

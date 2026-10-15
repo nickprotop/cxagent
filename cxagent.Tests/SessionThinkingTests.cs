@@ -238,6 +238,61 @@ public class SessionThinkingTests : IDisposable
         Assert.Null(new FolderSessionStore(new AppPaths(_dir)).LoadById(session.SessionId!));
     }
 
+    // A SESSION WIRED OVER A REAL PROVIDER LIST, the one /model and a new tab read from.
+    private (SessionManager Manager, Session Session) WiredWithCatalog(LevelledMock provider)
+    {
+        var manager = SessionManager.Create(new AppPaths(_dir));
+        var catalog = ProviderRegistry.FromProviders(new Dictionary<string, ILlmProvider> { ["test"] = provider }, "test");
+        var resolution = ResolvedConfig.ForTesting(provider).WithCatalog(new ProviderCatalog(Instances: catalog));
+        var session = manager.Open(_dir, resolution,
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+            AgentMode.Single);
+        session.SaveThinkingDefault = _ => true;
+        return (manager, session);
+    }
+
+    private static string? CatalogLevel(Session session) =>
+        ((IThinkingProvider)session.Resolution!.Providers!.Use("test")!.Provider).ThinkingLevel;
+
+    // --save IS THE NEW DEFAULT AT ONCE: /model back to this instance, in any tab, gets it.
+    [Fact]
+    public void ThinkWithSave_ChangesTheProviderList()
+    {
+        var (manager, session) = WiredWithCatalog(new LevelledMock(["low", "high"]));
+        using var _m = manager;
+
+        session.SetThinking("high", save: true);
+
+        Assert.Equal("high", CatalogLevel(session));
+    }
+
+    // WITHOUT --save, THIS SESSION ONLY.
+    [Fact]
+    public void ThinkWithoutSave_LeavesTheProviderList()
+    {
+        var (manager, session) = WiredWithCatalog(new LevelledMock(["low", "high"]));
+        using var _m = manager;
+
+        session.SetThinking("high");
+
+        Assert.Null(CatalogLevel(session));
+    }
+
+    // A NEW TAB IS A NEW SESSION, and starts at the saved default — not at a level this tab chose for
+    // itself.
+    [Fact]
+    public void ANewSession_StartsAtTheSavedDefault_NotThisSessionsLevel()
+    {
+        var (manager, session) = WiredWithCatalog(new LevelledMock(["low", "high"]));
+        using var _m = manager;
+
+        session.SetThinking("high");
+        Assert.Null(((IThinkingProvider)session.NewSessionResolution!.Model!.Provider).ThinkingLevel);
+
+        session.SetThinking("low", save: true);
+        Assert.Equal("low", ((IThinkingProvider)session.NewSessionResolution!.Model!.Provider).ThinkingLevel);
+    }
+
     // EVERY RESUME PASSES THE WIRE, and the wire restores the level the session was saved at.
     [Fact]
     public void Resume_RestoresTheSavedLevel()
