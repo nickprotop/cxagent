@@ -69,6 +69,9 @@ public record LlmResponse
     public string StopReason { get; init; } = "";   // "end_turn" | "tool_use" | "refusal" | ...
     public LlmUsage Usage { get; init; } = new();
 
+    /// <summary>Thinking returned by a non-streamed call, for callers that show it; never sent back.</summary>
+    public string? Thinking { get; init; }
+
     public static LlmResponse WithToolCall(string name, object args) =>
         new()
         {
@@ -90,8 +93,16 @@ public record LlmResponse
 /// <param name="ToolCallDelta">A completed tool call, or null. One per chunk — several calls fan out.</param>
 /// <param name="IsFinal">Whether this is the last chunk; usage and the stop reason ride it.</param>
 /// <param name="Usage">What the call cost, on the final chunk only.</param>
+/// <param name="ThinkingDelta">
+/// Thinking since the last chunk: null = none in this chunk, "" = the model is thinking but the
+/// provider hides the text (Anthropic <c>display: omitted</c>, a redacted block), text = summary or
+/// reasoning. A block starts at the first non-null value and ends at the first text, tool call or
+/// stream end — no separate start/end chunks, so a provider cannot forget to close one.
+/// </param>
+/// <param name="ThinkingRedacted">True on the chunk that carries a safety-redacted block.</param>
 public record LlmStreamChunk(string? TextDelta, ToolCall? ToolCallDelta, bool IsFinal,
-    LlmUsage? Usage = null, string? StopReason = null);
+    LlmUsage? Usage = null, string? StopReason = null, string? ThinkingDelta = null,
+    bool ThinkingRedacted = false);
 
 /// <summary>A terminal LLM provider failure (auth, bad request, model-not-found, or retries exhausted).</summary>
 public sealed class LlmProviderException : Exception

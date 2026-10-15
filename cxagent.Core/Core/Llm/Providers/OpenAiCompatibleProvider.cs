@@ -128,19 +128,23 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
                 continue;
             }
 
-            var (textDelta, chunkFinish, delta) = OpenAiWire.ParseStreamDelta(data);
-            if (chunkFinish is not null) finish = chunkFinish;
+            var d = OpenAiWire.ParseStreamDelta(data);
+            if (d.Finish is not null) finish = d.Finish;
 
             // Returns EVERY completed call on the terminating chunk, each with its own arguments
             // joined. A turn may carry several; yielding only the first is how the rest were lost.
-            var completedCalls = toolAcc.Accept(delta, chunkFinish);
+            var completedCalls = toolAcc.Accept(d.Delta, d.Finish);
 
-            if (textDelta is not null && completedCalls.Count == 0)
-                yield return new LlmStreamChunk(textDelta, null, IsFinal: false);
+            // THINKING FIRST: a server that sends reasoning and content in one delta reasoned before it wrote.
+            if (d.Thinking is not null)
+                yield return new LlmStreamChunk(null, null, IsFinal: false, ThinkingDelta: d.Thinking);
+
+            if (d.Text is not null && completedCalls.Count == 0)
+                yield return new LlmStreamChunk(d.Text, null, IsFinal: false);
 
             for (var i = 0; i < completedCalls.Count; i++)
                 yield return new LlmStreamChunk(
-                    i == 0 ? textDelta : null, completedCalls[i], IsFinal: false);
+                    i == 0 ? d.Text : null, completedCalls[i], IsFinal: false);
         }
         // The normalized stop reason rides the final chunk so the agent loop can AND it with its
         // own tool-call check. Trusting either alone is a known failure: some servers report "stop"

@@ -137,6 +137,7 @@ public static class OpenAiWire
         return new LlmResponse
         {
             Text = text,
+            Thinking = ReasoningOf(message),
             ToolCalls = calls,
             StopReason = NormalizeStopReason(finish),
             Usage = usage
@@ -252,6 +253,20 @@ public static class OpenAiWire
         }
     }
 
+    /// <summary>One streamed delta: answer text, thinking, the finish reason, and the cloned delta the
+    /// tool-call accumulator reads after the document is disposed.</summary>
+    public readonly record struct OpenAiStreamDelta(string? Text, string? Thinking, string? Finish, JsonElement Delta);
+
+    /// <summary>
+    /// Reasoning, from either field servers use for it. <c>reasoning_content</c> is llama.cpp's,
+    /// DeepSeek's and older vLLM's; <c>reasoning</c> is OpenRouter's, Ollama's and newer vLLM's. One
+    /// reader for both, so a server is never invisible because it picked the other spelling.
+    /// </summary>
+    private static string? ReasoningOf(JsonElement e) =>
+        e.TryGetProperty("reasoning_content", out var rc) && rc.ValueKind == JsonValueKind.String ? rc.GetString()
+        : e.TryGetProperty("reasoning", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString()
+        : null;
+
     /// <summary>
     /// Parses one OpenAI SSE `data:` chunk into its text delta, finish reason, and the RAW `delta`
     /// element — which the caller feeds to a <see cref="StreamingToolCallAccumulator"/> so a tool call
@@ -264,25 +279,25 @@ public static class OpenAiWire
     /// unconditionally throws out of the async iterator and kills the goal mid-stream, so an empty
     /// array returns the same "nothing here" shape as a chunk with no `delta`.
     /// </remarks>
-    public static (string? textDelta, string? finishReason, JsonElement delta) ParseStreamDelta(string dataJson)
+    public static OpenAiStreamDelta ParseStreamDelta(string dataJson)
     {
         // Clone the delta: the JsonDocument is disposed on return, and the accumulator reads it after.
         using var doc = JsonDocument.Parse(dataJson);
         var choices = doc.RootElement.GetProperty("choices");
         if (choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
-            return (null, null, default);
+            return new(null, null, null, default);
 
         var choice = choices[0];
         string? finish = choice.TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String
             ? fr.GetString() : null;
 
         if (!choice.TryGetProperty("delta", out var delta))
-            return (null, finish, default);
+            return new(null, null, finish, default);
 
         string? text = delta.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String
             ? c.GetString() : null;
 
-        return (text, finish, delta.Clone());
+        return new(text, ReasoningOf(delta), finish, delta.Clone());
     }
 
     /// <summary>

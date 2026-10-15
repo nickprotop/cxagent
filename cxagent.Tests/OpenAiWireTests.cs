@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using CxAgent.Core.Llm.Providers;
 using CxAgent.Core.Models;
@@ -79,5 +80,25 @@ public class OpenAiWireTests
 
         Assert.NotNull(msgs[0]!["content"]!.AsArray());
         Assert.Equal("second", msgs[1]!["content"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("reasoning_content")]
+    [InlineData("reasoning")]
+    public void ParseStreamDelta_ReadsReasoningIntoThinking(string field)
+    {
+        var d = OpenAiWire.ParseStreamDelta($$$"""{"choices":[{"delta":{"{{{field}}}":"Let me see"}}]}""");
+        Assert.Equal("Let me see", d.Thinking);
+        Assert.Null(d.Text);
+    }
+
+    [Fact]
+    public void ParseResponse_ReadsReasoningContent()
+    {
+        using var doc = JsonDocument.Parse(
+            """{"choices":[{"message":{"content":"42","reasoning_content":"6*7"},"finish_reason":"stop"}]}""");
+        var r = OpenAiWire.ParseResponse(doc.RootElement);
+        Assert.Equal("42", r.Text);
+        Assert.Equal("6*7", r.Thinking);
     }
 }

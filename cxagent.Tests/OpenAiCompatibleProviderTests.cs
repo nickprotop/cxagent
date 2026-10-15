@@ -520,4 +520,24 @@ public class OpenAiCompatibleProviderTests : IDisposable
 
         Assert.Equal(0.0000044m, usage!.Cost);
     }
+
+    [Fact]
+    public async Task ChatStream_EmitsReasoningContent_AsThinkingDeltas()
+    {
+        _srv.EnqueueSse(
+            "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Here\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"'s a\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"391\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n");
+
+        var thinking = new System.Text.StringBuilder(); var text = new System.Text.StringBuilder();
+        await foreach (var c in Make().ChatStreamAsync(Msgs(), null, CancellationToken.None))
+        {
+            thinking.Append(c.ThinkingDelta); text.Append(c.TextDelta);
+        }
+        Assert.Equal("Here's a", thinking.ToString());
+        Assert.Equal("391", text.ToString());
+    }
 }
