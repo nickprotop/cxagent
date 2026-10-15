@@ -220,6 +220,7 @@ public sealed class ProviderRegistry
                 ExtraHeaders = cfg.ExtraHeaders,
                 Client = client,
                 CacheControl = cfg.CacheControl,
+                Thinking = cfg.Thinking,
             }),
             "ollama" => new OllamaProvider(
                 name, display, cfg.Model, cfg.BaseUrl, client: client),

@@ -49,4 +49,11 @@ public sealed record OpenAiProviderOptions
     /// ignore the field entirely (llama.cpp) are unaffected either way.</para>
     /// </summary>
     public bool CacheControl { get; init; }
+
+    /// <summary>
+    /// The thinking level requests are sent at; null = the server's own default (nothing sent).
+    /// Only <c>off</c> and <c>on</c> mean anything to an OpenAI-compatible server, and only a
+    /// llama.cpp whose chat template takes <c>enable_thinking</c> acts on them.
+    /// </summary>
+    public string? Thinking { get; init; }
 }

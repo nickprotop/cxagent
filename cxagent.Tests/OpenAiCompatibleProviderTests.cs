@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Llm.Providers;
 using CxAgent.Core.Models;
@@ -539,5 +540,49 @@ public class OpenAiCompatibleProviderTests : IDisposable
         }
         Assert.Equal("Here's a", thinking.ToString());
         Assert.Equal("391", text.ToString());
+    }
+
+    // ---- llama.cpp thinking switch --------------------------------------------------------------
+
+    private const string ChatOk = """{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}""";
+
+    [Fact]
+    public async Task Off_SendsEnableThinkingFalse_WhenTheTemplateTakesIt()
+    {
+        _srv.Route("/props", 200, """{"chat_template":"enable_thinking"}""");
+        _srv.EnqueueJson(200, ChatOk);
+        var p = (OpenAiCompatibleProvider)Make().WithThinking("off");
+        await p.ChatAsync(Msgs(), null, CancellationToken.None);
+        Assert.False((bool)JsonNode.Parse(_srv.LastRequestBody!)!["chat_template_kwargs"]!["enable_thinking"]!);
+    }
+
+    [Fact]
+    public async Task DefaultLevel_AddsNothing()
+    {
+        _srv.EnqueueJson(200, ChatOk);
+        await Make().ChatAsync(Msgs(), null, CancellationToken.None);
+        Assert.Null(JsonNode.Parse(_srv.LastRequestBody!)!["chat_template_kwargs"]);
+    }
+
+    /// <summary>A server that cannot say what it accepts gets the body it always got, level or not.</summary>
+    [Fact]
+    public async Task PropsUnreachable_AddsNothing_EvenWithALevel()
+    {
+        _srv.EnqueueJson(200, ChatOk);
+        await ((OpenAiCompatibleProvider)Make().WithThinking("off")).ChatAsync(Msgs(), null, CancellationToken.None);
+        Assert.Null(JsonNode.Parse(_srv.LastRequestBody!)!["chat_template_kwargs"]);
+    }
+
+    /// <summary>/props sits beside /v1, so a BaseUrl ending in /v1 must still find it.</summary>
+    [Fact]
+    public async Task BaseUrlEndingInV1_ProbesTheServerRoot()
+    {
+        _srv.Route("/props", 200, """{"chat_template":"enable_thinking"}""");
+        var p = new OpenAiCompatibleProvider(new OpenAiProviderOptions
+        {
+            ProviderId = "llama", DisplayName = "llama", Model = "m",
+            BaseUrl = _srv.BaseUrl + "/v1", Retry = RetryPolicy.NoDelay,
+        });
+        Assert.True((await p.GetThinkingOptionsAsync()).Any);
     }
 }

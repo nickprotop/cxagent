@@ -11,7 +11,7 @@ namespace CxAgent.Core.Llm.Providers;
 /// Together, vLLM, llama.cpp, LM Studio and any other OpenAI-compatible endpoint. Normalizes
 /// StopReason/Usage at this boundary; the core never sees a raw vendor value.
 /// </summary>
-public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
+public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingProvider
 {
     private readonly HttpClient _client;
     private readonly string _model;
@@ -22,6 +22,10 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
     /// <summary>See OpenAiProviderOptions.CacheControl. Read by ChatAsync and ChatStreamAsync when
     /// they build a request body.</summary>
     private readonly bool _cacheControl;
+    /// <summary>Kept whole so <see cref="WithThinking"/> can clone with one field changed.</summary>
+    private readonly OpenAiProviderOptions _options;
+    /// <summary>Shared with every clone: the server's answer does not depend on the level.</summary>
+    private readonly CapabilityCache _caps;
 
     public string ProviderId { get; }
     public string DisplayName { get; }
@@ -55,8 +59,12 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
     /// Clones re-pass the original argument so a clone never silently swaps out a test's fake handler.
     /// </summary>
 
-    public OpenAiCompatibleProvider(OpenAiProviderOptions options)
+    public OpenAiCompatibleProvider(OpenAiProviderOptions options) : this(options, new CapabilityCache()) { }
+
+    private OpenAiCompatibleProvider(OpenAiProviderOptions options, CapabilityCache caps)
     {
+        _options = options;
+        _caps = caps;
         ProviderId = options.ProviderId;
         DisplayName = options.DisplayName;
         _model = options.Model;
@@ -66,6 +74,44 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
         _client = options.Client ?? Shared;
         _retry = options.Retry ?? RetryPolicy.Default;
         _cacheControl = options.CacheControl;
+    }
+
+    public string? ThinkingLevel => _options.Thinking;
+    public ThinkingOptions? KnownThinkingOptions => _caps.Known;
+    public ILlmProvider WithThinking(string? level) =>
+        new OpenAiCompatibleProvider(_options with { Thinking = level }, _caps);
+
+    /// <summary>llama.cpp serves <c>/props</c> at the server root, beside — not under — <c>/v1</c>.</summary>
+    /// <param name="ct">Cancels the probe.</param>
+    public Task<ThinkingOptions> GetThinkingOptionsAsync(CancellationToken ct = default) =>
+        _caps.GetAsync(async c =>
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(c);
+            cts.CancelAfter(ThinkingCapabilities.Timeout);
+            var root = _baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? _baseUrl[..^3] : _baseUrl;
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{root}/props");
+            if (!string.IsNullOrEmpty(_apiKey)) req.Headers.Authorization = new("Bearer", _apiKey);
+            using var resp = await _client.SendAsync(req, cts.Token);
+            // A reply is an answer even when it says nothing useful: a server without /props (Ollama,
+            // OpenAI, most gateways) is cached as "none" and asked once. Only an exception or timeout
+            // (no reply) reaches the cache as null.
+            var unsaid = ThinkingOptions.None("the endpoint did not say what it accepts");
+            return resp.IsSuccessStatusCode
+                ? ThinkingCapabilities.ParseLlamaProps(await resp.Content.ReadAsStringAsync(cts.Token)) ?? unsaid
+                : unsaid;
+        }, ct);
+
+    /// <summary>
+    /// Null — send nothing — unless a level is set AND the server said it takes the switch: an
+    /// unknown field is a 400 on strict servers, so a guess is never sent.
+    /// </summary>
+    private async Task<bool?> EnableThinkingAsync(CancellationToken ct)
+    {
+        if (_options.Thinking is not { } level) return null;
+        var options = await GetThinkingOptionsAsync(ct);
+        if (!options.Any) return null;
+        if (level == ThinkingLevels.Lowest) level = options.Levels[0];
+        return level switch { ThinkingLevels.Off => false, ThinkingLevels.On => true, _ => null };
     }
 
     /// <inheritdoc/>
@@ -90,7 +136,7 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
         List<ToolDefinition>? tools, CancellationToken ct)
     {
         var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: false,
-            cacheSystemPrompt: _cacheControl).ToJsonString();
+            cacheSystemPrompt: _cacheControl, enableThinking: await EnableThinkingAsync(ct)).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         var json = await resp.Content.ReadAsStringAsync(ct);
@@ -102,7 +148,7 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
         List<ToolDefinition>? tools, [EnumeratorCancellation] CancellationToken ct)
     {
         var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: true,
-            cacheSystemPrompt: _cacheControl).ToJsonString();
+            cacheSystemPrompt: _cacheControl, enableThinking: await EnableThinkingAsync(ct)).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         using var stream = await resp.Content.ReadAsStreamAsync(ct);

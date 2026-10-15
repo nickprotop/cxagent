@@ -60,4 +60,13 @@ public class ThinkingCapabilitiesTests
         Assert.Equal(1, calls);
         Assert.Same(none, cache.Known);
     }
+
+    [Fact]
+    public void LlamaProps_TemplateWithEnableThinking_OffersOffAndOn() =>
+        Assert.Equal(["off", "on"], ThinkingCapabilities.ParseLlamaProps(
+            """{"chat_template":"{% if enable_thinking %}<think>{% endif %}"}""")!.Levels);
+
+    [Fact]
+    public void LlamaProps_TemplateWithout_OffersNothing() =>
+        Assert.False(ThinkingCapabilities.ParseLlamaProps("""{"chat_template":"plain"}""")!.Any);
 }
