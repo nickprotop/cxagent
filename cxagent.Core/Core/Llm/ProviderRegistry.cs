@@ -31,9 +31,6 @@ public sealed class ProviderRegistry
     /// </summary>
     private Dictionary<string, ProbeTarget> _endpoints = new(StringComparer.Ordinal);
 
-    /// <summary>Where to ask, what to ask about, and what to authenticate with.</summary>
-    private readonly record struct ProbeTarget(string Kind, string? BaseUrl, string? Model, string? ApiKey);
-
     /// <summary>Guards the lazy fill. Two sessions switching at once would otherwise probe the same
     /// endpoint twice and race on the dictionary.</summary>
     private readonly object _windowLock = new();
@@ -195,7 +192,7 @@ public sealed class ProviderRegistry
             if (!_endpoints.TryGetValue(instanceName, out var target)) return null;
 
             var probed = ContextWindowProbe
-                .TryGetAsync(target.Kind, target.BaseUrl, target.Model, target.ApiKey)
+                .TryGetAsync(target)
                 .GetAwaiter().GetResult();
 
             // ONLY A REAL ANSWER IS REMEMBERED. Caching a null would turn one unreachable endpoint

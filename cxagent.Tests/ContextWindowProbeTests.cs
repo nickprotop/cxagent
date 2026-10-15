@@ -27,7 +27,7 @@ public class ContextWindowProbeTests : IDisposable
         _srv.EnqueueJson(200, """{"id":"claude-sonnet-5-5","max_input_tokens":1000000,"max_tokens":128000}""");
 
         var window = await ContextWindowProbe.TryGetAsync(
-            "anthropic", _srv.BaseUrl.TrimEnd('/'), "claude-sonnet-5-5", "sk-ant-test");
+            new ProbeTarget("anthropic", _srv.BaseUrl.TrimEnd('/'), "claude-sonnet-5-5", "sk-ant-test"));
 
         Assert.Equal(1_000_000, window);
         Assert.Equal("sk-ant-test", _srv.LastRequestHeaders["x-api-key"]);
@@ -40,13 +40,13 @@ public class ContextWindowProbeTests : IDisposable
         _srv.EnqueueJson(401, """{"error":{"message":"bad key"}}""");
 
         Assert.Null(await ContextWindowProbe.TryGetAsync(
-            "anthropic", _srv.BaseUrl.TrimEnd('/'), "claude-sonnet-5-5", "sk-ant-bad"));
+            new ProbeTarget("anthropic", _srv.BaseUrl.TrimEnd('/'), "claude-sonnet-5-5", "sk-ant-bad")));
     }
 
     /// <summary>Every other kind keeps the llama.cpp path: no baseUrl, no request.</summary>
     [Fact]
     public async Task OpenAiCompatible_WithoutBaseUrl_IsUnknown() =>
-        Assert.Null(await ContextWindowProbe.TryGetAsync("openai-compatible", null, "m", "k"));
+        Assert.Null(await ContextWindowProbe.TryGetAsync(new ProbeTarget("openai-compatible", null, "m", "k")));
 
     [Fact]
     public async Task OpenAiCompatible_ReadsLlamaCppNCtx()
@@ -54,6 +54,6 @@ public class ContextWindowProbeTests : IDisposable
         _srv.EnqueueJson(200, """{"data":[{"id":"local","meta":{"n_ctx":212992}}]}""");
 
         Assert.Equal(212_992, await ContextWindowProbe.TryGetAsync(
-            "openai-compatible", _srv.BaseUrl.TrimEnd('/'), "local", null));
+            new ProbeTarget("openai-compatible", _srv.BaseUrl.TrimEnd('/'), "local", null)));
     }
 }

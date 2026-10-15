@@ -4,6 +4,20 @@ using System.Text.Json;
 namespace CxAgent.Core.Llm;
 
 /// <summary>
+/// Where to ask for a context window, what to ask about, and what to authenticate with.
+///
+/// <para>NAMED, NOT FOUR STRINGS. Kind, base URL, model and key are all <c>string?</c>, so passed
+/// loose a transposed pair compiles and probes the wrong thing — a key sent as a model id, or a
+/// URL.</para>
+/// </summary>
+/// <param name="Kind">The instance's <c>kind</c>; <c>anthropic</c> is asked its Models API,
+/// every other kind takes the llama.cpp path.</param>
+/// <param name="BaseUrl">The configured base URL, or null for the kind's default.</param>
+/// <param name="Model">The model id to ask about.</param>
+/// <param name="ApiKey">The instance's key, or null.</param>
+public readonly record struct ProbeTarget(string? Kind, string? BaseUrl, string? Model, string? ApiKey);
+
+/// <summary>
 /// Asks an OpenAI-compatible endpoint how large the served context window actually is.
 ///
 /// <para>WHY ASK RATHER THAN BE TOLD. The window was configuration only — an optional
@@ -30,8 +44,8 @@ public static class ContextWindowProbe
     private const string AnthropicDefaultBaseUrl = "https://api.anthropic.com/v1";
 
     /// <summary>
-    /// The context window for an instance of <paramref name="kind"/>, or null when it cannot be
-    /// determined.
+    /// The context window for the instance <paramref name="target"/> describes, or null when it
+    /// cannot be determined.
     ///
     /// <para>ANTHROPIC SAYS SO OUTRIGHT. Its Models API returns <c>max_input_tokens</c> for a model
     /// id, so an <c>anthropic</c> instance is asked there — with its own auth header, and against
@@ -39,15 +53,14 @@ public static class ContextWindowProbe
     /// asked at all (no baseUrl, so the probe returned at once), and a 1M-token model was compacted
     /// at the 40,000-token fallback. Every other kind takes the llama.cpp path unchanged.</para>
     /// </summary>
-    public static Task<int?> TryGetAsync(
-        string? kind, string? baseUrl, string? model, string? apiKey, CancellationToken ct = default) =>
-        string.Equals(kind, "anthropic", StringComparison.Ordinal)
-            ? TryGetAnthropicAsync(baseUrl, model, apiKey, ct)
-            : TryGetAsync(baseUrl, model, apiKey, ct);
+    public static Task<int?> TryGetAsync(ProbeTarget target, CancellationToken ct = default) =>
+        string.Equals(target.Kind, "anthropic", StringComparison.Ordinal)
+            ? TryGetAnthropicAsync(target, ct)
+            : TryGetAsync(target.BaseUrl, target.Model, target.ApiKey, ct);
 
-    private static async Task<int?> TryGetAnthropicAsync(
-        string? baseUrl, string? model, string? apiKey, CancellationToken ct)
+    private static async Task<int?> TryGetAnthropicAsync(ProbeTarget target, CancellationToken ct)
     {
+        var (_, baseUrl, model, apiKey) = target;
         if (string.IsNullOrWhiteSpace(model) || string.IsNullOrWhiteSpace(apiKey)) return null;
 
         try
