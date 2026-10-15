@@ -91,10 +91,14 @@ public sealed partial class Session
         return SetThinking(options.Levels[(at + 1) % options.Levels.Count]);
     }
 
-    /// <summary>From a resumed session's header: applied silently — the user chose it before.</summary>
+    /// <summary>
+    /// From a resumed session's header: applied silently — the user chose it before. Null is a
+    /// header with nothing saved, which keeps the config's level; "default" is the model's own.
+    /// </summary>
     public void RestoreThinking(string? level)
     {
-        if (level is not null) SwapThinking(level);
+        if (level is null) return;
+        SwapThinking(level == ThinkingLevels.Default ? null : level);
     }
 
     /// <summary>

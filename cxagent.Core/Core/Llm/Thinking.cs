@@ -16,6 +16,13 @@ public static class ThinkingLevels
     /// </summary>
     public const string Lowest = "lowest";
 
+    /// <summary>
+    /// The model's own level, written where a level is stored — the session header. Not a level a
+    /// request sends: it is the absence of one, NAMED so that a stored "the user chose the model's
+    /// default" cannot be read as "nothing was stored" and replaced by the config's level.
+    /// </summary>
+    public const string Default = "default";
+
     /// <summary>Every name config and <c>/think</c> accept, in offering order.</summary>
     public static readonly IReadOnlyList<string> Known = [Off, On, Minimal, Low, Medium, High, XHigh, Max];
 

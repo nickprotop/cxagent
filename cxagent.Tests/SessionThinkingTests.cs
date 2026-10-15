@@ -293,6 +293,35 @@ public class SessionThinkingTests : IDisposable
         Assert.Equal("low", ((IThinkingProvider)session.NewSessionResolution!.Model!.Provider).ThinkingLevel);
     }
 
+    // "DEFAULT" IS A CHOICE, saved as one: null in the header means nothing was saved, and a resume
+    // would then come back at the config's level instead of the model's own.
+    [Fact]
+    public async Task TheModelsDefault_IsSavedAsDefault_NotAsNothing()
+    {
+        var model = (LevelledMock)new LevelledMock(["low", "high"]).WithThinking("high");
+        var (manager, session, _) = Wired(model);
+        using var _m = manager;
+        session.SetThinking(null);
+        await Turn(session, "hi");
+
+        var snapshot = new FolderSessionStore(new AppPaths(_dir)).LoadById(session.SessionId!);
+        Assert.Equal("default", snapshot!.Thinking);
+    }
+
+    [Fact]
+    public void Resume_OfASessionLeftAtDefault_ComesBackAtDefault()
+    {
+        var model = (LevelledMock)new LevelledMock(["low", "high"]).WithThinking("high");
+        var (manager, session, said) = Wired(model);
+        using var _m = manager;
+        var ports = new SessionPorts { Observer = said, ToolObserver = new BufferedJobPanel() };
+
+        manager.Resume(session, new SessionSnapshot("agent-1", [], 0, 0, DateTimeOffset.UtcNow, Thinking: "default"),
+            rewire: () => manager.Open(session, ResolvedConfig.ForTesting(model), ports, AgentMode.Single));
+
+        Assert.Null(session.ThinkingLevel);
+    }
+
     // EVERY RESUME PASSES THE WIRE, and the wire restores the level the session was saved at.
     [Fact]
     public void Resume_RestoresTheSavedLevel()

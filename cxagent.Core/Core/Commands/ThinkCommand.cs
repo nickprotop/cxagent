@@ -19,7 +19,7 @@ public readonly record struct ThinkCommandResult(string? SetTo, bool Save, bool 
 /// </summary>
 public static class ThinkCommand
 {
-    public const string Default = "default";
+    public const string Default = ThinkingLevels.Default;
     private const string SaveFlag = "--save";
 
     /// <param name="argument">Everything after the command word.</param>

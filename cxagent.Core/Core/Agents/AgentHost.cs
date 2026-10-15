@@ -648,7 +648,13 @@ public sealed class AgentHost : IDisposable
     private void SaveResume(Agent agent) =>
         _stores.Resume?.SaveTurn(new FolderSessionStore.ResumeTurn(
             agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
-            _runtime.WorkingDir, Mode.Edits, (_runtime.Provider as IThinkingProvider)?.ThinkingLevel));
+            _runtime.WorkingDir, Mode.Edits, SavedLevel()));
+
+    // "default" FOR THE MODEL'S OWN, NOT NULL: null is what a header with nothing saved reads as,
+    // and a resume would then take the config's level over the one the user chose. Null only where
+    // the model has no levels at all.
+    private string? SavedLevel() =>
+        _runtime.Provider is IThinkingProvider thinker ? thinker.ThinkingLevel ?? ThinkingLevels.Default : null;
 
     /// <summary>
     /// Hands the running turn something to read on its next lap, or answers false when nothing can
