@@ -831,13 +831,28 @@ public sealed class MainWindow : IDisposable
     /// </remarks>
     private static string ModelLabelFor(ResolvedConfig resolution)
     {
-        var model = resolution.Provider?.ModelId;
+        var model = resolution.Provider?.ModelId is { } id ? ShortModelName(id) : null;
         if (model is null) return resolution.DisplayName ?? "no provider";
 
         return resolution.InstanceName is { Length: > 0 } instance
             ? $"{instance}:{model}"
             : model;
     }
+
+    /// <summary>
+    /// A model id without a model file's extension: a local server names its model after the file it
+    /// loaded, and ".gguf" says nothing the reader needs while costing the narrow mode line room.
+    /// Only known model-file extensions — "gpt-4.1" is a name, not a file.
+    /// </summary>
+    public static string ShortModelName(string id)
+    {
+        foreach (var ext in ModelFileExtensions)
+            if (id.Length > ext.Length && id.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+                return id[..^ext.Length];
+        return id;
+    }
+
+    private static readonly string[] ModelFileExtensions = [".gguf", ".safetensors", ".bin"];
 
     /// <summary>
     /// The folder this session works in, for the panel to show.
@@ -3386,7 +3401,7 @@ public sealed class MainWindow : IDisposable
         $"[{ColorScheme.AccentMarkup}]{AgentModes.Name(mode.Agent)}[/]"
       + $"[{ColorScheme.MutedMarkup}] · [/]"
       + $"[{EditModeMarkup(mode.Edits)}]{EditModes.Name(mode.Edits)}[/]"
-      + $"[{ColorScheme.MutedMarkup}] (shift+tab to change)[/]"
+      + $"[{ColorScheme.MutedMarkup}] (shift+tab)[/]"
       + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]"
         // BESIDE THE MODEL IT IS ABOUT. Uncached, every turn re-sends and re-bills the whole
         // conversation at full price, and nothing else on screen would ever say so.

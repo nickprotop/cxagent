@@ -52,4 +52,13 @@ public class ThinkingModeLineTests
     [Fact]
     public void ModeLine_NoLongerCarriesTheF4Hint() =>
         Assert.DoesNotContain("F4", MainWindow.ModeLineTextForTest(WorkingMode.Default, "local:qwen"));
+
+    [Theory]
+    [InlineData("qwen3.6-35b-a3b-ud-iq4_xs.gguf", "qwen3.6-35b-a3b-ud-iq4_xs")]
+    [InlineData("model.Q4_K_M.GGUF", "model.Q4_K_M")]
+    [InlineData("weights.safetensors", "weights")]
+    [InlineData("claude-opus-5-5", "claude-opus-5-5")]
+    [InlineData("gpt-4.1", "gpt-4.1")]
+    public void ModelName_DropsAModelFilesExtension_Only(string id, string shown) =>
+        Assert.Equal(shown, MainWindow.ShortModelName(id));
 }
