@@ -314,11 +314,17 @@ headlessly. See [CONFIG.md](CONFIG.md#custom-commands).
 
 Tools from a DLL you drop in a folder, without rebuilding cxagent.
 
-Two ship: **csharp-lsp** — go-to-definition, find-references and diagnostics for C#, backed by a
-language server, crossing project boundaries as grep cannot — and **calculator**, which evaluates a
-whole arithmetic expression exactly in one call.
+Four are in the catalog:
 
-Neither is bundled with the installer. Both arrive through the plugin manager (**F2**), which
+- **csharp-lsp** — go-to-definition, find-references and diagnostics for C#, backed by a language
+  server, crossing project boundaries as grep cannot.
+- **calculator** — evaluates a whole arithmetic expression exactly, in one call.
+- **triggers** — work that starts without anybody typing: a turn schedules a prompt to arrive later
+  in the same session.
+- **clone-finder** — duplicated code found without reading the repository: locations ranked by size,
+  in one call.
+
+None is bundled with the installer. Each arrives through the plugin manager (**F2**), which
 downloads, verifies and unpacks into your plugins folder and stops there. cxagent tells you a plugin
 is present and leaves it alone:
 

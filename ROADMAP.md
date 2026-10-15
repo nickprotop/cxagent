@@ -5,7 +5,9 @@ What is next. See [README](README.md) for what cxagent does and
 
 ## Next
 
-- **A plugin marketplace** — somewhere to publish an entry, and a picker to install one.
+- **Publishing a plugin from outside this repository** — the catalog and the picker that installs
+  from it ship (`/plugin browse`, F2); adding an entry still takes a change to
+  [`plugins.json`](plugins/plugins.json) here.
 - **A plugin that is not written in C#** — the ABI path is tested but nothing real uses it.
 - **A web front end** — the reason the extraction was worth doing.
 - **Skill scripts** — a skill that runs, not just one that is read.
@@ -16,3 +18,5 @@ What is next. See [README](README.md) for what cxagent does and
 ## Known
 
 - **Pipes still prompt.** A read-only command runs unasked unless it is piped.
+- **A configured plugin's own `Load` runs before it is approved** in the TUI: the trust question comes
+  after the plugin's code has run once. A headless run decides first and skips an unapproved plugin.

@@ -1,3 +1,0 @@
-Terminal
-Black screen white text
-Commands fly by fast
