@@ -284,4 +284,20 @@ public class AnthropicProviderTests : IDisposable
         Assert.Equal("ephemeral", result["cache_control"]!["type"]!.GetValue<string>());
         Assert.Equal("- [ ] step one", msgs[^1]!["content"]!.GetValue<string>());
     }
+
+    /// <summary>
+    /// THE DEFAULT CAP LEAVES ROOM TO THINK AND ANSWER. 4,096 cut a sub-agent's report mid-sentence,
+    /// because the model's thinking is counted against the same budget.
+    /// </summary>
+    [Fact]
+    public async Task DefaultMaxTokens_IsNotTheOld4096()
+    {
+        _srv.EnqueueJson(200, """{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}""");
+        var provider = new AnthropicProvider("anthropic", "Claude x", "claude-x", "k",
+            baseUrl: _srv.BaseUrl.TrimEnd('/'), retryPolicy: RetryPolicy.NoDelay);
+
+        await provider.ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.Contains($"\"max_tokens\":{AnthropicProvider.DefaultMaxTokens}", _srv.LastRequestBody);
+    }
 }

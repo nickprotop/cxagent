@@ -34,8 +34,17 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
     private static readonly HttpClient Shared = new() { Timeout = Timeout.InfiniteTimeSpan };
 
 
+    /// <summary>
+    /// The per-response output cap. It bounds what the model THINKS as well as what it writes:
+    /// current Claude models think by default, and thinking counts against max_tokens. At 4,096 a
+    /// sub-agent's final report was cut mid-sentence and handed back as "completed". Only generated
+    /// tokens are billed, so a high cap costs nothing on a short reply; every request this driver
+    /// sends that can be long is streamed, so it cannot hit an HTTP timeout either.
+    /// </summary>
+    public const int DefaultMaxTokens = 32_000;
+
     public AnthropicProvider(string providerId, string displayName, string model, string apiKey,
-        int maxTokens = 4096, string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null,
+        int maxTokens = DefaultMaxTokens, string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null,
         bool cacheControl = false)
     {
         _cache = cacheControl;
