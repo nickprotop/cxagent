@@ -206,8 +206,8 @@ internal static class AnthropicWire
             }
         }
 
-        /// <summary>Tool calls whose block never closed — a stream cut short. Emitted rather than
-        /// dropped: the model asked for them, and a call with no record cannot be answered.</summary>
+        /// <summary>Tool calls whose block never closed — a stream cut short — and whose input
+        /// is nonetheless whole. One whose input does not parse is dropped by <c>Close</c>.</summary>
         public List<ToolCall> Flush()
         {
             var calls = _open.Keys.Order().ToList().Select(Close).OfType<ToolCall>().ToList();
@@ -221,9 +221,10 @@ internal static class AnthropicWire
             var json = acc.Json.ToString();
             JsonElement args;
             try { args = JsonDocument.Parse(json.Length == 0 ? "{}" : json).RootElement.Clone(); }
-            // Malformed only when the stream was cut mid-argument. Empty, so the tool reports what
-            // is missing, rather than throwing out of the iterator and losing the turn.
-            catch (JsonException) { args = JsonDocument.Parse("{}").RootElement.Clone(); }
+            // Malformed only when the output cap cut the input mid-argument. DROPPED, not run with
+            // {}: the empty call fails for missing arguments and the model takes it for its own
+            // mistake. The stop reason says max_tokens, and the agent asks for the call again.
+            catch (JsonException) { return null; }
             return new ToolCall { Name = acc.Name, Id = acc.Id, Arguments = args };
         }
 

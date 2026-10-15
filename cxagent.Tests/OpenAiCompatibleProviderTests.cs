@@ -448,20 +448,23 @@ public class OpenAiCompatibleProviderTests : IDisposable
     }
 
     [Fact]
-    public void Accumulator_ATruncatedStreamYieldsEmptyArgs_NotAThrow()
+    public void Accumulator_ATruncatedCall_IsDropped_NotThrownOrRunEmpty()
     {
-        // Unbalanced JSON from a length cap or dropped connection must not throw out of an async
-        // iterator and kill the goal mid-stream.
+        // Unbalanced JSON from a length cap must not throw out of an async iterator and kill the
+        // goal mid-stream — nor be run with {}, which fails for missing arguments and reads to the
+        // model as its own mistake. The complete call beside it still runs; the "length" finish
+        // reason is what tells the agent to ask for the cut-off one again.
         var acc = new OpenAiWire.StreamingToolCallAccumulator();
 
         acc.Accept(Delta("""
-            {"tool_calls":[{"index":0,"function":{"name":"read_file","arguments":"{\"path\":\"unclo"}}]}
+            {"tool_calls":[{"index":0,"function":{"name":"grep","arguments":"{\"pattern\":\"x\"}"}},
+                           {"index":1,"function":{"name":"read_file","arguments":"{\"path\":\"unclo"}}]}
             """), null);
 
         var calls = acc.Accept(Delta("{}"), "length");
 
-        Assert.Single(calls);
-        Assert.Equal(JsonValueKind.Object, calls[0].Arguments.ValueKind);
+        var call = Assert.Single(calls);
+        Assert.Equal("grep", call.Name);
     }
 
     /// <summary>

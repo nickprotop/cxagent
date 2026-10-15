@@ -929,6 +929,71 @@ public class AgentTests
     }
 
     /// <summary>
+    /// A REPLY CUT OFF AT THE OUTPUT CAP IS CONTINUED, and the caller gets all of it. A sub-agent's
+    /// report cut at the cap came back mid-sentence, marked completed.
+    /// </summary>
+    [Fact]
+    public async Task CappedReply_IsContinued_AndThePartsAreJoined()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse { Text = "The parser is hand-", StopReason = "max_tokens" });
+        provider.EnqueueResponse(new LlmResponse { Text = "rolled, and --mode is ", StopReason = "max_tokens" });
+        provider.EnqueueResponse(new LlmResponse { Text = "missing from --help.", StopReason = "end_turn" });
+
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+
+        var result = await agent.SendAsync("report", CancellationToken.None);
+
+        Assert.Equal(SendOutcome.Completed, result.Outcome);
+        Assert.Equal("The parser is hand-rolled, and --mode is missing from --help.", result.Text);
+        Assert.Equal(2, provider.LastMessages!.Count(m => m.Role == "user" && m.Content.Contains("cut off at the output limit")));
+    }
+
+    /// <summary>Still capped after every continuation: the answer says so, for whoever reads it.</summary>
+    [Fact]
+    public async Task CappedReply_StillCutOff_EndsWithTheMarker()
+    {
+        var provider = new MockLlmProvider();
+        for (var i = 0; i < 3; i++)
+            provider.EnqueueResponse(new LlmResponse { Text = $"part{i} ", StopReason = "max_tokens" });
+
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+
+        var result = await agent.SendAsync("report", CancellationToken.None);
+
+        Assert.Equal("part0 part1 part2 " + Agent.CutOffMarker, result.Text);
+    }
+
+    /// <summary>
+    /// A CAPPED REPLY WITH TOOL CALLS runs the complete ones, then says a cut-off call was not run —
+    /// after the results, so it never splits them.
+    /// </summary>
+    [Fact]
+    public async Task CappedReplyWithToolCalls_SaysAfterTheResults_ThatACutOffCallWasNotRun()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            StopReason = "max_tokens",
+            ToolCalls = [ReadOfNothing("first.txt"), ReadOfNothing("second.txt")],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+
+        await agent.SendAsync("read them", CancellationToken.None);
+
+        var sent = provider.LastMessages!;
+        var call = sent.FindIndex(m => m.ToolCalls is { Count: 2 });
+        Assert.NotNull(sent[call + 1].ToolCallId);
+        Assert.NotNull(sent[call + 2].ToolCallId);
+        Assert.Contains("hit the output limit", sent[call + 3].Content);
+    }
+
+    /// <summary>
     /// The implicit conversion is what kept this a mechanical change: of ~73 call sites only four
     /// read the string, and every other one awaits and discards. Without it each would have needed
     /// touching to say <c>.Text</c>.

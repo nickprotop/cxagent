@@ -300,4 +300,33 @@ public class AnthropicProviderTests : IDisposable
 
         Assert.Contains($"\"max_tokens\":{AnthropicProvider.DefaultMaxTokens}", _srv.LastRequestBody);
     }
+
+    /// <summary>
+    /// A CALL THE CAP CUT MID-ARGUMENT IS DROPPED, not run with {}. The complete one beside it runs,
+    /// and the stop reason tells the agent to ask for the other again.
+    /// </summary>
+    [Fact]
+    public async Task ChatStream_DropsAToolCallCutOffMidArgument()
+    {
+        _srv.EnqueueSse(
+            Ev("""{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tu_1","name":"grep","input":{}}}"""),
+            Ev("""{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"pattern\": \"x\"}"}}"""),
+            Ev("""{"type":"content_block_stop","index":0}"""),
+            Ev("""{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tu_2","name":"write_file","input":{}}}"""),
+            Ev("""{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"path\": \"a.cs\", \"content\": \"cla"}}"""),
+            Ev("""{"type":"content_block_stop","index":1}"""),
+            Ev("""{"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":32000}}"""),
+            Ev("""{"type":"message_stop"}"""));
+
+        var calls = new List<ToolCall>();
+        string? stop = null;
+        await foreach (var chunk in Make().ChatStreamAsync(Msgs(), null, CancellationToken.None))
+        {
+            if (chunk.ToolCallDelta is not null) calls.Add(chunk.ToolCallDelta);
+            if (chunk.IsFinal) stop = chunk.StopReason;
+        }
+
+        Assert.Equal("grep", Assert.Single(calls).Name);
+        Assert.Equal("max_tokens", stop);
+    }
 }

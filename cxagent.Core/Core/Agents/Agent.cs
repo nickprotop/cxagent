@@ -1448,6 +1448,13 @@ public sealed class Agent
         // reports it on EVERY turn cannot spin the loop.
         var toolUseMismatches = 0;
 
+        // A REPLY THAT HIT THE OUTPUT CAP, and the parts of it so far. The model is asked to carry
+        // on rather than the cut-off text being returned as its answer: a sub-agent's report cut at
+        // 4,096 tokens came back mid-sentence as "completed". The parts are joined so the caller
+        // receives one answer; bounded, because a model that never finishes would otherwise loop.
+        var capContinuations = 0;
+        var capturedParts = new StringBuilder();
+
         // Set when a call has repeated past the point where a nudge could still help, which ends the
         // request. Carried out of the tool loop rather than returned from inside it: the remaining
         // calls of THIS turn still need their results appended, or the conversation ends holding a
@@ -1670,8 +1677,48 @@ public sealed class Agent
                 continue;
             }
 
+            // CUT OFF AT THE OUTPUT CAP, with nothing to run: the answer is unfinished. Kept in the
+            // conversation and continued, since current models refuse a prefilled assistant turn —
+            // the follow-up user message is the only way to say "carry on".
+            var capped = response.ToolCalls.Count == 0 && response.StopReason == "max_tokens";
+            if (capped && capContinuations < MaxCapContinuations)
+            {
+                capContinuations++;
+                capturedParts.Append(text);
+                if (!string.IsNullOrWhiteSpace(response.Text))
+                    messages.Add(new ChatMessage
+                    {
+                        Role = "assistant",
+                        Content = response.Text,
+                        Timestamp = DateTimeOffset.UtcNow,
+                    });
+                messages.Add(new ChatMessage
+                {
+                    Role = "user",
+                    Content = "Your reply was cut off at the output limit. Continue exactly where you "
+                            + "stopped, without repeating anything. If you were writing a tool call, "
+                            + "issue it again.",
+                    Timestamp = DateTimeOffset.UtcNow,
+                });
+                continue;
+            }
+
             if (response.ToolCalls.Count == 0)
             {
+                // ONE ANSWER, NOT ITS LAST PART. Earlier parts were cut off at the cap and continued;
+                // the caller — often a parent agent reading a sub-agent's report — needs all of it.
+                if (capturedParts.Length > 0) text = capturedParts.Append(text).ToString();
+
+                // STILL CUT OFF after every continuation. Said in the answer itself, so a parent
+                // agent knows the report is incomplete rather than reading it as finished.
+                if (capped)
+                {
+                    text = (text ?? "") + CutOffMarker;
+                    _sink.Said(new Message(
+                        "the reply was still cut off at the output limit after "
+                        + $"{MaxCapContinuations} continuations.", Severity.Warning));
+                }
+
                 // THE MODEL'S OWN ANSWER GOES INTO THE CONVERSATION, and this line is the whole
                 // difference between a chat and a series of unrelated questions. The tool-call path
                 // below appends its assistant message; without this line THIS path returns without
@@ -1940,6 +1987,18 @@ public sealed class Agent
                     Record(call, await task);
 
                 spawned.Clear();
+
+                // A TOOL CALL THE CAP CUT OFF was dropped by the provider — its arguments never
+                // finished — so the model believes it asked for something that never ran. Said
+                // after the barrier, like the nudges, so it cannot split this turn's results.
+                if (response.StopReason == "max_tokens")
+                    nudges.Add(new ChatMessage
+                    {
+                        Role = "user",
+                        Content = "Your last reply hit the output limit. Any tool call it was still "
+                                + "writing was cut off and not run; issue it again if you still need it.",
+                        Timestamp = DateTimeOffset.UtcNow,
+                    });
 
                 // Every result is recorded, so the stuck nudges can join the conversation now.
                 messages.AddRange(nudges);
@@ -3257,6 +3316,12 @@ public sealed class Agent
     /// taken at face value. Two, because a genuine truncation is transient and a server that always
     /// misreports would otherwise never let the goal end.</summary>
     private const int MaxToolUseMismatches = 2;
+
+    /// <summary>How many times one answer may be continued after hitting the output cap.</summary>
+    private const int MaxCapContinuations = 2;
+
+    /// <summary>Ends an answer that was still cut off after every continuation.</summary>
+    public const string CutOffMarker = "\n\n[reply cut off at the output limit]";
 
 
 

@@ -237,9 +237,11 @@ public static class OpenAiWire
                 catch (JsonException)
                 {
                     // A truncated stream (length cap, dropped connection) leaves unbalanced JSON.
-                    // Surface an empty argument object rather than throwing out of an async
-                    // iterator — the caller reports a failed call instead of the app dying.
-                    parsed = JsonDocument.Parse("{}").RootElement.Clone();
+                    // DROPPED, not run with {}: an empty call fails for missing arguments, the model
+                    // reads that as its own mistake, and the stuck guard then counts the repeats. The
+                    // finish reason still says "length", so the agent tells the model the call was
+                    // cut off and asks for it again.
+                    continue;
                 }
 
                 completed.Add(new ToolCall { Name = partial.Name, Id = partial.Id, Arguments = parsed });
