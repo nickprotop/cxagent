@@ -207,9 +207,11 @@ public sealed class ProviderRegistry
         var display = $"{cfg.Kind} {cfg.Model}";
         return cfg.Kind switch
         {
+            // THE CONFIGURED baseUrl, when there is one: a gateway or proxy that speaks Anthropic's API.
+            // Null keeps the provider's own default endpoint.
             "anthropic" => new AnthropicProvider(
-                name, display, cfg.Model, cfg.ApiKey ?? "", client: client, cacheControl: cfg.CacheControl,
-                thinkingDisplay: cfg.ThinkingDisplay, thinking: cfg.Thinking),
+                name, display, cfg.Model, cfg.ApiKey ?? "", baseUrl: cfg.BaseUrl, client: client,
+                cacheControl: cfg.CacheControl, thinkingDisplay: cfg.ThinkingDisplay, thinking: cfg.Thinking),
             "openai-compatible" => new OpenAiCompatibleProvider(new OpenAiProviderOptions
             {
                 ProviderId = name,
