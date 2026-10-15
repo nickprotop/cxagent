@@ -1904,9 +1904,6 @@ public static class AppBootstrap
                     case EscapeTarget.CancelTurn:
                         escaping.CancelTurn();
                         return true;
-                    case EscapeTarget.KeepComposer:
-                        mainWindow.FocusComposer();
-                        return true;
                 }
 
                 // A FILE TAB'S TOOLBAR, WHICH NOTHING ELSE CAN REACH. The editor consumes Tab as

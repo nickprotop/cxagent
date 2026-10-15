@@ -445,7 +445,7 @@ one run before it was written down — and the full reference for options, outpu
 | Key | Action |
 |-----|--------|
 | `Enter` | Send. During a running turn, queues instead — several queued messages go as one prompt |
-| `Esc` | Stop the running turn. Anything queued goes back into the composer rather than being lost. In btw mode: stop the aside's answer, then leave btw mode. With nothing to stop, the cursor stays in the composer |
+| `Esc` | Stop the running turn. Anything queued goes back into the composer rather than being lost. In btw mode: stop the aside's answer, then leave btw mode |
 | `F1` | Help |
 | `F3` | Session panel (show / hide / automatic) |
 | `F4` | Put the cursor back in the composer |
