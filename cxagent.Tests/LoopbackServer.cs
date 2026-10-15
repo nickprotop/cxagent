@@ -33,6 +33,19 @@ public sealed class LoopbackServer : IDisposable
     public void EnqueueJson(int status, string json) => _responses.Enqueue((status, json, false));
     public void EnqueueSse(params string[] events) => _responses.Enqueue((200, string.Join("", events), true));
 
+    // PROBES ARE ANSWERED OFF-QUEUE. A capability probe (Anthropic's GET /models/{id}, llama.cpp's
+    // GET /props) precedes the request a test is about, and a test enqueues only the answers it
+    // asserts on — if the probe took the next queue slot it would eat the /messages response and
+    // every older test would see the wrong body. So a probe neither dequeues nor overwrites
+    // LastRequest*, which keep describing the request the test sent.
+    private readonly ConcurrentDictionary<string, (int status, string body)> _routes = new();
+
+    /// <summary>Answers requests whose path ends with <paramref name="path"/> with a fixed response, never dequeued.</summary>
+    /// <param name="path">The path suffix to match, e.g. <c>/models/claude-x</c>.</param>
+    /// <param name="status">The HTTP status to answer.</param>
+    /// <param name="body">The response body.</param>
+    public void Route(string path, int status, string body) => _routes[path] = (status, body);
+
     private async Task Loop()
     {
         while (_listener.IsListening)
@@ -41,13 +54,24 @@ public sealed class LoopbackServer : IDisposable
             try { ctx = await _listener.GetContextAsync(); }
             catch { return; } // listener stopped
 
-            using (var reader = new StreamReader(ctx.Request.InputStream, Encoding.UTF8))
-                LastRequestBody = await reader.ReadToEndAsync();
-            LastRequestHeaders.Clear();
-            foreach (string? key in ctx.Request.Headers.AllKeys)
-                if (key is not null) LastRequestHeaders[key] = ctx.Request.Headers[key] ?? "";
+            var path = ctx.Request.Url?.AbsolutePath ?? "";
+            (int status, string body, bool sse) answer;
+            var routed = _routes.FirstOrDefault(kv => path.EndsWith(kv.Key, StringComparison.Ordinal));
+            if (routed.Key is not null)
+                answer = (routed.Value.status, routed.Value.body, false);
+            else if (ctx.Request.HttpMethod == "GET" && (path.Contains("/models/") || path.EndsWith("/props")))
+                answer = (404, "{}", false);
+            else
+            {
+                using (var reader = new StreamReader(ctx.Request.InputStream, Encoding.UTF8))
+                    LastRequestBody = await reader.ReadToEndAsync();
+                LastRequestHeaders.Clear();
+                foreach (string? key in ctx.Request.Headers.AllKeys)
+                    if (key is not null) LastRequestHeaders[key] = ctx.Request.Headers[key] ?? "";
+                answer = _responses.TryDequeue(out var r) ? r : (200, "{}", false);
+            }
 
-            var (status, body, sse) = _responses.TryDequeue(out var r) ? r : (200, "{}", false);
+            var (status, body, sse) = answer;
             ctx.Response.StatusCode = status;
             if (sse) ctx.Response.ContentType = "text/event-stream";
             var bytes = Encoding.UTF8.GetBytes(body);
