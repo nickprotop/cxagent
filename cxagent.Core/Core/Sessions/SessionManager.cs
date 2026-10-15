@@ -200,6 +200,10 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, _) => session.ListSkills().Handled());
                     break;
 
+                case "/commands":
+                    Commands.Register(command, (session, arguments) => session.ListCommands(arguments).Handled());
+                    break;
+
                 case "/diff":
                     Commands.Register(command, (session, arguments) => session.ShowDiff(arguments).Handled());
                     break;
@@ -356,6 +360,7 @@ public sealed class SessionManager : IDisposable
                 Gate = buildGate?.Invoke(rules),
                 Mcp = mcp,
                 GlobalInstructionsDir = paths.ConfigDir,
+                HomeDir = paths.HomeDir,
             },
             rules,
             ownsServices: true,
@@ -834,6 +839,9 @@ public sealed class SessionManager : IDisposable
         // AN ASIDE IS NOT A TURN, so IsBusy does not hold the close for it — and left running, it
         // would keep calling the model and raising permission prompts for a tab that is gone.
         session.LeaveAside();
+
+        // NAMED, NOT RUN: a tab that is gone has no turn for its held command to follow.
+        session.DropHeld();
 
         SessionLifecycleLog.Write(Shared.Logs, "close", session);
         lock (_gate) _sessions.Remove(session);

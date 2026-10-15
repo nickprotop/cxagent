@@ -21,6 +21,20 @@ namespace CxAgent.Core.Sessions;
 public sealed partial class Session
 {
     /// <summary>
+    /// Says what custom commands can be typed here, and which files were shadowed or skipped — see
+    /// <see cref="Commands.CommandsCommand"/>.
+    /// </summary>
+    public CommandStatus ListCommands(string arguments)
+    {
+        // SCANNED NOW, like the palette and dispatch, so a file saved a moment ago is listed — and a
+        // name the registry holds is shown as shadowed by it, because that is what typing it runs.
+        Say(Commands.CommandsCommand.Render(new Commands.CommandsView(Catalog(),
+            name => Manager?.Commands.IsRegistered(name) == true,
+            Policy?.FolderTrusted ?? false), arguments));
+        return CommandStatus.Reported;
+    }
+
+    /// <summary>
     /// Says what skills this session can reach, and which SKILL.md files were skipped.
     ///
     /// <para>DISCOVERED NOW, from the working directory — the same read the agent does each turn, so
@@ -29,7 +43,7 @@ public sealed partial class Session
     public CommandStatus ListSkills()
     {
         Say(new Commands.SkillsCommand(
-            () => Skills.SkillCatalog.Find(WorkingDirectory, Services?.GlobalInstructionsDir ?? ""),
+            Catalog,
             // WHAT THE AGENT WAS ACTUALLY OFFERED. Listing loadable skills to a user whose agent
             // cannot load one is the same defect as the todo header naming a withheld todowrite.
             CxAgent.Core.Jobs.ToolSelection.Offers(ToolSelection, CxAgent.Core.Jobs.Tool.Skill)).Render());
@@ -387,6 +401,10 @@ public sealed partial class Session
     {
         if (Host is null || RefusedWhileBusy()) return CommandStatus.Refused;
 
+        // A HELD COMMAND WAS TYPED AGAINST THE CONVERSATION BEING CLEARED, so it does not survive it.
+        // Taken now, named after the announcement below — for the reason given there.
+        var dropped = TakeHeld();
+
         Host.Context.Clear();
 
         // NOTHING LEFT TO ASK ABOUT: the fork follows the clear, and an aside forked from what was
@@ -403,6 +421,7 @@ public sealed partial class Session
         // with an empty screen and no word about why.
         Announce(SessionChangeKind.ContextCleared);
         Say("Conversation cleared.");
+        if (dropped is not null) Say(new Message($"{dropped} was not run.", Severity.Warning));
         return CommandStatus.Changed;
     }
 

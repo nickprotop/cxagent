@@ -55,7 +55,6 @@ public class SkillCatalogTests : IDisposable
         Assert.Contains("RTL/LTR", only.Description, StringComparison.Ordinal);
         Assert.Contains("Do the thing", only.Body, StringComparison.Ordinal);
         Assert.Empty(found.Problems);
-        Assert.NotNull(found.SourceDirectory);
     }
 
     /// <summary>
@@ -173,6 +172,7 @@ public class SkillCatalogTests : IDisposable
         Assert.Contains("does not match", Assert.Single(found.Problems).Reason, StringComparison.Ordinal);
     }
 
+    /// <summary>Per name: both folders contribute, and for a shared name .cxagent wins.</summary>
     [Fact]
     public void Find_PrefersDotCxagent_OverDotAgents()
     {
@@ -180,10 +180,13 @@ public class SkillCatalogTests : IDisposable
         Dir("repo", ".git");
         Skill(Dir("repo", ".cxagent", "skills"), "from-cxagent");
         Skill(Dir("repo", ".agents", "skills"), "from-agents");
+        Skill(Dir("repo", ".cxagent", "skills"), "shared", "Use the cxagent one.");
+        Skill(Dir("repo", ".agents", "skills"), "shared", "Use the agents one.");
 
         var found = SkillCatalog.Find(repo);
 
-        Assert.Equal("from-cxagent", Assert.Single(found.Skills).Name);
+        Assert.Equal(["from-agents", "from-cxagent", "shared"], found.Skills.Select(s => s.Name).ToArray());
+        Assert.Equal("Use the cxagent one.", found.Skills.Single(s => s.Name == "shared").Description);
     }
 
     /// <summary>
@@ -290,19 +293,23 @@ public class SkillCatalogTests : IDisposable
         Assert.Equal("the-worktrees-own", Assert.Single(found.Skills).Name);
     }
 
-    /// <summary>Nearest wins: a package's own skills outrank the repo root's.</summary>
+    /// <summary>Nearest wins a shared name: a package's own skill outranks the repo root's, and the
+    /// root's other skills are still offered.</summary>
     [Fact]
     public void Find_PrefersTheNearestDirectory_OverTheRepoRoot()
     {
         var repo = Dir("repo");
         Dir("repo", ".git");
         Skill(Dir("repo", ".cxagent", "skills"), "root-level");
+        Skill(Dir("repo", ".cxagent", "skills"), "shared", "The root's.");
         var package = Dir("repo", "packages", "web");
         Skill(Dir("repo", "packages", "web", ".cxagent", "skills"), "package-level");
+        Skill(Dir("repo", "packages", "web", ".cxagent", "skills"), "shared", "The package's.");
 
         var found = SkillCatalog.Find(package);
 
-        Assert.Equal("package-level", Assert.Single(found.Skills).Name);
+        Assert.Equal(["package-level", "root-level", "shared"], found.Skills.Select(s => s.Name).ToArray());
+        Assert.Equal("The package's.", found.Skills.Single(s => s.Name == "shared").Description);
     }
 
     /// <summary>Read when no project directory supplies any — cxagent's own config folder.</summary>

@@ -14,6 +14,16 @@ public record ChatMessage
     public string? ToolCallId { get; init; }         // tool result messages — the ONLY marker of one
 
     /// <summary>
+    /// What the transcript showed for this user message, when that differs from what the model was
+    /// sent — <c>/review 42</c> for a command's expanded prompt, <c>/init</c> for its briefing.
+    ///
+    /// <para>KEPT FOR THE SESSION LIST, which titles a session by its first message: the expansion is
+    /// what the model needed, and the typed line is what the user will recognise. Never sent to a
+    /// provider — the wire builders read <see cref="Content"/>.</para>
+    /// </summary>
+    public string? Shown { get; init; }
+
+    /// <summary>
     /// True for the ONE regenerated message carrying the model's task list.
     ///
     /// <para>A PROPERTY, NOT A TEXT MATCH. The list is rewritten every turn, so the previous copy has

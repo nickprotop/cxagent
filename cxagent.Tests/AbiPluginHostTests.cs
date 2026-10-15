@@ -366,7 +366,11 @@ public class AbiPluginHostTests
         // fixture-submits' own cxagent_plugin_poll answers on its FIRST call (fixture_plugin.c's own
         // doc) — cxagent.PluginHost's poll loop ticks every 200ms, so this bounds the wait rather
         // than assuming the very first tick lands before this line runs.
-        await signal.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        //
+        // TWENTY SECONDS, NOT FIVE: the bound is for a hang, and a full parallel run starting other
+        // processes stretched this host's first poll past five often enough to fail a run in about
+        // fifteen. A passing wait ends at the first tick either way, so the bound costs nothing.
+        await signal.Task.WaitAsync(TimeSpan.FromSeconds(20));
 
         Assert.NotNull(received);
         Assert.Equal("run the tests", received!.Goal);

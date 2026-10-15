@@ -88,6 +88,16 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     public bool Unattended { get; init; }
 
     /// <summary>
+    /// Raised while expanding a command the user typed — one of its <c>!`…`</c> lines or
+    /// <c>@file</c> includes — rather than by the model.
+    ///
+    /// <para>FOR A FRONT END'S ESCAPE KEY. On the model's own call, Escape means "no" and the run
+    /// adapts. On a command's line it means "don't send this": denying the one line would still send
+    /// the rest of a command the user just tried to stop, so a front end cancels the turn instead.</para>
+    /// </summary>
+    public bool RaisedByCommand { get; init; }
+
+    /// <summary>
     /// WHICH SESSION IS ASKING — its working directory, and the edit mode it is running under.
     ///
     /// <para>THE QUESTION IS PER-SESSION; THE ANSWER IS NOT. The gate is one per process because

@@ -35,7 +35,19 @@ public class SettingsEntryTests
         // is the routing staying a pure function rather than a gap.
         Assert.Equal(EscapeTarget.CancelTurn,
             EscapeRouting.For(turnIsRunning: true, chatTabIsActive: true));
-        Assert.Equal(EscapeTarget.Nothing,
+        Assert.Equal(EscapeTarget.KeepComposer,
+            EscapeRouting.For(turnIsRunning: false, chatTabIsActive: true));
+    }
+
+    /// <summary>
+    /// An Escape the chat tab has no use for is kept, and the composer keeps the cursor. Handed on, it
+    /// reached the composer itself, which drops focus on Escape — after which Enter submitted nothing
+    /// and typing went nowhere until F4, seen on a live drive.
+    /// </summary>
+    [Fact]
+    public void AnIdleChatTab_KeepsTheComposer()
+    {
+        Assert.Equal(EscapeTarget.KeepComposer,
             EscapeRouting.For(turnIsRunning: false, chatTabIsActive: true));
     }
 
@@ -52,8 +64,8 @@ public class SettingsEntryTests
         Assert.Equal(EscapeTarget.Nothing,
             EscapeRouting.For(turnIsRunning: true, chatTabIsActive: false));
 
-        // Not a turn to cancel: the tab does not come into it.
-        Assert.Equal(EscapeTarget.Nothing,
+        // Not a turn to cancel: the chat tab keeps its composer, and another tab gets the key.
+        Assert.Equal(EscapeTarget.KeepComposer,
             EscapeRouting.For(turnIsRunning: false, chatTabIsActive: true));
         Assert.Equal(EscapeTarget.Nothing,
             EscapeRouting.For(turnIsRunning: false, chatTabIsActive: false));

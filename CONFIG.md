@@ -515,38 +515,41 @@ rejected, never auto-corrected.
 write it as *"Use when…"* rather than as a title. A description that says WHEN beats one that says
 WHAT — the model is matching a task against it, not reading a table of contents.
 
-**Where they live, first directory with a valid skill wins:**
+**Where they live — every folder below is read, and for a name that appears in more than one, the
+nearest wins:**
 
 | Location | Meaning |
 |---|---|
 | `<repo>/.cxagent/skills/` | This project, addressed to this agent |
 | `<repo>/.agents/skills/` | This project, vendor-neutral — the plural of the `AGENTS.md` convention |
+| `<repo>/.claude/skills/` | This project, written for Claude Code |
 | `<config dir>/skills/` | You, wherever you work |
+| `~/.claude/skills/` | You, from Claude Code |
 
-Searched by walking up from the working directory to the repository root, nearest first, so a
-package's own skills outrank the repo's. Same boundary as the instruction files, and it matters more
-here: a skill is text the model reads **and acts on**, and the directories above your home folder are
-writable by other people on a shared machine.
+The project folders are searched by walking up from the working directory to the repository root,
+nearest first, so a package's own skills outrank the repo's. Same boundary as the instruction files,
+and it matters more here: a skill is text the model reads **and acts on**, and the directories above
+your home folder are writable by other people on a shared machine. At one level the order is the
+table's: `.cxagent` before `.agents` before `.claude`, because a file written for this tool says more
+about what is meant here.
 
-**Unlike instructions, skills shadow rather than stack.** Two `AGENTS.md` files combine sensibly —
-house style plus package specifics. Two `SKILL.md` files with the same name are two *versions* of one
-document, and merging them produces a document that contradicts itself. Exactly one directory
-supplies the catalog.
+**Skills shadow per name, not per folder.** Two `SKILL.md` files with the same name are two
+*versions* of one document, and merging them produces a document that contradicts itself — so the
+nearest one is used and the other is listed by `/skills` as shadowed. Skills with different names all
+load: a repo with its own skills still leaves yours available. A command file of the same name
+(below) shadows a skill too, and then the skill is not offered to the model either — one name means
+one thing.
 
-**"Has a skill" means at least one that parses**, not merely that the directory exists — an abandoned
-empty `.cxagent/skills/` must not silently switch off a populated `.agents/skills/` beside it.
+**Claude Code's skills load as they are.** `allowed-tools` and `model` in their frontmatter are
+ignored, and `/skills` says so: `allowed-tools` is a permission grant written for another
+application's tools, and obeying it would mean following rules you never granted here. cxagent's own
+permission gate governs every call a skill provokes, exactly as if the model had chosen the tool
+itself. If you symlinked `.claude/skills` into `.cxagent/skills` to get them, the link can go —
+`.claude/skills` is read directly now. Leaving it does no harm: a folder reached twice is read once.
 
-**`.claude/skills/` is not read.** Those files carry `allowed-tools`, a tool grant written for a
-different application with different tools; honouring it silently would mean obeying permissions you
-never granted here. If you want them, say so explicitly:
-
-```sh
-ln -s .claude/skills .cxagent/skills
-```
-
-Their prose then loads normally. Unknown frontmatter keys — `allowed-tools`, `argument-hint` — are
-ignored rather than rejected, which is what makes that symlink work. cxagent's own permission gate
-governs every call a skill provokes, exactly as if the model had chosen the tool itself.
+**Two Claude Code keys are honoured.** `disable-model-invocation: true` keeps a skill out of the
+model's list — only you can run it, by typing `/name` — and `/skills` lists it under *You only*.
+`user-invocable: false` is the reverse: the model may load it, and it is not offered as a command.
 
 **A skill can ship other files.** Reference documents, templates, examples — anything beside the
 `SKILL.md`:
@@ -574,11 +577,13 @@ the rest of the session.
 
 **A malformed `SKILL.md` is skipped and reported, never guessed at.** Missing frontmatter, missing
 `description`: the skill does not exist as far as the model is concerned, and `/skills` says which
-file and why — including files in a directory that lost the shadowing contest, since a broken file in
-a shadowed directory is exactly the one nothing else would explain.
+file and why — including files in folders whose other names were shadowed, since a broken file there
+is exactly the one nothing else would explain.
 
 **The name comes from the folder.** A `name:` in the frontmatter is checked against it and reported
-when it disagrees, never obeyed — otherwise two directories could declare the same skill.
+when it disagrees, never obeyed — otherwise two directories could declare the same skill. A name with a
+character a command cannot hold (`dotnet.testing`) still loads for the model; it just cannot be typed,
+and `/skills` marks it *not typeable*.
 
 **Re-read every turn.** Edit a skill and it takes effect on the next one, with no restart and no
 refresh command. The prompt cache is protected by comparison rather than by caching the read: an
@@ -591,6 +596,69 @@ call that fetched it unanswered, which breaks the session outright. When compact
 the model is told which skills went and that it may reload them; without that it would keep citing a
 document it can no longer read. `/skills` shows what exists; the session panel shows what is
 currently in force.
+
+---
+
+## Custom commands
+
+A prompt you use often, saved as a file and run by typing its name. `/review 42` sends the file's
+text, with `42` filled in, as your message; the model does the work. Claude Code's command files work
+unchanged.
+
+```markdown
+---
+description: Review a pull request
+argument-hint: [pr-number]
+---
+
+Review PR $1. Current diff:
+
+!`gh pr diff $1`
+
+Follow the house style in @CONTRIBUTING.md.
+```
+
+**Where they live** — read the same way as skills, nearest first, one file per name:
+
+| Location | Meaning |
+|---|---|
+| `<repo>/.cxagent/commands/` | This project, addressed to this agent |
+| `<repo>/.claude/commands/` | This project, written for Claude Code |
+| `<config dir>/commands/` | You, wherever you work |
+| `~/.claude/commands/` | You, from Claude Code |
+
+At each level a command file comes before a skill, so `review.md` and a `review` skill side by side
+mean the command. The name is the file name; a subfolder (`commands/frontend/component.md`) is only a
+label in the palette, and two subfolders at one level holding the same name are both skipped, since
+neither is more "the" one. Names use letters, digits, `-` and `_`. **A built-in always wins**: a
+repo's `init.md` never changes what `/init` does, and `/commands` lists it as shadowed by the
+built-in.
+
+**Frontmatter is optional.** Without it the first line is the description. `description` and
+`argument-hint` show in the `/` palette. `allowed-tools` and `model` are ignored and listed as
+ignored — the first is another application's permission grant, the second names its models.
+
+**What the file can do:**
+
+- `$ARGUMENTS` is everything after the name; `$1`…`$9` are the words, split as a shell would, quotes
+  grouping. A file with neither still gets what you typed, as a last line `ARGUMENTS: …`.
+- ``!`command` `` runs before the prompt is sent, with `/bin/sh -c` from the working folder, and its
+  output (up to 20 KB) takes its place. **It asks, the way the model's `run_shell` does**: rules, the
+  edit mode and the folder's trust decide, and "Always allow" covers it next time. A refused line
+  becomes `(not run: refused)`; one still running after 60 seconds is killed. An argument inside a
+  shell line is quoted, so `/review "1; rm -rf ~"` reaches `gh` as one harmless word.
+- `@path` attaches that file under the prompt, through the same read permission the model's
+  `read_file` gets. Something after `@` that is not a file — `@Override`, `@types/node` — stays as
+  text.
+
+**Only the file's own text does this.** What you type after the name fills placeholders and nothing
+else: `/review @secret.txt` sends the words `@secret.txt`, and a typed `` !`…` `` is never run.
+
+**Typed while a turn runs**, a command waits for it to finish and then runs as its own turn, expanded
+then — so ``!`git diff` `` sees what the turn changed. See [COMMANDS.md](COMMANDS.md#commands).
+
+**Headless too.** `cxagent -p "/review 42"` runs the file. With nobody to answer, a shell line runs
+only if a rule or the permission mode allows it, and a refusal is listed in `permission_denials`.
 
 ---
 

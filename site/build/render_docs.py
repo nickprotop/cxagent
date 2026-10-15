@@ -27,6 +27,7 @@ GITHUB_BLOB = "https://github.com/nickprotop/cxagent/blob/master"
 RENDERED = OrderedDict([
     ("COMMANDS.md", "commands"),
     ("CONFIG.md", "config"),
+    ("SCRIPTING.md", "scripting"),
     ("cxagent.Core/docs/plugins.md", "plugins"),
     ("docs/screenshots/README.md", "walkthrough"),
 ])

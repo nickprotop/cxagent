@@ -55,9 +55,10 @@ public class CommandSelectionTests
 
     // --- /skills -------------------------------------------------------------------------
 
-    private static SkillCatalogResult OneSkill() => new(
-        [new SkillInfo("writing-tests", "Use when writing tests.", "/tmp/skills/writing-tests", "body")],
-        [], "/tmp/skills");
+    private static InvocableCatalogResult OneSkill() => new(
+        [new Invocable("writing-tests", InvocableKind.Skill, "/tmp/skills/writing-tests/SKILL.md", "/tmp/skills",
+            null, "Use when writing tests.", null, true, true, [], "body", "/tmp/skills/writing-tests")],
+        [], []);
 
     [Fact]
     public void SkillsListsWithoutRemarkWhenTheSkillToolIsOffered()
@@ -95,7 +96,7 @@ public class CommandSelectionTests
         // write one at .cxagent/skills/<name> — the worst advice available to someone whose agent
         // cannot load a skill however many they write. Found only because the wiring test ran
         // against an empty temp directory.
-        var empty = new SkillCatalogResult([], [], null);
+        var empty = InvocableCatalogResult.Empty;
 
         Assert.Contains("not offered", new SkillsCommand(() => empty, skillToolOffered: false).Render());
     }

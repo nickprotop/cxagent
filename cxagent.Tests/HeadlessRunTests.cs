@@ -299,4 +299,64 @@ public class HeadlessRunTests : IDisposable
 
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(err, "Queue empty"));
     }
+
+    private void CommandFile(string name, string text)
+    {
+        var folder = Path.Combine(_work, ".cxagent", "commands");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, name + ".md"), text);
+    }
+
+    [Fact]
+    public async Task ACustomCommand_Expands_InAHeadlessRun()
+    {
+        CommandFile("review", "Review PR $1.");
+        var model = Says("reviewed");
+
+        var (code, output, _) = await Run(model, null, "-p", "/review 7");
+
+        Assert.Equal(0, code);
+        Assert.Equal("reviewed", output.Trim());
+        Assert.Contains(model.LastMessages!, m => m.Role == "user" && m.Content == "Review PR 7.");
+    }
+
+    [Fact]
+    public async Task PipedInput_GoesUnderTheExpansion_NotIntoArguments()
+    {
+        CommandFile("summarise", "Summarise: $ARGUMENTS");
+        var model = Says("ok");
+
+        await Run(model, "line one\nline two", "-p", "/summarise briefly");
+
+        var sent = model.LastMessages!.Last(m => m.Role == "user").Content;
+        Assert.StartsWith("Summarise: briefly", sent);
+        Assert.Contains("line one", sent);
+    }
+
+    /// <summary>A shell line that would prompt is refused headless and listed as a denial.</summary>
+    [Fact]
+    public async Task AShellLineThatWouldPrompt_IsRefused_AndListed()
+    {
+        // NOT /diff: that is a built-in, which wins over a file of its name and goes to the model as text.
+        CommandFile("changes", "Changes:\n!`git diff`");
+        var model = Says("ok");
+
+        var (_, output, _) = await Run(model, null, "-p", "/changes", "--output-format", "json");
+
+        using var doc = JsonDocument.Parse(output);
+        Assert.NotEmpty(doc.RootElement.GetProperty("permission_denials").EnumerateArray());
+        Assert.Contains(model.LastMessages!, m => m.Content.Contains("(not run: refused)"));
+    }
+
+    /// <summary>A file named like a built-in does not run headless either: /clear is still text.</summary>
+    [Fact]
+    public async Task AFileNamedLikeABuiltIn_StaysText_InAHeadlessRun()
+    {
+        CommandFile("clear", "Not the real clear — expanded anyway.");
+        var model = Says("ok");
+
+        await Run(model, null, "-p", "/clear");
+
+        Assert.Contains(model.LastMessages!, m => m.Role == "user" && m.Content == "/clear");
+    }
 }

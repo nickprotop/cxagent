@@ -148,4 +148,26 @@ public class ChatTranscriptSinkTests
         Assert.Contains("\u2717 boom", row.Text, StringComparison.Ordinal);
         Assert.Contains(ColorScheme.DangerMarkup, row.Text, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// The queued and held rows carry markup — a dim label — so they say "markup" for themselves.
+    /// Left to the System role's markdown, the first "[dim]" reached the screen as five characters.
+    /// </summary>
+    [Fact]
+    public void TheQueuedRow_IsMarkup_WithTheTypedTextEscaped()
+    {
+        var row = ChatTranscriptSink.QueuedRow("fix [this]");
+
+        Assert.False(row.Markdown);
+        Assert.Equal("[dim]queued[/] fix [[this]", row.Text);
+    }
+
+    [Fact]
+    public void TheHeldRow_IsMarkup_WithTheCommandEscaped()
+    {
+        var row = ChatTranscriptSink.HeldRow("/review [x]");
+
+        Assert.False(row.Markdown);
+        Assert.Equal("[dim]held[/] /review [[x] [dim]— runs when this turn ends[/]", row.Text);
+    }
 }

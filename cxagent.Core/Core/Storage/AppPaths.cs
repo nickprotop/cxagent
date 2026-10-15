@@ -38,6 +38,20 @@ public class AppPaths
     /// </summary>
     public string LogsDir => Path.Combine(ConfigDir, "logs");
 
+    /// <summary>
+    /// The user's home folder, for <c>~/.claude/commands</c> and <c>~/.claude/skills</c>, or null to
+    /// read none.
+    ///
+    /// <para>NULL UNLESS SET, for every constructor. A library embedding Core should not find another
+    /// tool's commands and skills in its model's prompt because it took the default paths, and a test
+    /// that read the developer's own <c>~/.claude</c> would pass or fail by machine. cxagent's own
+    /// startup sets it — <c>new AppPaths(dir) { HomeDir = AppPaths.UserHome }</c>.</para>
+    /// </summary>
+    public string? HomeDir { get; init; }
+
+    /// <summary>The signed-in user's home folder.</summary>
+    public static string UserHome => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
     public AppPaths(string? overrideDir = null)
     {
         if (overrideDir is not null)

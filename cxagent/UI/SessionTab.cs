@@ -134,6 +134,14 @@ public sealed class SessionTab
     public SharpConsoleUI.Controls.ChatMessageId? QueuedBlock { get; set; }
 
     /// <summary>
+    /// The row standing for this conversation's held command, or null when none is held.
+    ///
+    /// <para>APART FROM <see cref="QueuedBlock"/>: queued text joins the running turn, a held command
+    /// runs after it, and one row saying both would misdescribe one of them.</para>
+    /// </summary>
+    public SharpConsoleUI.Controls.ChatMessageId? HeldBlock { get; set; }
+
+    /// <summary>
     /// The configuration this conversation resolved against, or null before it has wired one.
     ///
     /// <para>PER CONVERSATION BECAUSE /model IS. Two sessions can run different providers — that is

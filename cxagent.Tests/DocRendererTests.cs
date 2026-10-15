@@ -88,6 +88,7 @@ public class DocRendererTests
             File.WriteAllText(Path.Combine(fake, "COMMANDS.md"),
                 "# Commands\n\nSee [the config](CONFIG.md#no-such-heading).\n");
             File.WriteAllText(Path.Combine(fake, "CONFIG.md"), "# Configuration\n\nNothing here.\n");
+            File.WriteAllText(Path.Combine(fake, "SCRIPTING.md"), "# Scripting\n\nNothing here.\n");
             File.WriteAllText(Path.Combine(fake, "cxagent.Core", "docs", "plugins.md"),
                 "# Writing a plugin\n\nNothing here.\n");
             // EVERY DOCUMENT IN RENDERED MUST EXIST, or the renderer fails on the missing file

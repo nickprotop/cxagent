@@ -26,6 +26,7 @@ on:
       - 'plugins/plugins.json'
       - 'COMMANDS.md'
       - 'CONFIG.md'
+      - 'SCRIPTING.md'
       - 'cxagent.Core/docs/plugins.md'
       # THE WALKTHROUGH AND ITS IMAGES. render_docs.py renders four documents and this list named
       # three, so an edit to the walkthrough — or a new screenshot in it — published only when some

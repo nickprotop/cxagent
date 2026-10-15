@@ -99,6 +99,7 @@
       <button type="button" class="exp-item" role="tab" id="tab-23-shell-terminal" aria-controls="pane-23-shell-terminal"><span class="exp-icon">&#128421;&#65039;</span><span>A real terminal</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-29-btw-aside" aria-controls="pane-29-btw-aside"><span class="exp-icon">&#128172;</span><span>A side question</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-31-headless" aria-controls="pane-31-headless"><span class="exp-icon">&#9881;&#65039;</span><span>Headless</span></button>
+      <button type="button" class="exp-item" role="tab" id="tab-32-custom-commands" aria-controls="pane-32-custom-commands"><span class="exp-icon">&#128221;</span><span>Your commands</span></button>
       </div>
       <div class="exp-body" id="panels">
       <div class="exp-pane" role="tabpanel" id="pane-session-overview" aria-labelledby="tab-session-overview">
@@ -152,6 +153,10 @@
       <div class="exp-pane" role="tabpanel" id="pane-31-headless" aria-labelledby="tab-31-headless">
         <div class="exp-shot"><a href="screenshots/31-headless.png" title="Open the full-size capture"><img src="screenshots/31-headless.png" alt="Four headless runs in a shell: an answer, a pipe, JSON through jq, and a continued run" loading="lazy"></a></div>
         <div class="exp-text"><h3>One goal, no window</h3><p><code>cxagent -p</code> runs a goal and prints the answer, so it goes in a pipe, a script or a CI job. The options are Claude Code's — <code>--output-format json</code>, <code>stream-json</code>, <code>-c</code> to continue the run before — so a script written for <code>claude -p</code> works with cxagent swapped in.</p><p class="exp-aside">Nobody is there to answer a prompt, so anything that would ask is refused and listed in the result; each run is an ordinary session you can open in the TUI.</p></div>
+      </div>
+      <div class="exp-pane" role="tabpanel" id="pane-32-custom-commands" aria-labelledby="tab-32-custom-commands">
+        <div class="exp-shot"><a href="screenshots/32-custom-commands.png" title="Open the full-size capture"><img src="screenshots/32-custom-commands.png" alt="A custom /review-branch command after it ran, with the / palette listing the project's commands" loading="lazy"></a></div>
+        <div class="exp-text"><h3>A prompt you keep, as a command</h3><p>A markdown file in <code>.claude/commands</code> became <code>/review-branch</code>. The row shows what was typed; the model got the file, with the arguments filled in and the output of its <code>git diff</code> line — which asked first, as the agent's own shell calls do.</p><p class="exp-aside">Claude Code's commands and skills work as they are; the palette tags each one with where it came from, because the nearer file of a name wins.</p></div>
       </div>
       </div>
     </div>
@@ -269,6 +274,21 @@
       <code>--theme &lt;name&gt;</code>, and <code>cxagent --help</code> lists what is installed. The
       captures above are not all the same one.</p>
     </div>
+    <div class="u-item">
+      <div class="u-num">16</div>
+      <p class="u-title">One goal, or a script full of them</p>
+      <p class="u-body"><code>cxagent -p</code> runs a goal with no window and prints the answer, as
+      text, JSON or a stream of events. <code>-c</code> carries a script's next step on in the same
+      conversation, which then opens in the TUI like any other. Anything that would have asked is
+      refused and listed in the result.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">17</div>
+      <p class="u-title">Your prompts, as commands</p>
+      <p class="u-body">A markdown file becomes <code>/review 42</code>: arguments filled in, shell
+      lines and <code>@file</code> includes run through the same permission prompts as the agent's
+      own calls. Your Claude Code commands and skills work as they are.</p>
+    </div>
   </div>
 </section>
 
@@ -285,6 +305,7 @@
     <a class="chip" href="writing-a-plugin.html"><b>04</b>Writing a plugin</a>
     <a class="chip" href="docs/commands.html"><b>05</b>Commands</a>
     <a class="chip" href="docs/config.html"><b>06</b>Configuration</a>
+    <a class="chip" href="docs/scripting.html"><b>07</b>Scripting</a>
     <a class="chip" href="https://github.com/nickprotop/cxagent/releases"><b>↗</b>Releases</a>
     <a class="chip" href="https://github.com/nickprotop/cxagent"><b>↗</b>GitHub</a>
   </div>

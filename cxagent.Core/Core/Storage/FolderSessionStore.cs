@@ -265,7 +265,8 @@ public sealed class FolderSessionStore(AppPaths paths)
 
         if (first is null) return null;
 
-        var text = first.Content.ReplaceLineEndings(" ").Trim();
+        // WHAT THE USER SAW, when that differs from what was sent — see ChatMessage.Shown.
+        var text = (first.Shown ?? first.Content).ReplaceLineEndings(" ").Trim();
         return text.Length <= 80 ? text : text[..80].TrimEnd() + "…";
     }
 }

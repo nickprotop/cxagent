@@ -200,4 +200,12 @@ public class FolderSessionStoreTests : IDisposable
 
         Assert.True(Directory.Exists(orphan));
     }
+
+    /// <summary>A message the transcript showed differently — a typed command — is titled as shown.</summary>
+    [Fact]
+    public void TheTitle_IsWhatWasShown_WhenItDiffers() =>
+        Assert.Equal("/review 42", FolderSessionStore.TitleOf(
+        [
+            new CxAgent.Core.Models.ChatMessage { Role = "user", Content = "Review PR 42 against…", Shown = "/review 42" },
+        ]));
 }

@@ -72,6 +72,19 @@ public static class WindowPermissionPrompt
             (request, offerTrust, ct) => ShowOneAtATime(system, mw, request, offerTrust, ct));
 
     /// <summary>
+    /// What Escape does on this prompt.
+    ///
+    /// <para>"NO" FOR THE MODEL'S OWN CALL, so the run continues and the model adapts to the refusal —
+    /// see MainWindow.TryDenyPermission. A COMMAND'S LINE STOPS THE COMMAND: the user pressing Escape
+    /// on a <c>!`…`</c> line they just set off means "don't send this", and denying the one line
+    /// would still send the rest. Cancelling the turn resolves this prompt as Deny through its
+    /// cancellation registration and hands the typed command back to the composer.</para>
+    /// </summary>
+    /// <param name="stopTurn">Cancels the asking session's turn; null when there is none to find.</param>
+    public static Action EscapeAction(PermissionRequest request, Action deny, Action? stopTurn) =>
+        request.RaisedByCommand && stopTurn is not null ? stopTurn : deny;
+
+    /// <summary>
     /// Waits for the composer cell, then asks.
     ///
     /// <para>A REQUEST CANCELLED WHILE STILL QUEUED IS A DENY. It never reached the screen, so there
@@ -109,7 +122,13 @@ public static class WindowPermissionPrompt
             // control, so it cannot answer the prompt on its own — this is the one operation
             // Escape needs, and TryCancel is already the safe idempotent Deny the cancellation
             // registration below uses.
-            system.EnqueueOnUIThread(() => mw.ShowPermissionPrompt(content, prompt.TryCancel), "windowPermissionPrompt.ShowOneAtATime");
+            //
+            // A COMMAND'S LINE STOPS THE COMMAND instead — see EscapeAction.
+            var stopTurn = request.Policy?.SessionId is { } sessionId
+                ? () => { mw.TabForSessionId(sessionId)?.Session?.CancelTurn(); }
+                : (Action?)null;
+            var escape = EscapeAction(request, prompt.TryCancel, stopTurn);
+            system.EnqueueOnUIThread(() => mw.ShowPermissionPrompt(content, escape), "windowPermissionPrompt.ShowOneAtATime");
             return await AwaitAndRestore(prompt, ct,
                 () => system.EnqueueOnUIThread(() => mw.RestoreComposer(content),
                     "windowPermissionPrompt.RestoreComposer"));

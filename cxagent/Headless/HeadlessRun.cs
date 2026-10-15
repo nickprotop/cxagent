@@ -104,7 +104,7 @@ public static class HeadlessRun
         try
         {
             return await RunSessionAsync(new OpenedRun(r, goal.Text!, output, gate, stores, services, session,
-                resolution, target, plugins, folders));
+                resolution, target, plugins, folders) { Piped = goal.Piped });
         }
         finally
         {
@@ -116,7 +116,11 @@ public static class HeadlessRun
     // without a dozen positional arguments.
     private sealed record OpenedRun(HeadlessRequest Request, string Goal, HeadlessOutput Output,
         PermissionDecider Gate, StartupStores Stores, StartupServices Services, Session Session,
-        ResolvedConfig Resolution, ResumeTarget Target, PluginChoice Plugins, IReadOnlyList<string> Folders);
+        ResolvedConfig Resolution, ResumeTarget Target, PluginChoice Plugins, IReadOnlyList<string> Folders)
+    {
+        /// <summary>The piped block apart from the goal, for a custom command to put under its expansion.</summary>
+        public string? Piped { get; init; }
+    }
 
     private static async Task<int> RunSessionAsync(OpenedRun run)
     {
@@ -199,7 +203,14 @@ public static class HeadlessRun
 
         var clock = Stopwatch.StartNew();
         // SubmitRaw, NOT Submit: a goal is always a goal. "/clear" goes to the model as text.
-        if (session.SubmitRaw(goal) is not Session.SubmitOutcome.Started started)
+        //
+        // EXCEPT A CUSTOM COMMAND, which IS a goal — a saved one — so -p "/review 7" runs it as the
+        // TUI would. FindTyped answers null for a built-in or an unknown name, which keep going as
+        // text. Piped input goes under the expansion, never into $ARGUMENTS.
+        var submitted = h.Goal is { } typed && session.FindTyped(typed) is { } entry
+            ? session.RunCommand(new TypedCommand(typed, entry) { Attachment = run.Piped })
+            : session.SubmitRaw(goal);
+        if (submitted is not Session.SubmitOutcome.Started started)
         {
             r.Io.Err.WriteLine("cxagent: the session could not start a turn.");
             return 2;

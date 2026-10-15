@@ -287,6 +287,21 @@ public sealed partial class Session
         // business, and sending it to the aside would lose it.
         if (InAside && IsTheUser(source, origin)) return SendAside(text);
 
+        return Route(new TurnRequest(text, echo, tools, origin, source));
+    }
+
+    /// <summary>
+    /// <see cref="Submit"/> past btw mode: a command, a command file or skill, or the model.
+    ///
+    /// <para>ITS OWN METHOD so a held command takes exactly this path and no copy of it — the same
+    /// lookups in the same order, the same "unknown" sentence — while skipping the btw check, which
+    /// is about what is typed in btw mode and a held command was typed before it.</para>
+    /// </summary>
+    private SubmitOutcome Route(TurnRequest request)
+    {
+        var (text, echo, tools, origin, source) = (request.Text, request.Echo, request.Tools,
+            request.Origin, request.Source);
+
         if (Manager is { } manager && text.TrimStart().StartsWith('/'))
         {
             switch (manager.Commands.Run(this, text))
@@ -311,6 +326,12 @@ public sealed partial class Session
             // call a registered command "unknown" right after Run above dispatched it correctly.
             if (SessionCommands.Match(text, manager.Commands) is null)
             {
+                // A COMMAND FILE OR SKILL, AFTER THE REGISTRY HAD NOTHING — so a built-in always
+                // wins — and ONLY FOR THE USER'S OWN TYPING: a delivery or a plugin's goal that
+                // happens to start with /deploy must never run a file's shell lines.
+                if (IsTheUser(source, origin) && FindTyped(text) is { } entry)
+                    return RunCommand(new TypedCommand(text, entry));
+
                 Say(new Message($"Unknown command '{text.TrimStart().Split(' ')[0]}'. Available: "
                     + string.Join(", ", manager.Commands.All.Select(c => c.Name)) + ".",
                     Severity.Warning));
@@ -330,7 +351,7 @@ public sealed partial class Session
         // queued text early, attached to words the user did not write, hidden behind their echo.
         //
         // WHERE IT IS ATTACHED depends on which arm Send takes — see Send.
-        return Send(new TurnRequest(text, echo, tools, origin, source), IsTheUser(source, origin));
+        return Send(request, IsTheUser(source, origin));
     }
 
     /// <summary>
@@ -400,6 +421,11 @@ public sealed partial class Session
         // beside the turn can.
         if (IsBusy)
         {
+            // A COMMAND IS HELD, NEVER STEERED. RunCommand checks IsBusy too, but a turn can start
+            // between that check and this one; steering here would deliver the raw "/name" line as
+            // prose and drop the expansion that was the whole point of the request.
+            if (request.Expand is not null) return Hold(request.Text);
+
             // NOBODY TYPED THIS, SO NOTHING MAY SAY THEY DID. Steer is announced through
             // UserTurnAdded and drawn as the user's own queued block — offered back for editing when
             // a cancel returns it — which for a command's result puts words on the transcript the
@@ -485,7 +511,7 @@ public sealed partial class Session
         try
         {
             return new SubmitOutcome.Started(
-                RunTurnAsync(new TurnRequest(text, echo, tools, origin, source), result, outcome),
+                RunTurnAsync(request with { Text = text, Echo = echo }, result, outcome),
                 result.Task, outcome.Task);
         }
         finally
@@ -512,6 +538,7 @@ public sealed partial class Session
         var echo = request.Echo;
         var tools = request.Tools;
         var origin = request.Origin;
+        var expand = request.Expand;
 
         // ONLY THE FIRST LAP CAN BE THE APPLICATION'S. Every later lap is text the user typed while
         // this turn ran, and is announced as theirs.
@@ -552,6 +579,11 @@ public sealed partial class Session
             Volatile.Write(ref _busy, true);
             Volatile.Write(ref _originator, origin ?? TurnOriginator.User);
             SendResult sent;
+
+            // WHAT THE TWO EARLY EXITS DO WITH A HELD COMMAND, acted on in the finally — see there for
+            // why neither can happen in the catch itself. A cancel drops it; a failure runs it.
+            var dropHeld = false;
+            var runHeld = false;
             try
             {
                 // THE TRANSCRIPT'S OWN TURNS, announced before the model is called so a watcher has a
@@ -571,12 +603,45 @@ public sealed partial class Session
                 _sink?.AssistantTurnBegan(assistantId);
                 _sink?.AssistantTurnEnded(assistantId);   // the agent opens its own turns
 
-                sent = await Host!.RunAsync(text, scope.Token, tools);
+                // THE COMMAND'S EXPANSION, ON THE FIRST LAP ONLY: later laps are steered text the user
+                // typed, sent as itself.
+                string? expanded = null;
+                var fromCommand = expand is not null;
+                if (expand is not null)
+                {
+                    expanded = await expand(scope.Token);
+                    expand = null;
+
+                    // A CANCEL IS A CANCEL EVEN WHEN NOTHING THREW. The real gate answers a prompt
+                    // cancelled under it with a deny rather than an exception, so the expansion can
+                    // come back with text after Esc — and the host would then store it in the
+                    // conversation under a token that is already cancelled. Thrown here, it takes the
+                    // cancellation path below: nothing stored, the model never called.
+                    scope.Token.ThrowIfCancellationRequested();
+                }
+
+                if (fromCommand && string.IsNullOrWhiteSpace(expanded))
+                {
+                    // A LAP THAT SENT NOTHING, NOT THE END OF THE TURN. Text steered while the
+                    // expansion ran is still waiting below, and returning from here would strand it
+                    // in the queue and skip the plugin goal a turn's end drains. Failed with no text
+                    // is what the caller is told when nothing follows.
+                    Say(new Message("nothing to send — the command expanded to no text.", Severity.Warning));
+                    sent = new SendResult("", SendOutcome.Failed);
+                }
+                else
+                {
+                    if (expanded is not null) text = expanded;
+                    // WHAT THE TRANSCRIPT SHOWED goes with the message when it differs from what is
+                    // sent, so the session list can name the session by it — see ChatMessage.Shown.
+                    sent = await Host!.RunAsync(text, scope.Token, tools,
+                        echo is not null && echo != text ? echo : null);
+                }
             }
             catch (OperationCanceledException)
             {
                 // CANCELLATION ENDS THE DRAIN, and nothing is said: CancelTurn already said
-                // "Stopped." and handed the queue back through CancelPending. Continuing the loop
+                // "Stopped." and handed the queue back through HandBack. Continuing the loop
                 // would send text the user just took back.
                 //
                 // TRYSETRESULT, NOT SETRESULT: a caller awaiting Result while this fires gets null
@@ -584,20 +649,28 @@ public sealed partial class Session
                 // another exit of this same method — SetResult would throw on the second call.
                 result.TrySetResult(null);
                 outcome.TrySetResult(SendOutcome.Cancelled);
+
+                // A CANCELLED TURN RUNS NOTHING AFTER IT. CancelTurn has already taken the slot
+                // through HandBack, so this only names a command held when something other than
+                // CancelTurn cancelled the turn — running it would start work after a stop.
+                dropHeld = true;
                 return;
             }
             catch (Exception ex)
             {
-                // A BACKSTOP, NOT THE REPORTING PATH — verified by silencing it, which changed
-                // nothing: AgentHost catches a failing turn and calls _sink.Failed, so an ordinary
-                // provider failure never reaches here. What does reach here is a host that rethrows,
-                // which today is only cancellation (handled above) but is exactly the kind of thing a
-                // later change adds without noticing.
+                // THE FAILURE PATH. A provider's error — refused, unreachable, a 500 — is rethrown by
+                // the agent and reaches here: this is how a turn fails, not a backstop for one that
+                // should not.
                 //
-                // IT MUST STILL SAY SOMETHING. This loop is fire-and-forget from the caller's side —
+                // IT MUST SAY SOMETHING. This loop is fire-and-forget from the caller's side —
                 // the Task is awaited for its falling edge, not its result — so an exception escaping
                 // silently would leave a session that stopped working with nothing on screen.
                 Say(new Message(ex.Message, Severity.Error));
+
+                // A FAILED TURN STILL RUNS THE COMMAND HELD BEHIND IT, as an answered one does: the
+                // user typed it to come next, and a provider's hiccup on this turn is no reason to
+                // throw it away. A cancel is different — that is the user saying stop.
+                runHeld = true;
 
                 // A CALLER AWAITING Result MUST NOT HANG just because the turn failed rather than
                 // answered — null is the same "no text" signal a silent turn produces.
@@ -627,6 +700,18 @@ public sealed partial class Session
                 // disposing under it throws from a place nobody is catching. Clearing the field is
                 // enough: CancelTurn reads null and answers false.
                 lock (_turnGate) { if (ReferenceEquals(_turn, scope)) _turn = null; }
+
+                // DROPPED AFTER _busy IS CLEARED, NOT IN THE CATCH. Hold stores a line whenever it
+                // sees the session busy, and only these two exits skip the tail that would run it —
+                // so a drop before _busy falls leaves a gap where a line is held, nothing drops it,
+                // and it runs after some later, unrelated turn. Once _busy is false, a Hold either
+                // stores before this take and is dropped by it, or runs its line itself as an idle
+                // session would (see Hold). Nothing is left in the slot.
+                if (dropHeld) DropHeld();
+
+                // AND RUN AFTER IT, for the same reason: with _busy clear, the held line starts its
+                // own turn rather than being held again. Its outcome is not this turn's.
+                if (runHeld && TakeHeld() is { } held) RunHeld(held);
             }
 
             // WHOLE OR NOT AT ALL, and never an echo: what goes in on a later lap is exactly what the
@@ -641,6 +726,21 @@ public sealed partial class Session
                 // member promises null for.
                 result.TrySetResult(string.IsNullOrWhiteSpace(sent.Text) ? null : sent.Text);
                 outcome.TrySetResult(sent.Outcome);
+
+                // THE HELD COMMAND RUNS BEFORE ANY QUEUED PLUGIN GOAL: the user typed it while
+                // watching this turn, and the plugin's goal waits one more turn either way. Looked up
+                // again now — a file deleted meanwhile is "unknown", not a stale copy — and expanded
+                // now, against the state this turn left. In the MAIN conversation even if btw mode
+                // was entered meanwhile: see RunHeld.
+                //
+                // THE PLUGIN'S GOAL WAITS ONLY FOR A TURN THAT EXISTS: the held one's (Started), or one
+                // that began meanwhile and held the line again (Queued) — that turn's own tail drains
+                // it, and draining here would steer the goal into it. A held line that starts nothing
+                // — its file deleted, a refusal — falls through, or the goal would sit until some
+                // unrelated turn ended.
+                if (TakeHeld() is { } held
+                    && RunHeld(held) is SubmitOutcome.Started or SubmitOutcome.Queued)
+                    return;
 
                 // A DIFFERENT QUEUE FROM THE STEER ABOVE, and drained only here, once this loop is
                 // truly done rather than on every lap. Steer JOINS the running turn — the text above
@@ -671,7 +771,18 @@ public sealed partial class Session
     /// nullable, is the shape where two get transposed and it still compiles.</para>
     /// </summary>
     private sealed record TurnRequest(string Text, string? Echo, Jobs.ToolSelection? Tools,
-        TurnOriginator? Origin, SubmitSource Source);
+        TurnOriginator? Origin, SubmitSource Source)
+    {
+        /// <summary>
+        /// A typed command's expansion, run as the turn's first step. It returns the text to send, or
+        /// null when there is nothing to send.
+        ///
+        /// <para>INSIDE THE TURN, after the user's row is drawn, so the session is busy throughout —
+        /// a second message steers rather than starting another turn — and Esc cancels it like any
+        /// turn.</para>
+        /// </summary>
+        public Func<CancellationToken, Task<string?>>? Expand { get; init; }
+    }
 
     /// <summary>
     /// Stops the running turn and hands back anything queued behind it. True when a turn was stopped.
@@ -682,7 +793,7 @@ public sealed partial class Session
     /// user chose to abandon.</para>
     ///
     /// <para>ANYTHING QUEUED GOES BACK, not to the bin. That text was never sent, so cancelling must
-    /// not eat it — and where it goes is not this method's business: <see cref="CancelPending"/>
+    /// not eat it — and where it goes is not this method's business: <see cref="HandBack"/>
     /// raises <see cref="Cancelled"/> and a subscriber decides. The UI puts it in the composer above
     /// whatever has been typed since; a log writer would record it.</para>
     ///
@@ -703,6 +814,13 @@ public sealed partial class Session
         // callback reaching back into the session would deadlock against a turn trying to finish.
         if (turn is null || turn.IsCancellationRequested) return false;
 
+        // THE EXPANDING LINE AND THE HELD ONE ARE TAKEN BEFORE CANCEL, NOT AFTER. Cancel runs the
+        // token's callbacks on this thread, and a turn can unwind inline from there — an expansion's
+        // finally clears its field, and the cancel exit drops the held slot with "was not run" —
+        // before Cancel returns. Read afterwards, both are gone and the user's typed command with
+        // them; whether that happens depends on how the awaits below happened to be scheduled.
+        var expanding = Interlocked.Exchange(ref _expanding, null);
+        var held = TakeHeld();
         turn.Cancel();
 
         Announce(SessionChangeKind.TurnCancelled);
@@ -711,7 +829,7 @@ public sealed partial class Session
         // AFTER the announcement, so a subscriber restoring the text into a composer is drawing over
         // a surface that has already reacted to the stop — announce before you say, and before you
         // hand anything back.
-        CancelPending();
+        HandBack(expanding, held);
         return true;
     }
 }

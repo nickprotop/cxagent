@@ -218,6 +218,17 @@ public sealed class ChatTranscriptSink : ISessionObserver
     };
 
     /// <summary>
+    /// The stand-in for text typed into a running turn: a dim label, then the text as typed.
+    /// MARKUP, said here, for the reason <see cref="Row"/> gives — the System role renders markdown,
+    /// which put the label's own "[dim]" on screen.
+    /// </summary>
+    public static SystemRow QueuedRow(string body) => new($"[dim]queued[/] {Escape(body)}", false);
+
+    /// <summary>The stand-in for a command waiting for the running turn to end. Markup, as above.</summary>
+    public static SystemRow HeldRow(string line) =>
+        new($"[dim]held[/] {Escape(line)} [dim]— runs when this turn ends[/]", false);
+
+    /// <summary>
     /// Posts a system row in the dialect it asks for.
     /// </summary>
     /// <remarks>

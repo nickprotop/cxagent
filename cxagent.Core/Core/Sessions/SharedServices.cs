@@ -116,6 +116,10 @@ public sealed record SharedServices
     /// paths object would be five unused members travelling with one used one.</para>
     /// </summary>
     public string? GlobalInstructionsDir { get; init; }
+
+    /// <summary>The user's home, for <c>~/.claude/commands</c> and <c>~/.claude/skills</c> — see
+    /// <see cref="Storage.AppPaths.HomeDir"/>. Null reads none.</summary>
+    public string? HomeDir { get; init; }
 }
 
 /// <summary>

@@ -214,10 +214,11 @@ public sealed class SkillLoader
     /// second implementation of "is this a skill body?" is the kind of duplicate that stays correct
     /// until the marker changes and then disagrees silently.</para>
     ///
-    /// <para>FILTERS ON <c>ToolCallId</c>, NEVER ON <c>Role == "tool"</c>. <see cref="ChatMessage"/>
-    /// says so itself: the wire builders overwrite the role — OpenAI sets "tool", Anthropic emits a
-    /// "user" turn carrying a tool_result block — and <c>ToolCallId</c> is the only reliable marker
-    /// of a tool result. An assistant message that merely QUOTES the marker is not a loaded body.</para>
+    /// <para>A TOOL RESULT IS FOUND BY <c>ToolCallId</c>, NEVER BY <c>Role == "tool"</c>.
+    /// <see cref="ChatMessage"/> says so itself: the wire builders overwrite the role — OpenAI sets
+    /// "tool", Anthropic emits a "user" turn carrying a tool_result block. The other loaded body is a
+    /// user message opening with the marker: a skill typed as /name. An assistant message that merely
+    /// QUOTES the marker is not a loaded body.</para>
     /// </summary>
     public static IReadOnlyList<string> LoadedIn(IReadOnlyList<ChatMessage> messages)
     {
@@ -225,7 +226,13 @@ public sealed class SkillLoader
 
         foreach (var message in messages)
         {
-            if (message.ToolCallId is null) continue;
+            // A TOOL RESULT, OR A SKILL THE USER TYPED BY NAME. A typed /name sends the body as the
+            // user's own message, opening with the same marker the tool returns, so the tool does not
+            // send it again and the panel and compaction see it in force. An assistant message merely
+            // QUOTING the marker is neither.
+            var typed = message.ToolCallId is null
+                && string.Equals(message.Role, "user", StringComparison.Ordinal);
+            if (message.ToolCallId is null && !typed) continue;
             if (!message.Content.StartsWith(BodyMarkerPrefix, StringComparison.Ordinal)) continue;
 
             var end = message.Content.IndexOf(']', BodyMarkerPrefix.Length);

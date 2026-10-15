@@ -100,8 +100,17 @@ public enum EscapeTarget
     /// </summary>
     CancelTurn,
 
-    /// <summary>Nothing to cancel: Escape does nothing.</summary>
+    /// <summary>Not the chat tab's key: Escape goes on to whatever has focus — a terminal's program, a
+    /// file tab's editor.</summary>
     Nothing,
+
+    /// <summary>
+    /// The chat tab, with nothing to cancel: the key is kept and the composer keeps the cursor.
+    ///
+    /// <para>NOT PASSED ON. The composer drops focus on Escape, so an Escape handed to it left Enter
+    /// submitting nothing and typing going nowhere until F4 — a stray key that looked like a hang.</para>
+    /// </summary>
+    KeepComposer,
 
     /// <summary>btw mode, the aside answering: stop that answer, and only that.</summary>
     StopAside,
@@ -145,5 +154,5 @@ public static class EscapeRouting
         : aside is AsideState.Answering ? EscapeTarget.StopAside
         : aside is AsideState.Idle ? EscapeTarget.LeaveAside
         : turnIsRunning ? EscapeTarget.CancelTurn
-        : EscapeTarget.Nothing;
+        : EscapeTarget.KeepComposer;
 }

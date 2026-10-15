@@ -391,6 +391,27 @@ the result — `--trust` here only trusts the folder for the run, and writes not
 
 ---
 
+## A prompt you keep, as a command
+
+![A custom /review-branch command after it ran: the typed line, the git diff it ran, the review, and the / palette listing the project's commands](32-custom-commands.png)
+
+A small repository with a branch that changed `qty >= 10` into `qty > 10`, and a file at
+`.claude/commands/review-branch.md` — written for Claude Code, read here unchanged. Its body asks for
+a review and ends with a line ``!`git diff main...HEAD` ``.
+
+Typing `/review-branch off-by-one errors` sent that file, not those four words. The row shows what was
+typed; what the model received is the file's text with the arguments added and the diff in place of
+the shell line. The diff ran only after the same permission prompt the agent's own `run_shell` gets —
+answered once here — and the notice under the row says what it ran and how much came back. The model
+then read `prices.py` itself to be sure of the line number.
+
+The palette below is `/re` typed again: both of the project's commands, each tagged with where it came
+from. A file from the repo and one from `~/.claude` can share a name, and the nearer one wins — the tag
+is how you see which one is about to run. `/commands` lists them all, with anything shadowed or
+skipped and why.
+
+---
+
 ## A second project, and a worker's receipts
 
 ![A session exploring a codebase, with two finished workers and the panel showing what it cost](session-overview.png)

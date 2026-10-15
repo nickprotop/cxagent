@@ -1,4 +1,5 @@
 using CxAgent.Core.Models;
+using CxAgent.Core.Skills;
 
 namespace CxAgent.Core.Commands;
 
@@ -48,6 +49,10 @@ public static class SessionCommands
         // NO SUBCOMMANDS — it lists, it does not load, and it is not a refresh: skills are re-read
         // every turn, so an edited one is already live.
         new("/skills", "list available skills, and any SKILL.md that was skipped"),
+        // THE TYPEABLE HALF OF WHAT /skills SHOWS THE MODEL'S HALF OF. A bare listing, or one file by
+        // name — what /review will actually send, readable before it is run.
+        new("/commands", "list custom commands, and any file that was shadowed or skipped",
+            [new CommandArgument("<name>", "show that command's file", Completes: false)]),
         // IT EXISTS BECAUSE THE BRIEFINGS ARE NOT IN config.json. The shipped five live in code, so
         // there is no file to open to read what a type is told, and CONFIG.md is a poor substitute
         // when a drive has just gone wrong in front of you.
@@ -183,12 +188,48 @@ public static class SessionCommands
     }
 
     /// <summary>
+    /// Palette rows for the custom commands a catalog holds, to follow the registry's own.
+    ///
+    /// <para>A NAME THE REGISTRY HAS IS LEFT OUT: the built-in runs, so listing the file would offer
+    /// something that never happens. /commands shows it as shadowed instead.</para>
+    ///
+    /// <para>THE HINT IS A DISPLAY-ONLY ARGUMENT, so <c>/review </c> shows what the file asks for the
+    /// way <c>/mcp </c> shows its verbs — and Completes:false, because "[pr-number]" is a description,
+    /// not text to put in the composer.</para>
+    /// </summary>
+    public static IReadOnlyList<SessionCommand> FromCatalog(InvocableCatalogResult catalog,
+        Func<string, bool> isRegistered) =>
+        [.. catalog.Entries
+            .Where(e => e.Typeable && !isRegistered("/" + e.Name))
+            // THE TAG FIRST: the palette cuts a summary at its column width, and at the end the tag is
+            // the part that goes — the one thing that says a cloned repo's file is the one about to run.
+            .Select(e => new SessionCommand("/" + e.Name, SourceTag(e) + " · " + e.Description,
+                e.ArgumentHint is { Length: > 0 } hint ? [new CommandArgument(hint, "", Completes: false)] : null))];
+
+    /// <summary>
+    /// Where a custom command came from, short: <c>project</c>, <c>config</c> or <c>~/.claude</c>,
+    /// then <c>skill</c> for a skill and the subfolder for a labelled command.
+    /// </summary>
+    private static string SourceTag(Invocable e) => string.Join(" · ", new[]
+    {
+        e.Scope switch { InvocableScope.Home => "~/.claude", InvocableScope.Config => "config", _ => "project" },
+        e.Kind == InvocableKind.Skill ? "skill" : null,
+        e.Label,
+    }.Where(p => p is not null));
+
+    /// <summary>
     /// Commands whose name starts with <paramref name="prefix"/> — for tab completion and, later, a
     /// palette. An empty or bare-slash prefix offers everything.
     /// </summary>
-    public static IReadOnlyList<SessionCommand> Matching(string prefix, CommandRegistry? registry = null)
+    /// <param name="prefix">What has been typed so far, slash included.</param>
+    /// <param name="registry">This process's commands, or null for Core's table alone.</param>
+    /// <param name="extra">Custom commands to offer after the registry's — see <see cref="FromCatalog"/>.</param>
+    public static IReadOnlyList<SessionCommand> Matching(string prefix, CommandRegistry? registry = null,
+        IReadOnlyList<SessionCommand>? extra = null)
     {
-        var universe = registry?.All ?? All;
+        IReadOnlyList<SessionCommand> universe = extra is { Count: > 0 }
+            ? [.. registry?.All ?? All, .. extra]
+            : registry?.All ?? All;
         if (string.IsNullOrEmpty(prefix) || prefix == "/") return universe;
 
         var hits = new List<SessionCommand>();
@@ -227,7 +268,7 @@ public static class SessionCommands
     /// </summary>
     public static IReadOnlyList<CommandArgument> ArgumentsFor(
         string input, Func<string, IReadOnlyList<CommandArgument>>? values = null,
-        CommandRegistry? registry = null)
+        CommandRegistry? registry = null, IReadOnlyList<SessionCommand>? extra = null)
     {
         var space = input.IndexOf(' ');
         if (space < 0) return [];
@@ -241,7 +282,7 @@ public static class SessionCommands
         var rest = input[(space + 1)..];
         var name = input[..space];
 
-        var command = All.FirstOrDefault(c =>
+        var command = All.Concat(extra ?? []).FirstOrDefault(c =>
             string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (!command.TakesArguments) return [];
 

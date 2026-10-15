@@ -82,6 +82,7 @@ public class NoProviderCommandTests
     [InlineData("/clear")]
     [InlineData("/trust")]       // the folder's classification, and the store is on disk
     [InlineData("/plugin")]      // the registry and config.Plugins, neither of which is the model
+    [InlineData("/commands")]    // a folder scan, not the model
     public void TheseRunWithNoModel(string input)
         => Assert.False(NeedsAModel(input), $"{input} must work with no provider configured");
 
@@ -103,13 +104,13 @@ public class NoProviderCommandTests
     [Fact]
     public void EveryShippedCommandIsClassified()
     {
-        // A SEVENTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
+        // AN EIGHTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
         // not know, which reads as "not a command" — so a command added to the table but forgotten in
         // TheseRunWithNoModel silently becomes unavailable without a model. This fails when the
         // counts diverge.
         var commands = SessionCommands.All;
 
-        Assert.Equal(16, commands.Count);
+        Assert.Equal(17, commands.Count);
         Assert.All(commands, c => Assert.NotNull(SessionCommands.Match(c.Name)));
     }
 

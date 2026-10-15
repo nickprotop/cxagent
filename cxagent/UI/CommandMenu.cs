@@ -183,6 +183,17 @@ public sealed class CommandMenu
     /// </summary>
     public Func<bool>? CommandsOff { get; set; }
 
+    /// <summary>
+    /// The custom commands to offer after the registry's, or null for none.
+    ///
+    /// <para>READ WHEN THE MENU OPENS and kept while it stays open. Sync runs on every keystroke, and
+    /// a folder scan per keystroke is cost for nothing — while a file saved between two openings is
+    /// still picked up, which is all "live" has to mean for a palette.</para>
+    /// </summary>
+    public Func<IReadOnlyList<SessionCommand>>? Custom { get; set; }
+
+    private IReadOnlyList<SessionCommand> _custom = [];
+
     /// <summary>Whether the menu is currently on screen.</summary>
     public bool IsOpen => _portal is not null;
 
@@ -232,6 +243,8 @@ public sealed class CommandMenu
             return;
         }
 
+        if (!IsOpen) _custom = Custom?.Invoke() ?? [];
+
         // A SPACE DESCENDS INTO THE COMMAND'S ARGUMENTS rather than closing the menu. Closing on a
         // space is a discovery gap: the palette vanishes at exactly the moment a user has committed
         // to a command and needs to know what may follow it, leaving `/mcp reload` and
@@ -239,7 +252,7 @@ public sealed class CommandMenu
         List<Row> matches;
         if (text.Contains(' '))
         {
-            var args = SessionCommands.ArgumentsFor(text, Values, Registry);
+            var args = SessionCommands.ArgumentsFor(text, Values, Registry, _custom);
 
         // A ROW THAT CARRIES ITS PLACEHOLDER COMPLETES TO THE VERB IN FRONT OF IT. Rows like
         // `show <name>` and `login <name>` are otherwise unselectable: Completes:false makes them
@@ -272,7 +285,7 @@ public sealed class CommandMenu
             // THE HINT RIDES WITH THE SUMMARY, so a command that takes arguments does not look
             // identical to one that does not. Without it `/stats` and `/clear` were the same row to
             // a reader, and nothing on screen suggested one of them had more to offer.
-            matches = [.. SessionCommands.Matching(text, Registry).Select(c => new Row(
+            matches = [.. SessionCommands.Matching(text, Registry, _custom).Select(c => new Row(
                 c.Name,
                 c.TakesArguments ? $"{c.Summary}  {c.Hint}" : c.Summary,
                 c.Name))];
@@ -619,6 +632,16 @@ public sealed class CommandMenu
         return new System.Drawing.Rectangle(1, Math.Max(0, bottom - height), width, height);
     }
 
+    /// <summary>
+    /// How wide the name column is: the longest name shown, at least 12 and at most 24.
+    ///
+    /// <para>FITTED, NOT FIXED. Twelve suits the built-ins, and a custom command — /review-branch —
+    /// is often longer, which ran its summary into the name with nothing to line up on. The cap keeps
+    /// one very long name from squeezing every summary to nothing.</para>
+    /// </summary>
+    public static int NameColumnFor(IEnumerable<string> labels) =>
+        Math.Clamp(labels.Select(l => l.Length).DefaultIfEmpty(0).Max(), 12, 24);
+
     private void Render()
     {
         if (_list is null) return;
@@ -626,8 +649,8 @@ public sealed class CommandMenu
         // ONE ROW PER COMMAND. The summary is truncated to whatever is left after the caret and the
         // name column, so a long one is clipped rather than wrapped onto a row of its own.
         var available = Bounds().Width;
-        const int NameColumn = 12;
-        var room = Math.Max(0, available - NameColumn - 4);
+        var nameColumn = NameColumnFor(_shown.Select(c => c.Label));
+        var room = Math.Max(0, available - nameColumn - 4);
 
         // SHOW THE WINDOW AROUND THE SELECTION, not always the first N. With a height cap the list
         // can be taller than the box, and drawing from index 0 would make everything past the cap
@@ -640,7 +663,7 @@ public sealed class CommandMenu
         for (var i = first; i < last; i++)
         {
             var c = _shown[i];
-            var name = MarkupParser.Escape(c.Label).PadRight(NameColumn);
+            var name = MarkupParser.Escape(c.Label).PadRight(nameColumn);
             var summary = MarkupParser.Escape(
                 c.Summary.Length > room ? c.Summary[..Math.Max(0, room - 1)] + "…" : c.Summary);
 

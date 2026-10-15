@@ -4,7 +4,15 @@ namespace CxAgent.Headless;
 
 public sealed record GoalInput(string? Goal, bool StdinRedirected, TextReader Stdin);
 
-public sealed record ComposedGoal(string? Text, string? Error, bool Truncated);
+public sealed record ComposedGoal(string? Text, string? Error, bool Truncated)
+{
+    /// <summary>
+    /// The piped block alone, as it is appended to <see cref="Text"/>, when input was piped alongside
+    /// a goal. A custom command puts it under its expansion: folded into the typed line it would land
+    /// in <c>$ARGUMENTS</c>, and piped text is never an argument.
+    /// </summary>
+    public string? Piped { get; init; }
+}
 
 /// <summary>The goal as the model receives it: -p's text, stdin, or both.</summary>
 public static class HeadlessGoal
@@ -47,9 +55,9 @@ public static class HeadlessGoal
         if (goal is null) return new(pipedText + note, null, truncated);
         if (pipedText is null) return new(goal, null, false);
 
-        var text = new StringBuilder()
-            .Append(goal).Append("\n\nInput piped to this run:\n```\n")
-            .Append(pipedText).Append("\n```").Append(note);
-        return new(text.ToString(), null, truncated);
+        var block = new StringBuilder()
+            .Append("Input piped to this run:\n```\n")
+            .Append(pipedText).Append("\n```").Append(note).ToString();
+        return new(goal + "\n\n" + block, null, truncated) { Piped = block };
     }
 }

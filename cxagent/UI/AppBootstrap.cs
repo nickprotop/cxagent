@@ -131,7 +131,9 @@ public static class AppBootstrap
         // --config-dir OVERRIDES EVERYTHING, including XDG_CONFIG_HOME, because it is the more
         // specific instruction: someone who typed a path on the command line means that path.
         // Null falls through to AppPaths' own resolution, so the default is untouched.
-        var paths = new AppPaths(options.ConfigDir);
+        // HOME EVEN WITH --config-dir: that flag moves cxagent's own state, and ~/.claude is the
+        // user's, read for their Claude Code commands and skills.
+        var paths = new AppPaths(options.ConfigDir) { HomeDir = AppPaths.UserHome };
         paths.EnsureCreated();
 
         // A HEADLESS RUN NEVER BUILDS A WINDOW. It branches here, after the questions that need no
@@ -440,8 +442,6 @@ public static class AppBootstrap
                 if (mainWindow.TabForSession(session) is not { } tab) return;
                 if (body is not { Length: > 0 }) { RemoveQueuedBlock(); return; }
 
-                var text = $"[dim]queued[/] {ChatTranscriptSink.Escape(body)}";
-
                 // REMOVED AND RE-ADDED, not rewritten in place. UpdateMessage leaves the block
                 // wherever it first appeared, so a turn producing output pushes it up the screen and
                 // the user ends up appending to something they cannot see. It is the most recent
@@ -449,7 +449,7 @@ public static class AppBootstrap
                 // occupy when it goes in. Still ONE row either way — the cost this avoids is a row
                 // per message, not a row that moves.
                 RemoveQueuedBlock();
-                tab.QueuedBlock = tab.Chat.AddMessage(ChatRole.System, text);
+                tab.QueuedBlock = ChatTranscriptSink.Post(tab.Chat, ChatTranscriptSink.QueuedRow(body));
 
                 // CANCEL PUTS THEM BACK IN THE COMPOSER, not in the bin. What was typed was meant,
                 // and the same Restore that Escape uses places it ABOVE anything typed since — the
@@ -527,6 +527,18 @@ public static class AppBootstrap
             // MARSHALLED HERE, NOT RAISED THERE. Core has no dispatcher and a headless subscriber
             // should not pay for one — the same division Session.Changed already uses.
             session.Pending += (whole, _) => system.EnqueueOnUIThread(() => ShowQueued(whole), "appBootstrap.DrainQueuedToComposer");
+
+            // THE HELD COMMAND'S OWN ROW. The slot is READ on the UI thread rather than taken from
+            // the event's argument: two holds racing can raise their events out of order, and the
+            // slot is what is true when the row is drawn.
+            session.HeldChanged += _ => system.EnqueueOnUIThread(() =>
+            {
+                if (mainWindow.TabForSession(session) is not { } tab) return;
+                if (tab.HeldBlock is { } old) tab.Chat.RemoveMessage(old);
+                tab.HeldBlock = session.HeldCommand is { } line
+                    ? ChatTranscriptSink.Post(tab.Chat, ChatTranscriptSink.HeldRow(line))
+                    : null;
+            }, "appBootstrap.HeldCommand");
 
 
         // MCP, ITS TOKENS AND THE SESSION MANAGER, built the way every front end builds them — see
@@ -1283,6 +1295,12 @@ public static class AppBootstrap
             // THE ACTIVE SESSION'S MODE, read per keystroke: btw mode belongs to one tab, and the
             // palette must open normally in the tab beside it.
             CommandsOff = () => mainWindow.ActiveSession?.InAside ?? false,
+
+            // THE ACTIVE SESSION'S COMMAND FILES, scanned when the palette opens: a tab in another
+            // project has other files, and a name the registry holds is left out because the built-in
+            // is what typing it runs.
+            Custom = () => SessionCommands.FromCatalog(
+                (mainWindow.ActiveSession ?? session).Catalog(), manager.Commands.IsRegistered),
         };
         commandMenu.Chosen += (_, completion) =>
         {
@@ -1496,11 +1514,16 @@ public static class AppBootstrap
             if (!(mainWindow.ActiveSession ?? session).HasAgent || !mainWindow.SubmissionEnabled)
             {
                 var command = SessionCommands.Match(goalText, manager.Commands);
-                if (command is null or { NeedsModel: true })
+
+                // A CUSTOM COMMAND IS A PROMPT, so it needs a model like any goal — but it is still
+                // a command, and "no model is configured" reads as though the name were not known.
+                var custom = command is null
+                    && (mainWindow.ActiveSession ?? session).FindTyped(goalText) is not null;
+                if (command is null or { NeedsModel: true } || custom)
                 {
                     // SAY WHY, rather than dropping the keystroke. Silence here is what made this
                     // read as a frozen window rather than a session waiting to be configured.
-                    mainWindow.Chat.AddMessage(ChatRole.System, command is null
+                    mainWindow.Chat.AddMessage(ChatRole.System, command is null && !custom
                         ? "No model is configured. Run /model to pick one, or /exit to leave."
                         : "That command needs a model. Run /model to pick one first.");
                     mainWindow.Input.Input = "";
@@ -1880,6 +1903,9 @@ public static class AppBootstrap
                         return true;
                     case EscapeTarget.CancelTurn:
                         escaping.CancelTurn();
+                        return true;
+                    case EscapeTarget.KeepComposer:
+                        mainWindow.FocusComposer();
                         return true;
                 }
 

@@ -206,6 +206,7 @@ Each does the work, says its result through your observer, and returns a `Comman
 | `Use(string?)` | an instance name already decided on | switches |
 | `Use(ActiveModel?, string?)` | a model the catalog never knew | switches |
 | `ListSkills()` | — | says what skills are reachable |
+| `ListCommands(string)` | a command name, or empty | lists custom commands, or shows one file |
 | `ListSessions(string)` | `""`, `"all"`, `"resume 3"` | lists, or restores through the manager |
 | `ListAgentTypes(string)` | a type name, or empty | lists types or one briefing |
 | `ShowDiff(string)` | a path, or empty | says the working-tree diff |
@@ -222,6 +223,39 @@ Each does the work, says its result through your observer, and returns a `Comman
 | `Unknown` | nothing here services this |
 
 `.Handled()` → bool, for routing. `.Moved()` → whether a repaint is warranted.
+
+## Custom commands
+
+**`Submit` does this for you.** A user's `/name` that the registry does not know is looked up among
+command files and skills (`.cxagent/commands`, `.claude/commands`, the skill folders — see
+CONFIG.md) and run as a turn whose first step is expanding the file. A built-in always wins, and only
+the user's own text expands: a delivery or a plugin's goal starting with `/` stays text.
+
+```csharp
+InvocableCatalogResult Catalog()               // every command file and skill, scanned now
+Invocable? FindTyped(string line)              // what this /line runs; null for a built-in or no match
+SubmitOutcome RunCommand(TypedCommand command) // run it — or hold it if a turn is running
+
+string?               HeldCommand              // the command waiting for the turn to end
+event Action<string?>? HeldChanged;            // the slot changed — read HeldCommand, not the argument
+```
+
+**`~/.claude` is opt-in.** The scan reads `<home>/.claude/commands` and `skills` only when
+`AppPaths.HomeDir` is set — `new AppPaths(dir) { HomeDir = AppPaths.UserHome }`. The default leaves it
+null, so a library embedding Core does not find another tool's files in its model's prompt by
+accident; cxagent's own startup sets it.
+
+`TypedCommand(Line, Entry) { Attachment }` — `Attachment` goes under the expansion, never into
+`$ARGUMENTS`; a headless front end puts piped input there.
+
+**Expansion runs inside the turn**, so the session is busy from the moment it starts: the row shows
+what was typed, then shell lines and `@file` reads ask through your permission hook exactly as the
+model's own calls do, then the model gets the expanded text. `CancelTurn()` during expansion sends
+nothing and hands the typed line back through `Cancelled`.
+
+**A command submitted mid-turn is held**, one at a time, and runs when the turn ends. A cancel hands
+back one thing — steered text first, then the line being expanded, then the held command — and names
+anything else as not run.
 
 ## Side questions
 

@@ -17,20 +17,22 @@ namespace CxAgent.Tests;
 [Collection("working-directory")]
 public class SkillsUiTests
 {
-    private static SkillInfo Skill(string name, string description = "Use when testing.") =>
-        new(name, description, $"/tmp/skills/{name}", "body");
+    private static Invocable Skill(string name, string description = "Use when testing.",
+        string folder = "/tmp/skills") =>
+        new(name, InvocableKind.Skill, $"{folder}/{name}/SKILL.md", folder, null, description, null,
+            true, true, [], "body", $"{folder}/{name}");
 
     // RENDERS, RATHER THAN PRINTING THROUGH A DOUBLE. The command took a transcript writer and this
     // supplied a fake one to read back what it wrote; a listing that is pure text needs neither.
-    private static string Render(SkillCatalogResult result) =>
+    private static string Render(InvocableCatalogResult result) =>
         new SkillsCommand(() => result).Render();
 
     [Fact]
     public void Skills_ListsEachSkillWithItsDescription_AndTheDirectoryTheyCameFrom()
     {
-        var text = Render(new SkillCatalogResult(
-            [Skill("rtl-aware-development", "Use when implementing RTL/LTR behaviour.")],
-            [], "/repo/.cxagent/skills"));
+        var text = Render(new InvocableCatalogResult(
+            [Skill("rtl-aware-development", "Use when implementing RTL/LTR behaviour.", "/repo/.cxagent/skills")],
+            [], []));
 
         Assert.Contains("rtl-aware-development", text, StringComparison.Ordinal);
         // VERBATIM: a user debugging "why was this never loaded?" must read what the model read.
@@ -45,10 +47,9 @@ public class SkillsUiTests
     [Fact]
     public void Skills_NamesEverySkippedFile_AndWhy()
     {
-        var text = Render(new SkillCatalogResult(
-            [Skill("good")],
-            [new SkillProblem("/repo/.agents/skills/bad/SKILL.md", "no description")],
-            "/repo/.cxagent/skills"));
+        var text = Render(new InvocableCatalogResult(
+            [Skill("good")], [],
+            [new SkillProblem("/repo/.agents/skills/bad/SKILL.md", "no description")]));
 
         Assert.Contains("/repo/.agents/skills/bad/SKILL.md", text, StringComparison.Ordinal);
         Assert.Contains("no description", text, StringComparison.Ordinal);
@@ -61,13 +62,12 @@ public class SkillsUiTests
     [Fact]
     public void Skills_WithEverythingMalformed_SaysNoneLoaded_WithoutNamingADirectoryAsInUse()
     {
-        var text = Render(new SkillCatalogResult(
-            [],
+        var text = Render(new InvocableCatalogResult(
+            [], [],
             [
                 new SkillProblem("/repo/.cxagent/skills/a/SKILL.md", "no frontmatter"),
                 new SkillProblem("/repo/.agents/skills/b/SKILL.md", "no description"),
-            ],
-            SourceDirectory: null));
+            ]));
 
         Assert.Contains("No skills loaded", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("in use", text, StringComparison.OrdinalIgnoreCase);
@@ -75,11 +75,42 @@ public class SkillsUiTests
         Assert.Contains("no description", text, StringComparison.Ordinal);
     }
 
+    /// <summary>A skill the model never sees is listed apart, not as part of its menu.</summary>
+    [Fact]
+    public void Skills_ListsYouOnlySkills_InTheirOwnSection()
+    {
+        var deploy = Skill("deploy") with { ModelInvocable = false };
+
+        var text = Render(new InvocableCatalogResult([Skill("tidy"), deploy], [], []));
+
+        Assert.Contains("## You only · 1", text, StringComparison.Ordinal);
+        Assert.Contains("## Skills · 1", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>A name with a dot still loads for the model; the row says it cannot be typed.</summary>
+    [Fact]
+    public void Skills_MarksANameThatCannotBeTyped() =>
+        Assert.Contains("not typeable", Render(new InvocableCatalogResult([Skill("dotnet.testing")], [], [])),
+            StringComparison.Ordinal);
+
+    /// <summary>A skill a nearer file took is listed, with what took it.</summary>
+    [Fact]
+    public void Skills_ListsShadowedSkills_WithTheirWinner()
+    {
+        var near = Skill("review", folder: "/repo/.cxagent/skills");
+        var far = Skill("review", folder: "/home/.claude/skills");
+
+        var text = Render(new InvocableCatalogResult([near], [new ShadowedEntry(far, near)], []));
+
+        Assert.Contains("/home/.claude/skills/review/SKILL.md", text, StringComparison.Ordinal);
+        Assert.Contains("shadowed by /repo/.cxagent/skills/review/SKILL.md", text, StringComparison.Ordinal);
+    }
+
     /// <summary>Nothing at all: say where to put one rather than printing an empty heading.</summary>
     [Fact]
     public void Skills_WithNothingFound_SaysWhereToPutOne()
     {
-        var text = Render(new SkillCatalogResult([], [], null));
+        var text = Render(InvocableCatalogResult.Empty);
 
         Assert.Contains("SKILL.md", text, StringComparison.Ordinal);
         Assert.Contains(".cxagent/skills", text, StringComparison.Ordinal);

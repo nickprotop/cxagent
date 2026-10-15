@@ -5,7 +5,7 @@ so they cost nothing — no request, no tokens.
 
 **Which means most of them work with no model configured.** A session opened before you have set up
 a provider can still run `/exit`, `/help`, `/stats`, `/sessions`, `/diff`, `/mode`, `/mcp`,
-`/skills`, `/agents`, `/clear` — and `/model`, the one that fixes it. Only `/compress`, `/init` and
+`/skills`, `/commands`, `/agents`, `/clear` — and `/model`, the one that fixes it. Only `/compress`, `/init` and
 `/btw` need a model, because those genuinely talk to it; each says so rather than doing nothing.
 
 **Type `/` and the list appears.** Arrow to a command, Enter to fill it in. A command that takes
@@ -31,6 +31,9 @@ but not completed.
 | `/mcp reload` | Re-read config and reconnect |
 | `/mcp login <server>` | Authorise a server that needs OAuth |
 | `/skills` | List available skills, and any `SKILL.md` that was skipped |
+| `/commands` | List your custom commands, and any file that was shadowed or skipped |
+| `/commands <name>` | Show that command's file, as it will be sent |
+| `/<name> [args]` | Run a custom command, or a skill by name — see [`/commands`](#commands) |
 | `/agents` | The sub-agent types this session can spawn |
 | `/agents <name>` | The full briefing that type is given |
 | `/agents list` | The sub-agents this session has actually spawned, and which are busy |
@@ -317,13 +320,40 @@ Lists what was found, which directory it came from, and — the reason this comm
 nothing else in the app would ever mention it: you wrote a file, nothing happened, and there is no
 error anywhere.
 
-It lists; it does not load. The model decides what a task needs, and loading one here would spend
-context on a document nothing had asked for.
+It lists; it does not load. The model decides what a task needs, and loading one from a listing
+would spend context on a document nothing had asked for. To run one yourself, type its name:
+`/xunit` sends the skill as your message — see [`/commands`](#commands).
+
+Skills come from every folder, nearest first per name, so the listing says where each one came from,
+which ones a nearer file **shadowed**, which are **you only** (`disable-model-invocation`: the model
+never sees them), and which are **not typeable** (a name like `dotnet.testing` still loads for the
+model but cannot follow a `/`).
 
 It is also **not a refresh.** Skills are re-read from disk every turn, so a skill you just edited is
 already live on the next one — there is nothing to apply.
 
 See [CONFIG.md](CONFIG.md#skills) for where skills live and what a `SKILL.md` looks like.
+
+---
+
+## `/commands`
+
+Your saved prompts. A file at `.cxagent/commands/review.md` — or `.claude/commands/review.md`, which
+is where Claude Code keeps them — is typed as `/review 42`: its text goes to the model with `42`
+filled in, and the transcript shows what you typed. See [CONFIG.md](CONFIG.md#custom-commands) for
+where they live and what a file can do — arguments, ``!`shell` `` lines, `@file` includes.
+
+`/commands` lists what can be typed here, with where each came from, and — the reason it exists —
+**every file that is not running, with why**: shadowed by a nearer file of the same name, shadowed by
+a built-in (a repo's `init.md` never replaces `/init`), or skipped for broken frontmatter or a name
+with a dot in it. Frontmatter it ignores (`allowed-tools`, `model`) is named on the row.
+
+`/commands review` prints the file as cxagent read it and where from — what `/review` will send,
+readable before it runs. Worth it for a command that came with a repo you just cloned: its shell
+lines ask before they run, but reading them first costs nothing.
+
+**Nothing to refresh.** The folders are read when the palette opens and when a command runs, so a
+file you just saved is already there.
 
 ---
 
@@ -672,7 +702,7 @@ cxagent --sessions all          # every folder
 cxagent -c                      # continue the most recent session here
 cxagent -r 5ZFAVZ               # continue that one, by id or any unambiguous abbreviation
 cxagent --resume                # start with this folder's sessions listed, to pick from
-cxagent -p "<goal>"             # one goal, no TUI — see Headless in the README
+cxagent -p "<goal>"             # one goal, no TUI — see SCRIPTING.md
 ```
 
 The options follow Claude Code's names (`-c`/`--continue`, `-r`/`--resume`, `-p`/`--print`), so
@@ -723,6 +753,13 @@ aside's answer instead, then leaves btw mode — see [`/btw`](#btw).
 messages are joined into one prompt, newline-separated, and sent when the turn ends. They are
 appended rather than replaced: two messages typed in succession are usually one thought completed,
 and keeping only the last would silently discard half of what you said.
+
+**A custom command typed during a running turn** waits instead of joining it. It shows as a
+*held* row and runs as its own turn when the running one ends, expanded then, so a ``!`git diff` ``
+inside it sees the changes the turn just made. One waits at a time: a second replaces the first and
+says which. Escape hands it back to the composer — unless you had also typed text into the turn, in
+which case that text comes back, since the composer takes one thing, and the command is named as not
+run.
 
 **A question from the model** takes over the composer, one question at a time. `↑↓` and `Enter`
 choose an option — the first is already highlighted, so a recommended answer is one keypress — or

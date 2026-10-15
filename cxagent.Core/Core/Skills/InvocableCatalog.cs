@@ -1,0 +1,343 @@
+using System.Text.RegularExpressions;
+
+namespace CxAgent.Core.Skills;
+
+/// <summary>Where a scan starts, and the two folders outside the project it also reads.</summary>
+/// <param name="WorkingDirectory">Where the walk up to the repo root starts.</param>
+/// <param name="ConfigDirectory">cxagent's config folder, for its <c>commands</c> and <c>skills</c>.</param>
+/// <param name="HomeDirectory">The user's home, for <c>~/.claude</c>. NULL READS NO HOME FOLDER —
+/// what every test gets, so a developer's own <c>~/.claude</c> never leaks into a test result.</param>
+public sealed record CatalogRoots(string WorkingDirectory, string? ConfigDirectory, string? HomeDirectory);
+
+public enum InvocableKind { Command, Skill }
+
+/// <summary>Which of the three places a file came from: the project, cxagent's config dir, or home.</summary>
+public enum InvocableScope { Project, Config, Home }
+
+/// <summary>One command file or skill — the winner for its name, or a loser on the shadowed list.</summary>
+/// <param name="Name">What follows the <c>/</c>: the file name without <c>.md</c>, or the skill's folder.</param>
+/// <param name="Kind">Command file or skill.</param>
+/// <param name="Path">The file itself.</param>
+/// <param name="Folder">The commands or skills folder it was found under.</param>
+/// <param name="Label">A command's subfolder path (<c>frontend</c>), or null.</param>
+/// <param name="Description">From frontmatter, or a command file's first non-empty line.</param>
+/// <param name="ArgumentHint">What the palette shows after the name, or null.</param>
+/// <param name="UserInvocable">False when <c>user-invocable: false</c> keeps it from being typed.</param>
+/// <param name="ModelInvocable">False for a command file, or a skill marked <c>disable-model-invocation</c>.</param>
+/// <param name="IgnoredFields">Frontmatter keys written for another application and not obeyed.</param>
+/// <param name="Body">The text after the frontmatter, before expansion.</param>
+/// <param name="SkillDirectory">A skill's own folder, or null for a command file.</param>
+public sealed record Invocable(string Name, InvocableKind Kind, string Path, string Folder, string? Label,
+    string Description, string? ArgumentHint, bool UserInvocable, bool ModelInvocable,
+    IReadOnlyList<string> IgnoredFields, string Body, string? SkillDirectory)
+{
+    /// <summary>
+    /// Project, config or home. SAID IN THE PALETTE because nearest-first means a cloned repo's
+    /// <c>review.md</c> replaces yours without a word, and the row is where that is seen before it runs.
+    /// </summary>
+    public InvocableScope Scope { get; init; }
+
+    /// <summary>Whether the user can run it by typing <c>/name</c>.</summary>
+    public bool Typeable => UserInvocable && InvocableCatalog.IsTypeableName(Name);
+
+    public SkillInfo AsSkill() => new(Name, Description, SkillDirectory ?? Folder, Body);
+}
+
+/// <summary>A file that lost its name to a nearer one.</summary>
+public sealed record ShadowedEntry(Invocable Loser, Invocable Winner);
+
+/// <summary>Everything one scan found.</summary>
+/// <param name="Entries">The winner for each name, nearest first.</param>
+/// <param name="Shadowed">Every later file with a name a nearer one took.</param>
+/// <param name="Problems">Files skipped or reported, and why.</param>
+public sealed record InvocableCatalogResult(IReadOnlyList<Invocable> Entries,
+    IReadOnlyList<ShadowedEntry> Shadowed, IReadOnlyList<SkillProblem> Problems)
+{
+    public static InvocableCatalogResult Empty { get; } = new([], [], []);
+
+    /// <summary>What the model sees: winning skills it may load, sorted so the prompt prefix holds.</summary>
+    public IReadOnlyList<SkillInfo> ModelSkills =>
+        [.. Entries.Where(e => e.Kind == InvocableKind.Skill && e.ModelInvocable)
+                   .Select(e => e.AsSkill())
+                   .OrderBy(s => s.Name, StringComparer.Ordinal)];
+
+    /// <summary>The entry the user gets by typing <c>/name</c>, or null.</summary>
+    public Invocable? Typed(string name) =>
+        Entries.FirstOrDefault(e => e.Typeable && string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
+}
+
+/// <summary>
+/// Command files and skills, read from every folder that can hold them, one entry per name.
+///
+/// <para>ONE SCAN, ONE PRECEDENCE RULE. A skill can be typed by name and a command file is a prompt,
+/// so the two are one concept with two layouts; two scanners would carry two rules that have to agree
+/// for ever. The model's skill list and the palette are filtered views of this.</para>
+///
+/// <para>NEAREST FIRST, PER NAME. A package's own file beats the repo's, the repo's beats the config
+/// dir's, and that beats home. Within a level a command beats a skill, then cxagent's folder beats the
+/// vendor-neutral one beats Claude's: a file written for this tool says more about what is meant here.
+/// Per name rather than per folder, so a repo with its own skills still leaves yours available.</para>
+///
+/// <para>THE WALK STOPS AT THE REPO ROOT, the boundary instruction files use: folders above it can be
+/// written by other people on a shared machine, and a command is text the model acts on.</para>
+/// </summary>
+public static partial class InvocableCatalog
+{
+    private const string SkillFileName = "SKILL.md";
+
+    // EVERY KEY THAT IS RECOGNISED AND DELIBERATELY NOT OBEYED. allowed-tools is a permission grant
+    // written for another application's tools, and model names that application's models; both are
+    // listed so the user can see what cxagent did with a file that carries them.
+    private static readonly string[] Ignored = ["allowed-tools", "model"];
+
+    /// <summary>
+    /// Whether a name can be typed as one word after <c>/</c>. A name with a dot or a space would
+    /// split at the wrong place in the composer, so it is not offered as a command.
+    /// </summary>
+    public static bool IsTypeableName(string name) => TypeableName().IsMatch(name);
+
+    [GeneratedRegex("^[A-Za-z0-9_-]+$")]
+    private static partial Regex TypeableName();
+
+    private enum Layout { Commands, Skills }
+
+    private sealed record Source(string Folder, Layout Layout, InvocableScope Scope);
+
+    public static InvocableCatalogResult Find(CatalogRoots roots)
+    {
+        var problems = new List<SkillProblem>();
+        var winners = new Dictionary<string, Invocable>(StringComparer.OrdinalIgnoreCase);
+        var order = new List<string>();
+        var shadowed = new List<ShadowedEntry>();
+
+        // EVERY SOURCE IS READ, EVEN AFTER ONE SUPPLIED A NAME: a broken file in a losing folder is
+        // still a file the user wrote and expected to work, and silence about it is indistinguishable
+        // from it never having been found.
+        foreach (var source in Sources(roots))
+            foreach (var entry in Read(source, problems))
+            {
+                if (winners.TryGetValue(entry.Name, out var winner))
+                {
+                    shadowed.Add(new ShadowedEntry(entry, winner));
+                    continue;
+                }
+
+                winners[entry.Name] = entry;
+                order.Add(entry.Name);
+            }
+
+        return new InvocableCatalogResult([.. order.Select(n => winners[n])], shadowed, problems);
+    }
+
+    private static List<Source> Sources(CatalogRoots roots)
+    {
+        var sources = new List<Source>();
+        var seen = new HashSet<string>(OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+        void Add(string folder, Layout layout, InvocableScope scope)
+        {
+            // ONCE, AT ITS FIRST POSITION. A repo rooted at home reaches ~/.claude as a walked level
+            // and again as home; a symlinked folder reaches its target twice. Reading it twice would
+            // shadow every file in it by itself.
+            var real = RealPath(folder);
+            if (real is not null && seen.Add(real)) sources.Add(new Source(folder, layout, scope));
+        }
+
+        foreach (var dir in WalkedLevels(roots.WorkingDirectory))
+        {
+            Add(Path.Combine(dir, ".cxagent", "commands"), Layout.Commands, InvocableScope.Project);
+            Add(Path.Combine(dir, ".claude", "commands"), Layout.Commands, InvocableScope.Project);
+            Add(Path.Combine(dir, ".cxagent", "skills"), Layout.Skills, InvocableScope.Project);
+            Add(Path.Combine(dir, ".agents", "skills"), Layout.Skills, InvocableScope.Project);
+            Add(Path.Combine(dir, ".claude", "skills"), Layout.Skills, InvocableScope.Project);
+        }
+
+        if (!string.IsNullOrWhiteSpace(roots.ConfigDirectory))
+        {
+            Add(Path.Combine(roots.ConfigDirectory, "commands"), Layout.Commands, InvocableScope.Config);
+            Add(Path.Combine(roots.ConfigDirectory, "skills"), Layout.Skills, InvocableScope.Config);
+        }
+
+        if (!string.IsNullOrWhiteSpace(roots.HomeDirectory))
+        {
+            Add(Path.Combine(roots.HomeDirectory, ".claude", "commands"), Layout.Commands, InvocableScope.Home);
+            Add(Path.Combine(roots.HomeDirectory, ".claude", "skills"), Layout.Skills, InvocableScope.Home);
+        }
+
+        return sources;
+    }
+
+    /// <summary>The folder's resolved path when it exists, else null — a missing folder is not a source.</summary>
+    private static string? RealPath(string folder)
+    {
+        try
+        {
+            if (!Directory.Exists(folder)) return null;
+            var info = new DirectoryInfo(folder);
+            var target = info.ResolveLinkTarget(returnFinalTarget: true);
+            return Path.GetFullPath(target?.FullName ?? info.FullName)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The working folder up to the repo root, nearest first; the working folder alone when
+    /// no repo encloses it.</summary>
+    private static List<string> WalkedLevels(string start)
+    {
+        var dirs = new List<string>();
+        var foundRoot = false;
+        try
+        {
+            for (var d = new DirectoryInfo(start); d is not null; d = d.Parent)
+            {
+                dirs.Add(d.FullName);
+                var git = Path.Combine(d.FullName, ".git");
+                if (Directory.Exists(git) || File.Exists(git)) { foundRoot = true; break; }
+            }
+        }
+        catch (Exception)
+        {
+            // Best effort, like every read in this app that is not the work itself.
+        }
+
+        if (!foundRoot && dirs.Count > 1) dirs.RemoveRange(1, dirs.Count - 1);
+        return dirs;
+    }
+
+    private static IEnumerable<Invocable> Read(Source source, List<SkillProblem> problems) =>
+        source.Layout == Layout.Commands ? ReadCommands(source, problems) : ReadSkills(source, problems);
+
+    private static List<Invocable> ReadCommands(Source source, List<SkillProblem> problems)
+    {
+        var files = new List<string>();
+        CommandFilesIn(source.Folder, files, problems, depth: 0);
+        files.Sort(StringComparer.Ordinal);
+
+        var parsed = new List<Invocable>();
+        foreach (var file in files)
+        {
+            var name = Path.GetFileNameWithoutExtension(file);
+            if (!IsTypeableName(name))
+            {
+                problems.Add(new SkillProblem(file,
+                    "a command name may only use letters, digits, - and _"));
+                continue;
+            }
+
+            string text;
+            try { text = File.ReadAllText(file); }
+            catch (Exception) { problems.Add(new SkillProblem(file, "could not be read")); continue; }
+
+            var front = Frontmatter.Parse(text);
+            if (front.Error is { } error) { problems.Add(new SkillProblem(file, error)); continue; }
+
+            var relative = Path.GetRelativePath(source.Folder, Path.GetDirectoryName(file)!);
+            parsed.Add(new Invocable(
+                Name: name,
+                Kind: InvocableKind.Command,
+                Path: file,
+                Folder: source.Folder,
+                Label: relative == "." ? null : relative.Replace('\\', '/'),
+                Description: front.Fields.TryGetValue("description", out var d) && d.Length > 0
+                    ? d : FirstLine(front.Body),
+                ArgumentHint: front.Fields.GetValueOrDefault("argument-hint"),
+                UserInvocable: true,
+                ModelInvocable: false,
+                IgnoredFields: [.. Ignored.Where(front.Fields.ContainsKey)],
+                Body: front.Body,
+                SkillDirectory: null) { Scope = source.Scope });
+        }
+
+        // TWO SUBFOLDERS DECLARING ONE NAME AT ONE LEVEL: neither is more "the" one, so both are
+        // skipped and both reported, rather than letting directory order pick silently.
+        var clashes = parsed.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1).SelectMany(g => g).ToHashSet();
+        foreach (var clash in clashes)
+            problems.Add(new SkillProblem(clash.Path,
+                $"more than one '{clash.Name}' in {source.Folder} — rename one"));
+
+        return [.. parsed.Where(p => !clashes.Contains(p))];
+    }
+
+    /// <summary>
+    /// Every <c>*.md</c> under <paramref name="folder"/>, one directory at a time.
+    ///
+    /// <para>A FOLDER THAT CANNOT BE READ COSTS ITSELF, NOT ITS NEIGHBOURS. One recursive enumeration
+    /// throws on the first unreadable subfolder and loses every file it had not reached yet; walking
+    /// by hand keeps what can be read and reports the one that could not.</para>
+    /// </summary>
+    private static void CommandFilesIn(string folder, List<string> files, List<SkillProblem> problems, int depth)
+    {
+        // A BOUND, because a symlink can point a folder back at an ancestor and the walk would follow
+        // it for ever. Eight levels of subfolders is far past any label anyone types.
+        if (depth > MaxCommandDepth)
+        {
+            problems.Add(new SkillProblem(folder, $"deeper than {MaxCommandDepth} folders — not read"));
+            return;
+        }
+
+        try
+        {
+            files.AddRange(Directory.EnumerateFiles(folder, "*.md"));
+            foreach (var sub in Directory.EnumerateDirectories(folder))
+                CommandFilesIn(sub, files, problems, depth + 1);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            problems.Add(new SkillProblem(folder, $"could not be read: {ex.Message}"));
+        }
+    }
+
+    private const int MaxCommandDepth = 8;
+
+    private static List<Invocable> ReadSkills(Source source, List<SkillProblem> problems)
+    {
+        List<string> subdirectories;
+        try { subdirectories = [.. Directory.EnumerateDirectories(source.Folder).Order(StringComparer.Ordinal)]; }
+        catch (Exception ex)
+        {
+            problems.Add(new SkillProblem(source.Folder, $"could not be read: {ex.Message}"));
+            return [];
+        }
+
+        var skills = new List<Invocable>();
+        foreach (var subdirectory in subdirectories)
+        {
+            var path = Path.Combine(subdirectory, SkillFileName);
+            if (!File.Exists(path)) continue;   // not a skill folder; not a problem either
+
+            string text;
+            try { text = File.ReadAllText(path); }
+            catch (Exception) { problems.Add(new SkillProblem(path, "could not be read")); continue; }
+
+            var name = Path.GetFileName(subdirectory.TrimEnd(Path.DirectorySeparatorChar,
+                                                             Path.AltDirectorySeparatorChar));
+            if (SkillCatalog.ParseSkill(text, path, name, subdirectory, problems) is not { } skill) continue;
+
+            var front = Frontmatter.Parse(text);
+            skills.Add(new Invocable(
+                Name: name,
+                Kind: InvocableKind.Skill,
+                Path: path,
+                Folder: source.Folder,
+                Label: null,
+                Description: skill.Description,
+                ArgumentHint: front.Fields.GetValueOrDefault("argument-hint"),
+                UserInvocable: Frontmatter.Flag(front.Fields, "user-invocable", otherwise: true),
+                ModelInvocable: !Frontmatter.Flag(front.Fields, "disable-model-invocation", otherwise: false),
+                IgnoredFields: [.. Ignored.Where(front.Fields.ContainsKey)],
+                Body: skill.Body,
+                SkillDirectory: subdirectory) { Scope = source.Scope });
+        }
+
+        return skills;
+    }
+
+    private static string FirstLine(string body) =>
+        body.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0) ?? "";
+}

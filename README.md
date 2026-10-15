@@ -277,9 +277,10 @@ ERR-UNBALANCED in the message.
 because a file with broken frontmatter is otherwise invisible: you wrote it, nothing happened, and
 there was no error anywhere. The session panel shows which skills are currently in force.
 
-Already have `.claude/skills/`? `ln -s .claude/skills .cxagent/skills` — the prose loads, and
+Already have `.claude/skills/`? They load as they are — in the repo and in `~/.claude` — and
 cxagent's own permission gate still governs every tool call, so no `allowed-tools` grant comes with
-it.
+them. Skills from every folder are offered together; for a name that appears twice, the nearest
+wins. Type a skill's name — `/double-entry-posting` — to run it yourself.
 
 **Same caveat as delegation: whether a model reaches for a skill is a property of the model.** On a
 local `qwen3.6-35b-a3b` it does — it announced *"this is a double-entry bookkeeping task, so let me
@@ -289,6 +290,25 @@ explicitly that reading the file directly is not the same thing. Before that, th
 the session knew a skill was in force.
 
 See [CONFIG.md](CONFIG.md#skills) for where they live and how shadowing works.
+
+### Custom commands
+
+A prompt you keep retyping, saved as a file. `.cxagent/commands/review.md`:
+
+```markdown
+---
+description: Review a pull request
+argument-hint: [pr-number]
+---
+
+Review PR $1 against the house style. The diff: !`gh pr diff $1`
+```
+
+`/review 42` sends that, with the PR's diff in place of the shell line — which asks first, like any
+shell command the model runs. Claude Code's `.claude/commands/` work unchanged; their
+`allowed-tools` is ignored, and `/commands` says so, along with every file that was shadowed or
+skipped. A command typed while a turn runs waits and runs next. `cxagent -p "/review 42"` runs it
+headlessly. See [CONFIG.md](CONFIG.md#custom-commands).
 
 ## Plugins
 
@@ -370,7 +390,7 @@ cxagent --mode <single|fan-out>  # start in that mode
 cxagent --config-dir <dir>       # use this directory instead of the usual one
 cxagent --theme <name>           # start in a named theme
 cxagent --mock                   # a fake provider, to try the UI
-cxagent -p "<goal>"              # run one goal without the TUI — see Headless below
+cxagent -p "<goal>"              # run one goal without the TUI — see SCRIPTING.md
 cxagent -v, --version
 cxagent -h, --help               # the options, also shown when an argument is wrong
 ```
@@ -399,100 +419,27 @@ program driving cxagent:
 
 ```bash
 cxagent -p "in one sentence, what is this repo?"
-git diff | cxagent -p "review this" > review.md            # piped input is attached under the goal
+git diff | cxagent -p "/review"                             # piped input goes under the goal
 cxagent -p "list the TODOs" --output-format json | jq -r .result
 cxagent -c -p "now fix the first one"                       # continue the run before
 ```
 
-`--output-format` is `text` (the answer alone), `json` (one result object in Claude Code's shape,
-with cxagent's own facts under a `cxagent` key) or `stream-json` (one event per line, as it happens;
-`--include-partial-messages` adds the text as it streams). With no goal text, stdin is the goal. The
-goal can come before or after the options — `cxagent -p --output-format json "goal"` works as it does
-with `claude`.
+The options are Claude Code's — `--output-format text|json|stream-json`, `-c`, `-r`,
+`--permission-mode`, `--max-turns` — so a script written for `claude -p` runs with `cxagent` swapped
+in. **Nobody is there to answer a prompt**, so anything that would ask is refused and listed in the
+result; `--trust` and the permission modes decide what runs without asking. Every run is an ordinary
+session: the next line of a script continues it with `-c`, and the TUI opens it afterwards.
 
-**Nobody is there to answer a prompt**, so anything that would ask is refused, the model is told,
-and the run carries on; refusals are listed in the result. Trusted folders, stored "Always allow"
-rules and the edit modes decide first, exactly as in the TUI. `--permission-mode` takes `default`,
-`dontAsk`, `acceptEdits`, `auto` or `bypassPermissions`; `--trust` trusts the folder for this run
-only, writing nothing.
-
-**`--dangerously-skip-permissions` approves every prompt except a file-tool write into a `.git`,
-`.vscode`, `.claude` or `.idea` folder** — anywhere on the path, including `~/.claude` and a vendored
-checkout's own `.git` — because what lands there runs later, outside the run. That check reads
-file-tool requests, not shell text: a shell command that writes into those folders is approved like
-any other.
-
-Plugins load only if you approved them with "Always allow" in the TUI, or name them with `--plugin`
-(`--plugin none` loads none); naming one loads it even if config says `enabled: false`. A plugin
-that is left out or fails to load is listed under `cxagent.skipped.plugins`, with why. `--max-turns N`
-stops a run at N turns. Sessions are saved like any other: `-c` and `-r` continue them headlessly or
-in the TUI.
-
-| Exit | When |
-|---|---|
-| 0 | answered |
-| 1 | failed — the provider's message is on stderr and in `errors` |
-| 2 | usage — a bad or unsupported option, no model configured, nothing to run |
-| 3 | stopped at the turn limit |
-| 130 / 143 | Ctrl+C / SIGTERM — the turn is cancelled and the session saved first; a second one ends it at once |
-
-Claude Code options cxagent does not have (`--allowedTools`, `--system-prompt`, `--mcp-config`, …)
-are refused by name rather than ignored, so a script never believes one was honoured.
-
-#### Recipes
-
-**A step at a time.** Each run continues the one before, so a script can plan, then act, then check —
-and every step is a session you can open in the TUI afterwards:
-
-```bash
-cxagent -p "read the failing test in tests/ParserTests.cs and say why it fails" --trust
-cxagent -c -p "fix it" --permission-mode acceptEdits --trust
-cxagent -c -p "run the tests and report the result" --dangerously-skip-permissions
-```
-
-**Keep the id, come back to it.** `-c` takes the newest session here; `-r` takes the one you name,
-from any folder:
-
-```bash
-id=$(cxagent -p "summarise the open TODOs" --output-format json --trust | jq -r .session_id)
-cxagent -r "$id" -p "which one is the riskiest?"
-cxagent -r "$id"                       # or open it in the TUI
-```
-
-**In CI.** Fail the job on anything but an answer, and keep the result as an artifact:
-
-```bash
-cxagent -p "review this diff for bugs; list each with file:line" --trust \
-  --output-format json < <(git diff origin/main...HEAD) > review.json
-jq -e '.is_error | not' review.json && jq -r .result review.json
-```
-
-**Read the run as it happens.** `stream-json` is one JSON object per line — `system/init` first,
-then the model's text and tool calls, `result` last:
-
-```bash
-cxagent -p "find where the config is loaded" --trust --output-format stream-json |
-  while read -r line; do
-    case $(jq -r '.type' <<<"$line") in
-      assistant) jq -r '.message.content[] | .text // ("→ " + .input.summary)' <<<"$line" ;;
-      result)    jq -r '"done: \(.subtype), \(.num_turns) turns"' <<<"$line" ;;
-    esac
-  done
-```
-
-**A git hook.** A pre-push review that refuses to push on a finding:
-
-```bash
-#!/bin/sh
-git diff @{push}.. | cxagent -p "Reply only PASS, or FAIL and the reason, for this diff." --trust | grep -q '^PASS'
-```
+**[SCRIPTING.md](SCRIPTING.md)** is the guide: a review gate in CI, a pre-push hook, a step-by-step
+chain, batch runs over files, live progress from `stream-json`, release notes from `git log` — each
+one run before it was written down — and the full reference for options, output and exit codes.
 
 ## Keys
 
 | Key | Action |
 |-----|--------|
 | `Enter` | Send. During a running turn, queues instead — several queued messages go as one prompt |
-| `Esc` | Stop the running turn. Anything queued goes back into the composer rather than being lost. In btw mode: stop the aside's answer, then leave btw mode |
+| `Esc` | Stop the running turn. Anything queued goes back into the composer rather than being lost. In btw mode: stop the aside's answer, then leave btw mode. With nothing to stop, the cursor stays in the composer |
 | `F1` | Help |
 | `F3` | Session panel (show / hide / automatic) |
 | `F4` | Put the cursor back in the composer |

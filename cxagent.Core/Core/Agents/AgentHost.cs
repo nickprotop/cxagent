@@ -419,6 +419,9 @@ public sealed class AgentHost : IDisposable
         /// <summary>cxagent's config folder, so a user-level CXAGENT.md applies wherever they work.</summary>
         public string? GlobalInstructionsDir { get; init; }
 
+        /// <summary>The user's home, for <c>~/.claude/skills</c> — see <c>AppPaths.HomeDir</c>.</summary>
+        public string? HomeDir { get; init; }
+
         /// <summary>The real window, so compaction derives its threshold from actual headroom.</summary>
         public int? ContextWindow { get; init; }
 
@@ -587,6 +590,8 @@ public sealed class AgentHost : IDisposable
     /// the normal case: a front end that narrows once per session passes nothing here.</param>
     /// <param name="prompt">What the user asked for.</param>
     /// <param name="ct">Cancels the goal mid-run.</param>
+    /// <param name="shown">What the transcript showed for this prompt when it differs — a typed
+    /// command for its expansion — kept on the message for the session list. Null otherwise.</param>
     /// <returns>
     /// The agent's own <see cref="SendResult"/> rather than a bare <c>Task</c> — Session.Turn.cs needs
     /// the final assistant text to back <c>SubmitOutcome.Started.Result</c>, and the answer already
@@ -602,11 +607,11 @@ public sealed class AgentHost : IDisposable
     /// message", not every lap concatenated.</para>
     /// </returns>
     public async Task<SendResult> RunAsync(string prompt, CancellationToken ct,
-        Jobs.ToolSelection? turnTools = null)
+        Jobs.ToolSelection? turnTools = null, string? shown = null)
     {
         try
         {
-            return await _agent.SendAsync(prompt, ct, turnTools);
+            return await _agent.SendAsync(prompt, ct, turnTools, shown);
         }
         finally
         {
@@ -744,6 +749,7 @@ public sealed class AgentHost : IDisposable
             workingDir: _runtime.WorkingDir,
             instanceName: _runtime.InstanceName,
             globalInstructionsDir: _runtime.GlobalInstructionsDir,
+            homeDirectory: _runtime.HomeDir,
             mcp: _runtime.Mcp,
             briefing: _runtime.Briefing,
 
