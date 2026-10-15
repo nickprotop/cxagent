@@ -7,6 +7,12 @@ namespace CxAgent.Core.Llm.Providers;
 /// <summary>Neutral &lt;-&gt; Anthropic Messages wire mapping. Pure functions, no I/O.</summary>
 internal static class AnthropicWire
 {
+    /// <summary>The Messages API request body for one call.</summary>
+    /// <param name="model">The model id sent to the endpoint.</param>
+    /// <param name="maxTokens">The response's output cap, thinking included.</param>
+    /// <param name="messages">The conversation; system messages are hoisted to <c>system</c>.</param>
+    /// <param name="tools">The tools offered, or null for none.</param>
+    /// <param name="stream">Ask for server-sent events rather than one response.</param>
     /// <param name="cache">
     /// Ask Anthropic to cache the prefix — it caches nothing without a <c>cache_control</c> marker.
     /// Two of them: an explicit one on the system prompt, which covers the tools rendered before it
