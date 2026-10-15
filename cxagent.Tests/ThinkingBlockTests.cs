@@ -226,4 +226,33 @@ public class ThinkingBlockTests
 
         Assert.Equal("◆ Thought for 6s · 8 words", sink.BlockHeaderForTest(T1));
     }
+
+    // NO BLANK LINES OF ITS OWN at either end: models end their thinking with a newline, which would
+    // sit as an empty row between the block and the answer, on top of the gap every message has.
+    [Fact]
+    public void LeadingAndTrailingNewlines_AreNotShown_ButInnerOnesAre()
+    {
+        var (sink, _) = Sink();
+        sink.AssistantTurnBegan(T1);
+        sink.AssistantThinkingAppended(T1, "\n\nfirst line");
+        sink.AssistantThinkingAppended(T1, "\n");
+        sink.AssistantThinkingAppended(T1, "second line\n\n");
+        sink.AssistantThinkingEnded(T1, Sum());
+
+        Assert.Equal("first line\nsecond line", sink.BlockBodyForTest(T1));
+    }
+
+    [Fact]
+    public void ASecondRun_IsSetApartFromTheFirst()
+    {
+        var (sink, _) = Sink();
+        sink.AssistantTurnBegan(T1);
+        sink.AssistantThinkingAppended(T1, "first run.\n");
+        sink.AssistantThinkingEnded(T1, Sum());
+        sink.AssistantTextAppended(T1, "text");
+        sink.AssistantThinkingAppended(T1, "second run.");
+        sink.AssistantThinkingEnded(T1, Sum());
+
+        Assert.Equal("first run.\n\nsecond run.", sink.BlockBodyForTest(T1));
+    }
 }

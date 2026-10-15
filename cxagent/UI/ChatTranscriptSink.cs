@@ -131,6 +131,10 @@ public sealed class ChatTranscriptSink : ISessionObserver
             if (_map.TryGetValue(id.Value, out var fwId)) _chat.SetHeader(fwId, header);
         }, "chat.AssistantLabelled");
 
+    /// <summary>What a step's block shows, as plain text, for a test.</summary>
+    public string? BlockBodyForTest(ChatMessageId id) =>
+        _blocks.TryGetValue(id.Value, out var b) ? b.Body.ToString() : null;
+
     /// <summary>A step's folded header, for a test.</summary>
     public string? BlockHeaderForTest(ChatMessageId id) =>
         _blocks.TryGetValue(id.Value, out var b) ? b.Header : null;
@@ -221,7 +225,22 @@ public sealed class ChatTranscriptSink : ISessionObserver
         _post(() =>
         {
             var block = BlockFor(id);
-            if (text.Length > 0) _chat.Append(block.Id, $"[{ColorScheme.ThinkingMarkup}]{Escape(text)}[/]");
+
+            // NO BLANK LINES OF ITS OWN at either end. Models open and close their thinking with
+            // newlines, and each one renders as an empty row inside the block — on top of the gap
+            // every message already has. Whitespace is held back until text follows it, so what
+            // ends a run is never written, and what starts a block is skipped.
+            var shown = block.Body.Length == 0 ? text.TrimStart() : text;
+            var core = shown.TrimEnd();
+            if (core.Length == 0)
+            {
+                if (block.Body.Length > 0) block.Pending += shown;
+                return;
+            }
+            var write = block.Pending + core;
+            block.Pending = shown[core.Length..];
+            block.Body.Append(write);
+            _chat.Append(block.Id, $"[{ColorScheme.ThinkingMarkup}]{Escape(write)}[/]");
         }, "chat.AssistantThinkingAppended");
 
     /// <summary>
@@ -261,6 +280,8 @@ public sealed class ChatTranscriptSink : ISessionObserver
             {
                 known.Live = true;
                 known.Started = DateTimeOffset.UtcNow;
+                // A SECOND RUN STARTS ON ITS OWN PARAGRAPH, not run on from the first's last word.
+                if (known.Body.Length > 0) known.Pending = "\n\n";
                 _chat.SetExpanded(known.Id, true);
             }
             return known;
@@ -290,6 +311,12 @@ public sealed class ChatTranscriptSink : ISessionObserver
         public FwChatId Id { get; } = id;
         public DateTimeOffset Started { get; set; }
         public bool Live { get; set; } = true;
+
+        /// <summary>Whitespace held back until more text follows it — see AssistantThinkingAppended.</summary>
+        public string Pending { get; set; } = "";
+
+        /// <summary>What the block shows, as plain text — the control cannot read a body back.</summary>
+        public System.Text.StringBuilder Body { get; } = new();
 
         /// <summary>Every finished run in this block, added together.</summary>
         public Core.Llm.ThinkingSummary? Total { get; set; }
