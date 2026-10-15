@@ -211,6 +211,9 @@ public sealed class SessionTab
     /// <summary>This tab's mode line, under its prompt — set when the composer is built.</summary>
     public MarkupControl? ModeLine { get; set; }
 
+    /// <summary>The rule above this tab's composer — titled with the btw hint while in btw mode.</summary>
+    public RuleControl? ComposerRule { get; set; }
+
     /// <summary>
     /// The grid holding this tab's prompt and mode line.
     ///

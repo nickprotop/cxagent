@@ -6,25 +6,12 @@ namespace CxAgent.Tests;
 
 public class AsideUiTests
 {
-    /// <summary>The hint sits after the model name, and only in btw mode.</summary>
-    [Fact]
-    public void TheModeLine_CarriesTheHint_AfterTheModel_OnlyInBtwMode()
-    {
-        var plain = MainWindow.ModeLineTextForTest(WorkingMode.Default, "local:qwen", aside: false);
-        var btw = MainWindow.ModeLineTextForTest(WorkingMode.Default, "local:qwen", aside: true);
-
-        Assert.DoesNotContain(MainWindow.AsideHint, plain);
-        Assert.Contains(MainWindow.AsideHint, btw);
-        Assert.True(btw.IndexOf("local:qwen", StringComparison.Ordinal)
-                    < btw.IndexOf(MainWindow.AsideHint, StringComparison.Ordinal));
-    }
-
     /// <summary>The no-cache hint follows the model name, and only when asked for.</summary>
     [Fact]
     public void TheModeLine_CarriesTheCacheHint_AfterTheModel()
     {
-        var plain = MainWindow.ModeLineTextForTest(WorkingMode.Default, "anthropic:claude", aside: false);
-        var off = MainWindow.ModeLineTextForTest(WorkingMode.Default, "anthropic:claude", aside: false, cacheOff: true);
+        var plain = MainWindow.ModeLineTextForTest(WorkingMode.Default, "anthropic:claude");
+        var off = MainWindow.ModeLineTextForTest(WorkingMode.Default, "anthropic:claude", cacheOff: true);
 
         Assert.DoesNotContain(MainWindow.CacheOffHint, plain);
         Assert.True(off.IndexOf("anthropic:claude", StringComparison.Ordinal)
@@ -67,5 +54,24 @@ public class AsideComposerTests : IDisposable
 
         main.SetAside(session, false);
         Assert.Equal(before, main.GripTextForTest());
+    }
+
+    /// <summary>
+    /// The hint is the title of the rule above the composer, and only in btw mode — on the line that
+    /// already marks where the composer starts, not crowding the mode line after the model.
+    /// </summary>
+    [Fact]
+    public void BtwMode_TitlesTheRuleAboveTheComposer_AndLeavingClearsIt()
+    {
+        var main = _fixture.Host.Main;
+        var session = main.ActiveSession!;
+        Assert.Null(main.ComposerRuleTitleForTest());
+
+        main.SetAside(session, true);
+        Assert.Contains(MainWindow.AsideHint, main.ComposerRuleTitleForTest());
+        Assert.DoesNotContain(MainWindow.AsideHint, main.ModeLineForTest());
+
+        main.SetAside(session, false);
+        Assert.Null(main.ComposerRuleTitleForTest());
     }
 }

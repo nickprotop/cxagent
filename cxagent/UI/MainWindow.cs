@@ -426,7 +426,7 @@ public sealed class MainWindow : IDisposable
             // `[fg on bg]` is ONE tag in this parser — a bare `[on #…]` has no foreground and is not
             // the background form, so it painted nothing. Each run carries its own background, and
             // [fillwidth] carries the last one to the end of the row.
-            .AddLine(ModeLineText(_mode, _resolution, tab.InAside, tab.Session))
+            .AddLine(ModeLineText(_mode, _resolution, tab.Session))
             // STRETCH, so [fillwidth] has a full-width rect to fill INTO. The painter extends the
             // flagged cell's background to `bounds.Right`, and without stretch those bounds ended at
             // the last character — the fill was working, it simply had nothing to cross.
@@ -565,6 +565,7 @@ public sealed class MainWindow : IDisposable
         // THE PARTS GO ON THE TAB, because they are per conversation: a prompt swapped out for a
         // permission control belongs to the tab that asked, and a mode line reports that tab's mode.
         tab.ModeLine = modeLine;
+        tab.ComposerRule = composerRule;
         tab.PromptBox = promptBox;
         tab.Composer = composer;
         tab.Grip = grip;
@@ -3072,7 +3073,7 @@ public sealed class MainWindow : IDisposable
         if (_modeLine is not null)
         {
             _modeLine.BackgroundColor = ColorScheme.ComposerSurface;
-            _modeLine.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside, ActiveSessionTab.Session)]);
+            _modeLine.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.Session)]);
         }
 
         // THE TWO GRIPS, which are the accent rather than a surface. Both captured ColorScheme.Grip
@@ -3085,6 +3086,10 @@ public sealed class MainWindow : IDisposable
         // above it the content has to be regenerated rather than re-coloured.
         if (_promptGrip is not null)
             _promptGrip.SetContent([.. GripRows(GripColour(ActiveSessionTab.InAside))]);
+
+        // AND EVERY TAB'S BTW TITLE, coloured into its markup the same way.
+        foreach (var tab in _sessionTabs)
+            if (tab.ComposerRule is { } rule) rule.Title = ComposerRuleTitle(tab.InAside);
 
         // EVERY SESSION TAB, NOT THE ONE ON SCREEN. Each tab has its own transcript with its own
         // role styles, so restyling only the active one leaves the others drawing new messages in the
@@ -3305,7 +3310,7 @@ public sealed class MainWindow : IDisposable
 
         // THE MODE LINE IS THE TAB'S OWN, so it is refreshed whether or not the tab is in front —
         // a background session's composer must not keep naming the model it used to have.
-        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, resolution, tab.InAside, tab.Session)]);
+        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, resolution, tab.Session)]);
 
         if (ReferenceEquals(tab, ActiveSessionTab)) SetResolution(resolution);
     }
@@ -3317,7 +3322,7 @@ public sealed class MainWindow : IDisposable
         // THE COMPOSER LINE TOO. It carries the model name, so a switch that refreshed only the
         // panel left "local:…" under the prompt while the session was talking to `small` — the same
         // stale-readout bug the panel's own window had, one line lower.
-        _modeLine?.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside, ActiveSessionTab.Session)]);
+        _modeLine?.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.Session)]);
 
         RefreshSessionPanel();
         RefreshTokenItem();
@@ -3332,7 +3337,7 @@ public sealed class MainWindow : IDisposable
 
         tab.Mode = mode;
         tab.ModeLine?.SetContent(
-            [ModeLineText(mode, tab.Resolution ?? _resolution, tab.InAside, tab.Session)]);
+            [ModeLineText(mode, tab.Resolution ?? _resolution, tab.Session)]);
 
         if (ReferenceEquals(tab, ActiveSessionTab)) SetMode(mode);
     }
@@ -3342,7 +3347,7 @@ public sealed class MainWindow : IDisposable
         _mode = mode;
         // SetContent rather than a rebuild: the control is already placed in the grid, and replacing
         // it would detach the instance the layout holds.
-        _modeLine?.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside, ActiveSessionTab.Session)]);
+        _modeLine?.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.Session)]);
     }
 
     /// <summary>
@@ -3358,11 +3363,11 @@ public sealed class MainWindow : IDisposable
     ///
     /// <para>The model name is escaped (it comes from config); the mode words are ours.</para>
     /// </summary>
-    private static string ModeLineText(WorkingMode mode, ResolvedConfig resolution, bool aside, Session? session) =>
-        ModeLineText(mode, ModelLabelFor(resolution), aside, PromptCacheOff(resolution),
+    private static string ModeLineText(WorkingMode mode, ResolvedConfig resolution, Session? session) =>
+        ModeLineText(mode, ModelLabelFor(resolution), PromptCacheOff(resolution),
             ThinkingIndicator(session?.ThinkingLevel, session?.PendingThinking, session?.KnownThinkingOptions));
 
-    private static string ModeLineText(WorkingMode mode, string model, bool aside, bool cacheOff = false,
+    private static string ModeLineText(WorkingMode mode, string model, bool cacheOff = false,
         string? thinking = null) =>
         $"[{ColorScheme.AccentMarkup}]{AgentModes.Name(mode.Agent)}[/]"
       + $"[{ColorScheme.MutedMarkup}] · [/]"
@@ -3375,14 +3380,11 @@ public sealed class MainWindow : IDisposable
         // THE LEVEL BESIDE THE MODEL IT BELONGS TO, amber like the thinking blocks it governs; muted
         // when off, which is a choice rather than a state worth the eye.
       + (thinking is null ? ""
-         : $"[{(thinking.StartsWith('◇') ? ColorScheme.MutedMarkup : ColorScheme.ThinkingMarkup)}] · {thinking}[/]")
-        // AFTER THE MODEL, where the eye ends the line. The grip's colour says something changed;
-        // this says what, and how to undo it.
-      + (aside ? $"[{ColorScheme.AsideMarkup}] · {AsideHint}[/]" : "");
+         : $"[{(thinking.StartsWith('◇') ? ColorScheme.MutedMarkup : ColorScheme.ThinkingMarkup)}] · {thinking}[/]");
 
-    public static string ModeLineTextForTest(WorkingMode mode, string model, bool aside, bool cacheOff = false,
+    public static string ModeLineTextForTest(WorkingMode mode, string model, bool cacheOff = false,
         string? thinking = null) =>
-        ModeLineText(mode, model, aside, cacheOff, thinking);
+        ModeLineText(mode, model, cacheOff, thinking);
 
     /// <summary>
     /// The mode line's thinking item, or null when the model offers no levels — or has not said yet,
@@ -3405,7 +3407,7 @@ public sealed class MainWindow : IDisposable
     {
         var tab = _sessionTabs.FirstOrDefault(t => ReferenceEquals(t.Session, session));
         if (tab is null) return;
-        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, tab.Resolution ?? _resolution, tab.InAside, tab.Session)]);
+        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, tab.Resolution ?? _resolution, tab.Session)]);
     }
 
     /// <summary>Names the config key, so the hint says how to turn it on.</summary>
@@ -3428,7 +3430,7 @@ public sealed class MainWindow : IDisposable
     private static Color GripColour(bool inAside) => inAside ? ColorScheme.AsideRgb : ColorScheme.Grip;
 
     /// <summary>
-    /// btw mode on or off for one session's composer: the grip's colour and the hint after the model.
+    /// btw mode on or off for one session's composer: the grip's colour, and the hint on the rule above it.
     /// The tab's own, so a background session in btw mode does not recolour the one in front.
     /// </summary>
     public void SetAside(Core.Sessions.Session session, bool inAside)
@@ -3438,11 +3440,23 @@ public sealed class MainWindow : IDisposable
 
         tab.InAside = inAside;
         tab.Grip?.SetContent([.. GripRows(GripColour(inAside))]);
-        tab.ModeLine?.SetContent(
-            [ModeLineText(tab.Mode, tab.Resolution ?? _resolution, inAside, tab.Session)]);
+
+        // ON THE RULE ABOVE THE COMPOSER, the line that already marks where typing starts. The grip's
+        // colour says something changed; the rule's title says what, and how to undo it — without
+        // pushing the mode line's model and level off the edge of a narrow terminal.
+        if (tab.ComposerRule is { } rule) rule.Title = ComposerRuleTitle(inAside);
     }
 
+    private static string? ComposerRuleTitle(bool inAside) =>
+        inAside ? $"[{ColorScheme.AsideMarkup}]{AsideHint}[/]" : null;
+
     public string GripTextForTest() => ActiveSessionTab.Grip?.Text ?? "";
+
+    /// <summary>The active tab's composer rule title, for a test; null when it has none.</summary>
+    public string? ComposerRuleTitleForTest() => ActiveSessionTab.ComposerRule?.Title;
+
+    /// <summary>The active tab's mode line, for a test.</summary>
+    public string ModeLineForTest() => ActiveSessionTab.ModeLine?.Text ?? "";
 
     /// <summary>
     /// AUTO IS THE ONE WORTH NOTICING, so it alone is coloured. In the other two modes a human
