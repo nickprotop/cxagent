@@ -164,6 +164,8 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog, IThinkingProvider
             var data = line["data:".Length..].Trim();
 
             var item = acc.Accept(data);
+            if (item.Block is { } block)
+                yield return new LlmStreamChunk(null, null, IsFinal: false, ThinkingBlock: block);
             if (item.Thinking is not null)
                 yield return new LlmStreamChunk(null, null, IsFinal: false, ThinkingDelta: item.Thinking,
                     ThinkingRedacted: item.Redacted);

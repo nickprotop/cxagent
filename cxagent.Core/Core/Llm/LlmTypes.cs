@@ -67,6 +67,8 @@ public record LlmResponse
     public string? Text { get; init; }
     public List<ToolCall> ToolCalls { get; init; } = new();
     public string StopReason { get; init; } = "";   // "end_turn" | "tool_use" | "refusal" | ...
+    /// <summary>The step's thinking blocks, in order, to go back with its turn — see <see cref="ThinkingBlock"/>.</summary>
+    public List<ThinkingBlock> ThinkingBlocks { get; init; } = new();
     public LlmUsage Usage { get; init; } = new();
 
     /// <summary>Thinking returned by a non-streamed call, for callers that show it; never sent back.</summary>
@@ -100,9 +102,13 @@ public record LlmResponse
 /// stream end — no separate start/end chunks, so a provider cannot forget to close one.
 /// </param>
 /// <param name="ThinkingRedacted">True on the chunk that carries a safety-redacted block.</param>
+/// <param name="ThinkingBlock">
+/// A finished thinking block, whole, to be sent back with this step's turn — handed over when the
+/// block closes. Only a provider that requires its blocks back (Anthropic) sets it.
+/// </param>
 public record LlmStreamChunk(string? TextDelta, ToolCall? ToolCallDelta, bool IsFinal,
     LlmUsage? Usage = null, string? StopReason = null, string? ThinkingDelta = null,
-    bool ThinkingRedacted = false);
+    bool ThinkingRedacted = false, ThinkingBlock? ThinkingBlock = null);
 
 /// <summary>A terminal LLM provider failure (auth, bad request, model-not-found, or retries exhausted).</summary>
 public sealed class LlmProviderException : Exception

@@ -1603,6 +1603,7 @@ public sealed class Agent
                         u => { _ledger.Record(u, SpendLabel, _isSubAgent); RecordOwnSpend(u); },
                         (b, a) =>
                         {
+                            DropThinkingBlocks();
                             ContextCompressed?.Invoke(b, a);
                             if (_context.Used is { } estimated) ContextEstimated?.Invoke(estimated);
                         }),
@@ -1691,6 +1692,7 @@ public sealed class Agent
                         Role = "assistant",
                         Content = response.Text,
                         Timestamp = DateTimeOffset.UtcNow,
+                        ThinkingBlocks = BlocksOf(response),
                     });
                 messages.Add(new ChatMessage
                 {
@@ -1742,6 +1744,7 @@ public sealed class Agent
                         Role = "assistant",
                         Content = response.Text,
                         Timestamp = DateTimeOffset.UtcNow,
+                        ThinkingBlocks = BlocksOf(response),
                     });
 
                     // AND PUT THE TASK LIST BACK LAST. It is pinned to the end of the conversation
@@ -1792,6 +1795,9 @@ public sealed class Agent
                 Role = "assistant",
                 Content = response.Text ?? "",
                 ToolCalls = response.ToolCalls.ToList(),
+                // THE REASONING BEHIND THESE CALLS, sent back with them on the loop's next request —
+                // the provider requires it, and the model continues from it rather than afresh.
+                ThinkingBlocks = BlocksOf(response),
             });
 
             // TASK 11: SPECULATE THE MOMENT THE CALLS ARE PARSED, not when the walk below reaches
@@ -3113,6 +3119,7 @@ public sealed class Agent
         // THE STEP'S THINKING, from both sources at once. Ended before the first answer text and
         // before the first tool call, because that is when the reader's attention moves on — and a
         // step that only calls tools sends no text to end it otherwise.
+        var blocks = new List<ThinkingBlock>();
         var thinking = new ThinkingRun(
             text => _sink.AssistantThinkingAppended(turnId, text),
             summary => _sink.AssistantThinkingEnded(turnId, summary));
@@ -3122,6 +3129,7 @@ public sealed class Agent
             await foreach (var chunk in _provider.ChatStreamAsync(messages, tools, ct))
             {
                 if (chunk.ThinkingDelta is { } delta) thinking.Add(delta, chunk.ThinkingRedacted);
+                if (chunk.ThinkingBlock is { } block) blocks.Add(block);
 
                 if (!string.IsNullOrEmpty(chunk.TextDelta))
                 {
@@ -3172,6 +3180,7 @@ public sealed class Agent
         return new LlmResponse
         {
             Text = text.ToString(), ToolCalls = calls, Usage = usage, StopReason = stop,
+            ThinkingBlocks = blocks,
         };
     }
 
@@ -3211,6 +3220,25 @@ public sealed class Agent
             && string.Equals(messages[^1].Content, rendered, StringComparison.Ordinal))
             return;
 
+        // APPEND-ONLY WHILE THINKING IS CARRIED. A thinking block sent back is valid only while
+        // everything before it is unchanged, and moving the list would change that on every step of
+        // the loop. So the list stays where it is, a changed one is added after it, and the copies
+        // are tidied away at the next message, when no blocks are carried.
+        if (CarriesThinking(messages))
+        {
+            var latest = messages.LastOrDefault(m => m.IsTaskList);
+            if (latest is not null && string.Equals(latest.Content, rendered, StringComparison.Ordinal)) return;
+            if (string.IsNullOrWhiteSpace(rendered)) return;
+            messages.Add(new ChatMessage
+            {
+                Role = "user",
+                Content = rendered,
+                IsTaskList = true,
+                Timestamp = DateTimeOffset.UtcNow,
+            });
+            return;
+        }
+
         messages.RemoveAll(m => m.IsTaskList);
 
         if (string.IsNullOrWhiteSpace(rendered)) return;
@@ -3225,6 +3253,37 @@ public sealed class Agent
             IsTaskList = true,
             Timestamp = DateTimeOffset.UtcNow,
         });
+    }
+
+    /// <summary>A response's thinking blocks, or null when it had none.</summary>
+    private static IReadOnlyList<ThinkingBlock>? BlocksOf(LlmResponse response) =>
+        response.ThinkingBlocks.Count > 0 ? response.ThinkingBlocks : null;
+
+    /// <summary>
+    /// Whether the current tool loop — everything since the user last spoke — has thinking blocks
+    /// to send back. The task list is a user message that is not the user speaking.
+    /// </summary>
+    private static bool CarriesThinking(List<ChatMessage> messages)
+    {
+        for (var i = messages.Count - 1; i >= 0; i--)
+        {
+            var m = messages[i];
+            if (m is { Role: "user", ToolCallId: null, IsTaskList: false }) return false;
+            if (m.ThinkingBlocks is { Count: > 0 }) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Drops every carried thinking block. Compaction rewrites what precedes them, so they could only
+    /// be sent invalid; the loop continues, and the model reasons afresh.
+    /// </summary>
+    private void DropThinkingBlocks()
+    {
+        var messages = _context.Messages;
+        for (var i = 0; i < messages.Count; i++)
+            if (messages[i].ThinkingBlocks is not null)
+                messages[i] = messages[i] with { ThinkingBlocks = null };
     }
 
     /// <summary>
@@ -3278,6 +3337,8 @@ public sealed class Agent
                 u => { _ledger.Record(u, SpendLabel, _isSubAgent); RecordOwnSpend(u); },
                 (b, a) =>
                 {
+                    // WHAT PRECEDES THE BLOCKS WAS JUST REWRITTEN — see DropThinkingBlocks.
+                    DropThinkingBlocks();
                     ContextCompressed?.Invoke(b, a);
                     // The context re-estimated its own occupancy while compacting; publish it so the
                     // readout shows where that leaves us rather than the pre-compaction figure.

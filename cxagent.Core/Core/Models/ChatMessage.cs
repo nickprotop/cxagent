@@ -38,6 +38,15 @@ public record ChatMessage
     /// the bytes that get cached.</para>
     /// </summary>
     public bool IsTaskList { get; init; }
+
+    /// <summary>
+    /// The thinking blocks this assistant turn was given, to send back while its tool loop runs.
+    ///
+    /// <para>NOT SAVED. They matter only within the loop that produced them — a later request
+    /// leaves them out — so writing them to the session would store weight nothing reads.</para>
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<Llm.ThinkingBlock>? ThinkingBlocks { get; init; }
 }
 
 public record ToolCall

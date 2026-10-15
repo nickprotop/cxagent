@@ -484,4 +484,107 @@ public class AnthropicProviderTests : IDisposable
         _srv.Route("/models/claude-x", 200, Caps);
         Assert.True((await p.GetThinkingOptionsAsync()).Any);
     }
+
+    // THE BLOCK, WHOLE: its text and signature (or a redacted block's data), handed over when it
+    // closes, so it can be sent back exactly as it came.
+    [Fact]
+    public async Task ChatStream_HandsOverEachThinkingBlock_WithItsSignature()
+    {
+        _srv.EnqueueSse(
+            Ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"""),
+            Ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Check "}}"""),
+            Ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"prices"}}"""),
+            Ev("""{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"EqQB"}}"""),
+            Ev("""{"type":"content_block_stop","index":0}"""),
+            Ev("""{"type":"content_block_start","index":1,"content_block":{"type":"redacted_thinking","data":"enc"}}"""),
+            Ev("""{"type":"content_block_stop","index":1}"""),
+            Ev("""{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"t1","name":"read_file","input":{}}}"""),
+            Ev("""{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{}"}}"""),
+            Ev("""{"type":"content_block_stop","index":2}"""),
+            Ev("""{"type":"message_stop"}"""));
+
+        var order = new List<string>();
+        var blocks = new List<ThinkingBlock>();
+        await foreach (var c in Make().ChatStreamAsync(Msgs(), null, CancellationToken.None))
+        {
+            if (c.ThinkingBlock is { } b) { blocks.Add(b); order.Add("block"); }
+            if (c.ToolCallDelta is not null) order.Add("call");
+        }
+
+        Assert.Equal(["block", "block", "call"], order);
+        Assert.Equal(new ThinkingBlock(false, "Check prices", "EqQB", null), blocks[0]);
+        Assert.Equal(new ThinkingBlock(true, null, null, "enc"), blocks[1]);
+    }
+
+    private static ChatMessage U(string text) => new() { Role = "user", Content = text };
+    private static ChatMessage Calls(string id, params ThinkingBlock[] blocks) => new()
+    {
+        Role = "assistant", Content = "",
+        ToolCalls = [new ToolCall { Id = id, Name = "read_file", Arguments = System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone() }],
+        ThinkingBlocks = blocks,
+    };
+    private static ChatMessage Result(string id) => new() { Role = "tool", ToolCallId = id, Content = "ok" };
+
+    // THE CURRENT LOOP'S BLOCKS GO BACK, first in their turn, unchanged — Anthropic requires them
+    // within a tool loop. An earlier loop's are left out, which it allows.
+    [Fact]
+    public void BuildRequestBody_SendsTheCurrentLoopsBlocks_FirstAndUnchanged_AndNoOlderOnes()
+    {
+        var messages = new List<ChatMessage>
+        {
+            U("first goal"),
+            Calls("a", new ThinkingBlock(false, "old", "SIG-OLD", null)),
+            Result("a"),
+            new() { Role = "assistant", Content = "done" },
+            U("second goal"),
+            Calls("b", new ThinkingBlock(false, "new", "SIG-NEW", null), new ThinkingBlock(true, null, null, "enc")),
+            Result("b"),
+        };
+
+        var body = AnthropicWire.BuildRequestBody("m", 100, messages, null, stream: false).ToJsonString();
+        var json = System.Text.Json.Nodes.JsonNode.Parse(body)!;
+        // user, assistant(a), tool result, assistant "done", user, assistant(b) ← the current loop's turn
+        var current = json["messages"]!.AsArray()[5]!["content"]!.AsArray();
+
+        Assert.Equal("thinking", (string?)current[0]!["type"]);
+        Assert.Equal("new", (string?)current[0]!["thinking"]);
+        Assert.Equal("SIG-NEW", (string?)current[0]!["signature"]);
+        Assert.Equal("redacted_thinking", (string?)current[1]!["type"]);
+        Assert.Equal("enc", (string?)current[1]!["data"]);
+        Assert.Equal("tool_use", (string?)current[2]!["type"]);
+        Assert.DoesNotContain("SIG-OLD", body);
+    }
+
+    // THE TASK LIST is a user message, but not one that starts a loop.
+    [Fact]
+    public void BuildRequestBody_ATaskListDoesNotEndTheLoop()
+    {
+        var messages = new List<ChatMessage>
+        {
+            U("goal"),
+            Calls("a", new ThinkingBlock(false, "t", "SIG", null)),
+            Result("a"),
+            new() { Role = "user", Content = "tasks", IsTaskList = true },
+        };
+        var body = AnthropicWire.BuildRequestBody("m", 100, messages, null, stream: false).ToJsonString();
+        Assert.Contains("SIG", body);
+    }
+
+    // A CONFIGURED baseUrl IS WHERE THE REQUESTS GO — an Anthropic-compatible gateway, a proxy —
+    // not only where the capability probe goes.
+    [Fact]
+    public async Task ARegistryBuiltAnthropicInstance_SendsToItsConfiguredBaseUrl()
+    {
+        var settings = new ProviderSettings(
+            new Dictionary<string, ProviderInstanceConfig>
+            {
+                ["gw"] = new("anthropic", "claude-x", "sk-ant", _srv.BaseUrl.TrimEnd('/'), null),
+            }, "gw", Array.Empty<string>(), new Dictionary<string, RoutingTarget>());
+        _srv.EnqueueJson(200, Ok);
+
+        Assert.True(ProviderRegistry.Build(settings).TryGet("gw", out var provider));
+        await provider.ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.Contains("claude-x", _srv.LastRequestBody);
+    }
 }

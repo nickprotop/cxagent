@@ -69,3 +69,16 @@ public interface IThinkingProvider
     /// <param name="level">The level to send requests at.</param>
     ILlmProvider WithThinking(string? level);
 }
+
+/// <summary>
+/// One thinking block exactly as a provider returned it, to be sent back unchanged.
+///
+/// <para>OPAQUE, AND ONLY THE PROVIDER'S. Anthropic signs each block and refuses one that was
+/// edited; within a tool loop it requires them back, so the model keeps the reasoning behind the
+/// calls it is making. Nothing here reads or changes one — it is carried, then returned.</para>
+/// </summary>
+/// <param name="Redacted">A safety-redacted block: no readable text, only <paramref name="Data"/>.</param>
+/// <param name="Thinking">The block's text as returned (empty when the provider hid it).</param>
+/// <param name="Signature">The provider's signature over the block.</param>
+/// <param name="Data">A redacted block's encrypted content.</param>
+public sealed record ThinkingBlock(bool Redacted, string? Thinking, string? Signature, string? Data);

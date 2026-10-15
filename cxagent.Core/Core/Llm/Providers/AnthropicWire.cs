@@ -35,8 +35,17 @@ internal static class AnthropicWire
         var systemParts = new List<string>();
         var msgs = new JsonArray();
 
-        foreach (var m in messages)
+        // THE CURRENT TOOL LOOP: everything after the last thing the user said. Its assistant turns
+        // go back with their thinking blocks, which Anthropic requires within a loop; earlier turns
+        // go without, which it allows. The task list is a user message that is not the user speaking.
+        var loopStart = 0;
+        for (var i = messages.Count - 1; i >= 0; i--)
+            if (messages[i] is { Role: "user", ToolCallId: null, IsTaskList: false }) { loopStart = i + 1; break; }
+
+        for (var mi = 0; mi < messages.Count; mi++)
         {
+            var m = messages[mi];
+            var blocks = mi >= loopStart ? m.ThinkingBlocks : null;
             if (m.Role == "system") { systemParts.Add(m.Content); continue; }
 
             if (m.ToolCallId is not null)
@@ -62,6 +71,7 @@ internal static class AnthropicWire
             else if (m.ToolCalls is { Count: > 0 })
             {
                 var content = new JsonArray();
+                AddThinking(content, blocks);
                 if (m.Content.Length > 0)
                     content.Add(new JsonObject { ["type"] = "text", ["text"] = m.Content });
                 foreach (var tc in m.ToolCalls)
@@ -72,6 +82,13 @@ internal static class AnthropicWire
                         ["name"] = tc.Name,
                         ["input"] = JsonNode.Parse(tc.Arguments.GetRawText())
                     });
+                msgs.Add(new JsonObject { ["role"] = "assistant", ["content"] = content });
+            }
+            else if (m.Role == "assistant" && blocks is { Count: > 0 })
+            {
+                var content = new JsonArray();
+                AddThinking(content, blocks);
+                if (m.Content.Length > 0) content.Add(new JsonObject { ["type"] = "text", ["text"] = m.Content });
                 msgs.Add(new JsonObject { ["role"] = "assistant", ["content"] = content });
             }
             else
@@ -135,6 +152,18 @@ internal static class AnthropicWire
         return body;
     }
 
+    /// <summary>
+    /// A turn's thinking blocks, first and exactly as returned: Anthropic refuses a block that was
+    /// reordered, edited or dropped from among its siblings.
+    /// </summary>
+    private static void AddThinking(JsonArray content, IReadOnlyList<ThinkingBlock>? blocks)
+    {
+        foreach (var b in blocks ?? [])
+            content.Add(b.Redacted
+                ? new JsonObject { ["type"] = "redacted_thinking", ["data"] = b.Data }
+                : new JsonObject { ["type"] = "thinking", ["thinking"] = b.Thinking ?? "", ["signature"] = b.Signature });
+    }
+
     private static void MarkLastBlock(JsonObject message)
     {
         if (message["content"] is JsonValue text)
@@ -150,7 +179,9 @@ internal static class AnthropicWire
     /// <param name="Call">A tool call this event completed.</param>
     /// <param name="Thinking">A thinking delta, or "" for a block with no readable text.</param>
     /// <param name="Redacted">True when the thinking block was safety-redacted.</param>
-    public readonly record struct AnthropicStreamItem(string? Text, ToolCall? Call, string? Thinking = null, bool Redacted = false);
+    /// <param name="Block">A thinking block this event closed, whole, to send back with the turn.</param>
+    public readonly record struct AnthropicStreamItem(string? Text, ToolCall? Call, string? Thinking = null,
+        bool Redacted = false, ThinkingBlock? Block = null);
 
     /// <summary>
     /// Reassembles one streamed Anthropic message, fed one SSE data-line JSON at a time.
@@ -167,6 +198,10 @@ internal static class AnthropicWire
     public sealed class StreamAccumulator
     {
         private readonly Dictionary<int, (string Name, string? Id, System.Text.StringBuilder Json)> _open = new();
+
+        /// <summary>Thinking blocks being streamed, by index: their text and signature so far, or a
+        /// redacted block's data. Kept whole so the block can go back exactly as it came.</summary>
+        private readonly Dictionary<int, (System.Text.StringBuilder Text, System.Text.StringBuilder Signature, string? Data)> _thinking = new();
 
         public string? StopReason { get; private set; }
         public bool IsDone { get; private set; }
@@ -206,9 +241,12 @@ internal static class AnthropicWire
                             // and the block start is the only sign the model thought — the transcript
                             // still shows it happened.
                             case "thinking":
+                                _thinking[index] = (new(), new(), null);
                                 return new(null, null, Thinking: "");
                             // SAFETY-REDACTED reasoning: encrypted, never readable, still a step that thought.
                             case "redacted_thinking":
+                                _thinking[index] = (new(), new(),
+                                    cb.TryGetProperty("data", out var data) ? data.GetString() ?? "" : "");
                                 return new(null, null, Thinking: "", Redacted: true);
                         }
                     return default;
@@ -221,9 +259,14 @@ internal static class AnthropicWire
                         case "text_delta":
                             return new(d.TryGetProperty("text", out var txt) ? txt.GetString() : null, null);
                         case "thinking_delta":
-                            return new(null, null, Thinking: d.TryGetProperty("thinking", out var th) ? th.GetString() ?? "" : "");
-                        // The signature is what sends a block back unchanged; nothing here sends one back yet.
+                            var piece = d.TryGetProperty("thinking", out var th) ? th.GetString() ?? "" : "";
+                            if (_thinking.TryGetValue(index, out var open)) open.Text.Append(piece);
+                            return new(null, null, Thinking: piece);
+                        // THE SIGNATURE is what lets the block go back: Anthropic refuses one it did
+                        // not sign, so it is kept with the text it covers.
                         case "signature_delta":
+                            if (_thinking.TryGetValue(index, out var signed) && d.TryGetProperty("signature", out var sig))
+                                signed.Signature.Append(sig.GetString());
                             return default;
                         case "input_json_delta":
                             if (_open.TryGetValue(index, out var acc) && d.TryGetProperty("partial_json", out var pj))
@@ -234,6 +277,10 @@ internal static class AnthropicWire
                     }
 
                 case "content_block_stop":
+                    if (_thinking.Remove(index, out var block))
+                        return new(null, null, Block: block.Data is { } redacted
+                            ? new ThinkingBlock(true, null, null, redacted)
+                            : new ThinkingBlock(false, block.Text.ToString(), block.Signature.ToString(), null));
                     return new(null, Close(index));
 
                 case "message_delta":

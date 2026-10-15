@@ -473,6 +473,9 @@ public class AgentChallengeTests
     private sealed class ChunkScriptProvider(params LlmStreamChunk[][] requests) : ILlmProvider
     {
         private readonly Queue<LlmStreamChunk[]> _requests = new(requests);
+
+        /// <summary>The messages of every request, as sent — copies, since the list keeps growing.</summary>
+        public List<List<ChatMessage>> Sent { get; } = [];
         public string ProviderId => "script";
         public string DisplayName => "Script";
         public string ModelId => "script-1";
@@ -485,9 +488,11 @@ public class AgentChallengeTests
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
             await Task.Yield();
+            Sent.Add([.. messages]);
             var script = _requests.Count > 0 ? _requests.Dequeue() : [Text("done")];
             foreach (var chunk in script) yield return chunk;
-            yield return new LlmStreamChunk(null, null, IsFinal: true, new LlmUsage(),
+            // SOME USAGE, so a test with a compaction threshold has something to measure against.
+            yield return new LlmStreamChunk(null, null, IsFinal: true, new LlmUsage { InputTokens = 100 },
                 script.Any(c => c.ToolCallDelta is not null) ? "tool_use" : "end_turn");
         }
     }
@@ -594,6 +599,75 @@ public class AgentChallengeTests
         catch (OperationCanceledException) { }
 
         Assert.Single(sink.Ended);
+    }
+
+    private static LlmStreamChunk Block(string signature) =>
+        new(null, null, IsFinal: false, ThinkingBlock: new ThinkingBlock(false, "t", signature, null));
+
+    private static LlmStreamChunk Todo(string text) => new(null, new ToolCall
+    {
+        Name = "todowrite", Id = "todo-" + text,
+        Arguments = System.Text.Json.JsonDocument.Parse(
+            $$$"""{"todos":[{"text":"{{{text}}}","status":"in_progress"}]}""").RootElement.Clone(),
+    }, IsFinal: false);
+
+    // A STEP'S BLOCKS RIDE ITS ASSISTANT MESSAGE, so the next request of the loop sends them back.
+    [Fact]
+    public async Task AStepsThinkingBlocks_RideItsAssistantMessage()
+    {
+        var provider = new ChunkScriptProvider([Block("SIG-1"), Call("no_such_tool")], [Text("done")]);
+        await Build(provider, new RecordingSink()).SendAsync("go", CancellationToken.None);
+
+        var second = provider.Sent[1];
+        var carrier = Assert.Single(second, m => m.ThinkingBlocks is { Count: > 0 });
+        Assert.Equal("SIG-1", carrier.ThinkingBlocks![0].Signature);
+        Assert.NotNull(carrier.ToolCalls);
+    }
+
+    // WHILE BLOCKS ARE CARRIED, EVERYTHING BEFORE THEM STAYS PUT: a block is valid only while what
+    // precedes it is unchanged, and a task list moved to the end would change it every step.
+    [Fact]
+    public async Task WhileBlocksAreCarried_ATaskListChange_OnlyAppends()
+    {
+        var provider = new ChunkScriptProvider(
+            [Block("S1"), Todo("first")],
+            [Block("S2"), Todo("second")],
+            [Text("done")]);
+        await Build(provider, new RecordingSink()).SendAsync("go", CancellationToken.None);
+
+        static string Key(ChatMessage m) => $"{m.Role}|{m.ToolCallId}|{m.Content}";
+        var second = provider.Sent[1].Select(Key).ToList();
+        var third = provider.Sent[2].Select(Key).ToList();
+        Assert.Equal(second, third.Take(second.Count));
+        Assert.Contains(provider.Sent[2], m => m.IsTaskList && m.Content.Contains("second"));
+    }
+
+    // AFTER THE LOOP, the extra copies go: the next message starts with one list, at the end.
+    [Fact]
+    public async Task TheNextMessage_TidiesTheTaskListBackToOne()
+    {
+        var provider = new ChunkScriptProvider(
+            [Block("S1"), Todo("first")],
+            [Block("S2"), Todo("second")],
+            [Text("done")],
+            [Text("again")]);
+        var agent = Build(provider, new RecordingSink());
+        await agent.SendAsync("go", CancellationToken.None);
+        await agent.SendAsync("next", CancellationToken.None);
+
+        var last = provider.Sent[^1];
+        Assert.Single(last, m => m.IsTaskList);
+        Assert.True(last[^1].IsTaskList);
+    }
+
+    // COMPACTION REWRITES WHAT PRECEDES THE BLOCKS, so they are dropped rather than sent invalid.
+    [Fact]
+    public async Task Compaction_DropsTheCarriedBlocks()
+    {
+        var provider = new ChunkScriptProvider([Block("S1"), Call("no_such_tool")], [Text("done")]);
+        await Build(provider, new RecordingSink(), compressAbove: 1).SendAsync("go", CancellationToken.None);
+
+        Assert.DoesNotContain(provider.Sent[^1], m => m.ThinkingBlocks is { Count: > 0 });
     }
 
     [Fact]
