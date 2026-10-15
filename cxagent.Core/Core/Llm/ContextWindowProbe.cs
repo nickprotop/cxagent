@@ -49,9 +49,9 @@ public static class ContextWindowProbe
     ///
     /// <para>ANTHROPIC SAYS SO OUTRIGHT. Its Models API returns <c>max_input_tokens</c> for a model
     /// id, so an <c>anthropic</c> instance is asked there — with its own auth header, and against
-    /// the default URL when none is configured, which is the normal case. Before this it was never
-    /// asked at all (no baseUrl, so the probe returned at once), and a 1M-token model was compacted
-    /// at the 40,000-token fallback. Every other kind takes the llama.cpp path unchanged.</para>
+    /// the default URL when none is configured, which is the normal case. The llama.cpp path needs a
+    /// baseUrl and would return at once, leaving a 1M-token model compacted at the 40,000-token
+    /// fallback. Every other kind takes the llama.cpp path.</para>
     /// </summary>
     public static Task<int?> TryGetAsync(ProbeTarget target, CancellationToken ct = default) =>
         string.Equals(target.Kind, "anthropic", StringComparison.Ordinal)

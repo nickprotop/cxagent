@@ -128,9 +128,9 @@ internal static class AnthropicWire
     ///
     /// <para>A TOOL CALL'S INPUT IS NOT IN ITS START EVENT. <c>content_block_start</c> carries the
     /// name and id with an empty <c>input</c>; the arguments follow as <c>input_json_delta</c>
-    /// fragments and are only whole at <c>content_block_stop</c>. Emitting the call at its start —
-    /// as this once did — sent every streamed call with <c>{}</c>, so tools failed for missing
-    /// arguments and the stuck guard fired on the identical empty calls.</para>
+    /// fragments and are only whole at <c>content_block_stop</c>. A call emitted at its start would
+    /// reach its tool as <c>{}</c>: the tool fails for missing arguments, and the stuck guard fires
+    /// on the identical empty calls.</para>
     ///
     /// <para>END IS <c>message_stop</c>, not <c>message_delta</c>: the delta carries the stop reason
     /// and the output token count, and is followed by the stop.</para>

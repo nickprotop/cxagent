@@ -1449,8 +1449,8 @@ public sealed class Agent
         var toolUseMismatches = 0;
 
         // A REPLY THAT HIT THE OUTPUT CAP, and the parts of it so far. The model is asked to carry
-        // on rather than the cut-off text being returned as its answer: a sub-agent's report cut at
-        // 4,096 tokens came back mid-sentence as "completed". The parts are joined so the caller
+        // on rather than the cut-off text being returned as its answer, which would hand a parent agent
+        // a sub-agent's report that stops mid-sentence, marked "completed". The parts are joined so the caller
         // receives one answer; bounded, because a model that never finishes would otherwise loop.
         var capContinuations = 0;
         var capturedParts = new StringBuilder();

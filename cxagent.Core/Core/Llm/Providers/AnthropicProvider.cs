@@ -36,8 +36,8 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
 
     /// <summary>
     /// The per-response output cap. It bounds what the model THINKS as well as what it writes:
-    /// current Claude models think by default, and thinking counts against max_tokens. At 4,096 a
-    /// sub-agent's final report was cut mid-sentence and handed back as "completed". Only generated
+    /// current Claude models think by default, and thinking counts against max_tokens, so a cap of a
+    /// few thousand cuts a long answer — a sub-agent's final report — mid-sentence. Only generated
     /// tokens are billed, so a high cap costs nothing on a short reply; every request this driver
     /// sends that can be long is streamed, so it cannot hit an HTTP timeout either.
     /// </summary>
