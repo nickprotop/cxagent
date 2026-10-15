@@ -31,7 +31,8 @@ public sealed class FolderSessionStore(AppPaths paths)
     /// the shape where transposing a pair compiles cleanly and writes the wrong field.
     /// </remarks>
     public readonly record struct ResumeTurn(string AgentId, IReadOnlyList<ChatMessage> Context,
-        int InputTokens, int OutputTokens, string? WorkingDir = null, EditMode? Edits = null);
+        int InputTokens, int OutputTokens, string? WorkingDir = null, EditMode? Edits = null,
+        string? Thinking = null);
 
     /// <summary>The five-argument form kept for callers that have no mode to record.</summary>
     public void SaveTurn(string agentId, IReadOnlyList<ChatMessage> context,
@@ -60,7 +61,7 @@ public sealed class FolderSessionStore(AppPaths paths)
             SessionHeader.Write(folder, new SessionHeader(
                 turn.AgentId, TitleOf(turn.Context), turn.WorkingDir,
                 turn.InputTokens, turn.OutputTokens,
-                SessionEndState.Running, DateTimeOffset.UtcNow, turn.Edits));
+                SessionEndState.Running, DateTimeOffset.UtcNow, turn.Edits, turn.Thinking));
         }
         catch (Exception)
         {
@@ -79,7 +80,7 @@ public sealed class FolderSessionStore(AppPaths paths)
         if (context is null) return null;
 
         return new SessionSnapshot(header.AgentId, context, header.InputTokens,
-            header.OutputTokens, header.UpdatedAt, header.Edits, header.WorkingDir);
+            header.OutputTokens, header.UpdatedAt, header.Edits, header.WorkingDir, header.Thinking);
     }
 
     private static IReadOnlyList<ChatMessage>? ReadContext(SessionFolder folder)
@@ -319,6 +320,11 @@ public sealed record UidLookup(SessionSnapshot? Session, IReadOnlyList<string> A
 /// worse than staying put — a resume that silently re-scoped to the wrong project would change
 /// which files a turn may touch.</para>
 /// </param>
+/// <param name="Thinking">
+/// The thinking level the conversation was at, or null for the model's own default (and for a row
+/// written before the column existed). Restored with it: a level is part of how the user chose to
+/// run this conversation, like its edit mode.
+/// </param>
 public sealed record SessionSnapshot(
     string AgentId,
     IReadOnlyList<ChatMessage> Context,
@@ -327,4 +333,6 @@ public sealed record SessionSnapshot(
     DateTimeOffset UpdatedAt,
     EditMode? Edits = null,
 
-    string? WorkingDir = null);
+    string? WorkingDir = null,
+
+    string? Thinking = null);

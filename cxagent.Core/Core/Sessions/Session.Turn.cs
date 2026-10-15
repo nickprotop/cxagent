@@ -506,6 +506,10 @@ public sealed partial class Session
         // AND NOT ConfigureAwait(false) ON EVERY AWAIT: there are over two hundred in this path, and a
         // single missed one silently restores the hazard. One boundary that cannot be forgotten beats
         // two hundred that can.
+        // THE LEVEL CHOSEN DURING THE LAST TURN takes effect here, at the start of this one — never
+        // inside a tool loop.
+        ApplyPendingThinking();
+
         var previous = System.Threading.SynchronizationContext.Current;
         System.Threading.SynchronizationContext.SetSynchronizationContext(null);
         try

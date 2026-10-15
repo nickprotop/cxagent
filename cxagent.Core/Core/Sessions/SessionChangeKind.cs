@@ -15,6 +15,9 @@ public enum SessionChangeKind
     /// <summary>A different model, over the same conversation.</summary>
     Model,
 
+    /// <summary>The thinking level moved, or a level was chosen to apply at the next message.</summary>
+    Thinking,
+
     /// <summary>An earlier conversation was restored into this session.</summary>
     Resumed,
 

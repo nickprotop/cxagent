@@ -23,6 +23,9 @@ namespace CxAgent.Core.Permissions;
 public sealed class ActionClassifier
 {
     private readonly ILlmProvider _provider;
+
+    /// <summary>The provider this classifier asks, for a test of the level it asks at.</summary>
+    internal ILlmProvider ProviderForTest => _provider;
     private readonly TimeSpan _stageDeadline;
 
     /// <summary>

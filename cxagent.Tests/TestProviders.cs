@@ -251,3 +251,57 @@ public sealed class NullJobPanel : IToolObserver
     public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot) { }
     public void ToolOutputAppended(string jobId, string delta) { }
 }
+
+/// <summary>
+/// A provider offering fixed thinking levels that records the level each request went at, and can
+/// hold a request open until released — a turn that is still running while the level changes.
+/// </summary>
+internal sealed class LevelledMock : ILlmProvider, IThinkingProvider
+{
+    private readonly IReadOnlyList<string> _levels;
+    private readonly string? _level;
+    private readonly Shared _shared;
+
+    /// <summary>What every clone shares: the requests seen, and the gate a request waits on.</summary>
+    internal sealed class Shared
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<string?> Seen { get; } = new();
+        public TaskCompletionSource? Hold { get; set; }
+        public bool Throw { get; set; }
+    }
+
+    public LevelledMock(IReadOnlyList<string> levels, string? level = null) : this(levels, level, new Shared()) { }
+    private LevelledMock(IReadOnlyList<string> levels, string? level, Shared shared)
+    {
+        _levels = levels; _level = level; _shared = shared;
+    }
+
+    public Shared State => _shared;
+    public string? LastLevel => _shared.Seen.LastOrDefault();
+    public string ProviderId => "mock";
+    public string DisplayName => "Mock";
+    public string ModelId => "mock-model";
+    public bool SupportsToolCalling => true;
+    public bool SupportsStreaming => true;
+    public string? ThinkingLevel => _level;
+    public ThinkingOptions? KnownThinkingOptions => _levels.Count > 0 ? new(_levels) : ThinkingOptions.None("no levels");
+    public Task<ThinkingOptions> GetThinkingOptionsAsync(CancellationToken ct = default) =>
+        Task.FromResult(KnownThinkingOptions!);
+    public ILlmProvider WithThinking(string? level) => new LevelledMock(_levels, level, _shared);
+
+    public async Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t, CancellationToken ct)
+    {
+        _shared.Seen.Enqueue(_level);
+        if (_shared.Hold is { } hold) await hold.Task.WaitAsync(ct);
+        if (_shared.Throw) throw new InvalidOperationException("boom");
+        return new LlmResponse { Text = "ok", StopReason = "end_turn" };
+    }
+
+    public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> m, List<ToolDefinition>? t,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        var r = await ChatAsync(m, t, ct);
+        yield return new LlmStreamChunk(r.Text, null, IsFinal: false);
+        yield return new LlmStreamChunk(null, null, IsFinal: true, new LlmUsage(), "end_turn");
+    }
+}

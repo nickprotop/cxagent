@@ -391,6 +391,10 @@ internal static class SessionFactory
 
         session.ReplaceHost(host, resolution.Provider!, resolution.InstanceName, executors);
 
+        // THE LEVEL THE RESUMED SESSION WAS AT, the one place every resume passes — the command
+        // line's -c and -r, the session picker, and a headless continue alike.
+        if (resumeSnapshot?.Thinking is { } thinking) session.RestoreThinking(thinking);
+
         // THE TRANSCRIPT KEYS ON THE SESSION AND ITS FILE LIVES IN THE AGENT'S FOLDER, so the store
         // is told the mapping here — the first point where both ids are in hand, since SessionId
         // reads through Host and ReplaceHost is what sets it. Re-bound on every wire, because a

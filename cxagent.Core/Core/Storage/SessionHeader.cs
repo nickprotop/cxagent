@@ -35,7 +35,8 @@ public sealed record SessionHeader(
     int OutputTokens,
     int State,
     DateTimeOffset UpdatedAt,
-    EditMode? Edits = null)
+    EditMode? Edits = null,
+    string? Thinking = null)
 {
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
 

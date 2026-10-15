@@ -629,7 +629,7 @@ public sealed class AgentHost : IDisposable
     private void SaveResume(Agent agent) =>
         _stores.Resume?.SaveTurn(new FolderSessionStore.ResumeTurn(
             agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
-            _runtime.WorkingDir, Mode.Edits));
+            _runtime.WorkingDir, Mode.Edits, (_runtime.Provider as IThinkingProvider)?.ThinkingLevel));
 
     /// <summary>
     /// Hands the running turn something to read on its next lap, or answers false when nothing can

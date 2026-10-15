@@ -136,7 +136,10 @@ public sealed class PermissionDecider : IPermissionGate
                 // would make every classification time out instantly — auto mode that silently never
                 // decides. Out-of-range means "use the default", the same reading every other
                 // hand-edited number here takes.
-                ? new ActionClassifier(provider,
+                // AT THE LOWEST LEVEL THE MODEL OFFERS, whatever the session's: the classifier answers
+                // yes or no on every tool call, and deliberation there is latency with no answer in it.
+                ? new ActionClassifier(
+                    provider is Llm.IThinkingProvider thinker ? thinker.WithThinking(Llm.ThinkingLevels.Lowest) : provider,
                     stageTimeoutSeconds is > 0 and var s ? TimeSpan.FromSeconds(s) : null)
                 : null;
 
