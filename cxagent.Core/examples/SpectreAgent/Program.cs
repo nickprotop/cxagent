@@ -48,8 +48,9 @@ using var manager = SessionManager.Create(new AppPaths(configDir), buildGate: st
     PermissionDecider.WithPrompt(store,
         // THE SAME SINK THE OBSERVER USES, because a gate notice and a session notice are the same
         // kind of line: Core's own words, with a severity attached. Routing them through one writer
-        // is what keeps "denied: ..." from arriving in a different voice than "Stopped."
-        notice: ConsoleSink.Say,
+        // is what keeps "denied: ..." from arriving in a different voice than "Stopped." The session
+        // a notice names is ignored: this program runs one.
+        notice: (_, message) => ConsoleSink.Say(message),
         promptHook: (request, offerTrust, ct) =>
         {
             AnsiConsole.WriteLine();

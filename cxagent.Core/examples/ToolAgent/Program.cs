@@ -38,8 +38,9 @@ if (!resolution.HasProvider)
 using var manager = SessionManager.Create(new AppPaths(configDir), buildGate: store =>
     PermissionDecider.WithPrompt(store,
         // THE SAME ROUTING AS THE OBSERVER BELOW: a gate notice carries a severity like any other
-        // line Core says, and an error belongs on stderr whichever of the two produced it.
-        notice: message =>
+        // line Core says, and an error belongs on stderr whichever of the two produced it. The first
+        // argument names the session a notice belongs to; this program runs one, so it is ignored.
+        notice: (_, message) =>
             (message.Severity == Severity.Error ? Console.Error : Console.Out).WriteLine(message.Text),
         promptHook: (request, offerTrust, ct) =>
         {
