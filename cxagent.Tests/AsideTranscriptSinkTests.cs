@@ -67,4 +67,28 @@ public class AsideTranscriptSinkTests
 
         Assert.Equal(2, chat.MessageIds.Count);
     }
+
+    /// <summary>
+    /// An aside's thinking: a live line while it arrives, then one line in the thread saying how
+    /// long — never the thinking itself, which would read as part of the answer.
+    /// </summary>
+    [Fact]
+    public void Thinking_IsALiveLine_ThenOneLineInTheThread()
+    {
+        var chat = new ChatTranscriptControl();
+        var sink = AsideTranscriptSink.ForTest(chat);
+
+        sink.Asked(1, "why?");
+        sink.ThinkingAppended(1, "first\nlooking at the loader");
+        Assert.Equal("◆ looking at the loader", sink.ThinkingLineForTest(1));
+
+        sink.ThinkingEnded(1, new CxAgent.Core.Llm.ThinkingSummary(TimeSpan.FromSeconds(3), 5, false, false));
+        sink.AnswerAppended(1, "because");
+
+        Assert.Null(sink.ThinkingLineForTest(1));
+        var thread = sink.ThreadTextForTest(1);
+        Assert.Contains("◆ Thought for 3s · 5 words", thread, StringComparison.Ordinal);
+        Assert.DoesNotContain("looking at the loader", thread, StringComparison.Ordinal);
+        Assert.EndsWith("because", thread, StringComparison.Ordinal);
+    }
 }

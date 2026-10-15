@@ -74,10 +74,32 @@ public sealed class BufferedChatSink : ISessionObserver
     // parent's tool result must be the answer, not the thinking.
     public void AssistantThinkingAppended(ChatMessageId id, string text)
     {
-        lock (_gate) _transcript.Append(text);
+        lock (_gate)
+        {
+            _transcript.Append(text);
+            _thinkingRun.Append(text);
+        }
     }
 
-    public void AssistantThinkingEnded(ChatMessageId id, Llm.ThinkingSummary summary) { }
+    public void AssistantThinkingEnded(ChatMessageId id, Llm.ThinkingSummary summary)
+    {
+        lock (_gate) _thinkingRun.Clear();
+    }
+
+    /// <summary>The run of thinking in progress, for <see cref="LatestThinkingLine"/>.</summary>
+    private readonly StringBuilder _thinkingRun = new();
+
+    /// <summary>
+    /// The last line of the thinking under way, or null when none is.
+    ///
+    /// <para>FOR THE PARENT'S ROW: a worker silent for a minute is visibly working when its row shows
+    /// what it is weighing now. Null once the run ends, so a worker that has moved on to calling tools
+    /// or answering shows that instead of a stale thought.</para>
+    /// </summary>
+    public string? LatestThinkingLine
+    {
+        get { lock (_gate) return Llm.ModelOutput.LastLine(_thinkingRun.ToString()); }
+    }
 
     public void AssistantTurnEnded(ChatMessageId id)
     {

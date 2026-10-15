@@ -94,6 +94,8 @@ public sealed partial class Session
         public void Waiting(int aside, bool waiting) { }
         public void AnswerAppended(int aside, string text) { }
         public void LookedUp(int aside, string row) { }
+        public void ThinkingAppended(int aside, string text) { }
+        public void ThinkingEnded(int aside, Llm.ThinkingSummary summary) { }
         public void Finished(int aside, AsideEnd end, string? detail) { }
     }
 }

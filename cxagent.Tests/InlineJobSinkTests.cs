@@ -1408,6 +1408,38 @@ public class InlineJobSinkTests
     }
 
     [Fact]
+    public void ARunningWorker_ShowsItsLatestThought_UnderTheCalls()
+    {
+        // ONE LINE, REPLACED AS IT GOES: a worker silent for a minute is visibly working.
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "prices.py", "succeeded", agentId: child.Agent.Id));
+        child.Sink.AssistantThinkingAppended(new CxAgent.Core.Sessions.ChatMessageId(1),
+            "first idea\nthe >= change needs a test");
+
+        var body = sink.RunningWorkerBodyForTest(RunningWorker())!;
+
+        Assert.EndsWith("*◆ the >= change needs a test*", body.TrimEnd(), StringComparison.Ordinal);
+        Assert.DoesNotContain("first idea", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AWorkersThought_IsGone_OnceItsRunEnds()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        var step = new CxAgent.Core.Sessions.ChatMessageId(1);
+        child.Sink.AssistantThinkingAppended(step, "considering");
+        child.Sink.AssistantThinkingEnded(step,
+            new CxAgent.Core.Llm.ThinkingSummary(TimeSpan.FromSeconds(1), 1, false, false));
+
+        Assert.DoesNotContain("considering", sink.RunningWorkerBodyForTest(RunningWorker()) ?? "",
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ARunningWorkersTable_HasNoOutColumn()
     {
         // Output size is noise mid-flight: it lands when the row settles, and a column of blanks

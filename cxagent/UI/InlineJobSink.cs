@@ -1980,6 +1980,12 @@ public sealed class InlineJobSink : IToolObserver
         var snapshot = calls is null ? [] : Snapshot(calls);
         var table = Timetable(snapshot, new LiveRun(inFlight));
 
+        // ITS LATEST THOUGHT, ONE LINE, REPLACED AS IT GOES — under the calls, where the eye reaches
+        // the row's newest fact. Italic markdown rather than a colour: this body is markdown, which
+        // shows a markup tag as the literal text.
+        if (child.Sink.LatestThinkingLine is { } thought)
+            table += $"\n\n*◆ {Md.Escape(thought)}*";
+
         return Caption(job.ProgressBody) is { } caption ? caption + "\n\n---\n\n" + table : table;
     }
 

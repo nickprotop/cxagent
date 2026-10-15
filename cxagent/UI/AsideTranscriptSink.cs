@@ -28,6 +28,9 @@ public sealed class AsideTranscriptSink : IAsideObserver
     // moving a block means re-adding it whole — see Asked.
     private readonly Dictionary<int, StringBuilder> _threads = new();
 
+    // THE THINKING UNDER WAY in each aside, for its status line. UI-thread only.
+    private readonly Dictionary<int, StringBuilder> _thinking = new();
+
     public AsideTranscriptSink(ConsoleWindowSystem system, ChatTranscriptControl chat)
         : this(chat, system.EnqueueOnUIThread)
     {
@@ -116,6 +119,34 @@ public sealed class AsideTranscriptSink : IAsideObserver
 
     public void LookedUp(int aside, string row) =>
         Write(aside, $"\n`{row.Replace("`", "'")}`\n", "asideSink.LookedUp");
+
+    /// <summary>
+    /// The aside's latest thought, on its status row — the line that otherwise says "waiting for the
+    /// model" — so a long think reads as work rather than as silence. A status, not the thread: the
+    /// thread is the conversation, and thinking written into it would read as part of the answer.
+    /// </summary>
+    public void ThinkingAppended(int aside, string text) =>
+        _onUiThread(() =>
+        {
+            if (!TryBlock(aside, out var id)) return;
+            var run = _thinking.TryGetValue(aside, out var known) ? known : _thinking[aside] = new StringBuilder();
+            run.Append(text);
+            if (Core.Llm.ModelOutput.LastLine(run.ToString()) is { } line) _chat.SetStatus(id, $"◆ {line}");
+        }, "asideSink.ThinkingAppended");
+
+    /// <summary>The run is over: the status clears and the thread keeps one line saying so.</summary>
+    public void ThinkingEnded(int aside, Core.Llm.ThinkingSummary summary) =>
+        _onUiThread(() =>
+        {
+            _thinking.Remove(aside);
+            if (!TryBlock(aside, out var id)) return;
+            _chat.ClearStatus(id);
+            Append(aside, id, $"*{ChatTranscriptSink.Escape(ChatTranscriptSink.FoldedHeader(summary))}*\n\n");
+        }, "asideSink.ThinkingEnded");
+
+    /// <summary>The live thought an aside's status shows, for a test.</summary>
+    public string? ThinkingLineForTest(int aside) =>
+        _thinking.TryGetValue(aside, out var run) && Core.Llm.ModelOutput.LastLine(run.ToString()) is { } line ? $"◆ {line}" : null;
 
     public void Finished(int aside, AsideEnd end, string? detail) =>
         Write(aside, end switch

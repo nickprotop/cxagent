@@ -41,6 +41,10 @@ public class AsideRunnerTests : IDisposable
         public void AnswerAppended(int aside, string text) => Answer += text;
         public void LookedUp(int aside, string row) => Rows.Enqueue(row);
         public void Finished(int aside, AsideEnd end, string? detail) { End = end; Detail = detail; }
+        public string Thinking = "";
+        public List<ThinkingSummary> Thought { get; } = [];
+        public void ThinkingAppended(int aside, string text) { Thinking += text; Events.Enqueue("thinking"); }
+        public void ThinkingEnded(int aside, ThinkingSummary summary) { Thought.Add(summary); Events.Enqueue("thought"); }
     }
 
     private static readonly IReadOnlyList<ToolDefinition> MainTools =
@@ -101,6 +105,21 @@ public class AsideRunnerTests : IDisposable
         Assert.EndsWith("what does the loader do?", sent[3].Content);
         Assert.Equal("it reads config", seen.Answer);
         Assert.Equal(AsideEnd.Answered, seen.End);
+    }
+
+    /// <summary>An aside's thinking is shown and closed before its answer, and never kept in it.</summary>
+    [Fact]
+    public async Task Thinking_IsReported_ThenEnded_AndKeptOutOfTheAnswer()
+    {
+        var mock = new MockLlmProvider();
+        mock.EnqueueResponse(Says("<think>check the loader</think>it reads config"));
+        var seen = new Seen();
+
+        await Runner(mock, seen).Ask("what does the loader do?")!;
+
+        Assert.Equal("check the loader", seen.Thinking);
+        Assert.Single(seen.Thought);
+        Assert.Equal("it reads config", seen.Answer);
     }
 
     /// <summary>The same list, so llama.cpp's cached prefix still matches the fork.</summary>

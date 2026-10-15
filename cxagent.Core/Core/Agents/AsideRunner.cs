@@ -192,7 +192,14 @@ public sealed class AsideRunner
         LlmUsage usage = new();
         var stop = "";
         var shown = 0;
+        var shownReasoning = 0;
         var first = true;
+
+        // THE SAME RUNS THE MAIN AGENT REPORTS, to the aside's own observer: an aside that thinks for
+        // twenty seconds on a local model is otherwise a block that says nothing for twenty seconds.
+        var thinking = new ThinkingRun(
+            t => _runtime.Observer.ThinkingAppended(Number, t),
+            s => _runtime.Observer.ThinkingEnded(Number, s));
 
         _runtime.Observer.Waiting(Number, true);
         try
@@ -205,18 +212,35 @@ public sealed class AsideRunner
                     _runtime.Observer.Waiting(Number, false);
                 }
 
+            if (chunk.ThinkingDelta is { } delta) thinking.Add(delta, chunk.ThinkingRedacted);
+
             if (!string.IsNullOrEmpty(chunk.TextDelta))
             {
                 text.Append(chunk.TextDelta);
-                var visible = ModelOutput.StripReasoning(text.ToString());
+                var accumulated = text.ToString();
+
+                // Thinking first: one delta can close the thought and start the answer.
+                var reasoning = ModelOutput.ExtractReasoning(accumulated);
+                if (reasoning.Length > shownReasoning)
+                {
+                    thinking.Add(reasoning[shownReasoning..]);
+                    shownReasoning = reasoning.Length;
+                }
+
+                var visible = ModelOutput.StripReasoning(accumulated);
                 if (visible.Length > shown)
                 {
+                    thinking.End();
                     _runtime.Observer.AnswerAppended(Number, visible[shown..]);
                     shown = visible.Length;
                 }
             }
 
-            if (chunk.ToolCallDelta is { } tc) toolCalls.Add(tc);
+            if (chunk.ToolCallDelta is { } tc)
+            {
+                thinking.End();
+                toolCalls.Add(tc);
+            }
             if (chunk.Usage is { } u) usage = u;
             if (chunk.StopReason is { Length: > 0 } sr) stop = sr;
             }
@@ -226,6 +250,9 @@ public sealed class AsideRunner
             // CLEARED ONCE, on the way out of a request that never produced a chunk: stopped or failed
             // while still waiting, the block must not keep saying it is waiting.
             if (first) _runtime.Observer.Waiting(Number, false);
+
+            // And a thought cut off by a stop or a failure still closes.
+            thinking.End();
         }
 
         return new LlmResponse { Text = text.ToString(), ToolCalls = toolCalls, Usage = usage, StopReason = stop };

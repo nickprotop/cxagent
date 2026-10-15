@@ -74,4 +74,17 @@ public static class ModelOutput
 
         return cleaned.Trim();
     }
+
+    /// <summary>
+    /// The last line of <paramref name="text"/> with anything on it, trimmed, or null. What a
+    /// one-line view of streaming thinking shows: the newest thought, not the whole deliberation.
+    /// </summary>
+    public static string? LastLine(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return null;
+        var lines = text.Split('\n');
+        for (var i = lines.Length - 1; i >= 0; i--)
+            if (lines[i].Trim() is { Length: > 0 } line) return line;
+        return null;
+    }
 }
