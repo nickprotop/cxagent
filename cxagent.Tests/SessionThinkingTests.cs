@@ -173,6 +173,48 @@ public class SessionThinkingTests : IDisposable
         Assert.Equal("high", snapshot!.Thinking);
     }
 
+    // SAVED WHEN IT CHANGES, not at the next turn: a level chosen after the last answer, then a
+    // quit, otherwise comes back at the level before it.
+    [Fact]
+    public async Task ALevelChangedAfterTheLastTurn_IsSaved_WithoutAnotherTurn()
+    {
+        var (manager, session, _) = Wired(new LevelledMock(["low", "high"]));
+        using var _m = manager;
+        await Turn(session, "hi");
+
+        session.SetThinking("high");
+
+        var snapshot = new FolderSessionStore(new AppPaths(_dir)).LoadById(session.SessionId!);
+        Assert.Equal("high", snapshot!.Thinking);
+    }
+
+    // AND THE EDIT MODE, which is saved by the same write and has the same gap.
+    [Fact]
+    public async Task AnEditModeChangedAfterTheLastTurn_IsSaved_WithoutAnotherTurn()
+    {
+        var (manager, session, _) = Wired(new LevelledMock(["low", "high"]));
+        using var _m = manager;
+        await Turn(session, "hi");
+
+        session.SetMode(session.Mode with { Edits = EditMode.AcceptEdits });
+
+        var snapshot = new FolderSessionStore(new AppPaths(_dir)).LoadById(session.SessionId!);
+        Assert.Equal(EditMode.AcceptEdits, snapshot!.Edits);
+    }
+
+    // NOTHING SAVED FOR A SESSION WITH NOTHING IN IT: a folder written here would be offered for
+    // resume, and resuming it would bring back an empty conversation.
+    [Fact]
+    public void ALevelChangedBeforeAnyTurn_SavesNoSession()
+    {
+        var (manager, session, _) = Wired(new LevelledMock(["low", "high"]));
+        using var _m = manager;
+
+        session.SetThinking("high");
+
+        Assert.Null(new FolderSessionStore(new AppPaths(_dir)).LoadById(session.SessionId!));
+    }
+
     // EVERY RESUME PASSES THE WIRE, and the wire restores the level the session was saved at.
     [Fact]
     public void Resume_RestoresTheSavedLevel()

@@ -625,7 +625,26 @@ public sealed class AgentHost : IDisposable
         }
     }
 
-    // ONE WRITE, two callers: every completed model turn, and the end of the goal.
+    /// <summary>
+    /// Writes the resume header now, for a setting changed between turns — the thinking level, the
+    /// edit mode.
+    ///
+    /// <para>THE TURN'S WRITE IS NOT ENOUGH. Those settings ride along with each turn's save, and a
+    /// change after the last answer has no turn to ride on: quit before the next message and the
+    /// session comes back at the setting it had before.</para>
+    ///
+    /// <para>NOT FOR A CONVERSATION WITH NOTHING IN IT. A folder written then would be offered for
+    /// resume, and resuming it would bring back nothing; the first turn saves the setting anyway.
+    /// </para>
+    /// </summary>
+    public void SaveSettings()
+    {
+        if (!Context.Messages.Any(m => m.Role == "user")) return;
+        SaveResume(_agent);
+    }
+
+    // ONE WRITE, three callers: every completed model turn, the end of the goal, and a setting
+    // changed between turns.
     private void SaveResume(Agent agent) =>
         _stores.Resume?.SaveTurn(new FolderSessionStore.ResumeTurn(
             agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,

@@ -125,6 +125,10 @@ public sealed partial class Session
     {
         CacheNote();
         SwapThinking(level);
+
+        // SAVED NOW, here and not in SwapThinking: this is the user's change, while a resume
+        // restoring the saved level is not one, and has nothing new to write.
+        Host?.SaveSettings();
         Say(new Message(level is null ? "Thinking set to the model's default." : $"Thinking set to {level}."));
     }
 

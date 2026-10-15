@@ -463,6 +463,10 @@ public sealed partial class Session
             Policy.RememberEdits(mode.Edits);
         }
 
+        // SAVED NOW, not with the next turn: a mode set after the last answer is otherwise lost to
+        // a quit, and the session comes back in the mode the user had just left.
+        Host.SaveSettings();
+
         // SAID BY THE SESSION, not by whoever asked: /mode and Shift+Tab are one action reached two
         // ways, and what is ACTUALLY in force depends on folder trust — which the policy knows and a
         // caller would have to look up.
