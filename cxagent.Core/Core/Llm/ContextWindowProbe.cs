@@ -27,6 +27,70 @@ public static class ContextWindowProbe
     /// <summary>Bounded so a slow or absent endpoint delays startup by at most this.</summary>
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(3);
 
+    private const string AnthropicDefaultBaseUrl = "https://api.anthropic.com/v1";
+
+    /// <summary>
+    /// The context window for an instance of <paramref name="kind"/>, or null when it cannot be
+    /// determined.
+    ///
+    /// <para>ANTHROPIC SAYS SO OUTRIGHT. Its Models API returns <c>max_input_tokens</c> for a model
+    /// id, so an <c>anthropic</c> instance is asked there — with its own auth header, and against
+    /// the default URL when none is configured, which is the normal case. Before this it was never
+    /// asked at all (no baseUrl, so the probe returned at once), and a 1M-token model was compacted
+    /// at the 40,000-token fallback. Every other kind takes the llama.cpp path unchanged.</para>
+    /// </summary>
+    public static Task<int?> TryGetAsync(
+        string? kind, string? baseUrl, string? model, string? apiKey, CancellationToken ct = default) =>
+        string.Equals(kind, "anthropic", StringComparison.Ordinal)
+            ? TryGetAnthropicAsync(baseUrl, model, apiKey, ct)
+            : TryGetAsync(baseUrl, model, apiKey, ct);
+
+    private static async Task<int?> TryGetAnthropicAsync(
+        string? baseUrl, string? model, string? apiKey, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(model) || string.IsNullOrWhiteSpace(apiKey)) return null;
+
+        try
+        {
+            using var http = new HttpClient { Timeout = Timeout };
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(Timeout);
+
+            var root = (string.IsNullOrWhiteSpace(baseUrl) ? AnthropicDefaultBaseUrl : baseUrl).TrimEnd('/');
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{root}/models/{Uri.EscapeDataString(model)}");
+            req.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+            req.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+
+            using var resp = await http.SendAsync(req, cts.Token);
+            if (!resp.IsSuccessStatusCode) return null;
+            return ParseAnthropicContextWindow(await resp.Content.ReadAsStringAsync(cts.Token));
+        }
+        catch (Exception)
+        {
+            // Same contract as the llama.cpp path: unknown, never a startup failure.
+            return null;
+        }
+    }
+
+    /// <summary>Pulls <c>max_input_tokens</c> out of an Anthropic <c>/v1/models/{id}</c> response.</summary>
+    public static int? ParseAnthropicContextWindow(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                   && doc.RootElement.TryGetProperty("max_input_tokens", out var m)
+                   && m.ValueKind == JsonValueKind.Number
+                   && m.TryGetInt32(out var window) && window > 0
+                ? window
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// The served context window for <paramref name="model"/>, or null when it cannot be determined.
     /// </summary>

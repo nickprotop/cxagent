@@ -167,7 +167,7 @@ public static class ConfigResolver
             if (!settings.Providers.TryGetValue(instanceName, out var cfg)) return null;
 
             int? contextWindow = cfg.ContextWindow
-                ?? ContextWindowProbe.TryGetAsync(cfg.BaseUrl, cfg.Model, cfg.ApiKey)
+                ?? ContextWindowProbe.TryGetAsync(cfg.Kind, cfg.BaseUrl, cfg.Model, cfg.ApiKey)
                     .GetAwaiter().GetResult();
 
             return new ResolvedConfig(
@@ -269,7 +269,7 @@ public static class ConfigResolver
             // probe is bounded at three seconds, and every failure returns null — so the worst case
             // is the behaviour we had before it existed.
             int? contextWindow = cfg?.ContextWindow
-                ?? ContextWindowProbe.TryGetAsync(cfg?.BaseUrl, cfg?.Model, cfg?.ApiKey)
+                ?? ContextWindowProbe.TryGetAsync(cfg?.Kind, cfg?.BaseUrl, cfg?.Model, cfg?.ApiKey)
                     .GetAwaiter().GetResult();
             return new ResolvedConfig(
                 new ActiveModel(provider, settings.DefaultProvider, provider.DisplayName, contextWindow),

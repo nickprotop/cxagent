@@ -37,7 +37,9 @@ Named instances. The name is yours; `kind` is what cxagent knows how to talk to.
 **`contextWindow` is worth setting even though it is optional.** Without it the app cannot tell you
 how full the context is — a percentage needs a denominator, and inventing one would put a confident
 figure on a guess. It is also what auto-compaction measures pressure against: unset, the threshold
-falls back to a fixed constant that may be far from your model's real headroom.
+falls back to a fixed constant that may be far from your model's real headroom. Left unset, it is
+asked of the endpoint: a llama.cpp server's `n_ctx`, or Anthropic's Models API for an `anthropic`
+instance.
 
 **`apiKey` supports `${ENV_VAR}`**, so a config file can be committed or shared without carrying a
 secret. A key written literally is still forced to `0600`, but the variable form is better.

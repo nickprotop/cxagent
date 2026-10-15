@@ -32,7 +32,7 @@ public sealed class ProviderRegistry
     private Dictionary<string, ProbeTarget> _endpoints = new(StringComparer.Ordinal);
 
     /// <summary>Where to ask, what to ask about, and what to authenticate with.</summary>
-    private readonly record struct ProbeTarget(string? BaseUrl, string? Model, string? ApiKey);
+    private readonly record struct ProbeTarget(string Kind, string? BaseUrl, string? Model, string? ApiKey);
 
     /// <summary>Guards the lazy fill. Two sessions switching at once would otherwise probe the same
     /// endpoint twice and race on the dictionary.</summary>
@@ -137,8 +137,10 @@ public sealed class ProviderRegistry
         {
             built[name] = Construct(name, cfg, client);
             windows[name] = cfg.ContextWindow;
-            if (cfg.ContextWindow is null && !string.IsNullOrWhiteSpace(cfg.BaseUrl))
-                endpoints[name] = new ProbeTarget(cfg.BaseUrl, cfg.Model, cfg.ApiKey);
+            // Anthropic needs no baseUrl to be asked: its default endpoint answers.
+            if (cfg.ContextWindow is null
+                && (!string.IsNullOrWhiteSpace(cfg.BaseUrl) || cfg.Kind == "anthropic"))
+                endpoints[name] = new ProbeTarget(cfg.Kind, cfg.BaseUrl, cfg.Model, cfg.ApiKey);
         }
 
         return new ProviderRegistry(built, settings.DefaultProvider)
@@ -193,7 +195,7 @@ public sealed class ProviderRegistry
             if (!_endpoints.TryGetValue(instanceName, out var target)) return null;
 
             var probed = ContextWindowProbe
-                .TryGetAsync(target.BaseUrl, target.Model, target.ApiKey)
+                .TryGetAsync(target.Kind, target.BaseUrl, target.Model, target.ApiKey)
                 .GetAwaiter().GetResult();
 
             // ONLY A REAL ANSWER IS REMEMBERED. Caching a null would turn one unreachable endpoint
