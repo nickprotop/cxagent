@@ -66,6 +66,18 @@ public static class CxAgentTheme
             {
                 t.WindowBackgroundColor = Ground;
                 t.PrimaryColor = Accent;
+
+                // LISTS IN THE SHAPE EVERY OTHER THEME USES: ordinary rows in the accent, the
+                // selection a clearly darker accent bar with light text. ModernGray drew ordinary
+                // rows in Cyan1 — the brightest colour the terminal has, and not this app's accent —
+                // and its selection twenty shades from the background, so the rows NOT chosen were the
+                // most vivid on screen and a two-answer trust question looked answered the wrong way.
+                // The bar is the accent at about 45% over the ground, as Amber's is over its own.
+                t.ListFocusedForegroundColor = Accent;
+                t.ListSelectedBackgroundColor = new Color(0x6f, 0x4e, 0x34);
+                t.ListSelectedForegroundColor = new Color(0xe0, 0xdc, 0xd5);
+                t.ListUnfocusedHighlightBackgroundColor = new Color(0x52, 0x3b, 0x29);
+                t.ListUnfocusedHighlightForegroundColor = new Color(0xe0, 0xdc, 0xd5);
             })
             .Build();
 
