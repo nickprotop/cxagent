@@ -1698,15 +1698,13 @@ public static class AppBootstrap
                 return true;
             });
 
-        // EVERY THINKING BLOCK IN THE TAB AT ONCE. One block opens with a click or Enter like any
-        // folded row; this is for reading back how a whole run reasoned. Ctrl+O because Ctrl+T is the
-        // library's window-cycle key, and it is Claude Code's key for expanding detail.
-        keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.O, "open or fold all thinking", () =>
+        // THE THINKING JUST FOLDED, back open — or folded again. Only the latest: any other block is a
+        // click away, or Tab to it and Enter, and opening every block at once buries the answers
+        // between them. Ctrl+O because Ctrl+T is the library's window-cycle key.
+        keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.O, "open or fold the latest thinking", () =>
         {
             if (PluginManagerDialog.IsOpen) return false;
-            var tab = mainWindow.ActiveTab;
-            tab.ShowThinking = !tab.ShowThinking;
-            tab.ChatSink?.SetShowThinking(tab.ShowThinking);
+            mainWindow.ActiveTab.ChatSink?.ToggleLatestThinking();
             return true;
         });
 
@@ -1836,6 +1834,9 @@ public static class AppBootstrap
         // to its left: the key in the shortcut slot, and a click that runs exactly what the key runs
         // rather than a second path to the same place.
         mainWindow.ShowTabsItem(mainWindow.FocusTabStrip);
+
+        // THE PANEL KEY LAST OF THESE, so the jobs item — added on the first tick — follows it.
+        mainWindow.ShowPanelItem();
 
         // NO "DIAGNOSE THE FOCUSED JOB" KEY. Such a key would resolve its target through
         // FocusedJobId(), which walks the focus path for a JobBlockControl — and those are created

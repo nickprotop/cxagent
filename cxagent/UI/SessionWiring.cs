@@ -83,10 +83,6 @@ public static class SessionWiring
         // other's elapsed times frozen and both contending on one panel.
         tab.JobSink = jobs;
         tab.ChatSink = sink;
-
-        // A RE-WIRE (/model, resume) makes a new sink over the same transcript; carrying the tab's
-        // Ctrl+O choice over keeps new blocks landing open when the user asked for them open.
-        if (tab.ShowThinking) sink.SetShowThinking(true);
         return (sink, jobs);
     }
 

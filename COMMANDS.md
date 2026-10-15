@@ -126,8 +126,8 @@ says that the next request rebuilds the cache.
 lowest, because it answers yes or no on every tool call.
 
 **Thinking shows in the transcript as a block per step**, open while it streams and folded to
-`◆ Thought for 9s · 412 words` when the answer starts. Click or Enter opens one; **Ctrl+O** opens or
-folds them all. A running worker's row shows its latest thought, one line; a `/btw` aside shows its
+`◆ Thought for 9s · 412 words` when the answer starts. Click one, or Tab to it and Enter, to open
+it; **Ctrl+O** opens or folds the latest. A running worker's row shows its latest thought, one line; a `/btw` aside shows its
 own on its status line.
 
 ---

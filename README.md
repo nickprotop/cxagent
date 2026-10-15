@@ -177,7 +177,7 @@ can only read. Enter keeps the side thread going; `Esc` stops an answer, then le
 
 **You see what the model thinks, and choose how hard.** Each step's thinking is its own block, open
 while it streams and folded to `◆ Thought for 9s · 412 words` once the answer starts — from a local
-llama.cpp model or from Claude. `Ctrl+O` opens or folds them all. `/think` and `F8` set the level the
+llama.cpp model or from Claude. `Ctrl+O` opens or folds the latest; any other opens with a click. `/think` and `F8` set the level the
 model offers — `off`/`on` on llama.cpp, `low` to `max` on Claude — for this session, kept on resume.
 See [COMMANDS.md](COMMANDS.md#think) and [CONFIG.md](CONFIG.md#providers--required).
 
@@ -459,7 +459,7 @@ one run before it was written down — and the full reference for options, outpu
 | `F7` | Jobs panel — background jobs in the right-hand column; `↑` `↓` and `Enter` open one. `F7` again hides it |
 | `F8` | Next thinking level this model offers — see `/think` |
 | `F9` | Theme |
-| `Ctrl+O` | Open or fold every thinking block in this session |
+| `Ctrl+O` | Open or fold the latest thinking block |
 | `Shift+Tab` | Cycle the edit mode — see [COMMANDS.md](COMMANDS.md) |
 | `Ctrl+Q` | Quit |
 

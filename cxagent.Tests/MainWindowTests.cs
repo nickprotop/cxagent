@@ -107,6 +107,7 @@ public class MainWindowTests
         var res = ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock");
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
+        mw.ShowPanelItem();   // as AppBootstrap does once the window is up
 
         // BOTH SIDES. Asserting LeftItems pinned WHERE a key sits, which is a layout decision, and
         // it broke the moment the bar was rearranged. What matters is that nothing ADVERTISED is

@@ -8,7 +8,7 @@ namespace CxAgent.Tests;
 
 /// <summary>
 /// A step's thinking as its own block: placed where the spinner was, folded when the answer starts,
-/// one block per step, and all of them opened or folded together by Ctrl+O.
+/// one block per step, and the latest opened or folded by Ctrl+O.
 /// </summary>
 public class ThinkingBlockTests
 {
@@ -143,23 +143,31 @@ public class ThinkingBlockTests
     }
 
     [Fact]
-    public void ShowThinking_OpensEveryBlock_AndKeepsNewOnesOpen_ThenFoldsThemAll()
+    public void CtrlO_TogglesOnlyTheLatestBlock()
     {
         var (sink, chat) = Sink();
         sink.AssistantTurnBegan(T1);
         sink.AssistantThinkingAppended(T1, "a");
         sink.AssistantThinkingEnded(T1, Sum());
-        sink.SetShowThinking(true);
-        Assert.All(Blocks(chat), b => Assert.True(chat.IsExpanded(b)));
-
         sink.AssistantTurnBegan(T2);
         sink.AssistantThinkingAppended(T2, "b");
         sink.AssistantThinkingEnded(T2, Sum());
-        Assert.Equal(2, Blocks(chat).Count());
-        Assert.All(Blocks(chat), b => Assert.True(chat.IsExpanded(b)));
+        var blocks = Blocks(chat).ToList();
 
-        sink.SetShowThinking(false);
-        Assert.All(Blocks(chat), b => Assert.False(chat.IsExpanded(b)));
+        sink.ToggleLatestThinking();
+        Assert.False(chat.IsExpanded(blocks[0]));
+        Assert.True(chat.IsExpanded(blocks[1]));
+
+        sink.ToggleLatestThinking();
+        Assert.False(chat.IsExpanded(blocks[1]));
+    }
+
+    [Fact]
+    public void CtrlO_WithNoThinking_DoesNothing()
+    {
+        var (sink, chat) = Sink();
+        sink.ToggleLatestThinking();
+        Assert.Empty(chat.MessageIds);
     }
 
     [Fact]
@@ -179,7 +187,7 @@ public class ThinkingBlockTests
     }
 
     [Fact]
-    public void Forget_DropsTheBlocks_SoShowThinkingTouchesNothingCleared()
+    public void Forget_DropsTheBlocks_SoCtrlOTouchesNothingCleared()
     {
         var (sink, chat) = Sink();
         sink.AssistantTurnBegan(T1);
@@ -187,6 +195,6 @@ public class ThinkingBlockTests
         sink.AssistantThinkingEnded(T1, Sum());
         chat.Clear();
         sink.Forget();
-        sink.SetShowThinking(true);   // must not throw on an id the transcript no longer has
+        sink.ToggleLatestThinking();   // must not touch an id the transcript no longer has
     }
 }

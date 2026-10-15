@@ -73,12 +73,9 @@ public sealed class SessionTab
 
     /// <summary>
     /// This tab's transcript sink, for what the window does to its thinking blocks: tick their
-    /// elapsed time, open or fold them all on Ctrl+O, forget them when the transcript is cleared.
+    /// elapsed time, open or fold the latest on Ctrl+O, forget them when the transcript is cleared.
     /// </summary>
     public ChatTranscriptSink? ChatSink { get; set; }
-
-    /// <summary>Whether Ctrl+O has this tab's thinking open. Per tab, like the transcript it governs.</summary>
-    public bool ShowThinking { get; set; }
 
     /// <summary>
     /// What the right panel reports about THIS conversation.

@@ -1897,19 +1897,10 @@ public sealed class MainWindow : IDisposable
         // screen: it is fixed for the life of the process, so it earns a place you look up rather
         // than a permanent slot beside numbers that change every turn.
 
-        // ONE KEY HINT. Quit went first — Ctrl+Q is the binding nobody needs told, and /exit says it
-        // in the command list. F1 follows it: help is discoverable from `/help`, which is where
-        // someone lost already looks, and the slot is better spent on the token split beside the
-        // context readout — a number that changes, rather than a key that never does.
-        //
-        // F3 stays because it is the only key that changes what is ON SCREEN; everything else opens
-        // something and comes back.
-        // THE ONE HINT STILL WRITTEN OUT, because this runs in the constructor and the shortcut
-        // registry does not exist until AppBootstrap has bound every key. The items added later
-        // (theme, plugins, tabs) read their key from it instead, so this is the only status hint
-        // left that must be edited by hand if F3 ever moves. Nothing catches it if nobody does:
-        // the bindings live behind a live window and no test reaches them.
-        StatusBar.AddRight("F3", "Panel");
+        // NO KEY HINTS ON THE RIGHT. Quit is the binding nobody needs told, and /exit says it in the
+        // command list; help is discoverable from `/help`, which is where someone lost already looks.
+        // The right side is for readouts — the context and the token split — numbers that change,
+        // rather than keys that never do. The keys sit together on the left; see ShowPanelItem.
 
         // D10: the goal composer is INVISIBLE when empty, and nothing on screen says where to type.
         //
@@ -3214,6 +3205,22 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private string KeyHint(string description, string fallback) =>
         Keys?.For(description)?.Label() ?? fallback;
+
+    /// <summary>
+    /// The session panel's key, on the left with the other keys — after the tab strip and before
+    /// the jobs item, which is added on the first tick and so lands after it.
+    ///
+    /// <para>A KEY WORTH SHOWING because it is the only one that changes what is ON SCREEN; the
+    /// others open something and come back. A click runs what F3 runs.</para>
+    /// </summary>
+    public void ShowPanelItem()
+    {
+        if (_panelItem is not null) return;   // idempotent, like the items beside it
+        _panelItem = StatusBar.AddLeft(KeyHint("show or hide the session panel", "F3"), "Panel",
+            ToggleSessionPanel);
+    }
+
+    private StatusBarItem? _panelItem;
 
     public void ShowTabsItem(Action onClick)
     {

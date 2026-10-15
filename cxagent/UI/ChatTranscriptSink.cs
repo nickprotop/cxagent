@@ -30,13 +30,11 @@ public sealed class ChatTranscriptSink : ISessionObserver
     /// thinking in it rejoins its block.</summary>
     private readonly ConcurrentDictionary<long, Block> _blocks = new();
 
-    /// <summary>Every block in creation order, for Ctrl+O. UI thread only.</summary>
+    /// <summary>Every block in creation order — the last is Ctrl+O's. UI thread only.</summary>
     private readonly List<FwChatId> _allBlocks = [];
 
     /// <summary>A label given to a step before its answer message existed, for when it does.</summary>
     private readonly ConcurrentDictionary<long, string> _labels = new();
-
-    private bool _showThinking;
 
     public ChatTranscriptSink(ConsoleWindowSystem system, ChatTranscriptControl chat)
         : this(chat, (action, name) => system.EnqueueOnUIThread(action, name)) { }
@@ -209,8 +207,8 @@ public sealed class ChatTranscriptSink : ISessionObserver
         }, "chat.AssistantThinkingAppended");
 
     /// <summary>
-    /// The run is over: the block's header says for how long and how much, and the block folds —
-    /// unless Ctrl+O has thinking showing, in which case it stays open with the rest.
+    /// The run is over: the block's header says for how long and how much, and the block folds so
+    /// the answer below it is what the eye lands on.
     /// </summary>
     public void AssistantThinkingEnded(ChatMessageId id, Core.Llm.ThinkingSummary summary) =>
         _post(() =>
@@ -218,7 +216,7 @@ public sealed class ChatTranscriptSink : ISessionObserver
             var block = BlockFor(id);
             block.Live = false;
             _chat.SetHeader(block.Id, $"[{ColorScheme.ThinkingMarkup}]{Escape(FoldedHeader(summary))}[/]");
-            _chat.SetExpanded(block.Id, _showThinking);
+            _chat.SetExpanded(block.Id, false);
         }, "chat.AssistantThinkingEnded");
 
     /// <summary>
@@ -280,12 +278,16 @@ public sealed class ChatTranscriptSink : ISessionObserver
         + (s.Words > 0 ? $" · {s.Words} words" : "")
         + (s.Redacted ? " (redacted)" : "");
 
-    /// <summary>Ctrl+O: every thinking block in this transcript open or folded, and new ones follow.</summary>
-    public void SetShowThinking(bool show) => _post(() =>
+    /// <summary>
+    /// Ctrl+O: opens or folds the most recent thinking block — the one just folded, which is the one
+    /// a reader wants back. Any other block opens with a click, or Tab to it and Enter.
+    /// </summary>
+    public void ToggleLatestThinking() => _post(() =>
     {
-        _showThinking = show;
-        foreach (var b in _allBlocks) _chat.SetExpanded(b, show);
-    }, "chat.SetShowThinking");
+        if (_allBlocks.Count == 0) return;
+        var latest = _allBlocks[^1];
+        _chat.SetExpanded(latest, !_chat.IsExpanded(latest));
+    }, "chat.ToggleLatestThinking");
 
     /// <summary>
     /// Advances each live block's elapsed time. Driven by the window's one-second tick, because a
