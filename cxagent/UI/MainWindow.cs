@@ -426,7 +426,7 @@ public sealed class MainWindow : IDisposable
             // `[fg on bg]` is ONE tag in this parser — a bare `[on #…]` has no foreground and is not
             // the background form, so it painted nothing. Each run carries its own background, and
             // [fillwidth] carries the last one to the end of the row.
-            .AddLine(ModeLineText(_mode, _resolution, tab.InAside))
+            .AddLine(ModeLineText(_mode, _resolution, tab.InAside, tab.Session))
             // STRETCH, so [fillwidth] has a full-width rect to fill INTO. The painter extends the
             // flagged cell's background to `bounds.Right`, and without stretch those bounds ended at
             // the last character — the fill was working, it simply had nothing to cross.
@@ -3081,7 +3081,7 @@ public sealed class MainWindow : IDisposable
         if (_modeLine is not null)
         {
             _modeLine.BackgroundColor = ColorScheme.ComposerSurface;
-            _modeLine.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside)]);
+            _modeLine.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside, ActiveSessionTab.Session)]);
         }
 
         // THE TWO GRIPS, which are the accent rather than a surface. Both captured ColorScheme.Grip
@@ -3298,7 +3298,7 @@ public sealed class MainWindow : IDisposable
 
         // THE MODE LINE IS THE TAB'S OWN, so it is refreshed whether or not the tab is in front —
         // a background session's composer must not keep naming the model it used to have.
-        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, resolution, tab.InAside)]);
+        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, resolution, tab.InAside, tab.Session)]);
 
         if (ReferenceEquals(tab, ActiveSessionTab)) SetResolution(resolution);
     }
@@ -3310,7 +3310,7 @@ public sealed class MainWindow : IDisposable
         // THE COMPOSER LINE TOO. It carries the model name, so a switch that refreshed only the
         // panel left "local:…" under the prompt while the session was talking to `small` — the same
         // stale-readout bug the panel's own window had, one line lower.
-        _modeLine?.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside)]);
+        _modeLine?.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside, ActiveSessionTab.Session)]);
 
         RefreshSessionPanel();
         RefreshTokenItem();
@@ -3325,7 +3325,7 @@ public sealed class MainWindow : IDisposable
 
         tab.Mode = mode;
         tab.ModeLine?.SetContent(
-            [ModeLineText(mode, tab.Resolution ?? _resolution, tab.InAside)]);
+            [ModeLineText(mode, tab.Resolution ?? _resolution, tab.InAside, tab.Session)]);
 
         if (ReferenceEquals(tab, ActiveSessionTab)) SetMode(mode);
     }
@@ -3335,7 +3335,7 @@ public sealed class MainWindow : IDisposable
         _mode = mode;
         // SetContent rather than a rebuild: the control is already placed in the grid, and replacing
         // it would detach the instance the layout holds.
-        _modeLine?.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside)]);
+        _modeLine?.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside, ActiveSessionTab.Session)]);
     }
 
     /// <summary>
@@ -3351,10 +3351,12 @@ public sealed class MainWindow : IDisposable
     ///
     /// <para>The model name is escaped (it comes from config); the mode words are ours.</para>
     /// </summary>
-    private static string ModeLineText(WorkingMode mode, ResolvedConfig resolution, bool aside) =>
-        ModeLineText(mode, ModelLabelFor(resolution), aside, PromptCacheOff(resolution));
+    private static string ModeLineText(WorkingMode mode, ResolvedConfig resolution, bool aside, Session? session) =>
+        ModeLineText(mode, ModelLabelFor(resolution), aside, PromptCacheOff(resolution),
+            ThinkingIndicator(session?.ThinkingLevel, session?.PendingThinking, session?.KnownThinkingOptions));
 
-    private static string ModeLineText(WorkingMode mode, string model, bool aside, bool cacheOff = false) =>
+    private static string ModeLineText(WorkingMode mode, string model, bool aside, bool cacheOff = false,
+        string? thinking = null) =>
         $"[{ColorScheme.AccentMarkup}]{AgentModes.Name(mode.Agent)}[/]"
       + $"[{ColorScheme.MutedMarkup}] · [/]"
       + $"[{EditModeMarkup(mode.Edits)}]{EditModes.Name(mode.Edits)}[/]"
@@ -3363,12 +3365,41 @@ public sealed class MainWindow : IDisposable
         // BESIDE THE MODEL IT IS ABOUT. Uncached, every turn re-sends and re-bills the whole
         // conversation at full price, and nothing else on screen would ever say so.
       + (cacheOff ? $"[{ColorScheme.CautionMarkup}] {CacheOffHint}[/]" : "")
+        // THE LEVEL BESIDE THE MODEL IT BELONGS TO, amber like the thinking blocks it governs; muted
+        // when off, which is a choice rather than a state worth the eye.
+      + (thinking is null ? ""
+         : $"[{(thinking.StartsWith('◇') ? ColorScheme.MutedMarkup : ColorScheme.ThinkingMarkup)}] · {thinking}[/]")
         // AFTER THE MODEL, where the eye ends the line. The grip's colour says something changed;
         // this says what, and how to undo it.
       + (aside ? $"[{ColorScheme.AsideMarkup}] · {AsideHint}[/]" : "");
 
-    public static string ModeLineTextForTest(WorkingMode mode, string model, bool aside, bool cacheOff = false) =>
-        ModeLineText(mode, model, aside, cacheOff);
+    public static string ModeLineTextForTest(WorkingMode mode, string model, bool aside, bool cacheOff = false,
+        string? thinking = null) =>
+        ModeLineText(mode, model, aside, cacheOff, thinking);
+
+    /// <summary>
+    /// The mode line's thinking item, or null when the model offers no levels — or has not said yet,
+    /// which the line simply waits out rather than guessing. "default" is a level in its own right:
+    /// the model decides, and nothing is sent.
+    /// </summary>
+    public static string? ThinkingIndicator(string? level, string? pending, Core.Llm.ThinkingOptions? options)
+    {
+        if (options is not { Any: true }) return null;
+        var now = level ?? "default";
+        if (pending is not null && pending != now) return $"◆ {now} → {pending} (next message) (F8)";
+        return now == Core.Llm.ThinkingLevels.Off ? "◇ off (F8)" : $"◆ {now} (F8)";
+    }
+
+    /// <summary>
+    /// Re-draws the mode line of the tab showing <paramref name="session"/> — after its level moves,
+    /// or after its model first says which levels it offers.
+    /// </summary>
+    public void RefreshModeLine(Session session)
+    {
+        var tab = _sessionTabs.FirstOrDefault(t => ReferenceEquals(t.Session, session));
+        if (tab is null) return;
+        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, tab.Resolution ?? _resolution, tab.InAside, tab.Session)]);
+    }
 
     /// <summary>Names the config key, so the hint says how to turn it on.</summary>
     public const string CacheOffHint = "(no prompt cache · set cacheControl)";
@@ -3401,7 +3432,7 @@ public sealed class MainWindow : IDisposable
         tab.InAside = inAside;
         tab.Grip?.SetContent([.. GripRows(GripColour(inAside))]);
         tab.ModeLine?.SetContent(
-            [ModeLineText(tab.Mode, tab.Resolution ?? _resolution, inAside)]);
+            [ModeLineText(tab.Mode, tab.Resolution ?? _resolution, inAside, tab.Session)]);
     }
 
     public string GripTextForTest() => ActiveSessionTab.Grip?.Text ?? "";

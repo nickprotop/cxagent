@@ -189,6 +189,19 @@ public class SessionThinkingTests : IDisposable
     }
 
     [Fact]
+    public void ThinkCommand_ThroughSubmit_SetsTheLevel_AndOffersItInThePalette()
+    {
+        var (manager, session, _) = Wired(new LevelledMock(["low", "high"]));
+        using var _m = manager;
+
+        Assert.IsType<Session.SubmitOutcome.Handled>(session.Submit("/think high"));
+        Assert.Equal("high", session.ThinkingLevel);
+        var offered = session.Values(CompletionSets.ThinkingLevels);
+        Assert.Equal(["low", "high", "default"], offered.Select(v => v.Name));
+        Assert.Equal("in use", offered.Single(v => v.Name == "high").Summary);
+    }
+
+    [Fact]
     public void TheClassifier_RunsAtTheLowestLevel()
     {
         var registry = ProviderRegistry.FromProviders(

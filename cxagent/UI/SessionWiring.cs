@@ -215,6 +215,14 @@ public static class SessionWiring
         // THIS TAB'S TRANSCRIPT, set on every wire so a re-wire draws asides where the tab now draws.
         session.AsideObserver = new AsideTranscriptSink(system, tab.Chat);
 
+        // /think --save writes THIS session's instance — the one its level was chosen for.
+        session.SaveThinkingDefault = level =>
+            ThinkingConfigWriter.TrySave(Path.Combine(configDir, "config.json"), session.InstanceName, level);
+
+        // THE LEVELS ARE ASKED OF THE MODEL NOW, not at the first F8: the mode line shows the level
+        // once the model has said what it offers, and F8 never waits on a probe.
+        AskThinkingLevels(system, main, session);
+
         session.Changed += kind => system.EnqueueOnUIThread(() =>
         {
             if (kind is SessionChangeKind.Mode) main.SetMode(session, session.Mode);
@@ -222,7 +230,12 @@ public static class SessionWiring
             if (kind is SessionChangeKind.Aside) main.SetAside(session, session.InAside);
 
             if (kind is SessionChangeKind.Model && session.Resolution is { } current)
+            {
                 main.SetResolution(session, current);
+                AskThinkingLevels(system, main, session);   // another model offers other levels
+            }
+
+            if (kind is SessionChangeKind.Thinking) main.RefreshModeLine(session);
 
             // THE GAUGE, AND THE SCROLLBACK WITH IT. Clearing the transcript is THIS front end's
             // answer to "the messages behind it are gone" — a log writer would draw a divider and
@@ -263,6 +276,15 @@ public static class SessionWiring
     /// the caller with its root, rules and edit mode. Assigning here keeps "what reviews this
     /// session" beside "what this session may do", which is the same question asked twice.
     /// </remarks>
+    /// <summary>
+    /// Asks the session's model which thinking levels it offers, and redraws its mode line when it
+    /// answers. Off the UI thread: the answer is an HTTP request, bounded at three seconds.
+    /// </summary>
+    private static void AskThinkingLevels(ConsoleWindowSystem system, MainWindow main, Session session) =>
+        _ = session.ThinkingOptionsAsync().ContinueWith(
+            _ => system.EnqueueOnUIThread(() => main.RefreshModeLine(session), "sessionWiring.ThinkingLevels"),
+            TaskScheduler.Default);
+
     private static PermissionPolicy Reviewing(PermissionPolicy policy, ResolvedConfig resolution)
     {
         policy.Classifier = PermissionDecider.ClassifierFor(

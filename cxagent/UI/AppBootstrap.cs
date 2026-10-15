@@ -1689,6 +1689,15 @@ public static class AppBootstrap
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F7, "background jobs",
             () => !PluginManagerDialog.IsOpen && mainWindow.ToggleJobsPanel());
 
+        // THE NEXT THINKING LEVEL this model offers, wrapping — the quick way; /think picks one by name.
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F8, "next thinking level",
+            () =>
+            {
+                if (PluginManagerDialog.IsOpen) return false;
+                (mainWindow.ActiveTab.Session ?? session).CycleThinking();
+                return true;
+            });
+
         // EVERY THINKING BLOCK IN THE TAB AT ONCE. One block opens with a click or Enter like any
         // folded row; this is for reading back how a whole run reasoned. Ctrl+O because Ctrl+T is the
         // library's window-cycle key, and it is Claude Code's key for expanding detail.

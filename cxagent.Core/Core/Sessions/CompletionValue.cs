@@ -48,6 +48,10 @@ public static class CompletionSets
     /// toolset — the LIVE servers, not the names in a config file that may not have connected.</summary>
     public const string McpServers = "mcp-servers";
 
+    /// <summary>The thinking levels this session's model offers, for <c>/think</c>. Answered by the
+    /// session, because the levels are its model's — another instance offers others.</summary>
+    public const string ThinkingLevels = "thinking-levels";
+
     /// <summary>Delegation modes, for <c>/mode agent</c>. Answered by the session.</summary>
     public const string AgentModes = "agent-modes";
 

@@ -106,6 +106,13 @@ public static class SessionCommands
             new("<instance>", "a name from `providers` in config", Completes: false,
                 Values: ValueSources.Providers),
         ]),
+        // THE LEVELS THIS MODEL OFFERS, live: they come from the model's own answer, so the palette
+        // offers exactly what will be accepted rather than every name any provider knows.
+        new("/think", "show or set how hard the model thinks (F8 cycles)",
+        [
+            new("<level>", "a level this model offers, or default · --save makes it the default",
+                Completes: false, Values: ValueSources.ThinkingLevels),
+        ]),
         // The live mode belongs to the session's agent, and this type deliberately holds nothing but
         // the conversation.
         // THE AXIS IS NAMED, so this one command can grow. Delegation is the only axis today; file

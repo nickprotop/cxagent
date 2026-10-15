@@ -124,6 +124,9 @@ public static class ValueSources
     /// <summary>Sub-agents this session has spawned, for <c>/agents send</c>.</summary>
     public const string SpawnedAgents = Core.Sessions.CompletionSets.SpawnedAgents;
 
+    /// <summary>The thinking levels this session's model offers, for <c>/think</c>.</summary>
+    public const string ThinkingLevels = Core.Sessions.CompletionSets.ThinkingLevels;
+
     /// <summary>Edit modes, for <c>/mode edits</c>.</summary>
     public const string EditModes = Core.Sessions.CompletionSets.EditModes;
 

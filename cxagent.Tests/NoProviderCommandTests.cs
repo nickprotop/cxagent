@@ -104,13 +104,13 @@ public class NoProviderCommandTests
     [Fact]
     public void EveryShippedCommandIsClassified()
     {
-        // AN EIGHTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
+        // A NINETEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
         // not know, which reads as "not a command" — so a command added to the table but forgotten in
         // TheseRunWithNoModel silently becomes unavailable without a model. This fails when the
         // counts diverge.
         var commands = SessionCommands.All;
 
-        Assert.Equal(17, commands.Count);
+        Assert.Equal(18, commands.Count);
         Assert.All(commands, c => Assert.NotNull(SessionCommands.Match(c.Name)));
     }
 

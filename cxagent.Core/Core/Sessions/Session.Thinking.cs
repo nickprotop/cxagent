@@ -164,5 +164,22 @@ public sealed partial class Session
     private ThinkingOptions OptionsNow() =>
         KnownThinkingOptions ?? Task.Run(ThinkingOptionsAsync).GetAwaiter().GetResult();
 
+    /// <summary><c>/think</c>: the levels, or a level set for this session (and saved, with --save).</summary>
+    public CommandStatus Think(string argument)
+    {
+        var decision = ThinkCommand.Decide(argument, OptionsNow(), ThinkingLevel);
+        if (decision.Reply.Text.Length > 0) Say(decision.Reply);
+        if (decision.SetTo is null && !decision.Clear) return CommandStatus.Reported;
+        return SetThinking(decision.Clear ? null : decision.SetTo, decision.Save);
+    }
+
+    /// <summary>The palette's values for <c>/think</c>: what the model offers, then the default.
+    /// Empty until the model has said — the palette must never wait on a probe.</summary>
+    private IReadOnlyList<CompletionValue> ThinkingValues() =>
+        KnownThinkingOptions is { Any: true } options
+            ? [.. options.Levels.Select(l => new CompletionValue(l, l == ThinkingLevel ? "in use" : "")),
+               new CompletionValue(ThinkCommand.Default, ThinkingLevel is null ? "in use" : "the model's own")]
+            : [];
+
     private string ModelName => Resolution?.Model?.Label ?? Provider?.ModelId ?? "this model";
 }

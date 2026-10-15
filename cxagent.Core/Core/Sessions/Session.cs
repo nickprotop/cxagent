@@ -1323,6 +1323,7 @@ public sealed partial class Session
         CompletionSets.Providers => ProviderValues(),
         CompletionSets.EditModes => EditModeValues(),
         CompletionSets.AgentModes => AgentModeValues(),
+        CompletionSets.ThinkingLevels => ThinkingValues(),
         CompletionSets.AgentTypes => AgentTypeValues(),
         CompletionSets.Plugins => PluginValues(),
         CompletionSets.SpawnedAgents => SpawnedAgentValues(),
