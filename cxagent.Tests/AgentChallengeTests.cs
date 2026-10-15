@@ -565,6 +565,37 @@ public class AgentChallengeTests
         Assert.Equal("ac", string.Concat(sink.Reasoning));
     }
 
+    /// <summary>Thinks, then dies mid-stream — Esc, or a dropped connection.</summary>
+    private sealed class ThinksThenThrowsProvider : ILlmProvider
+    {
+        public string ProviderId => "dies";
+        public string DisplayName => "Dies";
+        public string ModelId => "dies-1";
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => true;
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools,
+            CancellationToken ct) => throw new InvalidOperationException("boom");
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
+            List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            yield return Think("weighing it");
+            throw new OperationCanceledException("stopped");
+        }
+    }
+
+    // A RUN CUT OFF MID-THOUGHT STILL ENDS, or its block would read "Thinking" and tick forever.
+    [Fact]
+    public async Task ThinkingCutOffByAStop_StillEnds()
+    {
+        var sink = new RecordingSink();
+        try { await Build(new ThinksThenThrowsProvider(), sink).SendAsync("go", CancellationToken.None); }
+        catch (OperationCanceledException) { }
+
+        Assert.Single(sink.Ended);
+    }
+
     [Fact]
     public async Task TheModelsRawResponseIsLogged()
     {

@@ -481,6 +481,10 @@ public sealed partial class Session
         var result = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var outcome = new TaskCompletionSource<SendOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        // THE LEVEL CHOSEN DURING THE LAST TURN takes effect here, at the start of this one — never
+        // inside a tool loop.
+        ApplyPendingThinking();
+
         // STARTED OFF THE CALLER'S SYNCHRONIZATION CONTEXT, AND THIS IS A CORRECTNESS REQUIREMENT, not
         // a throughput one. A TUI host installs a context whose Post queues onto the render thread, so
         // calling RunTurnAsync directly makes every await in the turn — the provider call, each tool,
@@ -506,10 +510,6 @@ public sealed partial class Session
         // AND NOT ConfigureAwait(false) ON EVERY AWAIT: there are over two hundred in this path, and a
         // single missed one silently restores the hazard. One boundary that cannot be forgotten beats
         // two hundred that can.
-        // THE LEVEL CHOSEN DURING THE LAST TURN takes effect here, at the start of this one — never
-        // inside a tool loop.
-        ApplyPendingThinking();
-
         var previous = System.Threading.SynchronizationContext.Current;
         System.Threading.SynchronizationContext.SetSynchronizationContext(null);
         try

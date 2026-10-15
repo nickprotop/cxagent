@@ -44,7 +44,7 @@ public sealed partial class Session
     /// </summary>
     public CommandStatus SetThinking(string? level, bool save = false)
     {
-        var options = OptionsNow();
+        var options = KnownOptionsOrNotYet();
         if (!options.Any)
         {
             Say(new Message($"No thinking levels: {options.Why}."));
@@ -73,16 +73,13 @@ public sealed partial class Session
         return CommandStatus.Changed;
     }
 
-    /// <summary>
-    /// F8: the next offered level, wrapping. Never waits on the model: before it has said what it
-    /// offers there is nothing to step through, and a key must not freeze the window for a probe.
-    /// </summary>
+    /// <summary>F8: the next offered level, wrapping.</summary>
     public CommandStatus CycleThinking()
     {
-        var options = KnownThinkingOptions;
-        if (options is not { Any: true })
+        var options = KnownOptionsOrNotYet();
+        if (!options.Any)
         {
-            Say(new Message($"No thinking levels: {(options ?? ThinkingOptions.None("the model has not said yet")).Why}."));
+            Say(new Message($"No thinking levels: {options.Why}."));
             return CommandStatus.Reported;
         }
 
@@ -98,9 +95,9 @@ public sealed partial class Session
     }
 
     /// <summary>
-    /// Runs as a turn starts: the level chosen during the last turn, then — once — a check that a
-    /// configured level is one the model offers. A refused level would be a 400 on every request;
-    /// this says so once and uses the model's default instead.
+    /// Runs as a turn starts: the level chosen during the last turn, then — once the model has said
+    /// what it offers — a check that a configured level is one of them. The provider already sends
+    /// the model's default for a level it does not offer; this says so, once, so the user knows why.
     /// </summary>
     private void ApplyPendingThinking()
     {
@@ -111,9 +108,11 @@ public sealed partial class Session
         }
 
         if (_thinkingChecked || ThinkingLevel is not { } level || level == ThinkingLevels.Lowest) return;
+
+        // NOT YET IS NOT A VERDICT: checked at a later turn, once the model has answered.
+        if (KnownThinkingOptions is not { } options) return;
         _thinkingChecked = true;
 
-        var options = OptionsNow();
         if (options.Any && !options.Levels.Contains(level))
         {
             Say(new Message($"Config asks for thinking '{level}', which {ModelName} does not offer — "
@@ -157,17 +156,21 @@ public sealed partial class Session
     }
 
     /// <summary>
-    /// The options, waiting for the probe if it has not answered. ON THE POOL: the probe awaits
-    /// HTTP, and blocking on it from the UI thread would deadlock on that thread's own context.
-    /// Bounded by the probe's three seconds, and cached once it answers.
+    /// What the model has said it offers, or a "not yet" with no levels.
+    ///
+    /// <para>NEVER WAITS ON THE PROBE. Every caller can run on the UI thread, and a probe started
+    /// there carries that thread's context: blocking it on the probe would wait for a continuation
+    /// that needs the very thread being blocked, and freeze the window for good. The probe is
+    /// started when the session is wired, and answers within seconds; until then the user is told
+    /// to wait rather than made to.</para>
     /// </summary>
-    private ThinkingOptions OptionsNow() =>
-        KnownThinkingOptions ?? Task.Run(ThinkingOptionsAsync).GetAwaiter().GetResult();
+    private ThinkingOptions KnownOptionsOrNotYet() =>
+        KnownThinkingOptions ?? ThinkingOptions.None("the model has not said yet which levels it offers — try again in a moment");
 
     /// <summary><c>/think</c>: the levels, or a level set for this session (and saved, with --save).</summary>
     public CommandStatus Think(string argument)
     {
-        var decision = ThinkCommand.Decide(argument, OptionsNow(), ThinkingLevel);
+        var decision = ThinkCommand.Decide(argument, KnownOptionsOrNotYet(), ThinkingLevel);
         if (decision.Reply.Text.Length > 0) Say(decision.Reply);
         if (decision.SetTo is null && !decision.Clear) return CommandStatus.Reported;
         return SetThinking(decision.Clear ? null : decision.SetTo, decision.Save);

@@ -265,6 +265,16 @@ public static class SessionWiring
     }
 
     /// <summary>
+    /// Asks the session's model which thinking levels it offers, and redraws its mode line when it
+    /// answers. ON THE POOL: the answer is an HTTP request, and a probe begun on the UI thread would
+    /// carry that thread's context into code that holds a gate the UI may later wait on.
+    /// </summary>
+    private static void AskThinkingLevels(ConsoleWindowSystem system, MainWindow main, Session session) =>
+        _ = Task.Run(session.ThinkingOptionsAsync).ContinueWith(
+            _ => system.EnqueueOnUIThread(() => main.RefreshModeLine(session), "sessionWiring.ThinkingLevels"),
+            TaskScheduler.Default);
+
+    /// <summary>
     /// The policy, carrying the classifier this session's configuration asks for.
     /// </summary>
     /// <remarks>
@@ -272,15 +282,6 @@ public static class SessionWiring
     /// the caller with its root, rules and edit mode. Assigning here keeps "what reviews this
     /// session" beside "what this session may do", which is the same question asked twice.
     /// </remarks>
-    /// <summary>
-    /// Asks the session's model which thinking levels it offers, and redraws its mode line when it
-    /// answers. Off the UI thread: the answer is an HTTP request, bounded at three seconds.
-    /// </summary>
-    private static void AskThinkingLevels(ConsoleWindowSystem system, MainWindow main, Session session) =>
-        _ = session.ThinkingOptionsAsync().ContinueWith(
-            _ => system.EnqueueOnUIThread(() => main.RefreshModeLine(session), "sessionWiring.ThinkingLevels"),
-            TaskScheduler.Default);
-
     private static PermissionPolicy Reviewing(PermissionPolicy policy, ResolvedConfig resolution)
     {
         policy.Classifier = PermissionDecider.ClassifierFor(

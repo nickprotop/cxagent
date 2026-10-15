@@ -3117,52 +3117,57 @@ public sealed class Agent
             text => _sink.AssistantThinkingAppended(turnId, text),
             summary => _sink.AssistantThinkingEnded(turnId, summary));
 
-        await foreach (var chunk in _provider.ChatStreamAsync(messages, tools, ct))
+        try
         {
-            if (chunk.ThinkingDelta is { } delta) thinking.Add(delta, chunk.ThinkingRedacted);
-
-            if (!string.IsNullOrEmpty(chunk.TextDelta))
+            await foreach (var chunk in _provider.ChatStreamAsync(messages, tools, ct))
             {
-                text.Append(chunk.TextDelta);
+                if (chunk.ThinkingDelta is { } delta) thinking.Add(delta, chunk.ThinkingRedacted);
 
-                var accumulated = text.ToString();
-
-                // THINKING BEFORE THE TEXT THAT FOLLOWS IT. One delta can carry "</think>" and the
-                // answer's first words together, and the reader must see the thought end before the
-                // answer begins.
-                //
-                // THE AGENT SAYS WHAT KIND OF TEXT THIS IS; the sink decides how it looks and where it
-                // goes. Building markup here would put a colour decision inside the turn loop, and
-                // would leave the sink unable to tell styled thinking from unstyled body text — so
-                // only one of the two would ever get escaped.
-                var reasoning = ModelOutput.ExtractReasoning(accumulated);
-                if (reasoning.Length > shownReasoning)
+                if (!string.IsNullOrEmpty(chunk.TextDelta))
                 {
-                    thinking.Add(reasoning[shownReasoning..]);
-                    shownReasoning = reasoning.Length;
+                    text.Append(chunk.TextDelta);
+
+                    var accumulated = text.ToString();
+
+                    // THINKING BEFORE THE TEXT THAT FOLLOWS IT. One delta can carry "</think>" and the
+                    // answer's first words together, and the reader must see the thought end before the
+                    // answer begins.
+                    //
+                    // THE AGENT SAYS WHAT KIND OF TEXT THIS IS; the sink decides how it looks and where it
+                    // goes. Building markup here would put a colour decision inside the turn loop, and
+                    // would leave the sink unable to tell styled thinking from unstyled body text — so
+                    // only one of the two would ever get escaped.
+                    var reasoning = ModelOutput.ExtractReasoning(accumulated);
+                    if (reasoning.Length > shownReasoning)
+                    {
+                        thinking.Add(reasoning[shownReasoning..]);
+                        shownReasoning = reasoning.Length;
+                    }
+
+                    var visible = ModelOutput.StripReasoning(accumulated);
+                    if (visible.Length > shown)
+                    {
+                        thinking.End();
+                        _sink.AssistantTextAppended(turnId, visible[shown..]);
+                        shown = visible.Length;
+                    }
                 }
 
-                var visible = ModelOutput.StripReasoning(accumulated);
-                if (visible.Length > shown)
+                if (chunk.ToolCallDelta is { } tc)
                 {
                     thinking.End();
-                    _sink.AssistantTextAppended(turnId, visible[shown..]);
-                    shown = visible.Length;
+                    calls.Add(tc);
                 }
+                if (chunk.Usage is { } u) usage = u;
+                if (chunk.StopReason is { Length: > 0 } sr) stop = sr;
             }
-
-            if (chunk.ToolCallDelta is { } tc)
-            {
-                thinking.End();
-                calls.Add(tc);
-            }
-            if (chunk.Usage is { } u) usage = u;
-            if (chunk.StopReason is { Length: > 0 } sr) stop = sr;
         }
-
-        // A response that ended mid-thought — cut off, or thinking and nothing else — still closes
-        // its block, or the sink would show it thinking forever.
-        thinking.End();
+        finally
+        {
+            // A RESPONSE THAT ENDED MID-THOUGHT — thinking and nothing else, a stop, a dropped
+            // stream — still closes its run, or the sink would show it thinking forever.
+            thinking.End();
+        }
 
         return new LlmResponse
         {

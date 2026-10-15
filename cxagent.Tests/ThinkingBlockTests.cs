@@ -197,4 +197,18 @@ public class ThinkingBlockTests
         sink.Forget();
         sink.ToggleLatestThinking();   // must not touch an id the transcript no longer has
     }
+
+    // A SAFETY NET: whatever cut a turn short, a block still live when the turn ends folds.
+    [Fact]
+    public void ABlockStillLive_WhenTheTurnEnds_Folds()
+    {
+        var (sink, chat) = Sink();
+        sink.AssistantTurnBegan(T1);
+        sink.AssistantThinkingAppended(T1, "weighing it");
+        sink.AssistantTurnEnded(T1);
+
+        var block = Assert.Single(Blocks(chat));
+        Assert.False(chat.IsExpanded(block));
+        Assert.Equal(0, sink.LiveBlocksForTest);
+    }
 }

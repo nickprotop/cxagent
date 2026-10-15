@@ -131,6 +131,9 @@ public sealed class ChatTranscriptSink : ISessionObserver
             if (_map.TryGetValue(id.Value, out var fwId)) _chat.SetHeader(fwId, header);
         }, "chat.AssistantLabelled");
 
+    /// <summary>How many blocks are still receiving thinking, for a test.</summary>
+    public int LiveBlocksForTest => _blocks.Values.Count(b => b.Live);
+
     /// <summary>The label a step's answer carries, for a test.</summary>
     public string? HeaderForTest(ChatMessageId id) => _labels.TryGetValue(id.Value, out var h) ? h : null;
 
@@ -147,6 +150,17 @@ public sealed class ChatTranscriptSink : ISessionObserver
     public void AssistantTurnEnded(ChatMessageId id) =>
         _post(() =>
         {
+            // A BLOCK STILL LIVE AT THE TURN'S END was cut off — a stop, a dropped stream — before
+            // its run could end. Folded with how long it ran, so it does not read "Thinking" and tick
+            // for the life of the window.
+            if (_blocks.TryGetValue(id.Value, out var block) && block.Live)
+            {
+                block.Live = false;
+                _chat.SetHeader(block.Id, $"[{ColorScheme.ThinkingMarkup}]{Escape(FoldedHeader(
+                    new Core.Llm.ThinkingSummary(DateTimeOffset.UtcNow - block.Started, 0, Hidden: true, Redacted: false)))}[/]");
+                _chat.SetExpanded(block.Id, false);
+            }
+
             if (!_map.TryGetValue(id.Value, out var fwId)) return;
 
             // IsThinking is still true exactly when no body content ever arrived — the control clears

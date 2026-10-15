@@ -92,12 +92,15 @@ public sealed class CapabilityCache
         Func<CancellationToken, Task<ThinkingOptions?>> probe, CancellationToken ct)
     {
         if (Known is { } k) return k;
-        await _gate.WaitAsync(ct);
+
+        // OFF THE CALLER'S CONTEXT throughout. A probe begun on a UI thread would otherwise resume
+        // there while holding the gate, and any wait on that thread for the gate would never end.
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             if (Known is { } again) return again;
             ThinkingOptions? answer;
-            try { answer = await probe(ct); }
+            try { answer = await probe(ct).ConfigureAwait(false); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception) { answer = null; }
             if (answer is not null) Volatile.Write(ref _known, answer);

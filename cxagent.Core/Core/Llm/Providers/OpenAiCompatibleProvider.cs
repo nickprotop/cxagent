@@ -91,13 +91,13 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
             var root = _baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? _baseUrl[..^3] : _baseUrl;
             using var req = new HttpRequestMessage(HttpMethod.Get, $"{root}/props");
             if (!string.IsNullOrEmpty(_apiKey)) req.Headers.Authorization = new("Bearer", _apiKey);
-            using var resp = await _client.SendAsync(req, cts.Token);
+            using var resp = await _client.SendAsync(req, cts.Token).ConfigureAwait(false);
             // A reply is an answer even when it says nothing useful: a server without /props (Ollama,
             // OpenAI, most gateways) is cached as "none" and asked once. Only an exception or timeout
             // (no reply) reaches the cache as null.
             var unsaid = ThinkingOptions.None("the endpoint did not say what it accepts");
             return resp.IsSuccessStatusCode
-                ? ThinkingCapabilities.ParseLlamaProps(await resp.Content.ReadAsStringAsync(cts.Token)) ?? unsaid
+                ? ThinkingCapabilities.ParseLlamaProps(await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false)) ?? unsaid
                 : unsaid;
         }, ct);
 

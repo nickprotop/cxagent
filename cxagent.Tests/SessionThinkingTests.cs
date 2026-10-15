@@ -201,6 +201,64 @@ public class SessionThinkingTests : IDisposable
         Assert.Equal("in use", offered.Single(v => v.Name == "high").Summary);
     }
 
+    /// <summary>A provider whose model never answers what it offers — a probe still in flight.</summary>
+    private sealed class SilentModel : ILlmProvider, IThinkingProvider
+    {
+        private readonly TaskCompletionSource<ThinkingOptions> _never = new();
+        public string ProviderId => "silent";
+        public string DisplayName => "Silent";
+        public string ModelId => "silent-1";
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => true;
+        public string? ThinkingLevel { get; init; }
+        public ThinkingOptions? KnownThinkingOptions => null;
+        public Task<ThinkingOptions> GetThinkingOptionsAsync(CancellationToken ct = default) => _never.Task;
+        public ILlmProvider WithThinking(string? level) => new SilentModel { ThinkingLevel = level };
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t, CancellationToken ct) =>
+            Task.FromResult(new LlmResponse { Text = "ok", StopReason = "end_turn" });
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> m, List<ToolDefinition>? t,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            yield return new LlmStreamChunk("ok", null, IsFinal: false);
+            yield return new LlmStreamChunk(null, null, IsFinal: true, new LlmUsage(), "end_turn");
+        }
+    }
+
+    // NEVER WAITS ON A PROBE. These run on the UI thread, where waiting on a probe whose own
+    // continuation needs that thread freezes the window for good.
+    [Fact]
+    public void BeforeTheModelHasSaid_SetThinkingAndThink_AnswerAtOnce_WithoutWaiting()
+    {
+        var manager = SessionManager.Create(new AppPaths(_dir));
+        using var _m = manager;
+        var said = new BufferedChatSink();
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(new SilentModel()),
+            new SessionPorts { Observer = said, ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
+
+        var answered = Task.Run(() =>
+        {
+            session.SetThinking("high");
+            session.Think("");
+        }).Wait(TimeSpan.FromSeconds(2));
+
+        Assert.True(answered, "SetThinking/Think waited on a probe that has not answered");
+        Assert.Contains(said.Notices, n => n.Contains("has not said"));
+    }
+
+    [Fact]
+    public async Task AConfiguredLevel_BeforeTheModelHasSaid_DoesNotHoldUpTheTurn()
+    {
+        var manager = SessionManager.Create(new AppPaths(_dir));
+        using var _m = manager;
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(new SilentModel { ThinkingLevel = "max" }),
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+            AgentMode.Single);
+
+        var turn = Task.Run(() => Turn(session, "hi"));
+        Assert.True(await Task.WhenAny(turn, Task.Delay(2000)) == turn, "the first turn waited on a probe");
+    }
+
     [Fact]
     public void TheClassifier_RunsAtTheLowestLevel()
     {
