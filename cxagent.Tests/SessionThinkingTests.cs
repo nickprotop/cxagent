@@ -78,6 +78,29 @@ public class SessionThinkingTests : IDisposable
         Assert.Null(session.PendingThinking);
     }
 
+    // A MESSAGE QUEUED DURING THE TURN IS THE NEXT MESSAGE. It runs as a later lap of the same
+    // turn, which starts a new tool loop — so the level chosen meanwhile applies to it, not to the
+    // message after it.
+    [Fact]
+    public async Task ALevelChosenMidTurn_AppliesToAMessageQueuedInThatTurn()
+    {
+        var model = new LevelledMock(["low", "high"]);
+        var (manager, session, _) = Wired(model);
+        using var _m = manager;
+
+        model.State.Hold = new TaskCompletionSource();
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("first"));
+        while (model.State.Seen.IsEmpty) await Task.Delay(5);
+
+        session.SetThinking("low");
+        Assert.IsType<Session.SubmitOutcome.Queued>(session.Submit("second"));
+        model.State.Hold.SetResult();
+        await started.Turn;
+
+        Assert.Equal([null, "low"], model.State.Seen);
+        Assert.Null(session.PendingThinking);
+    }
+
     [Fact]
     public void SetThinking_ALevelTheModelDoesNotOffer_IsRefused_NamingTheLevels()
     {

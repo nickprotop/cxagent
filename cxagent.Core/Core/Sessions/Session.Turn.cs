@@ -481,10 +481,6 @@ public sealed partial class Session
         var result = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var outcome = new TaskCompletionSource<SendOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // THE LEVEL CHOSEN DURING THE LAST TURN takes effect here, at the start of this one — never
-        // inside a tool loop.
-        ApplyPendingThinking();
-
         // STARTED OFF THE CALLER'S SYNCHRONIZATION CONTEXT, AND THIS IS A CORRECTNESS REQUIREMENT, not
         // a throughput one. A TUI host installs a context whose Post queues onto the render thread, so
         // calling RunTurnAsync directly makes every await in the turn — the provider call, each tool,
@@ -572,6 +568,13 @@ public sealed partial class Session
             // one the gate happens to hold — see PermissionDecider.Classifier.
             if (Services?.Gate is Permissions.PermissionDecider decider)
                 decider.ResetTurnState(Policy);
+
+            // THE LEVEL CHOSEN WHILE THE MODEL WORKED takes effect here, at the top of a lap — never
+            // inside a tool loop. EVERY LAP, not once per Submit: a lap after the first is a message
+            // the user queued during the turn, which starts a new tool loop, so it is the "next
+            // message" the change was promised to. On the first lap this still runs before the
+            // first await, so the notice lands before the user's own line is echoed.
+            ApplyPendingThinking();
 
             // THE TURN'S SCOPE, created here because the turn is this method's. It was the host's,
             // so the host is not a second way to start one.
