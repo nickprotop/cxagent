@@ -72,7 +72,7 @@ public sealed class TrustQuestionControl
         list.SelectedIndexChanged += (_, _) => MarkChosen(list);
         list.SelectedIndex = 0;
         MarkChosen(list);
-        list.ItemActivated += (_, _) => SubmitFromList();
+        list.ItemActivated += (_, _) => TakeHighlighted();
         _list = list;
         panel.AddControl(list);
 
@@ -87,13 +87,8 @@ public sealed class TrustQuestionControl
             list.Items[i].Text = (i == list.SelectedIndex ? "▸ " : "  ") + Answers[i];
     }
 
-    /// <summary>
-    /// Takes the highlighted answer, as Enter on the list does.
-    ///
-    /// <para>A TEST SEAM as well as the Enter handler: <c>ListControl.ProcessKey</c> refuses keys
-    /// unless it has focus in a live window, so a test chooses by index and calls this.</para>
-    /// </summary>
-    public void SubmitFromList()
+    /// <summary>Takes the highlighted answer — Enter on the list.</summary>
+    private void TakeHighlighted()
     {
         if (_list is { SelectedIndex: >= 0 } list) _tcs.TrySetResult(list.SelectedIndex == 1);
     }

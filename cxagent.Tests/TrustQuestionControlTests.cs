@@ -6,46 +6,53 @@ namespace CxAgent.Tests;
 
 /// <summary>
 /// The startup trust question is a list: Up/Down move between the two answers and Enter takes the
-/// highlighted one. Two stacked buttons sat in a panel that used the arrows only for scrolling, so
-/// Down did nothing and Enter answered "don't trust" — twice, on a live drive.
+/// highlighted one. Driven with real keys in a headless window — see <see cref="HeadlessKeys"/>.
 /// </summary>
 public class TrustQuestionControlTests
 {
+    private sealed record Asked(TrustQuestionControl Question, ListControl List, HeadlessKeys Keys);
+
     private static ListControl ListIn(IWindowControl content) =>
         ((ScrollablePanelControl)content).Children.OfType<ListControl>().Single();
+
+    private static Asked Ask()
+    {
+        var question = new TrustQuestionControl("/repo");
+        var content = question.BuildContent();
+        var list = ListIn(content);
+        return new Asked(question, list, HeadlessKeys.Focus(content, list));
+    }
 
     [Fact]
     public void TheCautiousAnswer_IsFirst_AndHighlighted()
     {
-        var question = new TrustQuestionControl("/repo");
-        var list = ListIn(question.BuildContent());
+        var (_, list, _) = Ask();
 
         Assert.Equal(2, list.Items.Count);
         Assert.Equal(0, list.SelectedIndex);
         Assert.Contains("Don't trust", list.Items[0].Text);
     }
 
+    /// <summary>Enter on the first answer, as opened, does not trust: a stray Enter is the safe one.</summary>
     [Fact]
-    public async Task ChoosingTheSecond_Trusts()
+    public async Task Enter_AsOpened_DoesNotTrust()
     {
-        var question = new TrustQuestionControl("/repo");
-        var list = ListIn(question.BuildContent());
+        var (question, _, keys) = Ask();
 
-        list.SelectedIndex = 1;
-        question.SubmitFromList();
+        Assert.True(keys.Enter());
 
-        Assert.True(await question.Completion);
+        Assert.False(await question.Completion.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]
-    public async Task ChoosingTheFirst_DoesNotTrust()
+    public async Task DownThenEnter_Trusts()
     {
-        var question = new TrustQuestionControl("/repo");
-        ListIn(question.BuildContent());
+        var (question, _, keys) = Ask();
 
-        question.SubmitFromList();
+        Assert.True(keys.Down());
+        Assert.True(keys.Enter());
 
-        Assert.False(await question.Completion);
+        Assert.True(await question.Completion.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     /// <summary>
@@ -55,7 +62,7 @@ public class TrustQuestionControlTests
     /// </summary>
     [Fact]
     public void TheHighlight_IsTheSelection_NotTheMouse() =>
-        Assert.False(ListIn(new TrustQuestionControl("/repo").BuildContent()).HoverHighlightsItems);
+        Assert.False(Ask().List.HoverHighlightsItems);
 
     /// <summary>
     /// The chosen answer carries the caret, and it moves with the selection. The list's own colours
@@ -63,14 +70,14 @@ public class TrustQuestionControlTests
     /// the screen showed "Don't trust" lit while Enter would trust.
     /// </summary>
     [Fact]
-    public void TheCaret_MarksTheAnswerEnterTakes()
+    public void TheCaret_FollowsDown()
     {
-        var list = ListIn(new TrustQuestionControl("/repo").BuildContent());
+        var (_, list, keys) = Ask();
 
         Assert.StartsWith("▸ Don't trust", list.Items[0].Text);
         Assert.StartsWith("  Trust this folder", list.Items[1].Text);
 
-        list.SelectedIndex = 1;
+        keys.Down();
 
         Assert.StartsWith("  Don't trust", list.Items[0].Text);
         Assert.StartsWith("▸ Trust this folder", list.Items[1].Text);

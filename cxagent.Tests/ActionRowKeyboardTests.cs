@@ -43,10 +43,9 @@ public class ActionRowKeyboardTests
     }
 
     /// <summary>
-    /// AND DECLINES KEYS WHEN IT IS NOT FOCUSED, which is why the rest of this behaviour is
-    /// drive-verified rather than unit-tested: `ProcessKey` returns false unless the control is in
-    /// the window's focus path, and focus is the FocusManager's to give — there is no `SetFocus` on
-    /// the control for a test to call. A detached toolbar sent Tab tests the guard, not the walking.
+    /// AND DECLINES KEYS WHEN IT IS NOT FOCUSED: `ProcessKey` returns false unless the control is in
+    /// its window's focus path, and focus is the window's focus manager's to give. The walking itself
+    /// is tested below, with the row in a headless window — see <see cref="HeadlessKeys"/>.
     /// </summary>
     [Fact]
     public void TheRowDeclinesKeysWhenItIsNotFocused()
@@ -54,5 +53,26 @@ public class ActionRowKeyboardTests
         var (bar, _, _) = Row();
 
         Assert.False(bar.ProcessKey(Tab()));
+    }
+
+    /// <summary>
+    /// ARROWS WALK, ENTER PRESSES, TAB LEAVES — the row as a keyboard user meets it, with real keys.
+    /// </summary>
+    [Fact]
+    public void ArrowsWalkTheRow_EnterPresses_TabLeaves()
+    {
+        var (bar, first, second) = Row();
+        var pressed = "";
+        first.Click += (_, _) => pressed = "first";
+        second.Click += (_, _) => pressed = "second";
+        var keys = HeadlessKeys.Focus(bar, bar);
+
+        Assert.True(keys.Right());
+        Assert.True(second.HasFocus);
+
+        Assert.True(keys.Enter());
+        Assert.Equal("second", pressed);
+
+        Assert.False(keys.Tab());
     }
 }

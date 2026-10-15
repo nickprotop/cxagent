@@ -563,13 +563,19 @@ public class AskUserTests
                           new QuestionOption("typecheck")]),
         ]);
         var content = prompt.BuildContent();
-
         var list = Assert.IsType<SharpConsoleUI.Controls.ListControl>(prompt.FocusTarget);
+        var keys = HeadlessKeys.Focus(content, list);
 
-        Check(list, 0);
-        Check(list, 2);
-        prompt.SubmitFromList();
+        // THE KEYS A USER PRESSES: onto the first option, check it, two down, check, submit.
+        keys.Down();
+        keys.Space();
+        keys.Down();
+        keys.Down();
+        keys.Space();
+        keys.Enter();
 
+        // COMPLETED FIRST, so a broken Enter fails here rather than blocking on Result for ever.
+        Assert.True(prompt.Completion.IsCompleted, "Enter did not submit the checked options");
         Assert.Equal("lint, typecheck", Assert.Single(prompt.Completion.Result.Answers));
     }
 
@@ -586,8 +592,10 @@ public class AskUserTests
                 Options: [new QuestionOption("lint"), new QuestionOption("tests")]),
         ]);
         var content = prompt.BuildContent();
+        var keys = HeadlessKeys.Focus(content, prompt.FocusTarget!);
 
-        prompt.SubmitFromList();
+        keys.Down();
+        keys.Enter();
 
         Assert.False(prompt.Completion.IsCompleted);
     }
@@ -633,9 +641,6 @@ public class AskUserTests
     /// <para>Set directly rather than via ProcessKey: the list refuses every key unless it HasFocus,
     /// and that is computed from a live window's focus manager.</para>
     /// </summary>
-    private static void Check(SharpConsoleUI.Controls.ListControl list, int index) =>
-        list.Items[index].IsChecked = true;
-
     /// <summary>The free-text prompt inside the question panel.</summary>
     private static SharpConsoleUI.Controls.PromptControl FindPrompt(
         SharpConsoleUI.Controls.IWindowControl content)
