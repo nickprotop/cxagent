@@ -552,6 +552,10 @@ var resolution = new AgentConfig
 | `ContextWindow` | tokens. Null probes the endpoint on first use, then falls back to a fixed threshold |
 | `MaxConcurrentAgents` | how many children may call this endpoint at once. Null is unlimited |
 | `Headers` · `CacheControl` | extra headers, and prompt caching where the provider bills for it |
+| `Thinking` · `ThinkingDisplay` | the level a new session starts at, and whether a Claude model's thinking is summarized or omitted — see `/think` |
+| `Reasoning` | marks an `api.openai.com` model as one that reasons, so it offers `minimal` to `high` |
+
+**The same settings, the same model.** A `ModelConfig` builds its provider the way a `config.json` entry does, so every key the file documents behaves identically here.
 
 **Mistakes come back as errors, never exceptions** — `resolution.Errors` with `HasProvider` false.
 

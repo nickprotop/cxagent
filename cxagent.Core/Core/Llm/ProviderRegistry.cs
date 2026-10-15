@@ -202,7 +202,7 @@ public sealed class ProviderRegistry
         }
     }
 
-    private static ILlmProvider Construct(string name, ProviderInstanceConfig cfg, HttpClient? client)
+    internal static ILlmProvider Construct(string name, ProviderInstanceConfig cfg, HttpClient? client)
     {
         var display = $"{cfg.Kind} {cfg.Model}";
         return cfg.Kind switch

@@ -1,5 +1,6 @@
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Models;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -173,4 +174,61 @@ public class AgentConfigTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // EVERY SETTING config.json HONOURS, honoured here too: the typed path builds its providers
+    // through the same construction, so a model written in code behaves as the same model in a file.
+    [Fact]
+    public async Task AnAnthropicModel_GoesToItsBaseUrl_WithItsCachingLevelAndDisplay()
+    {
+        using var srv = new LoopbackServer();
+        srv.Route("/models/claude-x", 200, AnthropicCaps);
+        srv.EnqueueJson(200, AnthropicOk);
+        var provider = new AgentConfig
+        {
+            Models =
+            {
+                ["claude"] = new(ProviderKind.Anthropic, "claude-x")
+                             { BaseUrl = srv.BaseUrl.TrimEnd('/'), ApiKey = "k", CacheControl = true,
+                               Thinking = "high", ThinkingDisplay = ThinkingDisplay.Omitted },
+            },
+        }.Resolve().Provider!;
+
+        await provider.ChatAsync([new ChatMessage { Role = "system", Content = "s" },
+                                  new ChatMessage { Role = "user", Content = "u" }], null, CancellationToken.None);
+
+        var body = System.Text.Json.Nodes.JsonNode.Parse(srv.LastRequestBody!)!;
+        Assert.Equal("high", (string?)body["output_config"]!["effort"]);
+        Assert.Equal("omitted", (string?)body["thinking"]!["display"]);
+        Assert.Contains("\"cache_control\"", srv.LastRequestBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnOpenAiCompatibleModel_StartsAtItsLevel()
+    {
+        var provider = new AgentConfig
+        {
+            Models = { ["local"] = new(ProviderKind.OpenAiCompatible, "m") { BaseUrl = "http://localhost:1/v1", Thinking = "off" } },
+        }.Resolve().Provider!;
+
+        Assert.Equal("off", ((IThinkingProvider)provider).ThinkingLevel);
+    }
+
+    // THE DIALECT FROM THE HOST AND THE REASONING FLAG, together: api.openai.com offers levels only
+    // with Reasoning set, and answers without a request — so a wrong dialect or a dropped flag fails.
+    [Fact]
+    public async Task AnOpenAiReasoningModel_OffersOpenAisLevels()
+    {
+        var provider = new AgentConfig
+        {
+            Models = { ["gpt"] = new(ProviderKind.OpenAiCompatible, "gpt-5-mini")
+                                 { BaseUrl = "https://api.openai.com/v1", ApiKey = "k", Reasoning = true } },
+        }.Resolve().Provider!;
+
+        var options = await ((IThinkingProvider)provider).GetThinkingOptionsAsync();
+
+        Assert.Equal(["minimal", "low", "medium", "high"], options.Levels);
+    }
+
+    private const string AnthropicCaps = """{"id":"claude-x","capabilities":{"effort":{"supported":true,"low":{"supported":true},"medium":{"supported":true},"high":{"supported":true},"max":{"supported":true}},"thinking":{"supported":true,"types":{"adaptive":{"supported":true},"disabled":{"supported":true},"enabled":{"supported":false}}}}}""";
+    private const string AnthropicOk = """{"content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}""";
 }

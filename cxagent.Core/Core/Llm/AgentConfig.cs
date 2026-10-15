@@ -51,6 +51,18 @@ public sealed record ModelConfig(ProviderKind Kind, string Model)
     /// <summary>Ask this endpoint to cache the system prompt. Opt-in because cache writes are billed
     /// above normal input — see ProviderInstanceConfig for the numbers.</summary>
     public bool CacheControl { get; init; }
+
+    /// <summary>How hard this model thinks in a new session — config.json's <c>thinking</c>. Null
+    /// sends nothing and lets the model decide; a level it does not offer falls back to its default.</summary>
+    public string? Thinking { get; init; }
+
+    /// <summary>Whether a Claude model's thinking is summarized or omitted — config.json's
+    /// <c>thinkingDisplay</c>. Anthropic only.</summary>
+    public ThinkingDisplay ThinkingDisplay { get; init; } = ThinkingDisplay.Summarized;
+
+    /// <summary>Marks an <c>api.openai.com</c> model as one that reasons — config.json's
+    /// <c>reasoning</c>. OpenAI cannot be asked, and a model that does not reason refuses the field.</summary>
+    public bool Reasoning { get; init; }
 }
 
 /// <summary>
@@ -229,35 +241,20 @@ public sealed record AgentConfig
         return null;
     }
 
-    // THE SAME CONSTRUCTION ProviderRegistry.Construct performs for a config.json entry, reached from
-    // a typed kind rather than a string. Kept here rather than shared because that one takes a
-    // ProviderInstanceConfig — the JSON shape — and building one of those just to unwrap it would be
-    // a detour through the file format this type exists to avoid.
-    private static ILlmProvider ProviderFor(string name, ModelConfig model, HttpClient? client)
-    {
-        var display = $"{KindName(model.Kind)} {model.Model}";
-
-        return model.Kind switch
-        {
-            ProviderKind.Anthropic => new Providers.AnthropicProvider(
-                name, display, model.Model, model.ApiKey ?? "", client: client),
-
-            ProviderKind.Ollama => new Providers.OllamaProvider(
-                name, display, model.Model, model.BaseUrl, client: client),
-
-            _ => new Providers.OpenAiCompatibleProvider(new Providers.OpenAiProviderOptions
-            {
-                ProviderId = name,
-                DisplayName = display,
-                Model = model.Model,
-                BaseUrl = model.BaseUrl ?? "",
-                ApiKey = model.ApiKey,
-                ExtraHeaders = model.Headers.Count > 0 ? model.Headers : null,
-                Client = client,
-                CacheControl = model.CacheControl,
-            }),
-        };
-    }
+    // THROUGH ProviderRegistry.Construct, THE ONE config.json USES. A second construction here
+    // drifted: every setting added to the file had to be remembered twice, and the typed path
+    // silently lost a Claude model's baseUrl, caching and thinking, and an OpenRouter model's
+    // reasoning dialect. Mapping to the file's shape costs one record; drifting cost all of those.
+    private static ILlmProvider ProviderFor(string name, ModelConfig model, HttpClient? client) =>
+        ProviderRegistry.Construct(name, new ProviderInstanceConfig(
+            KindName(model.Kind), model.Model, model.ApiKey, model.BaseUrl,
+            model.Headers.Count > 0 ? model.Headers : null,
+            ContextWindow: model.ContextWindow,
+            MaxConcurrentAgents: model.MaxConcurrentAgents,
+            CacheControl: model.CacheControl,
+            ThinkingDisplay: model.ThinkingDisplay,
+            Thinking: model.Thinking,
+            Reasoning: model.Reasoning), client);
 
     /// <summary>The config.json spelling, so a display name reads the same however it was built.</summary>
     private static string KindName(ProviderKind kind) => kind switch
