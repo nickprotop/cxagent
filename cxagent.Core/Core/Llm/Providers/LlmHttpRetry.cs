@@ -49,8 +49,10 @@ public static class LlmHttpRetry
             {
                 var body = await SafeReadBody(resp, ct);
                 resp.Dispose();
+                var detail = VendorDetail(body);
                 throw new LlmProviderException(instanceName, status, body,
-                    $"provider '{instanceName}' returned {status} after {attempt} attempt(s).");
+                    $"provider '{instanceName}' returned {status} after {attempt} attempt(s)"
+                    + (detail is null ? "." : $": {detail}"));
             }
 
             var retryAfter = resp.Headers.RetryAfter?.Delta
@@ -70,6 +72,39 @@ public static class LlmHttpRetry
         var delay = retryAfter is { } ra && ra > backoff ? ra : backoff;
         if (delay <= TimeSpan.Zero) return Task.CompletedTask;
         return Task.Delay(delay, ct);
+    }
+
+    /// <summary>
+    /// The vendor's own reason for a refusal, for the message the user sees. A bare status said
+    /// nothing a 400 needed — which request field was wrong is only in the body. Reads
+    /// <c>error.message</c>, the shape Anthropic, OpenAI and llama.cpp share, else the body itself;
+    /// one line, capped, because it lands in the transcript.
+    /// </summary>
+    internal static string? VendorDetail(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return null;
+        var text = body;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind == System.Text.Json.JsonValueKind.Object
+                && root.TryGetProperty("error", out var err))
+            {
+                if (err.ValueKind == System.Text.Json.JsonValueKind.String)
+                    text = err.GetString() ?? body;
+                else if (err.ValueKind == System.Text.Json.JsonValueKind.Object
+                         && err.TryGetProperty("message", out var m)
+                         && m.ValueKind == System.Text.Json.JsonValueKind.String)
+                    text = m.GetString() ?? body;
+            }
+        }
+        catch (System.Text.Json.JsonException) { /* not JSON — show it as sent */ }
+
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+        if (text.Length == 0 || text == "{}") return null;
+        const int Cap = 400;
+        return text.Length <= Cap ? text : text[..Cap] + "…";
     }
 
     private static async Task<string?> SafeReadBody(HttpResponseMessage resp, CancellationToken ct)

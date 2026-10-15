@@ -74,25 +74,23 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
         using var stream = await resp.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream, Encoding.UTF8);
 
-        bool emittedFinal = false;
+        var acc = new AnthropicWire.StreamAccumulator();
         string? line;
         while ((line = await reader.ReadLineAsync(ct)) is not null)
         {
             if (line.Length == 0 || !line.StartsWith("data:")) continue;
             var data = line["data:".Length..].Trim();
 
-            var (textDelta, toolCall, isFinal) = AnthropicWire.ParseStreamEvent(data);
+            var (textDelta, toolCall) = acc.Accept(data);
             if (textDelta is not null || toolCall is not null)
                 yield return new LlmStreamChunk(textDelta, toolCall, IsFinal: false);
-            if (isFinal)
-            {
-                emittedFinal = true;
-                yield return new LlmStreamChunk(null, null, IsFinal: true);
-                break;
-            }
+            if (acc.IsDone) break;
         }
-        if (!emittedFinal)
-            yield return new LlmStreamChunk(null, null, IsFinal: true);
+        foreach (var call in acc.Flush())
+            yield return new LlmStreamChunk(null, call, IsFinal: false);
+
+        // The stop reason and usage ride the final chunk, as they do for the OpenAI driver.
+        yield return new LlmStreamChunk(null, null, IsFinal: true, acc.Usage, acc.StopReason);
     }
 
     /// <inheritdoc/>

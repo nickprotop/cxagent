@@ -897,6 +897,38 @@ public class AgentTests
     }
 
     /// <summary>
+    /// THE STUCK NUDGE NEVER SPLITS A TURN'S RESULTS. It fires while results are being recorded, and
+    /// was added on the spot — after the first of two results, so the user turn sat between a
+    /// tool_use and its answer and Anthropic refused every request that followed with a 400.
+    /// </summary>
+    [Fact]
+    public async Task StuckNudge_IsAddedAfterAllOfTheTurnsToolResults()
+    {
+        var provider = new MockLlmProvider();
+        for (var i = 0; i < 3; i++)
+            provider.EnqueueResponse(new LlmResponse
+            {
+                StopReason = "tool_use",
+                ToolCalls = [ReadOfNothing("first.txt"), ReadOfNothing("second.txt")],
+            });
+        provider.EnqueueResponse(new LlmResponse { Text = "giving up", StopReason = "end_turn" });
+
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+
+        await agent.SendAsync("read those files", CancellationToken.None);
+
+        var sent = provider.LastMessages!;
+        Assert.Contains(sent, m => m.Role == "user" && m.Content.Contains("same arguments"));
+        for (var i = 0; i < sent.Count; i++)
+        {
+            if (sent[i].ToolCalls is not { Count: > 0 } calls) continue;
+            for (var k = 1; k <= calls.Count; k++)
+                Assert.NotNull(sent[i + k].ToolCallId);
+        }
+    }
+
+    /// <summary>
     /// The implicit conversion is what kept this a mechanical change: of ~73 call sites only four
     /// read the string, and every other one awaits and discards. Without it each would have needed
     /// touching to say <c>.Text</c>.

@@ -1809,6 +1809,8 @@ public sealed class Agent
                 // later STARTED rather than awaited, the concurrent part carries no shared state at
                 // all. Nothing races because nothing concurrent touches anything — which is a much
                 // cheaper guarantee than locking six mutation sites and hoping the list stays at six.
+                var nudges = new List<ChatMessage>();
+
                 void Record(ToolCall call, string result)
                 {
                     // STUCK: the same call returning the same result, over and over. Measured on one
@@ -1824,8 +1826,12 @@ public sealed class Agent
                     seen.TryGetValue(signature, out var times);
                     seen[signature] = ++times;
 
+                    // HELD, NOT ADDED. This runs between results, and a user turn spliced among an
+                    // assistant message's tool results is the orphan shape that 400s Anthropic —
+                    // measured: the nudge landed after the first of two results and every later
+                    // request was refused. Added after the barrier, with the steer.
                     if (times == StuckRepeats)
-                        messages.Add(new ChatMessage
+                        nudges.Add(new ChatMessage
                         {
                             Role = "user",
                             Content = $"You have called {call.Name} with the same arguments {times} times "
@@ -1934,6 +1940,9 @@ public sealed class Agent
                     Record(call, await task);
 
                 spawned.Clear();
+
+                // Every result is recorded, so the stuck nudges can join the conversation now.
+                messages.AddRange(nudges);
 
                 // AFTER THE BARRIER, BEFORE THE NEXT REQUEST — the only point in a turn where a user
                 // message can legally be appended. The assistant message above declared N tool calls

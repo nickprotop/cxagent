@@ -106,4 +106,17 @@ public class LlmHttpRetryTests : IDisposable
         Assert.Equal(400, ex.HttpStatus);
         Assert.Equal(1, _hits);   // no retry on 4xx (except 429)
     }
+
+    /// <summary>The reason shown with a refusal, across the body shapes the providers send. A local
+    /// llama.cpp server and OpenAI share Anthropic's <c>error.message</c>.</summary>
+    [Theory]
+    [InlineData("""{"error":{"code":400,"message":"the request exceeds the available context size","type":"exceed_context_size_error"}}""",
+                "the request exceeds the available context size")]
+    [InlineData("""{"type":"error","error":{"type":"invalid_request_error","message":"bad\nthing"}}""", "bad thing")]
+    [InlineData("""{"error":"model not loaded"}""", "model not loaded")]
+    [InlineData("Bad Gateway", "Bad Gateway")]
+    [InlineData("{}", null)]
+    [InlineData("", null)]
+    public void VendorDetail_ReadsErrorMessage(string body, string? expected) =>
+        Assert.Equal(expected, LlmHttpRetry.VendorDetail(body));
 }
