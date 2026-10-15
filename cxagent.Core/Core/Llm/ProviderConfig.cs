@@ -40,6 +40,8 @@ namespace CxAgent.Core.Llm;
 /// OpenRouter: the same 7,002-token prefix twice gave 0 cached without a breakpoint and 7,002
 /// with one.</para>
 /// </param>
+/// <param name="ThinkingDisplay">Whether Anthropic returns thinking text (<c>summarized</c>) or empty blocks (<c>omitted</c>).</param>
+/// <param name="Thinking">The thinking level requests start at, or null for the model's own default.</param>
 /// <param name="Kind">Which driver serves this instance — <c>anthropic</c>, <c>openai-compatible</c> or <c>ollama</c>.</param>
 /// <param name="Model">The model id sent to the endpoint.</param>
 /// <param name="ApiKey">The credential, or null for an endpoint that needs none.</param>
@@ -53,7 +55,9 @@ public record ProviderInstanceConfig(
     string Kind, string Model, string? ApiKey, string? BaseUrl,
     IReadOnlyDictionary<string, string>? ExtraHeaders, int? ContextWindow = null,
     int? MaxConcurrentAgents = null,
-    bool CacheControl = false);
+    bool CacheControl = false,
+    ThinkingDisplay ThinkingDisplay = ThinkingDisplay.Summarized,
+    string? Thinking = null);
 
 public record RoutingTarget(string Provider, string Model);
 
@@ -658,6 +662,26 @@ public static class ProviderConfigLoader
                     var cacheControl = o.TryGetProperty("cacheControl", out var cc)
                         && cc.ValueKind == JsonValueKind.True;
 
+                    // INVALID IS AN ERROR, unlike cacheControl's lenient read: a misspelt level silently
+                    // ignored is a session that thinks at a level nobody chose, and the user has no way
+                    // to see why.
+                    var thinkingDisplay = ThinkingDisplay.Summarized;
+                    if (o.TryGetProperty("thinkingDisplay", out var td))
+                        switch (td.ValueKind == JsonValueKind.String ? td.GetString() : null)
+                        {
+                            case "summarized": break;
+                            case "omitted": thinkingDisplay = ThinkingDisplay.Omitted; break;
+                            default: errors.Add($"provider '{name}': 'thinkingDisplay' must be \"summarized\" or \"omitted\"."); break;
+                        }
+
+                    string? thinking = null;
+                    if (o.TryGetProperty("thinking", out var tk))
+                    {
+                        thinking = tk.ValueKind == JsonValueKind.String ? tk.GetString() : null;
+                        if (!ThinkingLevels.IsKnown(thinking))
+                            errors.Add($"provider '{name}': 'thinking' must be one of {string.Join(", ", ThinkingLevels.Known)}.");
+                    }
+
                     // env override: CXAGENT_PROVIDER_<INSTANCE>_APIKEY
                     var envKey = $"CXAGENT_PROVIDER_{name.ToUpperInvariant()}_APIKEY";
                     if (env.TryGetValue(envKey, out var envVal) && !string.IsNullOrEmpty(envVal))
@@ -677,7 +701,7 @@ public static class ProviderConfigLoader
                     ValidateEndpoint(name, kind, baseUrl, errors);
 
                     providers[name] = new ProviderInstanceConfig(kind, model, apiKey, baseUrl, extra, contextWindow,
-                        maxConcurrentAgents, cacheControl);
+                        maxConcurrentAgents, cacheControl, thinkingDisplay, thinking);
                 }
             else
                 errors.Add("config.json has no 'providers' object.");

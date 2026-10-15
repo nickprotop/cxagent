@@ -208,7 +208,8 @@ public sealed class ProviderRegistry
         return cfg.Kind switch
         {
             "anthropic" => new AnthropicProvider(
-                name, display, cfg.Model, cfg.ApiKey ?? "", client: client, cacheControl: cfg.CacheControl),
+                name, display, cfg.Model, cfg.ApiKey ?? "", client: client, cacheControl: cfg.CacheControl,
+                thinkingDisplay: cfg.ThinkingDisplay, thinking: cfg.Thinking),
             "openai-compatible" => new OpenAiCompatibleProvider(new OpenAiProviderOptions
             {
                 ProviderId = name,

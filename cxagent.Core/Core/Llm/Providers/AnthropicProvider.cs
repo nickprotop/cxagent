@@ -6,7 +6,7 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Llm.Providers;
 
 /// <summary>Native Anthropic Messages API driver. Normalizes stop_reason/usage at this boundary.</summary>
-public class AnthropicProvider : ILlmProvider, IModelCatalog
+public class AnthropicProvider : ILlmProvider, IModelCatalog, IThinkingProvider
 {
     private const string AnthropicVersion = "2023-06-01";
 
@@ -17,6 +17,9 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
     private readonly string _baseUrl;
     private readonly RetryPolicy _retry;
     private readonly bool _cache;
+    private readonly ThinkingDisplay _display;
+    private readonly string? _level;
+    private readonly CapabilityCache _caps;
 
     public string ProviderId { get; }
     public string DisplayName { get; }
@@ -45,9 +48,13 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
 
     public AnthropicProvider(string providerId, string displayName, string model, string apiKey,
         int maxTokens = DefaultMaxTokens, string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null,
-        bool cacheControl = false)
+        bool cacheControl = false, ThinkingDisplay thinkingDisplay = ThinkingDisplay.Summarized,
+        string? thinking = null)
     {
         _cache = cacheControl;
+        _display = thinkingDisplay;
+        _level = thinking;
+        _caps = new CapabilityCache();
         ProviderId = providerId;
         DisplayName = displayName;
         _model = model;
@@ -56,6 +63,61 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
         _baseUrl = (baseUrl ?? "https://api.anthropic.com/v1").TrimEnd('/');
         _client = client ?? Shared;
         _retry = retryPolicy ?? RetryPolicy.Default;
+    }
+
+    /// <summary>A clone at another level. Shares the client and the capability cache, so a level costs
+    /// no second probe.</summary>
+    private AnthropicProvider(AnthropicProvider from, string? level)
+    {
+        _client = from._client;
+        _model = from._model;
+        _apiKey = from._apiKey;
+        _maxTokens = from._maxTokens;
+        _baseUrl = from._baseUrl;
+        _retry = from._retry;
+        _cache = from._cache;
+        _display = from._display;
+        _caps = from._caps;
+        _level = level;
+        ProviderId = from.ProviderId;
+        DisplayName = from.DisplayName;
+    }
+
+    public string? ThinkingLevel => _level;
+    public ThinkingOptions? KnownThinkingOptions => _caps.Known;
+    public ILlmProvider WithThinking(string? level) => new AnthropicProvider(this, level);
+
+    public Task<ThinkingOptions> GetThinkingOptionsAsync(CancellationToken ct = default) =>
+        _caps.GetAsync(async c =>
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(c);
+            cts.CancelAfter(ThinkingCapabilities.Timeout);
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/models/{Uri.EscapeDataString(_model)}");
+            req.Headers.TryAddWithoutValidation("x-api-key", _apiKey);
+            req.Headers.TryAddWithoutValidation("anthropic-version", AnthropicVersion);
+            using var resp = await _client.SendAsync(req, cts.Token);
+            // A reply is an answer even when it says nothing useful: a non-2xx or a body without
+            // capabilities is cached as "none", so a gateway lacking this route is asked once.
+            // Only an exception or timeout (no reply) reaches the cache as null.
+            var unsaid = ThinkingOptions.None("the endpoint did not say what it accepts");
+            return resp.IsSuccessStatusCode
+                ? ThinkingCapabilities.ParseAnthropic(await resp.Content.ReadAsStringAsync(cts.Token)) ?? unsaid
+                : unsaid;
+        }, ct);
+
+    /// <summary>
+    /// The thinking fields for the next request, from the model's own answer. NOTHING WHEN UNKNOWN:
+    /// a guessed capability is a 400 on a model that refuses it, so a failed or empty probe sends
+    /// exactly what a request sent before levels existed. A level the model does not offer falls
+    /// back to its default rather than failing the turn.
+    /// </summary>
+    private async Task<AnthropicThinking?> ThinkingForAsync(CancellationToken ct)
+    {
+        var options = await GetThinkingOptionsAsync(ct);
+        if (!options.Any) return null;
+        var level = _level == ThinkingLevels.Lowest ? options.Levels[0] : _level;
+        if (level is null || !options.Levels.Contains(level)) return new(null, false, _display);
+        return level == ThinkingLevels.Off ? new(null, true, _display) : new(level, false, _display);
     }
 
     private HttpRequestMessage BuildRequest(string bodyJson)
@@ -72,7 +134,9 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
     public async Task<LlmResponse> ChatAsync(List<ChatMessage> messages,
         List<ToolDefinition>? tools, CancellationToken ct)
     {
-        var body = AnthropicWire.BuildRequestBody(_model, _maxTokens, messages, tools, stream: false, cache: _cache).ToJsonString();
+        var thinking = await ThinkingForAsync(ct);
+        var body = AnthropicWire.BuildRequestBody(_model, _maxTokens, messages, tools, stream: false, cache: _cache,
+            thinking: thinking).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         var json = await resp.Content.ReadAsStringAsync(ct);
@@ -83,7 +147,9 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
     public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
         List<ToolDefinition>? tools, [EnumeratorCancellation] CancellationToken ct)
     {
-        var body = AnthropicWire.BuildRequestBody(_model, _maxTokens, messages, tools, stream: true, cache: _cache).ToJsonString();
+        var thinking = await ThinkingForAsync(ct);
+        var body = AnthropicWire.BuildRequestBody(_model, _maxTokens, messages, tools, stream: true, cache: _cache,
+            thinking: thinking).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         using var stream = await resp.Content.ReadAsStreamAsync(ct);

@@ -867,4 +867,29 @@ public class ProviderConfigTests : IDisposable
 
         Assert.True(a.DescribesSameServerAs(b));
     }
+
+    [Fact]
+    public void ThinkingKeys_AreRead()
+    {
+        WriteConfig("""{"providers":{"p":{"kind":"anthropic","model":"m","thinkingDisplay":"omitted","thinking":"high"}},"defaultProvider":"p"}""");
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+        Assert.Equal(ThinkingDisplay.Omitted, s.Providers["p"].ThinkingDisplay);
+        Assert.Equal("high", s.Providers["p"].Thinking);
+    }
+
+    [Fact]
+    public void ThinkingDisplay_InvalidValue_NamesTheChoices()
+    {
+        WriteConfig("""{"providers":{"p":{"kind":"anthropic","model":"m","thinkingDisplay":"loud"}},"defaultProvider":"p"}""");
+        var ex = Assert.Throws<ProviderConfigException>(() => ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv));
+        Assert.Contains(ex.Errors, e => e.Contains("thinkingDisplay") && e.Contains("summarized"));
+    }
+
+    [Fact]
+    public void Thinking_InvalidValue_NamesTheLevels()
+    {
+        WriteConfig("""{"providers":{"p":{"kind":"anthropic","model":"m","thinking":"extreme"}},"defaultProvider":"p"}""");
+        var ex = Assert.Throws<ProviderConfigException>(() => ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv));
+        Assert.Contains(ex.Errors, e => e.Contains("'thinking'") && e.Contains("off, on, low, medium, high, xhigh, max"));
+    }
 }

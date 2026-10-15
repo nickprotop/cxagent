@@ -40,6 +40,13 @@ public sealed class LoopbackServer : IDisposable
     // LastRequest*, which keep describing the request the test sent.
     private readonly ConcurrentDictionary<string, (int status, string body)> _routes = new();
 
+    /// <summary>
+    /// Whether an unrouted GET to <c>/models/{id}</c> or <c>/props</c> is answered 404 off-queue.
+    /// A test whose subject IS such a request (the context-window probe) turns this off so the
+    /// request takes its enqueued answer and is captured like any other.
+    /// </summary>
+    public bool AnswerProbesWith404 { get; init; } = true;
+
     /// <summary>Answers requests whose path ends with <paramref name="path"/> with a fixed response, never dequeued.</summary>
     /// <param name="path">The path suffix to match, e.g. <c>/models/claude-x</c>.</param>
     /// <param name="status">The HTTP status to answer.</param>
@@ -59,7 +66,7 @@ public sealed class LoopbackServer : IDisposable
             var routed = _routes.FirstOrDefault(kv => path.EndsWith(kv.Key, StringComparison.Ordinal));
             if (routed.Key is not null)
                 answer = (routed.Value.status, routed.Value.body, false);
-            else if (ctx.Request.HttpMethod == "GET" && (path.Contains("/models/") || path.EndsWith("/props")))
+            else if (AnswerProbesWith404 && ctx.Request.HttpMethod == "GET" && (path.Contains("/models/") || path.EndsWith("/props")))
                 answer = (404, "{}", false);
             else
             {

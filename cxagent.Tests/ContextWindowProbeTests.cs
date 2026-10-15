@@ -6,7 +6,7 @@ namespace CxAgent.Tests;
 [Collection("http-listeners")]
 public class ContextWindowProbeTests : IDisposable
 {
-    private readonly LoopbackServer _srv = new();
+    private readonly LoopbackServer _srv = new() { AnswerProbesWith404 = false };
     public void Dispose() => _srv.Dispose();
 
     [Theory]

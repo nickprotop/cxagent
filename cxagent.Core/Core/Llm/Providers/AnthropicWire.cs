@@ -4,6 +4,13 @@ using CxAgent.Core.Models;
 
 namespace CxAgent.Core.Llm.Providers;
 
+/// <summary>What one request says about thinking. Null on the request means "say nothing" — the
+/// shape of every request whose capabilities are unknown.</summary>
+/// <param name="Effort">An effort level, or null for the model's default.</param>
+/// <param name="Disabled">Send <c>thinking: {type: disabled}</c> (only where the model accepts it).</param>
+/// <param name="Display">Whether thinking text comes back.</param>
+internal sealed record AnthropicThinking(string? Effort, bool Disabled, ThinkingDisplay Display);
+
 /// <summary>Neutral &lt;-&gt; Anthropic Messages wire mapping. Pure functions, no I/O.</summary>
 internal static class AnthropicWire
 {
@@ -20,8 +27,10 @@ internal static class AnthropicWire
     /// to the last block as the conversation grows, so each turn reads what the previous one wrote.
     /// In a tool loop the history is most of every request, so the system marker alone saves little.
     /// </param>
+    /// <param name="thinking">What to say about thinking, or null to say nothing.</param>
     public static JsonObject BuildRequestBody(string model, int maxTokens,
-        List<ChatMessage> messages, List<ToolDefinition>? tools, bool stream, bool cache = false)
+        List<ChatMessage> messages, List<ToolDefinition>? tools, bool stream, bool cache = false,
+        AnthropicThinking? thinking = null)
     {
         var systemParts = new List<string>();
         var msgs = new JsonArray();
@@ -97,6 +106,18 @@ internal static class AnthropicWire
             // only ever grows, which the next request does contain.
             if (messages.Count > 1 && messages[^1].IsTaskList && msgs.Count > 1)
                 MarkLastBlock((JsonObject)msgs[^2]!);
+        }
+        if (thinking is { Disabled: true })
+            body["thinking"] = new JsonObject { ["type"] = "disabled" };
+        else if (thinking is not null)
+        {
+            body["thinking"] = new JsonObject
+            {
+                ["type"] = "adaptive",
+                ["display"] = thinking.Display == ThinkingDisplay.Omitted ? "omitted" : "summarized",
+            };
+            if (thinking.Effort is { } effort)
+                body["output_config"] = new JsonObject { ["effort"] = effort };
         }
         if (stream) body["stream"] = true;
         if (tools is { Count: > 0 })

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Llm.Providers;
 using CxAgent.Core.Models;
@@ -387,5 +388,88 @@ public class AnthropicProviderTests : IDisposable
         var r = await Make().ChatAsync(Msgs(), null, CancellationToken.None);
         Assert.Equal("42", r.Text);
         Assert.Equal("6*7", r.Thinking);
+    }
+
+    private const string Caps = """{"id":"claude-x","capabilities":{"effort":{"supported":true,"low":{"supported":true},"medium":{"supported":true},"high":{"supported":true},"max":{"supported":true}},"thinking":{"supported":true,"types":{"adaptive":{"supported":true},"disabled":{"supported":true},"enabled":{"supported":false}}}}}""";
+    private const string Ok = """{"content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}""";
+
+    private AnthropicProvider MakeThinking(ThinkingDisplay display = ThinkingDisplay.Summarized, string? level = null) =>
+        new("anthropic", "Claude x", "claude-x", "sk-ant-test", maxTokens: 1024,
+            baseUrl: _srv.BaseUrl.TrimEnd('/'), retryPolicy: RetryPolicy.NoDelay,
+            thinkingDisplay: display, thinking: level);
+
+    [Fact]
+    public async Task AdaptiveModel_DefaultLevel_SendsAdaptiveSummarized_AndNoEffort()
+    {
+        _srv.Route("/models/claude-x", 200, Caps); _srv.EnqueueJson(200, Ok);
+        await MakeThinking().ChatAsync(Msgs(), null, CancellationToken.None);
+        var body = JsonNode.Parse(_srv.LastRequestBody!)!;
+        Assert.Equal("adaptive", (string?)body["thinking"]!["type"]);
+        Assert.Equal("summarized", (string?)body["thinking"]!["display"]);
+        Assert.Null(body["output_config"]);
+    }
+
+    [Fact]
+    public async Task ALevel_SendsOutputConfigEffort()
+    {
+        _srv.Route("/models/claude-x", 200, Caps); _srv.EnqueueJson(200, Ok);
+        await ((AnthropicProvider)MakeThinking().WithThinking("high")).ChatAsync(Msgs(), null, CancellationToken.None);
+        Assert.Equal("high", (string?)JsonNode.Parse(_srv.LastRequestBody!)!["output_config"]!["effort"]);
+    }
+
+    [Fact]
+    public async Task Off_SendsDisabled_WithNoDisplay()
+    {
+        _srv.Route("/models/claude-x", 200, Caps); _srv.EnqueueJson(200, Ok);
+        await MakeThinking(level: "off").ChatAsync(Msgs(), null, CancellationToken.None);
+        var t = JsonNode.Parse(_srv.LastRequestBody!)!["thinking"]!;
+        Assert.Equal("disabled", (string?)t["type"]);
+        Assert.Null(t["display"]);
+    }
+
+    [Fact]
+    public async Task Omitted_IsSentAsOmitted()
+    {
+        _srv.Route("/models/claude-x", 200, Caps); _srv.EnqueueJson(200, Ok);
+        await MakeThinking(ThinkingDisplay.Omitted).ChatAsync(Msgs(), null, CancellationToken.None);
+        Assert.Equal("omitted", (string?)JsonNode.Parse(_srv.LastRequestBody!)!["thinking"]!["display"]);
+    }
+
+    [Fact]
+    public async Task Lowest_ResolvesToTheFirstOfferedLevel()
+    {
+        _srv.Route("/models/claude-x", 200, Caps); _srv.EnqueueJson(200, Ok);
+        await MakeThinking(level: ThinkingLevels.Lowest).ChatAsync(Msgs(), null, CancellationToken.None);
+        Assert.Equal("disabled", (string?)JsonNode.Parse(_srv.LastRequestBody!)!["thinking"]!["type"]);
+    }
+
+    [Fact]
+    public async Task ALevelTheModelDoesNotOffer_SendsTheModelDefault()
+    {
+        _srv.Route("/models/claude-x", 200, Caps); _srv.EnqueueJson(200, Ok);
+        await MakeThinking(level: "xhigh").ChatAsync(Msgs(), null, CancellationToken.None);
+        var body = JsonNode.Parse(_srv.LastRequestBody!)!;
+        Assert.Equal("adaptive", (string?)body["thinking"]!["type"]);
+        Assert.Null(body["output_config"]);
+    }
+
+    // A failed probe changes nothing about the request.
+    [Fact]
+    public async Task CapabilityProbeFails_RequestCarriesNoThinkingFields()
+    {
+        _srv.Route("/models/claude-x", 500, "{}"); _srv.EnqueueJson(200, Ok);
+        await MakeThinking(level: "high").ChatAsync(Msgs(), null, CancellationToken.None);
+        var body = JsonNode.Parse(_srv.LastRequestBody!)!;
+        Assert.Null(body["thinking"]);
+        Assert.Null(body["output_config"]);
+    }
+
+    [Fact]
+    public void WithThinking_LeavesTheOriginalAlone()
+    {
+        var p = MakeThinking();
+        var high = (IThinkingProvider)p.WithThinking("high");
+        Assert.Null(p.ThinkingLevel);
+        Assert.Equal("high", high.ThinkingLevel);
     }
 }
