@@ -261,11 +261,19 @@ public static class OpenAiWire
     /// Reasoning, from either field servers use for it. <c>reasoning_content</c> is llama.cpp's,
     /// DeepSeek's and older vLLM's; <c>reasoning</c> is OpenRouter's, Ollama's and newer vLLM's. One
     /// reader for both, so a server is never invisible because it picked the other spelling.
+    ///
+    /// <para>EMPTY IS NONE. On the stream chunk "" means "thinking, text hidden", which no
+    /// OpenAI-compatible server does; one that sends an empty field beside every content delta would
+    /// otherwise open a hidden-thinking block on each.</para>
     /// </summary>
-    private static string? ReasoningOf(JsonElement e) =>
-        e.TryGetProperty("reasoning_content", out var rc) && rc.ValueKind == JsonValueKind.String ? rc.GetString()
-        : e.TryGetProperty("reasoning", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString()
-        : null;
+    private static string? ReasoningOf(JsonElement e)
+    {
+        var text =
+            e.TryGetProperty("reasoning_content", out var rc) && rc.ValueKind == JsonValueKind.String ? rc.GetString()
+            : e.TryGetProperty("reasoning", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString()
+            : null;
+        return string.IsNullOrEmpty(text) ? null : text;
+    }
 
     /// <summary>
     /// Parses one OpenAI SSE `data:` chunk into its text delta, finish reason, and the RAW `delta`

@@ -92,6 +92,21 @@ public class OpenAiWireTests
         Assert.Null(d.Text);
     }
 
+    /// <summary>
+    /// An EMPTY reasoning field is no thinking. "" on the stream chunk means "thinking, text hidden",
+    /// which no OpenAI-compatible server does; a server that sends an empty field beside every
+    /// content delta would otherwise open a hidden-thinking block on each one.
+    /// </summary>
+    [Theory]
+    [InlineData("\"reasoning_content\":\"\"")]
+    [InlineData("\"reasoning_content\":null")]
+    public void ParseStreamDelta_EmptyReasoning_IsNoThinking(string field)
+    {
+        var d = OpenAiWire.ParseStreamDelta($$$"""{"choices":[{"delta":{"content":"hi",{{{field}}}}}]}""");
+        Assert.Null(d.Thinking);
+        Assert.Equal("hi", d.Text);
+    }
+
     [Fact]
     public void ParseResponse_ReadsReasoningContent()
     {
