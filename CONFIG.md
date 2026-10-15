@@ -48,6 +48,33 @@ wrote. Off by default because cache writes are billed (1.25x input for a five-mi
 tool loop the reads (0.1x) repay that from the second request. A local server caches on its own and
 needs nothing.
 
+**`thinking` sets how hard the model thinks** in a new session — `/think` and F8 change it for one
+session ([COMMANDS.md](COMMANDS.md#think)). Which values work is the model's own answer, not a list
+in cxagent:
+
+| Instance | Levels | Sent as |
+|---|---|---|
+| `anthropic`, a model that accepts adaptive thinking | `low` `medium` `high` `xhigh` `max` as the model offers them, and `off` where it accepts that | `output_config.effort`; `off` is `thinking: {type: "disabled"}` |
+| `openai-compatible`, a llama.cpp server whose chat template takes `enable_thinking` | `off` `on` | `chat_template_kwargs.enable_thinking` |
+| anything else | none — the model's own behaviour | nothing |
+
+Unset, nothing is sent and the model decides. A level the model does not offer is said once and the
+model's default used, so a config written for one model cannot break a session on another. Changing
+the level on an Anthropic conversation re-sends it uncached once, because the level is part of the
+cached prompt.
+
+**`thinkingDisplay` is `"summarized"` (the default) or `"omitted"`**, for `anthropic` instances. Claude
+models that think hide the text unless asked for a summary; cxagent asks, so thinking shows in the
+transcript like a local model's. `"omitted"` shows only `◆ Thought for 4s` and starts the answer a
+little sooner; the cost is the same either way.
+
+**cxagent sends adaptive thinking to every Claude model that accepts it.** Claude 5 models think by
+default anyway; Claude Opus 4.6–4.8 and Sonnet 4.6 do not, and now do. Set `"thinking"` to a lower
+level, or `"off"` where the model offers it, to spend less.
+
+**Thinking from a local server shows too**, whether it arrives as `reasoning_content`, `reasoning`
+or inline `<think>…</think>` text. It is shown, never sent back, and never saved.
+
 **`apiKey` supports `${ENV_VAR}`**, so a config file can be committed or shared without carrying a
 secret. A key written literally is still forced to `0600`, but the variable form is better.
 

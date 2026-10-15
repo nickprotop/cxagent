@@ -5,7 +5,7 @@ so they cost nothing — no request, no tokens.
 
 **Which means most of them work with no model configured.** A session opened before you have set up
 a provider can still run `/exit`, `/help`, `/stats`, `/sessions`, `/diff`, `/mode`, `/mcp`,
-`/skills`, `/commands`, `/agents`, `/clear` — and `/model`, the one that fixes it. Only `/compress`, `/init` and
+`/skills`, `/commands`, `/agents`, `/clear`, `/think` — and `/model`, the one that fixes it. Only `/compress`, `/init` and
 `/btw` need a model, because those genuinely talk to it; each says so rather than doing nothing.
 
 **Type `/` and the list appears.** Arrow to a command, Enter to fill it in. A command that takes
@@ -18,6 +18,7 @@ but not completed.
 |---|---|
 | `/help` | Keys and commands |
 | `/model` | Show or switch which configured model this session uses |
+| `/think` | Show or set how hard the model thinks (F8 cycles) |
 | `/mode` | Show how this session works |
 | `/mode agent single` · `/mode agent fan-out` | Set delegation, live |
 | `/mode edits always-ask` · `/mode edits accept-edits` | Set when writes ask, live (Shift+Tab cycles) |
@@ -86,6 +87,48 @@ editor would write a file and ask you to restart. `cxagent --model <name>` start
 without touching config.
 
 Declined while a turn is running: re-wiring replaces the agent that turn is writing into.
+
+---
+
+## `/think`
+
+```
+Thinking
+
+  - low
+  - ▸ medium (in use)
+  - high
+  - xhigh
+  - max
+  - default
+
+  /think <level> sets it for this session · --save makes it the default · F8 cycles
+```
+
+**The levels are the model's own.** An Anthropic model lists the effort levels it accepts — and
+`off` only where it accepts turning thinking off; a llama.cpp server whose template takes the switch
+offers `off` and `on`. A model with neither says why rather than offering levels it would refuse.
+`default` hands the choice back to the model, and sends nothing.
+
+**For this session.** `/think high --save` also writes `"thinking": "high"` to this instance in
+`config.json`, the default for sessions after it; nothing else in the file changes. A resumed
+session comes back at the level it was left at.
+
+**F8 steps to the next level**, wrapping around. The level sits on the line under the composer,
+after the model: `◆ medium (F8)`, or `◇ off (F8)`.
+
+**A change during a turn waits for your next message** — `◆ medium → high (next message)` until then.
+The level of a tool loop cannot change part-way: Anthropic turns thinking off for a request whose
+level differs from the rest of its loop. On a cached Anthropic conversation over 10K tokens, a change
+says that the next request rebuilds the cache.
+
+**Sub-agents think at the session's level**; the reviewer behind `/mode edits auto` always at the
+lowest, because it answers yes or no on every tool call.
+
+**Thinking shows in the transcript as a block per step**, open while it streams and folded to
+`◆ Thought for 9s · 412 words` when the answer starts. Click or Enter opens one; **Ctrl+O** opens or
+folds them all. A running worker's row shows its latest thought, one line; a `/btw` aside shows its
+own on its status line.
 
 ---
 

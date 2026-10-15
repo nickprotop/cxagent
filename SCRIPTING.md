@@ -225,8 +225,9 @@ The run needs no permissions at all — everything it reads arrived through the 
 | `-p`, `--print "goal"` | run the goal and exit; the goal may also come after the options |
 | `--output-format text\|json\|stream-json` | the answer alone (default), one result object, or one event per line |
 | `--include-partial-messages` | with `stream-json`: the answer's text as it streams |
-| `--verbose` | with `text`: progress and tool calls on stderr |
+| `--verbose` | with `text`: progress, tool calls and a line per run of thinking on stderr |
 | `--max-turns N` | stop after N turns, exit 3 |
+| `--thinking <level>` | think at that level for this run — one the model offers, as `/think` lists them; cxagent's own option |
 | `--permission-mode M` | `default` or `dontAsk` (refuse what would ask), `acceptEdits`, `auto`, `bypassPermissions` |
 | `--dangerously-skip-permissions` | approve everything but writes into `.git`, `.vscode`, `.claude`, `.idea` |
 | `--trust` | trust this folder for this run only |
@@ -249,10 +250,15 @@ Claude Code's shape, so a consumer written for `claude -p` reads it unchanged: `
 
 ### Stream events
 
-`system`/`init` (session, model, tools, MCP servers, plugins), `assistant` (text, or a `tool_use`
-with a one-line `input.summary`), `user` (the `tool_result` for each `tool_use`),
-`system`/`permission_denied`, `stream_event` (with `--include-partial-messages`) and `result` — the
-same object `json` prints, last.
+`system`/`init` (session, model, tools, MCP servers, plugins), `assistant` (text, a `thinking`
+block, or a `tool_use` with a one-line `input.summary`), `user` (the `tool_result` for each
+`tool_use`), `system`/`permission_denied`, `stream_event` (with `--include-partial-messages`: the
+answer's `text_delta`s and the thinking's `thinking_delta`s) and `result` — the same object `json`
+prints, last.
+
+A step that thought sends its `thinking` block before that step's text or tool calls, as Claude
+Code does. When the provider hid the text, the block's `thinking` is `""`: the model thought, and
+said nothing about it. Thinking never appears in `result`.
 
 ### Exit codes
 

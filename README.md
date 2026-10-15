@@ -175,6 +175,12 @@ starts from what the main agent knows answers in its own block, under this sessi
 can only read. Enter keeps the side thread going; `Esc` stops an answer, then leaves. See
 [COMMANDS.md](COMMANDS.md#btw).
 
+**You see what the model thinks, and choose how hard.** Each step's thinking is its own block, open
+while it streams and folded to `◆ Thought for 9s · 412 words` once the answer starts — from a local
+llama.cpp model or from Claude. `Ctrl+O` opens or folds them all. `/think` and `F8` set the level the
+model offers — `off`/`on` on llama.cpp, `low` to `max` on Claude — for this session, kept on resume.
+See [COMMANDS.md](COMMANDS.md#think) and [CONFIG.md](CONFIG.md#providers--required).
+
 ### Permissions
 
 Reading and writing inside the working folder is free, and so are commands that can only look —
@@ -451,7 +457,9 @@ one run before it was written down — and the full reference for options, outpu
 | `F4` | Put the cursor back in the composer |
 | `F6` | Focus the tab strip — then `←` `→` to change session, `F6` back to the composer |
 | `F7` | Jobs panel — background jobs in the right-hand column; `↑` `↓` and `Enter` open one. `F7` again hides it |
+| `F8` | Next thinking level this model offers — see `/think` |
 | `F9` | Theme |
+| `Ctrl+O` | Open or fold every thinking block in this session |
 | `Shift+Tab` | Cycle the edit mode — see [COMMANDS.md](COMMANDS.md) |
 | `Ctrl+Q` | Quit |
 
