@@ -1835,7 +1835,8 @@ public static class AppBootstrap
         // rather than a second path to the same place.
         mainWindow.ShowTabsItem(mainWindow.FocusTabStrip);
 
-        // THE PANEL KEY LAST OF THESE, so the jobs item — added on the first tick — follows it.
+        // F4 THEN F3, the last of these, so the jobs item — added on the first tick — follows them.
+        mainWindow.ShowFocusItem();
         mainWindow.ShowPanelItem();
 
         // NO "DIAGNOSE THE FOCUSED JOB" KEY. Such a key would resolve its target through

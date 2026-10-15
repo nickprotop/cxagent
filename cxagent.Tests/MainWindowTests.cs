@@ -101,13 +101,28 @@ public class MainWindowTests
     /// This asserts the bar advertises only F-keys (unambiguous escape sequences) plus Ctrl+Q,
     /// which is verified working.
     /// </summary>
+    /// <summary>F4 sits on the left of the status bar, directly before F3.</summary>
+    [Fact]
+    public void StatusBar_PutsF4_DirectlyBeforeF3()
+    {
+        var res = ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock");
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+        mw.ShowFocusItem();
+        mw.ShowPanelItem();
+
+        var keys = mw.StatusBar.LeftItems.Select(i => i.Shortcut).ToList();
+        Assert.Equal(keys.IndexOf("F3") - 1, keys.IndexOf("F4"));
+    }
+
     [Fact]
     public void StatusBar_AdvertisesOnlyBindableKeys()
     {
         var res = ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock");
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
-        mw.ShowPanelItem();   // as AppBootstrap does once the window is up
+        mw.ShowFocusItem();   // as AppBootstrap does once the window is up
+        mw.ShowPanelItem();
 
         // BOTH SIDES. Asserting LeftItems pinned WHERE a key sits, which is a layout decision, and
         // it broke the moment the bar was rearranged. What matters is that nothing ADVERTISED is

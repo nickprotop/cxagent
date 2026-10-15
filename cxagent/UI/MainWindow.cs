@@ -3212,6 +3212,20 @@ public sealed class MainWindow : IDisposable
         Keys?.For(description)?.Label() ?? fallback;
 
     /// <summary>
+    /// The composer's key, on the left with the other keys and directly before F3 — a key, so it
+    /// sits with the keys rather than in the mode line, where it took room from the model and the
+    /// thinking level. A click does what F4 does.
+    /// </summary>
+    public void ShowFocusItem()
+    {
+        if (_focusItem is not null) return;   // idempotent, like the items beside it
+        _focusItem = StatusBar.AddLeft(KeyHint("put the cursor back in the composer", "F4"), "Focus",
+            ShowChatTab);
+    }
+
+    private StatusBarItem? _focusItem;
+
+    /// <summary>
     /// The session panel's key, on the left with the other keys — after the tab strip and before
     /// the jobs item, which is added on the first tick and so lands after it.
     ///
@@ -3372,7 +3386,7 @@ public sealed class MainWindow : IDisposable
         $"[{ColorScheme.AccentMarkup}]{AgentModes.Name(mode.Agent)}[/]"
       + $"[{ColorScheme.MutedMarkup}] · [/]"
       + $"[{EditModeMarkup(mode.Edits)}]{EditModes.Name(mode.Edits)}[/]"
-      + $"[{ColorScheme.MutedMarkup}] (shift+tab to change · F4 focus)[/]"
+      + $"[{ColorScheme.MutedMarkup}] (shift+tab to change)[/]"
       + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]"
         // BESIDE THE MODEL IT IS ABOUT. Uncached, every turn re-sends and re-bills the whole
         // conversation at full price, and nothing else on screen would ever say so.

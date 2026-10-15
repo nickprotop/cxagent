@@ -47,4 +47,9 @@ public class ThinkingModeLineTests
     [Fact]
     public void Indicator_NotYetKnown_IsAbsent() =>
         Assert.Null(MainWindow.ThinkingIndicator(null, null, null));
+
+    /// <summary>F4 is a status-bar key now; the mode line keeps only the Shift+Tab hint.</summary>
+    [Fact]
+    public void ModeLine_NoLongerCarriesTheF4Hint() =>
+        Assert.DoesNotContain("F4", MainWindow.ModeLineTextForTest(WorkingMode.Default, "local:qwen"));
 }
