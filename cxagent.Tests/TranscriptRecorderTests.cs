@@ -186,7 +186,7 @@ public class TranscriptRecorderTests : IDisposable
         var id = new ChatMessageId(1);
 
         recorder.AssistantTurnBegan(id);
-        recorder.AssistantReasoningAppended(id, "let me think about this");
+        recorder.AssistantThinkingAppended(id, "let me think about this");
         recorder.AssistantTurnEnded(id);
 
         Assert.Empty(_store.Value.Window("session-1"));

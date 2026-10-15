@@ -41,9 +41,23 @@ public interface ISessionObserver
     /// the sink unable to tell which of its two inputs is safe to escape. Escape one and not the
     /// other and the unescaped side silently swallows any recognised tag name a model writes.</para>
     ///
-    /// <para>Same contract as <see cref="AssistantTextAppended"/>: plain text, escaped by the sink.</para>
+    /// <para>Same contract as <see cref="AssistantTextAppended"/>: plain text, escaped by the sink.
+    /// Thinking from the provider's own channel and from inline &lt;think&gt; text arrive here alike.</para>
     /// </summary>
-    void AssistantReasoningAppended(ChatMessageId id, string text);
+    void AssistantThinkingAppended(ChatMessageId id, string text);
+
+    /// <summary>
+    /// A run of thinking has ended — the first answer text or tool call arrived, or the response did.
+    ///
+    /// <para>SAID, NOT INFERRED. A sink could fold its block when text arrives, but a step that thinks
+    /// and then only calls tools never sends text, and its block would stay open forever. The agent
+    /// knows when the stream moved on; the sink is told.</para>
+    ///
+    /// <para>Comes before the step's next <see cref="AssistantTextAppended"/>, and once per run: a
+    /// step whose thinking resumes after its text (a note before a tool call) ends twice, same id.
+    /// A run with no visible text — the provider hid it — still ends, marked hidden.</para>
+    /// </summary>
+    void AssistantThinkingEnded(ChatMessageId id, Llm.ThinkingSummary summary);
 
     /// <summary>
     /// Closes an assistant turn. MUST be called for every <see cref="AssistantTurnBegan"/>, including

@@ -222,7 +222,8 @@ public abstract class HeadlessOutput : ISessionObserver, IToolObserver
     public virtual void UserTurnAdded(ChatMessageId id, string text) { }
     public virtual void AssistantTurnBegan(ChatMessageId id) { }
     public virtual void AssistantTextAppended(ChatMessageId id, string token) { }
-    public virtual void AssistantReasoningAppended(ChatMessageId id, string text) { }
+    public virtual void AssistantThinkingAppended(ChatMessageId id, string text) { }
+    public virtual void AssistantThinkingEnded(ChatMessageId id, Core.Llm.ThinkingSummary summary) { }
     public virtual void AssistantTurnEnded(ChatMessageId id) { }
     public virtual void AssistantLabelled(ChatMessageId id, string header) { }
     public virtual void Said(Message message)

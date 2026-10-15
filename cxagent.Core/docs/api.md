@@ -393,7 +393,8 @@ transcript must never be handed to another.
 | `UserTurnAdded(id, text)` | a prompt goes in — including one delivered from the queue |
 | `AssistantTurnBegan(id)` | the model starts answering |
 | `AssistantTextAppended(id, token)` | streaming body, token by token |
-| `AssistantReasoningAppended(id, text)` | streaming reasoning, where the provider sends it |
+| `AssistantThinkingAppended(id, text)` | streaming thinking — the provider's own channel or inline `<think>` text |
+| `AssistantThinkingEnded(id, summary)` | that run of thinking is over: duration, words, hidden, redacted |
 | `AssistantTurnEnded(id)` | that turn's answer is complete |
 | `AssistantLabelled(id, header)` | a header for the turn |
 | `Said(message)` | the **session's own** words, in Core's markup dialect |

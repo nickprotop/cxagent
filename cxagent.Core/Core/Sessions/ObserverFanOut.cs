@@ -92,8 +92,11 @@ public sealed class ObserverFanOut : ISessionObserver
     public void AssistantTextAppended(ChatMessageId id, string token) =>
         Each(o => o.AssistantTextAppended(id, token));
 
-    public void AssistantReasoningAppended(ChatMessageId id, string text) =>
-        Each(o => o.AssistantReasoningAppended(id, text));
+    public void AssistantThinkingAppended(ChatMessageId id, string text) =>
+        Each(o => o.AssistantThinkingAppended(id, text));
+
+    public void AssistantThinkingEnded(ChatMessageId id, Llm.ThinkingSummary summary) =>
+        Each(o => o.AssistantThinkingEnded(id, summary));
 
     public void AssistantTurnEnded(ChatMessageId id) =>
         Each(o => o.AssistantTurnEnded(id));

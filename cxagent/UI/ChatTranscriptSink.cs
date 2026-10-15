@@ -144,7 +144,7 @@ public sealed class ChatTranscriptSink : ISessionObserver
     /// doubled passed straight through to the screen. Outside code spans the doubling is invisible,
     /// which is exactly why it survived: every existing test here used plain text.</para>
     ///
-    /// <para>THE ASYMMETRY WITH <see cref="AssistantReasoningAppended"/> IS CORRECT, and is the thing to
+    /// <para>THE ASYMMETRY WITH <see cref="AssistantThinkingAppended"/> IS CORRECT, and is the thing to
     /// understand before "fixing" it back. Reasoning is wrapped in a colour scope BY THIS SINK, which
     /// makes it markup, and markup must be escaped or a model writing "[red]" opens a style scope.
     /// Body text goes to a role whose <c>Markdown = true</c> (MainWindow.cs:330-335) routes it through
@@ -166,12 +166,15 @@ public sealed class ChatTranscriptSink : ISessionObserver
     /// honour it produce grey mush. A colour of its own says "this is a different KIND of text"
     /// rather than "this text matters less", which is what reasoning actually is.</para>
     /// </summary>
-    public void AssistantReasoningAppended(ChatMessageId id, string text) =>
+    public void AssistantThinkingAppended(ChatMessageId id, string text) =>
         _system.EnqueueOnUIThread(() =>
         {
             if (_map.TryGetValue(id.Value, out var fwId))
                 _chat.Append(fwId, $"[{ColorScheme.ThinkingMarkup}]{Escape(text)}[/]");
         }, "chat.AssistantTextAppended");
+
+    /// <summary>The block that folds on this lands with the transcript's thinking blocks.</summary>
+    public void AssistantThinkingEnded(ChatMessageId id, Core.Llm.ThinkingSummary summary) { }
 
     /// <summary>
     /// Makes model text safe to hand a markup parser.

@@ -88,7 +88,7 @@ public sealed class TranscriptRecorder : ISessionObserver
     public void AssistantTextAppended(ChatMessageId id, string token) => Accumulate(id, token);
 
     /// <summary>
-    /// Reasoning is NOT recorded.
+    /// Thinking is NOT recorded — neither its text nor its end.
     /// </summary>
     /// <remarks>
     /// IT IS NOT PART OF THE CONVERSATION. A model's thinking is shown live because watching it is
@@ -96,7 +96,10 @@ public sealed class TranscriptRecorder : ISessionObserver
     /// division the context itself makes, where reasoning does not survive into the next turn. Storing
     /// it would also multiply the store's size for content nothing reads back.
     /// </remarks>
-    public void AssistantReasoningAppended(ChatMessageId id, string text) { }
+    public void AssistantThinkingAppended(ChatMessageId id, string text) { }
+
+    /// <inheritdoc cref="AssistantThinkingAppended"/>
+    public void AssistantThinkingEnded(ChatMessageId id, Llm.ThinkingSummary summary) { }
 
     /// <summary>The message is complete: write it as one row and forget the buffer.</summary>
     public void AssistantTurnEnded(ChatMessageId id)

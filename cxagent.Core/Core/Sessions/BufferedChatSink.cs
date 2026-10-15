@@ -72,10 +72,12 @@ public sealed class BufferedChatSink : ISessionObserver
     // KEPT, NOT DROPPED. A child's reasoning is the most useful thing in the buffer when its answer
     // turns out to be wrong — it is the record of how it got there. It stays out of Body because the
     // parent's tool result must be the answer, not the thinking.
-    public void AssistantReasoningAppended(ChatMessageId id, string text)
+    public void AssistantThinkingAppended(ChatMessageId id, string text)
     {
         lock (_gate) _transcript.Append(text);
     }
+
+    public void AssistantThinkingEnded(ChatMessageId id, Llm.ThinkingSummary summary) { }
 
     public void AssistantTurnEnded(ChatMessageId id)
     {

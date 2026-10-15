@@ -99,7 +99,8 @@ public class SessionBoundaryTests
         public void UserTurnAdded(ChatMessageId id, string text) { }
         public void AssistantTurnBegan(ChatMessageId id) => AssistantTurns.Add(id);
         public void AssistantTextAppended(ChatMessageId id, string token) { }
-        public void AssistantReasoningAppended(ChatMessageId id, string text) { }
+        public void AssistantThinkingAppended(ChatMessageId id, string text) { }
+        public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary) { }
         public void AssistantTurnEnded(ChatMessageId id) { }
         public void AssistantLabelled(ChatMessageId id, string label) { }
         public void Said(Message message) { }
@@ -115,8 +116,10 @@ public class SessionBoundaryTests
         { a.AssistantTurnBegan(id); b.AssistantTurnBegan(id); }
         public void AssistantTextAppended(ChatMessageId id, string token)
         { a.AssistantTextAppended(id, token); b.AssistantTextAppended(id, token); }
-        public void AssistantReasoningAppended(ChatMessageId id, string text)
-        { a.AssistantReasoningAppended(id, text); b.AssistantReasoningAppended(id, text); }
+        public void AssistantThinkingAppended(ChatMessageId id, string text)
+        { a.AssistantThinkingAppended(id, text); b.AssistantThinkingAppended(id, text); }
+        public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary)
+        { a.AssistantThinkingEnded(id, summary); b.AssistantThinkingEnded(id, summary); }
         public void AssistantTurnEnded(ChatMessageId id)
         { a.AssistantTurnEnded(id); b.AssistantTurnEnded(id); }
         public void AssistantLabelled(ChatMessageId id, string label)

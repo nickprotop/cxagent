@@ -159,7 +159,8 @@ internal sealed class ConsoleSink : ISessionObserver
     // is not a colour tag.
     public void AssistantTextAppended(ChatMessageId id, string token) => Console.Write(token);
 
-    public void AssistantReasoningAppended(ChatMessageId id, string text) { }   // show it, or don't
+    public void AssistantThinkingAppended(ChatMessageId id, string text) { }    // show it, or don't
+    public void AssistantThinkingEnded(ChatMessageId id, ThinkingSummary summary) { }
     public void AssistantTurnEnded(ChatMessageId id) => Console.WriteLine();
     public void AssistantLabelled(ChatMessageId id, string header) { }
 

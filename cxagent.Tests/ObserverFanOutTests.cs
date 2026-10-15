@@ -27,7 +27,8 @@ public class ObserverFanOutTests
         public void UserTurnAdded(ChatMessageId id, string text) => Note($"user:{text}");
         public void AssistantTurnBegan(ChatMessageId id) => Note("began");
         public void AssistantTextAppended(ChatMessageId id, string token) => Note($"text:{token}");
-        public void AssistantReasoningAppended(ChatMessageId id, string text) => Note($"reason:{text}");
+        public void AssistantThinkingAppended(ChatMessageId id, string text) => Note($"reason:{text}");
+        public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary) => Note("thought");
         public void AssistantTurnEnded(ChatMessageId id) => Note("ended");
         public void AssistantLabelled(ChatMessageId id, string header) => Note($"label:{header}");
         public void Said(Message message) => Note($"said:{message.Text}");
@@ -196,7 +197,8 @@ public class ObserverFanOutTests
         public void UserTurnAdded(ChatMessageId id, string text) { }
         public void AssistantTurnBegan(ChatMessageId id) => fan.Add(joiner);
         public void AssistantTextAppended(ChatMessageId id, string token) { }
-        public void AssistantReasoningAppended(ChatMessageId id, string text) { }
+        public void AssistantThinkingAppended(ChatMessageId id, string text) { }
+        public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary) { }
         public void AssistantTurnEnded(ChatMessageId id) { }
         public void AssistantLabelled(ChatMessageId id, string header) { }
         public void Said(Message message) { }

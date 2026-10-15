@@ -116,7 +116,8 @@ internal sealed class ConsoleSink : ISessionObserver
     public void UserTurnAdded(ChatMessageId id, string text) { }
     public void AssistantTurnBegan(ChatMessageId id) { }
     public void AssistantTextAppended(ChatMessageId id, string token) => Console.Write(token);
-    public void AssistantReasoningAppended(ChatMessageId id, string text) { }
+    public void AssistantThinkingAppended(ChatMessageId id, string text) { }
+    public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary) { }
     public void AssistantTurnEnded(ChatMessageId id) => Console.WriteLine();
     public void AssistantLabelled(ChatMessageId id, string header) { }
     public void Said(Message message) =>

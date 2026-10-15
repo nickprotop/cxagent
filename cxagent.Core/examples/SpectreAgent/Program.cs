@@ -145,7 +145,8 @@ internal sealed class ConsoleSink : ISessionObserver
         AnsiConsole.Write(new Text(token));
     }
 
-    public void AssistantReasoningAppended(ChatMessageId id, string text) { }   // hidden here
+    public void AssistantThinkingAppended(ChatMessageId id, string text) { }   // hidden here
+    public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary) { }
 
     public void AssistantTurnEnded(ChatMessageId id)
     {

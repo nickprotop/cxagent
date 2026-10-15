@@ -3110,57 +3110,98 @@ public sealed class Agent
         // written is appended after each chunk.
         var shownReasoning = 0;
 
+        // THE STEP'S THINKING, from both sources at once. Ended before the first answer text and
+        // before the first tool call, because that is when the reader's attention moves on — and a
+        // step that only calls tools sends no text to end it otherwise.
+        var thinking = new ThinkingRun(_sink, turnId);
+
         await foreach (var chunk in _provider.ChatStreamAsync(messages, tools, ct))
         {
+            if (chunk.ThinkingDelta is { } delta) thinking.Add(delta, chunk.ThinkingRedacted);
+
             if (!string.IsNullOrEmpty(chunk.TextDelta))
             {
                 text.Append(chunk.TextDelta);
 
                 var accumulated = text.ToString();
 
-                var visible = ModelOutput.StripReasoning(accumulated);
-                if (visible.Length > shown)
-                {
-                    _sink.AssistantTextAppended(turnId, visible[shown..]);
-                    shown = visible.Length;
-                }
-
-                // REASONING GOES IN THE BODY, dimmed — not into the header.
+                // THINKING BEFORE THE TEXT THAT FOLLOWS IT. One delta can carry "</think>" and the
+                // answer's first words together, and the reader must see the thought end before the
+                // answer begins.
                 //
-                // It WAS a one-line header that rewrote itself on every new line of thought, and
-                // that was wrong twice over. A single line that overwrites itself discards the
-                // reasoning as fast as it arrives, so the thing it is meant to make visible can
-                // never actually be read; and because nothing clears the header when the turn ends,
-                // the last line of thinking stayed welded to the finished message as its title.
-                //
-                // The body can hold all of it, in order, where it scrolls with everything else.
-                //
-                // THE AGENT SAYS WHAT KIND OF TEXT THIS IS; the sink decides how it looks. Building
-                // the markup here would put a colour decision inside the turn loop, and would leave
-                // the sink unable to tell styled reasoning from unstyled body text arriving on the
-                // same method — so only one of the two would ever get escaped.
-                //
-                // The semantic decision that DOES belong here: reasoning is worth showing at all.
-                // ChatTranscriptControl clears a message's thinking flag as soon as body content
-                // arrives, so this costs the spinner — the right trade, because the reasoning text
-                // is better evidence the model is alive than a spinner is: it says WHAT it is doing.
+                // THE AGENT SAYS WHAT KIND OF TEXT THIS IS; the sink decides how it looks and where it
+                // goes. Building markup here would put a colour decision inside the turn loop, and
+                // would leave the sink unable to tell styled thinking from unstyled body text — so
+                // only one of the two would ever get escaped.
                 var reasoning = ModelOutput.ExtractReasoning(accumulated);
                 if (reasoning.Length > shownReasoning)
                 {
-                    _sink.AssistantReasoningAppended(turnId, reasoning[shownReasoning..]);
+                    thinking.Add(reasoning[shownReasoning..]);
                     shownReasoning = reasoning.Length;
+                }
+
+                var visible = ModelOutput.StripReasoning(accumulated);
+                if (visible.Length > shown)
+                {
+                    thinking.End();
+                    _sink.AssistantTextAppended(turnId, visible[shown..]);
+                    shown = visible.Length;
                 }
             }
 
-            if (chunk.ToolCallDelta is { } tc) calls.Add(tc);
+            if (chunk.ToolCallDelta is { } tc)
+            {
+                thinking.End();
+                calls.Add(tc);
+            }
             if (chunk.Usage is { } u) usage = u;
             if (chunk.StopReason is { Length: > 0 } sr) stop = sr;
         }
+
+        // A response that ended mid-thought — cut off, or thinking and nothing else — still closes
+        // its block, or the sink would show it thinking forever.
+        thinking.End();
 
         return new LlmResponse
         {
             Text = text.ToString(), ToolCalls = calls, Usage = usage, StopReason = stop,
         };
+    }
+
+    /// <summary>
+    /// One step's thinking, from both sources — the provider's channel and inline &lt;think&gt; text —
+    /// so nothing downstream can tell them apart. A run opens at the first thinking and closes at the
+    /// first answer text or tool call; thinking that resumes after text (a note before a call) opens
+    /// a second run in the same step.
+    /// </summary>
+    private sealed class ThinkingRun(ISessionObserver sink, ChatMessageId turnId)
+    {
+        private readonly StringBuilder _text = new();
+        private DateTimeOffset? _started;
+        private bool _redacted;
+
+        /// <summary>Adds to the open run, opening one if none is. Empty text still opens it: the
+        /// provider hid the text, and the step thought all the same.</summary>
+        public void Add(string delta, bool redacted = false)
+        {
+            _started ??= DateTimeOffset.UtcNow;
+            _redacted |= redacted;
+            if (delta.Length == 0) return;
+            _text.Append(delta);
+            sink.AssistantThinkingAppended(turnId, delta);
+        }
+
+        /// <summary>Closes the open run, if there is one.</summary>
+        public void End()
+        {
+            if (_started is not { } started) return;
+            var words = _text.ToString().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+            sink.AssistantThinkingEnded(turnId,
+                new ThinkingSummary(DateTimeOffset.UtcNow - started, words, Hidden: words == 0, _redacted));
+            _started = null;
+            _text.Clear();
+            _redacted = false;
+        }
     }
 
 

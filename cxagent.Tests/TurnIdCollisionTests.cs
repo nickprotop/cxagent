@@ -34,7 +34,8 @@ public class TurnIdCollisionTests : IDisposable
         public void UserTurnAdded(ChatMessageId id, string text) => Note(id);
         public void AssistantTurnBegan(ChatMessageId id) => Note(id);
         public void AssistantTextAppended(ChatMessageId id, string text) { }
-        public void AssistantReasoningAppended(ChatMessageId id, string text) { }
+        public void AssistantThinkingAppended(ChatMessageId id, string text) { }
+        public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary) { }
         public void AssistantTurnEnded(ChatMessageId id) { }
         public void AssistantLabelled(ChatMessageId id, string label) { }
         public void Said(Message message) { }

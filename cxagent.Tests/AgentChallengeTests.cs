@@ -467,6 +467,104 @@ public class AgentChallengeTests
     }
 
 
+    /// <summary>Answers each request with the next scripted list of chunks, as a streaming
+    /// provider would — the shape thinking actually arrives in, which a whole-response mock cannot
+    /// express.</summary>
+    private sealed class ChunkScriptProvider(params LlmStreamChunk[][] requests) : ILlmProvider
+    {
+        private readonly Queue<LlmStreamChunk[]> _requests = new(requests);
+        public string ProviderId => "script";
+        public string DisplayName => "Script";
+        public string ModelId => "script-1";
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => true;
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools,
+            CancellationToken ct) => Task.FromResult(Prose("done"));
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
+            List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            var script = _requests.Count > 0 ? _requests.Dequeue() : [Text("done")];
+            foreach (var chunk in script) yield return chunk;
+            yield return new LlmStreamChunk(null, null, IsFinal: true, new LlmUsage(),
+                script.Any(c => c.ToolCallDelta is not null) ? "tool_use" : "end_turn");
+        }
+    }
+
+    private static LlmStreamChunk Think(string text) => new(null, null, IsFinal: false, ThinkingDelta: text);
+    private static LlmStreamChunk Text(string text) => new(text, null, IsFinal: false);
+    private static LlmStreamChunk Call(string name) => new(null, new ToolCall
+    {
+        Name = name, Id = "call-" + name,
+        Arguments = System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone(),
+    }, IsFinal: false);
+
+    [Fact]
+    public async Task ThinkingDeltas_AreShown_ThenEnded_BeforeTheAnswer()
+    {
+        var provider = new ChunkScriptProvider([Think("Look at prices.py"), Think(" first"), Text("Done.")]);
+        var sink = new RecordingSink();
+        await Build(provider, sink).SendAsync("why?", CancellationToken.None);
+
+        Assert.Equal("Look at prices.py first", string.Concat(sink.Reasoning));
+        var ended = Assert.Single(sink.Ended);
+        Assert.Equal(4, ended.Words);
+        Assert.False(ended.Hidden);
+        Assert.DoesNotContain("prices.py", string.Concat(sink.Appended), StringComparison.Ordinal);
+        // ENDED BEFORE THE ANSWER: the sink folds the block on this, and the answer lands below it.
+        Assert.True(sink.Events.IndexOf("ended") < sink.Events.IndexOf("text"));
+    }
+
+    [Fact]
+    public async Task HiddenThinking_EndsAsHidden_WithZeroWords()
+    {
+        var provider = new ChunkScriptProvider([Think(""), Text("ok")]);
+        var sink = new RecordingSink();
+        await Build(provider, sink).SendAsync("hi", CancellationToken.None);
+
+        var ended = Assert.Single(sink.Ended);
+        Assert.True(ended.Hidden);
+        Assert.Equal(0, ended.Words);
+        Assert.Empty(sink.Reasoning);   // nothing to show, but the step still thought
+    }
+
+    [Fact]
+    public async Task InlineThink_AndChannelThinking_LookTheSame()
+    {
+        var provider = new ChunkScriptProvider([Text("<think>abc</think>ok")]);
+        var sink = new RecordingSink();
+        await Build(provider, sink).SendAsync("hi", CancellationToken.None);
+
+        Assert.Equal("abc", string.Concat(sink.Reasoning));
+        Assert.Single(sink.Ended);
+        Assert.Equal("ok", string.Concat(sink.Appended));
+    }
+
+    // A STEP THAT THINKS AND ONLY CALLS TOOLS sends no text, and its block must still close.
+    [Fact]
+    public async Task ThinkingThenOnlyToolCalls_StillEnds()
+    {
+        var provider = new ChunkScriptProvider([Think("x"), Call("no_such_tool")], [Text("done")]);
+        var sink = new RecordingSink();
+        await Build(provider, sink).SendAsync("go", CancellationToken.None);
+
+        Assert.Single(sink.Ended);
+    }
+
+    // A NOTE BEFORE A TOOL CALL comes after the step's text: a second run, same step.
+    [Fact]
+    public async Task ThinkingAfterText_InOneStep_EndsTwice()
+    {
+        var provider = new ChunkScriptProvider(
+            [Think("a"), Text("b"), Think("c"), Call("no_such_tool")], [Text("done")]);
+        var sink = new RecordingSink();
+        await Build(provider, sink).SendAsync("go", CancellationToken.None);
+
+        Assert.Equal(2, sink.Ended.Count);
+        Assert.Equal("ac", string.Concat(sink.Reasoning));
+    }
+
     [Fact]
     public async Task TheModelsRawResponseIsLogged()
     {
@@ -900,9 +998,13 @@ public class AgentChallengeTests
         public void AssistantTurnBegan(ChatMessageId id) { Begins++; }
         /// <summary>Every body token, in order — reasoning now streams here rather than to the header.</summary>
         public readonly List<string> Appended = [];
-        public void AssistantTextAppended(ChatMessageId id, string token) => Appended.Add(token);
+        public void AssistantTextAppended(ChatMessageId id, string token) { Appended.Add(token); Events.Add("text"); }
         public readonly List<string> Reasoning = [];
-        public void AssistantReasoningAppended(ChatMessageId id, string text) => Reasoning.Add(text);
+        public void AssistantThinkingAppended(ChatMessageId id, string text) { Reasoning.Add(text); Events.Add("thinking"); }
+        public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary) { Ended.Add(summary); Events.Add("ended"); }
+        /// <summary>Text, thinking and ends in arrival order, for the ordering the sink relies on.</summary>
+        public readonly List<string> Events = [];
+        public readonly List<CxAgent.Core.Llm.ThinkingSummary> Ended = [];
         public void AssistantTurnEnded(ChatMessageId id) => Ends++;
         public void Said(Message message)
         {

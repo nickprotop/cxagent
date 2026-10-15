@@ -131,7 +131,8 @@ internal sealed class ConsoleSink : ISessionObserver
     // bracket in a code identifier would otherwise throw mid-sentence.
     public void AssistantTextAppended(ChatMessageId id, string token) => Console.Write(token);
 
-    public void AssistantReasoningAppended(ChatMessageId id, string text) { }
+    public void AssistantThinkingAppended(ChatMessageId id, string text) { }
+    public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary) { }
     public void AssistantTurnEnded(ChatMessageId id) => AnsiConsole.WriteLine();
     public void AssistantLabelled(ChatMessageId id, string header) { }
     // ESCAPED, NOT STRIPPED. Core writes markdown, so there are no colour tags to remove — but a

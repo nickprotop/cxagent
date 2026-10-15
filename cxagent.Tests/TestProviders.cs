@@ -80,7 +80,9 @@ public sealed class RecordingSink : ISessionObserver
     /// that merged the two would let a test assert on body content that was actually thinking.</summary>
     public readonly System.Collections.Concurrent.ConcurrentQueue<string> ReasoningTokens = new();
 
-    public void AssistantReasoningAppended(ChatMessageId id, string text) => ReasoningTokens.Enqueue(text);
+    public void AssistantThinkingAppended(ChatMessageId id, string text) => ReasoningTokens.Enqueue(text);
+    public readonly ConcurrentQueue<CxAgent.Core.Llm.ThinkingSummary> ThinkingEnded = new();
+    public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary) => ThinkingEnded.Enqueue(summary);
 
     public void AssistantLabelled(ChatMessageId id, string header) { }
 }
