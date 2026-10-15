@@ -372,6 +372,25 @@ answers it no and the aside carries on without the file.
 
 ---
 
+## One goal, no window
+
+![Four headless runs in a shell: an answer, a pipe, JSON through jq, and a run that continues the one before](31-headless.png)
+
+The same cxgpu checkout, from a plain shell. `cxagent -p` runs one goal and prints the answer — no
+window, nothing to press — so it slots into a pipe like any other command. The second run reads its
+input from `git log`: piped text is attached under the goal, not run as one.
+
+`--output-format json` prints a single result object in Claude Code's shape, which is why `jq` can
+pick out `subtype` and `num_turns` without knowing anything about cxagent. The last run is `-c`: it
+continues the conversation the JSON run left behind, so "name them" needs no context — it knows what
+"them" was. `echo $?` is `0` because it answered; a turn limit is `3`, Ctrl+C `130`.
+
+Each of these is an ordinary session: `cxagent --resume` lists them, and any one opens in the TUI.
+Nobody is there to answer a permission prompt, so anything that would ask is refused and listed in
+the result — `--trust` here only trusts the folder for the run, and writes nothing.
+
+---
+
 ## A second project, and a worker's receipts
 
 ![A session exploring a codebase, with two finished workers and the panel showing what it cost](session-overview.png)

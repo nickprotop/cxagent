@@ -20,6 +20,9 @@ public class AsideUiTests
     }
 }
 
+// IN THE file-tabs COLLECTION, which runs alone: the grip's colour is read from the static
+// ColorScheme, and ColorSchemeTests running beside it switches the theme between the two reads.
+[Collection("file-tabs")]
 public class AsideComposerTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();

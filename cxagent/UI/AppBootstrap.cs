@@ -27,23 +27,6 @@ public static class AppBootstrap
     /// <para>Mirrors <c>MainWindow.ModelLabel</c>. Two spellings of the same fact would drift, and
     /// this one is reached from a static path that has no window.</para>
     /// </summary>
-    /// <summary>
-    /// The catalog this process runs on, resolved once.
-    ///
-    /// <para>--model OVERRIDES defaultProvider FOR THIS RUN ONLY, without touching config. Same rule
-    /// /model follows: naming an instance that is not configured returns null so the caller can stop,
-    /// rather than falling back — silently starting on the model the user was trying to avoid is the
-    /// worst of the available outcomes.</para>
-    ///
-    /// <para>A METHOD RATHER THAN TWO BRANCHES AT THE CALL SITE, so the result can be bound by an
-    /// initialiser and never assigned again. See the caller for why that matters here.</para>
-    /// </summary>
-    private static ResolvedConfig? ResolveStartup(AppPaths paths,
-        IReadOnlyDictionary<string, string> env, bool useMock, string? instance) =>
-        instance is { } wanted && !useMock
-            ? ConfigResolver.ResolveInstance(paths, env, wanted)
-            : ConfigResolver.Resolve(paths, env, useMock);
-
     private static string ModelLabelOf(ResolvedConfig resolution)
     {
         var model = resolution.Provider?.ModelId;
@@ -68,46 +51,41 @@ public static class AppBootstrap
             ?.Split('+')[0]
         ?? "unknown";
 
-    /// <summary>
-    /// The session <c>--resume</c> asked for, or why there is not one.
-    ///
-    /// <para>STATIC AND OUTSIDE <c>Run</c> so it can be tested: everything else on this path needs a
-    /// console driver and a terminal. The two failure modes are kept apart because they call for
-    /// different actions — nothing to resume means "just start", while an ambiguous id means "type
-    /// more characters", and a single "could not resume" would hide which one happened.</para>
-    ///
-    /// <para>Public because a front end is a consumer, not an internal: the InternalsVisibleTo grant
-    /// in AssemblyWiring covers Core's assemble members, not the app's own entry point.</para>
-    /// </summary>
-    public static (SessionSnapshot? Snapshot, string Problem) FindResumeTarget(
-        FolderSessionStore store, string workingDir, string? uid)
+    private static int RunHeadless(CommandLineOptions options, AppPaths paths)
     {
-        // BARE --resume MEANS THE MOST RECENT UNFINISHED ONE HERE, which is the session the startup
-        // offer would have proposed. Scoped to the folder for the same reason it is: restoring
-        // another project's conversation fills this one with its files and decisions.
-        if (uid is null)
+        using var cancel = new CancellationTokenSource();
+        var terminated = false;
+
+        // CTRL+C CANCELS THE TURN, NOT THE PROCESS: the session saves first, then the run exits 130.
+        // A SECOND CTRL+C ENDS THE PROCESS AT ONCE, as a terminal user expects when the first one
+        // seems to do nothing — a turn stuck somewhere that does not observe cancellation.
+        ConsoleCancelEventHandler onCancel = (_, e) =>
         {
-            var latest = store.LoadLatestUnfinished(workingDir);
-            return latest is null
-                ? (null, "No unfinished session to resume in this folder.")
-                : (latest, "");
+            e.Cancel = !cancel.IsCancellationRequested;
+            cancel.Cancel();
+        };
+        Console.CancelKeyPress += onCancel;
+        using var term = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+            System.Runtime.InteropServices.PosixSignal.SIGTERM, ctx =>
+            {
+                // Likewise a second SIGTERM: the default handling then terminates.
+                ctx.Cancel = !cancel.IsCancellationRequested;
+                terminated = true;
+                cancel.Cancel();
+            });
+
+        try
+        {
+            return Headless.HeadlessRun.RunAsync(new Headless.HeadlessRequest(options, paths,
+                Path.GetFullPath(Environment.CurrentDirectory),
+                new Headless.GoalInputSource(Console.IsInputRedirected, Console.In),
+                new Headless.HeadlessIo(Console.Out, Console.Error),
+                new Headless.HeadlessSignals(cancel.Token, () => terminated))).GetAwaiter().GetResult();
         }
-
-        var found = store.LoadByUid(uid);
-
-        if (found.IsAmbiguous)
-            return (null, $"'{uid}' matches {found.Ambiguous.Count} sessions "
-                        + $"({string.Join(", ", found.Ambiguous.Take(4).Select(SessionsCommand.Short))}"
-                        + $"{(found.Ambiguous.Count > 4 ? ", …" : "")}) — use more characters.");
-
-        // FOUND BY ID REGARDLESS OF FOLDER, unlike bare --resume. Naming a specific session is an
-        // explicit act: someone who copied an id out of `--sessions all` and pasted it here meant
-        // that session, and refusing it because the shell is elsewhere would be a rule with no
-        // purpose — the folder scope exists to stop an unasked-for session appearing, not to stop
-        // a named one being opened.
-        return found.Session is null
-            ? (null, $"No session matches '{uid}'.")
-            : (found.Session, "");
+        finally
+        {
+            Console.CancelKeyPress -= onCancel;
+        }
     }
 
     public static int Run(string[] args)
@@ -156,6 +134,10 @@ public static class AppBootstrap
         var paths = new AppPaths(options.ConfigDir);
         paths.EnsureCreated();
 
+        // A HEADLESS RUN NEVER BUILDS A WINDOW. It branches here, after the questions that need no
+        // config (--help, --version) and before anything takes over the terminal.
+        if (options.Headless is not null) return RunHeadless(options, paths);
+
         // --sessions PRINTS AND EXITS, before anything builds a window or resolves a provider.
         // Answering "which conversations do I have here" should not cost a TUI launch, and the ids
         // it prints are meant to be copied into the next command — which is why it goes to stdout as
@@ -169,10 +151,7 @@ public static class AppBootstrap
             return 0;
         }
 
-        var env = Environment.GetEnvironmentVariables()
-            .Cast<System.Collections.DictionaryEntry>()
-            .Where(e => e.Key is string k && k.StartsWith("CXAGENT_"))
-            .ToDictionary(e => (string)e.Key, e => (string)(e.Value ?? ""));
+        var env = Startup.Env();
 
         // RESOLVED ONCE, AND NEVER REBOUND. Four sites want to repoint it — startup, --model, the
         // setup save, and /model — while every other consumer in this method closes over the VARIABLE. A
@@ -208,7 +187,7 @@ public static class AppBootstrap
         // the fact that no consumer needs a rebind any more — setup restarts, /model passes its own
         // record. If a fourth bug of this shape ever appears, the answer is a wrapper type with a
         // genuinely readonly field, not a stronger comment.
-        var startup = ResolveStartup(paths, env, useMock, options.Instance);
+        var startup = Startup.Resolve(paths, env, useMock, options.Instance);
         if (startup is null)
         {
             Console.Error.WriteLine($"cxagent: no provider called '{options.Instance}' in config.");
@@ -271,17 +250,11 @@ public static class AppBootstrap
             }
         };
 
-        // THE RESUME BUFFER. Built before the host so it can be handed in at construction, and
-        // pruned once here rather than on a timer: startup is the only moment nothing is mid-turn,
-        // and finished sessions are the only rows old enough to be worth dropping.
-        var sessions = new FolderSessionStore(paths);
-        sessions.Prune(FolderSessionStore.DefaultRetention);
-
-        // USAGE HISTORY — a different file, and NOT pruned. The resume database above is a buffer
-        // whose rows are worthless once a session ends cleanly; this is the archive, and pruning an
-        // archive on startup would delete the answer to "where did last month go" every time the app
-        // opened.
-        var history = new UsageHistoryStore(paths);
+        // THE STORES — resume buffer, usage archive, permission rules — opened and migrated the way
+        // every front end opens them. See Startup.Stores for the ordering they need.
+        var stores = Startup.Stores(paths);
+        var sessions = stores.Sessions;
+        var history = stores.History;
 
         // RECORDED NOW, CONSUMED LATER. Nothing reads `installation` yet — it is wired here because
         // the value only becomes useful once a version has been written BEFORE the one asking. A
@@ -299,29 +272,18 @@ public static class AppBootstrap
         // cannot be revised, so a mode restored after it would be announced wrong for the rest of
         // the session.
         var session = new Core.Sessions.Session(Path.GetFullPath(Environment.CurrentDirectory));
-        var permissionRules = new PermissionRulesStore(paths);
+        var permissionRules = stores.Rules;
         string? migrationNotice = null;
 
-        // FOLD THE SCOPES TWO OLD BUGS LEFT BEHIND, before anything reads trust or rules. Pre-identity
-        // scopes were bare paths; ctime-era scopes moved every time the agent wrote a file. Both
-        // stranded the grants and trust recorded under them, which is why a folder already trusted
-        // asked again. Idempotent, so it costs one no-op pass on every later launch.
-        //
-        // The file is copied to permissions.json.premigration first — this rewrites decisions the
-        // user made, and "it deleted my grants" must be answerable with a file rather than a claim.
-        try
+        // SAID ONLY WHEN THE MIGRATION IN Startup.Stores CHANGED SOMETHING; a store that could not be
+        // rewritten reports null there, keeps working, and just keeps asking.
+        if (stores.Migration is { ChangedAnything: true } migration)
         {
-            var migration = PermissionScopeMigration.Run(permissionRules);
-            if (migration.ChangedAnything)
-                migrationNotice = $"[dim]permissions: folded {migration.Scopes} stale folder "
-                    + $"{(migration.Scopes == 1 ? "scope" : "scopes")} from an older identity scheme "
-                    + $"({migration.Trusted} trust {(migration.Trusted == 1 ? "decision" : "decisions")} "
-                    + $"kept, {migration.Rules} {(migration.Rules == 1 ? "rule" : "rules")} moved). "
-                    + "Previous file saved as permissions.json.premigration.[/]";
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // A store that cannot be rewritten still works, it just keeps asking. Never fatal.
+            migrationNotice = $"[dim]permissions: folded {migration.Scopes} stale folder "
+                + $"{(migration.Scopes == 1 ? "scope" : "scopes")} from an older identity scheme "
+                + $"({migration.Trusted} trust {(migration.Trusted == 1 ? "decision" : "decisions")} "
+                + $"kept, {migration.Rules} {(migration.Rules == 1 ? "rule" : "rules")} moved). "
+                + "Previous file saved as permissions.json.premigration.[/]";
         }
 
         // THE FOLDER'S REMEMBERED EDIT MODE, restored exactly — including the permissive ones. This
@@ -567,54 +529,19 @@ public static class AppBootstrap
             session.Pending += (whole, _) => system.EnqueueOnUIThread(() => ShowQueued(whole), "appBootstrap.DrainQueuedToComposer");
 
 
-        // Tokens live beside config at 0600, never IN it. One HttpClient for the auth traffic, shared
-        // rather than per-login: a new one per attempt leaks sockets in TIME_WAIT.
-        var mcpTokens = new Core.Mcp.Auth.TokenStore(paths);
+        // MCP, ITS TOKENS AND THE SESSION MANAGER, built the way every front end builds them — see
+        // Startup.Services for the reasons behind their wiring. One HttpClient for the auth traffic,
+        // shared rather than per-login: a new one per attempt leaks sockets in TIME_WAIT.
+        var services = Startup.Services(new StartupServicesRequest(paths, stores, permissionGate, logs, resolution));
+        var mcp = services.Mcp;
+        var mcpTokens = services.McpTokens;
+        var manager = services.Manager;
         using var httpForAuth = new HttpClient();
-
-        // The token is read per REQUEST through this delegate, so a login mid-session reaches a
-        // client that was built before it.
-        var mcp = new Core.Mcp.McpManager(permissionGate,
-            accessToken: name => mcpTokens.Get(name)?.AccessToken);
 
         // /mcp lives in its own type: this file decides WHAT EXISTS, not what a command does.
         var mcpCommand = new McpCommand(mcp, mcpTokens, httpForAuth, paths, env, mainWindow);
 
 
-        // THE PROCESS'S SESSIONS AND WHAT THEY SHARE, built ONCE. WireRunner runs again on every re-wire,
-        // setup and /model. Constructing a fresh SharedServices record each time from these
-        // same locals — harmless while the members are identical, and exactly the shape that stops
-        // being harmless when a second session exists and one re-wire hands it a different record.
-        //
-        // Over() rather than Create(): the stores here are built before the window (the resume
-        // prune has to happen at startup) and the gate cannot exist until there IS a window, so the
-        // root assembles them in the order the UI forces and hands the result over. Create() is for
-        // a caller with no such ordering — a headless host.
-        var manager = Core.Sessions.SessionManager.Over(
-            new Core.Sessions.SharedServices
-            {
-                Logs = logs,
-                Resume = sessions,
-                History = history,
-                Mcp = mcp.Toolset,
-                McpStatuses = mcp.Statuses,
-                Gate = permissionGate,
-
-                // WHAT EACH SESSION WAS SHOWN, so a front end attaching later can be shown the same.
-                // LAZY: constructing the store creates its database, and a run that records nothing
-                // should leave no file behind.
-                Transcripts = new Lazy<Core.Storage.FolderTranscriptStore>(
-                    () => new Core.Storage.FolderTranscriptStore(paths)),
-
-                GlobalInstructionsDir = paths.ConfigDir,
-            },
-            permissionRules,
-            // THE MANAGER OWNS THE PLUGIN ENTRIES ITS MUTATORS CHANGE, so it needs the resolution
-            // rather than only the sessions having one. Without it Config is a default with no
-            // plugins, and `/plugin disable x` answers "'x' is not a configured plugin" for a
-            // plugin that just loaded from that very entry — every session holds its own copy and
-            // the one place a change is applied holds none.
-            resolution);
 
         // WHAT THIS FRONT END OVERRIDES OR ADDS TO CORE'S SEEDING. Everything else acts on a
         // session or on the manager's own stores and is fully serviced in Core; these need a window
@@ -1145,10 +1072,12 @@ public static class AppBootstrap
         // a context appears in it. The startup OFFER cannot do this (it needs a rendered window to
         // put a dialog in) and re-wires for that reason; asking on the command line does not.
         Message? resumeNotice = null;
-        if (options.Resume.Wanted)
+        // A BARE --resume ASKS TO PICK, and the list is the picker: /sessions resume N opens one.
+        var listSessionsAtStart = options.Resume.Kind == ResumeKind.Pick;
+        if (options.Resume.Kind is ResumeKind.Continue or ResumeKind.ById)
         {
-            var (snapshot, problem) = FindResumeTarget(sessions, session.WorkingDirectory, options.Resume.Uid);
-            if (snapshot is not null)
+            var target = Startup.FindResumeTarget(sessions, session.WorkingDirectory, options.Resume);
+            if (target.Snapshot is { } snapshot)
             {
                 session.PendResume(snapshot);
 
@@ -1184,7 +1113,7 @@ public static class AppBootstrap
                 // NOT FATAL. The user asked to continue something and gets a new session instead —
                 // which is fine as long as it SAYS SO, since an unnoticed fresh start is how someone
                 // spends a turn wondering why the agent forgot everything.
-                resumeNotice = new Message($"{problem} Starting a new session.", Severity.Warning);
+                resumeNotice = new Message($"{target.Problem} Starting a new session.", Severity.Warning);
             }
         }
 
@@ -2143,7 +2072,9 @@ public static class AppBootstrap
             // NOT WHEN THE COMMAND LINE ALREADY ANSWERED. `--resume` said which session to continue,
             // and pointing at the list afterwards would be the app answering a question nobody asked
             // twice over.
-            if (!options.Resume.Wanted)
+            if (listSessionsAtStart)
+                session.ListSessions("");
+            else if (!options.Resume.Wanted)
                 StartupHint();
         }, "appBootstrap.AskTrustThenLoadPluginsAsync");
 
@@ -2263,7 +2194,7 @@ public static class AppBootstrap
         ConsoleWindowSystem system,
         MainWindow mainWindow,
         AppPaths paths,
-        Dictionary<string, string> env,
+        IReadOnlyDictionary<string, string> env,
         Action<ResolvedConfig> wireRunner,
         CancellationToken ct)
     {

@@ -694,7 +694,7 @@ public class MainWindowTests
     /// time. A limit you are told you do not have is worse than one you cannot see.</para>
     /// </summary>
     [Fact]
-    public void SessionPanel_ShowsTheDefaultCeiling_WhenNothingIsConfigured()
+    public void SessionPanel_SaysNoCap_WhenNothingIsConfigured()
     {
         var window = new MainWindow(SysOfWidth(140),
             ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock")
@@ -703,9 +703,7 @@ public class MainWindowTests
         window.Build();
         window.RefreshSessionPanel();
 
-        Assert.Contains($"{AgentHost.DefaultTurnCeiling} turns per goal", window.SessionPanel.RenderedText,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("no turn cap", window.SessionPanel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("no turn cap", window.SessionPanel.RenderedText, StringComparison.Ordinal);
     }
 
     /// <summary>...and "no cap" is reserved for the explicit opt-out.</summary>

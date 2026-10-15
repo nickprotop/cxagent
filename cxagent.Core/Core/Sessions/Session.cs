@@ -93,6 +93,12 @@ public sealed partial class Session
     internal AgentHost? Host { get; private set; }
 
     /// <summary>
+    /// The tools this session's next turn would offer the model, by name — empty before the first
+    /// wire. See <see cref="Agent.OfferedToolNames"/>.
+    /// </summary>
+    public IReadOnlyList<string> OfferedToolNames() => Host?.OfferedToolNames() ?? [];
+
+    /// <summary>
     /// True once this session has an agent to talk to.
     ///
     /// <para>THE QUESTION CALLERS ACTUALLY ASK. They were writing <c>session.Host is null</c>, which

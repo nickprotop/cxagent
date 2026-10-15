@@ -2642,10 +2642,10 @@ public sealed class MainWindow : IDisposable
 
             Rules = _permissionRuleCount,
 
-            // THE CEILING THAT ACTUALLY BINDS, not the configured value: passing the raw setting
-            // makes an unconfigured session print "no cap" while a real ceiling is in force.
-            // int.MaxValue is the genuine no-cap case (an explicit 0), rendered as "no cap".
-            MaxTurns = AgentHost.CeilingFor(_resolution.Orchestrator?.MaxTurns) is var ceiling
+            // THE CEILING THAT ACTUALLY BINDS THE SESSION'S OWN AGENT, resolved the way the host
+            // resolves it, so the panel cannot claim a cap that is not in force or miss one that is.
+            // int.MaxValue — unconfigured, or an explicit 0 — is rendered as "no turn cap".
+            MaxTurns = AgentHost.SessionCeilingFor(_resolution.Orchestrator?.MaxTurns) is var ceiling
                 && ceiling == int.MaxValue ? 0 : ceiling,
 
             InputTokens = _lastInput,

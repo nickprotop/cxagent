@@ -507,15 +507,15 @@ schedule, and a policy nobody mentioned is one you discover by losing something.
 
 **Three things can happen to a session, and only one of them is pruned.**
 
-| | offered by bare `--resume` | pruned |
+| | continued by `-c` | pruned |
 |---|---|---|
 | still open (crashed, killed) | yes | **never** — it is the only thing here that cannot be reconstructed |
-| closed cleanly (`/exit`) | no | after 30 days |
+| closed cleanly (`/exit`, a finished headless run) | yes | after 30 days |
 | superseded (you resumed it) | no | **never** |
 
 A superseded session is a live conversation somebody continued: its successor was built on it, so
 deleting it would drop the history behind work that is still going, and a long chain of resumes
-would age out from its tail one link at a time. It is hidden from bare `--resume` for a different
+would age out from its tail one link at a time. It is skipped by `-c` for a different
 reason — accepting the same context twice forks one history into two sessions claiming it — and
 stays listed and reachable by id.
 
@@ -631,8 +631,8 @@ approved once, when it was backgrounded.
 
 ## `/exit`
 
-Quits, and marks the session finished — so bare `--resume`, which continues the most recent
-*unfinished* session, skips it. It is still listed by `/sessions` and still opens by id.
+Quits, and marks the session finished. It is still listed by `/sessions`, still opens by id, and is
+still what `-c` continues if it is the most recent one here.
 
 **On the way out it prints how to come back:**
 
@@ -644,8 +644,8 @@ That is the one moment the id is worth something — everywhere else it is an im
 and here it turns "I closed that by accident" into a command you can paste. It is skipped for a
 session where nothing was said, since nothing was stored to come back to.
 
-A session that ends any other way — a crash, a kill — stays **unfinished**, which is what bare
-`--resume` looks for and what the startup line mentions by name.
+A session that ends any other way — a crash, a kill — stays **unfinished**, which is what the
+startup line mentions by name.
 
 **Nothing is offered on startup.** Earlier versions asked *"an earlier session ended without closing
 — resume it?"* on the first render, before you had typed anything. It asked at the worst moment,
@@ -669,9 +669,14 @@ cxagent --model claude          # start on a configured instance, without editin
 cxagent --config-dir /tmp/x     # use this directory instead of the usual one
 cxagent --sessions              # print this folder's sessions and exit
 cxagent --sessions all          # every folder
-cxagent --resume                # continue the most recent unfinished session here
-cxagent --resume 5ZFAVZ         # continue that one, by id or any unambiguous abbreviation
+cxagent -c                      # continue the most recent session here
+cxagent -r 5ZFAVZ               # continue that one, by id or any unambiguous abbreviation
+cxagent --resume                # start with this folder's sessions listed, to pick from
+cxagent -p "<goal>"             # one goal, no TUI — see Headless in the README
 ```
+
+The options follow Claude Code's names (`-c`/`--continue`, `-r`/`--resume`, `-p`/`--print`), so
+what works for `claude` works here.
 
 **`--config-dir` takes the directory itself**, with no `cxagent` folder appended — unlike
 `XDG_CONFIG_HOME`, which does append one. So `--config-dir /tmp/x` reads `/tmp/x/config.json` and
@@ -692,16 +697,18 @@ is the kind of friction that stops people looking. Output is tab-separated with 
 5ZFAVZHZYPHHAWC501KZXEBFY1	2026-08-13 14:33	18213	add the arity table
 ```
 
-**`--resume` has three states, and they are different requests.** Absent starts fresh; bare
-continues the most recent unfinished session *in this folder*, which is the one the app would have
-offered you; with an id continues that one specifically. An id is **not** folder-scoped — copying one
-out of `--sessions all` and pasting it here opens it, because naming a session is an explicit act.
+**Four requests, and they are different.** With none of them a new session starts. `-c` continues the most recent
+session *in this folder* — finished or not, skipping one already continued. `-r ID` continues that
+one specifically; an id is **not** folder-scoped — copying one out of `--sessions all` and pasting it
+here opens it, because naming a session is an explicit act. A bare `--resume` asks to pick: the TUI
+starts with this folder's sessions listed, and `/sessions resume N` opens one.
 
-**A resume that finds nothing still starts.** It says which of the two things went wrong — nothing to
-resume, or an id that matched several — and begins a new session rather than refusing to launch. An
+**A resume that finds nothing still starts the TUI.** It says what went wrong — nothing to continue,
+or an id that matched several — and begins a new session rather than refusing to launch. (A headless
+`-c -p` that finds nothing is a usage error instead: a script must not silently start fresh.) An
 unnoticed fresh start is how someone spends a turn wondering why the agent forgot everything.
 
-`--sessions` and `--resume` together is an error: one asks a question, the other starts work, and
+`--sessions` with `-c` or `--resume` is an error: one asks a question, the other starts work, and
 doing half of what was typed leaves no way to tell which half you got.
 
 ---

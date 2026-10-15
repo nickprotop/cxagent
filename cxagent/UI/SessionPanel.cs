@@ -331,9 +331,8 @@ public sealed class SessionPanel
         // apply either way.
         Section(lines, "Limits");
 
-        // THE CEILING THAT BINDS, resolved by the caller — the default when nothing is configured,
-        // and 0 only for an explicit opt-out. Take the raw configured value here and an unconfigured
-        // session reads "no cap" while a real ceiling is in force.
+        // THE CEILING THAT BINDS THE SESSION'S OWN AGENT, resolved by the caller the way the host
+        // resolves it: the configured number, or 0 — "no turn cap" — when none is set or 0 was.
         //
         // THE CAP IS PER GOAL; THE COUNTER ABOVE IS PER SESSION. Rendering "{Turns}/{max}" pairs a
         // session-lifetime count with a limit that resets on every prompt — a long session then

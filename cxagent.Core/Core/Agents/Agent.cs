@@ -1149,6 +1149,96 @@ public sealed class Agent
     private static readonly IReadOnlyList<BuiltinTool> AllBuiltins = Enum.GetValues<BuiltinTool>();
 
     /// <summary>
+    /// The names of the tools this agent's next request would offer, selection applied — what a
+    /// front end lists before the first turn, as Claude Code's <c>init</c> event does.
+    ///
+    /// <para>THE SAME ASSEMBLY THE REQUEST USES, not a second list kept beside it: a copy would
+    /// drift the first time a gate was added to one and not the other. Read between turns; MCP
+    /// servers and plugins that join later are offered from then on, as the request itself would.</para>
+    /// </summary>
+    public IReadOnlyList<string> OfferedToolNames() => [.. OfferedTools(null).Select(t => t.Name)];
+
+    private List<ToolDefinition> OfferedTools(Jobs.ToolSelection? turnTools)
+    {
+        // MCP tools join the built-ins here, at the point the request is built, so a server that
+        // connected since the last prompt is picked up with no restart. Mid-request the list is
+        // fixed, which is correct: a tool appearing between two turns of one request would be a
+        // moving target for the model.
+        var tools = ToolBindings.For(AllBuiltins, _executors)
+            .Concat(_mcp?.Definitions() ?? [])
+            // THE SPAWN TOOL, only when this agent CAN spawn — fan-out mode, and a spawner to do it
+            // with. Two independent reasons not to offer it, and both matter: a child has no spawner
+            // (the no-nesting mechanism), and a single-mode parent has one but is not using it.
+            .Concat(CanSpawn ? new[] { _spawner!.Definition } : [])
+            // THE REACH TOOLS, GATED ON THE SAME CanSpawn — which is what keeps a child from waking a
+            // sibling. A child has no spawner, so it has nothing it could have spawned and nothing to
+            // reach; offering these to one would widen "it cannot spawn sub-agents of its own" into
+            // recursion by another name, without any of the reasoning that forbids spawning having
+            // been consulted. And an agent with no kept children still gets them: agent_list saying
+            // "none yet" is an answer, where a missing tool is a capability the model cannot ask about.
+            .Concat(CanSpawn && _reach is not null ? AgentReachTools.Definitions : [])
+            // THE JOB TOOLS, ALWAYS — NOT GATED ON CanSpawn. That gate keeps a child from waking a
+            // sibling it never spawned; backgrounding a shell command is a different capability every
+            // agent has regardless of whether it can spawn, so a sub-agent needs to see and stop its
+            // own job exactly as the session does.
+            .Concat(Jobs.BackgroundJobTools.Definitions)
+            // THE LOAD TOOL, only when there is something to load. Offering it with an empty catalog
+            // advertises a capability whose every call can only fail, and costs schema bytes in the
+            // request for every session that has no skills — the same reasoning that keeps the
+            // catalog section out of the prompt when it is empty.
+            .Concat(_skills.Catalog().Skills.Count > 0 ? new[] { _skills.Definition } : [])
+            // THE PLAN TOOL, always. Unlike skills there is no catalog to be empty — an agent can
+            // always have work worth tracking, and the list starting empty is the normal state
+            // rather than a reason to withhold the tool.
+            .Concat(new[] { _todoTool.Definition })
+            // ONLY WHEN THERE IS SOMEONE TO ASK. Withheld from a child and from any host with no UI
+            // — the same mechanism that makes "no sub-agents of sub-agents" structural: not a rule
+            // the agent is asked to follow, a tool it was never given.
+            .Concat(_askUser is not null ? new[] { _askUser.Definition } : [])
+            // THE EMBEDDER'S OWN. Last in the list, which is presentation rather than protection —
+            // dispatch consults injected tools BEFORE the built-ins, so ordering here shadows
+            // nothing. What keeps a consumer off a built-in's name is the check at the dispatch
+            // link, which skips an injected tool while a built-in of that name is offered.
+            //
+            // OFFERED AT ALL, which dispatch alone would not achieve: a tool the model is never TOLD
+            // about can never be called, so both halves are needed.
+            .Concat(_agentTools?.Definitions() ?? [])
+            // THE DYNAMIC SOURCE, read fresh HERE rather than snapshotted, so a plugin registered
+            // since the last request is offered on THIS one with no restart — the same reason MCP
+            // definitions are concatenated at this point rather than at construction.
+            .Concat(_dynamicTools?.Invoke().Select(t => t.Definition) ?? [])
+            .ToList();
+
+        // THE SELECTION, APPLIED ONCE, HERE. Everything above has already run every structural gate
+        // — a child has no ask_user, a single-mode agent has no `agent`, an empty catalog has no
+        // `skill` — so `tools` IS the S0 set and a `+` term can only match something already in it.
+        // That is why S0 needs no check of its own: a second place deciding it is a second place
+        // that can disagree with the first.
+        //
+        // MCP IS EXEMPT, and by name rather than by position: enabled servers' tools are added to
+        // every request whatever a selection says, because `enabled` per server is their control and
+        // their names arrive after config is read. Filtering them here would be the delta-timing bug
+        // this design removed rather than mitigated.
+        // S3 COMPOSED HERE, NOT AT CONSTRUCTION. The request's own selection arrives as an argument
+        // and joins the session's; composing at construction would make it inert for the session's
+        // own agent, which is the caller most likely to use it.
+        if (Jobs.ToolSelection.Then(_toolSelection, turnTools) is { } selection)
+        {
+            var mcpNames = _mcp?.Names().ToHashSet(StringComparer.Ordinal) ?? [];
+            var selectable = tools.Where(t => !mcpNames.Contains(t.Name)).ToList();
+            var kept = selection.Apply(selectable);
+
+            // ORDER PRESERVED: the assembly order is deliberate (built-ins first, so a consumer
+            // cannot appear ahead of a name the model already trusts), so this filters in place
+            // rather than concatenating the two groups back together.
+            var keptNames = kept.Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
+            tools = [.. tools.Where(t => mcpNames.Contains(t.Name) || keptNames.Contains(t.Name))];
+        }
+
+        return tools;
+    }
+
+    /// <summary>
     /// One exchange on the linear path: prompt → tools → answer.
     /// </summary>
     /// <remarks>
@@ -1335,81 +1425,7 @@ public sealed class Agent
             }
         }
 
-
-        // MCP tools join the built-ins here, at the point the request is built, so a server that
-        // connected since the last prompt is picked up with no restart. Mid-request the list is
-        // fixed, which is correct: a tool appearing between two turns of one request would be a
-        // moving target for the model.
-        var tools = ToolBindings.For(AllBuiltins, _executors)
-            .Concat(_mcp?.Definitions() ?? [])
-            // THE SPAWN TOOL, only when this agent CAN spawn — fan-out mode, and a spawner to do it
-            // with. Two independent reasons not to offer it, and both matter: a child has no spawner
-            // (the no-nesting mechanism), and a single-mode parent has one but is not using it.
-            .Concat(CanSpawn ? new[] { _spawner!.Definition } : [])
-            // THE REACH TOOLS, GATED ON THE SAME CanSpawn — which is what keeps a child from waking a
-            // sibling. A child has no spawner, so it has nothing it could have spawned and nothing to
-            // reach; offering these to one would widen "it cannot spawn sub-agents of its own" into
-            // recursion by another name, without any of the reasoning that forbids spawning having
-            // been consulted. And an agent with no kept children still gets them: agent_list saying
-            // "none yet" is an answer, where a missing tool is a capability the model cannot ask about.
-            .Concat(CanSpawn && _reach is not null ? AgentReachTools.Definitions : [])
-            // THE JOB TOOLS, ALWAYS — NOT GATED ON CanSpawn. That gate keeps a child from waking a
-            // sibling it never spawned; backgrounding a shell command is a different capability every
-            // agent has regardless of whether it can spawn, so a sub-agent needs to see and stop its
-            // own job exactly as the session does.
-            .Concat(Jobs.BackgroundJobTools.Definitions)
-            // THE LOAD TOOL, only when there is something to load. Offering it with an empty catalog
-            // advertises a capability whose every call can only fail, and costs schema bytes in the
-            // request for every session that has no skills — the same reasoning that keeps the
-            // catalog section out of the prompt when it is empty.
-            .Concat(_skills.Catalog().Skills.Count > 0 ? new[] { _skills.Definition } : [])
-            // THE PLAN TOOL, always. Unlike skills there is no catalog to be empty — an agent can
-            // always have work worth tracking, and the list starting empty is the normal state
-            // rather than a reason to withhold the tool.
-            .Concat(new[] { _todoTool.Definition })
-            // ONLY WHEN THERE IS SOMEONE TO ASK. Withheld from a child and from any host with no UI
-            // — the same mechanism that makes "no sub-agents of sub-agents" structural: not a rule
-            // the agent is asked to follow, a tool it was never given.
-            .Concat(_askUser is not null ? new[] { _askUser.Definition } : [])
-            // THE EMBEDDER'S OWN. Last in the list, which is presentation rather than protection —
-            // dispatch consults injected tools BEFORE the built-ins, so ordering here shadows
-            // nothing. What keeps a consumer off a built-in's name is the check at the dispatch
-            // link, which skips an injected tool while a built-in of that name is offered.
-            //
-            // OFFERED AT ALL, which dispatch alone would not achieve: a tool the model is never TOLD
-            // about can never be called, so both halves are needed.
-            .Concat(_agentTools?.Definitions() ?? [])
-            // THE DYNAMIC SOURCE, read fresh HERE rather than snapshotted, so a plugin registered
-            // since the last request is offered on THIS one with no restart — the same reason MCP
-            // definitions are concatenated at this point rather than at construction.
-            .Concat(_dynamicTools?.Invoke().Select(t => t.Definition) ?? [])
-            .ToList();
-
-        // THE SELECTION, APPLIED ONCE, HERE. Everything above has already run every structural gate
-        // — a child has no ask_user, a single-mode agent has no `agent`, an empty catalog has no
-        // `skill` — so `tools` IS the S0 set and a `+` term can only match something already in it.
-        // That is why S0 needs no check of its own: a second place deciding it is a second place
-        // that can disagree with the first.
-        //
-        // MCP IS EXEMPT, and by name rather than by position: enabled servers' tools are added to
-        // every request whatever a selection says, because `enabled` per server is their control and
-        // their names arrive after config is read. Filtering them here would be the delta-timing bug
-        // this design removed rather than mitigated.
-        // S3 COMPOSED HERE, NOT AT CONSTRUCTION. The request's own selection arrives as an argument
-        // and joins the session's; composing at construction would make it inert for the session's
-        // own agent, which is the caller most likely to use it.
-        if (Jobs.ToolSelection.Then(_toolSelection, turnTools) is { } selection)
-        {
-            var mcpNames = _mcp?.Names().ToHashSet(StringComparer.Ordinal) ?? [];
-            var selectable = tools.Where(t => !mcpNames.Contains(t.Name)).ToList();
-            var kept = selection.Apply(selectable);
-
-            // ORDER PRESERVED: the assembly order is deliberate (built-ins first, so a consumer
-            // cannot appear ahead of a name the model already trusts), so this filters in place
-            // rather than concatenating the two groups back together.
-            var keptNames = kept.Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
-            tools = [.. tools.Where(t => mcpNames.Contains(t.Name) || keptNames.Contains(t.Name))];
-        }
+        var tools = OfferedTools(turnTools);
 
         // AFTER THE FILTER, so a refusal lists what was actually offered rather than what could have
         // been. Held for the turn because the dispatch chain is a separate method a thousand lines

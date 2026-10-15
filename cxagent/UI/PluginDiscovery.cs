@@ -3,6 +3,7 @@ using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Plugins.Abi;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Sessions;
 
 namespace CxAgent.UI;
@@ -185,6 +186,12 @@ public static class PluginDiscovery
         return found;
     }
 
+    /// <summary>A configured plugin that was asked for and is not running, and why.</summary>
+    public sealed record PluginNotLoaded(string Name, string Why)
+    {
+        public override string ToString() => $"{Name} ({Why})";
+    }
+
     /// <summary>
     /// Loads every ENABLED configured plugin whose file resolves against
     /// <paramref name="searchFolders"/>, in name order for a deterministic prompt sequence when more
@@ -201,11 +208,14 @@ public static class PluginDiscovery
     /// <param name="configDir">Where <see cref="ChildProcessStore"/> persists — the same file
     /// <see cref="SessionFactory.Wire"/> already attached to <c>session.Plugins</c>, so a process this
     /// call registers is reapable exactly like one registered mid-session.</param>
-    public static async Task LoadConfiguredAsync(Session session,
+    /// <returns>Each enabled plugin that did not end up loaded, and why — for a caller that lists
+    /// what a run left out rather than reading the reports back.</returns>
+    public static async Task<IReadOnlyList<PluginNotLoaded>> LoadConfiguredAsync(Session session,
         IReadOnlyDictionary<string, PluginConfig> plugins, IReadOnlyList<string> searchFolders,
-        string configDir, Action<string> report, CancellationToken ct)
+        string configDir, Action<string> report, CancellationToken ct, bool allowClients = true)
     {
         var children = new ChildProcessStore(configDir);
+        var notLoaded = new List<PluginNotLoaded>();
 
         foreach (var (name, config) in plugins.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
@@ -218,6 +228,7 @@ public static class PluginDiscovery
             {
                 report($"plugin '{name}': no file named '{config.File}' found under "
                      + $"{string.Join(", ", searchFolders)}.");
+                notLoaded.Add(new(name, "not found"));
                 continue;
             }
 
@@ -237,6 +248,7 @@ public static class PluginDiscovery
             if (string.IsNullOrEmpty(declaredName))
             {
                 report($"plugin '{name}': no usable sidecar manifest at '{sidecarPath}'.");
+                notLoaded.Add(new(name, "no usable sidecar manifest"));
                 continue;
             }
 
@@ -262,7 +274,10 @@ public static class PluginDiscovery
             // sidecar, which the declaredName check above already refuses before this line is
             // reached; the guard here is defence for that invariant, and "no declaration read" has to
             // mean "no client" regardless, so the null-safe read is also the correct one.
-            var client = sidecarManifest?.Client == true
+            //
+            // NO CLIENT IN A HEADLESS RUN (allowClients false): the run is exactly the user's goal, and
+            // a plugin starting work of its own would be a second goal nobody asked for.
+            var client = allowClients && sidecarManifest?.Client == true
                 ? new SessionPluginClient(session, declaredName, session.Plugins.SubmitQueue)
                 : null;
 
@@ -284,11 +299,14 @@ public static class PluginDiscovery
                 if (abiResult is AbiPluginLoadResult.Failed abiFailed)
                 {
                     report($"plugin '{name}': {abiFailed.Reason}");
+                    notLoaded.Add(new(name, abiFailed.Reason));
                     continue;
                 }
 
                 var abiLoaded = (AbiPluginLoadResult.Loaded)abiResult;
-                await session.LoadPlugin(abiLoaded.Instance, abiLoaded.Manifest, loadSetDirectory, ct, context, client);
+                if (await session.LoadPlugin(abiLoaded.Instance, abiLoaded.Manifest, loadSetDirectory, ct, context, client)
+                    != CommandStatus.Changed)
+                    notLoaded.Add(new(name, "not loaded — see warnings"));
                 continue;
             }
 
@@ -296,12 +314,19 @@ public static class PluginDiscovery
             if (result is ManagedPluginLoadResult.Failed failed)
             {
                 report($"plugin '{name}': {failed.Reason}");
+                notLoaded.Add(new(name, failed.Reason));
                 continue;
             }
 
+            // NOT CHANGED MEANS NOT LOADED: declined, a name collision, or a Start that failed and
+            // was unwound. The session has already said which.
             var loaded = (ManagedPluginLoadResult.Loaded)result;
-            await session.LoadPlugin(loaded.Instance, loaded.Manifest, loadSetDirectory, ct, context, client);
+            if (await session.LoadPlugin(loaded.Instance, loaded.Manifest, loadSetDirectory, ct, context, client)
+                != CommandStatus.Changed)
+                notLoaded.Add(new(name, "not loaded — see warnings"));
         }
+
+        return notLoaded;
     }
 
 }

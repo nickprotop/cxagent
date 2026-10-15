@@ -115,12 +115,11 @@ public class AgentHostTests
     /// argued for.</para>
     /// </summary>
     [Fact]
-    public void TurnCeiling_IsBounded_WhenNothingIsConfigured()
+    public void TurnCeiling_IsUnbounded_WhenNothingIsConfigured()
     {
         var runner = NewRunner(new MockLlmProvider());
 
-        Assert.Equal(AgentHost.DefaultTurnCeiling, runner.TurnCeiling);
-        Assert.True(runner.TurnCeiling < int.MaxValue, "an unconfigured session must still be bounded");
+        Assert.Equal(int.MaxValue, runner.TurnCeiling);
     }
 
     /// <summary>
@@ -409,12 +408,13 @@ public class AgentHostTests
     public void TurnCeiling_OfZero_MeansUnbounded()
     {
         var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime
+            {
+                Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(),
+                Orchestrator = new OrchestratorSettings(MaxTurns: 0),
+            },
             new RecordingSink(),
-            new NullJobPanel())
-        {
-            ConfiguredMaxTurns = 0,
-        };
+            new NullJobPanel());
 
         Assert.Equal(int.MaxValue, runner.TurnCeiling);
     }
@@ -455,12 +455,13 @@ public class AgentHostTests
     public void TurnCeiling_HonoursAConfiguredValue()
     {
         var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime
+            {
+                Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(),
+                Orchestrator = new OrchestratorSettings(MaxTurns: 25),
+            },
             new RecordingSink(),
-            new NullJobPanel())
-        {
-            ConfiguredMaxTurns = 25,
-        };
+            new NullJobPanel());
 
         Assert.Equal(25, runner.TurnCeiling);
     }

@@ -428,11 +428,12 @@ behaviour switch.
 ```
 
 `maxTurns` is how many turns one request may take before the agent stops and summarises what it
-got. **Absent means the built-in ceiling of 300** — which is not the same as no cap. **`0` means no
-cap**, the explicit opt-out.
+got. A number applies to the session agent *and* to sub-agents: a child inherits it unless its own
+type sets `agents.<name>.maxTurns`. A headless run's `--max-turns N` sets it for that run.
 
-It applies to the session agent *and* to sub-agents: a child inherits it unless its own type sets
-`agents.<name>.maxTurns`.
+**Absent, the session agent has no cap** — you are watching it and can stop it — **while sub-agents
+keep a built-in ceiling of 300**, since a runaway worker inside a fan-out costs the whole plan. **`0`
+means no cap for both**, the explicit opt-out.
 
 `contextCompressThreshold` is the other key here — compact above this many tokens. Absent, it is
 80% of the model's context window when that is known, and a built-in threshold when it is not.

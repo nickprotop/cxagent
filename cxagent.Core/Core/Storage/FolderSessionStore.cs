@@ -126,6 +126,25 @@ public sealed class FolderSessionStore(AppPaths paths)
     }
 
     /// <summary>
+    /// The newest session in this folder that has not been continued — finished or not.
+    ///
+    /// <para>-c's ANSWER, which is Claude Code's "most recent conversation". A headless run closes
+    /// its session cleanly, so the unfinished-only rule <see cref="LoadLatestUnfinished"/> keeps for
+    /// a crash buffer would make `cxagent -c -p` unable to find the run before it. A superseded
+    /// session is skipped because its successor is the conversation now.</para>
+    /// </summary>
+    public SessionSnapshot? LoadLatestUncontinued(string? workingDir = null)
+    {
+        foreach (var h in Headers())
+        {
+            if (h.State == SessionEndState.Superseded) continue;
+            if (workingDir is not null && !PathsMatch(h.WorkingDir, workingDir)) continue;
+            if (LoadById(h.AgentId) is { } snap) return snap;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// The sessions, newest first.
     ///
     /// <para><paramref name="all"/> WIDENS THE FOLDER, NOT THE STATE. Every session is listed

@@ -139,7 +139,7 @@ they are three different things for a caller to do:
 
 | Outcome | What happened | What you do |
 |---|---|---|
-| `Started(Task Turn)` | a turn began | await it, or attach a continuation and keep rendering |
+| `Started(Turn, Result, Outcome)` | a turn began | await `Turn`, or attach a continuation and keep rendering; `Outcome` says whether it answered, hit the turn limit, failed or was cancelled |
 | `Queued` | a turn was already running; this went to the queue | nothing — the `Pending` event already fired |
 | `NoAgent` | no model is wired | leave the text in your input box |
 

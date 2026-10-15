@@ -104,9 +104,22 @@ public class PermissionPolicy
     /// </summary>
     public EditMode Edits { get; set; }
 
+    /// <summary>
+    /// Treat the folder as trusted for this process, whatever is stored.
+    ///
+    /// <para>FOR <c>--trust</c>: a fresh CI checkout has no stored answer and nobody to ask, and
+    /// trusting it by writing permissions.json would change the user's own setup from inside a
+    /// script. The override lives and dies with this policy object.</para>
+    /// </summary>
+    public bool TrustOverride { get; init; }
+
+    // EVERY TRUST READ GOES THROUGH HERE, so the override cannot be honoured by four of them and
+    // missed by the fifth.
+    private TrustState RootTrust => TrustOverride ? TrustState.Trusted : _rules.GetTrust(_root);
+
     /// <summary>Whether the folder this policy judges is trusted — what an edit mode ACTUALLY does
     /// depends on it, so anything reporting a mode change has to be able to ask.</summary>
-    public bool FolderTrusted => _rules.GetTrust(_root) == TrustState.Trusted;
+    public bool FolderTrusted => RootTrust == TrustState.Trusted;
 
     /// <summary>The folder's classification as stored — Trusted, Untrusted, or never asked.</summary>
     /// <remarks>
@@ -116,7 +129,7 @@ public class PermissionPolicy
     /// showed them as the same word would misdescribe the one case where the startup question is
     /// still owed.
     /// </remarks>
-    public TrustState Trust => _rules.GetTrust(_root);
+    public TrustState Trust => RootTrust;
 
     /// <summary>
     /// Records this folder's trust classification.
@@ -446,7 +459,7 @@ public class PermissionPolicy
         // IsReadOnly and CommandSubjects.Of parse anything.
         if (request.Kind == PermissionKind.Shell
             && !request.Unattended
-            && _rules.GetTrust(_root) == TrustState.Trusted
+            && RootTrust == TrustState.Trusted
             && ReadOnlyCommands.IsReadOnly(request.What, out _))
         {
             var subjects = CommandSubjects.Of(request.What);
@@ -629,7 +642,7 @@ public class PermissionPolicy
     /// </summary>
     public bool AllowsSilentWrites(PermissionRequest request) =>
         request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite
-        && _rules.GetTrust(_root) == TrustState.Trusted
+        && RootTrust == TrustState.Trusted
         && (IsInsideBoundary(request.Display) || ReadsOwnLog(request))
         && !IsExecutableConfig(request);
 
@@ -674,7 +687,7 @@ public class PermissionPolicy
     public ReviewEffect EffectFor(PermissionRequest request)
     {
         if (Edits != EditMode.Auto) return ReviewEffect.None;
-        if (_rules.GetTrust(_root) != TrustState.Trusted) return ReviewEffect.None;
+        if (RootTrust != TrustState.Trusted) return ReviewEffect.None;
 
         return request.Kind switch
         {
@@ -1086,11 +1099,35 @@ public class PermissionPolicy
 
         var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_root));
         if (!resolved.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-            return false;   // outside the boundary entirely; the caller already refuses it
+            return false;   // outside the boundary: such a write always asks, so it is never silent
 
         var first = resolved[(root.Length + 1)..].Split(Path.DirectorySeparatorChar)[0];
 
         return ExecutableConfigDirs.Contains(first, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// A file-tool write into a folder whose contents execute — see <see cref="ExecutableConfigDirs"/>.
+    ///
+    /// <para>PUBLIC FOR A PROMPT HOOK THAT APPROVES EVERYTHING ELSE. A headless run under
+    /// skip-permissions still refuses these. It reads requests, not shell text: a shell command that
+    /// writes into these folders is a Shell request and is not seen here.</para>
+    ///
+    /// <para>ANYWHERE ON THE PATH, NOT ONLY AT THE TOP OF THE WORKING FOLDER — wider than
+    /// <see cref="IsExecutableConfig"/>, which only decides what may be silent. Here nothing asks
+    /// afterwards: a run started in <c>repo/src</c> writing <c>../.git/hooks</c>, a vendored
+    /// checkout's own <c>.git</c>, or <c>~/.claude/settings.json</c> would otherwise be approved, and
+    /// each runs later outside the run.</para>
+    /// </summary>
+    public bool IsProtectedWrite(PermissionRequest request)
+    {
+        if (request.Kind != PermissionKind.FileWrite) return false;
+
+        var resolved = TryResolve(request.Display, _root);
+        if (resolved is null) return true;   // unresolvable: fail toward refusing
+
+        return resolved.Split(Path.DirectorySeparatorChar)
+            .Any(part => ExecutableConfigDirs.Contains(part, StringComparer.OrdinalIgnoreCase));
     }
 
     private static string? TryResolve(string path, string? root)

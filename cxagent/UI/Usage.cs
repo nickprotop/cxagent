@@ -61,9 +61,8 @@ public static class Usage
         and every shell command, asks first.
 
         OPTIONS
-          --instance NAME     Start on a named provider from config.json instead of the
-                              default. The status line shows which one is live.
-          --model NAME        Alias for --instance.
+          --model NAME        Start on a named provider instance from config.json instead
+                              of the default. The status line shows which one is live.
           --theme NAME        Start in a named theme, case-insensitive. An unknown name
                               falls back to '{Features.DefaultTheme}' rather than refusing
                               to start. Available themes:
@@ -71,14 +70,37 @@ public static class Usage
           --config-dir DIR    Use DIR for config.json, history and session state instead
                               of the usual location. Useful for a throwaway setup that
                               leaves your real one alone.
-          --resume [ID]       Reopen the last session in this folder, or a specific one
-                              by id. Without an id it takes the most recent.
+          -c, --continue      Reopen the most recent session in this folder.
+          -r, --resume ID     Reopen that session. Without an id, the TUI starts with this
+                              folder's sessions listed, to pick from.
           --sessions [all]    List this folder's sessions and exit. 'all' lists every
                               folder's.
           --mock              Run against a scripted provider instead of a real model.
                               Nothing is sent anywhere and nothing is spent.
-          --version           Print the version and exit.
-          --help              Print this and exit.
+          -v, --version       Print the version and exit.
+          -h, --help          Print this and exit.
+
+        HEADLESS (one goal, no TUI — Claude Code's options)
+          -p, --print "GOAL"  Run GOAL and print the result. The goal may also come last,
+                              after the options. With no text, stdin is the goal; with
+                              text, piped stdin is attached to it.
+          --output-format F   text (the answer), json (one result object) or
+                              stream-json (one event per line).
+          --include-partial-messages   With stream-json: text as it streams.
+          --verbose           With text: progress on stderr.
+          --max-turns N       Stop after N turns (exit 3).
+          --permission-mode M default or dontAsk (refuse what would prompt), acceptEdits,
+                              auto, bypassPermissions.
+          --dangerously-skip-permissions
+                              Approve every prompt, except a file-tool write into a .git,
+                              .vscode, .claude or .idea folder, anywhere. Shell commands
+                              are approved like anything else, including ones that write
+                              into those folders.
+          --trust             Trust this folder for this run only.
+          --plugin NAME       Load that configured plugin for this run, even one with
+                              enabled: false (repeatable, or comma-separated);
+                              --plugin none loads none.
+          Exit: 0 answered, 1 failed, 2 usage, 3 turn limit, 130/143 interrupted.
 
         CONFIGURATION
           Providers, agent types, MCP servers and permissions live in config.json under

@@ -112,25 +112,24 @@ public class CommandLineTests
     }
 
     // --- sessions and resume ---
-
     /// <summary>
-    /// THREE STATES, NOT TWO. Absent, bare, and with an id are genuinely different requests, and a
-    /// nullable string cannot carry them: null would mean both "not asked for" and "asked for,
-    /// unspecified", which take opposite actions.
+    /// FOUR STATES, Claude Code's split: -c continues the most recent, -r ID resumes that one, and a
+    /// bare --resume asks to pick — which the TUI answers by listing, never by guessing.
     /// </summary>
     [Fact]
-    public void Resume_HasThreeDistinctStates()
+    public void Resume_HasFourDistinctStates()
     {
-        Assert.False(CommandLine.Parse([]).Resume.Wanted);
+        Assert.Equal(ResumeKind.None, CommandLine.Parse([]).Resume.Kind);
+        Assert.Equal(ResumeKind.Continue, CommandLine.Parse(["-c"]).Resume.Kind);
+        Assert.Equal(ResumeKind.Continue, CommandLine.Parse(["--continue"]).Resume.Kind);
+        Assert.Equal(ResumeKind.Pick, CommandLine.Parse(["--resume"]).Resume.Kind);
 
-        var bare = CommandLine.Parse(["--resume"]).Resume;
-        Assert.True(bare.Wanted);
-        Assert.Null(bare.Uid);
-
-        var named = CommandLine.Parse(["--resume", "5PSCPG"]).Resume;
-        Assert.True(named.Wanted);
+        var named = CommandLine.Parse(["-r", "5PSCPG"]).Resume;
+        Assert.Equal(ResumeKind.ById, named.Kind);
         Assert.Equal("5PSCPG", named.Uid);
     }
+
+
 
     [Fact]
     public void Resume_AcceptsTheEqualsForm()
@@ -292,5 +291,157 @@ public class CommandLineTests
     {
         // The message is the only discovery path — there is no --help.
         Assert.Contains("--config-dir", CommandLine.Parse(["--bogus"]).Error ?? "");
+    }
+}
+
+/// <summary>Headless options: Claude Code's names, one name each, and refusals that cannot be mistaken for acceptance.</summary>
+public class HeadlessCommandLineTests
+{
+    [Fact]
+    public void Print_WithText_IsAHeadlessGoal()
+    {
+        var options = CommandLine.Parse(["-p", "summarise README"]);
+
+        Assert.Null(options.Error);
+        Assert.Equal("summarise README", options.Headless!.Goal);
+        Assert.Equal(OutputFormat.Text, options.Headless.Output);
+    }
+
+    /// <summary>Claude Code's order works too: options first, the goal as the last word.</summary>
+    [Fact]
+    public void TheGoal_CanFollowTheOptions()
+    {
+        var options = CommandLine.Parse(["-p", "--output-format", "json", "summarise README"]);
+
+        Assert.Null(options.Error);
+        Assert.Equal("summarise README", options.Headless!.Goal);
+        Assert.Equal(OutputFormat.Json, options.Headless.Output);
+    }
+
+    [Fact]
+    public void AWordWithoutPrint_OrASecondGoal_IsStillAnError()
+    {
+        Assert.Contains("unknown argument", CommandLine.Parse(["summarise"]).Error);
+        Assert.NotNull(CommandLine.Parse(["-p", "one", "two"]).Error);
+    }
+
+    [Fact]
+    public void Print_WithoutText_ReadsTheGoalFromStdin()
+    {
+        var options = CommandLine.Parse(["--print", "--output-format", "json"]);
+
+        Assert.Null(options.Error);
+        Assert.Null(options.Headless!.Goal);
+        Assert.Equal(OutputFormat.Json, options.Headless.Output);
+    }
+
+    [Theory]
+    [InlineData("text", OutputFormat.Text)]
+    [InlineData("json", OutputFormat.Json)]
+    [InlineData("stream-json", OutputFormat.StreamJson)]
+    public void OutputFormat_TakesClaudesValues(string value, OutputFormat expected) =>
+        Assert.Equal(expected, CommandLine.Parse(["-p", "x", "--output-format", value]).Headless!.Output);
+
+    [Theory]
+    [InlineData("default", HeadlessPermissions.Default)]
+    [InlineData("dontAsk", HeadlessPermissions.Default)]
+    [InlineData("acceptEdits", HeadlessPermissions.AcceptEdits)]
+    [InlineData("auto", HeadlessPermissions.Auto)]
+    [InlineData("bypassPermissions", HeadlessPermissions.Bypass)]
+    public void PermissionMode_MapsToCxagentsModes(string value, HeadlessPermissions expected) =>
+        Assert.Equal(expected, CommandLine.Parse(["-p", "x", "--permission-mode", value]).Headless!.Permissions);
+
+    [Fact]
+    public void PlanMode_IsRefused() =>
+        Assert.Contains("plan", CommandLine.Parse(["-p", "x", "--permission-mode", "plan"]).Error);
+
+    [Fact]
+    public void SkipPermissions_IsBypass_AndTrustsTheFolder()
+    {
+        var h = CommandLine.Parse(["-p", "x", "--dangerously-skip-permissions"]).Headless!;
+
+        Assert.Equal(HeadlessPermissions.Bypass, h.Permissions);
+        Assert.True(h.TrustsFolder);
+    }
+
+    [Fact]
+    public void Plugins_AreRepeatableAndCommaSeparated()
+    {
+        var h = CommandLine.Parse(["-p", "x", "--plugin", "a,b", "--plugin", "c"]).Headless!;
+
+        Assert.Equal(["a", "b", "c"], h.Plugins);
+        Assert.False(h.NoPlugins);
+        Assert.True(CommandLine.Parse(["-p", "x", "--plugin", "none"]).Headless!.NoPlugins);
+    }
+
+    [Fact]
+    public void MaxTurns_MustBeAPositiveNumber()
+    {
+        Assert.Equal(7, CommandLine.Parse(["-p", "x", "--max-turns", "7"]).Headless!.MaxTurns);
+        Assert.NotNull(CommandLine.Parse(["-p", "x", "--max-turns", "0"]).Error);
+        Assert.NotNull(CommandLine.Parse(["-p", "x", "--max-turns", "lots"]).Error);
+    }
+
+    [Theory]
+    [InlineData("--output-format", "json")]
+    [InlineData("--trust", null)]
+    [InlineData("--plugin", "a")]
+    [InlineData("--max-turns", "3")]
+    [InlineData("--dangerously-skip-permissions", null)]
+    [InlineData("--include-partial-messages", null)]
+    [InlineData("--permission-mode", "auto")]
+    public void HeadlessOnlyOptions_WithoutPrint_AreAUsageError(string option, string? value)
+    {
+        string[] args = value is null ? [option] : [option, value];
+
+        Assert.Contains("-p", CommandLine.Parse(args).Error);
+    }
+
+    [Theory]
+    [InlineData("--allowedTools")]
+    [InlineData("--disallowedTools")]
+    [InlineData("--tools")]
+    [InlineData("--append-system-prompt")]
+    [InlineData("--system-prompt")]
+    [InlineData("--append-system-prompt-file")]
+    [InlineData("--system-prompt-file")]
+    [InlineData("--mcp-config")]
+    [InlineData("--json-schema")]
+    [InlineData("--max-budget-usd")]
+    [InlineData("--bare")]
+    [InlineData("--no-session-persistence")]
+    [InlineData("--input-format")]
+    public void ClaudeOptions_CxagentLacks_AreRefusedByName(string option) =>
+        Assert.Equal($"{option} is not supported by cxagent",
+            CommandLine.Parse(["-p", "x", option, "value"]).Error);
+
+    [Fact]
+    public void BareResume_WithPrint_PointsToContinue() =>
+        Assert.Contains("-c", CommandLine.Parse(["-p", "x", "--resume"]).Error);
+
+    [Fact]
+    public void Sessions_WithPrint_IsAUsageError() =>
+        Assert.NotNull(CommandLine.Parse(["-p", "x", "--sessions"]).Error);
+
+    [Fact]
+    public void Verbose_AndPartialMessages_AreRead()
+    {
+        var h = CommandLine.Parse(["-p", "x", "--output-format", "stream-json", "--verbose",
+            "--include-partial-messages"]).Headless!;
+
+        Assert.True(h.Verbose);
+        Assert.True(h.IncludePartialMessages);
+    }
+
+    [Fact]
+    public void Instance_IsUnknown_AsItAlwaysWas() =>
+        Assert.Contains("unknown argument", CommandLine.Parse(["--instance", "x"]).Error);
+
+    [Fact]
+    public void TheHelp_ListsModel_NotInstance()
+    {
+        Assert.DoesNotContain("--instance", Usage.Text);
+        Assert.Contains("--print", Usage.Text);
+        Assert.Contains("--continue", Usage.Text);
     }
 }

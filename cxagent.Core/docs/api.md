@@ -120,7 +120,7 @@ bool          RefuseIfBusy()
 
 | | Carries | Meaning |
 |---|---|---|
-| `Started` | `Task Turn` | a turn began. Await it, or attach a continuation |
+| `Started` | `Task Turn`, `Task<string?> Result`, `Task<SendOutcome> Outcome` | a turn began. Await `Turn`, or attach a continuation. `Result` is the final answer's text; `Outcome` says how the turn ended — `Completed`, `Capped` at the turn limit, `Failed`, `Cancelled` — which the text alone cannot tell you |
 | `Queued` | — | a turn was already running; the text went to the queue and `Pending` fired |
 | `NoAgent` | — | no model is wired |
 | `Aside` | `Task? Answer` | the session is in btw mode and the text went to the side agent — null when it was still answering and refused it |
@@ -308,9 +308,12 @@ ILlmProvider? Provider · string? InstanceName · ResolvedConfig? Resolution
 PermissionPolicy? Policy · SharedServices? Services · SessionManager? Manager · JobRegistry? Executors
 
 IReadOnlyList<CompletionValue> Values(string set)
+IReadOnlyList<string> OfferedToolNames()
 ```
 
-The third group is what the session was wired **with**, exposed for diagnostics.
+The third group is what the session was wired **with**, exposed for diagnostics. `OfferedToolNames()`
+is what the next turn would offer the model, built the same way the request builds it — empty
+before the first wire.
 
 ## Resume and shutdown
 
@@ -465,6 +468,18 @@ record PermissionRequest(PermissionKind Kind, string Display, string? AlwaysRule
 
 Everything fails toward asking.
 
+## For a front end with nobody to ask
+
+A host that runs unattended — cxagent's own `-p` is one — answers the prompt hook itself. Two
+members exist for it:
+
+| Member | |
+|---|---|
+| `PermissionPolicy.TrustOverride` | init-only: treat the folder as trusted **for this policy object only**. Nothing is written to `permissions.json`, so a script never changes the user's own setup |
+| `PermissionPolicy.IsProtectedWrite(request)` | true for a file-tool write with a `.git`, `.vscode`, `.claude` or `.idea` folder anywhere on its path — where what lands runs later. A hook that approves everything else should still refuse these. It reads requests, not shell text |
+
+Answer `Once` or `Deny` from such a hook, never `Always` or `TrustFolder`: both persist.
+
 ---
 
 # Configuration
@@ -491,7 +506,7 @@ var resolution = new AgentConfig
 | `Models` | every model, by the name a user types at `/model` |
 | `DefaultModel` | which one a session starts on. Null takes the single entry when there is exactly one |
 | `Classifier` | which model reviews writes in `Auto`. **Null means Auto is not offered at all** |
-| `MaxTurns` · `CompressAbove` | turn ceiling and compaction threshold; null derives both |
+| `MaxTurns` · `CompressAbove` | turn ceiling and compaction threshold; null derives both. A set ceiling binds the session's own agent and its sub-agents; unset, the session's agent has no cap and sub-agents keep a built-in 300 |
 | `Agents` | sub-agent types, merged with the shipped ones rather than replacing them |
 | `Mcp` | MCP servers, stdio or HTTP |
 

@@ -112,8 +112,10 @@ public class SessionWiringParityTests
     [Fact]
     public void TheCompositionRootSuppliesATranscriptStore()
     {
-        Assert.Contains("Transcripts = new Lazy<Core.Storage.FolderTranscriptStore>(",
-            Read("cxagent/UI/AppBootstrap.cs"));
+        // Startup.Services is where every front end's SharedServices is built — the TUI's and a
+        // headless run's alike.
+        Assert.Contains("Transcripts = new Lazy<FolderTranscriptStore>(",
+            Read("cxagent/UI/Startup.cs"));
     }
 
     /// <summary>

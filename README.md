@@ -361,16 +361,22 @@ absence means.
 
 ```
 cxagent                          # start in the current folder
-cxagent --resume [<id>]          # continue the most recent session here, or one by id
+cxagent -c                       # continue the most recent session here
+cxagent -r <id>                  # continue that one, by id
+cxagent --resume                 # start with this folder's sessions listed, to pick from
 cxagent --sessions [all]         # list earlier sessions and exit
 cxagent --model <instance>       # open on a specific entry from `providers`
 cxagent --mode <single|fan-out>  # start in that mode
 cxagent --config-dir <dir>       # use this directory instead of the usual one
 cxagent --theme <name>           # start in a named theme
 cxagent --mock                   # a fake provider, to try the UI
-cxagent --version
-cxagent --help                   # the options, also shown when an argument is wrong
+cxagent -p "<goal>"              # run one goal without the TUI — see Headless below
+cxagent -v, --version
+cxagent -h, --help               # the options, also shown when an argument is wrong
 ```
+
+The options follow Claude Code's names where it has one, so a script written for `claude -p` runs
+with `cxagent` swapped in.
 
 **`--config-dir`** points cxagent at a different config directory — the one holding `config.json`,
 the session database and the logs. The path is used AS the directory, with no `cxagent` folder
@@ -385,6 +391,101 @@ cxagent --config-dir /tmp/scratch
 back to cxagent's own rather than refusing to start — a colour scheme is not worth failing over.
 `--help` lists what is installed. A `theme` key in `config.json` does the same thing for every run;
 the argument wins when both are present.
+
+### Headless
+
+`-p` runs one goal, prints the result and exits — for scripts and pipes, for CI, and for another
+program driving cxagent:
+
+```bash
+cxagent -p "in one sentence, what is this repo?"
+git diff | cxagent -p "review this" > review.md            # piped input is attached under the goal
+cxagent -p "list the TODOs" --output-format json | jq -r .result
+cxagent -c -p "now fix the first one"                       # continue the run before
+```
+
+`--output-format` is `text` (the answer alone), `json` (one result object in Claude Code's shape,
+with cxagent's own facts under a `cxagent` key) or `stream-json` (one event per line, as it happens;
+`--include-partial-messages` adds the text as it streams). With no goal text, stdin is the goal. The
+goal can come before or after the options — `cxagent -p --output-format json "goal"` works as it does
+with `claude`.
+
+**Nobody is there to answer a prompt**, so anything that would ask is refused, the model is told,
+and the run carries on; refusals are listed in the result. Trusted folders, stored "Always allow"
+rules and the edit modes decide first, exactly as in the TUI. `--permission-mode` takes `default`,
+`dontAsk`, `acceptEdits`, `auto` or `bypassPermissions`; `--trust` trusts the folder for this run
+only, writing nothing.
+
+**`--dangerously-skip-permissions` approves every prompt except a file-tool write into a `.git`,
+`.vscode`, `.claude` or `.idea` folder** — anywhere on the path, including `~/.claude` and a vendored
+checkout's own `.git` — because what lands there runs later, outside the run. That check reads
+file-tool requests, not shell text: a shell command that writes into those folders is approved like
+any other.
+
+Plugins load only if you approved them with "Always allow" in the TUI, or name them with `--plugin`
+(`--plugin none` loads none); naming one loads it even if config says `enabled: false`. A plugin
+that is left out or fails to load is listed under `cxagent.skipped.plugins`, with why. `--max-turns N`
+stops a run at N turns. Sessions are saved like any other: `-c` and `-r` continue them headlessly or
+in the TUI.
+
+| Exit | When |
+|---|---|
+| 0 | answered |
+| 1 | failed — the provider's message is on stderr and in `errors` |
+| 2 | usage — a bad or unsupported option, no model configured, nothing to run |
+| 3 | stopped at the turn limit |
+| 130 / 143 | Ctrl+C / SIGTERM — the turn is cancelled and the session saved first; a second one ends it at once |
+
+Claude Code options cxagent does not have (`--allowedTools`, `--system-prompt`, `--mcp-config`, …)
+are refused by name rather than ignored, so a script never believes one was honoured.
+
+#### Recipes
+
+**A step at a time.** Each run continues the one before, so a script can plan, then act, then check —
+and every step is a session you can open in the TUI afterwards:
+
+```bash
+cxagent -p "read the failing test in tests/ParserTests.cs and say why it fails" --trust
+cxagent -c -p "fix it" --permission-mode acceptEdits --trust
+cxagent -c -p "run the tests and report the result" --dangerously-skip-permissions
+```
+
+**Keep the id, come back to it.** `-c` takes the newest session here; `-r` takes the one you name,
+from any folder:
+
+```bash
+id=$(cxagent -p "summarise the open TODOs" --output-format json --trust | jq -r .session_id)
+cxagent -r "$id" -p "which one is the riskiest?"
+cxagent -r "$id"                       # or open it in the TUI
+```
+
+**In CI.** Fail the job on anything but an answer, and keep the result as an artifact:
+
+```bash
+cxagent -p "review this diff for bugs; list each with file:line" --trust \
+  --output-format json < <(git diff origin/main...HEAD) > review.json
+jq -e '.is_error | not' review.json && jq -r .result review.json
+```
+
+**Read the run as it happens.** `stream-json` is one JSON object per line — `system/init` first,
+then the model's text and tool calls, `result` last:
+
+```bash
+cxagent -p "find where the config is loaded" --trust --output-format stream-json |
+  while read -r line; do
+    case $(jq -r '.type' <<<"$line") in
+      assistant) jq -r '.message.content[] | .text // ("→ " + .input.summary)' <<<"$line" ;;
+      result)    jq -r '"done: \(.subtype), \(.num_turns) turns"' <<<"$line" ;;
+    esac
+  done
+```
+
+**A git hook.** A pre-push review that refuses to push on a finding:
+
+```bash
+#!/bin/sh
+git diff @{push}.. | cxagent -p "Reply only PASS, or FAIL and the reason, for this diff." --trust | grep -q '^PASS'
+```
 
 ## Keys
 

@@ -290,6 +290,9 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     public bool KnowsInjectedTool(string name) => _agent.KnowsInjectedTool(name);
 
+    /// <summary>What the next request would offer — forwarded to <see cref="Agent.OfferedToolNames"/>.</summary>
+    public IReadOnlyList<string> OfferedToolNames() => _agent.OfferedToolNames();
+
     /// <summary>
     /// The session agent's plan. A child keeps its own and it stays with the child: a worker's plan
     /// is scaffolding for one job, and pooling it into the session's would make the panel report a
@@ -353,9 +356,13 @@ public sealed class AgentHost : IDisposable
 
     /// <summary>
     /// <c>orchestrator.maxTurns</c> as the user set it, or null when they did not — what that
-    /// absence MEANS is <see cref="CeilingFor"/>'s to decide, not the parser's.
+    /// absence MEANS is <see cref="SessionCeilingFor"/>'s to decide, not the parser's.
+    ///
+    /// <para>READ FROM THE RUNTIME, NOT SET ON THE HOST. The agent is built inside the constructor,
+    /// and an init property is assigned after it, so a value set that way would reach this property
+    /// and never the agent.</para>
     /// </summary>
-    public int? ConfiguredMaxTurns { get; init; }
+    public int? ConfiguredMaxTurns => _runtime.Orchestrator?.MaxTurns;
 
     /// <summary>Raises <see cref="TurnCompleted"/>. Called by the loop, which is the only thing that
     /// knows a turn boundary.</summary>
@@ -594,8 +601,30 @@ public sealed class AgentHost : IDisposable
     /// returns, it loops again inside <c>SendAsync</c> — so this is already "the last assistant
     /// message", not every lap concatenated.</para>
     /// </returns>
-    public Task<SendResult> RunAsync(string prompt, CancellationToken ct,
-        Jobs.ToolSelection? turnTools = null) => _agent.SendAsync(prompt, ct, turnTools);
+    public async Task<SendResult> RunAsync(string prompt, CancellationToken ct,
+        Jobs.ToolSelection? turnTools = null)
+    {
+        try
+        {
+            return await _agent.SendAsync(prompt, ct, turnTools);
+        }
+        finally
+        {
+            // SAVED AGAIN ONCE THE GOAL IS OVER, HOWEVER IT ENDED. The per-turn save runs as each
+            // model response arrives, BEFORE a plain final answer is appended to the conversation —
+            // so without this the stored context ends at the user's last question, and a resumed
+            // session (--resume, a headless -c) remembers what was asked but not what it answered.
+            // In a finally because a goal stopped before any response (Ctrl+C on a first turn) has
+            // had no per-turn save at all, and its session id would then name nothing.
+            SaveResume(_agent);
+        }
+    }
+
+    // ONE WRITE, two callers: every completed model turn, and the end of the goal.
+    private void SaveResume(Agent agent) =>
+        _stores.Resume?.SaveTurn(new FolderSessionStore.ResumeTurn(
+            agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
+            _runtime.WorkingDir, Mode.Edits));
 
     /// <summary>
     /// Hands the running turn something to read on its next lap, or answers false when nothing can
@@ -617,36 +646,30 @@ public sealed class AgentHost : IDisposable
 
 
     /// <summary>
-    /// A backstop, not a budget. The user's configured value when they set one, otherwise
-    /// <see cref="DefaultTurnCeiling"/>.
+    /// Turns one request to the SESSION'S OWN agent may take before it is stopped.
     ///
-    /// <para>NO LOW DEFAULT: a low cap exists to bound a WORKER inside a fan-out — one job among
-    /// many, where a runaway costs the whole plan. A session is not that. The user is watching it and
-    /// can stop it, and a ceiling in the low hundreds just ends real work at a number that has
-    /// nothing to do with the task.</para>
+    /// <para>THE USER'S NUMBER WHEN THEY SET ONE, AND NO CAP WHEN THEY DID NOT. The person running
+    /// the session is watching it and can stop it, so a default ceiling only ends real work at a
+    /// number that has nothing to do with the task. A worker inside a fan-out is different — one job
+    /// among many, where a runaway costs the whole plan — which is why children keep
+    /// <see cref="CeilingFor"/>'s default.</para>
     ///
-    /// <para>WHAT DOES NOT FOLLOW is <c>int.MaxValue</c>. "No arbitrary limit" and "no limit" are
-    /// different claims, and the first does not license the second. Stuck detection is not a
-    /// substitute either unless it can actually END a run rather than nudge — without a real ceiling
-    /// the common case, an unconfigured session, has nothing bounding it at all.</para>
+    /// <para>A CONFIGURED VALUE BINDS BOTH. <c>orchestrator.maxTurns</c> (and <c>--max-turns</c>,
+    /// which sets it) caps this agent and every child, so a limit someone typed is never half
+    /// applied.</para>
     /// </summary>
-    /// <para>ZERO MEANS UNBOUNDED, an explicit opt-out. Read literally it would be a ceiling of zero
-    /// turns — the agent stopping before its first call and doing nothing — which nobody configures
-    /// on purpose, so the number is free to carry the meaning someone actually intends by it. It
-    /// matches opencode's <c>agent.steps ?? Infinity</c>: a session nobody asked to bound is not
-    /// bounded.</para>
-    /// <summary>
-    /// Turns one request may take before it is stopped — this agent's, and every child's.
-    ///
-    /// <para>ONE RESOLUTION, SHARED. Resolving it here for the session agent and again, by a
-    /// separate expression, for sub-agents lets the two disagree: a configured <c>0</c> makes the
-    /// parent unbounded while children fall back to the default. A static so the composition root can
-    /// resolve it once, before the host exists, and hand the same number to the factory.</para>
-    /// </summary>
-    public int TurnCeiling => CeilingFor(ConfiguredMaxTurns);
+    public int TurnCeiling => SessionCeilingFor(ConfiguredMaxTurns);
 
     /// <summary>
-    /// What a configured <c>orchestrator.maxTurns</c> means.
+    /// What a configured <c>orchestrator.maxTurns</c> means for the session's own agent: that many
+    /// turns, or no cap when it is absent or <c>0</c>.
+    /// </summary>
+    public static int SessionCeilingFor(int? configured) =>
+        configured is { } turns and > 0 ? turns : int.MaxValue;
+
+    /// <summary>
+    /// What a configured <c>orchestrator.maxTurns</c> means for a CHILD — a sub-agent or a fan-out
+    /// worker. The session's own agent reads <see cref="SessionCeilingFor"/> instead.
     ///
     /// <para>ZERO IS THE OPT-OUT, not a mistake — the same meaning an agent type's <c>maxTurns</c>
     /// carries, and the reason nobody configures zero by accident: it would mean an agent that stops
@@ -660,7 +683,7 @@ public sealed class AgentHost : IDisposable
     };
 
     /// <summary>
-    /// Turns a single request may take before it is stopped, absent configuration.
+    /// Turns a single request to a CHILD may take before it is stopped, absent configuration.
     ///
     /// <para>Chosen to be unreachable by ordinary work and still finite. A live three-prompt drive
     /// used four turns; a long agentic session on a real repo used sixty-six. Three hundred leaves
@@ -777,9 +800,7 @@ public sealed class AgentHost : IDisposable
             // THE EDIT MODE GOES WITH IT. A session saved in always-ask that came back in the
             // accept-edits default would silently undo a decision the user made, at the moment they
             // are least likely to be watching.
-            _stores.Resume?.SaveTurn(new FolderSessionStore.ResumeTurn(
-                agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
-                _runtime.WorkingDir, Mode.Edits));
+            SaveResume(agent);
 
             // AND HISTORY, which is a different feature from resume and so a different database. The
             // resume store is a buffer worth nothing once a session ends cleanly; this survives, and

@@ -190,9 +190,9 @@ internal static class SessionFactory
             Ledger = ledger,
             Logs = shared.Logs,
 
-            // THE SAME CEILING THE PARENT GETS, resolved once. Two expressions for one number is
-            // how a configured 0 came to mean "unbounded" for the session and "the default" for
-            // its children.
+            // A CHILD'S CEILING: the configured number, the same one the session's own agent obeys,
+            // or the built-in default when none is set — see AgentHost.CeilingFor and
+            // SessionCeilingFor for why an unconfigured session and its workers differ.
             MaxTurns = AgentHost.CeilingFor(orchestrator.MaxTurns),
 
             // THE CONSTANT, never the literal — two copies of this number desynchronise the

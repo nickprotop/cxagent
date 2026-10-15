@@ -224,7 +224,14 @@ public sealed partial class Session
         /// answer — a plugin submitting with wantResult — awaits this. Keeping them apart means the
         /// common path allocates nothing extra.</para>
         /// </param>
-        public sealed record Started(Task Turn, Task<string?> Result) : SubmitOutcome;
+        /// <param name="Outcome">
+        /// How the turn ended — answered, capped at the turn limit, failed, cancelled.
+        ///
+        /// <para>A HEADLESS CALLER TURNS THIS INTO AN EXIT CODE, and the text alone cannot say it:
+        /// a reply may be the answer or a summary of work the turn limit cut short, and a failed turn
+        /// and a silent one both leave <paramref name="Result"/> null.</para>
+        /// </param>
+        public sealed record Started(Task Turn, Task<string?> Result, Task<SendOutcome> Outcome) : SubmitOutcome;
 
         /// <summary>
         /// The text named a command, which has run. Nothing was sent to the model.
@@ -446,6 +453,7 @@ public sealed partial class Session
         // awaiting Result means the plugin's own work executes on the turn loop's thread before
         // RunTurnAsync has unwound from the lap that produced the text.
         var result = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var outcome = new TaskCompletionSource<SendOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // STARTED OFF THE CALLER'S SYNCHRONIZATION CONTEXT, AND THIS IS A CORRECTNESS REQUIREMENT, not
         // a throughput one. A TUI host installs a context whose Post queues onto the render thread, so
@@ -477,7 +485,8 @@ public sealed partial class Session
         try
         {
             return new SubmitOutcome.Started(
-                RunTurnAsync(new TurnRequest(text, echo, tools, origin, source), result), result.Task);
+                RunTurnAsync(new TurnRequest(text, echo, tools, origin, source), result, outcome),
+                result.Task, outcome.Task);
         }
         finally
         {
@@ -496,7 +505,8 @@ public sealed partial class Session
     /// <para>CANCELLATION IS NOT AN ERROR HERE. <see cref="CancelTurn"/> already said "Stopped." and
     /// handed the queue back; saying anything further would report one event twice.</para>
     /// </summary>
-    private async Task RunTurnAsync(TurnRequest request, TaskCompletionSource<string?> result)
+    private async Task RunTurnAsync(TurnRequest request, TaskCompletionSource<string?> result,
+        TaskCompletionSource<SendOutcome> outcome)
     {
         var text = request.Text;
         var echo = request.Echo;
@@ -573,6 +583,7 @@ public sealed partial class Session
                 // rather than a hang, and Try tolerates the source already being completed from
                 // another exit of this same method — SetResult would throw on the second call.
                 result.TrySetResult(null);
+                outcome.TrySetResult(SendOutcome.Cancelled);
                 return;
             }
             catch (Exception ex)
@@ -591,6 +602,7 @@ public sealed partial class Session
                 // A CALLER AWAITING Result MUST NOT HANG just because the turn failed rather than
                 // answered — null is the same "no text" signal a silent turn produces.
                 result.TrySetResult(null);
+                outcome.TrySetResult(SendOutcome.Failed);
                 return;
             }
 
@@ -628,6 +640,7 @@ public sealed partial class Session
                 // carries "" (see SendOutcome.Silent), which is the same "nothing to report" this
                 // member promises null for.
                 result.TrySetResult(string.IsNullOrWhiteSpace(sent.Text) ? null : sent.Text);
+                outcome.TrySetResult(sent.Outcome);
 
                 // A DIFFERENT QUEUE FROM THE STEER ABOVE, and drained only here, once this loop is
                 // truly done rather than on every lap. Steer JOINS the running turn — the text above
