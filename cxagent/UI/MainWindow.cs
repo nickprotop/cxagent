@@ -417,7 +417,6 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private GridControl BuildComposerFor(SessionTab tab)
     {
-        var model = ModelLabel;
         var modeLine = Controls.Markup()
             // THE BACKGROUND IS IN THE MARKUP, not on the control. MarkupControl.PaintDOM fills from
             // Container?.BackgroundColor and never consults its own, so the builder's
@@ -427,7 +426,7 @@ public sealed class MainWindow : IDisposable
             // `[fg on bg]` is ONE tag in this parser — a bare `[on #…]` has no foreground and is not
             // the background form, so it painted nothing. Each run carries its own background, and
             // [fillwidth] carries the last one to the end of the row.
-            .AddLine(ModeLineText(_mode, model, tab.InAside))
+            .AddLine(ModeLineText(_mode, _resolution, tab.InAside))
             // STRETCH, so [fillwidth] has a full-width rect to fill INTO. The painter extends the
             // flagged cell's background to `bounds.Right`, and without stretch those bounds ended at
             // the last character — the fill was working, it simply had nothing to cross.
@@ -3078,7 +3077,7 @@ public sealed class MainWindow : IDisposable
         if (_modeLine is not null)
         {
             _modeLine.BackgroundColor = ColorScheme.ComposerSurface;
-            _modeLine.SetContent([ModeLineText(_mode, ModelLabel, ActiveSessionTab.InAside)]);
+            _modeLine.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside)]);
         }
 
         // THE TWO GRIPS, which are the accent rather than a surface. Both captured ColorScheme.Grip
@@ -3295,7 +3294,7 @@ public sealed class MainWindow : IDisposable
 
         // THE MODE LINE IS THE TAB'S OWN, so it is refreshed whether or not the tab is in front —
         // a background session's composer must not keep naming the model it used to have.
-        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, ModelLabelFor(resolution), tab.InAside)]);
+        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, resolution, tab.InAside)]);
 
         if (ReferenceEquals(tab, ActiveSessionTab)) SetResolution(resolution);
     }
@@ -3307,7 +3306,7 @@ public sealed class MainWindow : IDisposable
         // THE COMPOSER LINE TOO. It carries the model name, so a switch that refreshed only the
         // panel left "local:…" under the prompt while the session was talking to `small` — the same
         // stale-readout bug the panel's own window had, one line lower.
-        _modeLine?.SetContent([ModeLineText(_mode, ModelLabel, ActiveSessionTab.InAside)]);
+        _modeLine?.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside)]);
 
         RefreshSessionPanel();
         RefreshTokenItem();
@@ -3322,7 +3321,7 @@ public sealed class MainWindow : IDisposable
 
         tab.Mode = mode;
         tab.ModeLine?.SetContent(
-            [ModeLineText(mode, tab.Resolution is { } r ? ModelLabelFor(r) : ModelLabel, tab.InAside)]);
+            [ModeLineText(mode, tab.Resolution ?? _resolution, tab.InAside)]);
 
         if (ReferenceEquals(tab, ActiveSessionTab)) SetMode(mode);
     }
@@ -3330,10 +3329,9 @@ public sealed class MainWindow : IDisposable
     public void SetMode(WorkingMode mode)
     {
         _mode = mode;
-        var model = ModelLabel;
         // SetContent rather than a rebuild: the control is already placed in the grid, and replacing
         // it would detach the instance the layout holds.
-        _modeLine?.SetContent([ModeLineText(_mode, model, ActiveSessionTab.InAside)]);
+        _modeLine?.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.InAside)]);
     }
 
     /// <summary>
@@ -3349,18 +3347,35 @@ public sealed class MainWindow : IDisposable
     ///
     /// <para>The model name is escaped (it comes from config); the mode words are ours.</para>
     /// </summary>
-    private static string ModeLineText(WorkingMode mode, string model, bool aside) =>
+    private static string ModeLineText(WorkingMode mode, ResolvedConfig resolution, bool aside) =>
+        ModeLineText(mode, ModelLabelFor(resolution), aside, PromptCacheOff(resolution));
+
+    private static string ModeLineText(WorkingMode mode, string model, bool aside, bool cacheOff = false) =>
         $"[{ColorScheme.AccentMarkup}]{AgentModes.Name(mode.Agent)}[/]"
       + $"[{ColorScheme.MutedMarkup}] · [/]"
       + $"[{EditModeMarkup(mode.Edits)}]{EditModes.Name(mode.Edits)}[/]"
       + $"[{ColorScheme.MutedMarkup}] (shift+tab to change · F4 focus)[/]"
       + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]"
+        // BESIDE THE MODEL IT IS ABOUT. Uncached, every turn re-sends and re-bills the whole
+        // conversation at full price, and nothing else on screen would ever say so.
+      + (cacheOff ? $"[{ColorScheme.CautionMarkup}] {CacheOffHint}[/]" : "")
         // AFTER THE MODEL, where the eye ends the line. The grip's colour says something changed;
         // this says what, and how to undo it.
       + (aside ? $"[{ColorScheme.AsideMarkup}] · {AsideHint}[/]" : "");
 
-    public static string ModeLineTextForTest(WorkingMode mode, string model, bool aside) =>
-        ModeLineText(mode, model, aside);
+    public static string ModeLineTextForTest(WorkingMode mode, string model, bool aside, bool cacheOff = false) =>
+        ModeLineText(mode, model, aside, cacheOff);
+
+    /// <summary>Names the config key, so the hint says how to turn it on.</summary>
+    public const string CacheOffHint = "(no prompt cache · set cacheControl)";
+
+    /// <summary>
+    /// An Anthropic instance without <c>cacheControl</c>. Anthropic caches nothing unless asked, so
+    /// this is the one case where the setting decides whether there is a cache at all; a local
+    /// server caches on its own and an OpenAI endpoint caches automatically.
+    /// </summary>
+    public static bool PromptCacheOff(ResolvedConfig resolution) =>
+        resolution.Provider is Core.Llm.Providers.AnthropicProvider { CacheControl: false };
 
     public const string AsideHint = "btw · Esc to return";
 
@@ -3382,7 +3397,7 @@ public sealed class MainWindow : IDisposable
         tab.InAside = inAside;
         tab.Grip?.SetContent([.. GripRows(GripColour(inAside))]);
         tab.ModeLine?.SetContent(
-            [ModeLineText(tab.Mode, tab.Resolution is { } r ? ModelLabelFor(r) : ModelLabel, inAside)]);
+            [ModeLineText(tab.Mode, tab.Resolution ?? _resolution, inAside)]);
     }
 
     public string GripTextForTest() => ActiveSessionTab.Grip?.Text ?? "";

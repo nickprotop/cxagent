@@ -7,8 +7,15 @@ namespace CxAgent.Core.Llm.Providers;
 /// <summary>Neutral &lt;-&gt; Anthropic Messages wire mapping. Pure functions, no I/O.</summary>
 internal static class AnthropicWire
 {
+    /// <param name="cache">
+    /// Ask Anthropic to cache the prefix — it caches nothing without a <c>cache_control</c> marker.
+    /// Two of them: an explicit one on the system prompt, which covers the tools rendered before it
+    /// and survives anything later in the conversation; and the top-level automatic one, which moves
+    /// to the last block as the conversation grows, so each turn reads what the previous one wrote.
+    /// In a tool loop the history is most of every request, so the system marker alone saves little.
+    /// </param>
     public static JsonObject BuildRequestBody(string model, int maxTokens,
-        List<ChatMessage> messages, List<ToolDefinition>? tools, bool stream)
+        List<ChatMessage> messages, List<ToolDefinition>? tools, bool stream, bool cache = false)
     {
         var systemParts = new List<string>();
         var msgs = new JsonArray();
@@ -64,7 +71,27 @@ internal static class AnthropicWire
             ["max_tokens"] = maxTokens,
             ["messages"] = msgs
         };
-        if (systemParts.Count > 0) body["system"] = string.Join("\n\n", systemParts);
+        if (systemParts.Count > 0)
+        {
+            var system = string.Join("\n\n", systemParts);
+            body["system"] = cache
+                ? new JsonArray { new JsonObject {
+                    ["type"] = "text",
+                    ["text"] = system,
+                    ["cache_control"] = new JsonObject { ["type"] = "ephemeral" } } }
+                : system;
+        }
+        if (cache)
+        {
+            body["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
+
+            // THE TASK LIST MOVES, so the automatic marker on it never matches next turn: the
+            // agent removes it and re-appends it after the new results, and the cached prefix that
+            // ended with the old copy is gone. A marker on the block BEFORE it ends on history that
+            // only ever grows, which the next request does contain.
+            if (messages.Count > 1 && messages[^1].IsTaskList && msgs.Count > 1)
+                MarkLastBlock((JsonObject)msgs[^2]!);
+        }
         if (stream) body["stream"] = true;
         if (tools is { Count: > 0 })
         {
@@ -79,6 +106,15 @@ internal static class AnthropicWire
             body["tools"] = arr;
         }
         return body;
+    }
+
+    private static void MarkLastBlock(JsonObject message)
+    {
+        if (message["content"] is JsonValue text)
+            message["content"] = new JsonArray { new JsonObject {
+                ["type"] = "text", ["text"] = text.GetValue<string>() } };
+        if (message["content"] is JsonArray { Count: > 0 } blocks && blocks[^1] is JsonObject last)
+            last["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
     }
 
     /// <summary>
@@ -96,16 +132,13 @@ internal static class AnthropicWire
     public sealed class StreamAccumulator
     {
         private readonly Dictionary<int, (string Name, string? Id, System.Text.StringBuilder Json)> _open = new();
-        private int _inputTokens;
-        private int _outputTokens;
-        private bool _sawUsage;
 
         public string? StopReason { get; private set; }
         public bool IsDone { get; private set; }
 
-        public LlmUsage? Usage => _sawUsage
-            ? new LlmUsage { InputTokens = _inputTokens, OutputTokens = _outputTokens }
-            : null;
+        /// <summary>Input and cache figures arrive in <c>message_start</c>, the final output
+        /// count in <c>message_delta</c>; each later object overrides only the fields it carries.</summary>
+        public LlmUsage? Usage { get; private set; }
 
         /// <summary>Feeds one event. Returns its text delta and any tool call it completed.</summary>
         public (string? textDelta, ToolCall? toolCall) Accept(string dataJson)
@@ -188,13 +221,34 @@ internal static class AnthropicWire
             return new ToolCall { Name = acc.Name, Id = acc.Id, Arguments = args };
         }
 
-        private void ReadUsage(JsonElement u)
+        private void ReadUsage(JsonElement u) => Usage = AnthropicWire.ReadUsage(u, Usage);
+    }
+
+    /// <summary>
+    /// One Anthropic <c>usage</c> object in the neutral shape. Anthropic's <c>input_tokens</c> is
+    /// only the UNCACHED remainder; the neutral InputTokens is the whole prompt, as OpenAI's
+    /// <c>prompt_tokens</c> is, so the cache reads and writes are added back in. Reported as cache
+    /// figures only when Anthropic sends the fields — absent is "unknown", not a zero hit rate.
+    /// </summary>
+    internal static LlmUsage ReadUsage(JsonElement u, LlmUsage? prior = null)
+    {
+        int Get(string name, int fallback) =>
+            u.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : fallback;
+
+        var p = prior ?? new LlmUsage();
+        var uncached = Get("input_tokens", p.InputTokens - p.CachedInputTokens - p.CacheWriteTokens);
+        var read = Get("cache_read_input_tokens", p.CachedInputTokens);
+        var written = Get("cache_creation_input_tokens", p.CacheWriteTokens);
+        return new LlmUsage
         {
-            if (u.TryGetProperty("input_tokens", out var it) && it.ValueKind == JsonValueKind.Number)
-            { _inputTokens = it.GetInt32(); _sawUsage = true; }
-            if (u.TryGetProperty("output_tokens", out var ot) && ot.ValueKind == JsonValueKind.Number)
-            { _outputTokens = ot.GetInt32(); _sawUsage = true; }
-        }
+            InputTokens = uncached + read + written,
+            OutputTokens = Get("output_tokens", p.OutputTokens),
+            CachedInputTokens = read,
+            CacheWriteTokens = written,
+            CacheReported = p.CacheReported
+                || u.TryGetProperty("cache_read_input_tokens", out _)
+                || u.TryGetProperty("cache_creation_input_tokens", out _),
+        };
     }
 
     public static string NormalizeStopReason(string? stopReason) => stopReason switch
@@ -228,13 +282,7 @@ internal static class AnthropicWire
             }
 
         string? stop = root.TryGetProperty("stop_reason", out var sr) ? sr.GetString() : null;
-        var usage = new LlmUsage();
-        if (root.TryGetProperty("usage", out var u))
-            usage = new LlmUsage
-            {
-                InputTokens = u.TryGetProperty("input_tokens", out var it) ? it.GetInt32() : 0,
-                OutputTokens = u.TryGetProperty("output_tokens", out var ot) ? ot.GetInt32() : 0
-            };
+        var usage = root.TryGetProperty("usage", out var u) ? ReadUsage(u) : new LlmUsage();
 
         return new LlmResponse
         {

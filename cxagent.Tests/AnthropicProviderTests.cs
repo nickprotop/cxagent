@@ -197,4 +197,91 @@ public class AnthropicProviderTests : IDisposable
             "provider 'anthropic' returned 400 after 1 attempt(s): messages.2: tool_use ids were found without tool_result blocks",
             ex.Message);
     }
+
+    /// <summary>
+    /// CACHING IS ASKED FOR WHEN CONFIGURED, and not otherwise. Anthropic caches nothing without a
+    /// marker, and this driver sent none — every turn re-processed the whole conversation.
+    /// </summary>
+    [Fact]
+    public void BuildRequestBody_WithCache_MarksSystemPrompt_AndAsksForAutomaticCaching()
+    {
+        var messages = new List<ChatMessage>
+        {
+            new() { Role = "system", Content = "you are cxagent" },
+            new() { Role = "user", Content = "hi" },
+        };
+
+        var cached = AnthropicWire.BuildRequestBody("m", 10, messages, null, stream: true, cache: true);
+        var system = Assert.Single(cached["system"]!.AsArray())!;
+        Assert.Equal("you are cxagent", system["text"]!.GetValue<string>());
+        Assert.Equal("ephemeral", system["cache_control"]!["type"]!.GetValue<string>());
+        Assert.Equal("ephemeral", cached["cache_control"]!["type"]!.GetValue<string>());
+
+        var plain = AnthropicWire.BuildRequestBody("m", 10, messages, null, stream: true);
+        Assert.Equal("you are cxagent", plain["system"]!.GetValue<string>());
+        Assert.Null(plain["cache_control"]);
+    }
+
+    /// <summary>
+    /// CACHED TOKENS ARE COUNTED. Anthropic's input_tokens is the uncached remainder only; the
+    /// neutral figure is the whole prompt, with the reads and writes reported beside it.
+    /// </summary>
+    [Fact]
+    public async Task ChatStream_ReportsCacheReadsAndWrites()
+    {
+        _srv.EnqueueSse(
+            Ev("""{"type":"message_start","message":{"usage":{"input_tokens":50,"cache_read_input_tokens":9000,"cache_creation_input_tokens":400,"output_tokens":1}}}"""),
+            Ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}"""),
+            Ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}"""),
+            Ev("""{"type":"message_stop"}"""));
+
+        LlmUsage? usage = null;
+        await foreach (var chunk in Make().ChatStreamAsync(Msgs(), null, CancellationToken.None))
+            if (chunk.IsFinal) usage = chunk.Usage;
+
+        Assert.Equal(9450, usage!.InputTokens);
+        Assert.Equal(9000, usage.CachedInputTokens);
+        Assert.Equal(400, usage.CacheWriteTokens);
+        Assert.True(usage.CacheReported);
+        Assert.Equal(7, usage.OutputTokens);
+    }
+
+    [Fact]
+    public async Task ChatAsync_WithCacheControl_SendsTheMarkers()
+    {
+        _srv.EnqueueJson(200, """{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"cache_read_input_tokens":100,"output_tokens":1}}""");
+        var provider = new AnthropicProvider("anthropic", "Claude x", "claude-x", "sk-ant-test",
+            baseUrl: _srv.BaseUrl.TrimEnd('/'), retryPolicy: RetryPolicy.NoDelay, cacheControl: true);
+
+        var r = await provider.ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.Contains("\"cache_control\"", _srv.LastRequestBody);
+        Assert.Equal(103, r.Usage.InputTokens);
+        Assert.Equal(100, r.Usage.CachedInputTokens);
+    }
+
+    /// <summary>
+    /// THE MARKER SITS BEFORE A TRAILING TASK LIST. The list is removed and re-appended every turn,
+    /// so a cache entry ending on it is never read; one ending on the history before it is.
+    /// </summary>
+    [Fact]
+    public void BuildRequestBody_WithCache_MarksTheBlockBeforeATrailingTaskList()
+    {
+        var args = System.Text.Json.JsonDocument.Parse("{}").RootElement;
+        var messages = new List<ChatMessage>
+        {
+            new() { Role = "system", Content = "sys" },
+            new() { Role = "user", Content = "go" },
+            new() { Role = "assistant", Content = "", ToolCalls = [new ToolCall { Id = "a", Name = "grep", Arguments = args }] },
+            new() { Role = "tool", ToolCallId = "a", Content = "count: 0" },
+            new() { Role = "user", Content = "- [ ] step one", IsTaskList = true },
+        };
+
+        var msgs = AnthropicWire.BuildRequestBody("m", 10, messages, null, stream: true, cache: true)["messages"]!.AsArray();
+
+        var result = msgs[^2]!["content"]!.AsArray()[^1]!;
+        Assert.Equal("tool_result", result["type"]!.GetValue<string>());
+        Assert.Equal("ephemeral", result["cache_control"]!["type"]!.GetValue<string>());
+        Assert.Equal("- [ ] step one", msgs[^1]!["content"]!.GetValue<string>());
+    }
 }

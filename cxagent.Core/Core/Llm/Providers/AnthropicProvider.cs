@@ -16,12 +16,16 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
     private readonly int _maxTokens;
     private readonly string _baseUrl;
     private readonly RetryPolicy _retry;
+    private readonly bool _cache;
 
     public string ProviderId { get; }
     public string DisplayName { get; }
     public string ModelId => _model;
     public bool SupportsToolCalling => true;
     public bool SupportsStreaming => true;
+
+    /// <summary>Whether requests ask Anthropic to cache the prompt — <c>cacheControl</c> in config.</summary>
+    public bool CacheControl => _cache;
 
     /// <summary>The shared client. NO TIMEOUT — cancellation is the bound, for the reasons set out on
     /// <see cref="OpenAiCompatibleProvider"/>'s copy of this field. Kept identical rather than
@@ -31,8 +35,10 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
 
 
     public AnthropicProvider(string providerId, string displayName, string model, string apiKey,
-        int maxTokens = 4096, string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null)
+        int maxTokens = 4096, string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null,
+        bool cacheControl = false)
     {
+        _cache = cacheControl;
         ProviderId = providerId;
         DisplayName = displayName;
         _model = model;
@@ -57,7 +63,7 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
     public async Task<LlmResponse> ChatAsync(List<ChatMessage> messages,
         List<ToolDefinition>? tools, CancellationToken ct)
     {
-        var body = AnthropicWire.BuildRequestBody(_model, _maxTokens, messages, tools, stream: false).ToJsonString();
+        var body = AnthropicWire.BuildRequestBody(_model, _maxTokens, messages, tools, stream: false, cache: _cache).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         var json = await resp.Content.ReadAsStringAsync(ct);
@@ -68,7 +74,7 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
     public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
         List<ToolDefinition>? tools, [EnumeratorCancellation] CancellationToken ct)
     {
-        var body = AnthropicWire.BuildRequestBody(_model, _maxTokens, messages, tools, stream: true).ToJsonString();
+        var body = AnthropicWire.BuildRequestBody(_model, _maxTokens, messages, tools, stream: true, cache: _cache).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         using var stream = await resp.Content.ReadAsStreamAsync(ct);
