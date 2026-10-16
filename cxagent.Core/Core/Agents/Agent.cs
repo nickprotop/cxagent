@@ -2562,101 +2562,110 @@ public sealed class Agent
     private void PaintChildRow(ChildRun run)
     {
         if (!_liveJobs.TryGetValue(run.JobId, out var job)) return;
-        var child = run.Child;
-        var turns = run.Turns;
 
-        // ELAPSED, so a long-running child is visibly ALIVE rather than merely un-finished. A
-        // five-minute child otherwise shows one line of numbers that never moves between turns,
-        // which reads exactly like a frozen row.
-        var elapsed = DateTimeOffset.UtcNow - run.Started;
-        var age = elapsed.TotalMinutes >= 1
-            ? $" · {(int)elapsed.TotalMinutes}m{elapsed.Seconds:00}s"
-            : $" · {elapsed.TotalSeconds:0}s";
-
-        // UsedFraction is null until the provider first reports usage, so an early tick shows
-        // turns alone rather than "0% ctx", which would read as a measurement rather than as the
-        // absence of one.
-        var occupancy = child.Agent.Context.UsedFraction is { } f
-            ? $" · {Commands.StatsDashboard.Percent(f)} ctx"
-            : "";
-        // WAITING SAYS SO, AND SAYS IT FIRST. Turns and occupancy keep ticking while a child sits
-        // at a prompt, so a row showing only those reads as working — and with several children
-        // up, the user cannot tell which one their answer would release. The state changes too,
-        // so anything reasoning about the row (not just the header text) sees it.
-        var waiting = child.Agent.IsWaitingOnPermission;
-        job.State = waiting ? JobState.WaitingOnPermission : JobState.Running;
-
-        job.ProgressMessage = waiting
-            ? $"waiting for permission · {turns} turn{(turns == 1 ? "" : "s")}{age}"
-            : $"{turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}";
-
-        // WHAT IT IS DOING, behind the expand. The header's counters say a child is ALIVE; only
-        // its tool calls say whether it is on the right track — which is the question a
-        // minutes-long run provokes and the one that decides whether to press Escape.
-        //
-        // The child's own BufferedJobPanel already holds every row it has drawn (that is what
-        // keeps them out of the parent's transcript), so this is a read of something recorded
-        // rather than new bookkeeping.
-        //
-        // THE LAST FEW ONLY. A child that has made forty calls has a scrollback nobody wants
-        // inline; the recent ones are what "on the right track" is judged from.
-        var recent = child.Jobs.Jobs
-            .OrderByDescending(j => j.StartedAt)
-            .Take(6)
-            .Reverse()
-            .Select(j => $"  {j.DisplayName}")
-            .ToList();
-
-        // WHAT IT IS, above what it is doing. The recent-tools list answers "on the right track",
-        // but not "what did I even start" — and the header cannot carry that: it is one truncated
-        // line, and the row's own name lost the type entirely until DescribeCall grew a spawn
-        // branch. These are STANDING FACTS, unchanged for the child's whole life, so they belong
-        // where they can be read at leisure rather than glanced at.
-        //
-        // The MODEL earns its line because a type may name its own provider: a worker running
-        // somewhere other than the session's model is a thing the user has no other way to learn,
-        // and by the time the row finishes the provider is gone.
-        var facts = new List<string> { $"  type: {child.TypeName}" };
-        if (!string.IsNullOrWhiteSpace(child.ModelId))
-            facts.Add($"  model: {child.ModelId}");
-
-        // WHAT IT LOADED, and this is the line the row earns most. A child's context is invisible
-        // by design, so a skill it chose is the one thing shaping its answer that the parent
-        // cannot otherwise learn — and the load itself appears in the recent-tools list below for
-        // six calls before scrolling away for good.
-        //
-        // CAPTURED ONTO THE RUN, not just rendered. The finished row is built after SendAsync
-        // returns and cannot read live state — this section argues the child's context is gone by
-        // then, and a finished row reading it would depend on the very thing it says has vanished.
-        // The run's turn count is carried for the same reason.
-        //
-        // NOT A STANDING FACT, unlike type and model: skills ACCUMULATE mid-run, so the line
-        // appears only once something is loaded rather than sitting empty — the same reason
-        // occupancy renders as "" until the provider first reports usage.
-        run.Skills = child.Agent.LoadedSkills;
-        if (run.Skills.Count > 0)
-            facts.Add($"  skills: {Clip(string.Join(", ", run.Skills), 60)}");
-
-        // ITS TASK, the first line in full. The prompt is the parent's own words and is often a
-        // page long — the first line is what the parent MEANT, and the rest is detail the row
-        // cannot hold, but that first line is shown whole rather than clipped: cutting it short
-        // can drop the very word that distinguishes this run from a sibling's. Shown only when it
-        // says something the row's name does not already.
-        if (!string.IsNullOrWhiteSpace(run.Prompt))
+        // UNDER THE ROW'S LOCK, AND ONLY WHILE THE ROW IS STILL LIVE. A background spawn settles its row
+        // on the parent's thread while the child's first repaint runs on the runner's; a repaint that read
+        // the row before the settle and wrote after it would put "Running" over "Succeeded" and leave the
+        // row spinning for the rest of the session. The settle takes the same lock to remove the row.
+        lock (job)
         {
-            var first = run.Prompt!.Split('\n', 2)[0].Trim();
-            if (first.Length > 0) facts.Add($"  task: {first}");
+            if (!_liveJobs.ContainsKey(run.JobId)) return;
+            var child = run.Child;
+            var turns = run.Turns;
+
+            // ELAPSED, so a long-running child is visibly ALIVE rather than merely un-finished. A
+            // five-minute child otherwise shows one line of numbers that never moves between turns,
+            // which reads exactly like a frozen row.
+            var elapsed = DateTimeOffset.UtcNow - run.Started;
+            var age = elapsed.TotalMinutes >= 1
+                ? $" · {(int)elapsed.TotalMinutes}m{elapsed.Seconds:00}s"
+                : $" · {elapsed.TotalSeconds:0}s";
+
+            // UsedFraction is null until the provider first reports usage, so an early tick shows
+            // turns alone rather than "0% ctx", which would read as a measurement rather than as the
+            // absence of one.
+            var occupancy = child.Agent.Context.UsedFraction is { } f
+                ? $" · {Commands.StatsDashboard.Percent(f)} ctx"
+                : "";
+            // WAITING SAYS SO, AND SAYS IT FIRST. Turns and occupancy keep ticking while a child sits
+            // at a prompt, so a row showing only those reads as working — and with several children
+            // up, the user cannot tell which one their answer would release. The state changes too,
+            // so anything reasoning about the row (not just the header text) sees it.
+            var waiting = child.Agent.IsWaitingOnPermission;
+            job.State = waiting ? JobState.WaitingOnPermission : JobState.Running;
+
+            job.ProgressMessage = waiting
+                ? $"waiting for permission · {turns} turn{(turns == 1 ? "" : "s")}{age}"
+                : $"{turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}";
+
+            // WHAT IT IS DOING, behind the expand. The header's counters say a child is ALIVE; only
+            // its tool calls say whether it is on the right track — which is the question a
+            // minutes-long run provokes and the one that decides whether to press Escape.
+            //
+            // The child's own BufferedJobPanel already holds every row it has drawn (that is what
+            // keeps them out of the parent's transcript), so this is a read of something recorded
+            // rather than new bookkeeping.
+            //
+            // THE LAST FEW ONLY. A child that has made forty calls has a scrollback nobody wants
+            // inline; the recent ones are what "on the right track" is judged from.
+            var recent = child.Jobs.Jobs
+                .OrderByDescending(j => j.StartedAt)
+                .Take(6)
+                .Reverse()
+                .Select(j => $"  {j.DisplayName}")
+                .ToList();
+
+            // WHAT IT IS, above what it is doing. The recent-tools list answers "on the right track",
+            // but not "what did I even start" — and the header cannot carry that: it is one truncated
+            // line, and the row's own name lost the type entirely until DescribeCall grew a spawn
+            // branch. These are STANDING FACTS, unchanged for the child's whole life, so they belong
+            // where they can be read at leisure rather than glanced at.
+            //
+            // The MODEL earns its line because a type may name its own provider: a worker running
+            // somewhere other than the session's model is a thing the user has no other way to learn,
+            // and by the time the row finishes the provider is gone.
+            var facts = new List<string> { $"  type: {child.TypeName}" };
+            if (!string.IsNullOrWhiteSpace(child.ModelId))
+                facts.Add($"  model: {child.ModelId}");
+
+            // WHAT IT LOADED, and this is the line the row earns most. A child's context is invisible
+            // by design, so a skill it chose is the one thing shaping its answer that the parent
+            // cannot otherwise learn — and the load itself appears in the recent-tools list below for
+            // six calls before scrolling away for good.
+            //
+            // CAPTURED ONTO THE RUN, not just rendered. The finished row is built after SendAsync
+            // returns and cannot read live state — this section argues the child's context is gone by
+            // then, and a finished row reading it would depend on the very thing it says has vanished.
+            // The run's turn count is carried for the same reason.
+            //
+            // NOT A STANDING FACT, unlike type and model: skills ACCUMULATE mid-run, so the line
+            // appears only once something is loaded rather than sitting empty — the same reason
+            // occupancy renders as "" until the provider first reports usage.
+            run.Skills = child.Agent.LoadedSkills;
+            if (run.Skills.Count > 0)
+                facts.Add($"  skills: {Clip(string.Join(", ", run.Skills), 60)}");
+
+            // ITS TASK, the first line in full. The prompt is the parent's own words and is often a
+            // page long — the first line is what the parent MEANT, and the rest is detail the row
+            // cannot hold, but that first line is shown whole rather than clipped: cutting it short
+            // can drop the very word that distinguishes this run from a sibling's. Shown only when it
+            // says something the row's name does not already.
+            if (!string.IsNullOrWhiteSpace(run.Prompt))
+            {
+                var first = run.Prompt!.Split('\n', 2)[0].Trim();
+                if (first.Length > 0) facts.Add($"  task: {first}");
+            }
+
+            // The live counters repeat the header ON PURPOSE here: an expanded row is tall enough
+            // that the header may be scrolled out of view, and these are the numbers being watched.
+            facts.Add($"  {turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}");
+
+            job.ProgressBody = recent.Count > 0
+                ? string.Join("\n", facts) + "\n\n" + string.Join("\n", recent)
+                : string.Join("\n", facts);
+
+            _jobs.ToolProgressed(job);
         }
-
-        // The live counters repeat the header ON PURPOSE here: an expanded row is tall enough
-        // that the header may be scrolled out of view, and these are the numbers being watched.
-        facts.Add($"  {turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}");
-
-        job.ProgressBody = recent.Count > 0
-            ? string.Join("\n", facts) + "\n\n" + string.Join("\n", recent)
-            : string.Join("\n", facts);
-
-        _jobs.ToolProgressed(job);
     }
 
     private async Task<string> InvokeAndShowAsync(string agentId, ToolCall call, CancellationToken ct)
@@ -2987,9 +2996,15 @@ public sealed class Agent
             if (childId is not null && SubAgentEnvelope.StateOf(outcome.Text) == SubAgentEnvelope.Running)
             {
                 backgrounded = true;
-                _liveJobs.TryRemove(job.Id, out _);
-                job.ProgressBody = null;
-                job.ProgressMessage = $"started in background · {SubAgentEnvelope.NameOf(outcome.Text)}";
+
+                // THE SAME LOCK PaintChildRow TAKES: once the row is out of _liveJobs under it, no repaint
+                // already in flight can write after this — see PaintChildRow.
+                lock (job)
+                {
+                    _liveJobs.TryRemove(job.Id, out _);
+                    job.ProgressBody = null;
+                    job.ProgressMessage = $"started in background · {SubAgentEnvelope.NameOf(outcome.Text)}";
+                }
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
