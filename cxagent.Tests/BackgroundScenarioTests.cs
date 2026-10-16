@@ -418,6 +418,73 @@ public class BackgroundScenarioTests : IDisposable
         Assert.Contains("found it", parent.Last);
     }
 
+    /// <summary>
+    /// S11b. A MESSAGE THE USER TYPES ENDS A WAIT AT ONCE: task_output answers with the child's progress and
+    /// a line saying the user spoke, the steer is read in the same turn, and the report still arrives later
+    /// as a message — once.
+    ///
+    /// <para>Guards TaskTools' wait on the session's user-spoke token: a wait that ignores it holds the
+    /// user's correction behind a child that may run for minutes.</para>
+    /// </summary>
+    [Fact]
+    public async Task AUserMessage_EndsAWait_AndTheReportStillArrives()
+    {
+        var parent = new ScriptedProvider(
+            Use(Calls.Spawn(id: "s1")),
+            Use(Calls.Named(Tool.TaskOutput, new { id = "find-thing", wait = true, timeout = 600 }, id: "o1")),
+            Answer("read what the user said"),
+            Answer("read the report"));
+        var child = new HeldProvider("found it");
+        var s = Open(parent, child);
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => parent.Calls == 2 && child.Calls == 1));
+        Assert.IsType<Session.SubmitOutcome.Queued>(s.Session.Submit("check the readme too"));
+
+        Assert.True(await Poll.Until(() => parent.Calls == 3), "the wait did not end when the user spoke");
+        await Idle(s.Session);
+        Assert.Contains("the user sent a message", parent.Last);
+        Assert.Contains("check the readme too", parent.Last);
+        Assert.Contains("'find-thing' is running", parent.Last);
+        Assert.Equal(BackgroundState.Running, RunOf(s).State);
+
+        child.Release();
+        Assert.True(await Poll.Until(() => parent.Calls == 4));
+        await Idle(s.Session);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(parent.Last, "found it"));
+    }
+
+    /// <summary>
+    /// S11c. A SYSTEM DELIVERY DOES NOT END A WAIT: only the user speaking does. The wait runs on until the
+    /// child ends, and the note is read with the report.
+    ///
+    /// <para>Guards that the interrupt rides Session.Steer alone: a system source goes to the mailbox, and
+    /// ending a wait on it would have every other agent's report cut short the one being waited for.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASystemDelivery_DoesNotEndAWait()
+    {
+        var parent = new ScriptedProvider(
+            Use(Calls.Spawn(id: "s1")),
+            Use(Calls.Named(Tool.TaskOutput, new { id = "find-thing", wait = true, timeout = 600 }, id: "o1")),
+            Answer("read it"));
+        var child = new HeldProvider("found it");
+        var s = Open(parent, child);
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => parent.Calls == 2 && child.Calls == 1));
+        Assert.IsType<Session.SubmitOutcome.Queued>(
+            s.Session.Submit("a note from the app", source: Session.SubmitSource.System));
+        Assert.True(await StaysAt(parent, 2), "a system delivery ended the wait");
+
+        child.Release();
+        Assert.True(await Poll.Until(() => parent.Calls == 3));
+        await Idle(s.Session);
+        Assert.Contains("found it", parent.Last);
+        Assert.Contains("a note from the app", parent.Last);
+        Assert.DoesNotContain("the user sent a message", parent.Last);
+    }
+
     // ---- S14–S16, S18, S20: Escape and stops -------------------------------------------------------------
 
     /// <summary>

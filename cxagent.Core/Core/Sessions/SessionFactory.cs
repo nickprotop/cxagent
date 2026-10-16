@@ -295,6 +295,10 @@ internal static class SessionFactory
                 // pending when the session was wired — which is nothing, forever.
                 TakePendingSteer = session.TakeSteer,
 
+                // AND WHETHER SOMETHING TYPED IS WAITING, so a task_output wait ends when the user speaks
+                // rather than holding their correction behind the work it waits on.
+                UserSpoke = session.UserSpokeToken,
+
                 // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
                 GlobalInstructionsDir = shared.GlobalInstructionsDir,
 

@@ -392,4 +392,42 @@ public class TaskToolsAgentTests
         Assert.Contains("found it", await Call(r, Tool.TaskOutput, new { id = "find-thing", wait = true, timeout = 10 }));
         Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(5));
     }
+
+    /// <summary>
+    /// THE USER SPEAKING AS THE RUN ENDS STILL DELIVERS THE REPORT EXACTLY ONCE: in the wait's answer, as a
+    /// message, or left as a note — never two of them, never none. Raced many times because the window is
+    /// the instant between the handoff choosing the waiter and the waiter being interrupted.
+    /// </summary>
+    [Fact]
+    public async Task TheUserSpeaking_AsTheRunEnds_DeliversTheReportExactlyOnce()
+    {
+        for (var i = 0; i < 300; i++)
+        {
+            var store = new SubAgentStore();
+            store.Keep(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+            {
+                Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+                MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+            }).Create(), "runner");
+            var left = 0;
+            var sent = 0;
+            var run = store.BeginBackground(new BackgroundStart(Name: "runner", ParentAgentId: "session", Brief: "b",
+                Description: "runner", IsResume: false), new ResultHandoff(_ => { Interlocked.Increment(ref left); return true; }));
+            var spoke = new CancellationTokenSource();
+            var tools = new TaskTools(new TaskSources(DetachedProcessRegistry.Default, new FinishedShells(), "session", store)
+            {
+                UserSpoke = () => spoke.Token,
+            });
+
+            var wait = tools.InvokeAsync("session", Calls.Named(Tool.TaskOutput, new { id = "runner", wait = true, timeout = 600 }),
+                CancellationToken.None);
+            await Task.WhenAll(
+                Task.Run(() => run.Handoff.Complete("THE REPORT", _ => { Interlocked.Increment(ref sent); return true; })),
+                Task.Run(spoke.Cancel));
+            var answer = await wait.WaitAsync(TimeSpan.FromSeconds(10));
+
+            var inAnswer = answer.Contains("THE REPORT") && !answer.Contains("also sent") ? 1 : 0;
+            Assert.True(inAnswer + sent + left == 1, $"iteration {i}: answer={inAnswer} sent={sent} left={left}: {answer}");
+        }
+    }
 }

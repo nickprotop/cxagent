@@ -597,6 +597,15 @@ public sealed class Agent
     public Func<SteerDelivery?>? TakePendingSteer { get; set; }
 
     /// <summary>
+    /// A token cancelled when the user types into the running turn, or null for an agent nobody steers.
+    ///
+    /// <para>WHAT ENDS A task_output WAIT: a steer is read at the next tool barrier, and a wait on a
+    /// background child holds that barrier for as long as the child runs. A function, for the reason
+    /// <see cref="TakePendingSteer"/> is one — it is asked at the moment of waiting, not at wiring.</para>
+    /// </summary>
+    public Func<CancellationToken>? UserSpoke { get; set; }
+
+    /// <summary>
     /// Points this agent at a different model, keeping everything else.
     ///
     /// <para>THE CONVERSATION NEVER MOVES, which is the whole reason this exists. The alternative —
@@ -1061,8 +1070,14 @@ public sealed class Agent
         // top-level construction — a child is always built with the session's own id (see
         // SubAgentFactory.Create), so falling back to THIS agent's Id here is correct exactly for
         // the one case that reaches it.
+        //
+        // THE USER-SPOKE TOKEN READ THROUGH THIS AGENT, not captured: the property is set after
+        // construction, and a wait asks for the token at the moment it starts.
         _tasks = new Jobs.TaskTools(new Jobs.TaskSources(Execution.DetachedProcessRegistry.Default,
-            Execution.FinishedShells.Default, sessionId ?? Id, spawner?.Store));
+            Execution.FinishedShells.Default, sessionId ?? Id, spawner?.Store)
+        {
+            UserSpoke = () => UserSpoke?.Invoke() ?? CancellationToken.None,
+        });
 
         // THE CLAIM IS THE SIGNAL, AND IT IS THE ONLY ONE BOTH PATHS RAISE. A spawn takes the same
         // claim a send takes — the spawner does it so a send cannot corrupt a context it is still

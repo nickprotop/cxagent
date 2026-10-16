@@ -83,8 +83,17 @@ public sealed partial class Session
     public void Steer(string text)
     {
         string whole;
+        CancellationTokenSource? spoke;
         lock (_pendingGate)
+        {
             whole = _pending = string.IsNullOrEmpty(_pending) ? text : _pending + "\n" + text;
+            spoke = _userSpoke;
+            _userSpoke = null;
+        }
+
+        // A WAIT ON BACKGROUND WORK ENDS NOW — see UserSpokeToken. Outside the lock for the reason the
+        // event below is: cancelling runs the waiter's callbacks synchronously.
+        spoke?.Cancel();
 
         // RAISED OUTSIDE THE LOCK, always. A subscriber doing synchronous work — reading the queue
         // back, or blocking on the UI thread while the UI thread waits here — deadlocks if this is
@@ -202,6 +211,39 @@ public sealed partial class Session
         return TakeInjected() is { Length: > 0 } injected
             ? new Agents.SteerDelivery(shown, injected + "\n\n" + shown)
             : new Agents.SteerDelivery(shown, shown);
+    }
+
+    /// <summary>
+    /// The source <see cref="UserSpokeToken"/> hands out while nothing is waiting; <see cref="Steer"/>
+    /// cancels it and drops it, so the next ask after the steer is taken gets a fresh one.
+    /// </summary>
+    private CancellationTokenSource? _userSpoke;
+
+    /// <summary>
+    /// A token cancelled when the user types into the running turn — already cancelled when something
+    /// they typed is still waiting to be read.
+    ///
+    /// <para>WHAT ENDS A task_output WAIT. A parent blocked on a background child holds the turn's next
+    /// tool barrier, and the barrier is where a steer is read; without this, a correction typed during a
+    /// ten-minute wait is read ten minutes late. Ended, the wait answers with the child's progress and the
+    /// steer is read at once.</para>
+    ///
+    /// <para>DECIDED UNDER THE STEER'S OWN LOCK, which is what makes it race-free: a steer queued before
+    /// the ask finds the queue non-empty and gets a cancelled token; one queued after cancels the very
+    /// source this handed out. A source on the agent, renewed when it took a steer, would have a steer
+    /// landing between the take and the renew cancel nothing.</para>
+    ///
+    /// <para>ONLY <see cref="Steer"/> CANCELS IT. A system delivery goes to the mailbox instead, and a
+    /// wait cut short by every other agent's report would never last long enough to be worth asking
+    /// for.</para>
+    /// </summary>
+    public CancellationToken UserSpokeToken()
+    {
+        lock (_pendingGate)
+        {
+            if (!string.IsNullOrEmpty(_pending)) return new CancellationToken(canceled: true);
+            return (_userSpoke ??= new CancellationTokenSource()).Token;
+        }
     }
 
     /// <summary>What is waiting, or null. For the UI to render — takes nothing.</summary>

@@ -241,6 +241,34 @@ public class TaskToolsShellTests
         Assert.Equal(0, sent);
     }
 
+    /// <summary>
+    /// A WAIT ON A SHELL ENDS WHEN THE USER SPEAKS, as one on a sub-agent does, and the exit still reaches
+    /// the model once — as the message the handoff sends, since nobody is waiting for it any more.
+    /// </summary>
+    [Fact]
+    public async Task TaskOutput_WaitOnAShell_EndsWhenTheUserSpeaks()
+    {
+        var finished = new FinishedShells();
+        var handoff = finished.Track(Job(4245, "SESSION"), _ => true);
+        var spoke = new CancellationTokenSource();
+        var tools = new TaskTools(new TaskSources(new DetachedProcessRegistry(), finished, "SESSION", null)
+        {
+            UserSpoke = () => spoke.Token,
+        });
+
+        var wait = tools.InvokeAsync("SESSION", Calls.Named(Tool.TaskOutput, new { id = 4245, wait = true, timeout = 600 }),
+            CancellationToken.None);
+        await Task.Delay(50);
+        spoke.Cancel();
+        var answer = await wait.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Contains("the user sent a message", answer);
+        var sent = 0;
+        finished.Finished(4245, exitCode: 0, killed: false);
+        handoff.Complete("finished with exit code 0", _ => { sent++; return true; });
+        Assert.Equal(1, sent);
+    }
+
     [Fact]
     public void AChild_ListsEveryLiveShell_ButStopsOnlyItsOwn()
     {

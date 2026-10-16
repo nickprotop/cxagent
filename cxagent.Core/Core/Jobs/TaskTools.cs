@@ -12,7 +12,14 @@ namespace CxAgent.Core.Jobs;
 /// <param name="SessionId">The session agent's id — who may see and stop everything.</param>
 /// <param name="Agents">Kept sub-agents, or null for an agent that cannot spawn.</param>
 public sealed record TaskSources(DetachedProcessRegistry Live, FinishedShells Finished, string SessionId,
-    Agents.SubAgentStore? Agents);
+    Agents.SubAgentStore? Agents)
+{
+    /// <summary>
+    /// A token cancelled when the user types into the running turn, asked for as a wait begins; null
+    /// where nobody can — a child, a headless run, /tasks.
+    /// </summary>
+    public Func<CancellationToken>? UserSpoke { get; init; }
+}
 
 /// <summary>
 /// <c>task_list</c>, <c>task_stop</c> and <c>task_output</c>: one vocabulary over everything running
@@ -181,9 +188,20 @@ public sealed class TaskTools(TaskSources sources)
         if (!run.Handoff.Ended && !wait) return Progress(handle, run);
 
         var seconds = WaitSeconds(timeout);
-        var read = run.Handoff.Ended
-            ? run.Handoff.Read()
-            : await run.Handoff.WaitAsync(TimeSpan.FromSeconds(seconds), ct);
+        var waited = run.Handoff.Ended
+            ? new Waited(run.Handoff.Read(), UserSpoke: false)
+            : await WaitOrHearAsync(run.Handoff, seconds, ct);
+        var read = waited.Read;
+
+        // THE USER SPOKE: how far it has got, and why the wait ended. An interrupt that raced the end finds
+        // the report already settled by the handoff — sent, left as a note, or kept for this read.
+        if (waited.UserSpoke)
+        {
+            if (!read.Ended) return Progress(handle, run) + UserSpokeNote;
+            return (read.AlreadySent
+                ? $"'{handle}' has just finished; its report comes to you as a message."
+                : read.Result ?? $"'{handle}' ended without a report.") + UserSpokeNote;
+        }
 
         if (!read.Ended) return Progress(handle, run) + $"\nStill running after {seconds}s.";
         var report = read.Result ?? run.Handoff.Result ?? $"'{handle}' ended without a report.";
@@ -264,16 +282,58 @@ public sealed class TaskTools(TaskSources sources)
             return $"pid {read.Pid} is running ({(job is null ? "?" : Age(job.Started))}).{Tail(job?.OutputPath)}";
 
         var seconds = WaitSeconds(read.Timeout);
-        var result = handoff is null ? null
-            : handoff.Ended ? handoff.Read()
-            : await handoff.WaitAsync(TimeSpan.FromSeconds(seconds), ct);
+        var waited = handoff is null ? null
+            : handoff.Ended ? new Waited(handoff.Read(), UserSpoke: false)
+            : await WaitOrHearAsync(handoff, seconds, ct);
+        var result = waited?.Read;
 
+        if (waited is { UserSpoke: true, Read.Ended: false })
+            return $"pid {read.Pid} is running ({(job is null ? "?" : Age(job.Started))}).{Tail(job?.OutputPath)}"
+                   + UserSpokeNote;
         if (result is { Ended: false })
             return $"pid {read.Pid} is still running after {seconds}s.{Tail(job?.OutputPath)}";
+        if (waited is { UserSpoke: true, Read.AlreadySent: true })
+            return $"pid {read.Pid} has just ended; its result comes to you as a message." + UserSpokeNote;
 
         var text = result?.Result ?? DescribeEnded(read.Pid);
         text += Tail(job?.OutputPath);
+        if (waited is { UserSpoke: true }) return text + UserSpokeNote;
         return result is { AlreadySent: true } ? text + "\n(You were also sent this as a message.)" : text;
+    }
+
+    /// <summary>What a wait found, and whether it ended because the user spoke rather than because the task did.</summary>
+    /// <param name="Read">The handoff as the wait left it — read again after an interrupt.</param>
+    /// <param name="UserSpoke">The wait ended because the user typed into the turn.</param>
+    private sealed record Waited(HandoffRead Read, bool UserSpoke);
+
+    /// <summary>Said after a wait the user's message ended, so the model reads it before waiting again.</summary>
+    private const string UserSpokeNote =
+        "\nThe wait ended because the user sent a message. Read it before you wait on this again.";
+
+    /// <summary>
+    /// Waits for the result, ending early when the user types into the turn.
+    ///
+    /// <para>TWO TOKENS, TOLD APART. The turn's cancellation is Escape, and rethrows as it always does — the
+    /// turn is ending. The user speaking is not a cancellation of anything: the turn goes on, and the wait
+    /// answers with what it has so the message is read now rather than after the task ends.</para>
+    ///
+    /// <para>EXACTLY ONCE STILL HOLDS. If the interrupt lands after the handoff chose this waiter,
+    /// <see cref="ResultHandoff.WaitAsync"/> treats the wait as abandoned and leaves the result as a note
+    /// before rethrowing — the result is not lost and is not delivered twice. The read that follows then
+    /// sees it as already sent, or takes it when the note was refused.</para>
+    /// </summary>
+    private async Task<Waited> WaitOrHearAsync(ResultHandoff handoff, int seconds, CancellationToken ct)
+    {
+        var spoke = sources.UserSpoke?.Invoke() ?? CancellationToken.None;
+        using var either = CancellationTokenSource.CreateLinkedTokenSource(ct, spoke);
+        try
+        {
+            return new Waited(await handoff.WaitAsync(TimeSpan.FromSeconds(seconds), either.Token), UserSpoke: false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && spoke.IsCancellationRequested)
+        {
+            return new Waited(handoff.Read(), UserSpoke: true);
+        }
     }
 
     /// <summary>What /tasks shows for a pid: never waits and never takes a result.</summary>
@@ -370,7 +430,8 @@ public sealed class TaskTools(TaskSources sources)
         new ToolDefinition(Tool.TaskOutput,
             "How far a background task has got, or its result once it has finished. With wait: true it "
             + "blocks until the task ends or the timeout passes — only when your next step cannot go on "
-            + "without the result. A result you read here is not sent to you again.",
+            + "without the result; a message from the user ends the wait. A result you read here is not "
+            + "sent to you again.",
             JsonDocument.Parse(
                 """
                 {
