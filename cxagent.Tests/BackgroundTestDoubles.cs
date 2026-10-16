@@ -83,3 +83,38 @@ internal static class Calls
     public static string Text(this HeldProvider p) =>
         string.Join("\n", p.LastMessages!.Select(m => m.Content));
 }
+
+/// <summary>Records every delivery, and answers as the session would.</summary>
+internal sealed class RecordingDelivery : IAgentDelivery
+{
+    private readonly List<Delivered> _got = [];
+    public DeliveryOutcome Answer { get; set; } = DeliveryOutcome.Woke;
+    public IReadOnlyList<Delivered> Got { get { lock (_got) return [.. _got]; } }
+
+    public DeliveryOutcome Tell(string agentId, string text) =>
+        Tell(agentId, new AgentNotice(Shown: text, ForModel: text));
+
+    public DeliveryOutcome Tell(string agentId, AgentNotice notice)
+    {
+        lock (_got) _got.Add(new Delivered(agentId, notice, Left: false));
+        return Answer;
+    }
+
+    public DeliveryOutcome Leave(string agentId, AgentNotice notice)
+    {
+        lock (_got) _got.Add(new Delivered(agentId, notice, Left: true));
+        return Answer == DeliveryOutcome.Woke ? DeliveryOutcome.Queued : Answer;
+    }
+
+    public async Task<Delivered> Next(int index = 0)
+    {
+        for (var i = 0; i < 250; i++)
+        {
+            lock (_got) if (_got.Count > index) return _got[index];
+            await Task.Delay(20);
+        }
+        throw new TimeoutException($"delivery #{index} never came");
+    }
+}
+
+internal sealed record Delivered(string To, AgentNotice Notice, bool Left);

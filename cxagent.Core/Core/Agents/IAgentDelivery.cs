@@ -1,7 +1,7 @@
 namespace CxAgent.Core.Agents;
 
 /// <summary>
-/// What happened to something handed to <see cref="IAgentDelivery.Tell"/>.
+/// What happened to something handed to <see cref="IAgentDelivery.Tell(string, string)"/>.
 ///
 /// <para>AN ENUM RATHER THAN A BOOL, because the callers say different things about each outcome and a
 /// port that hid the difference would force every one of them to re-derive it from the state it just
@@ -20,11 +20,10 @@ public enum DeliveryOutcome
     /// <summary>
     /// Held for an agent that has stopped working, and read when it is next resumed.
     ///
-    /// <para>NOTHING PRODUCES THIS TODAY, and the reason is the rule the port now keeps: an idle agent
-    /// is RUN, whoever is telling it. A settled child is the only place a background command's result
-    /// exists — the parent took its final report and moved on — so a message left waiting for a resume
-    /// that may never come is the same as a result that was lost, which is the cost this outcome used
-    /// to accept.</para>
+    /// <para>PRODUCED BY <see cref="IAgentDelivery.Leave"/>: a note left for the agent's next answer that
+    /// starts nothing. <see cref="IAgentDelivery.Tell(string, string)"/> never produces it — an idle agent
+    /// told something is RUN, because a message left for a resume that may never come is a result that
+    /// was lost.</para>
     ///
     /// <para>KEPT BECAUSE A DESTINATION MAY YET HAVE NO LOOP TO START: an agent from a restored
     /// session, or one a caller may only leave a note for. A consumer must therefore still handle it,
@@ -79,4 +78,24 @@ public interface IAgentDelivery
     /// caller inside a <c>finally</c> cannot be made to block on somebody else's turn.</para>
     /// </summary>
     DeliveryOutcome Tell(string agentId, string text);
+
+    /// <summary>
+    /// <see cref="Tell(string, string)"/>, with a short line for the transcript.
+    ///
+    /// <para>A DEFAULT MEMBER so an implementation that predates notices keeps compiling and delivers the
+    /// model's text as it always did.</para>
+    /// </summary>
+    DeliveryOutcome Tell(string agentId, AgentNotice notice) => Tell(agentId, notice.ForModel);
+
+    /// <summary>
+    /// Puts the notice where the agent reads it before its next answer, WITHOUT starting or extending a
+    /// turn.
+    ///
+    /// <para>FOR A FACT NOBODY NEEDS ACTED ON NOW: a stopped background agent. The user stopped that work,
+    /// so a request spent reacting is a cost they did not ask for — but the parent must still learn that
+    /// what it waits for will not come.</para>
+    ///
+    /// <para>REFUSED BY DEFAULT: an implementation that cannot hold a note must not claim it left one.</para>
+    /// </summary>
+    DeliveryOutcome Leave(string agentId, AgentNotice notice) => DeliveryOutcome.Refused;
 }

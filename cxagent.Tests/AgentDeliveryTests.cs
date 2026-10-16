@@ -685,4 +685,116 @@ public class AgentDeliveryTests : IDisposable
 
         gated.Release();
     }
+
+    // ---- notices: a short line for the transcript, and a note that does not wake --------------------
+
+    /// <summary>
+    /// A NOTICE IS DRAWN AS ITS SHORT LINE, AND THE MODEL READS THE WHOLE OF IT. A background agent's
+    /// report is pages long; the transcript gets one line saying it arrived.
+    /// </summary>
+    [Fact]
+    public async Task ANoticeWake_DrawsTheShortLine_AndSendsTheWholeText()
+    {
+        var (delivery, _, _) = Wired(out var provider, out var sessionAgentId);
+        provider.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn" });
+
+        Assert.Equal(DeliveryOutcome.Woke, delivery.Tell(sessionAgentId,
+            new AgentNotice(Shown: "agent x finished", ForModel: "the whole report, pages of it")));
+        await Settled();
+
+        Assert.Contains("agent x finished", _sink!.Notices);
+        Assert.DoesNotContain(_sink.Notices, n => n.Contains("pages of it"));
+        Assert.Contains("the whole report, pages of it", provider.Text());
+    }
+
+    /// <summary>INJECTED MID-TURN, THE SHORT LINE IS DRAWN THEN — the moment it reaches the agent.</summary>
+    [Fact]
+    public async Task ANoticeToABusySession_IsDrawnWhenItArrives()
+    {
+        var gated = new GatedProvider();
+        var (delivery, _, sessionAgentId) = WiredOn(gated);
+        delivery.Tell(sessionAgentId, "start something");
+        Assert.True(await Poll.Until(() => gated.Calls == 1));
+
+        Assert.Equal(DeliveryOutcome.Injected, delivery.Tell(sessionAgentId,
+            new AgentNotice(Shown: "agent x finished", ForModel: "report")));
+
+        Assert.Contains("agent x finished", _sink!.Notices);
+        gated.Release();
+        await Settled();
+    }
+
+    /// <summary>A SHELL'S EXIT NOTICE, which passes no short line, still draws nothing mid-turn.</summary>
+    [Fact]
+    public async Task APlainSystemDeliveryToABusySession_DrawsNothing()
+    {
+        var gated = new GatedProvider();
+        var (delivery, _, sessionAgentId) = WiredOn(gated);
+        delivery.Tell(sessionAgentId, "start something");
+        Assert.True(await Poll.Until(() => gated.Calls == 1));
+        var before = _sink!.Notices.Count;
+
+        delivery.Tell(sessionAgentId, "The background command `x` finished with exit code 0");
+
+        Assert.Equal(before, _sink.Notices.Count);
+        gated.Release();
+        await Settled();
+    }
+
+    /// <summary>
+    /// LEFT, NOT WOKEN. A stop's report waits for the next turn and starts nothing — the user stopped the
+    /// work, and a request spent hearing about it is a cost they did not ask for.
+    /// </summary>
+    [Fact]
+    public async Task ALeftNotice_StartsNoTurn_DrawsItsLine_AndIsReadByTheNextTurn()
+    {
+        var (delivery, _, _) = Wired(out var provider, out var sessionAgentId);
+
+        Assert.Equal(DeliveryOutcome.Queued, delivery.Leave(sessionAgentId,
+            new AgentNotice(Shown: "agent x stopped", ForModel: "agent x was stopped")));
+        Assert.False(Reached(provider));
+        Assert.Contains("agent x stopped", _sink!.Notices);
+
+        provider.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn" });
+        await Assert.IsType<Session.SubmitOutcome.Started>(_session!.Submit("next")).Turn;
+        Assert.Contains("agent x was stopped", provider.Text());
+    }
+
+    /// <summary>A LEFT NOTICE FOR A CHILD GOES TO ITS MAILBOX, and runs nothing.</summary>
+    [Fact]
+    public void ALeftNoticeForAChild_IsQueuedInItsMailbox_AndRunsNothing()
+    {
+        var (delivery, store, child) = WiredWithChild(out var childProvider);
+        store.Keep(child, "find thing");
+
+        Assert.Equal(DeliveryOutcome.Queued, delivery.Leave(child.Agent.Id,
+            new AgentNotice(Shown: "shown", ForModel: "note")));
+        Assert.False(Reached(childProvider));
+        Assert.Equal(["note"], child.Agent.Mailbox.Drain());
+    }
+
+    [Fact]
+    public void ALeftNoticeForAnUnknownId_IsUnknown()
+    {
+        var (delivery, _, _) = Wired();
+        Assert.Equal(DeliveryOutcome.Unknown, delivery.Leave("nobody", new AgentNotice(Shown: "s", ForModel: "m")));
+    }
+
+    [Fact]
+    public void AnEmptyNotice_IsRefused_BothWays()
+    {
+        var (delivery, _, _) = Wired(out _, out var id);
+        Assert.Equal(DeliveryOutcome.Refused, delivery.Tell(id, new AgentNotice(Shown: "s", ForModel: " ")));
+        Assert.Equal(DeliveryOutcome.Refused, delivery.Leave(id, new AgentNotice(Shown: "s", ForModel: "")));
+    }
+
+    /// <summary>A FULL MAILBOX REFUSES A LEFT NOTICE rather than claiming it was left.</summary>
+    [Fact]
+    public void ALeftNotice_ToAFullMailbox_IsRefused()
+    {
+        var (delivery, _, _) = Wired(out _, out var id);
+        for (var i = 0; i < AgentMailbox.MaxDepth; i++) Assert.True(_session!.Host!.TryLeave($"n{i}"));
+
+        Assert.Equal(DeliveryOutcome.Refused, delivery.Leave(id, new AgentNotice(Shown: "s", ForModel: "one more")));
+    }
 }

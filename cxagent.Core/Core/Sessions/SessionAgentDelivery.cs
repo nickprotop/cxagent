@@ -61,20 +61,8 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
             // the agent's mailbox for the turn's next lap rather than steering it, which is announced
             // as a user turn and drawn as the user's own queued block. See Session.SubmitSource for
             // why this cannot ride on `origin`.
-            return session.Submit(text, origin: Origin, source: Session.SubmitSource.System) switch
-            {
-                Session.SubmitOutcome.Started => wasBusy
-                    ? Agents.DeliveryOutcome.Injected
-                    : Agents.DeliveryOutcome.Woke,
-
-                // HANDED TO THE RUNNING TURN, read at the top of its next lap.
-                Session.SubmitOutcome.Queued => Agents.DeliveryOutcome.Injected,
-
-                // NO MODEL, OR THE TEXT RAN AS A COMMAND. Neither delivered anything an agent will
-                // read, and both are about this message rather than the addressing — which is what
-                // Refused means as against Unknown.
-                _ => Agents.DeliveryOutcome.Refused,
-            };
+            return Mapped(session.Submit(text, origin: Origin, source: Session.SubmitSource.System),
+                wasBusy);
         }
 
         // A KEPT CHILD, BY THE ID ITS TOOL CALLS CARRY. FindByAgentId exists for exactly a caller
@@ -110,9 +98,70 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
     }
 
     /// <summary>
+    /// What a session agent's Submit means as a delivery.
+    /// </summary>
+    /// <param name="outcome">The accept decision Submit handed back.</param>
+    /// <param name="wasBusy">Whether the session was busy BEFORE the submit — read first, because an idle
+    /// session that starts a turn is busy immediately after, and reading it later would report every
+    /// wake as an injection.</param>
+    private static Agents.DeliveryOutcome Mapped(Session.SubmitOutcome outcome, bool wasBusy) => outcome switch
+    {
+        Session.SubmitOutcome.Started => wasBusy
+            ? Agents.DeliveryOutcome.Injected
+            : Agents.DeliveryOutcome.Woke,
+
+        // HANDED TO THE RUNNING TURN, read at the top of its next lap.
+        Session.SubmitOutcome.Queued => Agents.DeliveryOutcome.Injected,
+
+        // NO MODEL, OR THE TEXT RAN AS A COMMAND. Neither delivered anything an agent will read, and both
+        // are about this message rather than the addressing — which is what Refused means as against
+        // Unknown.
+        _ => Agents.DeliveryOutcome.Refused,
+    };
+
+    public Agents.DeliveryOutcome Tell(string agentId, Agents.AgentNotice notice)
+    {
+        if (string.IsNullOrWhiteSpace(notice.ForModel)) return Agents.DeliveryOutcome.Refused;
+
+        // A CHILD HAS NO TRANSCRIPT ANYONE READS, so it gets the model's text alone.
+        if (!session.IsSessionAgent(agentId)) return Tell(agentId, notice.ForModel);
+
+        // THE SHORT LINE IS THE ECHO: Submit draws a System source's echo as a note — when the woken turn
+        // starts, or (busy) the moment it is handed to the running one.
+        var wasBusy = session.IsBusy;
+        return Mapped(session.Submit(notice.ForModel, echo: notice.Shown, origin: Origin,
+            source: Session.SubmitSource.System), wasBusy);
+    }
+
+    /// <summary>
+    /// Leaves the notice for the agent's next answer without starting or extending a turn — see
+    /// IAgentDelivery.Leave.
+    ///
+    /// <para>THE SHORT LINE IS DRAWN NOW, for the session's own agent: the note itself may not be read
+    /// until the user next speaks, and the user should learn the fact when it happens rather than when the
+    /// model gets round to it.</para>
+    /// </summary>
+    public Agents.DeliveryOutcome Leave(string agentId, Agents.AgentNotice notice)
+    {
+        if (string.IsNullOrWhiteSpace(notice.ForModel)) return Agents.DeliveryOutcome.Refused;
+
+        if (session.IsSessionAgent(agentId))
+        {
+            if (!session.LeaveNote(notice.ForModel)) return Agents.DeliveryOutcome.Refused;
+            session.Notify(notice.Shown);
+            return Agents.DeliveryOutcome.Queued;
+        }
+
+        if (store.FindByAgentId(agentId) is not { } kept) return Agents.DeliveryOutcome.Unknown;
+        return kept.Agent.Agent.Mailbox.TryEnqueue(notice.ForModel, out _, wakes: false)
+            ? Agents.DeliveryOutcome.Queued
+            : Agents.DeliveryOutcome.Refused;
+    }
+
+    /// <summary>
     /// Resumes a settled child on the message just left for it, releasing the claim however it ends.
     ///
-    /// <para>NOT AWAITED BY <see cref="Tell"/>, WHICH IS SYNCHRONOUS ON PURPOSE: a caller inside a
+    /// <para>NOT AWAITED BY <see cref="Tell(string, string)"/>, WHICH IS SYNCHRONOUS ON PURPOSE: a caller inside a
     /// <c>finally</c> — a process exiting, a watch firing — must not be made to block on somebody
     /// else's turn. The claim taken before this starts is what keeps a second delivery from starting a
     /// second loop on the same context while this one runs.</para>

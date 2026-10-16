@@ -55,6 +55,15 @@ public sealed partial class Session
     /// </summary>
     private int _turnOwned;
 
+    /// <summary>
+    /// Leaves text for the session agent's next answer without starting a turn; false when there is no
+    /// agent or its mailbox is full. See IAgentDelivery.Leave.
+    /// </summary>
+    public bool LeaveNote(string text) => Host?.TryLeave(text) ?? false;
+
+    /// <summary>Draws one System line in this session's transcript.</summary>
+    public void Notify(string line) => Say(new Message(line, Severity.Info));
+
     /// <summary>Whether a turn loop owns this conversation.</summary>
     public bool TurnOwned => Volatile.Read(ref _turnOwned) == 1;
 
@@ -469,12 +478,18 @@ public sealed partial class Session
             // system delivery passes none, and a warning about a selection it never sent would be
             // addressed to nobody.
             if (source is SubmitSource.System)
+            {
                 // REFUSED RATHER THAN GROWN. The mailbox is bounded (AgentMailbox.MaxDepth), and a
                 // full one means the agent has not read the earlier messages — Queued would tell the
                 // caller this landed when it did not.
-            {
                 if (!Host.TryDeliver(text))
                     return new SubmitOutcome.Refused("the agent has messages it has not read yet.");
+
+                // THE ECHO IS THE NOTE, DRAWN AS IT ARRIVES. An idle wake draws a System source's echo
+                // when its turn starts; joining a running one starts no turn of its own, so the line is
+                // drawn here or not at all. A caller passing none — a shell's exit notice — draws
+                // nothing.
+                if (echo is { } line) Say(new Message(line, Severity.Info));
                 ResumeIfReleasedMeanwhile();
                 return new SubmitOutcome.Queued();
             }
