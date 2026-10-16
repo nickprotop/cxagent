@@ -114,7 +114,10 @@ public sealed class TaskTools(TaskSources sources)
 
     private static string AgentState(Agents.SubAgentStore agents, string name)
     {
-        if (agents.BackgroundOf(name) is { } run)
+        // A FOREGROUND CLAIM BEATS AN ENDED BACKGROUND RUN. The run entry stays after its report, so
+        // a child resumed by a foreground agent_send still has it; reading that entry alone would
+        // call a child that is working right now "finished".
+        if (agents.BackgroundOf(name) is { } run && !(run.Handoff.Ended && agents.IsBusy(name)))
         {
             if (run.Handoff.Ended)
             {
@@ -133,7 +136,7 @@ public sealed class TaskTools(TaskSources sources)
         if (agents?.Find(handle) is null) return $"no task '{handle}' — {Tool.TaskList} shows what exists.";
 
         var run = agents.BackgroundOf(handle);
-        if (run is null)
+        if (run is null || (run.Handoff.Ended && agents.IsBusy(handle)))
         {
             return agents.IsBusy(handle)
                 ? $"'{handle}' is not running in the background; it stops with the turn that asked it."
@@ -145,7 +148,7 @@ public sealed class TaskTools(TaskSources sources)
             return $"stopping '{handle}' — it will report as cancelled.";
 
         // Stop refuses once the child's answer is in: the work is over and only the report is left.
-        return $"'{handle}' has already finished its work and is reporting; {Tool.TaskOutput} shows its result.";
+        return $"'{handle}' has completed its work and is reporting; {Tool.TaskOutput} shows its result.";
     }
 
     private async Task<string> OutputAsync(string handle, bool wait, int? timeout, CancellationToken ct)
@@ -184,7 +187,14 @@ public sealed class TaskTools(TaskSources sources)
     {
         if (args.ValueKind == JsonValueKind.Object && args.TryGetProperty("id", out var id))
         {
-            if (id.ValueKind == JsonValueKind.Number && id.TryGetInt32(out var number)) return new(number, null, null);
+            if (id.ValueKind == JsonValueKind.Number)
+            {
+                // A fraction or an out-of-range number is a wrong id, not a missing one: saying
+                // "required" would send the model to supply a field it already supplied.
+                return id.TryGetInt32(out var number)
+                    ? new(number, null, null)
+                    : new(null, null, $"error: 'id' must be a whole number pid or a handle, not {id.GetRawText()}.");
+            }
             if (id.ValueKind == JsonValueKind.String && id.GetString() is { Length: > 0 } text)
                 return int.TryParse(text, out var pid) ? new(pid, null, null) : new(null, text, null);
         }

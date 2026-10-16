@@ -10,13 +10,14 @@ public class TaskToolsAgentTests
 {
     private sealed record Rig(TaskTools Tools, SubAgentStore Store, SubAgentSpawner Spawner, RecordingDelivery Delivery);
 
-    private static Rig Wired(ILlmProvider child)
+    private static Rig Wired(ILlmProvider child, int? cap = null)
     {
         var delivery = new RecordingDelivery();
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = child, Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
             MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000, Delivery = delivery,
+            MaxConcurrentAgents = cap,
         });
         var store = new SubAgentStore();
         return new Rig(new TaskTools(new TaskSources(DetachedProcessRegistry.Default, new FinishedShells(), "session", store)),
@@ -94,7 +95,7 @@ public class TaskToolsAgentTests
         await Spawn(r);
         held.Release();
         await r.Delivery.Next();
-        Assert.Contains("already finished", await Call(r, Tool.TaskStop, new { id = "find-thing" }));
+        Assert.Contains("'find-thing' has already finished; task_output", await Call(r, Tool.TaskStop, new { id = "find-thing" }));
     }
 
     [Fact]
@@ -224,7 +225,8 @@ public class TaskToolsAgentTests
         var held = new HeldProvider("x");
         var r = Wired(held);
         await Spawn(r);
-        Assert.DoesNotContain("error", await Call(r, Tool.TaskOutput, new { id }));
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+        Assert.Contains("is running", await Call(r, Tool.TaskOutput, new { id }));
         held.Release();
     }
 
@@ -242,5 +244,154 @@ public class TaskToolsAgentTests
             MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
         }).Create(), "fg");
         Assert.Contains("agent_send", await Call(r, Tool.TaskOutput, new { id = "fg" }));
+    }
+
+    // --- Describe takes nothing --------------------------------------------------------------
+
+    [Fact]
+    public async Task Describe_ShowsAnUndeliveredReport_WithoutTakingIt()
+    {
+        var held = new HeldProvider("found it");
+        var r = Wired(held);
+        r.Delivery.Answer = DeliveryOutcome.Refused;
+        await Spawn(r);
+        held.Release();
+        await r.Delivery.Next();
+        var run = r.Store.BackgroundOf("find-thing")!;
+        Assert.True(await Poll.Until(() => run.Handoff.Undelivered));
+
+        Assert.Contains("found it", r.Tools.Describe("find-thing"));
+        Assert.True(run.Handoff.Undelivered);
+
+        var output = await Call(r, Tool.TaskOutput, new { id = "find-thing" });
+        Assert.Contains("found it", output);
+        Assert.DoesNotContain("also sent", output);
+        Assert.False(run.Handoff.Undelivered);
+
+        // Taken once, so a second read says it was handed over already.
+        Assert.Contains("also sent this as a message", await Call(r, Tool.TaskOutput, new { id = "find-thing" }));
+    }
+
+    // --- the id ------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ANumericId_IsAPid_AndPointsAtTheJobTools()
+    {
+        var r = Wired(new HeldProvider());
+        var number = await r.Tools.InvokeAsync("session", Calls.Named(Tool.TaskOutput, new { id = 4242 }), default);
+        Assert.Contains("pid 4242", number);
+        Assert.Contains("job_list", number);
+    }
+
+    [Fact]
+    public async Task ANumericStringId_IsAPid_AndPointsAtTheJobTools()
+    {
+        var r = Wired(new HeldProvider());
+        var text = await Call(r, Tool.TaskStop, new { id = "4242" });
+        Assert.Contains("pid 4242", text);
+        Assert.Contains("job_kill", text);
+    }
+
+    [Fact]
+    public async Task AHandleId_IsNotTakenForAPid()
+    {
+        var held = new HeldProvider("x");
+        var r = Wired(held);
+        await Spawn(r);
+        var text = await Call(r, Tool.TaskStop, new { id = "find-thing" });
+        Assert.DoesNotContain("pid", text);
+        Assert.Contains("stopping 'find-thing'", text);
+        held.Release();
+    }
+
+    [Fact]
+    public async Task ANonIntegerNumberId_IsRefusedClearly_NotAsMissing()
+    {
+        var text = await Call(Wired(new HeldProvider()), Tool.TaskOutput, new { id = 1.5 });
+        Assert.DoesNotContain("is required", text);
+        Assert.Contains("whole number", text);
+    }
+
+    // --- states ------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task TaskList_NamesEachState()
+    {
+        var held = new HeldProvider("a", "b");
+        var r = Wired(held, cap: 1);
+        await Spawn(r, description: "first");
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+        await Spawn(r, description: "second");
+        Assert.Contains("'second' (", await Call(r, Tool.TaskList, new { }));
+        Assert.Matches(@"'first'.*— running", await Call(r, Tool.TaskList, new { }));
+        Assert.Matches(@"'second'.*— queued", await Call(r, Tool.TaskList, new { }));
+
+        held.Release();
+        await r.Delivery.Next();
+        await r.Delivery.Next();
+        Assert.True(await Poll.Until(() => r.Store.BackgroundOf("second")!.Handoff.Ended));
+        Assert.Matches(@"'first'.*— finished", await Call(r, Tool.TaskList, new { }));
+    }
+
+    [Fact]
+    public async Task TaskList_ShowsAStoppedRun_AndStoppingAQueuedRunWorks()
+    {
+        var held = new HeldProvider("a");
+        var r = Wired(held, cap: 1);
+        await Spawn(r, description: "first");
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+        await Spawn(r, description: "second");
+
+        Assert.Contains("stopping 'second'", await Call(r, Tool.TaskStop, new { id = "second" }));
+        Assert.True(await Poll.Until(() => r.Store.BackgroundOf("second")!.Handoff.Ended));
+        Assert.Matches(@"'second'.*— stopped", await Call(r, Tool.TaskList, new { }));
+        held.Release();
+    }
+
+    [Fact]
+    public async Task TaskList_NamesABusyAndAnIdleForegroundChild()
+    {
+        var r = Wired(new HeldProvider());
+        r.Store.Keep(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+        }).Create(), "fg");
+        Assert.Matches(@"'fg'.*— idle", await Call(r, Tool.TaskList, new { }));
+        r.Store.TryClaim("fg");
+        Assert.Matches(@"'fg'.*— busy", await Call(r, Tool.TaskList, new { }));
+        r.Store.Release("fg");
+    }
+
+    [Fact]
+    public async Task AResumedForegroundChild_IsBusy_NotFinished()
+    {
+        var held = new HeldProvider("done");
+        var r = Wired(held);
+        await Spawn(r);
+        held.Release();
+        await r.Delivery.Next();
+        Assert.True(await Poll.Until(() => r.Store.BackgroundOf("find-thing")!.Handoff.Ended));
+
+        Assert.True(r.Store.TryClaim("find-thing"));
+        Assert.Matches(@"'find-thing'.*— busy", await Call(r, Tool.TaskList, new { }));
+        Assert.Contains("not running in the background", await Call(r, Tool.TaskStop, new { id = "find-thing" }));
+        r.Store.Release("find-thing");
+    }
+
+    // --- an ended run ------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Wait_OnAnEndedRun_ReturnsTheReportAtOnce()
+    {
+        var held = new HeldProvider("found it");
+        var r = Wired(held);
+        await Spawn(r);
+        held.Release();
+        await r.Delivery.Next();
+
+        var started = DateTime.UtcNow;
+        Assert.Contains("found it", await Call(r, Tool.TaskOutput, new { id = "find-thing", wait = true, timeout = 10 }));
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(5));
     }
 }
