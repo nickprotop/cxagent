@@ -183,6 +183,30 @@ public class HeadlessOutputTests
         Assert.True(lines.IndexOf(thinking) < lines.FindIndex(l => l.ToString().Contains("\"done\"")));
     }
 
+    // A NOTE BEFORE A CALL: thinking, text, thinking again, then the tool call. The blocks go out in
+    // the order the model wrote them, so the text written between the runs comes between them.
+    [Fact]
+    public void StreamJson_TwoRunsOfThinking_KeepTheTextBetweenThem()
+    {
+        var (output, o, _) = Make(OutputFormat.StreamJson);
+        output.Start(Started);
+        var id = new ChatMessageId(1);
+        output.AssistantTurnBegan(id);
+        output.AssistantThinkingAppended(id, "first thought");
+        output.AssistantThinkingEnded(id, new(TimeSpan.FromSeconds(1), 2, false, false));
+        output.AssistantTextAppended(id, "a note");
+        output.AssistantThinkingAppended(id, "second thought");
+        output.AssistantThinkingEnded(id, new(TimeSpan.FromSeconds(1), 2, false, false));
+        output.AssistantTextAppended(id, "after");
+        output.AssistantTurnEnded(id);
+
+        var blocks = LinesOf(o).Where(l => l.GetProperty("type").GetString() == "assistant")
+            .Select(l => l.GetProperty("message").GetProperty("content")[0])
+            .Select(b => b.GetProperty(b.GetProperty("type").GetString()!).GetString())
+            .ToList();
+        Assert.Equal(["first thought", "a note", "second thought", "after"], blocks);
+    }
+
     [Fact]
     public void StreamJson_Partial_EmitsThinkingDeltas()
     {

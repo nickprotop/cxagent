@@ -409,24 +409,31 @@ internal sealed class StreamOutput(HeadlessIo io, bool partial) : HeadlessOutput
     }
 
     // CLAUDE CODE'S SHAPE, one content block per event, so a consumer written for `claude -p` reads
-    // it unchanged. The session ends a step's thinking before its text, and the text is emitted only
-    // when the turn ends, so the thinking line always comes first. A hidden run has nothing buffered
+    // it unchanged, in the order the model wrote them. The session ends a run of thinking before the
+    // text that follows it; text written BEFORE a run — a note ahead of a tool call, then more
+    // thinking — goes out first, or it would follow both runs. A hidden run has nothing buffered
     // and goes out with an empty string rather than not at all: the consumer still sees the model
     // thought.
     public override void AssistantThinkingEnded(ChatMessageId id, Core.Llm.ThinkingSummary summary)
     {
+        EmitText(id, end: false);
         string buffered;
         lock (_thinking) buffered = _thinking.Remove(id, out var sb) ? sb.ToString() : "";
         Emit(Message("assistant", new JsonObject { ["type"] = "thinking", ["thinking"] = buffered }, null));
     }
 
-    public override void AssistantTurnEnded(ChatMessageId id)
+    public override void AssistantTurnEnded(ChatMessageId id) => EmitText(id, end: true);
+
+    /// <summary>The step's text so far as one block; <paramref name="end"/> forgets the step.</summary>
+    private void EmitText(ChatMessageId id, bool end)
     {
         string text;
         lock (_text)
         {
-            if (!_text.Remove(id, out var sb)) return;
+            if (!_text.TryGetValue(id, out var sb)) return;
             text = sb.ToString();
+            if (end) _text.Remove(id);
+            else sb.Clear();
         }
         if (text.Length == 0) return;
         Emit(Message("assistant", new JsonObject { ["type"] = "text", ["text"] = text }, null));
