@@ -211,9 +211,11 @@ public static class SessionWiring
         // THIS TAB'S TRANSCRIPT, set on every wire so a re-wire draws asides where the tab now draws.
         session.AsideObserver = new AsideTranscriptSink(system, tab.Chat);
 
-        // /think --save writes THIS session's instance — the one its level was chosen for.
-        session.SaveThinkingDefault = level =>
-            ThinkingConfigWriter.TrySave(Path.Combine(configDir, "config.json"), session.InstanceName, level);
+        // /think --save writes THIS session's instance — the one its level was chosen for — through the
+        // one writer: judged by the loader first, and refused rather than "started fresh" over a file
+        // that does not parse. Read at the moment of saving, so a renamed instance saves under its new name.
+        session.SaveThinkingDefault = level => Core.Config.ConfigFile.SaveThinkingDefault(
+            Path.Combine(configDir, "config.json"), Startup.Env(), session.InstanceName, level);
 
         // THE LEVELS ARE ASKED OF THE MODEL NOW, not at the first F8: the mode line shows the level
         // once the model has said what it offers, and F8 never waits on a probe.
