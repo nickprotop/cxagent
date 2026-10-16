@@ -105,4 +105,27 @@ public class SessionTasksTests : IDisposable
         run.Handoff.Complete("r", _ => { sent++; return true; });
         Assert.Equal(0, sent);
     }
+
+    /// <summary>
+    /// THE APP GOING AWAY STOPS A BUSY SESSION'S AGENTS TOO. Close refuses a busy session, and Dispose
+    /// then tears it down by hand — a background run left going there would outlive its conversation and
+    /// report into one that is closing.
+    /// </summary>
+    [Fact]
+    public void DisposingTheManager_StopsABusySessionsBackgroundAgents_AndTellsNobody()
+    {
+        var s = Open();
+        var run = Run(s, "finder");
+        var sent = 0;
+
+        using (s.PretendBusyForTesting())
+        {
+            _manager!.Dispose();
+            _manager = null;
+        }
+
+        Assert.True(run.Token.IsCancellationRequested);
+        run.Handoff.Complete("r", _ => { sent++; return true; });
+        Assert.Equal(0, sent);
+    }
 }

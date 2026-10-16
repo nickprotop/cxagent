@@ -2461,6 +2461,12 @@ public static class AppBootstrap
         CancellationTokenSource cts)
     {
         if (!await QuitGuard.ConfirmAsync(system, manager.Sessions.Sum(s => s.RunningBackgroundAgents))) return;
+
+        // EVERY TAB'S AGENTS, STOPPED AND SILENCED BEFORE ANYTHING ELSE ENDS. The count just confirmed was
+        // summed over every session, and the user agreed to stop all of them; a busy tab, or one not in
+        // front, is not closed through the path that would stop its runs, so they are stopped here —
+        // before the cancel, so a run's report finds its handoff already closed to the conversation.
+        foreach (var s in manager.Sessions) s.SubAgents.StopAll();
         cts.Cancel();
         system.Shutdown();
     }

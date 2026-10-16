@@ -1118,7 +1118,15 @@ public sealed class SessionManager : IDisposable
         foreach (var session in Sessions)
         {
             session.CancelPending();
-            if (!Close(session)) { session.DisposeTurnScope(); session.Host?.Dispose(); }
+            if (!Close(session))
+            {
+                // CLOSE REFUSED A BUSY SESSION, AND ITS BACKGROUND AGENTS STOP HERE INSTEAD. Close is what
+                // stops them for an idle one; skipped, a run would go on past its conversation and report
+                // into a session nobody will draw again.
+                session.SubAgents.StopAll();
+                session.DisposeTurnScope();
+                session.Host?.Dispose();
+            }
         }
 
         // AND WAIT FOR WHAT CLOSE DETACHED. Close hands the plugin unwiring to the thread pool so a
