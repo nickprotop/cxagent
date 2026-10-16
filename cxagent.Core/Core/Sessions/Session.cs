@@ -567,6 +567,8 @@ public sealed partial class Session
     /// <see cref="RunLoadRequest"/>, or a test).
     /// </param>
     /// <param name="client">This plugin's handle on this session, retained so unwire can sever it.</param>
+    /// <param name="announce">Whether this load says it loaded. False for a caller loading several at
+    /// once, which says so for all of them with <see cref="AnnouncePluginsLoaded"/>.</param>
     public async Task<CommandStatus> LoadPlugin(Plugins.IPlugin plugin, Plugins.PluginManifest manifest,
         string loadSetDirectory, CancellationToken ct = default, IDisposable? context = null,
         Plugins.SessionPluginClient? client = null, bool announce = true)
