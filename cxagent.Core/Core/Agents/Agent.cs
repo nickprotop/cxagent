@@ -1769,6 +1769,14 @@ public sealed class Agent
                 // concluded, not only what it was asked.
                 Publish(messages, tools);
 
+                // SOMETHING ARRIVED WHILE THE ANSWER WAS BEING WRITTEN, so the turn is not over. The
+                // mailbox is drained before each request, and a report landing during the last one —
+                // a background job finishing, a message to a child — has missed every drain this turn
+                // has left. Returning would leave it unread with nothing to wake the agent for it: a
+                // session clears busy without looking here, and a settled child is resumed only when
+                // asked. One more lap reads it, and the top of the loop is where that happens.
+                if (Mailbox.HasPending) continue;
+
                 // A turn with no tool calls is the model saying it is done. CHALLENGE IT if the goal
                 // asked for a change and nothing was written — the failure this mode exists to fix
                 // ends exactly here, with a confident summary of work that never happened.

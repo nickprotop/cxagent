@@ -149,6 +149,13 @@ public class AgentDeliveryTests : IDisposable
 
         public void Release() => _gate.TrySetResult();
 
+        /// <summary>How many requests reached the provider — the second is a turn reading what arrived.</summary>
+        public int Calls => Volatile.Read(ref _calls);
+        private int _calls;
+
+        /// <summary>What the latest request carried.</summary>
+        public List<ChatMessage>? LastMessages { get; private set; }
+
         public string ProviderId => "gated";
         public string ModelId => "gated-model";
         public string DisplayName => "Gated";
@@ -158,6 +165,8 @@ public class AgentDeliveryTests : IDisposable
         public async Task<LlmResponse> ChatAsync(List<ChatMessage> messages,
             List<ToolDefinition>? tools, CancellationToken ct)
         {
+            Interlocked.Increment(ref _calls);
+            LastMessages = [.. messages];
             // A DEADLINE, so a test that forgets to release fails rather than hanging the suite.
             await _gate.Task.WaitAsync(TimeSpan.FromSeconds(20), ct);
             return new LlmResponse { Text = "released", StopReason = "end_turn" };
@@ -457,6 +466,29 @@ public class AgentDeliveryTests : IDisposable
         Assert.Equal(DeliveryOutcome.Injected, delivery.Tell(sessionAgentId, "and also this"));
 
         gated.Release();
+    }
+
+    /// <summary>
+    /// A DELIVERY THAT ARRIVES DURING A TURN'S LAST REQUEST IS STILL READ IN THAT TURN. The mailbox is
+    /// drained before each request, so text landing while the final answer is being written misses
+    /// every drain the turn has left — and the session, no longer busy, has nothing to wake it for.
+    /// </summary>
+    [Fact]
+    public async Task ADeliveryDuringTheLastRequest_IsReadBeforeTheTurnEnds()
+    {
+        var gated = new GatedProvider();
+        var (delivery, _, sessionAgentId) = WiredOn(gated);
+        delivery.Tell(sessionAgentId, "start something");
+        var session = _session!;
+        for (var attempt = 0; attempt < 200 && gated.Calls == 0; attempt++) await Task.Delay(20);
+
+        Assert.Equal(DeliveryOutcome.Injected, delivery.Tell(sessionAgentId, "the report arrived"));
+        gated.Release();
+        await Settled();
+
+        Assert.Equal(2, gated.Calls);
+        Assert.Contains("the report arrived",
+            string.Join("\n", gated.LastMessages!.Select(m => m.Content)));
     }
 
     /// <summary>
