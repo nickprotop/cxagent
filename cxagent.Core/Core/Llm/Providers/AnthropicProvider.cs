@@ -6,7 +6,7 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Llm.Providers;
 
 /// <summary>Native Anthropic Messages API driver. Normalizes stop_reason/usage at this boundary.</summary>
-public class AnthropicProvider : ILlmProvider, IModelCatalog, IThinkingProvider
+public class AnthropicProvider : ILlmProvider, IModelCatalog, IModelCatalogDetail, IThinkingProvider
 {
     private const string AnthropicVersion = "2023-06-01";
 
@@ -181,25 +181,28 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog, IThinkingProvider
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct) =>
+        [.. (await ListModelDetailsAsync(ct)).Models.Select(m => m.Id)];
+
+    /// <summary>
+    /// The Models API, with each model's input window. ONE PAGE OF A THOUSAND: the API's default page is
+    /// twenty, which would leave a picker missing models that plainly exist.
+    /// </summary>
+    public async Task<ModelCatalogResult> ListModelDetailsAsync(CancellationToken ct)
     {
         try
         {
-            var req = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/models");
+            var req = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/models?limit=1000");
             req.Headers.TryAddWithoutValidation("x-api-key", _apiKey);
             req.Headers.TryAddWithoutValidation("anthropic-version", AnthropicVersion);
 
             using var resp = await _client.SendAsync(req, ct);
-            if (!resp.IsSuccessStatusCode) return Array.Empty<string>();
+            if (!resp.IsSuccessStatusCode)
+                return new ModelCatalogResult([], $"the endpoint answered {(int)resp.StatusCode} {resp.ReasonPhrase}");
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
-                return Array.Empty<string>();
-            return data.EnumerateArray()
-                .Select(e => e.TryGetProperty("id", out var id) ? id.GetString() : null)
-                .Where(s => !string.IsNullOrEmpty(s))!
-                .ToList()!;
+            return new ModelCatalogResult(ModelCatalogParse.Data(doc.RootElement));
         }
-        catch (OperationCanceledException) { throw; }
-        catch { return Array.Empty<string>(); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { return new ModelCatalogResult([], ex.Message); }
     }
 }

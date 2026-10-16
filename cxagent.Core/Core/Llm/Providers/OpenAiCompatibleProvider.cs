@@ -12,7 +12,7 @@ namespace CxAgent.Core.Llm.Providers;
 /// Together, vLLM, llama.cpp, LM Studio and any other OpenAI-compatible endpoint. Normalizes
 /// StopReason/Usage at this boundary; the core never sees a raw vendor value.
 /// </summary>
-public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingProvider
+public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCatalogDetail, IThinkingProvider
 {
     private readonly HttpClient _client;
     private readonly string _model;
@@ -262,7 +262,11 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
     }
 
     /// <inheritdoc/>
-    public virtual async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct)
+    public virtual async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct) =>
+        [.. (await ListModelDetailsAsync(ct)).Models.Select(m => m.Id)];
+
+    /// <inheritdoc/>
+    public virtual async Task<ModelCatalogResult> ListModelDetailsAsync(CancellationToken ct)
     {
         try
         {
@@ -270,16 +274,12 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
             Authorize(req);
 
             using var resp = await _client.SendAsync(req, ct);
-            if (!resp.IsSuccessStatusCode) return Array.Empty<string>();
+            if (!resp.IsSuccessStatusCode)
+                return new ModelCatalogResult([], $"the endpoint answered {(int)resp.StatusCode} {resp.ReasonPhrase}");
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
-                return Array.Empty<string>();
-            return data.EnumerateArray()
-                .Select(e => e.TryGetProperty("id", out var id) ? id.GetString() : null)
-                .Where(s => !string.IsNullOrEmpty(s))!
-                .ToList()!;
+            return new ModelCatalogResult(ModelCatalogParse.Data(doc.RootElement));
         }
-        catch (OperationCanceledException) { throw; }
-        catch { return Array.Empty<string>(); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { return new ModelCatalogResult([], ex.Message); }
     }
 }

@@ -45,21 +45,26 @@ public sealed class OllamaProvider : OpenAiCompatibleProvider
     public override ILlmProvider WithThinking(string? level) => new OllamaProvider(this, level);
 
     /// <inheritdoc/>
-    public override async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct)
+    public override async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct) =>
+        [.. (await ListModelDetailsAsync(ct)).Models.Select(m => m.Id)];
+
+    /// <summary>Ollama's own <c>/api/tags</c>, which names the models and says nothing about their windows.</summary>
+    public override async Task<ModelCatalogResult> ListModelDetailsAsync(CancellationToken ct)
     {
         try
         {
             using var resp = await _client.GetAsync(_tagsUrl, ct);
-            if (!resp.IsSuccessStatusCode) return Array.Empty<string>();
+            if (!resp.IsSuccessStatusCode)
+                return new ModelCatalogResult([], $"the endpoint answered {(int)resp.StatusCode} {resp.ReasonPhrase}");
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
             if (!doc.RootElement.TryGetProperty("models", out var models) || models.ValueKind != JsonValueKind.Array)
-                return Array.Empty<string>();
-            return models.EnumerateArray()
+                return new ModelCatalogResult([]);
+            return new ModelCatalogResult([.. models.EnumerateArray()
                 .Select(e => e.TryGetProperty("name", out var name) ? name.GetString() : null)
-                .Where(s => !string.IsNullOrEmpty(s))!
-                .ToList()!;
+                .Where(s => !string.IsNullOrEmpty(s))
+                .Select(s => new ModelInfo(s!))]);
         }
-        catch (OperationCanceledException) { throw; }
-        catch { return Array.Empty<string>(); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { return new ModelCatalogResult([], ex.Message); }
     }
 }

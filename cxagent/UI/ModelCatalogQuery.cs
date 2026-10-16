@@ -28,11 +28,6 @@ public static class ModelFilter
     }
 }
 
-/// <summary>What an endpoint said it serves, or why it said nothing.</summary>
-/// <param name="Models">The model ids, empty when it could not be asked.</param>
-/// <param name="Why">Why the list is empty, when it is.</param>
-public sealed record ModelListing(IReadOnlyList<string> Models, string? Why);
-
 /// <summary>
 /// Asks an instance that is not saved yet — or is being edited — which models it serves.
 ///
@@ -41,7 +36,7 @@ public sealed record ModelListing(IReadOnlyList<string> Models, string? Why);
 /// </summary>
 public static class ModelCatalogQuery
 {
-    public static async Task<ModelListing> ListAsync(string name, ProviderInstanceConfig cfg, CancellationToken ct)
+    public static async Task<ModelCatalogResult> ListAsync(string name, ProviderInstanceConfig cfg, CancellationToken ct)
     {
         try
         {
@@ -49,19 +44,17 @@ public static class ModelCatalogQuery
                 new Dictionary<string, ProviderInstanceConfig> { [name] = cfg }, name,
                 Array.Empty<string>(), new Dictionary<string, RoutingTarget>());
             var provider = ProviderRegistry.Build(settings).Default;
-            if (provider is not IModelCatalog catalog)
-                return new ModelListing([], "this provider cannot list its models — type the id");
-            var models = await catalog.ListModelsAsync(ct);
-            return models.Count > 0
-                ? new ModelListing(models, null)
-                : new ModelListing([], "the endpoint listed no models — type the id");
+            if (provider is IModelCatalogDetail detail) return await detail.ListModelDetailsAsync(ct);
+            if (provider is IModelCatalog catalog)
+                return new ModelCatalogResult([.. (await catalog.ListModelsAsync(ct)).Select(id => new ModelInfo(id))]);
+            return new ModelCatalogResult([], "this provider cannot list its models");
         }
-        catch (OperationCanceledException) { throw; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            // A PROVIDER THAT CANNOT EVEN BE BUILT — a bad URL, an unknown kind — is an answer here,
-            // not a failure of the dialog: the user is mid-edit, and the reason is what they need.
-            return new ModelListing([], $"could not list models: {ex.Message}");
+            // A PROVIDER THAT CANNOT EVEN BE BUILT — a bad URL, an unknown kind — is an answer here, not
+            // a failure of the dialog: the user is mid-edit, and the reason is what they need.
+            return new ModelCatalogResult([], ex.Message);
         }
     }
 }

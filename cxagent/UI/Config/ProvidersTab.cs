@@ -263,51 +263,30 @@ public sealed class ProvidersTab
         _detail.AddControl(advanced);
     }
 
+    /// <summary>
+    /// The model in use, and Change… — which opens the picker over the dialog. The picker lists what
+    /// the endpoint on screen serves, so a just-edited endpoint or key is what is asked.
+    /// </summary>
     private IWindowControl ModelEditor(InstanceDraft draft)
     {
         var stack = new FieldGrid();
-        var id = new PromptControl { Input = draft.Model, HorizontalAlignment = HorizontalAlignment.Stretch };
-        id.InputChanged += (_, text) => { draft.Model = text.Trim(); Changed(); };
-
-        var list = new ListControl { HorizontalAlignment = HorizontalAlignment.Stretch, Visible = false };
-        var filter = new PromptControl { Prompt = "Filter: ", Visible = false, HorizontalAlignment = HorizontalAlignment.Stretch };
-        IReadOnlyList<string> all = [];
-        void Fill()
-        {
-            list.ClearItems();
-            foreach (var m in ModelFilter.Apply(all, filter.Input)) list.AddItem(new ListItem(MarkupParser.Escape(m)) { Tag = m });
-        }
-        filter.InputChanged += (_, _) => Fill();
-        list.SelectedIndexChanged += (_, i) =>
-        {
-            if (list.Items.ElementAtOrDefault(i)?.Tag is not string m) return;
-            id.Input = m;
-            draft.Model = m;
-            Changed();
-        };
-
-        var listButton = Controls.Button(" List models ").OnClick((_, _) =>
-        {
-            SetStatus($"[{ColorScheme.MutedMarkup}]Asking the endpoint…[/]");
-            var cfg = draft.ToConfig();
-            _ = Task.Run(() => ModelCatalogQuery.ListAsync(draft.Name, cfg, CancellationToken.None)).ContinueWith(t =>
-                _host.System.EnqueueOnUIThread(() =>
-                {
-                    var listing = t.IsCompletedSuccessfully ? t.Result : new ModelListing([], "could not list models");
-                    if (listing.Models.Count == 0) { SetStatus($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(listing.Why ?? "")}[/]"); return; }
-                    all = listing.Models;
-                    filter.Visible = true;
-                    list.Visible = true;
-                    Fill();
-                    SetStatus($"[{ColorScheme.MutedMarkup}]{all.Count} models — type to narrow, choose one to use it.[/]");
-                }, "providersTab.ListModels"), TaskScheduler.Default);
-        }).Build();
-
-        stack.AddBare(id);
-        stack.AddBare(listButton);
-        stack.AddBare(filter);
-        stack.AddBare(list);
+        var line = new MarkupControl([MarkupParser.Escape(draft.Model)]);
+        var change = Controls.Button(" Change… ").OnClick((_, _) => _ = PickModelAsync()).Build();
+        stack.AddBare(line);
+        stack.AddBare(change);
         return stack.Control;
+
+        async Task PickModelAsync()
+        {
+            var picked = await ModelPickerOverlay.PickAsync(_host.System, draft.Name, draft.ToConfig(), draft.Model);
+            if (picked is null) return;
+            _host.System.EnqueueOnUIThread(() =>
+            {
+                draft.Model = picked;
+                line.SetContent([MarkupParser.Escape(picked)]);
+                Changed();
+            }, "providersTab.Picked");
+        }
     }
 
     private IWindowControl KeyEditor(InstanceDraft draft)
@@ -474,15 +453,14 @@ public sealed class ProvidersTab
                 SetStatus($"[{ColorScheme.MutedMarkup}]Checking the endpoint…[/]");
                 var cfg = draft.ToConfig();
                 using var bounded = new CancellationTokenSource(TimeSpan.FromSeconds(6));
-                ModelListing listing;
+                ModelCatalogResult listing;
                 try { listing = await Task.Run(() => ModelCatalogQuery.ListAsync(draft.Name, cfg, bounded.Token)); }
-                catch (OperationCanceledException) { listing = new ModelListing([], "the endpoint did not answer within 6 seconds"); }
-                if (listing.Models.Count == 0 && listing.Why is { } why && why.StartsWith("could not", StringComparison.Ordinal)
-                    || listing.Why?.Contains("did not answer", StringComparison.Ordinal) == true)
+                catch (OperationCanceledException) { listing = new ModelCatalogResult([], "the endpoint did not answer within 6 seconds"); }
+                if (listing.Error is { } why)
                 {
                     _saveAnyway = true;
                     _save.Text = " Save anyway ";
-                    SetStatus($"[{ColorScheme.DangerMarkup}]✖ {MarkupParser.Escape(listing.Why!)}[/] [{ColorScheme.MutedMarkup}]— Save anyway writes it regardless.[/]");
+                    SetStatus($"[{ColorScheme.DangerMarkup}]✖ {MarkupParser.Escape(why)}[/] [{ColorScheme.MutedMarkup}]— Save anyway writes it regardless.[/]");
                     return;
                 }
             }
