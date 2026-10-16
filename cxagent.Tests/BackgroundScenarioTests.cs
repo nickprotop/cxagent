@@ -325,9 +325,15 @@ public class BackgroundScenarioTests : IDisposable
     }
 
     /// <summary>
-    /// S8. TEN FINISHING TOGETHER: every report read, never two requests at once.
+    /// S8. TEN FINISHING TOGETHER: every report reaches the parent, never two requests at once.
     ///
     /// <para>Guards the same turn-ownership test as S7.</para>
+    ///
+    /// <para>READ AS A MESSAGE OR KEPT AS UNDELIVERED, NEVER LOST. The parent's mailbox holds eight
+    /// (AgentMailbox.MaxDepth), and ten reports landing while the first wake's turn has not yet drained
+    /// it overflow by design: the overflow is refused, kept for task_output and marked undelivered
+    /// (spec decision 30). Whether that happens depends on when the drain runs, so the row holds every
+    /// report to one of the two outcomes rather than to the first alone.</para>
     /// </summary>
     [Fact]
     public async Task TenFinishTogether_AllRead_OneLoop()
@@ -341,8 +347,10 @@ public class BackgroundScenarioTests : IDisposable
         Assert.True(await Poll.Until(() => child.Calls == 10));
         child.Release();
 
-        Assert.True(await Poll.Until(() => Enumerable.Range(0, 10).All(i => parent.All.Contains($"background agent 'job-{i}'"))),
-            "not every report was read");
+        Assert.True(await Poll.Until(() => Enumerable.Range(0, 10).All(i =>
+                parent.All.Contains($"background agent 'job-{i}'")
+                || s.Session.SubAgents.BackgroundOf($"job-{i}") is { Handoff.Undelivered: true })),
+            "a report was neither read nor kept");
         await Idle(s.Session);
         Assert.Equal(1, parent.MaxInFlight);
         Assert.All(s.Session.SubAgents.Background(), r => Assert.Equal(BackgroundState.Finished, r.State));
