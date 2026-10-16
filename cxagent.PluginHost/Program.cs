@@ -99,8 +99,21 @@ await WriteLine(new HostReady(true, manifest));
 // "resolved by name at load time; its absence is not a load failure." Cancelled from the request
 // loop's own exit below, alongside the pending-request drain, so this process does not linger
 // polling a plugin whose parent has already gone.
+//
+// NOT UNTIL START HAS SUCCEEDED. The parent's reader runs as soon as it has read the ready line,
+// but what listens for a submit is wired after that, and before the parent sends start. A submit
+// polled any earlier could reach a reader with nobody listening, and be dropped; after start,
+// something always is. A plugin has no working directory or settings before start either.
 var pollLoopCts = new CancellationTokenSource();
-var pollLoop = plugin.HasPoll ? Task.Run(() => PollLoop(plugin, pollLoopCts.Token)) : Task.CompletedTask;
+var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var pollLoop = plugin.HasPoll
+    ? Task.Run(async () =>
+    {
+        try { await started.Task.WaitAsync(pollLoopCts.Token); }
+        catch (OperationCanceledException) { return; }
+        await PollLoop(plugin, pollLoopCts.Token);
+    })
+    : Task.CompletedTask;
 
 // THE REQUEST LOOP. One line in, one line out — see HostProtocol's own doc for why this vocabulary
 // exists separately from the ABI JSON. Each request runs on its own Task so a slow or concurrent
@@ -128,7 +141,7 @@ while (await stdin.ReadLineAsync() is { } line)
         continue;
     }
 
-    pending.Add(HandleRequest(plugin, request));
+    pending.Add(HandleRequest(plugin, request, started));
     // FINISHED TASKS ARE PRUNED OPPORTUNISTICALLY rather than awaited individually — this loop's
     // job is reading the next line promptly, not bookkeeping a list that only matters at shutdown.
     pending.RemoveAll(t => t.IsCompleted);
@@ -219,7 +232,8 @@ static async Task PollLoop(NativePlugin plugin, CancellationToken ct)
     }
 }
 
-static async Task HandleRequest(NativePlugin plugin, HostRequest request)
+/// <param name="started">Set once a start has succeeded, which lets the poll loop begin.</param>
+static async Task HandleRequest(NativePlugin plugin, HostRequest request, TaskCompletionSource started)
 {
     HostReply reply;
     try
@@ -250,6 +264,7 @@ static async Task HandleRequest(NativePlugin plugin, HostRequest request)
     }
 
     await WriteLine(reply);
+    if (request.Kind == HostProtocol.RequestKind.Start && reply.Ok) started.TrySetResult();
 }
 
 /// <summary>

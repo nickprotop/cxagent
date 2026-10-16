@@ -33,11 +33,14 @@ internal sealed class AbiHostProcess : IAsyncDisposable
     /// <summary>
     /// Fired for a line this instance never asked for — a plugin-originated <see cref="AbiSubmit"/>,
     /// see <see cref="HostProtocol"/>'s own doc. <see cref="AbiPlugin"/> is the only subscriber in
-    /// production, wired in its own constructor so no submit line arrives before something is
-    /// listening — an event rather than a constructor parameter because <see cref="AbiPlugin"/> does
-    /// not exist yet when <see cref="Launch"/> creates this instance (<c>AbiPluginLoader</c> builds
-    /// the two in that order: host first, so its handshake can be read, then the plugin shim around
-    /// it).
+    /// production, wired in its own constructor — an event rather than a constructor parameter
+    /// because <see cref="AbiPlugin"/> does not exist yet when <see cref="Launch"/> creates this
+    /// instance (<c>AbiPluginLoader</c> builds the two in that order: host first, so its handshake
+    /// can be read, then the plugin shim around it).
+    ///
+    /// <para>SUBSCRIBE BEFORE <see cref="Start"/>. The read loop runs from the moment Launch returns,
+    /// and a line with no subscriber is dropped; what keeps a submit from arriving unheard is that
+    /// the host process polls only once a start has succeeded.</para>
     /// </summary>
     public event Action<AbiSubmit>? PluginSubmitted;
 

@@ -364,12 +364,9 @@ public class AbiPluginHostTests
         await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
 
         // fixture-submits' own cxagent_plugin_poll answers on its FIRST call (fixture_plugin.c's own
-        // doc) — cxagent.PluginHost's poll loop ticks every 200ms, so this bounds the wait rather
-        // than assuming the very first tick lands before this line runs.
-        //
-        // TWENTY SECONDS, NOT FIVE: the bound is for a hang, and a full parallel run starting other
-        // processes stretched this host's first poll past five often enough to fail a run in about
-        // fifteen. A passing wait ends at the first tick either way, so the bound costs nothing.
+        // doc), which the host makes once start has succeeded, so this bounds the wait rather than
+        // assuming the first poll lands before this line runs. The bound is for a hang: a passing
+        // wait ends at the first poll, so a generous one costs nothing on a loaded machine.
         await signal.Task.WaitAsync(TimeSpan.FromSeconds(20));
 
         Assert.NotNull(received);
@@ -382,6 +379,33 @@ public class AbiPluginHostTests
         var invokeReply = await host.Invoke("echo", JsonSerializer.SerializeToElement(new { value = "hi" }),
             CancellationToken.None);
         Assert.True(invokeReply.Ok);
+    }
+
+    /// <summary>
+    /// NO POLL BEFORE START. The parent's reader runs from the moment Launch returns, and its
+    /// subscriber is wired after that — in production by AbiPlugin's constructor, which then sends
+    /// start. A submit polled in that gap was dispatched to nobody and lost. Waiting here well past
+    /// the host's first poll tick before subscribing makes that gap certain rather than a race a
+    /// loaded machine sometimes loses: the submit must still arrive, because nothing was polled
+    /// until start.
+    /// </summary>
+    [Fact]
+    public async Task NothingIsPolledBeforeStart_SoASubmitIsNeverLostBeforeSomethingListens()
+    {
+        if (!RequireFixture("fixture-submits", out var lib)) return;
+
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
+        await using var disposeHost = host;
+        Assert.True(handshake.Ready);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(800));
+
+        var signal = new TaskCompletionSource<AbiSubmit>();
+        host.PluginSubmitted += submit => signal.TrySetResult(submit);
+        await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
+
+        var received = await signal.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal("run the tests", received.Goal);
     }
 
     // ---- A dead pipe fails every outstanding waiter, not just the one that noticed -----------------

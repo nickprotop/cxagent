@@ -158,6 +158,10 @@ const char* cxagent_plugin_stop(void);
  * one that never originates work) omits it entirely, and the host loads it exactly as it always
  * has — see "HANDSHAKE" above. Resolved by name at load time; its absence is not a load failure.
  *
+ * NEVER CALLED BEFORE cxagent_plugin_start HAS RETURNED SUCCESSFULLY, and never after a start
+ * that failed. Until then the plugin has no working directory or settings, and the parent has
+ * nothing listening for what a poll would return.
+ *
  * MAY RETURN NULL, AND ORDINARILY DOES — an explicit exception to "a plugin must never return
  * NULL" (see OWNERSHIP, above): NULL here means "nothing to say right now", the state a plugin
  * spends nearly all of its time in. A plugin that allocated an empty object instead, to avoid ever
