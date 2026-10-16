@@ -53,6 +53,36 @@ public class ShellJobExecutorTests
         Assert.Contains("reached", result.Output["stdout"]?.ToString() ?? "");
     }
 
+    /// <summary>
+    /// A COMMAND THE USER'S ESCAPE CUT OFF SAYS SO, with what it printed first. A bare "exited with code
+    /// 137" reads as an ending the command reached on its own, and a model handed it tells the user the
+    /// command finished.
+    /// </summary>
+    [Fact]
+    public async Task Execute_CutOffByTheTurnsCancellation_SaysTheUserStoppedIt()
+    {
+        using var turn = new CancellationTokenSource();
+        var run = new ShellJobExecutor().ExecuteAsync(
+            P(("command", "echo first-part; sleep 10")), new CollectingContext(), turn.Token);
+        await Task.Delay(500);
+        turn.Cancel();
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.False(result.Success);
+        Assert.Contains("stopped by the user before it finished", result.ErrorMessage);
+        Assert.Contains("first-part", result.Output["stdout"]?.ToString() ?? "");
+    }
+
+    /// <summary>A COMMAND KILLED BY SOMETHING ELSE keeps the plain exit code: nobody stopped it from here.</summary>
+    [Fact]
+    public async Task Execute_ExitingWith137_OnItsOwn_KeepsThePlainExitCode()
+    {
+        var result = await new ShellJobExecutor().ExecuteAsync(
+            P(("command", "exit 137")), new CollectingContext(), CancellationToken.None);
+
+        Assert.Equal("command exited with code 137", result.ErrorMessage);
+    }
+
     [Fact]
     public async Task Execute_EchoSucceeds_WithExitCodeZero()
     {

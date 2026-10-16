@@ -187,7 +187,15 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
             Success = result.ExitCode == 0,
             ExitCode = result.ExitCode,
             Duration = duration,
-            ErrorMessage = result.ExitCode == 0 ? null : $"command exited with code {result.ExitCode}",
+            ErrorMessage = result.ExitCode == 0 ? null
+                // THE TURN'S CANCELLATION IS THE USER'S ESCAPE, AND THE KILL IT CAUSED SAYS SO. A bare
+                // "exited with code 137" reads as an ending the command reached on its own, and a model
+                // handed one tells the user the command finished. What it printed before the stop is
+                // still in the output, so the model can say how far it got.
+                : ct.IsCancellationRequested
+                    ? $"stopped by the user before it finished (exit code {result.ExitCode}) — it did not run "
+                      + "to completion; any output above is what it printed before the stop."
+                    : $"command exited with code {result.ExitCode}",
             Output = output,
         };
     }
