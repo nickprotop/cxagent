@@ -34,4 +34,19 @@ public class ProviderConfigParseTests
     public void Parse_NotJson_SaysSo() =>
         Assert.Contains("not valid JSON",
             Assert.Throws<ProviderConfigException>(() => ProviderConfigLoader.Parse("{ nope", NoEnv)).Errors[0]);
+
+    // THE DEFAULT CHILD NEEDS NO BRIEFING: where plain sub-agents run, how long and with what tools is
+    // configurable on its own — a briefing would be prefixed to every spawn that names no type.
+    [Fact]
+    public void General_WithoutABriefing_IsKept()
+    {
+        var settings = ProviderConfigLoader.Parse("""
+            { "providers": { "local": { "kind": "ollama", "model": "m" } }, "defaultProvider": "local",
+              "agents": { "general": { "provider": "local", "maxTurns": 9 } } }
+            """, NoEnv);
+
+        Assert.Equal("local", settings.AgentTypes["general"].Provider);
+        Assert.Equal(9, settings.AgentTypes["general"].MaxTurns);
+        Assert.DoesNotContain(settings.Warnings, w => w.Contains("general"));
+    }
 }

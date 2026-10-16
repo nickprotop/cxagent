@@ -49,4 +49,15 @@ public class AgentDraftTests
         Assert.Equal("You research.", fields.Briefing);
         Assert.Equal("reads outside the repo", fields.Description);
     }
+
+    [Fact]
+    public void General_WritesNoEmptyBriefing()
+    {
+        var draft = AgentDraft.ForGeneral(null);
+        draft.Provider = "local";
+        var fields = draft.ToFields();
+        Assert.Equal("local", fields.Provider);
+        Assert.Null(fields.Briefing);
+        Assert.True(draft.IsGeneral);
+    }
 }

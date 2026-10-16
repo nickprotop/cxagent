@@ -987,8 +987,9 @@ public static class ProviderConfigLoader
                     }
                     // REQUIRED FOR A TYPE THAT IS NOT BUILT IN. A type with nothing to say is the
                     // default child under another name, and naming it invites the model to believe it
-                    // picked something.
-                    else if (string.IsNullOrWhiteSpace(briefing))
+                    // picked something. EXCEPT THE DEFAULT CHILD ITSELF: `general` has no briefing by
+                    // design, and where it runs, how long and with which tools are worth setting alone.
+                    else if (string.IsNullOrWhiteSpace(briefing) && entry.Name != Agents.AgentTypeCatalog.DefaultTypeName)
                     {
                         warnings.Add($"agents.{entry.Name} has no 'briefing'; skipped.");
                         continue;

@@ -33,6 +33,10 @@ public sealed class AgentDraft
     public static AgentDraft ForBuiltin(AgentTypeDefinition shipped, AgentTypeConfig? overrideCfg) =>
         new(shipped.Name, builtin: true, overrideCfg) { Shipped = shipped };
 
+    /// <summary>The default child, <c>general</c>, and its override in config if there is one.</summary>
+    public static AgentDraft ForGeneral(AgentTypeConfig? overrideCfg) =>
+        new(AgentTypeCatalog.DefaultTypeName, builtin: false, overrideCfg) { IsGeneral = true };
+
     /// <summary>A type of the user's own, as config has it.</summary>
     public static AgentDraft ForOwn(string name, AgentTypeConfig cfg) => new(name, builtin: false, cfg);
 
@@ -42,6 +46,9 @@ public sealed class AgentDraft
     public string Name { get; set; }
     public bool IsBuiltin { get; }
     public bool IsNew { get; private init; }
+
+    /// <summary>The default child: provider, turns, tools and an optional standing briefing — no description.</summary>
+    public bool IsGeneral { get; private init; }
     public AgentTypeDefinition? Shipped { get; private init; }
     public AgentTypeConfig? Original { get; }
 
@@ -78,6 +85,7 @@ public sealed class AgentDraft
         if (MaxTurns is null && Original?.MaxTurns is not null) clear.Add("maxTurns");
         if (ToolsChanged && Tools is null) clear.Add("tools");
         if (!IsBuiltin && Blank(Description) is null && Original?.Description is not null) clear.Add("description");
+        if (IsGeneral && Blank(Briefing) is null && Original?.Briefing is not null) clear.Add("briefing");
         return new AgentTypeFields
         {
             Provider = Provider != Original?.Provider ? Provider : null,

@@ -88,11 +88,14 @@ public sealed class AgentsTab
     private IReadOnlyList<(string Name, bool Builtin, bool Overridden, string Line)> Rows()
     {
         var configured = _settings?.AgentTypes ?? new Dictionary<string, AgentTypeConfig>();
-        var rows = BuiltinAgentTypes.All
-            .Select(t => (t.Name, true, configured.ContainsKey(t.Name), t.Description))
-            .ToList();
+        var general = AgentTypeCatalog.DefaultTypeName;
+
+        // THE DEFAULT CHILD FIRST: it is what a spawn that names no type gets — the one used most.
+        var rows = new List<(string, bool, bool, string)> { (general, true, configured.ContainsKey(general), "default") };
+        rows.AddRange(BuiltinAgentTypes.All
+            .Select(t => (t.Name, true, configured.ContainsKey(t.Name), t.Description)));
         rows.AddRange(configured
-            .Where(kv => !BuiltinAgentTypes.IsBuiltin(kv.Key))
+            .Where(kv => !BuiltinAgentTypes.IsBuiltin(kv.Key) && kv.Key != general)
             .OrderBy(kv => kv.Key, StringComparer.Ordinal)
             .Select(kv => (kv.Key, false, false, kv.Value.Description ?? "")));
         return rows;
@@ -124,7 +127,9 @@ public sealed class AgentsTab
         _rail.ClearItems();
         foreach (var (name, builtin, overridden, line) in rows)
         {
-            var tag = builtin
+            var tag = name == AgentTypeCatalog.DefaultTypeName
+                ? $"[{ColorScheme.AccentMarkup}]default[/][{ColorScheme.MutedMarkup}]{(overridden ? " · set" : "")}[/]"
+                : builtin
                 ? $"[{ColorScheme.MutedMarkup}]built-in{(overridden ? " · overridden" : "")}[/]"
                 : line == "new" ? $"[{ColorScheme.CautionMarkup}]new[/]" : $"[{ColorScheme.AccentMarkup}]yours[/]";
             _rail.AddItem(new ListItem($"[bold]{MarkupParser.Escape(name)}[/] {tag}") { Tag = name });
@@ -159,7 +164,9 @@ public sealed class AgentsTab
         if (_draft?.Name != name || _draft is null)
         {
             var configured = _settings!.AgentTypes;
-            _draft = BuiltinAgentTypes.Find(name) is { } shipped
+            _draft = name == AgentTypeCatalog.DefaultTypeName
+                ? AgentDraft.ForGeneral(configured.TryGetValue(name, out var g) ? g : null)
+                : BuiltinAgentTypes.Find(name) is { } shipped
                 ? AgentDraft.ForBuiltin(shipped, configured.TryGetValue(name, out var o) ? o : null)
                 : configured.TryGetValue(name, out var own) ? AgentDraft.ForOwn(name, own) : _draft;
         }
@@ -171,12 +178,25 @@ public sealed class AgentsTab
         _detail.ClearContents();
         _firstField = null;
         _detail.AddControl(new MarkupControl([
-            $"[bold]{MarkupParser.Escape(draft.IsNew ? "New agent type" : draft.Name)}[/]  [{ColorScheme.MutedMarkup}]{(draft.IsBuiltin ? "ships with cxagent" : "yours")}[/]",
+            $"[bold]{MarkupParser.Escape(draft.IsNew ? "New agent type" : draft.Name)}[/]  [{ColorScheme.MutedMarkup}]{(draft.IsGeneral ? "the default" : draft.IsBuiltin ? "ships with cxagent" : "yours")}[/]",
             "",
         ]));
 
         var fields = new FieldGrid();
-        if (draft.IsBuiltin && draft.Shipped is { } shipped)
+        if (draft.IsGeneral)
+        {
+            _detail.AddControl(new MarkupControl([
+                "What a spawn that names no type gets: a plain child with the session's tools and no briefing of its own.",
+                "",
+                $"[{ColorScheme.MutedMarkup}]Set where it runs, how long, and with which tools. A briefing here is optional — a standing instruction every such child is given.[/]",
+                "",
+            ]) { Wrap = true });
+            var standing = new MultilineEditControl(viewportHeight: 4) { HorizontalAlignment = HorizontalAlignment.Stretch };
+            standing.SetContent(draft.Briefing ?? "");
+            standing.ContentChanged += (_, _) => draft.Briefing = standing.GetContent();
+            fields.Add("Standing briefing", "Optional. Given to every child spawned without a type. Enter to type, Esc when done.", standing);
+        }
+        else if (draft.IsBuiltin && draft.Shipped is { } shipped)
         {
             _detail.AddControl(new MarkupControl([
                 MarkupParser.Escape(shipped.Description), "",
@@ -278,7 +298,7 @@ public sealed class AgentsTab
 
     private void ShowRename()
     {
-        if (_draft is not { IsBuiltin: false, IsNew: false } draft) { SetStatus($"[{ColorScheme.MutedMarkup}]Select a type of your own to rename.[/]"); return; }
+        if (_draft is not { IsBuiltin: false, IsNew: false, IsGeneral: false } draft) { SetStatus($"[{ColorScheme.MutedMarkup}]Select a type of your own to rename.[/]"); return; }
         var from = draft.Name;
         _detail.ClearContents();
         var box = new PromptControl { Prompt = "New name: ", Input = from, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -297,7 +317,7 @@ public sealed class AgentsTab
     private async Task RemoveOrResetAsync()
     {
         if (_draft is not { IsNew: false } draft) return;
-        if (draft.IsBuiltin)
+        if (draft.IsBuiltin || draft.IsGeneral)
         {
             if (draft.Original is null) { SetStatus($"[{ColorScheme.MutedMarkup}]'{MarkupParser.Escape(draft.Name)}' is as shipped already.[/]"); return; }
             var name = draft.Name;
@@ -316,13 +336,14 @@ public sealed class AgentsTab
     {
         if (_saving || _draft is not { } draft || _settings is null) return;
         if (!draft.IsDirty) { SetStatus($"[{ColorScheme.MutedMarkup}]Nothing to save.[/]"); return; }
-        if (!draft.IsBuiltin && string.IsNullOrWhiteSpace(draft.Briefing)) { SetStatus($"[{ColorScheme.CautionMarkup}]A type of your own needs a briefing.[/]"); return; }
+        if (!draft.IsBuiltin && !draft.IsGeneral && string.IsNullOrWhiteSpace(draft.Briefing)) { SetStatus($"[{ColorScheme.CautionMarkup}]A type of your own needs a briefing.[/]"); return; }
         var name = draft.Name;
         var fields = draft.ToFields();
         _saving = true;
         try
         {
-            await CommitAsync(draft.IsBuiltin ? root => AgentEdits.SetOverride(root, name, fields)
+            await CommitAsync(draft.IsGeneral ? root => AgentEdits.SetGeneral(root, fields)
+                : draft.IsBuiltin ? root => AgentEdits.SetOverride(root, name, fields)
                 : draft.IsNew ? root => AgentEdits.AddType(root, name, fields)
                 : root => AgentEdits.UpdateType(root, name, fields), name, $"{name} saved");
         }
@@ -345,7 +366,7 @@ public sealed class AgentsTab
             _draft = null;
             Reload(select);
             _window()?.FocusManager.SetFocus(_rail, FocusReason.Programmatic);
-            SetStatus($"[{ColorScheme.AffirmativeMarkup}]✔ {MarkupParser.Escape(what)}.[/] [{ColorScheme.MutedMarkup}]Running tabs have it now; the model hears of it in its next message.[/]");
+            SetStatus($"[{ColorScheme.AffirmativeMarkup}]✔ {MarkupParser.Escape(what)}.[/] [{ColorScheme.MutedMarkup}]Running tabs have it now, in place.[/]");
         }, "agentsTab.Saved");
     }
 }

@@ -52,6 +52,21 @@ public class AgentTypeEditsTests : IDisposable
     }
 
     [Fact]
+    public void General_TakesProviderTurnsTools_AndAnOptionalBriefing()
+    {
+        var root = Doc();
+        AgentEdits.SetGeneral(root, new AgentTypeFields { Provider = "local", MaxTurns = 12 });
+        Assert.Equal("local", (string?)root["agents"]!["general"]!["provider"]);
+        Assert.Null(root["agents"]!["general"]!["briefing"]);
+
+        AgentEdits.SetGeneral(root, new AgentTypeFields { Briefing = "Cite file and line." });
+        Assert.Equal("Cite file and line.", (string?)root["agents"]!["general"]!["briefing"]);
+
+        AgentEdits.ResetBuiltin(root, "general");
+        Assert.Null(root["agents"]!["general"]);
+    }
+
+    [Fact]
     public void AnOwnType_NeedsABriefing() =>
         Assert.Throws<ConfigEditException>(() => AgentEdits.AddType(Doc(), "reviewer2", new AgentTypeFields { Description = "x" }));
 

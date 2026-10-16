@@ -45,8 +45,22 @@ public static class AgentEdits
         if (entry.Count == 0) types.Remove(builtin);
     }
 
-    /// <summary>Back to the shipped type: the override is removed.</summary>
+    /// <summary>Back to the shipped type — or to the plain default child — : the override is removed.</summary>
     public static void ResetBuiltin(JsonObject root, string builtin) => Types(root).Remove(builtin);
+
+    /// <summary>
+    /// The default child, <c>general</c> — what a spawn that names no type gets. Provider, turns and tools
+    /// like a built-in, and an OPTIONAL briefing: a standing instruction for every such spawn, which a
+    /// shipped type may not take but this one, having none of its own, can.
+    /// </summary>
+    public static void SetGeneral(JsonObject root, AgentTypeFields fields)
+    {
+        var types = Types(root);
+        var name = AgentTypeCatalog.DefaultTypeName;
+        if (types[name] is not JsonObject entry) { entry = new JsonObject(); types[name] = entry; }
+        fields.ApplyTo(entry);
+        if (entry.Count == 0) types.Remove(name);
+    }
 
     public static void AddType(JsonObject root, string name, AgentTypeFields fields)
     {

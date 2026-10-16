@@ -201,6 +201,11 @@ made in one session reached exactly one machine, because they were edits to a JS
 | `briefing` | **Ignored, with a warning at startup.** | Required. |
 | `description` | **Ignored, with a warning at startup.** | Optional, and worth writing. |
 
+**`general` is the default child** — what a spawn that names no type gets — and takes `provider`,
+`maxTurns` and `tools` with no briefing at all: `"general": { "provider": "local" }` moves every plain
+sub-agent to that instance. A `briefing` on it is optional, and becomes a standing instruction every such
+child is given.
+
 Ignoring loudly is deliberate. An edit that does nothing and says nothing is the worst of the three
 options — silently winning restores the drift, silently losing leaves you debugging a change that was
 never applied. If you want different text, give the type a name cxagent does not ship: any name that
