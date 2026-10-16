@@ -25,9 +25,13 @@ public static class ConfigApply
 
     public static ConfigWrite Save(ConfigApplyContext ctx, Action<JsonObject> edit, Func<ConfigWrite, ConfigChange> change)
     {
-        var write = ConfigFile.TryApply(PathOf(ctx.Paths), ctx.Env, edit);
+        var write = ConfigFile.TryApply(new ConfigTarget(PathOf(ctx.Paths), ctx.Env), edit);
         if (!write.Saved) return write;
 
+        // SAVED BUT NOT LIVE: the file is written, yet resolving it found no usable provider. Saved stays
+        // true — the file did change — and Errors says why nothing moved; the caller shows both.
+        // RESOLVED FROM THE FILE'S DEFAULT: a run started with --model returns to the file's own
+        // default for new tabs after a save, the way it would on the next start.
         var fresh = ConfigResolver.Resolve(ctx.Paths, ctx.Env, useMock: false);
         if (!fresh.HasProvider) return write with { Errors = fresh.Errors };
         ctx.Current.Replace(fresh);
@@ -41,7 +45,7 @@ public static class ConfigApply
     /// </summary>
     public static async Task<ConfigWrite> SaveMcpAsync(ConfigApplyContext ctx, Action<JsonObject> edit)
     {
-        var write = ConfigFile.TryApply(PathOf(ctx.Paths), ctx.Env, edit);
+        var write = ConfigFile.TryApply(new ConfigTarget(PathOf(ctx.Paths), ctx.Env), edit);
         if (!write.Saved) return write;
         await ctx.Mcp.ReloadAsync(write.Settings!.McpServers, CancellationToken.None);
         return write;

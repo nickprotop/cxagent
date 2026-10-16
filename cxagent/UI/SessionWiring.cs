@@ -215,7 +215,7 @@ public static class SessionWiring
         // one writer: judged by the loader first, and refused rather than "started fresh" over a file
         // that does not parse. Read at the moment of saving, so a renamed instance saves under its new name.
         session.SaveThinkingDefault = level => Core.Config.ConfigFile.SaveThinkingDefault(
-            Path.Combine(configDir, "config.json"), Startup.Env(), session.InstanceName, level);
+            new Core.Config.ConfigTarget(Path.Combine(configDir, "config.json"), Startup.Env()), session.InstanceName, level);
 
         // THE LEVELS ARE ASKED OF THE MODEL NOW, not at the first F10: the mode line shows the level
         // once the model has said what it offers, and F10 never waits on a probe.

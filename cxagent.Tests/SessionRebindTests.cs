@@ -145,4 +145,95 @@ public class SessionRebindTests : IDisposable
         Assert.False(change.Affects("other"));
         Assert.True((change with { Everyone = true }).Affects("other"));
     }
+
+    // ---- the front end's thread: a rebind is POSTED, and runs later ------------------------------
+
+    /// <summary>Like <see cref="Wired"/>, but the rebind is posted to a queue the test drains — the
+    /// UI's shape, where the wire waits for the UI thread and a turn can start in between.</summary>
+    private (SessionManager Manager, Session Session, Queue<Action> Posted, BufferedChatSink Said) Deferred(ResolvedConfig config)
+    {
+        var manager = SessionManager.Create(new AppPaths(_dir));
+        var said = new BufferedChatSink();
+        var ports = new SessionPorts { Observer = said, ToolObserver = new BufferedJobPanel() };
+        var session = manager.Open(_dir, config, ports, AgentMode.Single);
+        var posted = new Queue<Action>();
+        manager.Post = posted.Enqueue;
+        manager.RebindOne = (s, cfg) => { manager.Open(s, cfg, ports, AgentMode.Single); return true; };
+        return (manager, session, posted, said);
+    }
+
+    private static void Drain(Queue<Action> posted) { while (posted.TryDequeue(out var a)) a(); }
+
+    // A TURN THAT STARTS BEFORE THE POSTED REBIND RUNS keeps its host: the rebind waits for it, and
+    // what the turn said is in the conversation the new host starts from.
+    [Fact]
+    public async Task APostedRebind_ThatFindsATurnRunning_WaitsForIt_AndKeepsWhatItSaid()
+    {
+        var before = new LevelledMock(["off", "on"]);
+        var (manager, session, posted, _) = Deferred(Config(("local", before)));
+        using var _m = manager;
+
+        var after = new LevelledMock(["off", "on"]);
+        manager.ApplyConfig(Config(("local", after)), Changed("local"));
+
+        before.State.Hold = new TaskCompletionSource();
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("during the gap"));
+        while (before.State.Seen.IsEmpty) await Task.Delay(5);
+
+        Drain(posted);
+        Assert.Same(before.State, Assert.IsType<LevelledMock>(session.Provider).State);
+
+        before.State.Hold.SetResult();
+        await started.Turn;
+        var count = session.Host!.Context.Snapshot().Count;
+        Drain(posted);
+
+        Assert.Same(after.State, Assert.IsType<LevelledMock>(session.Provider).State);
+        Assert.Equal(count, session.Host!.Context.Snapshot().Count);
+    }
+
+    // TWO SAVES BEFORE THE UI THREAD RUNS EITHER: the second must not wire an empty conversation.
+    [Fact]
+    public async Task TwoPostedRebinds_KeepTheConversation()
+    {
+        var (manager, session, posted, _) = Deferred(Config(("local", new LevelledMock(["on"]))));
+        using var _m = manager;
+        await Turn(session, "remember heron");
+        var count = session.Host!.Context.Snapshot().Count;
+
+        manager.ApplyConfig(Config(("local", new LevelledMock(["on"]))), Changed("local"));
+        manager.ApplyConfig(Config(("local", new LevelledMock(["on"]))), Changed("local"));
+        Drain(posted);
+
+        Assert.Equal(count, session.Host!.Context.Snapshot().Count);
+    }
+
+    // A SESSION THAT CANNOT BE MOVED SAYS SO, and still sees the new catalog.
+    [Fact]
+    public void ARebindWithNowhereToGo_SaysSo_AndAdoptsTheCatalog()
+    {
+        var (manager, session, posted, said) = Deferred(Config(("local", new LevelledMock(["on"]))));
+        using var _m = manager;
+
+        manager.ApplyConfig(Config(("other", new LevelledMock(["on"]))), Changed("local"));
+        Drain(posted);
+
+        Assert.Contains(said.Notices, n => n.Contains("could not", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("other", session.Resolution!.Providers!.InstanceNames);
+    }
+
+    // THE MANAGER'S LIVE PLUGIN ENTRIES, NOT THE FILE'S, reach a re-wired session.
+    [Fact]
+    public void ARebind_KeepsTheManagersPluginEntries()
+    {
+        var (manager, session, posted, _) = Deferred(Config(("local", new LevelledMock(["on"]))));
+        using var _m = manager;
+        var live = manager.Config.Entries;
+
+        manager.ApplyConfig(Config(("local", new LevelledMock(["on"]))) with { Entries = new PluginEntries(new Dictionary<string, PluginConfig>()) }, Changed("local"));
+        Drain(posted);
+
+        Assert.Same(live, manager.Config.Entries);
+        Assert.Same(live, session.Resolution!.Entries);
+    }
 }

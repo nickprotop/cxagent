@@ -101,11 +101,17 @@ public sealed class SessionManager : IDisposable
     public Func<Session, bool>? RewireOne { get; set; }
 
     /// <summary>
-    /// Re-wires one session onto a given config. The front end's, because wiring builds its sinks; the
-    /// conversation is already carried (<see cref="Session.CarryToNextWire"/>) when this runs. Returns
-    /// whether it re-wired.
+    /// Re-wires one session onto a given config, NOW, on the thread it is called on — the front end's,
+    /// because wiring builds its sinks. The conversation is carried just before. Returns whether it
+    /// re-wired.
     /// </summary>
     public Func<Session, ResolvedConfig, bool>? RebindOne { get; set; }
+
+    /// <summary>
+    /// Where a rebind runs: the front end's UI thread, which is also where a typed line starts a turn.
+    /// Null runs it where it is asked for.
+    /// </summary>
+    public Action<Action>? Post { get; set; }
 
     /// <summary>
     /// A saved config, live: every session adopts the new catalog, and the ones the change touches are
@@ -113,28 +119,76 @@ public sealed class SessionManager : IDisposable
     /// </summary>
     public void ApplyConfig(ResolvedConfig fresh, Config.ConfigChange change)
     {
-        // THE PLUGIN ENTRIES ARE THE MANAGER'S OWN LIVE STATE, not the file's: kept across the swap.
-        Config = fresh with { Entries = Config.Entries };
-        foreach (var session in Sessions)
+        ResolvedConfig current;
+        List<Session> sessions;
+        lock (_gate)
         {
-            if (!change.Affects(session.InstanceName)) { session.AdoptCatalog(fresh); continue; }
-            session.RebindWhenIdle(() => Rebind(session, fresh, change));
+            // THE PLUGIN ENTRIES ARE THE MANAGER'S OWN LIVE STATE, not the file's: kept across the swap,
+            // and carried into every session this re-wires, so the manager and its sessions agree.
+            Config = fresh with { Entries = Config.Entries };
+            current = Config;
+            sessions = [.. _sessions];
+        }
+
+        foreach (var session in sessions)
+        {
+            if (!change.Affects(session.InstanceName)) { session.AdoptCatalog(current); continue; }
+            session.RebindWhenIdle(() => Schedule(session, current, change));
         }
     }
 
-    private void Rebind(Session session, ResolvedConfig fresh, Config.ConfigChange change)
+    private void Schedule(Session session, ResolvedConfig config, Config.ConfigChange change) =>
+        (Post ?? (run => run()))(() => RebindNow(session, config, change));
+
+    /// <summary>
+    /// The rebind itself, on the front end's thread.
+    ///
+    /// <para>CARRY AND WIRE IN ONE STEP, AND ONLY WHEN IDLE. A turn starts on this same thread from a
+    /// typed line, or on the pool from a queued one, so the session is asked again here rather than
+    /// trusted from when the rebind was scheduled: carried while idle and wired after a turn began, the
+    /// new host would start from a conversation missing that turn, and replace the host it was writing
+    /// into. A session found busy waits for that turn instead.</para>
+    /// </summary>
+    private void RebindNow(Session session, ResolvedConfig config, Config.ConfigChange change)
     {
-        if (RebindOne is not { } rebind) return;
+        if (session.IsBusy) { session.RebindWhenIdle(() => Schedule(session, config, change)); return; }
+
         var name = change.Follow(session.InstanceName);
 
-        // NO PROBE: this can run on the UI thread, and Use may ask an endpoint for its window. The
+        // NO PROBE: this runs on the UI thread, and Use may ask an endpoint for its window. The
         // registry's known window is enough; an unknown one is probed on first use, as at startup.
-        if (name is null || fresh.Providers is not { } registry || !registry.TryGet(name, out var provider)) return;
-        var window = registry.InstanceWindows.TryGetValue(name, out var known) ? known : null;
-        var target = fresh.WithModel(new ActiveModel(provider, name, provider.DisplayName, window));
+        if (name is null || config.Providers is not { } registry || !registry.TryGet(name, out var provider))
+        {
+            NotRebound(session, config, $"'{name ?? "this provider"}' is no longer in the config");
+            return;
+        }
+        if (RebindOne is not { } rebind) { NotRebound(session, config, "this front end cannot re-wire a tab"); return; }
 
-        if (!session.CarryToNextWire()) return;
-        if (rebind(session, target)) session.SayRebound(change.Note);
+        var window = registry.InstanceWindows.TryGetValue(name, out var known) ? known : null;
+        var target = config.WithModel(new ActiveModel(provider, name, provider.DisplayName, window));
+
+        if (!session.CarryToNextWire()) { NotRebound(session, config, "it has no conversation to carry"); return; }
+        try
+        {
+            if (rebind(session, target)) { session.SayRebound(change.Note); return; }
+            session.DropCarried();
+            NotRebound(session, config, "the re-wire was declined");
+        }
+        catch (Exception ex)
+        {
+            // THE CARRIED CONVERSATION IS DROPPED, not left armed: a later, unrelated wire would
+            // otherwise resurrect it over whatever the tab has said since.
+            session.DropCarried();
+            NotRebound(session, config, ex.Message);
+        }
+    }
+
+    /// <summary>A session the change touched but that stays where it is: it still sees the new
+    /// catalog, and says why it did not move.</summary>
+    private static void NotRebound(Session session, ResolvedConfig config, string why)
+    {
+        session.AdoptCatalog(config);
+        session.SayNotRebound(why);
     }
 
     /// <summary>

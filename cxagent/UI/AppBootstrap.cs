@@ -161,7 +161,7 @@ public static class AppBootstrap
         // config the process runs on NOW: a saved edit in the configuration dialog replaces it, and
         // every site that acts on the present — a new tab, a re-wire — reads it at the moment it acts.
         // A local captured by closures cannot be both, which is why the live one is a holder: a closure
-        // that captured the value itself kept the launch config for the life of the process.
+        // keeps whatever value it captured for as long as it lives.
         //
         // WHAT NEITHER IS: the active model. That is session state (Session.InstanceName), and /model
         // changes it freely.
@@ -1154,11 +1154,13 @@ public static class AppBootstrap
             return true;
         };
 
-        // A SAVED CONFIG, REACHING A SESSION. Wiring builds this tab's sinks and controls, so it runs on
-        // the UI thread; the conversation was carried before this is called.
+        // A SAVED CONFIG, REACHING A SESSION. Wiring builds this tab's sinks and controls, so a rebind is
+        // posted to the UI thread — the thread a typed line starts a turn on — and carries and wires
+        // there in one step; RebindOne is the wire itself, called from inside that posted step.
+        manager.Post = run => system.EnqueueOnUIThread(run, "appBootstrap.Rebind");
         manager.RebindOne = (target, config) =>
         {
-            system.EnqueueOnUIThread(() => WireRunner(config, target), "appBootstrap.RebindOne");
+            WireRunner(config, target);
             return true;
         };
 

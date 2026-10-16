@@ -15,11 +15,22 @@ public sealed partial class Session
     /// </summary>
     internal void AdoptCatalog(ResolvedConfig fresh)
     {
-        if (Resolution is not { } current) return;
-        Resolution = current with { Catalog = fresh.Catalog };
+        if (Resolution is { } current) Resolution = current with { Catalog = fresh.Catalog, Entries = fresh.Entries };
         _catalog = fresh.Providers;
         _classifierConfigured = fresh.ClassifierInstance is { Length: > 0 };
     }
+
+    /// <summary>Forgets a conversation carried for a wire that did not happen.</summary>
+    internal void DropCarried()
+    {
+        TakePendingResume();
+        TakeCarriedLedger();
+    }
+
+    /// <summary>Said when a change touched this session's provider but the session could not move.</summary>
+    internal void SayNotRebound(string why) =>
+        Say(new Message($"The saved change could not be applied to this tab: {why}. It stays on its current provider.",
+            Severity.Warning));
 
     /// <summary>
     /// Runs <paramref name="rebind"/> now when idle, or when the running turn ends.
@@ -37,7 +48,10 @@ public sealed partial class Session
         if (!IsBusy) CatchUpOnConfig();
     }
 
-    /// <summary>The turn's finally: a rebind that waited for it, now.</summary>
+    /// <summary>
+    /// The turn's finally: a rebind that waited for it, scheduled. A queued line may start the next lap
+    /// at once; the scheduled rebind asks again whether the session is idle when it runs.
+    /// </summary>
     internal void CatchUpOnConfig()
     {
         if (Interlocked.Exchange(ref _pendingRebind, null) is not { } rebind) return;

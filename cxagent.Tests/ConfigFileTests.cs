@@ -24,7 +24,7 @@ public class ConfigFileTests : IDisposable
     public void ASavedEdit_KeepsEverythingElse()
     {
         Write(Valid);
-        var result = ConfigFile.TryApply(PathOf, NoEnv, root =>
+        var result = ConfigFile.TryApply(new ConfigTarget(PathOf, NoEnv), root =>
             ProviderEdits.Update(root, "local", new InstanceFields { Model = "m2" }));
 
         Assert.True(result.Saved);
@@ -39,7 +39,7 @@ public class ConfigFileTests : IDisposable
     public void AnEditTheLoaderRejects_WritesNothing()
     {
         Write(Valid);
-        var result = ConfigFile.TryApply(PathOf, NoEnv, root => root["defaultProvider"] = "gone");
+        var result = ConfigFile.TryApply(new ConfigTarget(PathOf, NoEnv), root => root["defaultProvider"] = "gone");
 
         Assert.False(result.Saved);
         Assert.Contains(result.Errors, e => e.Contains("gone"));
@@ -50,7 +50,7 @@ public class ConfigFileTests : IDisposable
     public void AnUnparseableFile_IsRefused_AndLeftAlone()
     {
         Write("{ broken");
-        var result = ConfigFile.TryApply(PathOf, NoEnv, root => root["theme"] = "x");
+        var result = ConfigFile.TryApply(new ConfigTarget(PathOf, NoEnv), root => root["theme"] = "x");
 
         Assert.False(result.Saved);
         Assert.Contains("not valid JSON", result.Errors[0]);
@@ -61,7 +61,7 @@ public class ConfigFileTests : IDisposable
     public void AnEditThatThrows_IsReported_NotWritten()
     {
         Write(Valid);
-        var result = ConfigFile.TryApply(PathOf, NoEnv, root => ProviderEdits.Remove(root, "nope"));
+        var result = ConfigFile.TryApply(new ConfigTarget(PathOf, NoEnv), root => ProviderEdits.Remove(root, "nope"));
         Assert.False(result.Saved);
         Assert.Contains("nope", result.Errors[0]);
     }
@@ -69,7 +69,7 @@ public class ConfigFileTests : IDisposable
     [Fact]
     public void NoFileYet_StartsFromAnEmptyDocument()
     {
-        var result = ConfigFile.TryApply(PathOf, NoEnv, root =>
+        var result = ConfigFile.TryApply(new ConfigTarget(PathOf, NoEnv), root =>
             ProviderEdits.Add(root, "local", new InstanceFields { Kind = "ollama", Model = "m" }));
         Assert.True(result.Saved);
         Assert.Equal("local", result.Settings!.DefaultProvider);
@@ -80,7 +80,7 @@ public class ConfigFileTests : IDisposable
     {
         if (OperatingSystem.IsWindows()) return;
         Write(Valid);
-        ConfigFile.TryApply(PathOf, NoEnv, root => root["theme"] = "x");
+        ConfigFile.TryApply(new ConfigTarget(PathOf, NoEnv), root => root["theme"] = "x");
         Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(PathOf));
     }
 
@@ -91,7 +91,7 @@ public class ConfigFileTests : IDisposable
     {
         Write("""{"theme":"amber","providers":{"local":{"kind":"openai-compatible","model":"q","baseUrl":"http://x/v1"},"claude":{"kind":"anthropic","model":"c"}},"defaultProvider":"local"}""");
 
-        Assert.True(ConfigFile.SaveThinkingDefault(PathOf, NoEnv, "claude", "high"));
+        Assert.True(ConfigFile.SaveThinkingDefault(new ConfigTarget(PathOf, NoEnv), "claude", "high"));
 
         var root = JsonNode.Parse(File.ReadAllText(PathOf))!;
         Assert.Equal("high", (string?)root["providers"]!["claude"]!["thinking"]);
@@ -104,7 +104,7 @@ public class ConfigFileTests : IDisposable
     {
         Write("""{"providers":{"claude":{"kind":"anthropic","model":"c","thinking":"high"}},"defaultProvider":"claude"}""");
 
-        Assert.True(ConfigFile.SaveThinkingDefault(PathOf, NoEnv, "claude", null));
+        Assert.True(ConfigFile.SaveThinkingDefault(new ConfigTarget(PathOf, NoEnv), "claude", null));
         Assert.Null(JsonNode.Parse(File.ReadAllText(PathOf))!["providers"]!["claude"]!["thinking"]);
     }
 
@@ -112,7 +112,37 @@ public class ConfigFileTests : IDisposable
     public void SaveThinkingDefault_AnInstanceTheFileDoesNotName_IsNotSaved()
     {
         Write("""{"providers":{"claude":{"kind":"anthropic","model":"c"}},"defaultProvider":"claude"}""");
-        Assert.False(ConfigFile.SaveThinkingDefault(PathOf, NoEnv, "gone", "high"));
-        Assert.False(ConfigFile.SaveThinkingDefault(PathOf, NoEnv, null, "high"));
+        Assert.False(ConfigFile.SaveThinkingDefault(new ConfigTarget(PathOf, NoEnv), "gone", "high"));
+        Assert.False(ConfigFile.SaveThinkingDefault(new ConfigTarget(PathOf, NoEnv), null, "high"));
+    }
+
+    // ---- failures become answers, never exceptions ------------------------------------------------
+
+    [Fact]
+    public void AWriteThatFails_IsReported_AndLeavesNoTempFile()
+    {
+        if (OperatingSystem.IsWindows() || Environment.UserName == "root") return;
+        Write(Valid);
+        File.SetUnixFileMode(_dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            var result = ConfigFile.TryApply(new ConfigTarget(PathOf, NoEnv), root => root["theme"] = "x");
+
+            Assert.False(result.Saved);
+            Assert.NotEmpty(result.Errors);
+            Assert.Empty(Directory.GetFiles(_dir, "*.tmp"));
+        }
+        finally { File.SetUnixFileMode(_dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+    }
+
+    // A HAND-EDITED TYPE THE LOADER READS WITH GetString/GetInt32 throws something other than its own
+    // exception; that is still a refusal with a reason, not a crash in the dialog.
+    [Fact]
+    public void AWrongTypeInTheFile_IsARefusal_NotACrash()
+    {
+        Write("""{ "providers": { "local": { "kind": 5, "model": "m" } }, "defaultProvider": "local" }""");
+        var result = ConfigFile.TryApply(new ConfigTarget(PathOf, NoEnv), root => root["theme"] = "x");
+        Assert.False(result.Saved);
+        Assert.NotEmpty(result.Errors);
     }
 }
