@@ -30,13 +30,10 @@ public class ProviderKindCatalogTests
     }
 
     /// <summary>
-    /// The loader no longer refuses a keyless config for any kind — it cannot tell an OpenRouter
-    /// endpoint (needs a key) from a llama.cpp server on localhost (needs none) from the kind alone,
-    /// so a missing apiKey is not a config-time error and the endpoint's own 401 is the honest
-    /// failure instead. This replaces a prior version of this test that asserted the loader's
-    /// rejection agreed with ProviderKindCatalog.RequiresApiKey; that agreement is gone because the
-    /// rejection it was checking is gone. RequiresApiKey remains, but only as the wizard's prompt
-    /// default — see the comment on ProviderKindCatalog.All.
+    /// The loader refuses a keyless config for no kind — it cannot tell an OpenRouter endpoint (needs
+    /// a key) from a llama.cpp server on localhost (needs none) from the kind alone, so a missing
+    /// apiKey is not a config-time error and the endpoint's own 401 is the honest failure instead.
+    /// RequiresApiKey describes the kind and is not enforced — see the comment on ProviderKindCatalog.All.
     /// </summary>
     [Theory]
     [InlineData("anthropic")]
@@ -82,7 +79,7 @@ public class ProviderKindCatalogTests
         var presets = ProviderKindCatalog.Presets;
 
         // Every kind stays reachable — a preset list that dropped one would make that driver
-        // unconfigurable from the wizard.
+        // unconfigurable from the Configuration dialog.
         foreach (var kind in ProviderConfigLoader.KnownKinds)
             Assert.Contains(presets, p => p.Kind == kind);
 

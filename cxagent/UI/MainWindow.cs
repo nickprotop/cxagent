@@ -18,7 +18,7 @@ namespace CxAgent.UI;
 /// The app shell: ONE column — ChatTranscript over the multi-line goal input (MultilineEditControl;
 /// Enter submits, a trailing backslash continues onto the next line), with a clickable StatusBar. Jobs render INLINE in the
 /// transcript via InlineJobSink rather than in a side panel. When no provider resolved, the chat shows an actionable message and
-/// submission is disabled (the seam the P5c wizard fills).
+/// submission is disabled until the first provider saved in the Configuration dialog wires the session.
 /// </summary>
 public sealed class MainWindow : IDisposable
 {
@@ -3966,7 +3966,6 @@ public sealed class MainWindow : IDisposable
     /// <summary>
     /// F1 — post the key map into the chat transcript. Deliberately a chat message rather than a
     /// modal: it needs no new window plumbing, is scrollable/re-readable, and can't trap focus.
-    /// (A dedicated help window is a P5c concern, alongside the wizard and settings surfaces.)
     /// </summary>
     /// <summary>
     /// The registry this window's help should describe — the same lookup dispatch uses, so F1 and

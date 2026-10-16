@@ -239,7 +239,7 @@ internal static class SessionFactory
         // BOTH, because ISessionObserver carries what is SAID and IToolObserver carries the working.
         // Fanning out one would hand a second watcher half a transcript.
         //
-        // KEPT ACROSS A RE-WIRE, NOT REBUILT. A re-wire (/model, resume, a setup flow) replaces the
+        // KEPT ACROSS A RE-WIRE, NOT REBUILT. A re-wire (resume, a saved configuration's move) replaces the
         // host, and minting fresh fan-outs here would silently drop every subscriber that had joined
         // since the last one — which is exactly the case the fan-out exists for. The front end that
         // owns `ports.Observer` re-supplies itself on every wire and would survive either way; an

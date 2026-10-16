@@ -2071,14 +2071,14 @@ public static class AppBootstrap
             // `_ = ...` on the Task, not an async-void lambda: EnqueueOnUIThread takes a plain Action,
             // and an async-void target would let an exception from either await escape as unobservable
             // (the one thing the render loop must never see) instead of surfacing through the Task.
-            system.EnqueueOnUIThread(() => _ = RunWizardThenAskTrustAsync(), "appBootstrap.AppBootstrap");
+            system.EnqueueOnUIThread(() => _ = RunFirstRunThenAskTrustAsync(), "appBootstrap.AppBootstrap");
         }
         else
         {
             system.EnqueueOnUIThread(() => _ = AskTrustThenLoadPluginsAsync(), "appBootstrap.AppBootstrap");
         }
 
-        async Task RunWizardThenAskTrustAsync()
+        async Task RunFirstRunThenAskTrustAsync()
         {
             await RunFirstRunSetupAsync();
             await AskTrustThenLoadPluginsAsync();   // sequenced AFTER first-run setup, not concurrently

@@ -80,6 +80,6 @@ public class ModelCatalogTests : IDisposable
 
         var models = await ((IModelCatalog)p).ListModelsAsync(default);
 
-        Assert.Empty(models);   // the wizard degrades to free-text entry; it must not crash setup
+        Assert.Empty(models);   // the picker degrades to a typed id; it must not crash setup
     }
 }

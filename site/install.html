@@ -106,9 +106,10 @@ corrupted or truncated download. It does not prove who built it.</p>
 <h2>First run</h2>
 
 <p><strong>You do not need to write any configuration to start.</strong> With no config file, or
-none that names a working provider, a setup wizard asks for a provider and model and writes the file
-for you. Provider kinds are <code>ollama</code>, <code>openai-compatible</code> and
-<code>anthropic</code>.</p>
+none that names a working provider, the configuration dialog opens on a card for each place your
+model can run — Anthropic, OpenRouter, OpenAI, Ollama, llama.cpp or any OpenAI-compatible endpoint —
+lists the models that endpoint serves, and writes the file for you. After that, <code>F8</code> opens
+the same dialog.</p>
 
 <p>The file lands in <code>~/.config/cxagent/config.json</code> on Linux
 (<code>$XDG_CONFIG_HOME</code> when set), <code>%APPDATA%\cxagent\config.json</code> on Windows, and

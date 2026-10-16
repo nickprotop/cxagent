@@ -552,7 +552,7 @@ public sealed partial class Session
         DropPendingFresh();
 
         // RECORDED, BECAUSE NOTHING ELSE RECORDS IT. `/model` swaps the provider IN PLACE — it never
-        // reaches SessionManager.Open, so the "rewire" line that a resume or a setup flow writes is
+        // reaches SessionManager.Open, so the "rewire" line that a resume or a saved configuration's move writes is
         // not written here, and the log would show a session opening on one model and spending
         // against another with nothing in between to explain it. Which model a turn ran on is the
         // first thing anybody asks of a cost or a bad answer.

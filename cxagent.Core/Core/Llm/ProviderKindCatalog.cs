@@ -1,6 +1,6 @@
 namespace CxAgent.Core.Llm;
 
-/// <summary>Static, user-facing metadata for one provider kind. Drives the wizard's kind list.</summary>
+/// <summary>Static, user-facing metadata for one provider kind.</summary>
 public record ProviderKindInfo(
     string Kind,
     string DisplayName,
@@ -9,9 +9,10 @@ public record ProviderKindInfo(
     string ModelHint);
 
 /// <summary>
-/// The provider kinds the wizard can configure. Kept in lockstep with
-/// ProviderConfigLoader.KnownKinds (a test asserts the two sets are equal) so adding a driver
-/// surfaces it in the wizard automatically rather than silently omitting it.
+/// The provider kinds cxagent can configure, and the presets the Configuration dialog's gallery offers.
+/// <see cref="All"/> is kept in lockstep with ProviderConfigLoader.KnownKinds (a test asserts the two
+/// sets are equal), and every kind has a preset (another test), so adding a driver cannot leave it
+/// unreachable from the dialog.
 /// </summary>
 public static class ProviderKindCatalog
 {
@@ -19,11 +20,9 @@ public static class ProviderKindCatalog
     {
         new ProviderKindInfo("anthropic", "Anthropic (Claude)",
             RequiresApiKey: true,  RequiresBaseUrl: false, ModelHint: "claude-sonnet-4-5"),
-        // RequiresApiKey here is a WIZARD DEFAULT, not a loader rule: the loader cannot tell an
+        // RequiresApiKey here DESCRIBES THE KIND, it is not a loader rule: the loader cannot tell an
         // OpenRouter endpoint (needs a key) from a llama.cpp server on localhost (needs none) from
-        // the kind alone, so it no longer demands one. Prompting for a key is still the right default
-        // for setup — most anthropic/openai-compatible endpoints do want one — it just is not
-        // enforced past the wizard.
+        // the kind alone, so it never demands one, and the endpoint's own 401 is the honest failure.
         new ProviderKindInfo("openai-compatible", "OpenAI-compatible endpoint",
             RequiresApiKey: true,  RequiresBaseUrl: true,  ModelHint: "gpt-4o-mini"),
         new ProviderKindInfo("ollama", "Ollama (local)",

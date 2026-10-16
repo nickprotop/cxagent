@@ -1149,8 +1149,8 @@ public sealed partial class Session
     /// Whether a transcript recorder is already subscribed for this session.
     /// </summary>
     /// <remarks>
-    /// A RE-WIRE MUST NOT ADD A SECOND ONE. `SessionFactory.Wire` runs again on every `/model`,
-    /// resume and setup flow, and the fan-out is deliberately KEPT across those — so subscribing
+    /// A RE-WIRE MUST NOT ADD A SECOND ONE. `SessionFactory.Wire` runs again on every resume and
+    /// saved configuration's move, and the fan-out is deliberately KEPT across those — so subscribing
     /// unconditionally would leave one recorder per wire, each writing the same row, and the store's
     /// upsert would make that invisible until somebody counted.
     /// </remarks>

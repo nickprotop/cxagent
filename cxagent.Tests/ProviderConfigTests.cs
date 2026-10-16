@@ -362,7 +362,7 @@ public class ProviderConfigTests : IDisposable
     ///
     /// <para>Every other validation failure in this loader is collected into a
     /// <see cref="ProviderConfigException"/>, and an unloadable config refuses Settings outright and
-    /// routes to the repair wizard. Putting MCP on that list would mean one typo'd command line takes
+    /// leaves the app with no provider. Putting MCP on that list would mean one typo'd command line takes
     /// the whole app down — no providers, no session, over an optional third-party tool server.</para>
     ///
     /// <para>So the bad entry is dropped, the rest of the config loads, and the reason is carried out

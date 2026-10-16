@@ -6,12 +6,11 @@ namespace CxAgent.Tests;
 public class AppPathsTests
 {
     /// <summary>
-    /// Regression (found by the P5c live drive): the config directory holds config.json, which holds
-    /// API KEYS, plus cxagent.db and the job logs. `EnsureCreated` used a bare `Directory.CreateDirectory`
-    /// with no explicit mode, so the directory inherited the process umask — observed 775 under the
-    /// default umask 0002, i.e. group- and world-readable. `ConfigFile` correctly forces the
-    /// FILE to 0600, but a traversable directory still leaks the file listing (and anything a future
-    /// writer forgets to chmod). The spec calls for 0700; enforce it here.
+    /// The config directory holds config.json, which holds API KEYS, plus cxagent.db and the job logs.
+    /// A bare `Directory.CreateDirectory` takes no explicit mode, so the directory would inherit the
+    /// process umask — 775 under the default umask 0002, group- and world-readable. `ConfigFile` forces
+    /// the FILE to 0600, but a traversable directory still leaks the file listing (and anything a
+    /// future writer forgets to chmod), so `EnsureCreated` makes it 0700.
     /// </summary>
     [Fact]
     public void EnsureCreated_MakesConfigAndLogsDirs_OwnerOnly()

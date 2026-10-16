@@ -10,7 +10,7 @@ namespace CxAgent.Tests;
 /// schemas says which is which — <c>permissions.agent_id</c> holds a SESSION id despite its name —
 /// so the division is recorded here, where a change to it fails visibly.</para>
 ///
-/// <para><b>THE DIVISION IS DELIBERATE.</b> A re-wire — `/model`, a resume, a setup flow — replaces
+/// <para><b>THE DIVISION IS DELIBERATE.</b> A re-wire — a resume, a saved configuration's move — replaces
 /// the agent and mints a new id, and starts a NEW ledger. So anything MEASURING what was spent has
 /// to key on the agent, or two providers' costs sum into one number nobody can split. Anything
 /// FOLLOWING a conversation has to key on the session, or it breaks at exactly the moment worth

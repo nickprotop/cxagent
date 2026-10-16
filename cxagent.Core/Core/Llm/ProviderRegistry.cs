@@ -4,8 +4,8 @@ namespace CxAgent.Core.Llm;
 
 /// <summary>
 /// Config-driven map: instance name -> constructed ILlmProvider. Built once from ProviderSettings;
-/// the app-default (orchestrator) provider is resolved via Default. The wizard (P5) and llm_agent
-/// (P3b) consume this. NOTE: distinct from the P3 JobRegistry (jobs), despite the similar name.
+/// the app-default (orchestrator) provider is resolved via Default. Sessions, /model and agent types
+/// resolve instances through it. NOTE: distinct from the JobRegistry (jobs), despite the similar name.
 /// </summary>
 public sealed class ProviderRegistry
 {

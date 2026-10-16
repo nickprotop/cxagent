@@ -4,12 +4,11 @@ using SharpConsoleUI.Flows;
 namespace CxAgent.UI;
 
 /// <summary>
-/// Small reusable one-off dialogs driven outside a wizard, following the pattern established by
-/// <see cref="RecoveryFlow.RunAsync"/>: wrap a single <see cref="ChoiceStepContent"/> or
-/// <c>ctx.Prompt</c> call in <c>Flow.Run</c>, and map cancellation/fault uniformly to <c>null</c>.
+/// Small reusable one-off dialogs: wrap a single <see cref="ChoiceStepContent"/> call in
+/// <c>Flow.Run</c>, and map cancellation/fault uniformly to <c>null</c>.
 ///
-/// Centralised here so later callers (the model catalog editor, the role editor) reuse these
-/// instead of each hand-rolling their own <c>Flow.Run</c> wrapper.
+/// Centralised here so callers — the plugin manager's choices and confirmations — reuse one wrapper
+/// instead of each hand-rolling their own <c>Flow.Run</c>.
 /// </summary>
 public static class FlowDialogs
 {

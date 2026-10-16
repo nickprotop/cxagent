@@ -258,7 +258,7 @@ public class TranscriptWiringTests : IDisposable
     /// <summary>
     /// AND A RE-WIRE DOES NOT ADD A SECOND RECORDER.
     ///
-    /// <para>`SessionFactory.Wire` runs again on every `/model`, resume and setup flow, and the
+    /// <para>`SessionFactory.Wire` runs again on every resume and saved configuration's move, and the
     /// fan-outs are deliberately KEPT across those — so subscribing unconditionally would leave one
     /// recorder per wire, each writing the same row. The store's upsert would hide that until
     /// somebody counted.</para>

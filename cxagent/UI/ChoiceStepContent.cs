@@ -9,8 +9,8 @@ namespace CxAgent.UI;
 
 /// <summary>
 /// A one-of-N choice presented as a button per option, self-resolving on click. The framework's
-/// primitive step contents are internal and <c>FlowContext</c> has no choice verb, so the wizard
-/// supplies its own; presented via <c>ctx.Show(..., FlowButtons.None)</c> since it resolves itself.
+/// primitive step contents are internal and <c>FlowContext</c> has no choice verb, so cxagent
+/// supplies its own for <see cref="FlowDialogs"/>; presented via <c>ctx.Show(..., FlowButtons.None)</c> since it resolves itself.
 /// </summary>
 internal sealed class ChoiceStepContent : IFlowStepContent<string>
 {

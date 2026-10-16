@@ -8,7 +8,7 @@ namespace CxAgent.Tests;
 /// <summary>
 /// Writing a plugin's entry into config.json — the file the user also edits by hand.
 ///
-/// <para>MOST CONFIGS HAVE NO plugins KEY AT ALL. One written by the setup wizard carries providers,
+/// <para>MOST CONFIGS HAVE NO plugins KEY AT ALL. One written by the Configuration dialog carries providers,
 /// classifier, mcp, agents and orchestrator; nothing has ever written a plugins block. So the common
 /// operation is creating one, not editing one.</para>
 /// </summary>
