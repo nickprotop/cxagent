@@ -92,13 +92,4 @@ public class SpawnedAgentsCommandTests
 
     /// <summary>The listing marks a working agent, so a user can see which one their message queues
     /// behind — the state that no longer blocks a send still has to be visible.</summary>
-    [Fact]
-    public void TheListing_MarksABusyAgent()
-    {
-        Assert.Contains("busy", new SpawnedAgentsCommand(StoreWith("find thing", busy: true)).Render(),
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("busy",
-            new SpawnedAgentsCommand(StoreWith("find thing", busy: false)).Render(),
-            StringComparison.Ordinal);
-    }
 }

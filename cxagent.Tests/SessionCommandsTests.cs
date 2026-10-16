@@ -51,30 +51,35 @@ public class SessionCommandsTests
     }
 
     [Fact]
-    public void JobsIsACommandWithAKillSubcommand()
+    public void TasksIsACommandWithStopAndOutputSubcommands()
     {
-        // "kill 2243233" is the argument, not more of the name — Match only needs to recognise
-        // "/jobs" itself; the verb is dispatched by CommandRegistry, not by this table.
-        var command = SessionCommands.Match("/jobs kill 2243233");
+        // "stop x" is the argument, not more of the name — Match only needs to recognise "/tasks"; the
+        // verb is dispatched by CommandRegistry, not by this table.
+        var command = SessionCommands.Match("/tasks stop find-thing");
         Assert.NotNull(command);
-        Assert.Equal("/jobs", command!.Value.Name);
+        Assert.Equal("/tasks", command!.Value.Name);
+        Assert.Contains(command.Value.Args, a => a.Name == "stop <handle|pid>");
+        Assert.Contains(command.Value.Args, a => a.Name == "output <handle|pid>");
     }
 
     [Fact]
-    public void TheKillArgumentCompletesFromTheLiveJobs()
+    public void TheTaskArgumentsCompleteFromWhatIsRunning()
     {
-        // The <pid> argument declares Values: ValueSources.BackgroundJobs, so the palette can fill
-        // it from whatever is actually running rather than leaving the user to retype a pid they
-        // just read off a /jobs row.
-        var kill = SessionCommands.Match("/jobs")!.Value.Args.Single(a => a.Name == "kill <pid>");
-        Assert.Equal(ValueSources.BackgroundJobs, kill.Values);
+        // A handle is a slug the user may never have typed, a pid is a number they just read off a row:
+        // both are filled from what is actually there.
+        foreach (var arg in SessionCommands.Match("/tasks")!.Value.Args)
+            Assert.Equal(ValueSources.Tasks, arg.Values);
     }
 
     [Fact]
-    public void JobsIsNotAdvertisedToTheModel()
+    public void TasksIsNotAdvertisedToTheModel()
     {
         // TellTheModel is false: the model has task_list/task_stop already, and that flag is for a
-        // dead end the model walks into — /jobs is not one, since the model has its own tools.
-        Assert.False(SessionCommands.Match("/jobs")!.Value.TellTheModel);
+        // dead end the model walks into — /tasks is not one, since the model has its own tools.
+        Assert.False(SessionCommands.Match("/tasks")!.Value.TellTheModel);
     }
+
+    /// <summary>/JOBS IS GONE: /tasks lists commands and agents together, as the model's task_list does.</summary>
+    [Fact]
+    public void JobsIsNoLongerACommand() => Assert.Null(SessionCommands.Match("/jobs"));
 }

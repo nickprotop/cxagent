@@ -3,10 +3,10 @@ using CxAgent.Core.Agents;
 namespace CxAgent.Core.Commands;
 
 /// <summary>
-/// What this session has spawned, and a way to reach one without asking the model to.
+/// A way to reach a sub-agent this session kept, without asking the model to — /agents send.
 ///
 /// <para>SEPARATE FROM <see cref="AgentsCommand"/>, which lists agent TYPES from config — the kinds
-/// of agent that can be made. This lists the ones that WERE made, in this session, with their own
+/// of agent that can be made. This reaches the ones that WERE made, in this session, with their own
 /// contexts. Two different subjects that happen to share a word.</para>
 ///
 /// <para>WHY A USER NEEDS THIS AT ALL: the model decides whether to reach an existing agent or spawn
@@ -17,19 +17,6 @@ namespace CxAgent.Core.Commands;
 /// </summary>
 public sealed class SpawnedAgentsCommand(SubAgentStore store)
 {
-    /// <summary>The listing, or a line saying there is nothing to list.</summary>
-    public string Render()
-    {
-        var all = store.All();
-        if (all.Count == 0)
-            return "no sub-agents have been spawned in this session yet.";
-
-        return string.Join("\n", all.Select(a =>
-            $"#{a.Name}{(store.IsBusy(a.Name) ? "  ·  busy" : "")}"
-            + $"  ·  {a.TypeName}"
-            + (a.Description is { Length: > 0 } d ? $"  ·  {d}" : "")));
-    }
-
     /// <summary>What a send could not do, or null when it is about to be attempted.</summary>
     /// <remarks>
     /// REFUSALS ARE SEPARATED FROM THE SEND ITSELF because the caller runs the send asynchronously

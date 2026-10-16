@@ -384,10 +384,10 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, arguments) => session.ListAgentTypes(arguments).Handled());
                     break;
 
-                // KILL IS THE FRONT END'S — see AppBootstrap's /jobs block — because it is a verb, not
-                // the bare command. Reporting alone needs no window, so it lives here like /stats does.
-                case "/jobs":
-                    Commands.Register(command, (session, _) => session.ListBackgroundJobs().Handled());
+                // STOP AND OUTPUT ARE THE FRONT END'S — see AppBootstrap's /tasks block — because they are
+                // verbs, not the bare command. Listing alone needs no window, so it lives here like /stats.
+                case "/tasks":
+                    Commands.Register(command, (session, _) => session.ListTasks().Handled());
                     break;
 
                 case "/skills":
@@ -1033,6 +1033,10 @@ public sealed class SessionManager : IDisposable
     public bool Close(Session session)
     {
         if (session.IsBusy) return false;
+
+        // ITS BACKGROUND AGENTS STOP WITH IT, AND TELL NOBODY: a closed tab has no transcript and no turn
+        // to report to, and an agent left running keeps spending on a session nobody can see.
+        session.SubAgents.StopAll();
 
         // AN ASIDE IS NOT A TURN, so IsBusy does not hold the close for it — and left running, it
         // would keep calling the model and raising permission prompts for a tab that is gone.

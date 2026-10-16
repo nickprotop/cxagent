@@ -77,7 +77,7 @@ public class NoProviderCommandTests
     [InlineData("/mcp")]
     [InlineData("/skills")]
     [InlineData("/agents")]
-    [InlineData("/jobs")]        // the process-wide registry, not the model
+    [InlineData("/tasks")]       // the process-wide registry and the session store, not the model
     [InlineData("/diff")]        // git, not the model
     [InlineData("/clear")]
     [InlineData("/trust")]       // the folder's classification, and the store is on disk

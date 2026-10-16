@@ -142,6 +142,6 @@ public static class ValueSources
     /// <summary>Configured plugin names, for <c>/plugin load</c> and <c>/plugin unwire</c>.</summary>
     public const string Plugins = Core.Sessions.CompletionSets.Plugins;
 
-    /// <summary>Live background commands, for <c>/jobs kill</c>.</summary>
-    public const string BackgroundJobs = Core.Sessions.CompletionSets.BackgroundJobs;
+    /// <summary>Kept sub-agents and live background commands, for <c>/tasks stop</c> and <c>/tasks output</c>.</summary>
+    public const string Tasks = Core.Sessions.CompletionSets.Tasks;
 }

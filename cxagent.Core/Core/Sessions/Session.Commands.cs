@@ -277,49 +277,70 @@ public sealed partial class Session
     }
 
     /// <summary>Says what changed in this session's working folder, per <c>git diff</c>.</summary>
-    /// <summary>Lists the sub-agents this session has spawned, with what each was asked to do.</summary>
-    public CommandStatus ListSpawnedAgents()
+    /// <summary>
+    /// The task tools as the session agent sees them — every kept sub-agent and every live command.
+    ///
+    /// <para>THE SAME CLASS THE MODEL'S task_list RUNS, so a user and the model looking at the same moment
+    /// read the same rows; a second renderer is a second account that can disagree about a state.</para>
+    /// </summary>
+    private Jobs.TaskTools Tasks => new(new Jobs.TaskSources(DetachedProcessRegistry.Default,
+        FinishedShells.Default, SessionId ?? "", SubAgents));
+
+    /// <summary>How many of this session's background agents are queued or running.</summary>
+    public int RunningBackgroundAgents =>
+        SubAgents.Background().Count(r => r.State is Agents.BackgroundState.Queued or Agents.BackgroundState.Running);
+
+    /// <summary>Lists this session's background agents and every live background command.</summary>
+    public CommandStatus ListTasks()
     {
-        Say(new Commands.SpawnedAgentsCommand(SubAgents).Render());
+        Say(new Message(Tasks.List(SessionId ?? ""), Severity.Info));
         return CommandStatus.Reported;
     }
 
     /// <summary>
-    /// Lists every background command running right now, across every agent — the same rows
-    /// <c>task_list</c> answers, through the same process-wide registry.
+    /// Stops a background agent or command, typed rather than called as <c>task_stop</c>.
     ///
-    /// <para>NOT PER-SESSION. A job started by another tab is still killable by pid, so hiding its row
-    /// here would draw a boundary that does not actually stop anything — see
-    /// <see cref="Jobs.TaskTools"/> for the same reasoning on the model's side.</para>
-    /// </summary>
-    public CommandStatus ListBackgroundJobs()
-    {
-        Say(new Commands.JobsCommand(DetachedProcessRegistry.Default, SessionId ?? "")
-            .Render());
-        return CommandStatus.Reported;
-    }
-
-    /// <summary>
-    /// Stops one background command by pid, typed rather than called as <c>task_stop</c>.
+    /// <para>AN AGENT STOPPED HERE IS STOPPED BY THE USER, which the model's agent_send then respects: the
+    /// user ended that work, and the model must not quietly restart it.</para>
     ///
-    /// <para>NO OWNERSHIP CHECK HERE, unlike <see cref="Jobs.TaskTools"/>'s kill rule. This
-    /// command IS the session typing directly — there is no sub-agent identity to weigh it against,
-    /// so the only questions are whether the pid parses and whether it is still running.</para>
+    /// <para>NO OWNERSHIP CHECK FOR A COMMAND. This IS the session typing directly — there is no
+    /// sub-agent identity to weigh it against.</para>
     /// </summary>
-    public CommandStatus KillBackgroundJob(string arguments)
+    public CommandStatus StopTask(string arguments)
     {
-        // THE VERB'S OWN WORD, STRIPPED. RegisterVerb hands the handler everything typed including
-        // "kill" itself — the same shape /agents send strips before reading a name.
-        var pidText = (arguments.Split(' ', 2) is [_, var rest] ? rest : "").Trim();
-        if (pidText.Length == 0)
+        // THE VERB'S OWN WORD, STRIPPED. RegisterVerb hands the handler everything typed including "stop"
+        // itself — the same shape /agents send strips before reading a name.
+        var id = (arguments.Split(' ', 2) is [_, var rest] ? rest : "").Trim();
+        if (id.Length == 0)
         {
-            Say(new Message("say which pid to stop: `/jobs kill <pid>`.", Severity.Warning));
+            Say(new Message("say which task to stop: `/tasks stop <handle|pid>`.", Severity.Warning));
             return CommandStatus.Reported;
         }
 
-        var result = new Commands.JobsCommand(DetachedProcessRegistry.Default, SessionId ?? "")
-            .Kill(pidText);
-        Say(new Message(result, Severity.Info));
+        if (int.TryParse(id, out _))
+        {
+            Say(new Message(new Commands.JobsCommand(DetachedProcessRegistry.Default).Kill(id),
+                Severity.Info));
+            return CommandStatus.Reported;
+        }
+
+        var said = SubAgents.Find(id) is null ? $"no task '{id}' — /tasks lists them."
+            : SubAgents.Stop(id, byUser: true)
+                ? $"stopped '{id}' — the agent that started it will read that you stopped it."
+                : $"'{id}' is not running in the background, so there is nothing to stop.";
+        Say(new Message(said, Severity.Info));
+        return CommandStatus.Reported;
+    }
+
+    /// <summary>
+    /// Shows how far a task has got, or what it left — WITHOUT taking it: a person reading a report must
+    /// not be the reason the model is never sent it.
+    /// </summary>
+    public CommandStatus ShowTaskOutput(string arguments)
+    {
+        var id = (arguments.Split(' ', 2) is [_, var rest] ? rest : "").Trim();
+        Say(new Message(id.Length == 0 ? "say which task: `/tasks output <handle|pid>`." : Tasks.Describe(id),
+            Severity.Info));
         return CommandStatus.Reported;
     }
 

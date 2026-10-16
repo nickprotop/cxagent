@@ -66,8 +66,9 @@ public static class CompletionSets
     /// than silently omitting a name the user knows they wrote.</summary>
     public const string Plugins = "plugins";
 
-    /// <summary>Live background commands, for <c>/jobs kill</c>. Answered by the session, reading the
-    /// same process-wide registry <c>task_list</c> already reads — a second view built independently
-    /// could show a pid the tool cannot, or the reverse.</summary>
-    public const string BackgroundJobs = "background-jobs";
+    /// <summary>What <c>/tasks stop</c> and <c>/tasks output</c> can name: this session's kept sub-agents
+    /// and the live background commands. Answered by the session, reading the same store and the same
+    /// process-wide registry <c>task_list</c> reads — a second view built independently could offer a
+    /// task the tool cannot see, or the reverse.</summary>
+    public const string Tasks = "tasks";
 }

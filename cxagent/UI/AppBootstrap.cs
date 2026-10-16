@@ -587,19 +587,15 @@ public static class AppBootstrap
             // sessions rather than a `/session` sibling, which would be a mistype waiting to happen.
             // Injected here for /exit's reason: opening a tab needs a window.
             // THE SPAWNED AGENTS, BESIDE THE TYPES. `/agents` already lists the KINDS a session can
-            // spawn; these two reach the ones it actually made. A user needs them because the model
+            // spawn; this verb reaches the ones it actually made. A user needs them because the model
             // decides for itself whether to reuse an agent or start a fresh one and gets it wrong —
             // "re use the agent" produced a second spawn that had read none of the first one's work.
             // Reaching a child must not depend on the model seeing the situation correctly, which is
             // the argument /triggers-cancel already won.
             if (declared.Name == "/agents")
             {
-                manager.Commands.RegisterVerb("/agents",
-                    new CommandArgument("list", "the sub-agents this session has spawned"),
-                    (current, _) => current.ListSpawnedAgents().Handled());
-
                 // COMPLETABLE ON THE HANDLE: it is a slug of a description the user may never have
-                // typed, so nobody should have to run `list` first and retype what they read.
+                // typed, so nobody should have to run /tasks first and retype what they read.
                 manager.Commands.RegisterVerb("/agents",
                     new CommandArgument("send <name> <prompt>",
                         "ask a sub-agent you already spawned for more",
@@ -607,15 +603,21 @@ public static class AppBootstrap
                     (current, arguments) => current.SendToSpawnedAgent(arguments).Handled());
             }
 
-            // THE KILL VERB ONLY. The bare listing needs no window — it is registered in
-            // SessionManager, /stats's shape — but is not a UI dependency: this front end simply has
-            // nowhere else to put a verb, since SessionCommands.All is the shared table both layers
-            // read and Core's SeedCommands only seeds bare commands, never verbs.
-            if (declared.Name == "/jobs")
-                manager.Commands.RegisterVerb("/jobs",
-                    new CommandArgument("kill <pid>", "stop one", Completes: false,
-                        Values: ValueSources.BackgroundJobs),
-                    (current, arguments) => current.KillBackgroundJob(arguments).Handled());
+            // THE VERBS ONLY. The bare listing needs no window — it is registered in SessionManager,
+            // /stats's shape — but this front end has nowhere else to put a verb, since
+            // SessionCommands.All is the shared table both layers read and Core's SeedCommands only seeds
+            // bare commands, never verbs.
+            if (declared.Name == "/tasks")
+            {
+                manager.Commands.RegisterVerb("/tasks",
+                    new CommandArgument("stop <handle|pid>", "stop one", Completes: false,
+                        Values: ValueSources.Tasks),
+                    (current, arguments) => current.StopTask(arguments).Handled());
+                manager.Commands.RegisterVerb("/tasks",
+                    new CommandArgument("output <handle|pid>", "how far it has got, or what it left",
+                        Completes: false, Values: ValueSources.Tasks),
+                    (current, arguments) => current.ShowTaskOutput(arguments).Handled());
+            }
 
             if (declared.Name == "/sessions")
                 manager.Commands.RegisterVerb("/sessions",

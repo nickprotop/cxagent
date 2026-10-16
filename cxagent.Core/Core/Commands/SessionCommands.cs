@@ -64,14 +64,17 @@ public static class SessionCommands
             new("show <name>", "the full briefing that type is given", Completes: false,
                 Values: ValueSources.AgentTypes),
         ]),
-        // TELLTHEMODEL STAYS OFF. The model has task_list and task_stop already — this is the same
-        // work through a typed command instead of a tool call, and naming it in the prompt would
+        // TELLTHEMODEL STAYS OFF. The model has task_list, task_stop and task_output already — this is
+        // the same work through a typed command instead of a tool call, and naming it in the prompt would
         // dangle a path that leads nowhere: the model has no composer to type it into.
-        new("/jobs", "background commands running now, across every agent",
+        new("/tasks", "background agents and commands running now, and what they left",
         [
-            // COMPLETABLE ON THE PID, the reason /agents send is: a user should never have to
-            // retype a pid they just read off a /jobs row.
-            new("kill <pid>", "stop one", Completes: false, Values: ValueSources.BackgroundJobs),
+            // COMPLETABLE, the reason /agents send is: a handle is a slug the user may never have typed,
+            // and a pid is a number they just read off a /tasks row.
+            new("stop <handle|pid>", "stop one — an agent stopped here reports as stopped by you",
+                Completes: false, Values: ValueSources.Tasks),
+            new("output <handle|pid>", "how far it has got, or what it left — reading it takes nothing "
+                + "from the agent that is owed the report", Completes: false, Values: ValueSources.Tasks),
         ]),
         // NEEDS A MODEL, alone among these: it costs tokens and takes time, because the agent has to
         // go and look at the project. Every other command here answers from state the app already

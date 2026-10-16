@@ -4,45 +4,14 @@ using CxAgent.Core.Jobs;
 namespace CxAgent.Core.Commands;
 
 /// <summary>
-/// What is backgrounded right now, and a way to stop one without asking the model to.
+/// Stopping a background command by pid, typed rather than called — the half of <c>/tasks stop</c> that
+/// takes a number.
 ///
-/// <para>READS <see cref="DetachedProcessRegistry.Default"/> — THE SAME INSTANCE <see
-/// cref="TaskTools"/> reads for <c>task_list</c>. A second registry, or a second row format,
-/// is exactly the drift this design exists to rule out: a user typing <c>/jobs</c> must see what the
-/// model sees for <c>task_list</c>, not a copy that can disagree about a pid or an age.</para>
-///
-/// <para>NOT BUILT ON <see cref="TaskTools"/> ITSELF. That class answers in prose meant for
-/// a model to read back — "no background commands are running.", a numbered list ending in a slot
-/// count — and bending it to hand back rows instead would contort a tool-shaped API to do a
-/// command's job. <see cref="TaskTools.Age"/> is the one piece worth sharing, since two
-/// clocks computing "how long has this run" independently is how a row ends up disagreeing with
-/// itself between the two surfaces.</para>
+/// <para>READS <see cref="DetachedProcessRegistry.Default"/>, THE SAME INSTANCE <see cref="TaskTools"/>
+/// reads for <c>task_list</c>, so a pid the user just read off <c>/tasks</c> is the pid this stops.</para>
 /// </summary>
-public sealed class JobsCommand(DetachedProcessRegistry registry, string sessionId)
+public sealed class JobsCommand(DetachedProcessRegistry registry)
 {
-    /// <summary>The listing, or a line saying there is nothing to list.</summary>
-    public string Render()
-    {
-        var live = registry.Live;
-        if (live.Count == 0)
-            return "no background commands are running.";
-
-        return string.Join("\n", live.Select(entry =>
-        {
-            var job = entry.Job;
-            var owner = job is null ? "unowned"
-                : job.AgentId == sessionId ? "session"
-                : job.AgentId;
-            var age = job is null ? "?" : TaskTools.Age(job.Started);
-            var command = job?.Command ?? "(unknown — started outside the shell tool)";
-            // NO OUTPUT PATH IN THIS TABLE, unlike `task_list`. These are aligned columns in a
-            // terminal and a log path is long enough to wreck them, while the person reading has a
-            // shell and can find the file. The model's listing names it because a model cannot go
-            // looking: the path is the only handle it has on what the command actually printed.
-            return $"pid {entry.Process.Pid}  ·  {owner}  ·  {age}  ·  {command}";
-        }));
-    }
-
     /// <summary>
     /// Stops one background command, if the session may.
     ///

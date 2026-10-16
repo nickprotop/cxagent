@@ -1359,7 +1359,7 @@ public sealed partial class Session
         CompletionSets.AgentTypes => AgentTypeValues(),
         CompletionSets.Plugins => PluginValues(),
         CompletionSets.SpawnedAgents => SpawnedAgentValues(),
-        CompletionSets.BackgroundJobs => BackgroundJobValues(),
+        CompletionSets.Tasks => [.. SpawnedAgentValues(), .. BackgroundJobValues()],
         _ => [],
     };
 
@@ -1383,8 +1383,8 @@ public sealed partial class Session
     ];
 
     /// <summary>
-    /// The live background commands, for <c>/jobs kill</c> — the same rows <c>/jobs</c> just printed,
-    /// so nobody has to retype a pid they just read.
+    /// The live background commands, for <c>/tasks</c> — the same rows <c>/tasks</c> just printed, so
+    /// nobody has to retype a pid they just read.
     ///
     /// <para>THE COMMAND AND AGE AS THE SUMMARY, same instinct as <see cref="SpawnedAgentValues"/>:
     /// a bare pid means nothing in a popup, so the row shows what it IS rather than making the user
