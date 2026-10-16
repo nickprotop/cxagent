@@ -15,7 +15,7 @@ public enum BackgroundJobState
     /// <summary>Ended on its own, with a zero or non-zero exit code.</summary>
     Exited,
 
-    /// <summary>Ended because something called Kill: a tab, <c>/jobs kill</c>, <c>job_kill</c>.</summary>
+    /// <summary>Ended because something called Kill: a tab, <c>/jobs kill</c>, <c>task_stop</c>.</summary>
     Killed,
 }
 

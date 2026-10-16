@@ -431,7 +431,7 @@ public sealed class SubAgentFactory
             classifier: _runtime.Classifier,
             // parentAgentId IS THE SESSION'S ID, NEVER AN INTERMEDIATE PARENT'S: a child cannot
             // spawn (no spawner — see the note below), so whatever calls Create is always the
-            // session itself. Threaded through so BackgroundJobTools' kill rule ("the session may
+            // session itself. Threaded through so TaskTools' kill rule ("the session may
             // kill any job; a sub-agent only its own") can tell this child apart from the session
             // it belongs to.
             sessionId: parentAgentId);

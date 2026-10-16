@@ -275,21 +275,19 @@ public class TaskToolsAgentTests
     // --- the id ------------------------------------------------------------------------------
 
     [Fact]
-    public async Task ANumericId_IsAPid_AndPointsAtTheJobTools()
+    public async Task ANumericId_IsAPid_AndReachesTheShellHalf()
     {
         var r = Wired(new HeldProvider());
         var number = await r.Tools.InvokeAsync("session", Calls.Named(Tool.TaskOutput, new { id = 4242 }), default);
-        Assert.Contains("pid 4242", number);
-        Assert.Contains("job_list", number);
+        Assert.Contains("no background command with pid 4242", number);
     }
 
     [Fact]
-    public async Task ANumericStringId_IsAPid_AndPointsAtTheJobTools()
+    public async Task ANumericStringId_IsAPid_AndReachesTheShellHalf()
     {
         var r = Wired(new HeldProvider());
         var text = await Call(r, Tool.TaskStop, new { id = "4242" });
-        Assert.Contains("pid 4242", text);
-        Assert.Contains("job_kill", text);
+        Assert.Contains("no background command with pid 4242", text);
     }
 
     [Fact]

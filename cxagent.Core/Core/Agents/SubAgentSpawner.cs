@@ -360,7 +360,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         // KEPT THE MOMENT IT EXISTS, NOT WHEN IT FINISHES. A child is reachable — by agent_send,
         // task_output, task_stop — for the whole time it is running, which is exactly when the parent
         // wants to ask how far it has got or tell it something it needs. Kept only on completion, it
-        // would be invisible to agent_list for the whole of its run.
+        // would be invisible to task_list for the whole of its run.
         var keptAs = _store?.Keep(child, Read(call, "description"),
             call.Id is { } spawnId ? _store.ReservationFor(spawnId) : null);
 

@@ -210,7 +210,7 @@ public class ShellJobExecutorTests
 
     /// <summary>
     /// A BACKGROUNDED COMMAND IS DESCRIBED IN THE REGISTRY, not only reported to the agent that
-    /// started it — <c>job_list</c> reads this same entry, so a command backgrounded and never
+    /// started it — <c>task_list</c> reads this same entry, so a command backgrounded and never
     /// listed would be invisible to everyone but the one agent waiting on its exit.
     /// </summary>
     [Fact]
@@ -544,8 +544,8 @@ public class ShellJobExecutorTests
 
         // AND NAMES THE WAY OUT. The cap is cleared by ending a command, so a refusal that lists only
         // waiting and running in the foreground withholds the one action that actually frees a slot.
-        Assert.Contains(Tool.JobList, refused.ErrorMessage!);
-        Assert.Contains(Tool.JobKill, refused.ErrorMessage!);
+        Assert.Contains(Tool.TaskList, refused.ErrorMessage!);
+        Assert.Contains(Tool.TaskStop, refused.ErrorMessage!);
     }
 
     [Fact]

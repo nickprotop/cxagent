@@ -53,7 +53,7 @@ public static class Tool
     public const string HttpRequest = "http_request";
     public const string WebFetch = "web_fetch";
 
-    // --- The four that are not enum members, and are selectable just the same ----------
+    // --- The ones that are not enum members, and are selectable just the same ----------
 
     /// <summary>Delegate to a sub-agent. Also needs fan-out mode and a spawner — a selection cannot
     /// grant it on its own.</summary>
@@ -61,19 +61,9 @@ public static class Tool
 
     /// <summary>
     /// Ask a sub-agent this session already spawned. Rides on <see cref="Agent"/>'s own gating: an
-    /// agent that cannot spawn has nothing it could have spawned, so it is offered neither of these.
+    /// agent that cannot spawn has nothing it could have spawned, so it is not offered this.
     /// </summary>
     public const string AgentSend = "agent_send";
-
-    /// <summary>See which sub-agents this session has spawned. Gated exactly as <see cref="AgentSend"/>.</summary>
-    public const string AgentList = "agent_list";
-
-    /// <summary>See every background command still running, not only this agent's own — the registry
-    /// backing it is process-wide, and hiding a job that is still killable by pid is no boundary at all.</summary>
-    public const string JobList = "job_list";
-
-    /// <summary>Stop a background command. The session may stop any job; a sub-agent only its own.</summary>
-    public const string JobKill = "job_kill";
 
     /// <summary>Everything running in the background or kept: sub-agents by handle, shells by pid.</summary>
     public const string TaskList = "task_list";
@@ -111,7 +101,7 @@ public static class Tool
     private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
     {
         ReadFile, WriteFile, ReplaceInFile, Glob, Grep, RunShell, HttpRequest, WebFetch,
-        Agent, AgentSend, AgentList, JobList, JobKill, TaskList, TaskStop, TaskOutput, TodoWrite, AskUser, Skill,
+        Agent, AgentSend, TaskList, TaskStop, TaskOutput, TodoWrite, AskUser, Skill,
     };
 
     /// <summary>

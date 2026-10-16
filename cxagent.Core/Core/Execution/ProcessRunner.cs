@@ -643,12 +643,12 @@ public static class ProcessRunner
             detached.Kill();
             // ADVICE THE CALLER CAN ACT ON, AND ONLY THAT. The cap is reached by starting commands
             // and cleared by ending them, so the first thing to name is the pair that does it:
-            // `job_list` shows what is running and `job_kill` stops one by pid. Waiting and running in
+            // `task_list` shows what is running and `task_stop` stops one by pid. Waiting and running in
             // the foreground stay listed after it, because they are the right answer when every
             // running command is one the caller still wants.
             throw new InvalidOperationException(
                 $"already running {DetachedProcessRegistry.MaxConcurrent} background commands — "
-                + "job_list shows them and job_kill stops one by pid. Otherwise wait for one to "
+                + "task_list shows them and task_stop stops one by pid. Otherwise wait for one to "
                 + "finish, or run this one in the foreground.");
         }
 

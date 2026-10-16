@@ -73,7 +73,7 @@ public class SessionCommandsTests
     [Fact]
     public void JobsIsNotAdvertisedToTheModel()
     {
-        // TellTheModel is false: the model has job_list/job_kill already, and that flag is for a
+        // TellTheModel is false: the model has task_list/task_stop already, and that flag is for a
         // dead end the model walks into — /jobs is not one, since the model has its own tools.
         Assert.False(SessionCommands.Match("/jobs")!.Value.TellTheModel);
     }

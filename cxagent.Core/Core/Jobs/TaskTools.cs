@@ -51,22 +51,22 @@ public sealed class TaskTools(TaskSources sources)
         var id = ReadId(call.Arguments);
         if (id.Error is { } error) return error;
 
+        var wait = call.Arguments.ValueKind == JsonValueKind.Object
+            && call.Arguments.TryGetProperty("wait", out var w) && w.ValueKind == JsonValueKind.True;
+        int? timeout = call.Arguments.ValueKind == JsonValueKind.Object
+            && call.Arguments.TryGetProperty("timeout", out var t) && t.ValueKind == JsonValueKind.Number
+            && t.TryGetInt32(out var seconds) ? seconds : null;
+
         if (id.Pid is { } pid)
-        {
-            // THE SHELL HALF IS NOT HERE YET: a pid is a valid address, so it gets an honest answer
-            // rather than an exception or a claim that no such task exists.
-            return $"pid {pid} is a shell command; shell tasks are handled by {Tool.JobList} and "
-                + $"{Tool.JobKill} for now.";
-        }
+            return call.Name == Tool.TaskStop
+                ? StopShell(callerAgentId, pid)
+                : await ShellOutputAsync(new ShellRead(callerAgentId, pid, wait, timeout), ct);
 
         var handle = id.Handle!;
         if (call.Name == Tool.TaskStop) return Stop(callerAgentId, handle);
 
         if (callerAgentId != sources.SessionId)
             return "error: only the session agent can read a sub-agent's task.";
-        var wait = call.Arguments.TryGetProperty("wait", out var w) && w.ValueKind == JsonValueKind.True;
-        int? timeout = call.Arguments.TryGetProperty("timeout", out var t) && t.ValueKind == JsonValueKind.Number
-            && t.TryGetInt32(out var seconds) ? seconds : null;
         return await OutputAsync(handle, wait, timeout, ct);
     }
 
@@ -74,7 +74,7 @@ public sealed class TaskTools(TaskSources sources)
     /// a person looking at a task must not be the reason the model is never sent its report.</summary>
     public string Describe(string id)
     {
-        if (int.TryParse(id, out var pid)) return $"pid {pid}: shell tasks are listed by {Tool.JobList}.";
+        if (int.TryParse(id, out var pid)) return DescribeShell(pid);
         if (sources.Agents?.Find(id) is null) return $"no task '{id}'.";
         if (sources.Agents.BackgroundOf(id) is not { } run) return $"'{id}' is not running in the background.";
         return run.Handoff.Ended ? run.Handoff.Result ?? $"'{id}' has ended." : Progress(id, run);
@@ -94,20 +94,38 @@ public sealed class TaskTools(TaskSources sources)
             }
         }
 
-        foreach (var entry in sources.Live.Live)
+        // EVERY LIVE SHELL, WHOEVER STARTED IT. The registry is process-wide on purpose, and hiding another
+        // agent's command would draw a boundary that does not exist: it is still stoppable by pid by the
+        // session, and its owner is named so a child knows whom to ask.
+        var live = sources.Live.Live;
+        foreach (var entry in live)
         {
             var job = entry.Job;
-            sb.Append("shell pid ").Append(entry.Process.Pid).Append(" (")
-              .Append(job is null ? "?" : BackgroundJobTools.Age(job.Started)).Append(") running: ")
-              .AppendLine(job?.Command ?? "(started outside the shell tool)");
+            sb.Append("shell pid ").Append(entry.Process.Pid)
+              .Append(" (").Append(job is null ? "?" : Age(job.Started)).Append(", ")
+              .Append(Owner(callerAgentId, job)).Append(") running: ")
+              .Append(job?.Command ?? "(unknown — started outside the shell tool)");
+
+            // AND WHERE TO READ IT: the output is in a file, and the run_shell result that named it may
+            // have long since left the model's context.
+            if (job?.OutputPath is { } path) sb.Append(" -> ").Append(path);
+            sb.AppendLine();
         }
 
-        foreach (var done in sources.Finished.Recent(owner => owner == callerAgentId))
+        foreach (var done in sources.Finished.Recent(owner => Sees(callerAgentId, owner)))
         {
-            sb.Append("shell pid ").Append(done.Job.Pid).Append(done.Killed ? " stopped" : $" exited {done.ExitCode}")
-              .Append(" (").Append(BackgroundJobTools.Age(done.Ended)).Append(" ago): ")
-              .AppendLine(done.Job.Command);
+            sb.Append("shell pid ").Append(done.Job.Pid)
+              .Append(done.Killed ? " stopped" : $" exited {done.ExitCode}")
+              .Append(" (").Append(Age(done.Ended)).Append(" ago): ").Append(done.Job.Command);
+            if (done.Job.OutputPath is { } path) sb.Append(" -> ").Append(path);
+            sb.AppendLine();
         }
+
+        // THE SLOT COUNT, when anything runs: a model that cannot start another background command needs
+        // to know why rather than guess that the tool call failed.
+        if (live.Count > 0)
+            sb.Append(live.Count).Append(" of ").Append(DetachedProcessRegistry.MaxConcurrent)
+              .AppendLine(" shell slots in use.");
 
         return sb.Length == 0 ? "nothing is running in the background." : sb.ToString().TrimEnd();
     }
@@ -172,12 +190,134 @@ public sealed class TaskTools(TaskSources sources)
         return read.AlreadySent ? report + "\n(You were also sent this as a message.)" : report;
     }
 
+    /// <summary>A pid's task_output, as one caller asks for it.</summary>
+    /// <param name="Caller">Who asks — a child may read only its own commands.</param>
+    /// <param name="Pid">The command.</param>
+    /// <param name="Wait">Block until it ends or the timeout passes.</param>
+    /// <param name="Timeout">Seconds, before clamping.</param>
+    private sealed record ShellRead(string Caller, int Pid, bool Wait, int? Timeout);
+
+    /// <summary>
+    /// Whether a finished command belongs in this caller's view: the session sees its own and its
+    /// children's, a child only its own.
+    /// </summary>
+    private bool Sees(string callerAgentId, string? owner) =>
+        owner == callerAgentId
+        || (callerAgentId == sources.SessionId
+            && (owner == sources.SessionId || owner is not null && sources.Agents?.FindByAgentId(owner) is not null));
+
+    /// <summary>How a row names who started a command: "me", "session", an agent id, or "unowned" for a
+    /// process nothing ever described.</summary>
+    private string Owner(string callerAgentId, BackgroundJob? job)
+    {
+        if (job is null) return "unowned";
+        if (job.AgentId == callerAgentId) return "me";
+        if (job.AgentId == sources.SessionId) return "session";
+        return job.AgentId;
+    }
+
+    /// <summary>
+    /// Stops one background command, if the caller is allowed to.
+    ///
+    /// <para>THE SESSION MAY STOP ANY; A SUB-AGENT ONLY ITS OWN. Sub-agents cannot spawn sub-agents, so
+    /// every child's parent IS the session — the check is flat equality, with no parent/child table to
+    /// consult. A command with no recorded owner is the session's alone to stop.</para>
+    ///
+    /// <para>A REFUSAL NAMES THE OWNER THE WAY THE LIST DOES, so the model learns whom to ask rather than
+    /// retrying the same call.</para>
+    /// </summary>
+    private string StopShell(string callerAgentId, int pid)
+    {
+        var entry = sources.Live.Live.FirstOrDefault(j => j.Process.Pid == pid);
+        if (entry is null)
+            return sources.Finished.Find(pid) is { } done
+                ? $"pid {pid} has already {(done.Killed ? "been stopped" : $"exited with code {done.ExitCode}")}."
+                : $"no background command with pid {pid}.";
+
+        var owner = entry.Job?.AgentId;
+        if (callerAgentId != sources.SessionId && owner != callerAgentId)
+        {
+            var who = owner is null || owner == sources.SessionId ? "the session" : owner;
+            return who == "the session"
+                ? $"error: pid {pid} was started by the session, not you — only the session can stop it."
+                : $"error: pid {pid} was started by {who}, not you — only {who} or the session can stop it.";
+        }
+
+        entry.Process.Kill();
+        return $"pid {pid} stopped.";
+    }
+
+    /// <summary>
+    /// A command's output and state, or — waiting — its result once it ends. The result is taken through
+    /// its handoff, so an exit notice does not follow an answer the model already has.
+    /// </summary>
+    private async Task<string> ShellOutputAsync(ShellRead read, CancellationToken ct)
+    {
+        var live = sources.Live.Live.FirstOrDefault(j => j.Process.Pid == read.Pid);
+        var job = live?.Job ?? sources.Finished.JobFor(read.Pid);
+        if (job is null && live is null) return $"no background command with pid {read.Pid}.";
+        if (read.Caller != sources.SessionId && job?.AgentId != read.Caller)
+            return $"error: pid {read.Pid} was started by {(job is null || job.AgentId == sources.SessionId ? "the session" : job.AgentId)}, not you.";
+
+        var handoff = sources.Finished.HandoffFor(read.Pid);
+        if (live is not null && !(read.Wait && handoff is not null))
+            return $"pid {read.Pid} is running ({(job is null ? "?" : Age(job.Started))}).{Tail(job?.OutputPath)}";
+
+        var seconds = WaitSeconds(read.Timeout);
+        var result = handoff is null ? null
+            : handoff.Ended ? handoff.Read()
+            : await handoff.WaitAsync(TimeSpan.FromSeconds(seconds), ct);
+
+        if (result is { Ended: false })
+            return $"pid {read.Pid} is still running after {seconds}s.{Tail(job?.OutputPath)}";
+
+        var text = result?.Result ?? DescribeEnded(read.Pid);
+        text += Tail(job?.OutputPath);
+        return result is { AlreadySent: true } ? text + "\n(You were also sent this as a message.)" : text;
+    }
+
+    /// <summary>What /tasks shows for a pid: never waits and never takes a result.</summary>
+    private string DescribeShell(int pid)
+    {
+        if (sources.Live.Live.FirstOrDefault(j => j.Process.Pid == pid) is { } live)
+            return $"pid {pid} is running ({(live.Job is null ? "?" : Age(live.Job.Started))}).{Tail(live.Job?.OutputPath)}";
+        if (sources.Finished.Find(pid) is not { } done) return $"no background command with pid {pid}.";
+        return (sources.Finished.HandoffFor(pid)?.Result ?? DescribeEnded(pid)) + Tail(done.Job.OutputPath);
+    }
+
+    private string DescribeEnded(int pid) =>
+        sources.Finished.Find(pid) is { } done
+            ? $"pid {pid} {(done.Killed ? "was stopped" : $"exited with code {done.ExitCode}")}."
+            : $"pid {pid} has ended.";
+
+    /// <summary>The last lines a command wrote, under its own heading; empty when there is no file.</summary>
+    private static string Tail(string? path)
+    {
+        var lines = OutputTail.LastLines(path, 20);
+        return lines.Count == 0 ? "" : "\nLast output:\n" + string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// Elapsed time since a moment, coarse enough for a row and not a timestamp to parse.
+    ///
+    /// <para>INTERNAL, so <see cref="Commands.JobsCommand"/> renders the same age a model reading
+    /// task_list sees for the same row: a row that says "3m" to a user and "180s" to the model is the
+    /// disagreement one shared formula rules out.</para>
+    /// </summary>
+    internal static string Age(DateTimeOffset started)
+    {
+        var elapsed = DateTimeOffset.UtcNow - started;
+        if (elapsed.TotalMinutes < 1) return $"{(int)elapsed.TotalSeconds}s";
+        if (elapsed.TotalHours < 1) return $"{(int)elapsed.TotalMinutes}m";
+        return $"{(int)elapsed.TotalHours}h";
+    }
+
     private string Progress(string handle, Agents.BackgroundRun run)
     {
         var state = run.State == Agents.BackgroundState.Queued ? "queued" : "running";
         var rows = sources.Agents?.Find(handle)?.Agent.Jobs.Jobs ?? [];
         var latest = rows.OrderBy(j => j.CreatedAt).TakeLast(3).Select(j => j.DisplayName).ToList();
-        var text = $"'{handle}' is {state} · {BackgroundJobTools.Age(run.Started)} · {rows.Count} tool calls.";
+        var text = $"'{handle}' is {state} · {Age(run.Started)} · {rows.Count} tool calls.";
         return latest.Count == 0 ? text : text + " Latest: " + string.Join(", ", latest);
     }
 

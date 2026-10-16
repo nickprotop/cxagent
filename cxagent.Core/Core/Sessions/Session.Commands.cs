@@ -286,11 +286,11 @@ public sealed partial class Session
 
     /// <summary>
     /// Lists every background command running right now, across every agent — the same rows
-    /// <c>job_list</c> answers, through the same process-wide registry.
+    /// <c>task_list</c> answers, through the same process-wide registry.
     ///
     /// <para>NOT PER-SESSION. A job started by another tab is still killable by pid, so hiding its row
     /// here would draw a boundary that does not actually stop anything — see
-    /// <see cref="Jobs.BackgroundJobTools"/> for the same reasoning on the model's side.</para>
+    /// <see cref="Jobs.TaskTools"/> for the same reasoning on the model's side.</para>
     /// </summary>
     public CommandStatus ListBackgroundJobs()
     {
@@ -300,9 +300,9 @@ public sealed partial class Session
     }
 
     /// <summary>
-    /// Stops one background command by pid, typed rather than called as <c>job_kill</c>.
+    /// Stops one background command by pid, typed rather than called as <c>task_stop</c>.
     ///
-    /// <para>NO OWNERSHIP CHECK HERE, unlike <see cref="Jobs.BackgroundJobTools"/>'s kill rule. This
+    /// <para>NO OWNERSHIP CHECK HERE, unlike <see cref="Jobs.TaskTools"/>'s kill rule. This
     /// command IS the session typing directly — there is no sub-agent identity to weigh it against,
     /// so the only questions are whether the pid parses and whether it is still running.</para>
     /// </summary>

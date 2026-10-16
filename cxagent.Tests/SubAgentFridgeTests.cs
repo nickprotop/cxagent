@@ -174,7 +174,7 @@ public class SubAgentFridgeTests
 
     /// <summary>
     /// A HANDLE IS CLAIMED BEFORE THE CHILD EXISTS, so the name the store ends up holding is decided
-    /// at dispatch rather than at completion — which is what lets agent_list name a child while it is
+    /// at dispatch rather than at completion — which is what lets task_list name a child while it is
     /// still running, instead of answering "no sub-agents" for the whole of its run.
     /// </summary>
     [Fact]
@@ -234,7 +234,9 @@ public class SubAgentFridgeTests
         await spawner.TryInvokeAsync(Spawn("review auth", "look"),
             onChild: null, CancellationToken.None);
 
-        var listing = new AgentReachTools(store).List();
+        var listing = new CxAgent.Core.Jobs.TaskTools(new CxAgent.Core.Jobs.TaskSources(
+            new CxAgent.Core.Execution.DetachedProcessRegistry(), new CxAgent.Core.Execution.FinishedShells(),
+            "SESSION", store)).List("SESSION");
 
         Assert.Contains("review-auth", listing);
     }

@@ -19,11 +19,11 @@ public sealed record SendRequest(string To, string Prompt, bool Background, stri
 /// <summary>
 /// Reaching a sub-agent this session already spawned.
 ///
-/// <para>SENDING AND LISTING, NOT STOPPING. A child running in the background is stopped through the task
-/// tools, which stop background shells too — a parent asks "what is still running" about both kinds at
-/// once. A child resumed in the foreground stops with the turn that asked it, by that turn's token. No
-/// <c>agent_forget</c> either: a context costs nothing per turn, so a tool that only deletes is a tool
-/// whose only use is a mistake.</para>
+/// <para>SENDING, NOT LISTING OR STOPPING. The task tools list sub-agents and stop background ones, with
+/// background shells — a parent asks "what is still running" about both kinds at once. A child resumed
+/// in the foreground stops with the turn that asked it, by that turn's token. No <c>agent_forget</c>
+/// either: a context costs nothing per turn, so a tool that only deletes is a tool whose only use is a
+/// mistake.</para>
 ///
 /// <para>OFFERED TO THE SESSION'S AGENT, NEVER TO A CHILD. The spawn prompt states "It cannot spawn
 /// sub-agents of its own", and these inherit that limit rather than quietly widening it — a child
@@ -37,30 +37,7 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
     public SubAgentStore Store => store;
 
     /// <summary>Whether this handles a call by that name.</summary>
-    public bool Claims(string name) => name == Tool.AgentSend || name == Tool.AgentList;
-
-    /// <summary>
-    /// What this session has spawned.
-    ///
-    /// <para>SAYS SO WHEN THERE IS NOTHING, rather than answering with an empty string: a blank reply
-    /// reads as a tool that failed, and the model's next move is to call it again.</para>
-    /// </summary>
-    public string List()
-    {
-        var all = store.All();
-        if (all.Count == 0)
-            return "no sub-agents have been spawned in this session yet.";
-
-        var sb = new StringBuilder("sub-agents you can reach with agent_send:\n");
-        foreach (var a in all)
-        {
-            sb.Append("- ").Append(a.Name).Append(" (").Append(a.TypeName).Append(')');
-            if (a.Description is { Length: > 0 } d) sb.Append(" — ").Append(d);
-            if (store.IsBusy(a.Name)) sb.Append(" [busy]");
-            sb.AppendLine();
-        }
-        return sb.ToString().TrimEnd();
-    }
+    public bool Claims(string name) => name == Tool.AgentSend;
 
     /// <summary>
     /// Sends to a kept child: into its mailbox while it runs, otherwise resuming it — in the background
@@ -69,17 +46,17 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
     public async Task<string> SendAsync(SendRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.To))
-            return "error: 'to' is required — which sub-agent should answer? Call agent_list to see the "
+            return "error: 'to' is required — which sub-agent should answer? Call task_list to see the "
                  + "names.";
 
-        // A HANDLE OR AN AGENT ID: the handle is what the receipt and agent_list show, the id is what an
+        // A HANDLE OR AN AGENT ID: the handle is what the receipt and task_list show, the id is what an
         // envelope carries, and a model holding either should not have to translate. NAMES THE REMEDY,
         // NOT ONLY THE FAULT: a model that misremembers a handle needs to be told where the real ones
         // are, or its next move is another guess.
         var stored = store.Find(request.To) ?? store.FindByAgentId(request.To);
         if (stored is null)
             return $"error: no sub-agent named '{request.To}' in this session. "
-                 + "Call agent_list to see which ones there are.";
+                 + "Call task_list to see which ones there are.";
         var name = stored.Name;
 
         // A RUNNING CHILD IS SENT TO, NOT REFUSED — and the state decides the shape of the answer, so
@@ -222,13 +199,11 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
     }
 
     /// <summary>
-    /// The two definitions, hand-built as the spawn tool's is.
+    /// The send tool's definition, hand-built as the spawn tool's is.
     ///
-    /// <para>THE DESCRIPTIONS CARRY WHAT THE MODEL GETS WRONG, which is the only thing worth paying
-    /// schema bytes for. For <c>agent_send</c> that is restating the original brief — the agent
-    /// already has it, and repeating it wastes the very turn the tool exists to save. For
-    /// <c>agent_list</c> it is that NOTHING ELSE reports what was spawned, so a model that does not
-    /// call it does not know.</para>
+    /// <para>THE DESCRIPTION CARRIES WHAT THE MODEL GETS WRONG, which is the only thing worth paying
+    /// schema bytes for: restating the original brief — the agent already has it, and repeating it wastes
+    /// the very turn the tool exists to save.</para>
     /// </summary>
     public static IReadOnlyList<ToolDefinition> Definitions =>
     [
@@ -248,7 +223,7 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                   "properties": {
                     "to": {
                       "type": "string",
-                      "description": "The agent's handle, from the name= on its spawn result or from agent_list, or its agent id."
+                      "description": "The agent's handle, from the name= on its spawn result or from task_list, or its agent id."
                     },
                     "prompt": {
                       "type": "string",
@@ -260,17 +235,6 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                     }
                   },
                   "required": ["to", "prompt"]
-                }
-                """).RootElement),
-
-        new ToolDefinition(Tool.AgentList,
-            "The sub-agents spawned in this session, by name. Nothing else tells you what you "
-            + "spawned once the call falls out of context.",
-            JsonDocument.Parse(
-                """
-                {
-                  "type": "object",
-                  "properties": {}
                 }
                 """).RootElement),
     ];

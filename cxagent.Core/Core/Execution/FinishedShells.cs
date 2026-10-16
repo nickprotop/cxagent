@@ -83,6 +83,12 @@ public sealed class FinishedShells
         }
     }
 
+    /// <summary>What a tracked command was started to do, running or ended; null when nothing tracks it.</summary>
+    public BackgroundJob? JobFor(int pid)
+    {
+        lock (_gate) return _byPid.GetValueOrDefault(pid)?.Job;
+    }
+
     /// <summary>How a command ended; null while it runs or when nothing tracks the pid.</summary>
     public FinishedShell? Find(int pid)
     {

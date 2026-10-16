@@ -31,14 +31,6 @@ public class AgentReachPromptTests
     }
 
     [Fact]
-    public void Agent_list_says_nothing_else_reports_what_was_spawned()
-    {
-        var def = AgentReachTools.Definitions.Single(d => d.Name == "agent_list");
-
-        Assert.Contains("spawned", def.Description, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
     public void Agent_send_requires_both_a_target_and_a_prompt()
     {
         var def = AgentReachTools.Definitions.Single(d => d.Name == "agent_send");
@@ -48,11 +40,13 @@ public class AgentReachPromptTests
         Assert.Contains("\"prompt\"", schema);
     }
 
+    /// <summary>THE LISTING TOOL SAYS NOTHING ELSE REPORTS what is running, so a model that does not call it does not know.</summary>
     [Fact]
-    public void Agent_list_takes_nothing()
+    public void Task_list_says_it_shows_what_is_still_going_and_takes_nothing()
     {
-        var def = AgentReachTools.Definitions.Single(d => d.Name == "agent_list");
+        var def = CxAgent.Core.Jobs.TaskTools.Definitions.Single(d => d.Name == "task_list");
 
+        Assert.Contains("still going", def.Description, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("required", def.InputSchema.GetRawText());
     }
 }

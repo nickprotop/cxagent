@@ -207,7 +207,7 @@ public static class SubAgentEnvelope
     /// The handle this child is reachable by, or null when nothing kept it.
     ///
     /// <para>IN THE ENVELOPE RATHER THAN LEFT TO A LISTING CALL, because it is what a later
-    /// <c>agent_send</c> takes. Without it the model must call <c>agent_list</c> after every spawn
+    /// <c>agent_send</c> takes. Without it the model must call <c>task_list</c> after every spawn
     /// just to learn what it created a moment ago.</para>
     /// </param>
     /// <param name="outcome">How the run ended — completed, capped, stuck, cancelled or failed.</param>

@@ -64,7 +64,7 @@ public static class SessionCommands
             new("show <name>", "the full briefing that type is given", Completes: false,
                 Values: ValueSources.AgentTypes),
         ]),
-        // TELLTHEMODEL STAYS OFF. The model has job_list and job_kill already — this is the same
+        // TELLTHEMODEL STAYS OFF. The model has task_list and task_stop already — this is the same
         // work through a typed command instead of a tool call, and naming it in the prompt would
         // dangle a path that leads nowhere: the model has no composer to type it into.
         new("/jobs", "background commands running now, across every agent",

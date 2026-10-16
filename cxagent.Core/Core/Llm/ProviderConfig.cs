@@ -480,6 +480,14 @@ public static class ProviderConfigLoader
     /// an injected tool, a skill that appears — and an unmatched name grants nothing. Only the
     /// grammar is checked.</para>
     /// </summary>
+    /// <summary>Tool names this build no longer has, and what does their job now.</summary>
+    internal static readonly IReadOnlyDictionary<string, string> RemovedTools = new Dictionary<string, string>
+    {
+        ["job_list"] = Jobs.Tool.TaskList,
+        ["job_kill"] = Jobs.Tool.TaskStop,
+        ["agent_list"] = Jobs.Tool.TaskList,
+    };
+
     private static Jobs.ToolSelection? ReadToolSelection(
         JsonElement parent, string where, List<string> warnings)
     {
@@ -499,6 +507,15 @@ public static class ProviderConfigLoader
                            + "'all', a tool name, '-name' to remove, or '+name' to add back.");
                 continue;
             }
+
+            // A NAME THIS BUILD RETIRED IS WARNED ABOUT, NAMING ITS REPLACEMENT. Unknown names are
+            // otherwise legal and ignored, so "-job_kill" would silently stop restricting the tool that
+            // now does that job; the warning makes that visible, and what the selection should say is
+            // the user's decision — nothing is mapped.
+            var bare = term.Trim().TrimStart('+', '-');
+            if (RemovedTools.TryGetValue(bare, out var replacement))
+                warnings.Add($"{where}.tools: '{bare}' no longer exists — it is now '{replacement}'. "
+                           + "Update the selection, or it restricts nothing.");
 
             terms.Add(term.Trim());
         }

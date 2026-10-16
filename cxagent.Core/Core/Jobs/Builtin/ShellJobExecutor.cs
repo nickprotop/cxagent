@@ -370,7 +370,7 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
     {
         var jc = context as JobContext;
         // "unknown" RATHER THAN SKIPPING THE DESCRIPTION when there is no delivery port or no
-        // AgentId. A row that cannot say who owns it is still worth listing in job_list, and an
+        // AgentId. A row that cannot say who owns it is still worth listing in task_list, and an
         // owner-less job is one the kill rule already handles: only the session may stop it.
         var agentId = jc?.AgentId ?? "unknown";
 
@@ -434,7 +434,7 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
     /// facts are the same four this report used to carry as its own members — three of them strings
     /// — so transposing any two compiled cleanly and delivered a command line to an agent named after
     /// a file path. Holding the one record the registry also holds does not just avoid repeating that
-    /// hazard: it means the exit report and <c>job_list</c> read the same description and cannot
+    /// hazard: it means the exit report and <c>task_list</c> read the same description and cannot
     /// disagree about what the command was called.</para>
     /// </summary>
     /// <param name="Delivery">Where to say it.</param>

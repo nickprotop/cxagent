@@ -43,7 +43,7 @@ public class CommandSelectionTests
         [
             Tool.ReadFile, Tool.WriteFile, Tool.ReplaceInFile, Tool.Glob, Tool.Grep, Tool.RunShell,
             Tool.WebFetch, Tool.HttpRequest, Tool.TodoWrite, Tool.AskUser, Tool.Agent,
-            Tool.AgentSend, Tool.AgentList, Tool.JobList, Tool.JobKill, Tool.TaskList, Tool.TaskStop, Tool.TaskOutput, Tool.Skill,
+            Tool.AgentSend, Tool.TaskList, Tool.TaskStop, Tool.TaskOutput, Tool.Skill,
         ];
 
         Assert.All(documented, n => Assert.True(Tool.IsKnown(n), n + " is not a known tool"));

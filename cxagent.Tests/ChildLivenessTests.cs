@@ -102,6 +102,9 @@ public class ChildLivenessTests
 
         /// <summary>A second tool call the parent makes after the spawn, before it answers.</summary>
         public ToolCall? FollowUp { get; init; }
+
+        /// <summary>Several calls in ONE response after the spawn — for what the walk does with them.</summary>
+        public IReadOnlyList<ToolCall>? FollowUps { get; init; }
     }
 
     /// <summary>A parent built from a setup, and what a test reaches through it.</summary>
@@ -117,6 +120,8 @@ public class ChildLivenessTests
         });
         if (setup.FollowUp is { } followUp)
             parent.EnqueueResponse(new LlmResponse { Text = "", StopReason = "tool_use", ToolCalls = [followUp] });
+        if (setup.FollowUps is { Count: > 0 } followUps)
+            parent.EnqueueResponse(new LlmResponse { Text = "", StopReason = "tool_use", ToolCalls = [.. followUps] });
         parent.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
         var child = setup.Child;
@@ -254,6 +259,41 @@ public class ChildLivenessTests
         await rig.Agent.SendAsync("go", CancellationToken.None);
 
         Assert.Contains("now the lexer", child.Text());
+    }
+
+    /// <summary>
+    /// A WAIT DOES NOT DELAY THE TOOLS AFTER IT. task_output with wait is held on the walk like a spawn,
+    /// so the read emitted after it in the same response runs while the wait is still waiting.
+    /// </summary>
+    [Fact]
+    public async Task ATaskOutputWait_DoesNotDelayTheToolsAfterIt()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "wait-walk-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "notes.txt"), "a note");
+        var jobs = new BufferedJobPanel();
+        var child = new HeldProvider("found it");
+        try
+        {
+            var rig = Parent(new ParentSetup
+            {
+                Jobs = jobs, Child = child, Delivery = new RecordingDelivery(), Background = true,
+                FollowUps =
+                [
+                    Calls.Named(Tool.TaskOutput, new { id = "find-thing", wait = true, timeout = 10 }, id: "w1"),
+                    Calls.Named(Tool.ReadFile, new { path = Path.Combine(dir, "notes.txt") }, id: "r1"),
+                ],
+            });
+
+            var turn = rig.Agent.SendAsync("go", CancellationToken.None);
+
+            Assert.True(await Poll.Until(() =>
+                jobs.Jobs.Any(j => j.PlanLocalId == Tool.ReadFile && j.State == JobState.Succeeded)));
+            Assert.False(turn.IsCompleted);          // the wait is still waiting
+            child.Release();
+            await turn;
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Fact]

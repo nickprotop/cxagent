@@ -11,24 +11,14 @@ namespace CxAgent.Tests;
 public class AgentReachToolsTests
 {
     [Fact]
-    public void It_claims_only_its_own_two_tools()
+    public void It_claims_only_agent_send()
     {
         var tools = new AgentReachTools(new SubAgentStore());
 
         Assert.True(tools.Claims("agent_send"));
-        Assert.True(tools.Claims("agent_list"));
+        Assert.False(tools.Claims("agent_list"));
         Assert.False(tools.Claims("agent"));
         Assert.False(tools.Claims("run_shell"));
-    }
-
-    [Fact]
-    public void Listing_an_empty_store_says_so_rather_than_answering_nothing()
-    {
-        var tools = new AgentReachTools(new SubAgentStore());
-
-        var answer = tools.List();
-
-        Assert.Contains("no sub-agents", answer, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -39,7 +29,7 @@ public class AgentReachToolsTests
         var answer = await tools.SendAsync(Ask("ghost", "hello"), CancellationToken.None);
 
         Assert.Contains("ghost", answer);
-        Assert.Contains("agent_list", answer);
+        Assert.Contains("task_list", answer);
     }
 
     [Fact]

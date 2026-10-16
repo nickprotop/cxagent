@@ -1396,7 +1396,7 @@ public sealed partial class Session
         {
             var pid = live.Process.Pid.ToString();
             var command = live.Job?.Command ?? "(unknown)";
-            var age = live.Job is null ? "?" : Jobs.BackgroundJobTools.Age(live.Job.Started);
+            var age = live.Job is null ? "?" : Jobs.TaskTools.Age(live.Job.Started);
             return new CompletionValue(pid, $"{command} · {age}");
         }),
     ];
