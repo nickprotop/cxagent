@@ -639,6 +639,16 @@ public sealed partial class Session
                 else
                 {
                     if (expanded is not null) text = expanded;
+
+                    // AGENT TYPES CHANGED SINCE THE LAST MESSAGE: said at the front of this one, which is
+                    // appended to the conversation anyway — the cached prefix is untouched. The transcript
+                    // still shows what was typed.
+                    if (TakeTypesNote() is { } note)
+                    {
+                        echo ??= text;
+                        text = note + "\n\n" + text;
+                    }
+
                     // WHAT THE TRANSCRIPT SHOWED goes with the message when it differs from what is
                     // sent, so the session list can name the session by it — see ChatMessage.Shown.
                     sent = await Host!.RunAsync(text, scope.Token, tools,

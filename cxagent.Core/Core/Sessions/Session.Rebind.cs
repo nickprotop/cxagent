@@ -84,9 +84,24 @@ public sealed partial class Session
             policy.Classifier = Permissions.PermissionDecider.ClassifierFor(
                 fresh.ClassifierInstance, fresh.Providers, fresh.ClassifierTimeoutSeconds);
         var types = new Agents.AgentTypeCatalog(fresh.AgentTypes, fresh.Providers);
+        var said = Describe(_agentTypes);
         _spawner?.Refresh(fresh.MaxConcurrentAgents, types);
         NoteAgentTypes(types);
+
+        // THE MODEL HEARS OF A NEW OR CHANGED TYPE IN THE NEXT MESSAGE, not in the spawn tool: that tool's
+        // description is part of the cached prompt, and rewriting it re-sends the whole conversation.
+        if (_spawner is not null && Describe(types) is var now && now != said)
+            Volatile.Write(ref _typesNote, "[Agent types available now: " + now + "]");
     }
+
+    private string? _typesNote;
+
+    /// <summary>The types the model can name, one per line, as the spawn tool lists them.</summary>
+    private static string Describe(Agents.AgentTypeCatalog? catalog) =>
+        catalog is null ? "" : string.Join("; ", catalog.All.Select(t => t.Description is { Length: > 0 } d ? $"{t.Name} — {d}" : t.Name));
+
+    /// <summary>The note for the next message, once.</summary>
+    internal string? TakeTypesNote() => Interlocked.Exchange(ref _typesNote, null);
 
     /// <summary>
     /// The new config's catalog, kept on this session without a re-wire — for a session the change does
