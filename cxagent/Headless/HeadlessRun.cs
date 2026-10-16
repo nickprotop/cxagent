@@ -177,7 +177,9 @@ public static class HeadlessRun
                     + $"Levels: {string.Join(", ", offered.Levels)}.");
                 return 2;
             }
-            session.SetThinking(level);
+            // SILENTLY, as a resume restores one: "Thinking set to high" only repeats the flag back
+            // to whoever passed it, and in the JSON modes it would land on stderr.
+            session.RestoreThinking(level);
         }
 
         gate.OnDecision = report =>

@@ -102,8 +102,9 @@ public sealed partial class Session
     }
 
     /// <summary>
-    /// From a resumed session's header: applied silently — the user chose it before. Null is a
-    /// header with nothing saved, which keeps the config's level; "default" is the model's own.
+    /// A level the user already chose elsewhere — a resumed session's header, a headless run's
+    /// <c>--thinking</c> — applied silently, since telling them would only repeat their choice. Null
+    /// is a header with nothing saved, which keeps the config's level; "default" is the model's own.
     /// </summary>
     public void RestoreThinking(string? level)
     {

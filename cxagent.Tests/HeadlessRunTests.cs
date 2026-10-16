@@ -72,6 +72,23 @@ public class HeadlessRunTests : IDisposable
         Assert.Equal("high", model.LastLevel);
     }
 
+    // THE CALLER'S OWN FLAG IS NOT NEWS: echoing it would put a line on stderr in the JSON modes,
+    // where a consumer reads stderr as something going wrong.
+    [Theory]
+    [InlineData("json")]
+    [InlineData("stream-json")]
+    [InlineData("text")]
+    public async Task Thinking_AnOfferedLevel_IsAppliedWithoutANotice(string format)
+    {
+        var model = new LevelledMock(["low", "high"]);
+        var (code, _, err) = await Run(model, null, "-p", "x", "--thinking", "high",
+            "--output-format", format, "--verbose");
+
+        Assert.Equal(0, code);
+        Assert.Equal("high", model.LastLevel);
+        Assert.DoesNotContain("Thinking set to", err);
+    }
+
     [Fact]
     public async Task Text_PrintsTheAnswer_AndExitsZero()
     {
