@@ -107,13 +107,13 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         parts of the repository are independent. A search and then a fix that depends on what the
         search found are not — those are two turns, not two agents.
 
-        A PLANNER AND THE BUILDER THAT CARRIES OUT ITS PLAN ARE TWO TURNS, NOT TWO AGENTS IN ONE
-        MESSAGE. The builder needs a plan that does not exist while the planner is still running, so
-        batching them sends it to build from nothing. Send the planner, wait for the file it names,
-        then send the builder to that path. Give it the PATH, not your own account of the plan: a
-        specification you write into the builder's prompt is the planner's run spent and discarded,
-        and it is your transcription the builder then follows rather than the plan — measured, a
-        parent that wrote its own got three types wrong and the builder implemented all three.
+        A PLANNER AND THE BUILDER THAT CARRIES OUT ITS PLAN ARE TWO STEPS. The builder needs a plan that
+        does not exist while the planner is still running. Spawn the planner with background: false — or
+        spawn it in the background and wait for its report — then send the builder to the file it names.
+        Give it the PATH, not your own account of the plan: a specification you write into the builder's
+        prompt is the planner's run spent and discarded, and it is your transcription the builder then
+        follows rather than the plan — measured, a parent that wrote its own got three types wrong and the
+        builder implemented all three.
 
         Give them non-overlapping work. Two agents told to edit the same file will both edit it, and
         neither will know the other did.
@@ -132,16 +132,41 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
 
         It cannot spawn sub-agents of its own.
 
-        Spawning waits for the answer: the call returns when the agent is done, and its report IS the
-        result. Several spawned in one turn run at the same time and report together.
+        {{WAITING}}
 
         A sub-agent you spawned is still there, by name, with everything it read and did. When more is
         wanted from work an agent has ALREADY done — a correction, a deeper pass, a check on what it
         told you — use agent_send on that agent. Spawning a second one over the same ground starts
         from nothing: it has not read what the first read and cannot see what the first concluded.
-        Call agent_list to see which ones there are; you will not remember them once the spawn
-        falls out of context.
+        task_list shows which ones there are; you will not remember them once the spawn falls out of
+        context.
         """;
+
+    /// <summary>
+    /// How a spawn waits, for a spawner that can run one in the background.
+    ///
+    /// <para>ONE OF TWO PARAGRAPHS, CHOSEN BY WHAT THIS SPAWNER CAN DO: a headless run, or a caller with
+    /// no delivery port, spawns in the foreground whatever the model asks, and telling it a call returns
+    /// at once would have it end its turn before the answer it is about to be handed.</para>
+    /// </summary>
+    private const string WaitingInTheBackground =
+        """
+        IT RUNS IN THE BACKGROUND by default: the call returns at once, you carry on, and its report comes
+        to you as a message when it is done — in this turn if you are still working, as a new turn if you
+        are not. Do not poll for it and do not do its work yourself. Pass background: false when your next
+        step cannot start without its answer; then the call waits and its report IS the result. If you
+        backgrounded it and then find you need it now, task_output with wait: true waits for it.
+        """;
+
+    /// <summary>How a spawn waits, for a spawner that runs every spawn in the foreground.</summary>
+    private const string WaitingInTheForeground =
+        """
+        Spawning waits for the answer: the call returns when the agent is done, and its report IS the
+        result. Several spawned in one turn run at the same time and report together.
+        """;
+
+    /// <summary>Whether a spawn may run in the background here — the same test the spawn itself makes.</summary>
+    private bool CanBackground => _factory.AllowBackground && _factory.Delivery is not null && _store is not null;
 
     /// <summary>
     /// HAND-BUILT, AND THAT IS NORMAL HERE. <c>McpToolset.Definitions()</c> constructs
@@ -164,7 +189,8 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// </summary>
     private string DescriptionWithTypes()
     {
-        var sb = new System.Text.StringBuilder(Description);
+        var sb = new System.Text.StringBuilder(Description.Replace("{{WAITING}}",
+            (CanBackground ? WaitingInTheBackground : WaitingInTheForeground).TrimEnd(), StringComparison.Ordinal));
 
         sb.AppendLine();
         sb.AppendLine();
@@ -238,8 +264,26 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// </summary>
     public ToolDefinition Definition => _definition ??= Build();
 
+    /// <summary>
+    /// The `background` argument, offered only where it can do something — see
+    /// <see cref="CanBackground"/>. A flag the spawn ignores is a promise the schema cannot keep.
+    /// </summary>
+    private const string BackgroundProperty =
+        """
+        ,
+                        "background": {
+                          "type": "boolean",
+                          "description": "Default true: the agent runs while you carry on, and its report comes to you when it is done. Pass false only when your next step cannot start without its answer."
+                        }
+        """;
+
     private ToolDefinition Build() => new(ToolName, DescriptionWithTypes(),
         JsonDocument.Parse(
+            SchemaTemplate.Replace("{{BACKGROUND}}", CanBackground ? BackgroundProperty.Trim() : "",
+                StringComparison.Ordinal)).RootElement);
+
+    /// <summary>The spawn tool's argument schema, with a slot for the background flag.</summary>
+    private const string SchemaTemplate =
             """
             {
               "type": "object",
@@ -259,15 +303,11 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                 "type": {
                   "type": "string",
                   "description": "Optional. Which agent type to use — see the list in this tool's description. Omit for a general-purpose agent."
-                },
-                "background": {
-                  "type": "boolean",
-                  "description": "Default true: the agent runs while you carry on, and its report comes to you when it is done. Pass false only when your next step cannot start without its answer."
-                }
+                }{{BACKGROUND}}
               },
               "required": ["description", "prompt"]
             }
-            """).RootElement);
+            """;
 
     public async Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
         CancellationToken ct, string? parentAgentId = null, Jobs.ToolSelection? turnTools = null)

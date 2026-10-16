@@ -124,6 +124,51 @@ public class SubAgentSpawnerTests
         factory.ConcurrencySlot.Release();
     }
 
+    /// <summary>A spawner that can run a spawn in the background: a store, a delivery port, and nothing forbidding it.</summary>
+    private static SubAgentSpawner BackgroundCapable(bool allow = true) =>
+        new(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = Answering("x"), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000,
+            Delivery = new RecordingDelivery(), AllowBackground = allow,
+        }), store: new CxAgent.Core.Agents.SubAgentStore());
+
+    /// <summary>
+    /// A SPAWNER THAT CANNOT BACKGROUND SAYS SO — headless, or no delivery port: the model is told a spawn
+    /// waits, and is not offered a flag the spawn would ignore.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]   // headless: background not allowed
+    [InlineData(true)]    // no delivery port (FactoryOver wires none)
+    public void Definition_WhereBackgroundCannotRun_SaysSpawningWaits_AndOffersNoFlag(bool noPort)
+    {
+        var spawner = noPort ? new SubAgentSpawner(FactoryOver(Answering("x"))) : BackgroundCapable(allow: false);
+
+        Assert.Contains("Spawning waits for the answer", spawner.Definition.Description);
+        Assert.DoesNotContain("RUNS IN THE BACKGROUND", spawner.Definition.Description);
+        Assert.DoesNotContain("\"background\"", spawner.Definition.InputSchema.GetRawText());
+    }
+
+    [Fact]
+    public void Definition_WhereBackgroundCanRun_OffersTheFlag() =>
+        Assert.Contains("\"background\"", BackgroundCapable().Definition.InputSchema.GetRawText());
+
+    /// <summary>
+    /// THE DESCRIPTION MATCHES THE DEFAULT: a spawn runs in the background, and the model is told when to
+    /// wait instead — while the guidance tuned across live drives survives the rewrite.
+    /// </summary>
+    [Fact]
+    public void Definition_SaysSpawnsRunInTheBackground_AndWhenToWait()
+    {
+        var d = BackgroundCapable().Definition.Description;
+        Assert.Contains("RUNS IN THE BACKGROUND", d);
+        Assert.Contains("background: false", d);
+        Assert.Contains("task_output", d);
+        Assert.DoesNotContain("Spawning waits for the answer", d);
+        Assert.DoesNotContain("agent_list", d);
+        Assert.Contains("do not also do it yourself", d);
+    }
+
     private static ToolCall SpawnCall(string prompt = "find the thing", string description = "find thing") =>
         new()
         {
