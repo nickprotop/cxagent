@@ -23,7 +23,9 @@ public sealed record HandoffRead(string? Result, bool Ended, bool AlreadySent);
 /// Called when the result was handed to waiters that were then all cancelled (the user pressed
 /// Escape on the turn that was waiting), so nobody received it. It is left as a note rather than
 /// sent as a wake: the user has just stopped that turn, and a wake would start another one. True
-/// when the note was taken; false or a throw leaves the result for <see cref="Read"/>.
+/// when the note was taken; false or a throw leaves the result for <see cref="Read"/>. NEVER CALLED
+/// once the handoff is silenced — its conversation is closing — where the result is kept for
+/// <see cref="Read"/> instead.
 /// </param>
 public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
 {
@@ -125,7 +127,8 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
     /// <summary>
     /// Waits up to <paramref name="timeout"/> for the result. A wait that times out leaves the result
     /// to be sent as usual; one that is cancelled after the result reached it, with no other waiter
-    /// having received it, leaves the result through <c>leaveIfAbandoned</c> before rethrowing.
+    /// having received it, leaves the result through <c>leaveIfAbandoned</c> before rethrowing — unless
+    /// the handoff is silenced, when the result is kept for <see cref="Read"/> and nothing is left.
     /// </summary>
     /// <param name="timeout">How long to wait before answering "not ended".</param>
     /// <param name="ct">Cancels the wait; throws <see cref="OperationCanceledException"/>.</param>
