@@ -855,6 +855,32 @@ public class InlineJobSinkTests
         Assert.Equal(JobState.Succeeded, job.State);
     }
 
+    /// <summary>
+    /// A SETTLED WORKER ROW AND THE NOTICE THAT ITS RUN FINISHED SAY ITS LENGTH THE SAME WAY — under a minute
+    /// and over one — so a reader never reconciles "00h01m22s" with "1m 22s" for one run.
+    /// </summary>
+    [Theory]
+    [InlineData(15.0, "15s")]
+    [InlineData(82.0, "1m 22s")]
+    public void ASettledWorkerRow_AndItsFinishNotice_SayTheSameDuration(double seconds, string expected)
+    {
+        var took = TimeSpan.FromSeconds(seconds);
+        var job = new Job
+        {
+            Id = "j1", AgentId = "g1", JobType = "llm_agent", DisplayName = "Find thing", State = JobState.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow, StartedAt = DateTimeOffset.UtcNow,
+            Result = new JobResult { Success = true, Duration = took },
+        };
+        var run = new SubAgentStore().BeginBackground(new BackgroundStart(Name: "find-thing", ParentAgentId: "g1",
+            Brief: "b", Description: "find thing", IsResume: false), new CxAgent.Core.Jobs.ResultHandoff(_ => true));
+
+        var row = InlineJobSink.CompactHeaderForTest(job);
+        var notice = BackgroundRunner.Shown(run, "completed", stopped: false, took);
+
+        Assert.Contains($"done · {expected}", row);
+        Assert.EndsWith($"· {expected}", notice);
+    }
+
     /// <summary>A background spawn's row as its receipt left it, with its run started in a store the sink reads.</summary>
     private static (InlineJobSink Sink, Job Job, SubAgent Child, BackgroundRun Run) BackgroundRow()
     {

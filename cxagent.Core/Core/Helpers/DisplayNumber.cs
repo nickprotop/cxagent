@@ -76,4 +76,16 @@ public static class DisplayNumber
     /// </summary>
     public static string Duration(TimeSpan d) =>
         d.ToString(@"hh\hmm\mss\s", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// How long a finished run took, as a person says it: <c>15s</c>, <c>1m 22s</c>.
+    ///
+    /// <para>ONE HELPER FOR EVERY PLACE A SUB-AGENT RUN'S LENGTH IS SETTLED — the notice that it finished
+    /// and the worker row that settles beside it. The same run read as "1m 22s" in one and "00h01m22s" in
+    /// the other is two numbers a reader has to reconcile before trusting either.</para>
+    /// </summary>
+    public static string Took(TimeSpan d) =>
+        d.TotalMinutes >= 1
+            ? $"{((int)d.TotalMinutes).ToString(CultureInfo.InvariantCulture)}m {d.Seconds.ToString(CultureInfo.InvariantCulture)}s"
+            : $"{Fixed(Math.Floor(d.TotalSeconds), 0)}s";
 }

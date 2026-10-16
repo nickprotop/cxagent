@@ -159,10 +159,14 @@ internal static class BackgroundRunner
         return head + "\n" + envelope;
     }
 
-    private static string Shown(BackgroundRun run, string state, bool stopped)
+    /// <summary>The line the user sees when a run ends.</summary>
+    /// <param name="run">The run that ended.</param>
+    /// <param name="state">The envelope's word for how it ended.</param>
+    /// <param name="stopped">Whether something stopped it.</param>
+    /// <param name="took">How long it ran; null measures up to now, which is every caller but a test.</param>
+    internal static string Shown(BackgroundRun run, string state, bool stopped, TimeSpan? took = null)
     {
-        var took = DateTimeOffset.UtcNow - run.Started;
-        var elapsed = took.TotalMinutes >= 1 ? $"{(int)took.TotalMinutes}m {took.Seconds}s" : $"{took.TotalSeconds:0}s";
+        var elapsed = Helpers.DisplayNumber.Took(took ?? DateTimeOffset.UtcNow - run.Started);
         return stopped
             ? $"background agent '{run.Start.Name}' stopped · {elapsed}"
             : $"background agent '{run.Start.Name}' finished · {state} · {elapsed}";

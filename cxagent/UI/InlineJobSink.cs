@@ -967,7 +967,11 @@ public sealed class InlineJobSink : IToolObserver
             return $"[spinner braille {SpinnerIntervalMs}] {author}  {name}{deciding}{progress}{elapsed}";
         }
 
-        var duration = DurationSuffix(job.Result?.Duration);
+        // A WORKER'S LENGTH IN THE WORDS ITS FINISH NOTICE USES — see DisplayNumber.Took. Tool rows keep
+        // their tenths: they are compared at a glance against each other, not against a notice.
+        var duration = job.JobType == "llm_agent" && job.Result?.Duration is { } took
+            ? " · " + DisplayNumber.Took(took)
+            : DurationSuffix(job.Result?.Duration);
         var state = job.State switch
         {
             JobState.Succeeded => "done",
