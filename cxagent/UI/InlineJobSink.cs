@@ -1783,6 +1783,15 @@ public sealed class InlineJobSink : IToolObserver
     private readonly ConcurrentDictionary<string, JobState> _reopenedFrom = new();
 
     /// <summary>
+    /// When each reopened row started working again, so it settles with the time the work took.
+    ///
+    /// <para>NOT THE CALL'S OWN DURATION, which is what the row held before it reopened: a background
+    /// spawn's call returns its receipt at once, so that figure is near zero, and a row settling with it
+    /// says "done · 0.0s" over minutes of work.</para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _reopenedAt = new();
+
+    /// <summary>
     /// The terminal state each worker row settled into, kept so a later resume can restore it.
     ///
     /// <para>THE JOB CANNOT BE ASKED FOR THIS. Core's per-second repaint writes State = Running while
@@ -1842,6 +1851,7 @@ public sealed class InlineJobSink : IToolObserver
         if (_reopenedFrom.ContainsKey(jobId)) return;
 
         _reopenedFrom[jobId] = settled;
+        _reopenedAt[jobId] = DateTimeOffset.UtcNow;
         job.State = JobState.Running;
         job.CompletedAt = null;
 
@@ -1892,6 +1902,8 @@ public sealed class InlineJobSink : IToolObserver
 
         job.State = was;
         job.CompletedAt = DateTimeOffset.UtcNow;
+        if (_reopenedAt.TryRemove(jobId, out var since) && job.Result is { } result)
+            job.Result = result with { Duration = job.CompletedAt.Value - since };
         ToolUpdated(job);
     }
 

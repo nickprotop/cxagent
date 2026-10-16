@@ -856,6 +856,36 @@ public class InlineJobSinkTests
     }
 
     /// <summary>
+    /// A ROW THAT REOPENED SETTLES WITH THE TIME THE WORK TOOK, not the time its call took. A background
+    /// spawn's call returns its receipt at once, so the spawn's own duration is near zero; a row that kept
+    /// it would say "done · 0.0s" over minutes of work — seen on the first live drive.
+    /// </summary>
+    [Fact]
+    public void AReopenedRow_SettlesWithTheTimeTheWorkTook()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        var job = new Job
+        {
+            Id = "j1", AgentId = "g1", JobType = "llm_agent",
+            DisplayName = "Find callers", State = JobState.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow, StartedAt = DateTimeOffset.UtcNow,
+            Result = new JobResult { Success = true, Duration = TimeSpan.FromMilliseconds(20) },   // the receipt
+        };
+        sink.ToolsChangedNow(new[] { job });
+        sink.WorkerBodyForTest(job);
+
+        job.State = JobState.Running;
+        sink.WorkerResumed(child.Agent.Id);
+        Thread.Sleep(1100);
+        sink.WorkerSettled(child.Agent.Id);
+
+        Assert.True(job.Result!.Duration >= TimeSpan.FromSeconds(1),
+            $"settled with {job.Result.Duration}, the call's time rather than the work's");
+    }
+
+    /// <summary>
     /// A SETTLED RESUME LEAVES NOTHING IN FLIGHT FOR THE ROUND ROW EITHER.
     ///
     /// <para>USER-REPORTED, AND THE HALF THE ROW'S OWN STATE DOES NOT EXPLAIN: after a resumed
