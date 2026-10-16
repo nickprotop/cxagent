@@ -797,4 +797,34 @@ public class AgentDeliveryTests : IDisposable
 
         Assert.Equal(DeliveryOutcome.Refused, delivery.Leave(id, new AgentNotice(Shown: "s", ForModel: "one more")));
     }
+
+    /// <summary>A REPORT STILL REACHES A PARENT THAT SWITCHED TO SINGLE MODE while its child ran.</summary>
+    [Fact]
+    public async Task AReport_ReachesAParentThatSwitchedToSingle()
+    {
+        var parentModel = new MockLlmProvider("parent");
+        parentModel.EnqueueResponse(new LlmResponse { Text = "", StopReason = "tool_use", ToolCalls = [Calls.Spawn(id: "s1")] });
+        parentModel.EnqueueResponse(new LlmResponse { Text = "started it", StopReason = "end_turn" });
+        parentModel.EnqueueResponse(new LlmResponse { Text = "it found it", StopReason = "end_turn" });
+        var childModel = new HeldProvider("found it");
+
+        // TWO INSTANCES, THE CHILD'S TYPE ROUTED TO ITS OWN — a shared mock would interleave parent and child
+        // requests and make the order the test depends on a race.
+        var registry = ProviderRegistry.FromProviders(
+            new Dictionary<string, ILlmProvider> { ["local"] = parentModel, ["kid"] = childModel }, "local");
+        var config = new ResolvedConfig(registry.Use("local"), new ProviderCatalog(Instances: registry,
+            AgentTypes: new Dictionary<string, AgentTypeConfig> { ["general"] = new AgentTypeConfig("", Provider: "kid") }), []);
+
+        _manager = SessionManager.Create(new AppPaths(_dir));
+        var session = _session = _manager.Open(_dir, config,
+            new SessionPorts { Observer = _sink = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+            AgentMode.FanOut);
+
+        await Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("go")).Turn;
+        session.SetMode(session.Mode with { Agent = AgentMode.Single });
+        childModel.Release();
+
+        Assert.True(await Poll.Until(() => parentModel.ChatCallCount == 3));
+        Assert.Contains("found it", parentModel.Text());
+    }
 }

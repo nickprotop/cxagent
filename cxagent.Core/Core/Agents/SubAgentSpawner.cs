@@ -5,11 +5,13 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Agents;
 
 /// <summary>
-/// The <c>agent</c> tool: builds a child, runs it to completion, and returns its answer.
+/// The <c>agent</c> tool: builds a child, and either starts it in the background and returns a receipt,
+/// or runs it to completion and returns its answer.
 ///
-/// <para>FOREGROUND AND BLOCKING in step 1 (D10). The parent waits, exactly as it waits for
-/// <c>run_shell</c>. Background is a different tool — it needs a registry, a notification route and a
-/// lifetime rule — and pretending this one is asynchronous would mean building all three now.</para>
+/// <para>BACKGROUND WHERE IT CAN WORK, which needs a store to keep the child reachable, a delivery port and
+/// a parent to report to, and a front end that allows it — see the branch in
+/// <see cref="TryInvokeAsync"/>. Everywhere else, and when the model passes <c>background: false</c>, the
+/// parent waits, exactly as it waits for <c>run_shell</c>.</para>
 /// </summary>
 internal sealed class SubAgentSpawner : ISubAgentSpawner
 {
@@ -257,6 +259,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                 "type": {
                   "type": "string",
                   "description": "Optional. Which agent type to use — see the list in this tool's description. Omit for a general-purpose agent."
+                },
+                "background": {
+                  "type": "boolean",
+                  "description": "Default true: the agent runs while you carry on, and its report comes to you when it is done. Pass false only when your next step cannot start without its answer."
                 }
               },
               "required": ["description", "prompt"]
@@ -317,6 +323,27 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         // would be invisible to agent_list for the whole of its run.
         var keptAs = _store?.Keep(child, Read(call, "description"),
             call.Id is { } spawnId ? _store.ReservationFor(spawnId) : null);
+
+        // BACKGROUND BY DEFAULT, WHERE IT CAN WORK: a store (or nothing could reach or stop the child), a delivery
+        // port and a parent id (or nobody could be told it ended), and a runtime that allows it — headless
+        // does not (spec decision 8). Anything else spawns in the foreground, where none of these is needed.
+        var background = Args.ReadBool(call, "background") ?? true;
+        if (background && keptAs is not null && _factory.AllowBackground
+            && _factory.Delivery is { } delivery && parentAgentId is not null)
+        {
+            // CLAIMED AND QUEUED BEFORE THE RECEIPT RETURNS, so a task_output or task_stop the parent
+            // sends straight after finds a run to act on rather than a child that looks idle.
+            _store!.TryClaim(keptAs);
+            var run = _store.BeginBackground(
+                new BackgroundStart(Name: keptAs, ParentAgentId: parentAgentId, Brief: prompt,
+                    Description: Read(call, "description"), IsResume: false),
+                new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(delivery, parentAgentId, keptAs)));
+            _ = BackgroundRunner.Start(new BackgroundWork(_store, _store.Find(keptAs)!, run, prompt,
+                _factory.ConcurrencySlot, delivery,
+                result => SubAgentEnvelope.Render(child.Agent.Id, keptAs, result.Outcome,
+                    WithPlanOutcome(result.Text, planPath))));
+            return SubAgentEnvelope.Receipt(child.Agent.Id, keptAs, ChildCanWrite(turnTools, type));
+        }
 
         // CLAIMED SILENTLY FOR ITS WHOLE LIFE, ANNOUNCED ONLY WITH THE SLOT IN HAND — the order
         // AgentReachTools keeps for a resume. The claim makes a send while it waits go to its mailbox

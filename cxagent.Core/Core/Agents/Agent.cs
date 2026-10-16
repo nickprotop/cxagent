@@ -715,7 +715,7 @@ public sealed class Agent
     /// <summary>
     /// This agent's conversation, for its whole life — the thing that makes it self-contained.
     ///
-    /// <para>A field rather than a local inside <see cref="SendAsync"/> because a context that
+    /// <para>A field rather than a local inside <see cref="SendAsync(string, CancellationToken, Jobs.ToolSelection?, string?)"/> because a context that
     /// exists only for the duration of one method cannot be owned by anything: not by a readout that
     /// wants to report real occupancy, not by a <c>/compress</c> that wants a single meaningful
     /// target, and not by an agent that is supposed to carry what it learned into its next task. A
@@ -1265,8 +1265,29 @@ public sealed class Agent
     /// <see cref="CancellationToken.None"/> so a cancelled session still paid for it; and the pre-send
     /// check at the top of the turn loop already guarantees nothing over the threshold is ever sent.</para>
     /// </remarks>
-    public async Task<SendResult> SendAsync(string prompt, CancellationToken ct,
-        Jobs.ToolSelection? turnTools = null, string? shown = null)
+    public Task<SendResult> SendAsync(string prompt, CancellationToken ct,
+        Jobs.ToolSelection? turnTools = null, string? shown = null) =>
+        SendCoreAsync(prompt, ct, turnTools, shown, mailFirst: true);
+
+    /// <summary>
+    /// <see cref="SendAsync(string, CancellationToken, Jobs.ToolSelection?, string?)"/>, choosing where
+    /// mail already waiting goes relative to the prompt.
+    /// </summary>
+    /// <param name="prompt">What the agent is asked.</param>
+    /// <param name="ct">Cancels the exchange.</param>
+    /// <param name="mailFirst">
+    /// Whether mail already waiting goes IN FRONT of the prompt.
+    ///
+    /// <para>TRUE FOR AN IDLE AGENT: a note left for it predates the prompt, so it is read first.
+    /// FALSE FOR A CHILD THAT IS STARTING: what was sent to it while it waited for a slot corrects the
+    /// work its brief sets, so it belongs after the brief — where the loop's own drain puts it, before
+    /// the first request.</para>
+    /// </param>
+    internal Task<SendResult> SendAsync(string prompt, CancellationToken ct, bool mailFirst) =>
+        SendCoreAsync(prompt, ct, turnTools: null, shown: null, mailFirst);
+
+    private async Task<SendResult> SendCoreAsync(string prompt, CancellationToken ct,
+        Jobs.ToolSelection? turnTools, string? shown, bool mailFirst)
     {
         // HELD FOR THE TURN so the dispatch site can see what the offer site showed.
         //
@@ -1296,8 +1317,11 @@ public sealed class Agent
         // WHAT WAITED IN THE MAILBOX HAPPENED BEFORE THIS PROMPT, so it goes in front of it. Drained only at
         // the top of a lap, a note left while idle would land AFTER the user's new message — and the newest
         // thing in front of the model would be a stale fact rather than what was just asked.
-        foreach (var waiting in Mailbox.Drain())
-            messages.Add(new ChatMessage { Role = "user", Content = waiting, Timestamp = DateTimeOffset.UtcNow });
+        //
+        // UNLESS THE CALLER SAYS OTHERWISE — see mailFirst on the internal SendAsync.
+        if (mailFirst)
+            foreach (var waiting in Mailbox.Drain())
+                messages.Add(new ChatMessage { Role = "user", Content = waiting, Timestamp = DateTimeOffset.UtcNow });
 
         messages.Add(new ChatMessage
         {

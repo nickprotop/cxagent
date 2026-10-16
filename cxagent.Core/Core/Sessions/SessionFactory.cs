@@ -180,6 +180,9 @@ internal static class SessionFactory
             // session's agent.
             Delivery = delivery,
 
+            // OFF WHERE NOBODY STAYS FOR THE REPORT — see SessionPorts.BackgroundAgents.
+            AllowBackground = ports.BackgroundAgents,
+
             // THE SAME LIVE SOURCE THE TOOLS COME FROM. Read per turn, so a plugin loaded at a turn
             // boundary contributes its guidance on the same turn its tools appear, and unwiring
             // removes both together.

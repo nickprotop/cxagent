@@ -107,4 +107,13 @@ public sealed record SessionPorts
     /// judge.</para>
     /// </summary>
     public Permissions.PermissionPolicy? Policy { get; init; }
+
+    /// <summary>
+    /// Whether a spawn may run in the background and report when it ends. True for a front end that
+    /// stays to hear the report.
+    ///
+    /// <para>A FRONT END WITH ONE ANSWER TO GIVE — headless — TURNS IT OFF, so a spawn's work is in that
+    /// answer: a report arriving after the run printed and exited reaches nobody.</para>
+    /// </summary>
+    public bool BackgroundAgents { get; init; } = true;
 }

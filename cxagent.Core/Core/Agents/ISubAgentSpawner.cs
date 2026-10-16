@@ -128,22 +128,7 @@ public static class SubAgentEnvelope
     ///
     /// <para>Null for an ordinary tool result, which is how a non-spawn call is told apart.</para>
     /// </summary>
-    public static string? StateOf(string? envelope)
-    {
-        if (string.IsNullOrEmpty(envelope)) return null;
-
-        const string marker = "state=\"";
-        var i = envelope.IndexOf(marker, StringComparison.Ordinal);
-        if (i < 0) return null;
-
-        // Only in the opening tag: a state= appearing later is the CHILD's own text, not ours.
-        var close = envelope.IndexOf('>', 0);
-        if (close >= 0 && i > close) return null;
-
-        var start = i + marker.Length;
-        var end = envelope.IndexOf('"', start);
-        return end > start ? envelope[start..end] : null;
-    }
+    public static string? StateOf(string? envelope) => Attribute(envelope, "state=\"");
 
     /// <summary>
     /// Reads the child's <c>id</c> back out of a rendered envelope, or null if this is not one.
@@ -156,16 +141,35 @@ public static class SubAgentEnvelope
     /// <para>This is what lets a UI join a finished spawn ROW to the CHILD's own tool calls, which
     /// are reported under the child's agent id and under no other key.</para>
     /// </summary>
-    public static string? IdOf(string? envelope)
+    public static string? IdOf(string? envelope) => Attribute(envelope, "id=\"");
+
+    /// <summary>
+    /// Reads the child's <c>name</c> — the handle it is kept under — back out of a rendered envelope or
+    /// receipt, or null when there is none.
+    ///
+    /// <para>PARSED for the reason <see cref="StateOf"/> gives: a background spawn's receipt is the one
+    /// artefact that carries the handle the parent's later <c>task_output</c> and <c>task_stop</c> take.</para>
+    /// </summary>
+    public static string? NameOf(string? envelope) => Attribute(envelope, "name=\"");
+
+    /// <summary>
+    /// The state a background spawn's receipt carries: the child has started, and its report comes later.
+    /// </summary>
+    public const string Running = "running";
+
+    /// <summary>
+    /// One attribute of the opening tag, or null.
+    ///
+    /// <para>ONLY IN THE OPENING TAG: the same attribute appearing later is the CHILD's own text — it
+    /// routinely writes HTML and XML — and is not ours to read.</para>
+    /// </summary>
+    private static string? Attribute(string? envelope, string marker)
     {
         if (string.IsNullOrEmpty(envelope)) return null;
 
-        const string marker = "id=\"";
         var i = envelope.IndexOf(marker, StringComparison.Ordinal);
         if (i < 0) return null;
 
-        // Only in the opening tag, exactly as StateOf guards: an id= appearing later belongs to the
-        // CHILD's own text — it routinely writes HTML and XML — and is not ours to read.
         var close = envelope.IndexOf('>', 0);
         if (close >= 0 && i > close) return null;
 
@@ -173,6 +177,29 @@ public static class SubAgentEnvelope
         var end = envelope.IndexOf('"', start);
         return end > start ? envelope[start..end] : null;
     }
+
+    /// <summary>
+    /// What a background spawn returns at once, in place of an answer.
+    ///
+    /// <para>IT SAYS WHAT HAPPENS NEXT, because the failure this replaces was a parent that did not know: it
+    /// nudged itself for sixteen turns and stopped before the answer came. Waiting is something the app does
+    /// for it now, and a model not told so polls.</para>
+    ///
+    /// <para>THE NEXT CALLS ARE SPELLED OUT, id and all: a model that copies a call does not have to recall a
+    /// tool name or a handle, and recall is where the live drives saw it fail.</para>
+    ///
+    /// <para>THE WRITE WARNING ONLY FOR A CHILD THAT CAN WRITE: two agents editing one file each believe the
+    /// other did not, and the parent no longer waits at the spawn to keep them apart.</para>
+    /// </summary>
+    public static string Receipt(string childId, string name, bool canWrite) =>
+        $"<sub_agent id=\"{childId}\" name=\"{name}\" state=\"{Running}\">\n"
+        + "Running in the background. Its report will come to you as a message when it finishes — in this "
+        + "turn if you are still working, as a new turn if you are not. Do not poll task_list for it and do "
+        + "not do this work yourself; carry on with other work, or end your turn.\n"
+        + $"If your next step cannot go on without its answer: task_output {{\"id\": \"{name}\", \"wait\": true}}\n"
+        + $"To stop it: task_stop {{\"id\": \"{name}\"}}"
+        + (canWrite ? "\nIt may edit files. Do not edit what it is working on until it reports." : "")
+        + "\n</sub_agent>";
 
     /// <summary>Renders the envelope the parent's model reads as this spawn's tool result.</summary>
     /// <param name="childId">The child's own agent id, for a reader tracing it back to its logs.</param>

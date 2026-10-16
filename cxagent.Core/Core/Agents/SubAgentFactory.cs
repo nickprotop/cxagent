@@ -217,6 +217,16 @@ public sealed class SubAgentFactory
         public int? MaxConcurrentAgents { get; init; }
 
         /// <summary>
+        /// Whether a spawn may run in the background — returning a receipt at once and reporting to its
+        /// parent when it ends. True unless the front end has one answer to give.
+        ///
+        /// <para>HEADLESS TURNS IT OFF (spec decision 8): a run that prints one answer and exits has
+        /// nobody to deliver a later report to, so a spawn there must wait and put its work in that
+        /// answer.</para>
+        /// </summary>
+        public bool AllowBackground { get; init; } = true;
+
+        /// <summary>
         /// The same runtime with a type's provider and window substituted — a NEW record, never a
         /// mutation of this one.
         ///
@@ -320,6 +330,13 @@ public sealed class SubAgentFactory
     /// <summary>The session's selection, for a caller that must predict what a child will have
     /// before creating one — see SubAgentSpawner.ChildCanWrite.</summary>
     internal Jobs.ToolSelection? SessionToolSelection => _runtime.ToolSelection;
+
+    /// <summary>The port a background child's report reaches its parent through; null where nothing
+    /// can be told, which keeps every spawn in the foreground.</summary>
+    internal IAgentDelivery? Delivery => _runtime.Delivery;
+
+    /// <summary>See <see cref="SubAgentRuntime.AllowBackground"/>.</summary>
+    internal bool AllowBackground => _runtime.AllowBackground;
 
 
     /// <param name="parentAgentId">

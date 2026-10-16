@@ -158,6 +158,10 @@ public static class HeadlessRun
             Observer = output,
             ToolObserver = output,
             Policy = policy,
+
+            // SPAWNS WAIT HERE (spec decision 8): this run prints one answer and exits, so a child's
+            // report delivered later would reach nobody — its work has to be in that answer.
+            BackgroundAgents = false,
         }, new WorkingMode(r.Options.Mode, edits));
 
         // AFTER OPEN, which restores a resumed session's saved level: the flag is this run's own

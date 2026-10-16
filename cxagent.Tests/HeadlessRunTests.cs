@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 using CxAgent.Headless;
@@ -410,5 +411,25 @@ public class HeadlessRunTests : IDisposable
         await Run(model, null, "-p", "/clear");
 
         Assert.Contains(model.LastMessages!, m => m.Role == "user" && m.Content == "/clear");
+    }
+
+    /// <summary>HEADLESS SPAWNS WAIT (spec decision 8): the run's one answer is built from the child's.</summary>
+    [Fact]
+    public async Task AHeadlessSpawn_RunsInTheForeground()
+    {
+        var model = new MockLlmProvider("m");
+        model.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [Calls.Named(Tool.Agent, new { description = "look", prompt = "find the word" }, id: "s1")],
+        });
+        model.EnqueueResponse(new LlmResponse { Text = "the word is heron", StopReason = "end_turn" });   // the child
+        model.EnqueueResponse(new LlmResponse { Text = "It is heron.", StopReason = "end_turn" });        // the parent
+
+        var (code, output, _) = await Run(model, null, "-p", "what is the word?");
+
+        Assert.Equal(0, code);
+        Assert.Contains("It is heron.", output);
+        Assert.Contains("state=\"completed\"", model.Text());
     }
 }
