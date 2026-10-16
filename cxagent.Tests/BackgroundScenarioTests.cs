@@ -605,9 +605,16 @@ public class BackgroundScenarioTests : IDisposable
         var run = RunOf(s);
         Assert.True(run.StoppedByUser);
 
-        // SO THE PARENT IS TOLD IT WAS STOPPED — not that it completed.
+        // SO THE PARENT IS TOLD IT WAS STOPPED — not that it completed — and is handed the answer that came
+        // back in the same instant, under a head that says so plainly rather than under "cancelled before
+        // finishing", which would call a whole answer unfinished work.
         Assert.Equal(BackgroundState.Stopped, run.State);
-        Assert.Contains("state=\"cancelled\"", run.Handoff.Result!);
+        var report = run.Handoff.Result!;
+        Assert.Contains("was stopped by the user just as it finished; its answer is below, but the work was stopped",
+            report);
+        Assert.Contains("Do not redo its work unless the user asks", report);
+        Assert.Contains("found it", report);
+        Assert.DoesNotContain("cancelled before finishing", report);
 
         // LEFT, NOT WOKEN: a stop's report starts no turn of its own.
         Assert.True(await StaysAt(parent, 2), "the stopped run's report woke the parent");
@@ -615,7 +622,7 @@ public class BackgroundScenarioTests : IDisposable
         // AND THE NEXT TURN READS A STOP AND IS REFUSED A RESUME — consistently: the user stopped it, the
         // report says so, and the model may not quietly restart it.
         await Turn(s.Session, "what happened?");
-        Assert.Contains("was stopped by the user before it finished", parent.Last);
+        Assert.Contains("was stopped by the user just as it finished", parent.Last);
         Assert.Contains("was stopped by the user, so it will not be resumed", parent.Last);
     }
 

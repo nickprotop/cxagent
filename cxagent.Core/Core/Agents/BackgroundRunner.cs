@@ -38,6 +38,10 @@ internal static class BackgroundRunner
         var (store, kept, run) = (work.Store, work.Kept, work.Run);
         var announced = false;
         var result = new SendResult("", SendOutcome.Failed);
+
+        // THE ANSWER A STOP OVERTOOK, when one did — rendered as the child gave it, while the run is
+        // recorded and reported as stopped. See the override below.
+        SendResult? overtaken = null;
         string? envelope = null;
         try
         {
@@ -59,9 +63,16 @@ internal static class BackgroundRunner
                     // A STOP THE RUN ALREADY ACCEPTED WINS, even over an answer that came back in the same
                     // instant: whoever stopped it has been told it is stopping, and a "completed" report would
                     // contradict that. For the user's stop it would also leave the user-stop mark standing,
-                    // refusing the parent's next agent_send to a child it was told had finished. The answer is
-                    // not lost — it stays in the child's context, where a later send reaches it.
-                    if (!run.MarkAnswered()) result = result with { Outcome = SendOutcome.Cancelled };
+                    // refusing the parent's next agent_send to a child it was told had finished.
+                    //
+                    // THE ANSWER STILL GOES IN THE REPORT, under its own outcome: the work it describes was
+                    // done, and an envelope saying "cancelled before finishing" over a whole answer would have
+                    // the parent treat it as unfinished. The report's head says both facts — see ReportFor.
+                    if (!run.MarkAnswered())
+                    {
+                        overtaken = result;
+                        result = result with { Outcome = SendOutcome.Cancelled };
+                    }
                 }
                 finally
                 {
@@ -76,7 +87,7 @@ internal static class BackgroundRunner
             // "completed", and leave a user-stop mark that refuses the parent's next agent_send.
             run.Finish(result.Outcome == SendOutcome.Cancelled ? BackgroundState.Stopped : BackgroundState.Finished);
 
-            try { envelope = work.Render(result); }
+            try { envelope = work.Render(overtaken ?? result); }
             catch (Exception ex)
             {
                 envelope = SubAgentEnvelope.Render(kept.Agent.Agent.Id, kept.Name, SendOutcome.Failed,
@@ -103,7 +114,7 @@ internal static class BackgroundRunner
             // records the state, so a second call is harmless.
             run.Finish(stopped ? BackgroundState.Stopped : BackgroundState.Finished);
             var shown = Shown(run, state, stopped);
-            run.Handoff.Complete(ReportFor(work, envelope), text => DeliveryOutcomes.Delivered(stopped
+            run.Handoff.Complete(ReportFor(work, envelope, stoppedAsItFinished: overtaken is not null), text => DeliveryOutcomes.Delivered(stopped
                 ? work.Delivery.Leave(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))
                 : work.Delivery.Tell(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))));
         }
@@ -114,19 +125,31 @@ internal static class BackgroundRunner
     /// The report, self-contained: it may arrive after a compaction or a /clear, at a context that no
     /// longer holds why the child was asked — the reason ShellJobExecutor.Report states every fact.
     /// </summary>
-    internal static string ReportFor(BackgroundWork work, string envelope)
+    /// <param name="work">The stretch being reported.</param>
+    /// <param name="envelope">The child's answer, or its account of why there is none.</param>
+    /// <param name="stoppedAsItFinished">
+    /// A stop was accepted in the instant the answer came back: the run is stopped and the answer is whole.
+    /// </param>
+    internal static string ReportFor(BackgroundWork work, string envelope, bool stoppedAsItFinished = false)
     {
         var run = work.Run;
         var start = run.Start;
 
         // A STOP SAYS SO, AND SAYS WHO. "Finished" over a stopped run is false, and a model told only that
-        // the agent was cancelled treats the work as still owed — measured on the local model, it redid a
-        // user-stopped search by hand two runs in three. A user's stop is a decision about the work, not
-        // a failure of the agent, so the report carries that decision.
+        // the agent was cancelled treats the work as still owed and redoes a user-stopped task by hand. A
+        // user's stop is a decision about the work, not a failure of the agent, so the report carries that
+        // decision.
+        //
+        // A STOP THAT OVERTOOK THE ANSWER SAYS BOTH: the answer below is whole, and the work was still
+        // stopped — which, for the user's stop, still means it is not to be redone.
+        const string doNotRedo = " Do not redo its work unless the user asks for it again; tell them it was stopped.";
+        var by = run.StoppedByUser ? " by the user" : "";
         var ended = run.State != BackgroundState.Stopped ? "has finished."
+            : stoppedAsItFinished
+                ? $"was stopped{by} just as it finished; its answer is below, but the work was stopped."
+                  + (run.StoppedByUser ? doNotRedo : "")
             : run.StoppedByUser
-                ? "was stopped by the user before it finished. Do not redo its work unless the user asks for "
-                  + "it again; tell them it was stopped."
+                ? "was stopped by the user before it finished." + doNotRedo
                 : "was stopped before it finished.";
 
         var head = start.IsResume
