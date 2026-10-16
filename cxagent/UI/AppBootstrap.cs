@@ -153,40 +153,20 @@ public static class AppBootstrap
 
         var env = Startup.Env();
 
-        // RESOLVED ONCE, AND NEVER REBOUND. Four sites want to repoint it — startup, --model, the
-        // setup save, and /model — while every other consumer in this method closes over the VARIABLE. A
-        // mutable local makes correctness depend on when each consumer happens to read, which is not
-        // a property anything can check: read too early and a consumer keeps a stale record (the
-        // auto classifier consulting a provider config the settings no longer describe, silently,
-        // because the mode still works), read too late and it compares a record with itself (an MCP
-        // reload gated on `resolution.McpServers` AFTER `resolution` has become the new value is
-        // always equal, so the reload never runs — and it compiles clean).
+        // TWO VALUES, TWO LIFETIMES. `startup` is what this process was launched with and never
+        // changes: what was drawn and started at launch reads it — the theme, the window, the shared
+        // services, the MCP servers and plugins started below, the first-run gate. `configNow` is the
+        // config the process runs on NOW: a saved edit in the configuration dialog replaces it, and
+        // every site that acts on the present — a new tab, a re-wire — reads it at the moment it acts.
+        // A local captured by closures cannot be both, which is why the live one is a holder: a closure
+        // that captured the value itself kept the launch config for the life of the process.
         //
-        // `readonly` in a local function's closure is not expressible, so this is a local that is
-        // simply never assigned again — every later site takes it as a PARAMETER or reads it as
-        // the process's fixed catalog. The two startup cases fold into one expression below so that
-        // there is no window where it holds a value somebody could observe and then see change.
-        //
-        // WHAT THIS IS NOT: it is not the active model. That is session state (Session.InstanceName)
-        // and /model changes it freely — see SwitchModel. Conflating "the catalog this process was
-        // started with" and "the model this session is talking to" into one variable is what made
-        // both of the above bugs possible; they are different lifetimes and now different things.
+        // WHAT NEITHER IS: the active model. That is session state (Session.InstanceName), and /model
+        // changes it freely.
         //
         // --model OVERRIDES defaultProvider FOR THIS RUN ONLY, without touching config. Same rule
         // /model follows: naming an instance that is not configured stops rather than falling back,
         // because silently starting on the model the user was trying to avoid is the worst outcome.
-        // ASSIGNED ONCE, BY CONVENTION — and the convention is not compiler-enforced, which is worth
-        // stating plainly rather than implying otherwise. C# has no readonly local, a local captured
-        // by a closure cannot be one, and Run is static so there is no readonly field to hold it
-        // either. `resolution = something` further down would still compile today; it was tried, and
-        // it did.
-        //
-        // What the helper buys is smaller and real: the declaration and the value are one line, so
-        // there is no `ResolvedConfig resolution;` sitting empty inviting branches to fill it,
-        // and the two startup cases cannot drift apart. Enforcement here is the comment above and
-        // the fact that no consumer needs a rebind any more — setup restarts, /model passes its own
-        // record. If a fourth bug of this shape ever appears, the answer is a wrapper type with a
-        // genuinely readonly field, not a stronger comment.
         var startup = Startup.Resolve(paths, env, useMock, options.Instance);
         if (startup is null)
         {
@@ -194,7 +174,7 @@ public static class AppBootstrap
             return 2;
         }
 
-        var resolution = startup;
+        var configNow = new CurrentConfig(startup);
 
         var driver = new NetConsoleDriver();
         var system = new ConsoleWindowSystem(driver,
@@ -217,7 +197,7 @@ public static class AppBootstrap
         // An explicit --theme is a decision the user made for THIS run, so it outranks the file; the
         // gate exists so the whole route can be closed without touching either.
         CxAgentTheme.Install(system,
-            Features.ThemeSelection ? options.Theme ?? resolution.Theme : null);
+            Features.ThemeSelection ? options.Theme ?? startup.Theme : null);
 
         ColorScheme.DeriveFrom(system.ThemeStateService.CurrentTheme);
         var logs = new LogFileManager(paths);
@@ -311,10 +291,10 @@ public static class AppBootstrap
         // NOT A SECOND GUARD: both call the one Offers, so there is no second rule to drift. What is
         // duplicated is WHEN it is asked, which is forced by the banner being written once.
         if (startupMode.CanDelegate
-            && !CxAgent.Core.Jobs.ToolSelection.Offers(resolution.Tools, CxAgent.Core.Jobs.Tool.Agent))
+            && !CxAgent.Core.Jobs.ToolSelection.Offers(startup.Tools, CxAgent.Core.Jobs.Tool.Agent))
             startupMode = startupMode with { Agent = CxAgent.Core.Agents.AgentMode.Single };
 
-        var mainWindow = new MainWindow(system, resolution, logs)
+        var mainWindow = new MainWindow(system, startup, logs)
         {
             // BEFORE Build(), because the banner it writes is a chat message and cannot be revised.
             // The SetMode call further down still fixes the composer line on every /mode; this is the
@@ -542,7 +522,7 @@ public static class AppBootstrap
         // MCP, ITS TOKENS AND THE SESSION MANAGER, built the way every front end builds them — see
         // Startup.Services for the reasons behind their wiring. One HttpClient for the auth traffic,
         // shared rather than per-login: a new one per attempt leaks sockets in TIME_WAIT.
-        var services = Startup.Services(new StartupServicesRequest(paths, stores, permissionGate, logs, resolution));
+        var services = Startup.Services(new StartupServicesRequest(paths, stores, permissionGate, logs, startup));
         var mcp = services.Mcp;
         var mcpTokens = services.McpTokens;
         var manager = services.Manager;
@@ -628,7 +608,7 @@ public static class AppBootstrap
                     new CommandArgument("new [folder]",
                         "open another session in a tab — asks for a folder when none is given"),
                     // THE CURRENT SESSION'S CONFIGURATION AND MODE, NOT THE PROCESS'S STARTUP ONES.
-                    // `resolution` and `startupMode` are the values this window was BUILT with, so a
+                    // `startup` and `startupMode` are the values this window was BUILT with, so a
                     // /model switch or a Shift+Tab before opening a tab was silently ignored: the new
                     // session came up on the old provider, in the mode the app had launched in, while
                     // the status bar it inherited said otherwise. Both live on the session, which is
@@ -636,7 +616,7 @@ public static class AppBootstrap
                     // --save is this tab's, so the new one starts at the instance's saved level.
                     (current, arguments) => new NewSessionCommand(new NewSessionCommand.Host(
                         system, mainWindow, manager, permissionRules,
-                        current.NewSessionResolution ?? resolution, current.Mode, paths.ConfigDir))
+                        current.NewSessionResolution ?? configNow.Value, current.Mode, paths.ConfigDir))
                         .Run(current, NewSessionCommand.FolderFrom(arguments)));
 
             if (declared.Name == "/stats")
@@ -1064,9 +1044,9 @@ public static class AppBootstrap
         // Blocking is acceptable and bounded: every failure path inside returns rather than throws,
         // and each server carries its own timeout. This runs before the UI loop begins, so there is
         // no frame to drop — only a slower start for someone who configured a slow server.
-        if (resolution.McpServers.Count > 0)
+        if (startup.McpServers.Count > 0)
         {
-            mcp.ReloadAsync(resolution.McpServers, CancellationToken.None).GetAwaiter().GetResult();
+            mcp.ReloadAsync(startup.McpServers, CancellationToken.None).GetAwaiter().GetResult();
 
             // Each failure named once, plus any tool dropped for colliding — both are things the
             // user configured and would otherwise watch silently not happen.
@@ -1134,7 +1114,7 @@ public static class AppBootstrap
         // refuses rather than arming a resume nothing applies.
         //
         // SET BEFORE THE FIRST WIRE, so a resume arriving on the first render pump finds it.
-        manager.Rewire = () => WireRunner(resolution);
+        manager.Rewire = () => WireRunner(configNow.Value);
 
         // AND THE PER-SESSION HOOK, WHICH IS WHAT RESUME USES. WireRunner closes over the startup
         // session and assigns four window properties that resolve to the ACTIVE tab, so re-wiring
@@ -1152,15 +1132,23 @@ public static class AppBootstrap
         // declining.
         //
         // ITS OWN RESOLUTION WHERE IT HAS ONE. A re-wire re-resolves the configuration the session
-        // is actually running under; `resolution` is the process's startup config, which is right
-        // only for the session that started with it.
+        // is actually running under; `configNow` is the process's, which is right only for a session
+        // that has none of its own yet.
         manager.RewireOne = target =>
         {
-            WireRunner(target.Resolution ?? resolution, target);
+            WireRunner(target.Resolution ?? configNow.Value, target);
             return true;
         };
 
-        WireRunner(resolution, session);   // startup path, unchanged in effect
+        // A SAVED CONFIG, REACHING A SESSION. Wiring builds this tab's sinks and controls, so it runs on
+        // the UI thread; the conversation was carried before this is called.
+        manager.RebindOne = (target, config) =>
+        {
+            system.EnqueueOnUIThread(() => WireRunner(config, target), "appBootstrap.RebindOne");
+            return true;
+        };
+
+        WireRunner(configNow.Value, session);   // the startup path: nothing has replaced it yet
 
         // AFTER THE WIRE, because the sink it writes to is created inside it.
         if (migrationNotice is not null)
@@ -1187,10 +1175,10 @@ public static class AppBootstrap
         async Task LoadConfiguredPluginsAsync()
         {
             var searchFolders = PluginDiscovery.SearchFolders(
-                resolution.PluginPaths, session.WorkingDirectory, paths.ConfigDir);
+                startup.PluginPaths, session.WorkingDirectory, paths.ConfigDir);
 
-            if (resolution.Plugins.Count > 0)
-                await PluginDiscovery.LoadConfiguredAsync(session, resolution.Plugins, searchFolders,
+            if (startup.Plugins.Count > 0)
+                await PluginDiscovery.LoadConfiguredAsync(session, startup.Plugins, searchFolders,
                     paths.ConfigDir, message => transcript.Write(new Message(message, Severity.Warning)),
                     CancellationToken.None);
 
@@ -1209,7 +1197,7 @@ public static class AppBootstrap
         /// with the command that does it printed next to the name.
         void ReportUnconfiguredPlugins(IReadOnlyList<string> searchFolders)
         {
-            var found = PluginDiscovery.FindUnconfigured(resolution.Plugins, searchFolders);
+            var found = PluginDiscovery.FindUnconfigured(startup.Plugins, searchFolders);
             if (found.Count == 0) return;
 
             // ONE MESSAGE FOR ALL OF THEM — see FormatUnconfiguredNotice for what it says and why
@@ -1485,7 +1473,7 @@ public static class AppBootstrap
             //
             // TWO FLAGS MEAN "NO PROVIDER", AND BOTH BELONG INSIDE THE ONE CHECK. Guarding on
             // `session.HasAgent` here while an `if (!mainWindow.SubmissionEnabled) return;` sits
-            // ABOVE it fixes nothing: SubmissionEnabled is set from resolution.HasProvider
+            // ABOVE it fixes nothing: SubmissionEnabled is set from startup.HasProvider
             // (MainWindow.cs:500), so the handler returns before the classification runs and /exit
             // still does nothing. Reported against v0.4.2 — text types into the composer, Enter does
             // nothing. SubmissionEnabled is safe to fold in here because it is not a busy flag: its
@@ -2000,7 +1988,7 @@ public static class AppBootstrap
             }
         }
 
-        if (!resolution.HasProvider)
+        if (!startup.HasProvider)
         {
             // Deferred onto the UI thread: the wizard's SwapContentHost needs the message loop that
             // system.Run() starts, so it cannot be awaited inline here. EnqueueOnUIThread runs it on the
