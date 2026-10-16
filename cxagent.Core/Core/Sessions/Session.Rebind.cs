@@ -15,8 +15,16 @@ public sealed partial class Session
     /// </summary>
     public DateOnly StartedOn { get; internal set; } = DateOnly.FromDateTime(DateTime.Now);
 
-    /// <summary>The conversation's size as the provider last measured it, in tokens; null before a turn.</summary>
-    public int? ContextUsed => Host?.Context.Used;
+    /// <summary>
+    /// The conversation's size in tokens: the model's own count of the last request — the number the
+    /// status bar shows — or, from a provider that reports none, the characters at four to a token. Null
+    /// only with nothing in the conversation. AN ESTIMATE IS ENOUGH: the question it answers is whether a
+    /// tab has a prompt cache worth asking about, and a silent server must not make that "no".
+    /// </summary>
+    public int? ContextUsed => Host is not { } host ? null
+        : host.LastReportedInput
+          ?? host.Context.ProjectedUsed
+          ?? (host.Context.Count > 0 ? Math.Max(1, host.Context.TotalChars() / 4) : null);
 
     /// <summary>A saved change waits for this tab's next clear or compaction — the mode line says so.</summary>
     public bool ConfigPending => Volatile.Read(ref _pendingFresh) is not null;

@@ -82,7 +82,8 @@ public sealed class McpCommand(
     // THE ONLY PLACE A BROWSER OPENS, and only because the user typed /mcp login. A 401 during
     // a turn sets a status and stops; opening a browser on the agent's own initiative, while its
     // user may be away from the machine, asks for credentials at a moment nobody chose.
-    async Task LoginAsync(string serverName)
+    /// <summary>Authorises <paramref name="serverName"/> — what <c>/mcp login</c> runs, and the configuration dialog's Log in.</summary>
+    public async Task LoginAsync(string serverName)
     {
         if (mcp.AuthMetadataUrlFor(serverName) is not { } metadataUrl)
         {

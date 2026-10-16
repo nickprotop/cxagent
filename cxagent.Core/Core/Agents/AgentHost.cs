@@ -204,8 +204,15 @@ public sealed class AgentHost : IDisposable
     private void RecordInputTokens(int inputTokens)
     {
         if (inputTokens <= 0) return;
+        LastReportedInput = inputTokens;
         ContextUsedUpdated?.Invoke(this, inputTokens);
     }
+
+    /// <summary>
+    /// The model's own count of the last request it received — the whole request, system prompt and
+    /// tools included — or null before one. The figure the status bar shows.
+    /// </summary>
+    public int? LastReportedInput { get; private set; }
 
     /// <summary>
     /// One model turn finished; the payload is how many tool calls it made.

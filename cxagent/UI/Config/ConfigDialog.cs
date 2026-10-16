@@ -49,6 +49,7 @@ public static class ConfigDialog
 
     private static TabControl? _tabs;
     private static ProvidersTab? _providers;
+    private static McpTab? _mcp;
     private static ConfigDialogHost? _host;
     private static Action? _onClosed;
 
@@ -98,7 +99,8 @@ public static class ConfigDialog
         };
         _providers = new ProvidersTab(host, () => _window);
         _tabs.AddTab("Providers", _providers.Content);
-        _tabs.AddTab("MCP servers", McpContent(host));
+        _mcp = new McpTab(host, () => _window);
+        _tabs.AddTab("MCP servers", _mcp.Content);
         window.AddControl(_tabs);
 
         window.AddControl(new RuleControl
@@ -130,7 +132,8 @@ public static class ConfigDialog
         window.KeyPressed += (_, e) =>
         {
             if (e.KeyInfo.Key != ConsoleKey.S || e.KeyInfo.Modifiers != ConsoleModifiers.Control) return;
-            _providers?.SaveFromKey();
+            if (_tabs?.ActiveTabIndex == 1) _mcp?.SaveFromKey();
+            else _providers?.SaveFromKey();
             e.Handled = true;
         };
 
@@ -143,6 +146,7 @@ public static class ConfigDialog
             _window = null;
             _tabs = null;
             _providers = null;
+            _mcp = null;
             var closed = _onClosed;
             _onClosed = null;
             closed?.Invoke();
@@ -155,7 +159,7 @@ public static class ConfigDialog
         // FIRST RUN OPENS ON THE CARDS, focused: there is nothing to select yet, and choosing where the
         // model runs is the one thing to do. Shown once the window is up, so a card can take focus.
         if (firstRun) _providers.ShowGallery("cxagent needs one provider to start. Pick where your model runs.");
-        else if (_tabs.ActiveTabIndex == 0) window.FocusManager.SetFocus(_providers.Rail, FocusReason.Programmatic);
+        else window.FocusManager.SetFocus(_tabs.ActiveTabIndex == 1 ? _mcp.Rail : _providers.Rail, FocusReason.Programmatic);
     }
 
     /// <summary>
@@ -165,10 +169,10 @@ public static class ConfigDialog
     public static bool CloseIfOpen()
     {
         if (_window is not { } window) return false;
-        if (_providers?.HasUnsaved == true && _host is { } host)
+        if (_host is { } host)
         {
-            _ = AskThenCloseAsync(host, window, _providers.SelectedName!);
-            return true;
+            if (_providers?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _providers.SelectedName!); return true; }
+            if (_mcp?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _mcp.SelectedName!); return true; }
         }
         window.Close();
         return true;
@@ -187,6 +191,4 @@ public static class ConfigDialog
         _tabs.ActiveTabIndex = tab == ConfigTab.Mcp ? 1 : 0;
     }
 
-    private static IWindowControl McpContent(ConfigDialogHost host) =>
-        new MarkupControl(["MCP servers"]);
 }

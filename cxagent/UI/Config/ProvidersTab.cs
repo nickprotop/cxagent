@@ -769,6 +769,14 @@ internal sealed class FieldGrid
         _row++;
     }
 
+    /// <summary>Empties the grid, for a list that is rebuilt in place.</summary>
+    public void Clear()
+    {
+        foreach (var child in Control.Children.ToList()) Control.RemoveControl(child);
+        Control.RowDefinitions.Clear();
+        _row = 0;
+    }
+
     public void AddBare(IWindowControl control)
     {
         Control.RowDefinitions.Add(GridLength.Auto());

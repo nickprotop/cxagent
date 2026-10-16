@@ -148,4 +148,16 @@ public class SessionInPlaceTests : IDisposable
         Assert.NotNull(policy.Classifier);
         Assert.Same(host, session.Host);
     }
+
+    // A TAB WITH A CONVERSATION HAS A CACHE TO LOSE, whether or not its provider reports token usage —
+    // the question about it must not be skipped because a server stays silent about counts.
+    [Fact]
+    public async Task ContextUsed_IsEstimated_WhenTheProviderReportsNoUsage()
+    {
+        var (manager, session) = Wired(Config(("local", new LevelledMock(["on"]))));
+        using var _m = manager;
+        await Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("hello there")).Turn;
+
+        Assert.True(session.ContextUsed > 0);
+    }
 }
