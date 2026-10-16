@@ -11,9 +11,9 @@ public sealed record HandoffRead(string? Result, bool Ended, bool AlreadySent);
 ///
 /// <para>THERE ARE TWO WAYS IN: a message delivered to the parent, and the answer to a
 /// <c>task_output</c> call that is waiting for it. A result that arrives both ways is a wake that
-/// repeats it; one that arrives neither way is a lost report. Every race found in review came from
-/// two places each deciding which way it went, so the decision is made here, once, under one lock,
-/// and whoever loses the race is told "already sent" rather than delivering it again.</para>
+/// repeats it; one that arrives neither way is a lost report. Two places each deciding which way it
+/// goes can each decide differently in the same instant, so the decision is made here, once, under one
+/// lock, and whoever loses the race is told "already sent" rather than delivering it again.</para>
 ///
 /// <para>THE CALLBACKS RUN OUTSIDE THE LOCK. <c>send</c> and <c>leaveIfAbandoned</c> call into a
 /// session that may do arbitrary work — including reading this handoff back. The state moves to

@@ -5,7 +5,7 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// What the model reads about sub-agents and background work, checked against what the app now does.
+/// What the model reads about sub-agents and background work, checked against what the app does.
 ///
 /// <para>A STALE SENTENCE FAILS SILENTLY: a description naming a tool that no longer exists, or saying
 /// a spawn waits where it returns at once, compiles and passes every behaviour test — and a model acting

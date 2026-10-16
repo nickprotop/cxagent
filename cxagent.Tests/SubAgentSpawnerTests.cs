@@ -155,7 +155,7 @@ public class SubAgentSpawnerTests
 
     /// <summary>
     /// THE DESCRIPTION MATCHES THE DEFAULT: a spawn runs in the background, and the model is told when to
-    /// wait instead — while the guidance tuned across live drives survives the rewrite.
+    /// wait instead — and the delegation guidance around that paragraph is still there.
     /// </summary>
     [Fact]
     public void Definition_SaysSpawnsRunInTheBackground_AndWhenToWait()

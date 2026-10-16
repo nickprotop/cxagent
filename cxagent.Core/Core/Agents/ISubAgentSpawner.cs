@@ -191,15 +191,15 @@ public static class SubAgentEnvelope
     /// <summary>
     /// What a background spawn returns at once, in place of an answer.
     ///
-    /// <para>IT SAYS WHAT HAPPENS NEXT, because the failure this replaces was a parent that did not know: it
-    /// nudged itself for sixteen turns and stopped before the answer came. Waiting is something the app does
-    /// for it now, and a model not told so polls.</para>
+    /// <para>IT SAYS WHAT HAPPENS NEXT: the report arrives as a message without the parent doing anything,
+    /// and a model not told so polls for it — or ends its turn early and stops before the answer comes.</para>
     ///
     /// <para>THE NEXT CALLS ARE SPELLED OUT, id and all: a model that copies a call does not have to recall a
-    /// tool name or a handle, and recall is where the live drives saw it fail.</para>
+    /// tool name or a handle, and recalling them is where a model goes wrong.</para>
     ///
     /// <para>THE WRITE WARNING ONLY FOR A CHILD THAT CAN WRITE: two agents editing one file each believe the
-    /// other did not, and the parent no longer waits at the spawn to keep them apart.</para>
+    /// other did not, and a background spawn returns at once, so nothing holds the parent off the files the
+    /// child is working on.</para>
     /// </summary>
     public static string Receipt(string childId, string name, bool canWrite) =>
         $"<sub_agent id=\"{childId}\" name=\"{name}\" state=\"{Running}\">\n"

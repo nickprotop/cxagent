@@ -356,7 +356,7 @@ public class BackgroundSpawnTests
 
     /// <summary>
     /// A STOP SAYS WHO STOPPED IT. "Finished" over a stopped run is false, and a model not told the user
-    /// ended the work redoes it by hand — measured on the local model, two runs in three.
+    /// ended the work redoes it by hand.
     /// </summary>
     [Theory]
     [InlineData(true, "stopped by the user")]

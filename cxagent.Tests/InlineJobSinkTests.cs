@@ -996,7 +996,7 @@ public class InlineJobSinkTests
     /// <summary>
     /// A ROW THAT REOPENED SETTLES WITH THE TIME THE WORK TOOK, not the time its call took. A background
     /// spawn's call returns its receipt at once, so the spawn's own duration is near zero; a row that kept
-    /// it would say "done · 0.0s" over minutes of work — seen on the first live drive.
+    /// it would say "done · 0.0s" over minutes of work.
     /// </summary>
     [Fact]
     public void AReopenedRow_SettlesWithTheTimeTheWorkTook()

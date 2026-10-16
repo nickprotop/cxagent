@@ -2949,9 +2949,9 @@ public sealed class Agent
                 // governed by whoever asked for it.
                 ?? Text(CanSpawn && _reach is not null && _reach.Claims(call.Name)
                     ? await _reach.SendAsync(new SendRequest(
-                            // `name` STILL RESOLVES: a model with habits, or a conversation resumed from
-                            // before the argument was renamed, sends it — and a send refused over a
-                            // spelling would make it re-spawn the child it meant to reach.
+                            // `name` STILL RESOLVES: a model with habits, or a conversation saved with the
+                            // `name` argument, sends it — and a send refused over a spelling would make it
+                            // re-spawn the child it meant to reach.
                             To: ArgOrEmpty(call, "to") is { Length: > 0 } to ? to : ArgOrEmpty(call, "name"),
                             Prompt: ArgOrEmpty(call, "prompt"),
                             Background: Args.ReadBool(call, "background") ?? true,

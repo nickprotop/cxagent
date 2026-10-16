@@ -82,8 +82,8 @@ public interface IAgentDelivery
     /// <summary>
     /// <see cref="Tell(string, string)"/>, with a short line for the transcript.
     ///
-    /// <para>A DEFAULT MEMBER so an implementation that predates notices keeps compiling and delivers the
-    /// model's text as it always did.</para>
+    /// <para>A DEFAULT MEMBER, delivering the model's text alone: an implementation with no transcript to
+    /// draw on — a test double, a headless port — has nowhere to put the short line, and need not say so.</para>
     /// </summary>
     DeliveryOutcome Tell(string agentId, AgentNotice notice) => Tell(agentId, notice.ForModel);
 

@@ -360,7 +360,7 @@ public class TaskToolsShellTests
 
     /// <summary>
     /// A CONFIG NAMING A REMOVED TOOL IS WARNED, with the replacement: an unknown name is legal and ignored,
-    /// so "-job_kill" would otherwise silently stop restricting the tool that now does its job.
+    /// so "-job_kill" would otherwise silently stop restricting the tool that does its job.
     /// </summary>
     [Theory]
     [InlineData("-job_kill", "task_stop")]

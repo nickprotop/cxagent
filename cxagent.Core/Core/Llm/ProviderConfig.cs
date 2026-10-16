@@ -469,18 +469,12 @@ public static class ProviderConfigLoader
     }
 
     /// <summary>
-    /// A <c>tools</c> array as a selection, warning on any term whose SHAPE is wrong.
+    /// Tool names this build no longer has, and what does their job now.
     ///
-    /// <para>WARN, NEVER THROW. Config's contract is warn-and-continue for everything but a hard
-    /// error, and a malformed term is a typo rather than a broken installation. Throwing here would
-    /// also be worse than it sounds: Apply throws per REQUEST, so an unvalidated bad term opens the
-    /// session fine and fails every turn afterwards.</para>
-    ///
-    /// <para>UNKNOWN NAMES ARE NOT WARNED ABOUT. A name matching no tool today may match tomorrow —
-    /// an injected tool, a skill that appears — and an unmatched name grants nothing. Only the
-    /// grammar is checked.</para>
+    /// <para>WARNED ABOUT, UNLIKE OTHER UNKNOWN NAMES: a selection naming one was written for a tool that
+    /// existed, so it no longer restricts what it was written to restrict — "-job_kill" silently stops
+    /// removing the stop tool. The replacement is named, and the fix left to the user.</para>
     /// </summary>
-    /// <summary>Tool names this build no longer has, and what does their job now.</summary>
     internal static readonly IReadOnlyDictionary<string, string> RemovedTools = new Dictionary<string, string>
     {
         ["job_list"] = Jobs.Tool.TaskList,
@@ -488,6 +482,18 @@ public static class ProviderConfigLoader
         ["agent_list"] = Jobs.Tool.TaskList,
     };
 
+    /// <summary>
+    /// A <c>tools</c> array as a selection, warning on any term whose SHAPE is wrong.
+    ///
+    /// <para>WARN, NEVER THROW. Config's contract is warn-and-continue for everything but a hard
+    /// error, and a malformed term is a typo rather than a broken installation. Throwing here would
+    /// also be worse than it sounds: Apply throws per REQUEST, so an unvalidated bad term opens the
+    /// session fine and fails every turn afterwards.</para>
+    ///
+    /// <para>AN UNKNOWN NAME IS NOT WARNED ABOUT. A name matching no tool today may match tomorrow —
+    /// an injected tool, a skill that appears — and an unmatched name grants nothing. A name this build
+    /// RETIRED is the exception: see <see cref="RemovedTools"/>.</para>
+    /// </summary>
     private static Jobs.ToolSelection? ReadToolSelection(
         JsonElement parent, string where, List<string> warnings)
     {
@@ -510,7 +516,7 @@ public static class ProviderConfigLoader
 
             // A NAME THIS BUILD RETIRED IS WARNED ABOUT, NAMING ITS REPLACEMENT. Unknown names are
             // otherwise legal and ignored, so "-job_kill" would silently stop restricting the tool that
-            // now does that job; the warning makes that visible, and what the selection should say is
+            // does that job; the warning makes that visible, and what the selection should say is
             // the user's decision — nothing is mapped.
             var bare = term.Trim().TrimStart('+', '-');
             if (RemovedTools.TryGetValue(bare, out var replacement))

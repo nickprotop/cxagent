@@ -276,7 +276,6 @@ public sealed partial class Session
         return CommandStatus.Reported;
     }
 
-    /// <summary>Says what changed in this session's working folder, per <c>git diff</c>.</summary>
     /// <summary>
     /// The task tools as the session agent sees them — every kept sub-agent and every live command.
     ///
@@ -402,6 +401,7 @@ public sealed partial class Session
         return CommandStatus.Changed;
     }
 
+    /// <summary>Says what changed in this session's working folder, per <c>git diff</c>.</summary>
     public CommandStatus ShowDiff(string arguments)
     {
         Say(Commands.DiffCommand.Render(arguments, WorkingDirectory));

@@ -243,7 +243,7 @@ public class ChildLivenessTests
         }
     }
 
-    /// <summary>THE OLD ARGUMENT NAME STILL RESOLVES: a model with habits, or a resumed conversation, sends `name`.</summary>
+    /// <summary>`name` STILL RESOLVES: a model with habits, or a conversation saved with that argument, sends it.</summary>
     [Fact]
     public async Task AgentSend_AcceptsTheOldNameArgument()
     {
