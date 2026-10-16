@@ -243,7 +243,7 @@ public sealed class ProvidersTab
     private string TabsLine(string name)
     {
         var tabs = TabsByInstance().TryGetValue(name, out var n) ? n : 0;
-        return tabs == 0 ? "" : $"[{ColorScheme.MutedMarkup}]{(tabs == 1 ? "1 open tab" : $"{tabs} open tabs")} on '{MarkupParser.Escape(name)}' {(tabs == 1 ? "moves" : "move")} to a saved change when idle.[/]";
+        return tabs == 0 ? "" : $"[{ColorScheme.MutedMarkup}]{(tabs == 1 ? "1 open tab is" : $"{tabs} open tabs are")} on '{MarkupParser.Escape(name)}' — a new key reaches {(tabs == 1 ? "it" : "them")} in place; a new model or endpoint asks first.[/]";
     }
 
     private void BuildDetail(InstanceDraft draft)

@@ -430,6 +430,32 @@ levels instead — `low` to `max` — and shows its thinking the same way.
 
 ---
 
+## Configuration, in the app
+
+![The configuration dialog on its Providers tab: the instances on the left with the default starred and the open tab counted, the selected one's endpoint, model, masked key and thinking level beside it](34-configuration.png)
+
+`F8` opens one dialog for providers, MCP servers and agent types. The rail lists every instance — `★`
+marks the default, `◆` the auto-mode reviewer, and `· 1 tab` counts the open tabs on it. Beside it, the
+selected one's fields: the endpoint, the model (`Change…` lists what the endpoint serves), the key —
+`set · …ocal`, its last four characters, never the key — and the thinking level new sessions start at.
+Advanced, folded, holds the rest.
+
+A save applies at once. The line above Save says what that means for the tab on it: a new key reaches it
+in place and keeps its prompt cache; a new model or endpoint would re-send the conversation, so Save asks
+first — now, after compressing, at the tab's next clear or compaction, or only for new tabs.
+
+---
+
+## First run
+
+![First run with no config: the configuration dialog open on six cards — Anthropic, OpenRouter, OpenAI, Ollama, llama.cpp and OpenAI-compatible](35-first-run.png)
+
+With no `config.json`, cxagent opens the dialog on a card per kind of endpoint, the first one focused.
+A card fills in what it knows — llama.cpp's port, OpenRouter's address and attribution header — and the
+model is picked from what the endpoint serves. The first save wires the session; type a goal and it runs.
+
+---
+
 ## A second project, and a worker's receipts
 
 ![A session exploring a codebase, with two finished workers and the panel showing what it cost](session-overview.png)
