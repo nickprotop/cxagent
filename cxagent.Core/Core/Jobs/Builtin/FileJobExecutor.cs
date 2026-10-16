@@ -426,7 +426,26 @@ public class FileJobExecutor : IJobExecutor
         output["content"] = string.Join('\n', hits);
         output["count"] = hits.Count;
         if (hits.Count >= limit) output["truncated"] = true;
+
+        // A REGEX SENT AS LITERAL TEXT finds nothing, and "count: 0" reads as "not used anywhere"
+        // — the most misleading answer a search can give. Seen live: `Usage\.` and
+        // `Usage.Text|Usage\b.*Text` both came back empty against a file that calls Usage.Text,
+        // because the model wrote regex syntax without `regex: true`. Only on zero hits, so the
+        // hint costs nothing when the literal search worked, and a false alarm is one ignored line.
+        if (rx is null && hits.Count == 0 && LooksLikeRegex(needle))
+            output["hint"] = "no literal matches, and `pattern` looks like a regular expression. "
+                           + "Searches are literal unless you set `regex: true` — retry with it if "
+                           + "you meant a regex.";
     }
+
+    /// <summary>
+    /// Whether a literal search pattern carries regex syntax a model would not write by accident:
+    /// an escape such as <c>\.</c> or <c>\b</c>, an alternation, <c>.*</c> or <c>.+</c>, or an anchor
+    /// at either end.
+    /// </summary>
+    private static bool LooksLikeRegex(string pattern) =>
+        System.Text.RegularExpressions.Regex.IsMatch(pattern,
+            @"\\[.()\[\]{}|*+?^$\\bBdDwWsS]|\||\.[*+]|^\^|\$$");
 
     /// <summary>
     /// The declaration a matched line sits inside, as a "[in Foo]" prefix — or "" when none is

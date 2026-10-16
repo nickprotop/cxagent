@@ -768,6 +768,37 @@ public class FileJobExecutorTests : IDisposable
         Assert.DoesNotContain("axb", content);   // '.' was not a wildcard
     }
 
+    [Theory]
+    [InlineData(@"Usage\.")]
+    [InlineData(@"Usage.Text|Usage\b.*Text")]
+    [InlineData(@"^\s*public")]
+    public async Task Search_ARegexSentAsLiteral_ThatFindsNothing_SaysToSetRegex(string pattern)
+    {
+        // Seen live: both of the first two came back "count: 0" against a codebase that calls
+        // Usage.Text, because regex syntax was searched for as literal characters. Zero hits with
+        // no explanation reads as "not used anywhere".
+        File.WriteAllText(Path.Combine(_dir, "a.cs"), "    public void M() => Console.WriteLine(Usage.Text);");
+
+        var r = await Run(("action", "search"), ("path", _dir), ("pattern", pattern));
+
+        Assert.Equal(0, r.Output["count"]);
+        Assert.Contains("regex: true", (string)r.Output["hint"]!);
+    }
+
+    [Fact]
+    public async Task Search_NoRegexHint_WhenTheLiteralSearchFoundSomething_OrThePatternIsPlainText()
+    {
+        File.WriteAllText(Path.Combine(_dir, "a.cs"), "a || b");
+
+        var found = await Run(("action", "search"), ("path", _dir), ("pattern", "a || b"));
+        var plain = await Run(("action", "search"), ("path", _dir), ("pattern", "Usage.Text"));
+
+        Assert.Equal(1, found.Output["count"]);
+        Assert.False(found.Output.ContainsKey("hint"));
+        Assert.Equal(0, plain.Output["count"]);
+        Assert.False(plain.Output.ContainsKey("hint"));
+    }
+
     [Fact]
     public async Task Search_AnInvalidRegex_SaysHowToFixIt()
     {

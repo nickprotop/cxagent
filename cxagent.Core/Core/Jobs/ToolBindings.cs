@@ -158,9 +158,13 @@ public static class ToolBindings
         // — but requiring a directory the model has no opinion about is friction on every search.
         (BuiltinTool.SearchFiles, new ToolBinding("grep", "file", "search",
             Params: ["pattern", "path", "regex", "glob", "limit"], Required: ["pattern"],
+            // LITERAL BY DEFAULT, SAID HERE and not only on the `regex` param: "text or a regex"
+            // alone read as "either works", and a live drive sent `Usage\.` without the flag and
+            // got zero hits for a name the codebase uses.
             Description: "Search file CONTENTS for text or a regex, optionally restricted to files "
-                       + "matching a glob. Use this rather than run_shell with grep or rg — it "
-                       + "needs no approval.")),
+                       + "matching a glob. `pattern` is LITERAL text unless you set `regex: true` "
+                       + "— without it, \\. or | or \\b are searched for as those exact characters. "
+                       + "Use this rather than run_shell with grep or rg — it needs no approval.")),
         // NO DESCRIPTION AT ALL until now, so the model was told this tool is a "File Operation" —
         // the executor's DisplayName, which serves six actions. The one tool that can destroy work
         // silently was the one with nothing said about it.
