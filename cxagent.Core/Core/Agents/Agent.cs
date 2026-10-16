@@ -1564,6 +1564,14 @@ public sealed class Agent
             // longer describes what the reading covers.
             var sentChars = _context.TotalChars();
 
+            // AND THE WHOLE REQUEST, for judging the reading: the provider counts the system prompt and
+            // every tool definition too, so a short conversation behind them reports far more tokens
+            // than its own characters — a possible reading, not a garbage one.
+            var requestChars = messages.Sum(m => m.Content?.Length ?? 0)
+                + tools.Sum(t => t.Name.Length + t.Description.Length
+                    // A TOOL MAY CARRY NO SCHEMA AT ALL — an undefined element, whose text cannot be read.
+                    + (t.InputSchema.ValueKind == System.Text.Json.JsonValueKind.Undefined ? 0 : t.InputSchema.GetRawText().Length));
+
             // PUBLISHED AS SENT: this list, at this moment, is a valid conversation, so a side
             // question forked from it never inherits an unanswered tool call.
             Publish(messages, tools);
@@ -1629,7 +1637,7 @@ public sealed class Agent
             // estimate honestly after a compaction. Published BEFORE the compression check below, so
             // the reading that TRIGGERS a compression is the one the user sees; the row that follows
             // then explains the drop.
-            _context.RecordUsage(response.Usage.InputTokens, sentChars);
+            _context.RecordUsage(response.Usage.InputTokens, sentChars, requestChars);
             if (response.Usage.InputTokens > 0)
                 ContextUsed?.Invoke(response.Usage.InputTokens);
 

@@ -255,6 +255,21 @@ public class AgentContextTests
     /// only thing standing between it and the trigger. A context of 371 characters cannot be 249,125
     /// tokens — that was the actual pairing in the log.
     /// </summary>
+    /// <summary>
+    /// THE READING COVERS THE WHOLE REQUEST — system prompt and tool definitions too — so it is judged
+    /// against the whole request. A short conversation behind a 6,917-token prompt is not an impossible
+    /// reading; judged against the conversation's 100 characters alone, it looked like one.
+    /// </summary>
+    [Fact]
+    public void RecordUsage_JudgesTheReading_AgainstTheWholeRequest()
+    {
+        var ctx = new AgentContext(window: 212_992);
+        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 100) });
+        ctx.RecordUsage(6_917, atChars: 100, requestChars: 30_000);
+        Assert.Equal(6_917, ctx.Used);
+        Assert.Equal(100, ctx.UsedAtChars);
+    }
+
     [Fact]
     public void RecordUsage_RejectsAnImpossibleFirstReading()
     {

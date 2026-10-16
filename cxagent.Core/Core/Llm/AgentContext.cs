@@ -116,12 +116,17 @@ public sealed class AgentContext
     /// a −32% compaction move the estimate by 1%.</para>
     /// </param>
     /// <param name="inputTokens">What the provider reported for the request just sent.</param>
-    public void RecordUsage(int inputTokens, int atChars = 0)
+    /// <param name="requestChars">
+    /// The size of the WHOLE request — system prompt and tool definitions as well as the conversation —
+    /// for judging whether the reading is possible. The reading counts all of it, so a short conversation
+    /// behind a long prompt is not an impossible reading. 0 judges against the conversation alone.
+    /// </param>
+    public void RecordUsage(int inputTokens, int atChars = 0, int requestChars = 0)
     {
         if (inputTokens <= 0) return;
 
         var chars = atChars > 0 ? atChars : TotalChars();
-        if (!IsPossible(inputTokens, chars))
+        if (!IsPossible(inputTokens, Math.Max(chars, requestChars)))
         {
             // KEEP THE PREVIOUS READING, exactly as for a reported 0. Dropping to null would read as
             // "occupancy unknown" and silence the trigger; overwriting with the garbage would fire it
