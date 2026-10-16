@@ -103,6 +103,16 @@ public class BackgroundStressTests : IDisposable
 
         var runs = names.Select(n => store.BackgroundOf(n)!).ToList();
         Assert.All(runs, r => Assert.True(r.Handoff.Ended, $"run '{r.Start.Name}' never ended"));
+
+        // ENDED IS NOT DELIVERED: a handoff marks itself ended under its lock and hands the report on after
+        // letting go, so the last run can read Ended before its Tell or Leave has run. Waited for, per run:
+        // either the delivery recorded it, or the refusal has been recorded as undelivered.
+        Assert.True(await Poll.Until(() => delivery.Attempts == Children), "not every report was offered");
+        Assert.True(await Poll.Until(() =>
+        {
+            var took = delivery.Accepted;
+            return runs.All(r => r.Handoff.Undelivered || took.Contains(r.Start.Name));
+        }), "a delivery never settled");
         Assert.All(runs, r => Assert.Contains(r.State, new[] { BackgroundState.Finished, BackgroundState.Stopped }));
         Assert.True(await Poll.Until(() => names.All(n => !store.IsBusy(n))), "a run kept its claim");
         Assert.InRange(provider.MaxInFlight, 1, 4);

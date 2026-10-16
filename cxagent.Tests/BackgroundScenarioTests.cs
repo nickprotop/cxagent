@@ -416,9 +416,8 @@ public class BackgroundScenarioTests : IDisposable
     /// S14. ESCAPE ON THE PARENT'S TURN LEAVES A BACKGROUND CHILD ALONE: it runs on, finishes, and
     /// reports.
     ///
-    /// <para>NO LINE TO REVERT: the child runs on its own run's token, and nothing in CancelTurn reaches
-    /// it. Proved red by INSERTING <c>SubAgents.StopAll();</c> into Session.CancelTurn — the regression
-    /// this guards against.</para>
+    /// <para>The child runs on its own run's token, and nothing in Session.CancelTurn may reach a
+    /// background run — Escape is about the turn, not the work the turn handed off.</para>
     /// </summary>
     [Fact]
     public async Task Escape_DoesNotTouchABackgroundChild()
@@ -515,7 +514,9 @@ public class BackgroundScenarioTests : IDisposable
     [Fact]
     public async Task StopRacingTheAnswer_EndToEnd()
     {
-        var parent = new ScriptedProvider(Use(Calls.Spawn(id: "s1")), Answer("started"), Answer("read it"));
+        var parent = new ScriptedProvider(Use(Calls.Spawn(id: "s1")), Answer("started"),
+            Use(Calls.Named(Tool.AgentSend, new { to = "find-thing", prompt = "finish it", background = false }, id: "a1")),
+            Answer("told them"));
         Session? session = null;
         var child = new StoppingProvider("found it", () => session!.StopTask("stop find-thing"));
         var s = Open(parent, child);
@@ -532,6 +533,15 @@ public class BackgroundScenarioTests : IDisposable
         // SO THE PARENT IS TOLD IT WAS STOPPED — not that it completed.
         Assert.Equal(BackgroundState.Stopped, run.State);
         Assert.Contains("state=\"cancelled\"", run.Handoff.Result!);
+
+        // LEFT, NOT WOKEN: a stop's report starts no turn of its own.
+        Assert.True(await StaysAt(parent, 2), "the stopped run's report woke the parent");
+
+        // AND THE NEXT TURN READS A STOP AND IS REFUSED A RESUME — consistently: the user stopped it, the
+        // report says so, and the model may not quietly restart it.
+        await Turn(s.Session, "what happened?");
+        Assert.Contains("was stopped by the user before it finished", parent.Last);
+        Assert.Contains("was stopped by the user, so it will not be resumed", parent.Last);
     }
 
     /// <summary>
