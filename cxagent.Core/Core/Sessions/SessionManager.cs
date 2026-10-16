@@ -148,7 +148,7 @@ public sealed class SessionManager : IDisposable
             var target = TargetFor(session, current, change);
             if (target is null) { session.SayNotRebound($"'{change.Follow(session.InstanceName)}' is no longer in the config"); continue; }
 
-            if (SameModel(session, target))
+            if (!change.ModelChanged.Contains(session.InstanceName))
             {
                 session.RebindWhenIdle(() => PostRun(() => SwapWhenIdle(session, target, current, change.Note)));
                 continue;
@@ -172,16 +172,16 @@ public sealed class SessionManager : IDisposable
     }
 
     /// <summary>
-    /// The open sessions whose prompt cache a change would break — its model changes — for the question
-    /// asked before applying it. A session whose model is unchanged is not among them: it is swapped in
-    /// place.
+    /// The open sessions whose prompt cache a change would break — their instance's model or endpoint
+    /// changed — for the question asked before applying it. Any other session on an edited instance is
+    /// swapped in place.
     /// </summary>
     public IReadOnlyList<Session> BreaksCache(ResolvedConfig fresh, ConfigChange change)
     {
         List<Session> sessions;
         lock (_gate) sessions = [.. _sessions];
-        return [.. sessions.Where(s => s.InstanceName is { } name && change.Instances.Contains(name)
-            && TargetFor(s, fresh, change) is { } target && !SameModel(s, target))];
+        return [.. sessions.Where(s => s.InstanceName is { } name && change.ModelChanged.Contains(name)
+            && TargetFor(s, fresh, change) is not null)];
     }
 
     /// <summary>The model this session would move to, or null when its instance is gone.</summary>
@@ -196,15 +196,6 @@ public sealed class SessionManager : IDisposable
         return new ActiveModel(provider, name, provider.DisplayName, window);
     }
 
-    /// <summary>
-    /// Whether the model a request names stays the same — the cache is keyed on what the model receives,
-    /// and a different driver for the same id sends a different request.
-    /// </summary>
-    private static bool SameModel(Session session, ActiveModel target) =>
-        session.Provider is { } now
-        && now.ModelId == target.Provider.ModelId
-        && now.ProviderId == target.Provider.ProviderId;
-
     private void PostRun(Action run) => (Post ?? (r => r()))(run);
 
     /// <summary>
@@ -215,7 +206,13 @@ public sealed class SessionManager : IDisposable
     private void SwapWhenIdle(Session session, ActiveModel target, ResolvedConfig config, string note)
     {
         if (session.IsBusy) { session.RebindWhenIdle(() => PostRun(() => SwapWhenIdle(session, target, config, note))); return; }
-        session.SwapInPlace(target, config, note);
+        try { session.SwapInPlace(target, config, note); }
+        catch (Exception ex)
+        {
+            // ON THE FRONT END'S THREAD, where an exception goes nowhere a user would see: said in the tab
+            // instead, which stays on its current provider.
+            session.SayNotRebound(ex.Message);
+        }
     }
 
     /// <summary>

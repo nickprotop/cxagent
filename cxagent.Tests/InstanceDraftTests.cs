@@ -90,6 +90,15 @@ public class InstanceDraftTests
             AgentTypes = new Dictionary<string, AgentTypeConfig> { ["planner"] = new(Provider: "local") },
         }).Everyone);
 
+    // WHAT A TAB'S CACHE DOES NOT SURVIVE is known by the edit: a new model or server, not a new key.
+    [Fact]
+    public void ANewModelOrEndpoint_BreaksTheCache_ANewKeyDoesNot()
+    {
+        Assert.Contains("local", new InstanceDraft("local", Local) { Model = "x" }.ChangeFor(Settings("other")).ModelChanged);
+        Assert.Contains("local", new InstanceDraft("local", Local) { BaseUrl = "http://elsewhere:1/v1" }.ChangeFor(Settings("other")).ModelChanged);
+        Assert.Empty(new InstanceDraft("local", Local) { NewApiKey = "k2" }.ChangeFor(Settings("other")).ModelChanged);
+    }
+
     private static ProviderSettings Settings(string defaultName) => new(
         new Dictionary<string, ProviderInstanceConfig> { ["local"] = Local, ["other"] = Local },
         defaultName, [], new Dictionary<string, RoutingTarget>());

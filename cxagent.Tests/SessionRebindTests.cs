@@ -45,6 +45,10 @@ public class SessionRebindTests : IDisposable
     private static ConfigChange Changed(string instance) =>
         new(new HashSet<string> { instance }, new Dictionary<string, string>(), false, $"{instance} updated");
 
+    /// <summary>An edit to <paramref name="instance"/>'s model — one a tab's prompt cache does not survive.</summary>
+    private static ConfigChange NewModel(string instance) =>
+        Changed(instance) with { ModelChanged = new HashSet<string> { instance } };
+
     [Fact]
     public async Task AnIdleSession_IsRebound_KeepingItsConversation()
     {
@@ -55,7 +59,7 @@ public class SessionRebindTests : IDisposable
         var count = session.Host!.Context.Snapshot().Count;
 
         var after = new LevelledMock(["off", "on"], model: "next-model");
-        manager.ApplyConfig(Config(("local", after)), Changed("local"));
+        manager.ApplyConfig(Config(("local", after)), NewModel("local"));
 
         Assert.Same(after.State, Assert.IsType<LevelledMock>(session.Provider).State);
         Assert.Equal(count, session.Host!.Context.Snapshot().Count);
@@ -74,7 +78,7 @@ public class SessionRebindTests : IDisposable
         while (before.State.Seen.IsEmpty) await Task.Delay(5);
 
         var after = new LevelledMock(["off", "on"], model: "next-model");
-        manager.ApplyConfig(Config(("local", after)), Changed("local"));
+        manager.ApplyConfig(Config(("local", after)), NewModel("local"));
         Assert.Same(before.State, Assert.IsType<LevelledMock>(session.Provider).State);
 
         before.State.Hold.SetResult();
@@ -90,7 +94,7 @@ public class SessionRebindTests : IDisposable
         session.SetThinking("off");
         await Turn(session, "hi");
 
-        manager.ApplyConfig(Config(("local", new LevelledMock(["off", "on"], level: "on", model: "next-model"))), Changed("local"));
+        manager.ApplyConfig(Config(("local", new LevelledMock(["off", "on"], level: "on", model: "next-model"))), NewModel("local"));
 
         Assert.Equal("off", session.ThinkingLevel);
     }
@@ -174,7 +178,7 @@ public class SessionRebindTests : IDisposable
         using var _m = manager;
 
         var after = new LevelledMock(["off", "on"], model: "next-model");
-        manager.ApplyConfig(Config(("local", after)), Changed("local"));
+        manager.ApplyConfig(Config(("local", after)), NewModel("local"));
 
         before.State.Hold = new TaskCompletionSource();
         var started = Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("during the gap"));
@@ -201,8 +205,8 @@ public class SessionRebindTests : IDisposable
         await Turn(session, "remember heron");
         var count = session.Host!.Context.Snapshot().Count;
 
-        manager.ApplyConfig(Config(("local", new LevelledMock(["on"], model: "m2"))), Changed("local"));
-        manager.ApplyConfig(Config(("local", new LevelledMock(["on"], model: "m3"))), Changed("local"));
+        manager.ApplyConfig(Config(("local", new LevelledMock(["on"], model: "m2"))), NewModel("local"));
+        manager.ApplyConfig(Config(("local", new LevelledMock(["on"], model: "m3"))), NewModel("local"));
         Drain(posted);
 
         Assert.Equal(count, session.Host!.Context.Snapshot().Count);

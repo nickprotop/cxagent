@@ -37,6 +37,10 @@ public class SessionInPlaceTests : IDisposable
     private static ConfigChange Changed(string instance) =>
         new(new HashSet<string> { instance }, new Dictionary<string, string>(), false, $"{instance} updated");
 
+    /// <summary>An edit to <paramref name="instance"/>'s model — one a tab's prompt cache does not survive.</summary>
+    private static ConfigChange NewModel(string instance) =>
+        Changed(instance) with { ModelChanged = new HashSet<string> { instance } };
+
     // SAME MODEL, NEW KEY OR ENDPOINT: nothing the model sees changes, so nothing is rebuilt.
     [Fact]
     public void ASameModelChange_SwapsTheProviderInPlace_WithoutANewHost()
@@ -62,7 +66,7 @@ public class SessionInPlaceTests : IDisposable
         using var _m = manager;
 
         manager.ApplyConfig(Config(("local", new MockLlmProvider("another-model")), ("extra", new LevelledMock(["on"]))),
-            Changed("local"), CacheChoice.NewTabsOnly);
+            NewModel("local"), CacheChoice.NewTabsOnly);
 
         Assert.Same(before.State, Assert.IsType<LevelledMock>(session.Provider).State);
         Assert.Contains("extra", session.Resolution!.Providers!.InstanceNames);
@@ -75,7 +79,7 @@ public class SessionInPlaceTests : IDisposable
         var (manager, session) = Wired(Config(("local", before)));
         using var _m = manager;
 
-        manager.ApplyConfig(Config(("local", new MockLlmProvider("another-model"))), Changed("local"),
+        manager.ApplyConfig(Config(("local", new MockLlmProvider("another-model"))), NewModel("local"),
             CacheChoice.AtNextClearOrCompression);
         Assert.Same(before.State, Assert.IsType<LevelledMock>(session.Provider).State);
         Assert.True(session.ConfigPending);
@@ -92,7 +96,7 @@ public class SessionInPlaceTests : IDisposable
         var (manager, session) = Wired(Config(("local", new LevelledMock(["on"]))));
         using var _m = manager;
 
-        manager.ApplyConfig(Config(("local", new MockLlmProvider("another-model"))), Changed("local"), CacheChoice.ApplyNow);
+        manager.ApplyConfig(Config(("local", new MockLlmProvider("another-model"))), NewModel("local"), CacheChoice.ApplyNow);
 
         Assert.Equal("another-model", session.Provider!.ModelId);
     }
@@ -105,7 +109,7 @@ public class SessionInPlaceTests : IDisposable
         using var _m = manager;
 
         Assert.Empty(manager.BreaksCache(Config(("local", new LevelledMock(["on"]))), Changed("local")));
-        Assert.Same(session, Assert.Single(manager.BreaksCache(Config(("local", new MockLlmProvider("another-model"))), Changed("local"))));
+        Assert.Same(session, Assert.Single(manager.BreaksCache(Config(("local", new MockLlmProvider("another-model"))), NewModel("local"))));
     }
 
     // A RE-WIRE KEEPS THE DAY THE SESSION STARTED: the date is in the system prompt, and a new one would
@@ -118,7 +122,7 @@ public class SessionInPlaceTests : IDisposable
         var yesterday = DateOnly.FromDateTime(DateTime.Now).AddDays(-1);
         session.StartedOn = yesterday;
 
-        manager.ApplyConfig(Config(("local", new MockLlmProvider("another-model"))), Changed("local"), CacheChoice.ApplyNow);
+        manager.ApplyConfig(Config(("local", new MockLlmProvider("another-model"))), NewModel("local"), CacheChoice.ApplyNow);
 
         Assert.Equal(yesterday, session.Host!.AgentStartedOn);
     }

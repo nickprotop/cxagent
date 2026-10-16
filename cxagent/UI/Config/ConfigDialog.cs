@@ -173,8 +173,8 @@ public static class ConfigDialog
 
     private static async Task AskThenCloseAsync(ConfigDialogHost host, Window window, string name)
     {
-        var answer = await FlowDialogs.ChooseAsync(host.System, window,
-            $"Unsaved changes to '{name}'", ["Keep editing", "Discard and close"], CancellationToken.None, appendCancel: false);
+        var answer = await ConfirmDialog.AskAsync(host.System, $"Unsaved changes to '{name}'",
+            ["Closing drops what you changed and did not save."], ["Keep editing", "Discard and close"]);
         if (answer == "Discard and close") window.Close();
     }
 

@@ -112,7 +112,12 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
         var everyone = settings.Classifier == Name
             || (settings.DefaultProvider == Name && MaxConcurrentAgents != Original.MaxConcurrentAgents)
             || settings.AgentTypes.Values.Any(t => t.Provider == Name);
-        return new ConfigChange(new HashSet<string> { Name }, new Dictionary<string, string>(), everyone, Note());
+        // THE MODEL OR THE SERVER CHANGED: a tab's cache does not survive either, so it is asked about.
+        var breaks = Model.Trim() != Original.Model || UrlChanged;
+        return new ConfigChange(new HashSet<string> { Name }, new Dictionary<string, string>(), everyone, Note())
+        {
+            ModelChanged = breaks ? new HashSet<string> { Name } : new HashSet<string>(),
+        };
     }
 
     /// <summary>What a re-wired tab is told: the instance, and what changed in it.</summary>

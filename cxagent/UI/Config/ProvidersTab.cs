@@ -55,6 +55,10 @@ public sealed class ProvidersTab
 
         Toolbar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         Toolbar.AddItem(Controls.Button(" + Add ").OnClick((_, _) => ShowGallery()).Build());
+        Toolbar.AddItem(Controls.Button(" Make default ").OnClick((_, _) => _ = MakeDefaultAsync()).Build());
+        Toolbar.AddItem(Controls.Button(" Auto-mode reviewer ").OnClick((_, _) => _ = ToggleReviewerAsync()).Build());
+        Toolbar.AddItem(Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build());
+        Toolbar.AddItem(Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build());
         _root.Place(Toolbar, 0, 0, colSpan: 2);
 
         _rail = new ListControl { VerticalAlignment = VerticalAlignment.Fill, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -196,8 +200,8 @@ public sealed class ProvidersTab
     private async Task AskBeforeLeavingAsync(string next)
     {
         var edited = _draft!.Name;
-        var answer = await FlowDialogs.ChooseAsync(_host.System, _window(),
-            $"Unsaved changes to '{edited}'", ["Keep editing", "Discard them"], CancellationToken.None, appendCancel: false);
+        var answer = await ConfirmDialog.AskAsync(_host.System, $"Unsaved changes to '{edited}'",
+            ["Leaving this provider drops what you changed and did not save."], ["Keep editing", "Discard them"]);
         if (answer == "Discard them")
         {
             _draft = null;
@@ -461,6 +465,98 @@ public sealed class ProvidersTab
         Changed();
     }
 
+    // ---- the toolbar's actions on the selected instance -----------------------------------------------
+
+    /// <summary>The saved instance the toolbar acts on, or null — with the reason said — when there is none.</summary>
+    private string? Selected()
+    {
+        if (_draft is null || _draft.IsNew || _settings is null)
+        {
+            SetStatus($"[{ColorScheme.MutedMarkup}]Select a saved provider first.[/]");
+            return null;
+        }
+        return _draft.Name;
+    }
+
+    /// <summary>
+    /// Every session refreshes what the default decides — the sub-agent limit — in place; nobody moves,
+    /// because a running tab is on its own instance, not on "the default".
+    /// </summary>
+    private async Task MakeDefaultAsync()
+    {
+        if (Selected() is not { } name) return;
+        if (_settings!.DefaultProvider == name) { SetStatus($"[{ColorScheme.MutedMarkup}]'{MarkupParser.Escape(name)}' is already the default.[/]"); return; }
+        await CommitAsync(root => ProviderEdits.SetDefault(root, name),
+            new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true, $"{name} is now the default"), name);
+    }
+
+    /// <summary>
+    /// On the reviewer it clears (auto mode is then not offered); on any other instance it makes that one
+    /// the reviewer. Set on each session's policy in place — the reviewer's requests are its own, so no
+    /// tab's cache is touched.
+    /// </summary>
+    private async Task ToggleReviewerAsync()
+    {
+        if (Selected() is not { } name) return;
+        var clearing = _settings!.Classifier == name;
+        await CommitAsync(root => ProviderEdits.SetReviewer(root, clearing ? null : name),
+            new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true,
+                clearing ? "auto-mode reviewer cleared" : $"{name} now reviews auto mode"), name);
+    }
+
+    /// <summary>The new name, asked in the pane; Enter renames, a clash is said beside it.</summary>
+    private void ShowRename()
+    {
+        if (Selected() is not { } from) return;
+        _detail.ClearContents();
+        var box = new PromptControl { Prompt = "New name: ", Input = from, HorizontalAlignment = HorizontalAlignment.Stretch };
+        _detail.AddControl(new MarkupControl([
+            $"[bold]Rename '{MarkupParser.Escape(from)}'[/]",
+            $"[{ColorScheme.MutedMarkup}]Every reference moves with it — the default, the reviewer, agent types — and tabs on it follow the new name.[/]",
+            "",
+        ]) { Wrap = true });
+        _detail.AddControl(box);
+        _detail.AddControl(new MarkupControl(["", $"[{ColorScheme.MutedMarkup}]Enter renames · Revert cancels[/]"]));
+        box.Entered += (_, text) => _ = RenameAsync(from, text.Trim());
+        _window()?.FocusManager.SetFocus(box, FocusReason.Programmatic);
+    }
+
+    private async Task RenameAsync(string from, string to)
+    {
+        if (to.Length == 0 || to == from) { ShowInstance(from); return; }
+        if (_settings!.Providers.ContainsKey(to)) { SetStatus($"[{ColorScheme.CautionMarkup}]'{MarkupParser.Escape(to)}' already exists.[/]"); return; }
+
+        // EVERYONE when a session-wide reference names it: the reviewer and agent types are rebuilt per
+        // session, and the default's limit sizes every sub-agent semaphore. Tabs on it move in place —
+        // the same model under a new name sends the same request.
+        var wide = _settings.Classifier == from || _settings.DefaultProvider == from
+            || _settings.AgentTypes.Values.Any(t => t.Provider == from);
+        _draft = null;
+        await CommitAsync(root => ProviderEdits.Rename(root, from, to),
+            new ConfigChange(new HashSet<string> { from }, new Dictionary<string, string> { [from] = to }, wide, $"{from} is now {to}"), to);
+    }
+
+    private async Task RemoveAsync()
+    {
+        if (Selected() is not { } name) return;
+        var tabs = _host.Apply.Manager.Sessions
+            .Where(s => s.InstanceName == name)
+            .Select(s => Path.GetFileName(s.WorkingDirectory.TrimEnd(Path.DirectorySeparatorChar)))
+            .ToList();
+        var plan = ProviderRemovalPlan.For(_settings!, name, tabs);
+        if (plan.Refused)
+        {
+            SetStatus($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(plan.Lines[0])}[/]");
+            return;
+        }
+
+        var answer = await ConfirmDialog.AskAsync(_host.System, $"Remove '{name}'?", plan.Lines, ["Keep it", "Remove"]);
+        if (answer != "Remove") return;
+        _draft = null;
+        await CommitAsync(root => ProviderEdits.Remove(root, name),
+            new ConfigChange(new HashSet<string> { name }, new Dictionary<string, string>(), true, $"{name} was removed"), "");
+    }
+
     // ---- adding: the gallery ----------------------------------------------------------------------
 
     private ProviderKindCatalog.ProviderPreset? _addingFrom;
@@ -514,7 +610,15 @@ public sealed class ProvidersTab
         _draft = null;
         _addingFrom = null;
         FillRail(null);
+        FocusRail();
     }
+
+    /// <summary>
+    /// FOCUS BACK ON THE RAIL after the pane is rebuilt: the control that had focus — a name box, a
+    /// button — is gone with the old pane, and keys sent to a control no longer on screen go nowhere,
+    /// Escape included.
+    /// </summary>
+    private void FocusRail() => _window()?.FocusManager.SetFocus(_rail, FocusReason.Programmatic);
 
     // ---- saving -------------------------------------------------------------------------------
 
@@ -607,10 +711,15 @@ public sealed class ProvidersTab
 
         _draft = null;
         Reload(select);
-        var moved = _host.Apply.Manager.Sessions.Count(s => change.Affects(s.InstanceName));
+        FocusRail();
+        // WHAT HAPPENED TO THE OPEN TABS, in the terms that cost something: a change no model sees is
+        // applied in place, and only one that breaks a tab's cache is a move.
+        var moved = _host.Apply.Manager.Sessions.Count(s => s.InstanceName is { } n && change.ModelChanged.Contains(n));
+        var tabs = moved == 0 ? "Applied to open tabs in place — no prompt cache is touched."
+            : $"{moved} tab{(moved == 1 ? "" : "s")} on a new model, as chosen.";
         SetStatus(result.Errors.Count > 0
             ? $"[{ColorScheme.CautionMarkup}]Saved, but not live: {MarkupParser.Escape(string.Join("; ", result.Errors))}[/]"
-            : $"[{ColorScheme.AffirmativeMarkup}]✔ Saved.[/] [{ColorScheme.MutedMarkup}]{(moved == 0 ? "No open tab needed to move." : $"{moved} tab{(moved == 1 ? "" : "s")} move{(moved == 1 ? "s" : "")} to it when idle.")}[/]");
+            : $"[{ColorScheme.AffirmativeMarkup}]✔ Saved.[/] [{ColorScheme.MutedMarkup}]{tabs}[/]");
     }
 }
 

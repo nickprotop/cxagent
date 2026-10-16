@@ -14,6 +14,15 @@ namespace CxAgent.Core.Config;
 public sealed record ConfigChange(
     IReadOnlySet<string> Instances, IReadOnlyDictionary<string, string> Renamed, bool Everyone, string Note)
 {
+    /// <summary>
+    /// Instances whose MODEL OR ENDPOINT changed — the edits a tab's prompt cache does not survive. Said by
+    /// whoever made the edit, because only the edit knows: a rename or a rotated key builds a provider
+    /// object that differs in every field a comparison could check, yet sends the same request to the
+    /// same server. A tab on one of these is moved as the user chooses; on any other edited instance it
+    /// is swapped in place.
+    /// </summary>
+    public IReadOnlySet<string> ModelChanged { get; init; } = new HashSet<string>();
+
     /// <summary>Whether a session on <paramref name="instanceName"/> must be re-wired.</summary>
     public bool Affects(string? instanceName) =>
         Everyone || (instanceName is not null && Instances.Contains(instanceName));
