@@ -1,3 +1,5 @@
+using CxAgent.Core.Agents;
+using CxAgent.Core.Llm;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
@@ -73,6 +75,7 @@ public static class Usage
         [
             new("--model NAME", "Start on a named provider instance from config.json instead of the default. The status line shows which one is live."),
             new("--theme NAME", $"Start in a named theme, case-insensitive. An unknown name falls back to '{Features.DefaultTheme}' rather than refusing to start. Available themes: {ThemeNames()}"),
+            new("--mode MODE", $"How the agent works: {AgentModes.Valid}. Fan-out lets it hand work to sub-agents; single keeps everything in one agent. Default: fan-out."),
             new("--config-dir DIR", "Use DIR for config.json, history and session state instead of the usual location. Useful for a throwaway setup that leaves your real one alone."),
             new("-c, --continue", "Reopen the most recent session in this folder."),
             new("-r, --resume ID", "Reopen that session. Without an id, the TUI starts with this folder's sessions listed, to pick from."),
@@ -87,6 +90,7 @@ public static class Usage
             new("--output-format F", "text (the answer), json (one result object) or stream-json (one event per line)."),
             new("--include-partial-messages", "With stream-json: text as it streams."),
             new("--verbose", "With text: progress on stderr."),
+            new("--thinking LEVEL", $"Run at this thinking level: {string.Join(", ", ThinkingLevels.Known)}. Without it, the session's own level is kept."),
             new("--max-turns N", "Stop after N turns (exit 3)."),
             new("--permission-mode M", "default or dontAsk (refuse what would prompt), acceptEdits, auto, bypassPermissions."),
             new("--dangerously-skip-permissions", "Approve every prompt, except a file-tool write into a .git, .vscode, .claude or .idea folder, anywhere. Shell commands are approved like anything else, including ones that write into those folders."),
