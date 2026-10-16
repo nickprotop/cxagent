@@ -570,6 +570,31 @@ public class AgentChallengeTests
         Assert.Equal("ac", string.Concat(sink.Reasoning));
     }
 
+    // THINKING ACROSS A TOOL LOOP: think and call, the tool runs, then think and answer. Each step's
+    // thinking is its own — begun, ended and closed inside that step — so the transcript gives the
+    // second step a block of its own below the tool row, and nothing of the first is still open when
+    // the tool starts.
+    [Fact]
+    public async Task ThinkingAcrossAToolLoop_StaysInItsOwnStep()
+    {
+        var provider = new ChunkScriptProvider(
+            [Think("check the file"), Call("no_such_tool")],
+            [Think("now answer"), Text("done")]);
+        var sink = new RecordingSink();
+        await Build(provider, sink).SendAsync("go", CancellationToken.None);
+
+        var began = sink.Steps.Where(e => e.StartsWith("began@", StringComparison.Ordinal))
+            .Select(e => e["began@".Length..]).ToList();
+        Assert.Equal(2, began.Count);
+        var (first, second) = (began[0], began[1]);
+        Assert.NotEqual(first, second);
+
+        Assert.Equal(
+            [$"began@{first}", $"thinking@{first}", $"ended@{first}", $"over@{first}",
+             $"began@{second}", $"thinking@{second}", $"ended@{second}", $"text@{second}", $"over@{second}"],
+            sink.Steps);
+    }
+
     /// <summary>Thinks, then dies mid-stream — Esc, or a dropped connection.</summary>
     private sealed class ThinksThenThrowsProvider : ILlmProvider
     {
@@ -1100,17 +1125,19 @@ public class AgentChallengeTests
         public void UserTurnAdded(ChatMessageId id, string text) { }
         public int Begins, Ends;
         public readonly List<string> Headers = [];
-        public void AssistantTurnBegan(ChatMessageId id) { Begins++; }
+        public void AssistantTurnBegan(ChatMessageId id) { Begins++; Steps.Add($"began@{id.Value}"); }
         /// <summary>Every body token, in order — reasoning now streams here rather than to the header.</summary>
         public readonly List<string> Appended = [];
-        public void AssistantTextAppended(ChatMessageId id, string token) { Appended.Add(token); Events.Add("text"); }
+        public void AssistantTextAppended(ChatMessageId id, string token) { Appended.Add(token); Events.Add("text"); Steps.Add($"text@{id.Value}"); }
         public readonly List<string> Reasoning = [];
-        public void AssistantThinkingAppended(ChatMessageId id, string text) { Reasoning.Add(text); Events.Add("thinking"); }
-        public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary) { Ended.Add(summary); Events.Add("ended"); }
+        public void AssistantThinkingAppended(ChatMessageId id, string text) { Reasoning.Add(text); Events.Add("thinking"); Steps.Add($"thinking@{id.Value}"); }
+        public void AssistantThinkingEnded(ChatMessageId id, CxAgent.Core.Llm.ThinkingSummary summary) { Ended.Add(summary); Events.Add("ended"); Steps.Add($"ended@{id.Value}"); }
         /// <summary>Text, thinking and ends in arrival order, for the ordering the sink relies on.</summary>
         public readonly List<string> Events = [];
+        /// <summary>Every event as <c>kind@step</c>, in order — which step each one belonged to.</summary>
+        public readonly List<string> Steps = [];
         public readonly List<CxAgent.Core.Llm.ThinkingSummary> Ended = [];
-        public void AssistantTurnEnded(ChatMessageId id) => Ends++;
+        public void AssistantTurnEnded(ChatMessageId id) { Ends++; Steps.Add($"over@{id.Value}"); }
         public void Said(Message message)
         {
             if (message.Severity == Severity.Error) Errors.Add(message.Text);
