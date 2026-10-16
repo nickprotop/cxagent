@@ -75,6 +75,15 @@ public static class Tool
     /// <summary>Stop a background command. The session may stop any job; a sub-agent only its own.</summary>
     public const string JobKill = "job_kill";
 
+    /// <summary>Everything running in the background or kept: sub-agents by handle, shells by pid.</summary>
+    public const string TaskList = "task_list";
+
+    /// <summary>Stop a background sub-agent or shell command.</summary>
+    public const string TaskStop = "task_stop";
+
+    /// <summary>How far a background task has got, or its result once it has ended.</summary>
+    public const string TaskOutput = "task_output";
+
     public const string TodoWrite = "todowrite";
 
     /// <summary>Ask the user. Never available to a sub-agent, whatever a selection says.</summary>
@@ -102,7 +111,7 @@ public static class Tool
     private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
     {
         ReadFile, WriteFile, ReplaceInFile, Glob, Grep, RunShell, HttpRequest, WebFetch,
-        Agent, AgentSend, AgentList, JobList, JobKill, TodoWrite, AskUser, Skill,
+        Agent, AgentSend, AgentList, JobList, JobKill, TaskList, TaskStop, TaskOutput, TodoWrite, AskUser, Skill,
     };
 
     /// <summary>
