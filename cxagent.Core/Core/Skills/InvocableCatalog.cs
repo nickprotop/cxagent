@@ -2,17 +2,15 @@ using System.Text.RegularExpressions;
 
 namespace CxAgent.Core.Skills;
 
-/// <summary>Where a scan starts, and the two folders outside the project it also reads.</summary>
+/// <summary>Where a scan starts, and the one folder outside the project it also reads.</summary>
 /// <param name="WorkingDirectory">Where the walk up to the repo root starts.</param>
 /// <param name="ConfigDirectory">cxagent's config folder, for its <c>commands</c> and <c>skills</c>.</param>
-/// <param name="HomeDirectory">The user's home, for <c>~/.claude</c>. NULL READS NO HOME FOLDER —
-/// what every test gets, so a developer's own <c>~/.claude</c> never leaks into a test result.</param>
-public sealed record CatalogRoots(string WorkingDirectory, string? ConfigDirectory, string? HomeDirectory);
+public sealed record CatalogRoots(string WorkingDirectory, string? ConfigDirectory);
 
 public enum InvocableKind { Command, Skill }
 
-/// <summary>Which of the three places a file came from: the project, cxagent's config dir, or home.</summary>
-public enum InvocableScope { Project, Config, Home }
+/// <summary>Which of the two places a file came from: the project, or cxagent's config dir.</summary>
+public enum InvocableScope { Project, Config }
 
 /// <summary>One command file or skill — the winner for its name, or a loser on the shadowed list.</summary>
 /// <param name="Name">What follows the <c>/</c>: the file name without <c>.md</c>, or the skill's folder.</param>
@@ -73,10 +71,15 @@ public sealed record InvocableCatalogResult(IReadOnlyList<Invocable> Entries,
 /// so the two are one concept with two layouts; two scanners would carry two rules that have to agree
 /// for ever. The model's skill list and the palette are filtered views of this.</para>
 ///
-/// <para>NEAREST FIRST, PER NAME. A package's own file beats the repo's, the repo's beats the config
-/// dir's, and that beats home. Within a level a command beats a skill, then cxagent's folder beats the
-/// vendor-neutral one beats Claude's: a file written for this tool says more about what is meant here.
-/// Per name rather than per folder, so a repo with its own skills still leaves yours available.</para>
+/// <para>NEAREST FIRST, PER NAME. A package's own file beats the repo's, and the repo's beats the
+/// config dir's. Within a level a command beats a skill, then cxagent's skills folder beats the
+/// vendor-neutral one: a file written for this tool says more about what is meant here. Per name
+/// rather than per folder, so a repo with its own skills still leaves yours available.</para>
+///
+/// <para>NOT CLAUDE CODE'S <c>.claude</c> FOLDERS, in the project or at home. Their files are written
+/// for that tool — its tool names, its <c>allowed-tools</c> grants, its subagents — and followed
+/// here they produce instructions the model cannot carry out. A repo that wants a command in both
+/// tools keeps a copy, or a symlink, under <c>.cxagent</c>.</para>
 ///
 /// <para>THE WALK STOPS AT THE REPO ROOT, the boundary instruction files use: folders above it can be
 /// written by other people on a shared machine, and a command is text the model acts on.</para>
@@ -137,9 +140,9 @@ public static partial class InvocableCatalog
 
         void Add(string folder, Layout layout, InvocableScope scope)
         {
-            // ONCE, AT ITS FIRST POSITION. A repo rooted at home reaches ~/.claude as a walked level
-            // and again as home; a symlinked folder reaches its target twice. Reading it twice would
-            // shadow every file in it by itself.
+            // ONCE, AT ITS FIRST POSITION. A symlinked folder — .agents/skills pointing at
+            // .cxagent/skills — reaches its target twice. Reading it twice would shadow every file in
+            // it by itself.
             var real = RealPath(folder);
             if (real is not null && seen.Add(real)) sources.Add(new Source(folder, layout, scope));
         }
@@ -147,22 +150,14 @@ public static partial class InvocableCatalog
         foreach (var dir in WalkedLevels(roots.WorkingDirectory))
         {
             Add(Path.Combine(dir, ".cxagent", "commands"), Layout.Commands, InvocableScope.Project);
-            Add(Path.Combine(dir, ".claude", "commands"), Layout.Commands, InvocableScope.Project);
             Add(Path.Combine(dir, ".cxagent", "skills"), Layout.Skills, InvocableScope.Project);
             Add(Path.Combine(dir, ".agents", "skills"), Layout.Skills, InvocableScope.Project);
-            Add(Path.Combine(dir, ".claude", "skills"), Layout.Skills, InvocableScope.Project);
         }
 
         if (!string.IsNullOrWhiteSpace(roots.ConfigDirectory))
         {
             Add(Path.Combine(roots.ConfigDirectory, "commands"), Layout.Commands, InvocableScope.Config);
             Add(Path.Combine(roots.ConfigDirectory, "skills"), Layout.Skills, InvocableScope.Config);
-        }
-
-        if (!string.IsNullOrWhiteSpace(roots.HomeDirectory))
-        {
-            Add(Path.Combine(roots.HomeDirectory, ".claude", "commands"), Layout.Commands, InvocableScope.Home);
-            Add(Path.Combine(roots.HomeDirectory, ".claude", "skills"), Layout.Skills, InvocableScope.Home);
         }
 
         return sources;

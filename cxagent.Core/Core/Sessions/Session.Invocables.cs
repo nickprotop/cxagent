@@ -25,7 +25,7 @@ public sealed partial class Session
     /// <c>/skills</c> and the palette list.
     /// </summary>
     public InvocableCatalogResult Catalog() => InvocableCatalog.Find(
-        new CatalogRoots(WorkingDirectory, Services?.GlobalInstructionsDir, Services?.HomeDir));
+        new CatalogRoots(WorkingDirectory, Services?.GlobalInstructionsDir));
 
     /// <summary>
     /// The command file or skill a typed line runs, or null.

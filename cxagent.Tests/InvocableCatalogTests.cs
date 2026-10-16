@@ -12,14 +12,12 @@ public class InvocableCatalogTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "invocables-" + Guid.NewGuid().ToString("N"));
     private readonly string _repo;
     private readonly string _config;
-    private readonly string _home;
 
     public InvocableCatalogTests()
     {
         _repo = Dir("repo");
         Directory.CreateDirectory(Path.Combine(_repo, ".git"));
         _config = Dir("config");
-        _home = Dir("home");
     }
 
     public void Dispose() { try { Directory.Delete(_root, recursive: true); } catch (Exception) { } }
@@ -46,12 +44,12 @@ public class InvocableCatalogTests : IDisposable
             $"---\ndescription: the {name} skill\n{extra}---\nbody of {name}\n");
 
     private InvocableCatalogResult Find(string? cwd = null) =>
-        InvocableCatalog.Find(new CatalogRoots(cwd ?? _repo, _config, _home));
+        InvocableCatalog.Find(new CatalogRoots(cwd ?? _repo, _config));
 
     [Fact]
     public void ACommandFile_WithNoFrontmatter_IsDescribedByItsFirstLine()
     {
-        Command(Path.Combine(_repo, ".claude", "commands"), "review", "\nReview the change.\nThen more.");
+        Command(Path.Combine(_repo, ".cxagent", "commands"), "review", "\nReview the change.\nThen more.");
 
         var review = Assert.Single(Find().Entries);
 
@@ -61,11 +59,29 @@ public class InvocableCatalogTests : IDisposable
         Assert.True(review.Typeable);
     }
 
+    /// <summary>
+    /// CLAUDE CODE'S FOLDERS ARE ITS OWN. A file there is written for another tool's commands and
+    /// tools, and reading it here made cxagent run instructions that do not fit it — so neither a
+    /// project's .claude nor the home one is a source, and nothing in them is reported either. Home
+    /// is not reachable at all: the catalog's roots are the project and cxagent's config dir.
+    /// </summary>
     [Fact]
-    public void CxagentCommands_BeatClaudeCommands_AtOneLevel()
+    public void ClaudeCodeFolders_AreNotRead()
     {
-        Command(Path.Combine(_repo, ".claude", "commands"), "review", "claude's");
-        var mine = Command(Path.Combine(_repo, ".cxagent", "commands"), "review", "mine");
+        Command(Path.Combine(_repo, ".claude", "commands"), "review", "---\nnever closed");
+        Skill(Path.Combine(_repo, ".claude", "skills"), "style");
+
+        var result = Find();
+
+        Assert.Empty(result.Entries);
+        Assert.Empty(result.Problems);
+    }
+
+    [Fact]
+    public void CxagentSkills_BeatAgentsSkills_AtOneLevel()
+    {
+        Skill(Path.Combine(_repo, ".agents", "skills"), "review");
+        var mine = Skill(Path.Combine(_repo, ".cxagent", "skills"), "review");
 
         var result = Find();
 
@@ -77,7 +93,7 @@ public class InvocableCatalogTests : IDisposable
     public void ACommand_BeatsASkill_AtOneLevel_AndHidesItFromTheModel()
     {
         Skill(Path.Combine(_repo, ".cxagent", "skills"), "review");
-        Command(Path.Combine(_repo, ".claude", "commands"), "review");
+        Command(Path.Combine(_repo, ".cxagent", "commands"), "review");
 
         var result = Find();
 
@@ -89,26 +105,24 @@ public class InvocableCatalogTests : IDisposable
     public void ANearerSkill_BeatsAFartherCommand()
     {
         var sub = Dir("repo", "src", "api");
-        Command(Path.Combine(_repo, ".claude", "commands"), "review");
+        Command(Path.Combine(_repo, ".cxagent", "commands"), "review");
         Skill(Path.Combine(sub, ".agents", "skills"), "review");
 
         Assert.Equal(InvocableKind.Skill, Assert.Single(Find(sub).Entries).Kind);
     }
 
     [Fact]
-    public void TheProject_BeatsConfig_WhichBeatsHome()
+    public void TheProject_BeatsConfig()
     {
-        Command(Path.Combine(_home, ".claude", "commands"), "a");
         Command(Path.Combine(_config, "commands"), "a");
-        Command(Path.Combine(_home, ".claude", "commands"), "b");
         Command(Path.Combine(_config, "commands"), "b");
-        var project = Command(Path.Combine(_repo, ".claude", "commands"), "a");
+        var project = Command(Path.Combine(_repo, ".cxagent", "commands"), "a");
 
         var result = Find();
 
         Assert.Equal(project, result.Entries.Single(e => e.Name == "a").Path);
         Assert.StartsWith(_config, result.Entries.Single(e => e.Name == "b").Path);
-        Assert.Equal(3, result.Shadowed.Count);
+        Assert.Single(result.Shadowed);
     }
 
     /// <summary>Skills now merge per name: a project's skills no longer hide the config dir's.</summary>
@@ -117,7 +131,7 @@ public class InvocableCatalogTests : IDisposable
     {
         Skill(Path.Combine(_repo, ".cxagent", "skills"), "one");
         Skill(Path.Combine(_config, "skills"), "two");
-        Skill(Path.Combine(_home, ".claude", "skills"), "three");
+        Skill(Path.Combine(_repo, ".agents", "skills"), "three");
 
         Assert.Equal(["one", "three", "two"], Find().ModelSkills.Select(s => s.Name).Order().ToArray());
     }
@@ -125,7 +139,7 @@ public class InvocableCatalogTests : IDisposable
     [Fact]
     public void TheWalk_StopsAtTheRepoRoot()
     {
-        Command(Path.Combine(_root, ".claude", "commands"), "outside");
+        Command(Path.Combine(_root, ".cxagent", "commands"), "outside");
 
         Assert.Empty(Find().Entries);
     }
@@ -134,8 +148,8 @@ public class InvocableCatalogTests : IDisposable
     public void WithNoRepo_OnlyTheWorkingFolderIsWalked()
     {
         var loose = Dir("loose", "deeper");
-        Command(Path.Combine(_root, "loose", ".claude", "commands"), "parent");
-        Command(Path.Combine(loose, ".claude", "commands"), "here");
+        Command(Path.Combine(_root, "loose", ".cxagent", "commands"), "parent");
+        Command(Path.Combine(loose, ".cxagent", "commands"), "here");
 
         Assert.Equal(["here"], Find(loose).Entries.Select(e => e.Name).ToArray());
     }
@@ -143,7 +157,7 @@ public class InvocableCatalogTests : IDisposable
     [Fact]
     public void ASubfolder_IsALabel_NotPartOfTheName()
     {
-        Command(Path.Combine(_repo, ".claude", "commands", "frontend"), "component");
+        Command(Path.Combine(_repo, ".cxagent", "commands", "frontend"), "component");
 
         var entry = Assert.Single(Find().Entries);
 
@@ -154,7 +168,7 @@ public class InvocableCatalogTests : IDisposable
     [Fact]
     public void TwoSubfolders_DeclaringOneName_AtOneLevel_AreBothSkipped()
     {
-        var commands = Path.Combine(_repo, ".claude", "commands");
+        var commands = Path.Combine(_repo, ".cxagent", "commands");
         Command(Path.Combine(commands, "a"), "x");
         Command(Path.Combine(commands, "b"), "x");
 
@@ -167,7 +181,7 @@ public class InvocableCatalogTests : IDisposable
     [Fact]
     public void ACommandWithAnInvalidName_IsSkipped_AndReported()
     {
-        Command(Path.Combine(_repo, ".claude", "commands"), "dotnet.test");
+        Command(Path.Combine(_repo, ".cxagent", "commands"), "dotnet.test");
 
         var result = Find();
 
@@ -224,7 +238,7 @@ public class InvocableCatalogTests : IDisposable
     [Fact]
     public void AllowedToolsAndModel_AreRecordedAsIgnored()
     {
-        Command(Path.Combine(_repo, ".claude", "commands"), "commit",
+        Command(Path.Combine(_repo, ".cxagent", "commands"), "commit",
             "---\ndescription: commit it\nallowed-tools: Bash(git add:*)\nmodel: claude-3-5-haiku\nargument-hint: [message]\n---\nCommit.");
 
         var entry = Assert.Single(Find().Entries);
@@ -237,7 +251,7 @@ public class InvocableCatalogTests : IDisposable
     [Fact]
     public void UnclosedFrontmatter_IsSkipped_AndReported()
     {
-        Command(Path.Combine(_repo, ".claude", "commands"), "broken", "---\ndescription: never closed\nbody");
+        Command(Path.Combine(_repo, ".cxagent", "commands"), "broken", "---\ndescription: never closed\nbody");
 
         var result = Find();
 
@@ -248,7 +262,7 @@ public class InvocableCatalogTests : IDisposable
     [Fact]
     public void Frontmatter_ToleratesBomAndCrlf()
     {
-        Command(Path.Combine(_repo, ".claude", "commands"), "win",
+        Command(Path.Combine(_repo, ".cxagent", "commands"), "win",
             "﻿---\r\ndescription: from windows\r\n---\r\nBody line.\r\n");
 
         var entry = Assert.Single(Find().Entries);
@@ -257,14 +271,16 @@ public class InvocableCatalogTests : IDisposable
         Assert.Equal("Body line.", entry.Body);
     }
 
-    /// <summary>A repo rooted at home must not read ~/.claude twice.</summary>
+    /// <summary>.agents/skills linked to .cxagent/skills must not read that folder twice.</summary>
     [Fact]
     public void AFolderReachedTwice_IsReadOnce()
     {
-        Directory.CreateDirectory(Path.Combine(_home, ".git"));
-        Command(Path.Combine(_home, ".claude", "commands"), "dot");
+        if (OperatingSystem.IsWindows()) return;
+        Skill(Path.Combine(_repo, ".cxagent", "skills"), "dot");
+        Directory.CreateDirectory(Path.Combine(_repo, ".agents"));
+        Directory.CreateSymbolicLink(Path.Combine(_repo, ".agents", "skills"), Path.Combine(_repo, ".cxagent", "skills"));
 
-        var result = InvocableCatalog.Find(new CatalogRoots(_home, _config, _home));
+        var result = Find();
 
         Assert.Single(result.Entries);
         Assert.Empty(result.Shadowed);
@@ -274,8 +290,8 @@ public class InvocableCatalogTests : IDisposable
     [Fact]
     public void ProblemsInLosingFolders_AreStillReported()
     {
-        Command(Path.Combine(_repo, ".claude", "commands"), "x");
-        Command(Path.Combine(_home, ".claude", "commands"), "y", "---\nnever closed");
+        Command(Path.Combine(_repo, ".cxagent", "commands"), "x");
+        Command(Path.Combine(_config, "commands"), "y", "---\nnever closed");
 
         Assert.Single(Find().Problems);
     }
@@ -283,15 +299,13 @@ public class InvocableCatalogTests : IDisposable
     [Fact]
     public void EachEntry_KnowsItsScope()
     {
-        Command(Path.Combine(_repo, ".claude", "commands"), "p");
+        Command(Path.Combine(_repo, ".cxagent", "commands"), "p");
         Command(Path.Combine(_config, "commands"), "c");
-        Command(Path.Combine(_home, ".claude", "commands"), "h");
 
         var result = Find();
 
         Assert.Equal(InvocableScope.Project, result.Entries.Single(e => e.Name == "p").Scope);
         Assert.Equal(InvocableScope.Config, result.Entries.Single(e => e.Name == "c").Scope);
-        Assert.Equal(InvocableScope.Home, result.Entries.Single(e => e.Name == "h").Scope);
     }
 
     /// <summary>One unreadable subfolder costs that subfolder, not the folder around it.</summary>
@@ -299,7 +313,7 @@ public class InvocableCatalogTests : IDisposable
     public void AnUnreadableSubfolder_IsReported_AndTheRestStillLoads()
     {
         if (OperatingSystem.IsWindows() || Environment.UserName == "root") return;
-        var commands = Path.Combine(_repo, ".claude", "commands");
+        var commands = Path.Combine(_repo, ".cxagent", "commands");
         Command(commands, "kept");
         var locked = Path.Combine(commands, "locked");
         Command(locked, "hidden");
@@ -319,7 +333,7 @@ public class InvocableCatalogTests : IDisposable
     public void ASymlinkCycle_EndsTheWalk_WithAProblem()
     {
         if (OperatingSystem.IsWindows()) return;
-        var commands = Path.Combine(_repo, ".claude", "commands");
+        var commands = Path.Combine(_repo, ".cxagent", "commands");
         Command(commands, "ok");
         Directory.CreateSymbolicLink(Path.Combine(commands, "loop"), commands);
 

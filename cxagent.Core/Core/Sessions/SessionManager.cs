@@ -365,7 +365,6 @@ public sealed class SessionManager : IDisposable
                 Gate = buildGate?.Invoke(rules),
                 Mcp = mcp,
                 GlobalInstructionsDir = paths.ConfigDir,
-                HomeDir = paths.HomeDir,
             },
             rules,
             ownsServices: true,

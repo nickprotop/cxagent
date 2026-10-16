@@ -152,7 +152,7 @@ public static partial class CommandText
     /// escaped and reopened — wrapping it in quotes of its own would CLOSE the author's and leave the
     /// value bare, which is how <c>'$1'</c> with <c>x; echo hi</c> ran <c>echo hi</c>. Inside
     /// <c>"…"</c> the four characters still special there — <c>\ " $ `</c> — are backslashed.
-    /// Claude Code files quote placeholders as often as not, so all three are ordinary input.</para>
+    /// Command files quote placeholders as often as not, so all three are ordinary input.</para>
     /// </summary>
     private static string SubstituteForShell(string text, TypedArguments arguments)
     {

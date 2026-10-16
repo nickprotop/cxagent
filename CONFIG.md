@@ -567,16 +567,14 @@ nearest wins:**
 |---|---|
 | `<repo>/.cxagent/skills/` | This project, addressed to this agent |
 | `<repo>/.agents/skills/` | This project, vendor-neutral — the plural of the `AGENTS.md` convention |
-| `<repo>/.claude/skills/` | This project, written for Claude Code |
 | `<config dir>/skills/` | You, wherever you work |
-| `~/.claude/skills/` | You, from Claude Code |
 
 The project folders are searched by walking up from the working directory to the repository root,
 nearest first, so a package's own skills outrank the repo's. Same boundary as the instruction files,
 and it matters more here: a skill is text the model reads **and acts on**, and the directories above
 your home folder are writable by other people on a shared machine. At one level the order is the
-table's: `.cxagent` before `.agents` before `.claude`, because a file written for this tool says more
-about what is meant here.
+table's: `.cxagent` before `.agents`, because a file written for this tool says more about what is
+meant here.
 
 **Skills shadow per name, not per folder.** Two `SKILL.md` files with the same name are two
 *versions* of one document, and merging them produces a document that contradicts itself — so the
@@ -585,12 +583,15 @@ load: a repo with its own skills still leaves yours available. A command file of
 (below) shadows a skill too, and then the skill is not offered to the model either — one name means
 one thing.
 
-**Claude Code's skills load as they are.** `allowed-tools` and `model` in their frontmatter are
-ignored, and `/skills` says so: `allowed-tools` is a permission grant written for another
-application's tools, and obeying it would mean following rules you never granted here. cxagent's own
-permission gate governs every call a skill provokes, exactly as if the model had chosen the tool
-itself. If you symlinked `.claude/skills` into `.cxagent/skills` to get them, the link can go —
-`.claude/skills` is read directly now. Leaving it does no harm: a folder reached twice is read once.
+**Claude Code's `.claude/skills` are not read**, in the repo or in `~/.claude`. They are written for
+that tool — its tool names, its subagents — and followed here they become instructions the model
+cannot carry out. A skill that suits both can be copied or symlinked into `.cxagent/skills` or
+`.agents/skills`; a folder reached twice through a link is read once.
+
+**`allowed-tools` and `model` in a skill's frontmatter are ignored**, and `/skills` says so:
+`allowed-tools` is a permission grant written for another application's tools, and obeying it would
+mean following rules you never granted here. cxagent's own permission gate governs every call a skill
+provokes, exactly as if the model had chosen the tool itself.
 
 **Two Claude Code keys are honoured.** `disable-model-invocation: true` keeps a skill out of the
 model's list — only you can run it, by typing `/name` — and `/skills` lists it under *You only*.
@@ -647,8 +648,9 @@ currently in force.
 ## Custom commands
 
 A prompt you use often, saved as a file and run by typing its name. `/review 42` sends the file's
-text, with `42` filled in, as your message; the model does the work. Claude Code's command files work
-unchanged.
+text, with `42` filled in, as your message; the model does the work. A Claude Code command file
+copied into `.cxagent/commands` works unchanged; `.claude/commands` itself is not read, for the same
+reason as its skills.
 
 ```markdown
 ---
@@ -668,9 +670,7 @@ Follow the house style in @CONTRIBUTING.md.
 | Location | Meaning |
 |---|---|
 | `<repo>/.cxagent/commands/` | This project, addressed to this agent |
-| `<repo>/.claude/commands/` | This project, written for Claude Code |
 | `<config dir>/commands/` | You, wherever you work |
-| `~/.claude/commands/` | You, from Claude Code |
 
 At each level a command file comes before a skill, so `review.md` and a `review` skill side by side
 mean the command. The name is the file name; a subfolder (`commands/frontend/component.md`) is only a

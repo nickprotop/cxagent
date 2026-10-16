@@ -18,29 +18,29 @@ public class CommandsCommandTests
     [Fact]
     public void Lists_NameSourceAndDescription()
     {
-        var text = Render(new([Entry("review", "/r/.claude/commands/review.md")], [], []));
+        var text = Render(new([Entry("review", "/r/.cxagent/commands/review.md")], [], []));
 
         Assert.Contains("/review", text);
         Assert.Contains("does review", text);
-        Assert.Contains(".claude/commands", text);
+        Assert.Contains(".cxagent/commands", text);
     }
 
     [Fact]
     public void Shadowed_NamesTheWinner()
     {
         var winner = Entry("review", "/r/.cxagent/commands/review.md");
-        var loser = Entry("review", "/home/.claude/commands/review.md");
+        var loser = Entry("review", "/home/config/commands/review.md");
 
         var text = Render(new([winner], [new ShadowedEntry(loser, winner)], []));
 
-        Assert.Contains("/home/.claude/commands/review.md", text);
+        Assert.Contains("/home/config/commands/review.md", text);
         Assert.Contains("shadowed by /r/.cxagent/commands/review.md", text);
     }
 
     [Fact]
     public void AFileNamedLikeABuiltIn_IsShadowedByTheBuiltIn()
     {
-        var text = Render(new([Entry("init", "/r/.claude/commands/init.md")], [], []), builtIns: "/init");
+        var text = Render(new([Entry("init", "/r/.cxagent/commands/init.md")], [], []), builtIns: "/init");
 
         Assert.Contains("shadowed by built-in /init", text);
     }
@@ -77,5 +77,5 @@ public class CommandsCommandTests
     [Fact]
     public void ANamedCommandABuiltInHolds_SaysTheBuiltInRuns() =>
         Assert.Contains("shadowed by built-in /init",
-            Render(new([Entry("init", "/r/.claude/commands/init.md")], [], []), "init", builtIns: "/init"));
+            Render(new([Entry("init", "/r/.cxagent/commands/init.md")], [], []), "init", builtIns: "/init"));
 }

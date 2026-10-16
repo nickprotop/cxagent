@@ -42,14 +42,13 @@ public static class SkillCatalog
     /// <summary>
     /// The skills the model may load: the model's view of <see cref="InvocableCatalog"/>.
     ///
-    /// <para>PER NAME, NEAREST FIRST, across project, config and home — see the catalog. A
+    /// <para>PER NAME, NEAREST FIRST, across the project and the config dir — see the catalog. A
     /// "you only" skill (<c>disable-model-invocation</c>) and a name a command file took are not
     /// offered, so the prompt, the <c>skill</c> tool's offer and its loading all read one list.</para>
     /// </summary>
-    public static SkillCatalogResult Find(string startDirectory, string? globalDirectory = null,
-        string? homeDirectory = null)
+    public static SkillCatalogResult Find(string startDirectory, string? globalDirectory = null)
     {
-        var all = InvocableCatalog.Find(new CatalogRoots(startDirectory, globalDirectory, homeDirectory));
+        var all = InvocableCatalog.Find(new CatalogRoots(startDirectory, globalDirectory));
         return new SkillCatalogResult(all.ModelSkills, all.Problems, null);
     }
 
@@ -60,7 +59,8 @@ public static class SkillCatalog
     /// model sees before loading a skill, so a skill without one is refused rather than guessed at.</para>
     ///
     /// <para>UNKNOWN KEYS ARE IGNORED, NOT FATAL. Published skills carry <c>argument-hint</c> and
-    /// <c>allowed-tools</c>; refusing them would make every Claude Code skill unreadable. Ignoring
+    /// <c>allowed-tools</c>; refusing them would make every skill shared through <c>.agents/skills</c>
+    /// or copied from Claude Code unreadable. Ignoring
     /// <c>allowed-tools</c> is a decision with teeth and it is deliberate: it names another
     /// application's tools, and this app's own permission gate governs every call a skill provokes.</para>
     /// </summary>

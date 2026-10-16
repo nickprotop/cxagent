@@ -28,7 +28,7 @@ public static class CommandsCommand
         if (typeable.Count == 0)
         {
             lines.Add("## Custom commands");
-            lines.Add("none found. Add one at `.cxagent/commands/<name>.md` — `.claude/commands` works too.");
+            lines.Add("none found. Add one at `.cxagent/commands/<name>.md`.");
         }
         else
         {
@@ -43,9 +43,9 @@ public static class CommandsCommand
                     + $" · {Md.Escape(Source(entry))}");
                 lines.Add($"  {Md.Escape(entry.Description)}");
 
-                // NAMED, NOT HIDDEN. A Claude Code file's allowed-tools is a grant this app does not
-                // honour; saying so here is how the user learns that a command which ran silently
-                // there will ask here.
+                // NAMED, NOT HIDDEN. A file copied from Claude Code carries allowed-tools, a grant
+                // this app does not honour; saying so here is how the user learns that a command
+                // which ran silently there will ask here.
                 if (entry.IgnoredFields.Count > 0)
                     lines.Add($"  ignored: {string.Join(", ", entry.IgnoredFields)}");
             }

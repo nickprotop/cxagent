@@ -125,10 +125,6 @@ public sealed class Agent
     /// </summary>
     private readonly string? _globalInstructionsDir;
 
-    /// <summary>The user's home, for skills under <c>~/.claude/skills</c>; null reads none — see
-    /// <see cref="Storage.AppPaths.HomeDir"/>.</summary>
-    private readonly string? _homeDirectory;
-
     /// <summary>Connected MCP servers, or null when none are configured — which is the common case
     /// and must cost nothing.</summary>
     private readonly Core.Mcp.McpToolset? _mcp;
@@ -918,7 +914,6 @@ public sealed class Agent
     /// context still HAS one, rather than borrowing the caller's list.
     /// </param>
     /// <param name="globalInstructionsDir">Where user-level AGENTS.md and friends are read from.</param>
-    /// <param name="homeDirectory">The user's home, for <c>~/.claude/skills</c>; null reads none.</param>
     /// <param name="mcp">Connected MCP servers, whose tools are offered beside the built-ins.</param>
     /// <param name="briefing">
     /// The highest-authority text in this agent's prompt — what an agent TYPE is told it is for.
@@ -986,7 +981,7 @@ public sealed class Agent
     /// </param>
     public Agent(ILlmProvider provider, JobRegistry executors, TokenLedger ledger,
         ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
-        AgentContext? context = null, string? globalInstructionsDir = null, string? homeDirectory = null,
+        AgentContext? context = null, string? globalInstructionsDir = null,
         Core.Mcp.McpToolset? mcp = null,
         string? briefing = null,
         ISubAgentSpawner? spawner = null,
@@ -1123,7 +1118,7 @@ public sealed class Agent
             var cwd = TryGetWorkingDirectory();
             return cwd is null
                 ? new Skills.SkillCatalogResult([], [], null)
-                : Skills.SkillCatalog.Find(cwd, _globalInstructionsDir, _homeDirectory);
+                : Skills.SkillCatalog.Find(cwd, _globalInstructionsDir);
         });
         _modelFacingCommands = modelFacingCommands;
         _isSubAgent = isSubAgent;
@@ -1147,7 +1142,6 @@ public sealed class Agent
         _compressAbove = compressAbove;
         _context = context ?? new AgentContext();
         _globalInstructionsDir = globalInstructionsDir;
-        _homeDirectory = homeDirectory;
     }
 
     /// <summary>Every tool, always. Safety lives in the permission gate, not in withholding

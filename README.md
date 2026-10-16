@@ -283,10 +283,11 @@ ERR-UNBALANCED in the message.
 because a file with broken frontmatter is otherwise invisible: you wrote it, nothing happened, and
 there was no error anywhere. The session panel shows which skills are currently in force.
 
-Already have `.claude/skills/`? They load as they are — in the repo and in `~/.claude` — and
-cxagent's own permission gate still governs every tool call, so no `allowed-tools` grant comes with
-them. Skills from every folder are offered together; for a name that appears twice, the nearest
-wins. Type a skill's name — `/double-entry-posting` — to run it yourself.
+Skills from every folder are offered together; for a name that appears twice, the nearest wins.
+Type a skill's name — `/double-entry-posting` — to run it yourself. Claude Code's `.claude/skills/`
+are not read: they are written for that tool's tools. One that suits cxagent too can be copied or
+linked into `.cxagent/skills/`, where cxagent's own permission gate still governs every tool call
+and no `allowed-tools` grant comes with it.
 
 **Same caveat as delegation: whether a model reaches for a skill is a property of the model.** On a
 local `qwen3.6-35b-a3b` it does — it announced *"this is a double-entry bookkeeping task, so let me
@@ -311,9 +312,9 @@ Review PR $1 against the house style. The diff: !`gh pr diff $1`
 ```
 
 `/review 42` sends that, with the PR's diff in place of the shell line — which asks first, like any
-shell command the model runs. Claude Code's `.claude/commands/` work unchanged; their
-`allowed-tools` is ignored, and `/commands` says so, along with every file that was shadowed or
-skipped. A command typed while a turn runs waits and runs next. `cxagent -p "/review 42"` runs it
+shell command the model runs. A Claude Code command copied into `.cxagent/commands/` works
+unchanged — `.claude/commands/` itself is not read; its `allowed-tools` is ignored, and `/commands`
+says so, along with every file that was shadowed or skipped. A command typed while a turn runs waits and runs next. `cxagent -p "/review 42"` runs it
 headlessly. See [CONFIG.md](CONFIG.md#custom-commands).
 
 ## Plugins

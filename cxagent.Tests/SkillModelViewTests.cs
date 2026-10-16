@@ -30,12 +30,13 @@ public class SkillModelViewTests : IDisposable
         Assert.Equal(["one", "two"], found.Skills.Select(s => s.Name).ToArray());
     }
 
+    /// <summary>Claude Code's skills are written for its tools, not these: not offered to the model.</summary>
     [Fact]
-    public void ClaudeSkills_AreRead()
+    public void ClaudeSkills_AreNotRead()
     {
         Skill(Path.Combine(_root, ".claude", "skills"), "from-claude");
 
-        Assert.Single(SkillCatalog.Find(_root).Skills);
+        Assert.Empty(SkillCatalog.Find(_root).Skills);
     }
 
     /// <summary>A skill the user typed is loaded: the skill tool must not send it again.</summary>
@@ -50,13 +51,4 @@ public class SkillModelViewTests : IDisposable
 
         Assert.Equal(["deploy"], SkillLoader.LoadedIn(messages));
     }
-
-    /// <summary>A library embedder reads ~/.claude only if it asks to: the default reads no home.</summary>
-    [Fact]
-    public void AppPaths_ByDefault_HasNoHome() =>
-        Assert.Null(new CxAgent.Core.Storage.AppPaths().HomeDir);
-
-    [Fact]
-    public void AppPaths_ForAnOverride_HasNoHome() =>
-        Assert.Null(new CxAgent.Core.Storage.AppPaths(_root).HomeDir);
 }

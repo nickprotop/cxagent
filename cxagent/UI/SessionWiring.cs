@@ -200,7 +200,7 @@ public static class SessionWiring
             // The LOADED list is derived from the parent's window, so it empties itself when
             // compaction removes a body. That silent stop is the thing worth showing.
             main.SetSkills(session,
-                Core.Skills.SkillCatalog.Find(session.WorkingDirectory, configDir, session.Services?.HomeDir).Skills.Count,
+                Core.Skills.SkillCatalog.Find(session.WorkingDirectory, configDir).Skills.Count,
                 session.LoadedSkills);
         }, "sessionWiring.SessionWiring");
 

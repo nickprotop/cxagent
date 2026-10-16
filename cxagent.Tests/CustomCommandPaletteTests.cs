@@ -7,7 +7,7 @@ namespace CxAgent.Tests;
 public class CustomCommandPaletteTests
 {
     private static Invocable Entry(string name, string? hint = null, string? label = null) =>
-        new(name, InvocableKind.Command, $"/r/.claude/commands/{name}.md", "/r/.claude/commands", label,
+        new(name, InvocableKind.Command, $"/r/.cxagent/commands/{name}.md", "/r/.cxagent/commands", label,
             $"does {name}", hint, true, false, [], "b", null);
 
     [Fact]
@@ -55,15 +55,13 @@ public class CustomCommandPaletteTests
     [Fact]
     public void FromCatalog_TagsEachRow_WithWhereItCameFrom()
     {
-        var home = Entry("mine") with { Scope = InvocableScope.Home };
         var config = Entry("cfg") with { Scope = InvocableScope.Config };
         var projectSkill = Entry("tidy") with { Kind = InvocableKind.Skill, ModelInvocable = true };
 
-        var rows = SessionCommands.FromCatalog(new InvocableCatalogResult([home, config, projectSkill], [], []), _ => false);
+        var rows = SessionCommands.FromCatalog(new InvocableCatalogResult([config, projectSkill], [], []), _ => false);
 
         // FIRST, because the palette cuts a summary at its column width and a tag at the end is the
         // part that goes.
-        Assert.StartsWith("~/.claude · ", rows.Single(r => r.Name == "/mine").Summary);
         Assert.StartsWith("config · ", rows.Single(r => r.Name == "/cfg").Summary);
         Assert.StartsWith("project · skill · ", rows.Single(r => r.Name == "/tidy").Summary);
     }

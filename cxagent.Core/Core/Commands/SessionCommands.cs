@@ -214,12 +214,12 @@ public static class SessionCommands
                 e.ArgumentHint is { Length: > 0 } hint ? [new CommandArgument(hint, "", Completes: false)] : null))];
 
     /// <summary>
-    /// Where a custom command came from, short: <c>project</c>, <c>config</c> or <c>~/.claude</c>,
+    /// Where a custom command came from, short: <c>project</c> or <c>config</c>,
     /// then <c>skill</c> for a skill and the subfolder for a labelled command.
     /// </summary>
     private static string SourceTag(Invocable e) => string.Join(" · ", new[]
     {
-        e.Scope switch { InvocableScope.Home => "~/.claude", InvocableScope.Config => "config", _ => "project" },
+        e.Scope == InvocableScope.Config ? "config" : "project",
         e.Kind == InvocableKind.Skill ? "skill" : null,
         e.Label,
     }.Where(p => p is not null));

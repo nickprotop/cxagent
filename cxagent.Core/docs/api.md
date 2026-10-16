@@ -227,7 +227,7 @@ Each does the work, says its result through your observer, and returns a `Comman
 ## Custom commands
 
 **`Submit` does this for you.** A user's `/name` that the registry does not know is looked up among
-command files and skills (`.cxagent/commands`, `.claude/commands`, the skill folders — see
+command files and skills (`.cxagent/commands`, the config dir's `commands`, the skill folders — see
 CONFIG.md) and run as a turn whose first step is expanding the file. A built-in always wins, and only
 the user's own text expands: a delivery or a plugin's goal starting with `/` stays text.
 
@@ -239,11 +239,6 @@ SubmitOutcome RunCommand(TypedCommand command) // run it — or hold it if a tur
 string?               HeldCommand              // the command waiting for the turn to end
 event Action<string?>? HeldChanged;            // the slot changed — read HeldCommand, not the argument
 ```
-
-**`~/.claude` is opt-in.** The scan reads `<home>/.claude/commands` and `skills` only when
-`AppPaths.HomeDir` is set — `new AppPaths(dir) { HomeDir = AppPaths.UserHome }`. The default leaves it
-null, so a library embedding Core does not find another tool's files in its model's prompt by
-accident; cxagent's own startup sets it.
 
 `TypedCommand(Line, Entry) { Attachment }` — `Attachment` goes under the expansion, never into
 `$ARGUMENTS`; a headless front end puts piped input there.

@@ -419,9 +419,6 @@ public sealed class AgentHost : IDisposable
         /// <summary>cxagent's config folder, so a user-level CXAGENT.md applies wherever they work.</summary>
         public string? GlobalInstructionsDir { get; init; }
 
-        /// <summary>The user's home, for <c>~/.claude/skills</c> — see <c>AppPaths.HomeDir</c>.</summary>
-        public string? HomeDir { get; init; }
-
         /// <summary>The real window, so compaction derives its threshold from actual headroom.</summary>
         public int? ContextWindow { get; init; }
 
@@ -774,7 +771,6 @@ public sealed class AgentHost : IDisposable
             workingDir: _runtime.WorkingDir,
             instanceName: _runtime.InstanceName,
             globalInstructionsDir: _runtime.GlobalInstructionsDir,
-            homeDirectory: _runtime.HomeDir,
             mcp: _runtime.Mcp,
             briefing: _runtime.Briefing,
 

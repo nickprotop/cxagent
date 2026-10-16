@@ -7,7 +7,8 @@ namespace CxAgent.Tests;
 
 /// <summary>
 /// Command files written the way Claude Code's own documentation writes them, read and expanded
-/// unchanged — the promise that a user's existing .claude/commands work here.
+/// unchanged — the promise that a command copied from .claude/commands into .cxagent/commands works
+/// here as it did there.
 /// </summary>
 public class ClaudeCodeParityTests : IDisposable
 {
@@ -18,16 +19,16 @@ public class ClaudeCodeParityTests : IDisposable
     public ClaudeCodeParityTests()
     {
         Directory.CreateDirectory(Path.Combine(_repo, ".git"));
-        Directory.CreateDirectory(Path.Combine(_repo, ".claude", "commands"));
+        Directory.CreateDirectory(Path.Combine(_repo, ".cxagent", "commands"));
     }
 
     public void Dispose() { try { Directory.Delete(_repo, recursive: true); } catch (Exception) { } }
 
     private void File_(string name, string text) =>
-        File.WriteAllText(Path.Combine(_repo, ".claude", "commands", name + ".md"), text);
+        File.WriteAllText(Path.Combine(_repo, ".cxagent", "commands", name + ".md"), text);
 
     private Invocable Find(string name) =>
-        InvocableCatalog.Find(new CatalogRoots(_repo, null, null)).Typed(name)
+        InvocableCatalog.Find(new CatalogRoots(_repo, null)).Typed(name)
         ?? throw new Xunit.Sdk.XunitException($"/{name} was not found");
 
     private Task<string> Expand(Invocable entry, string arguments) =>

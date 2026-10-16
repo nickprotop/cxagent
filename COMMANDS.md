@@ -382,8 +382,7 @@ See [CONFIG.md](CONFIG.md#skills) for where skills live and what a `SKILL.md` lo
 
 ## `/commands`
 
-Your saved prompts. A file at `.cxagent/commands/review.md` — or `.claude/commands/review.md`, which
-is where Claude Code keeps them — is typed as `/review 42`: its text goes to the model with `42`
+Your saved prompts. A file at `.cxagent/commands/review.md` is typed as `/review 42`: its text goes to the model with `42`
 filled in, and the transcript shows what you typed. See [CONFIG.md](CONFIG.md#custom-commands) for
 where they live and what a file can do — arguments, ``!`shell` `` lines, `@file` includes.
 

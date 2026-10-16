@@ -179,9 +179,6 @@ public sealed class SubAgentFactory
         /// <summary>cxagent's own config folder, so a user-level CXAGENT.md applies everywhere.</summary>
         public string? GlobalInstructionsDir { get; init; }
 
-        /// <summary>The user's home, for <c>~/.claude/skills</c> — see <c>AppPaths.HomeDir</c>.</summary>
-        public string? HomeDir { get; init; }
-
         /// <summary>
         /// THE PARENT'S TOOLSET, decided (D21). A child that cannot reach the docs server is crippled
         /// for the obvious use case — "go and find out how X works" is exactly what a child is for.
@@ -363,7 +360,6 @@ public sealed class SubAgentFactory
             workingDir: _runtime.WorkingDir,
             instanceName: runtime.InstanceName,
             globalInstructionsDir: _runtime.GlobalInstructionsDir,
-            homeDirectory: _runtime.HomeDir,
             mcp: _runtime.Mcp,
             // THE TYPE'S BRIEFING WINS over the parameter: the parameter is the caller saying what
             // this child is for, and a type is a human in config saying how that work is done (D9).

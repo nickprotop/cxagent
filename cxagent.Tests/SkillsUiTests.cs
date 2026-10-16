@@ -98,11 +98,11 @@ public class SkillsUiTests
     public void Skills_ListsShadowedSkills_WithTheirWinner()
     {
         var near = Skill("review", folder: "/repo/.cxagent/skills");
-        var far = Skill("review", folder: "/home/.claude/skills");
+        var far = Skill("review", folder: "/home/config/skills");
 
         var text = Render(new InvocableCatalogResult([near], [new ShadowedEntry(far, near)], []));
 
-        Assert.Contains("/home/.claude/skills/review/SKILL.md", text, StringComparison.Ordinal);
+        Assert.Contains("/home/config/skills/review/SKILL.md", text, StringComparison.Ordinal);
         Assert.Contains("shadowed by /repo/.cxagent/skills/review/SKILL.md", text, StringComparison.Ordinal);
     }
 

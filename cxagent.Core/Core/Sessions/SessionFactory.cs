@@ -202,7 +202,6 @@ internal static class SessionFactory
             ContextWindow = resolution.ContextWindow,
 
             GlobalInstructionsDir = shared.GlobalInstructionsDir,
-            HomeDir = shared.HomeDir,
             Mcp = shared.Mcp,
 
             // THE SAME POLICY THE PARENT GETS. A child calling an MCP tool is the common case, and
@@ -295,7 +294,6 @@ internal static class SessionFactory
 
                 // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
                 GlobalInstructionsDir = shared.GlobalInstructionsDir,
-                HomeDir = shared.HomeDir,
 
                 // The real window (when config told us one), so auto-compression derives its
                 // threshold from actual headroom instead of the fixed constant. Null on

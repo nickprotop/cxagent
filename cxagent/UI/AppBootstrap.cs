@@ -131,9 +131,7 @@ public static class AppBootstrap
         // --config-dir OVERRIDES EVERYTHING, including XDG_CONFIG_HOME, because it is the more
         // specific instruction: someone who typed a path on the command line means that path.
         // Null falls through to AppPaths' own resolution, so the default is untouched.
-        // HOME EVEN WITH --config-dir: that flag moves cxagent's own state, and ~/.claude is the
-        // user's, read for their Claude Code commands and skills.
-        var paths = new AppPaths(options.ConfigDir) { HomeDir = AppPaths.UserHome };
+        var paths = new AppPaths(options.ConfigDir);
         paths.EnsureCreated();
 
         // A HEADLESS RUN NEVER BUILDS A WINDOW. It branches here, after the questions that need no
