@@ -66,10 +66,20 @@ public sealed partial class Session
         // the next message — and says so on the mode line meanwhile.
         if (IsBusy)
         {
+            // Choosing back the level in use cancels the pending one rather than queueing a swap
+            // to where the session already is.
             _pendingThinking = level;
-            _hasPending = true;
+            _hasPending = level != ThinkingLevel;
             Announce(SessionChangeKind.Thinking);
             return CommandStatus.Changed;
+        }
+
+        // THE LEVEL IN USE IS NOT A CHANGE. A swap to it changes nothing the model sees, yet would
+        // say "set", and the cache note would warn of a full-price re-send that never happens.
+        if (level == ThinkingLevel)
+        {
+            Say(new Message(level is null ? "Thinking is already the model's default." : $"Thinking is already {level}."));
+            return CommandStatus.Reported;
         }
 
         Apply(level);
@@ -111,7 +121,7 @@ public sealed partial class Session
         if (_hasPending)
         {
             _hasPending = false;
-            Apply(_pendingThinking);
+            if (_pendingThinking != ThinkingLevel) Apply(_pendingThinking);
         }
 
         if (_thinkingChecked || ThinkingLevel is not { } level || level == ThinkingLevels.Lowest) return;

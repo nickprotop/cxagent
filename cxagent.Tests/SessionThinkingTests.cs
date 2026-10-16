@@ -170,6 +170,45 @@ public class SessionThinkingTests : IDisposable
         Assert.Null(session.ThinkingLevel);
     }
 
+    // THE LEVEL IN USE IS NOT A CHANGE: no new provider, so no rebuilt prompt cache and no notice
+    // that something was set.
+    [Fact]
+    public void SetThinking_TheLevelInUse_KeepsTheProvider_AndSaysSo()
+    {
+        var (manager, session, said) = Wired(new LevelledMock(["low", "high"]));
+        using var _m = manager;
+        session.SetThinking("high");
+        var provider = session.Provider;
+
+        Assert.Equal(CommandStatus.Reported, session.SetThinking("high"));
+
+        Assert.Same(provider, session.Provider);
+        Assert.Equal("Thinking is already high.", said.Notices[^1]);
+    }
+
+    // CHOSEN BACK MID-TURN: picking a level and then the one in use leaves nothing pending.
+    [Fact]
+    public async Task ChoosingTheLevelInUseMidTurn_LeavesNothingPending()
+    {
+        var model = new LevelledMock(["low", "high"]);
+        var (manager, session, said) = Wired(model);
+        using var _m = manager;
+
+        model.State.Hold = new TaskCompletionSource();
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("first"));
+        while (model.State.Seen.IsEmpty) await Task.Delay(5);
+        var provider = session.Provider;
+
+        session.SetThinking("low");
+        session.SetThinking(null);
+        Assert.Null(session.PendingThinking);
+
+        model.State.Hold.SetResult();
+        await started.Turn;
+        Assert.Same(provider, session.Provider);
+        Assert.DoesNotContain(said.Notices, n => n.StartsWith("Thinking set to", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void RestoreThinking_SetsTheLevel_WithoutANotice()
     {
