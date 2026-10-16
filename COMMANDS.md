@@ -39,9 +39,11 @@ but not completed.
 | `/<name> [args]` | Run a custom command, or a skill by name — see [`/commands`](#commands) |
 | `/agents` | The sub-agent types this session can spawn |
 | `/agents <name>` | The full briefing that type is given |
-| `/agents list` | The sub-agents this session has actually spawned, and which are busy |
 | `/agents edit` | Add agent types, or set where the built-ins run |
 | `/agents send <name> <prompt>` | Ask one for more — it still has its own context |
+| `/tasks` | Background sub-agents and commands — running, and what finished |
+| `/tasks stop <handle\|pid>` | Stop one |
+| `/tasks output <handle\|pid>` | How far it has got, or what it left |
 | `/init` | Write the project instruction file this agent reads each session |
 | `/diff` | What has changed in the working tree |
 | `/diff --staged` · `/diff <path>` | Narrow it to the index, or to one file |
@@ -445,13 +447,12 @@ What this session can delegate to, and what each type is told.
 ```
 /agents                      every type: where it runs, its turn cap, one line on when to choose it
 /agents planner              that type's briefing in full
-/agents list                 the sub-agents this session has actually spawned
-/agents send <name> <ask>    ask one of them for more
+/agents send <name> <ask>    ask one it already spawned for more
 ```
 
 **TYPES AND INSTANCES ARE DIFFERENT LISTS.** `/agents` is the catalog — what *could* be spawned,
-fixed for the session. `/agents list` is what this conversation *did* spawn, with the handle each
-answers to and a `[busy]` marker on any still working.
+fixed for the session. [`/tasks`](#tasks) is what this conversation *did* spawn, with the handle each
+answers to and its state.
 
 **The listing is what the model reads while choosing.** Each row shows the type's own description —
 the single line the spawn tool puts in front of the model — trimmed to its first sentence so the list
@@ -481,8 +482,9 @@ catalog.
 **`send` REACHES A CHILD THAT ALREADY EXISTS, which is the one thing the catalog cannot do.** A
 spawned sub-agent keeps its context for the life of the session — everything it read, ran and
 concluded — so asking it more costs a turn instead of the minutes a replacement would spend
-rediscovering the same ground. The handle comes from `/agents list` or from the `name=` on the spawn
-result, and it completes in the palette, so nothing has to be retyped from a listing.
+rediscovering the same ground. The handle comes from `/tasks` or from the `name=` on the spawn
+result, and it completes in the palette, so nothing has to be retyped from a listing. **The answer
+comes to you**, in the transcript — not to the model as a background report — because you asked.
 
 The model has the same reach through the `agent_send` tool; this is the same door for a user who can
 see what the model has not noticed, and it behaves the same way.
@@ -491,8 +493,12 @@ see what the model has not noticed, and it behaves the same way.
 mailbox, which it drains at the top of its next turn — so the reply confirms delivery rather than
 answering, and the child reads what you said on the next lap. Telling it the moment you know beats
 telling it after it has finished working on the wrong thing, which is the entire reason a running
-child can be reached at all. `/agents list` marks a busy one so you can see what your message will
+child can be reached at all. `/tasks` shows which are running so you can see what your message will
 queue behind.
+
+**YOUR SEND RESUMES AN AGENT YOU STOPPED.** The model's `agent_send` to an agent you stopped is
+refused — it must not quietly restart work you ended — so your own `/agents send` is the way back,
+and after it the model may work with that agent again.
 
 ## `/init`
 
@@ -664,7 +670,7 @@ asked to look, and a line in the conversation is read after you have switched aw
 
 `run_shell` runs a command with its streams captured — waiting for it and reading what it printed, or,
 with `background: true`, handing back a pid and a file path at once and reporting the exit code when it
-arrives — and `/jobs` lists what is running. Either way it covers everything except what needs a
+arrives — and [`/tasks`](#tasks) lists what is running. Either way it covers everything except what needs a
 person: a `sudo` password, `gcloud auth login`, `git rebase -i`, an installer that paints a screen.
 There is nothing to type into behind a captured stream, so the agent reaches that wall and hands the
 job back.
@@ -719,24 +725,32 @@ never suggests one that could not work.
 
 ---
 
-## `/jobs`
+## `/tasks`
 
-`/shell` opens a terminal for work that needs a person at the keyboard. `/jobs` is the other side of
-that: work with no terminal at all, backgrounded by `run_shell` and running unattended.
+`/shell` opens a terminal for work that needs a person at the keyboard. `/tasks` is the other side of
+that: work running unattended — commands backgrounded by `run_shell`, and sub-agents running in the
+background.
 
 ```
-/jobs              # every background command running now, across every agent
-/jobs kill <pid>   # stop one
+/tasks                          # every background agent and command, running and recently finished
+/tasks stop <handle|pid>        # stop one
+/tasks output <handle|pid>      # how far it has got, or what it left
 ```
 
-Each row shows the pid, who started it, how long it has been running, and the command line. **It is
-every agent's work, not only yours** — the registry backing it is process-wide, and a job is killable
-by pid regardless of who is told about it, so hiding another agent's row would draw a boundary that
-is not really there.
+A sub-agent's row shows its handle, type and state — queued, running, finished, stopped, busy or idle,
+and "report not delivered" when its report could not reach the model. A command's row shows the pid,
+who started it, how long it has been running, the command line and where its output is going. **It is
+every agent's work, not only yours** — the registry backing it is process-wide, and a command is
+stoppable by pid regardless of who is told about it, so hiding another agent's row would draw a
+boundary that is not really there. Commands that have ended stay listed with their exit code.
 
-**The `<pid>` argument completes**, offering the live pids with their command lines as summaries, the
-same mechanism `/agents send` uses for a spawned agent's name — so nobody has to retype a pid they
-just read off a `/jobs` row.
+**`stop` on an agent is your stop.** The agent reports to the model that you stopped it, without
+starting a turn, and the model is refused if it tries to restart it. **`output` reads without taking**:
+looking at a finished agent's report here does not stop the model being sent it.
+
+**The arguments complete**, offering the kept agents and the live pids with a summary of each, the
+same mechanism `/agents send` uses — so nobody has to retype a handle or a pid they just read off a
+`/tasks` row.
 
 **You do not have to ask.** `F7` turns the right-hand column into the jobs panel, as `F3` is the info
 panel: each of this session's background commands with its state, how long it has run, and the last
@@ -752,13 +766,14 @@ at the bottom. **Kill** stops the job; **Copy to transcript** queues its last 8,
 with your next message, without starting a turn — and if you send while a turn is running, the model
 gets the copy but your message shows only what you typed. Closing the tab leaves the job running.
 
-When a background command finishes while the session is idle, its notice starts a turn. The notice
-is shown as a System note, not as something you typed.
+When a background command or agent finishes while the session is idle, its notice starts a turn; a
+finished agent's report is shown as one line, not drawn in full. The notice is a System note, not
+something you typed.
 
-The model has the same two operations as `job_list` and `job_kill`, not as a `/jobs` it can type — it
-already has tools for this, and a command that only led to "the model has no terminal to run this in"
-would be a dead end. **The session agent may stop any job; a sub-agent may stop only its own**, and is
-told who owns it when refused. There is no permission prompt on a kill: the command was already
+The model has the same operations as `task_list`, `task_stop` and `task_output`, not as a `/tasks` it
+can type — it already has tools for this, and a command that only led to "the model has no terminal to
+run this in" would be a dead end. **The session agent may stop anything; a sub-agent may stop only its
+own commands**, and is told who owns one when refused. A sub-agent never sees other sub-agents. There is no permission prompt on a kill: the command was already
 approved once, when it was backgrounded.
 
 ---

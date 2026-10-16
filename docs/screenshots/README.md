@@ -329,7 +329,7 @@ The build finished first. Its notice is the `System` block in the transcript, no
 user's colour, because nobody typed it; the agent read the output it named and said so. The suite is
 still running above it, its newest lines arriving on the right.
 
-The prompt told it not to poll. Without that, a local model checks `job_list` every few seconds and
+The prompt told it not to poll. Without that, a local model checks `task_list` every few seconds and
 asks to `sleep` in between — work the exit notice already does.
 
 ![The test job open in a tab, ending in Passed! 3211](28-job-tab.png)

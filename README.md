@@ -115,11 +115,11 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `skill` | Load a skill's instructions on demand |
 | `todowrite` | Keep a task list across a long job |
 | `ask_user` | Ask the user questions — options with descriptions, several per call |
-| `agent` | Delegate a job to a sub-agent (fan-out mode) |
+| `agent` | Delegate a job to a sub-agent (fan-out mode) — in the background by default (`background`) |
 | `agent_send` | Ask a sub-agent you already spawned for more — it still has its own context |
-| `agent_list` | See which sub-agents this session has spawned |
-| `job_list` | Background commands running now, across every agent in the session, and where each one's output is going |
-| `job_kill` | Stop one by pid — your own, or any of them if you are the session agent |
+| `task_list` | Everything running in the background: sub-agents by handle, shell commands by pid, and what finished |
+| `task_stop` | Stop a background sub-agent or command — any of them if you are the session agent, otherwise your own commands |
+| `task_output` | How far a background task has got, or what it left; `wait: true` waits for it |
 
 **A long command does not have to hold the turn.** `run_shell` with `background: true` starts the
 command and returns at once with its pid and the path its output is going to — no `stdout`, because
@@ -127,13 +127,14 @@ nothing has been printed yet — and the agent is told separately when it exits,
 command that is *still* running at its `timeout_seconds` (120 by default) is handed over the same way
 rather than killed, so the work is not thrown away and re-run; `shellDetachOnTimeout: false` in
 config kills it at the deadline instead. Sixteen background commands may run at once, and past that
-`background: true` is refused rather than queued — the refusal names `job_list` and `job_kill`, since
+`background: true` is refused rather than queued — the refusal names `task_list` and `task_stop`, since
 ending one is what frees a slot.
 
-**`F7` shows this session's background commands in the right-hand column, and `Enter` on one follows its output in a tab.** **`/jobs` lists every background command running, and `/jobs kill <pid>` stops one** — the pid
+**`F7` shows this session's background commands in the right-hand column, and `Enter` on one follows its output in a tab.** **`/tasks` lists every background command and sub-agent, `/tasks stop` stops one, and `/tasks output` shows how far it has got** — the handle or pid
 completes in the palette, so nothing has to be retyped from a row you just read. The model has the
-same reach through `job_list` and `job_kill`, with one restriction a user does not have: the session
-agent may stop any job, but a sub-agent may stop only its own, and the refusal names who owns it.
+same reach through `task_list`, `task_stop` and `task_output`, with one restriction a user does not
+have: the session agent may stop anything, but a sub-agent may stop only its own commands, and the
+refusal names who owns it.
 There is no permission prompt on a kill — the command was already approved when it was backgrounded.
 A detached command is killed when cxagent exits, and one left behind by a crash is killed by the next
 launch.
@@ -147,11 +148,22 @@ reading all of one takes both files.
 
 `run_shell` also takes `env`, a set of environment variables added to the command's own.
 
+**A sub-agent runs in the background by default.** The spawn returns at once with a receipt naming
+the agent; the parent carries on, and the agent's report reaches it as a message when it is done —
+later in the same turn if the parent is still working, or as a new turn if it is not. A result is
+delivered exactly once: if the parent asked for it with `task_output` and `wait: true`, no message
+follows. `background: false` makes the spawn wait for its answer, for work the next step cannot start
+without. Escape never stops a background agent; `task_stop`, `/tasks stop`, closing its tab and
+quitting do, and closing or quitting asks first while one is running. An agent the user stopped reports
+that it was stopped, and the model is refused if it tries to restart it — the user's own `/agents send`
+is the way back. Headless runs (`-p`) spawn in the foreground, since a run with one answer has to wait
+for the work that answer needs.
+
 **A sub-agent is kept, not thrown away.** When one finishes, its context — everything it read, ran
 and concluded — stays for the life of the session, and `agent_send` asks it more on that same
 conversation. That is far cheaper than spawning a second agent to cover the ground the first already
-covered, which would have to redo the work to get back to where the first one already was. The three
-tools are offered only to an agent that can spawn, so a sub-agent cannot reach a sibling.
+covered, which would have to redo the work to get back to where the first one already was. `agent`
+and `agent_send` are offered only to an agent that can spawn, so a sub-agent cannot reach a sibling.
 
 **One name per tool, and no aliases.** Several of these have been renamed — `glob` was
 `list_files`, `grep` was `search_files`, `agent` was `spawn_agent` then `task`, `ask_user` was
@@ -259,9 +271,8 @@ See [CONFIG.md](CONFIG.md) for the `agents` block, and [COMMANDS.md](COMMANDS.md
   rarely on its own judgement, usually doing the work inline instead. A stronger model may well
   choose to delegate unprompted; we have not measured one. Treat the guidance as a starting point
   rather than a property of the tool.
-- **Sub-agents in one message run concurrently**, and the parent waits for all of them before it
-  answers. No child outlives the turn that started it — the message format requires every tool call
-  to be answered in the same turn, so a background agent has nowhere to put its result.
+- **Sub-agents in one message run concurrently.** In the background each reports on its own as it
+  finishes; with `background: false` the parent waits for all of them before it answers.
 - A sub-agent cannot spawn its own — not a rule it is asked to follow, a tool it is never given.
 - **A briefing is a request, not a permission.** "Never edit files" in a type's briefing asks the
   agent not to; it does not remove the tool. Permissions are the mechanism that constrains an agent,
