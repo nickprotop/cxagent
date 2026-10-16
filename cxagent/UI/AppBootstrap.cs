@@ -535,9 +535,18 @@ public static class AppBootstrap
 
         // WHAT THE CONFIGURATION DIALOG NEEDS, built once: F8, /providers, /mcp edit and first run all
         // open the same dialog over the same live config.
+        // THE STARTUP SESSION'S FIRST WIRE, ON EVERY COPY OF THE DIALOG — not only first run's. A
+        // first-run dialog closed without saving leaves that session with no provider, and no rebind
+        // reaches a session with no instance; the first provider saved from F8 later must wire it,
+        // or the tab stays unable to take a goal until a restart. Assigned below, once WireRunner's
+        // state exists; a no-op once the session has a provider.
+        Action<ResolvedConfig>? wireStartup = null;
         var configHost = new ConfigDialogHost(system, mainWindow,
             new ConfigApplyContext(paths, env, configNow, manager, mcp),
-            () => mainWindow.ActiveSession ?? session, mcpCommand);
+            () => mainWindow.ActiveSession ?? session, mcpCommand)
+        {
+            WireFirst = res => wireStartup?.Invoke(res),
+        };
 
 
 
@@ -898,11 +907,17 @@ public static class AppBootstrap
         // only ever rebuild that one — which is why `/sessions resume` from a second tab had to be
         // refused rather than serviced. The five uses below are the whole of it; what made the change
         // worth doing carefully is the POLICY, which was built once outside and is per session.
-        void WireRunner(ResolvedConfig res, Session? target = null)
+        void WireRunner(ResolvedConfig res, Session? target = null, bool rebind = false)
         {
             if (!res.HasProvider) return;
 
             var wired = target ?? session;
+
+            // A SAVED CONFIGURATION'S REBIND KEEPS THE TAB'S MODE AND POLICY: a model change is not a
+            // mode change. Every other wire — the first, a resume — starts from the launch mode, as
+            // it did.
+            var kept = rebind ? SessionWiring.KeptByRebind(wired, startupMode) : new SessionWiring.Kept(startupMode, null);
+            var mode = kept.Mode;
 
             // THE CLASSIFIER IS THE SESSION'S NOW, not the gate's — SessionWiring puts it on the
             // policy, which is per session and rides every request. Bound here it was one slot for
@@ -925,7 +940,10 @@ public static class AppBootstrap
                 system, wiringTab, beforeUserTurn: RemoveQueuedBlock);
             // The row and the agent must agree from the first frame — a status line that is right
             // only after the user touches something is a status line nobody trusts.
-            mainWindow.SetMode(startupMode);
+            // THE WIRED TAB'S ROW. The window's own mode line is the tab in front, so painting it from a
+            // background tab's rebind would show that tab's mode over the one the user is looking at.
+            if (ReferenceEquals(wiringTab, mainWindow.ActiveTab)) mainWindow.SetMode(mode);
+            else mainWindow.SetMode(wired, mode);
             // I3: permissionRules.Load runs at construction, before any sink exists to tell the
             // user. Echo a load failure here, once — a bad hand-edit to permissions.json silently
             // drops every rule and all folder trust, and the user needs to know before they grant
@@ -964,7 +982,7 @@ public static class AppBootstrap
                 Session: wired,
                 Manager: manager,
                 Resolution: res,
-                Mode: startupMode,
+                Mode: mode,
                 // THIS SESSION'S OWN, not the one built at startup. A policy carries the root it
                 // judges against and the id decisions are filed under, so re-wiring session B with
                 // session A's policy would judge B's file operations against A's folder.
@@ -973,19 +991,19 @@ public static class AppBootstrap
                 // launch, against the folder the app opened in — reusing it would judge the arriving
                 // project's file operations against the departing one's root and trust, which is the
                 // direction that grants more than the user gave.
-                Policy: ReferenceEquals(wired, session)
+                Policy: kept.Policy ?? (ReferenceEquals(wired, session)
                         && string.Equals(permissionPolicy.Root, wired.WorkingDirectory,
                                          StringComparison.Ordinal)
                     ? permissionPolicy
-                    : new PermissionPolicy(wired.WorkingDirectory, permissionRules, startupMode.Edits)
+                    : new PermissionPolicy(wired.WorkingDirectory, permissionRules, mode.Edits)
                       {
                           SessionId = wired.Id,
                           LogDir = paths.LogsDir,
-                      },
+                      }),
                 ConfigDir: paths.ConfigDir);
 
             manager.Open(wired, res,
-                SessionWiring.Ports(wiring, sink, jobPanelSink), startupMode);
+                SessionWiring.Ports(wiring, sink, jobPanelSink), mode);
 
             // Non-fatal config complaints — a server entry we could not read. Said once, here,
             // because a skipped server the user never hears about is indistinguishable from one
@@ -1022,7 +1040,9 @@ public static class AppBootstrap
 
             // ONCE, AT WIRE-UP, and this half stays here: the panel's session id is the WINDOW's
             // readout of whichever tab is in front, and at startup that is this one.
-            mainWindow.SessionId = wired.SessionId ?? "";
+            // AND ONLY THEN: a background tab's rebind must not put its id on the tab in front.
+            if (ReferenceEquals(wiringTab, mainWindow.ActiveTab))
+                mainWindow.SessionId = wired.SessionId ?? "";
 
             // AND WHERE IT NOW WORKS. A resume can carry a session to the folder its conversation
             // came from, and the tab label and panel location are painted on events — a move is one
@@ -1163,11 +1183,20 @@ public static class AppBootstrap
         manager.Post = run => system.EnqueueOnUIThread(run, "appBootstrap.Rebind");
         manager.RebindOne = (target, config) =>
         {
-            WireRunner(config, target);
+            WireRunner(config, target, rebind: true);
             return true;
         };
 
         WireRunner(configNow.Value, session);   // the startup path: nothing has replaced it yet
+
+        // ONLY WHILE THE STARTUP SESSION HAS NO PROVIDER: once wired, a save reaches it as a rebind.
+        wireStartup = res =>
+        {
+            if (session.Provider is not null) return;
+            WireRunner(res, session);
+            mainWindow.Chat.AddMessage(ChatRole.System,
+                $"Configuration saved. Model: {ModelLabelOf(res)}. Type a goal and press Enter.");
+        };
 
         // AFTER THE WIRE, because the sink it writes to is created inside it.
         if (migrationNotice is not null)
@@ -1623,6 +1652,18 @@ public static class AppBootstrap
                 return true;
             });
 
+        // ONE TOGGLE FOR THE KEY, as the plugin manager has: a second call site that opened the dialog
+        // its own way would be a second place for the close-if-open rule to be forgotten.
+        bool ToggleConfigDialog(ConfigTab? tab)
+        {
+            // NOT UNDER A QUESTION IT ASKED. A save waiting on "apply to open tabs?" or a confirm would
+            // carry on into a dialog that is gone; the key is swallowed, and Escape answers the question.
+            if (ConfirmDialog.IsOpen || ApplyToTabsDialog.IsOpen || ModelPickerOverlay.IsOpen) return true;
+            if (ConfigDialog.CloseIfOpen()) return true;
+            ConfigDialog.Show(configHost, tab);
+            return true;
+        }
+
         // F2 OPENS THE PLUGIN MANAGER. Global rather than window-bound because globals are consulted
         // before the active window (InputCoordinator.cs:130-134) — a window.KeyPressed handler for a
         // key registered here would be dead code, which is also why the dialog's own Escape lives in
@@ -1634,15 +1675,6 @@ public static class AppBootstrap
         // ONE TOGGLE, TWO WAYS IN. The key and the status-bar item run this same local function, so
         // a click cannot drift from what F2 does — a second call site that opened the dialog its own
         // way is a second place for the close-if-open rule to be forgotten.
-        // ONE TOGGLE FOR THE KEY, as the plugin manager has: a second call site that opened the dialog
-        // its own way would be a second place for the close-if-open rule to be forgotten.
-        bool ToggleConfigDialog(ConfigTab? tab)
-        {
-            if (ConfigDialog.CloseIfOpen()) return true;
-            ConfigDialog.Show(configHost, tab);
-            return true;
-        }
-
         bool TogglePluginManager()
         {
             if (PluginManagerDialog.CloseIfOpen()) return true;
@@ -1983,24 +2015,15 @@ public static class AppBootstrap
         Task RunFirstRunSetupAsync()
         {
             var closed = new TaskCompletionSource();
-            var firstRun = configHost with
-            {
-                WireFirst = res =>
-                {
-                    WireRunner(res, session);
-                    mainWindow.Chat.AddMessage(ChatRole.System,
-                        $"Configuration saved. Model: {ModelLabelOf(res)}. Type a goal and press Enter.");
-                },
-            };
-            ConfigDialog.Show(firstRun, ConfigTab.Providers, firstRun: true, onClosed: () => closed.TrySetResult());
+            ConfigDialog.Show(configHost, ConfigTab.Providers, firstRun: true, onClosed: () => closed.TrySetResult());
             return closed.Task;
         }
 
         // (Task 2.5) The startup trust question: an unclassified folder must be asked about,
         // immediately and blocking, before any goal can run in it. Deferred onto the UI thread for
-        // the same reason as the wizard/composer-hint below — ShowPermissionPrompt swaps a control
+        // the same reason as the first-run dialog and composer hint below — ShowPermissionPrompt swaps a control
         // into the composer's grid cell, which needs the render loop system.Run() starts. Runs
-        // AFTER the setup wizard completes on the no-provider path (not concurrently — two flows
+        // AFTER the first-run Configuration dialog closes on the no-provider path (not concurrently — two flows
         // contending for the user at once is worse than sequencing), and immediately otherwise.
         // Fire-and-forget: InstallSynchronizationContext resumes the continuation on the UI thread,
         // so nothing here blocks it; the blocking the user actually experiences is structural (the

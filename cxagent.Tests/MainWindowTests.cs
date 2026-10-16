@@ -914,6 +914,24 @@ public class MainWindowTests
     }
 
     /// <summary>
+    /// A TAB WIRED AFTER THE WINDOW WAS BUILT — first run, or a provider added from F8 — names its own
+    /// model when Shift+Tab repaints the line, not the "no provider" the window was built with.
+    /// </summary>
+    [Fact]
+    public void AModeChange_RepaintsWithTheTabsModel_NotTheOneTheWindowWasBuiltWith()
+    {
+        var none = new ResolvedConfig(null, CxAgent.Core.Llm.ProviderCatalog.Empty, []);
+        var mw = new MainWindow(SysOfWidth(200), none, Logs());
+        mw.Build();
+        mw.ActiveTab.Resolution = ResolvedConfig.ForTesting(new MockLlmProvider("wired-model"), "local");
+
+        mw.SetMode(new WorkingMode(AgentMode.FanOut, EditMode.AlwaysAsk));
+
+        Assert.Contains("local", mw.ModeLineForTest(), System.StringComparison.Ordinal);
+        Assert.DoesNotContain("no provider", mw.ModeLineForTest(), System.StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// THE WAY BACK TO THE COMPOSER EXISTS AND IS PUBLIC. F4 is bound to this in AppBootstrap, and
     /// the binding is the kind of one-liner that gets tidied away on the reasoning that focus cannot
     /// be lost.

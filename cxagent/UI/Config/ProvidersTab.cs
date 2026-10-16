@@ -34,7 +34,6 @@ public sealed class ProvidersTab
     private readonly ButtonControl _revert;
 
     private ProviderSettings? _settings;
-    private bool _wiredFirst;
 
     /// <summary>The field a new provider's editor starts on.</summary>
     private IFocusableControl? _firstField;
@@ -710,13 +709,11 @@ public sealed class ProvidersTab
                     choice = await ApplyToTabsDialog.AskAsync(_host.System, change.Note + ".", breaks);
                 ConfigApply.Commit(_host.Apply, prepared, change, choice);
 
-                // THE FIRST PROVIDER, ON FIRST RUN: the startup session has no instance for a rebind to
-                // find, so it is wired onto the new config here, once.
-                if (prepared.Fresh is { } wired && _host.WireFirst is { } wireFirst && !_wiredFirst)
-                {
-                    _wiredFirst = true;
+                // THE FIRST PROVIDER: a startup session with none has no instance for a rebind to find,
+                // so it is wired onto the new config here. Asked on every save, because the host knows
+                // whether that session is still unwired and this tab does not.
+                if (prepared.Fresh is { } wired && _host.WireFirst is { } wireFirst)
                     wireFirst(wired);
-                }
                 Saved(prepared.Write, select, change);
             }
             finally { done.TrySetResult(); }

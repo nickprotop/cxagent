@@ -141,15 +141,6 @@ public class SessionRebindTests : IDisposable
         Assert.Equal("here", savedFor);
     }
 
-    [Fact]
-    public void ConfigChange_Affects_ByNameOrEveryone()
-    {
-        var change = Changed("local");
-        Assert.True(change.Affects("local"));
-        Assert.False(change.Affects("other"));
-        Assert.True((change with { Everyone = true }).Affects("other"));
-    }
-
     // ---- the front end's thread: a rebind is POSTED, and runs later ------------------------------
 
     /// <summary>Like <see cref="Wired"/>, but the rebind is posted to a queue the test drains — the

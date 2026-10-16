@@ -364,9 +364,9 @@ tokens spent — and offers *Save anyway* when it does not answer. The toolbar s
 auto-mode reviewer (◆), renames an instance — every reference follows — and removes one, which is
 refused while a tab is on it.
 
-**What a save does to open tabs.** Anything the model cannot see — a new key, a moved endpoint, a
+**What a save does to open tabs.** Anything the model cannot see — a new key, new headers, a
 rename, the reviewer, the default — applies in place and keeps every tab's prompt cache. A change to the
-model a tab is on would re-send its whole conversation, so Save asks: *Apply now*, *Compress, then
+model a tab is on, or to the endpoint serving it, would re-send its whole conversation, so Save asks: *Apply now*, *Compress, then
 apply*, *At next clear or compression* (the mode line shows `⟳ config pending` until then), or *Only new
 tabs*.
 

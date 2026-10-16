@@ -1,16 +1,18 @@
 namespace CxAgent.Core.Config;
 
 /// <summary>
-/// What a saved edit changed, for deciding which running sessions must be re-wired.
+/// What a saved edit changed, for deciding what each running session does about it: nothing, a refresh
+/// in place, or a move onto the new instance.
 /// </summary>
-/// <param name="Instances">Instances whose provider object changes: edited, renamed (old name) or removed.</param>
+/// <param name="Instances">Instances whose provider object changes: edited, renamed (old name) or removed.
+/// A tab on one is swapped in place, or moved as the user chooses when it is in <see cref="ModelChanged"/>.</param>
 /// <param name="Renamed">Old name → new name.</param>
 /// <param name="Everyone">
-/// Every session re-wires: the reviewer changed (each session builds its classifier at wire time), the
-/// default instance or its <c>maxConcurrentAgents</c> changed (it sizes each session's sub-agent
-/// semaphore), or an instance an agent type names changed (types capture their provider at wire time).
+/// Every session refreshes in place, with no new host: the reviewer changed (set on each session's
+/// policy), the default instance or its <c>maxConcurrentAgents</c> changed (each session's sub-agent
+/// limit), or agent types or an instance one names changed (where each session's children run).
 /// </param>
-/// <param name="Note">One line for each re-wired tab: what changed.</param>
+/// <param name="Note">One line for each tab the change reaches: what changed.</param>
 public sealed record ConfigChange(
     IReadOnlySet<string> Instances, IReadOnlyDictionary<string, string> Renamed, bool Everyone, string Note)
 {
@@ -22,10 +24,6 @@ public sealed record ConfigChange(
     /// is swapped in place.
     /// </summary>
     public IReadOnlySet<string> ModelChanged { get; init; } = new HashSet<string>();
-
-    /// <summary>Whether a session on <paramref name="instanceName"/> must be re-wired.</summary>
-    public bool Affects(string? instanceName) =>
-        Everyone || (instanceName is not null && Instances.Contains(instanceName));
 
     /// <summary>The name a session on <paramref name="instanceName"/> runs under after this change.</summary>
     public string? Follow(string? instanceName) =>

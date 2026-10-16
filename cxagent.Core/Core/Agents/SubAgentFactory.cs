@@ -264,10 +264,12 @@ public sealed class SubAgentFactory
 
         // 0 AND NULL BOTH MEAN UNLIMITED, matching maxTurns. A semaphore of 0 would deadlock every
         // spawn forever, which is the one reading of "zero" nobody wants.
-        ConcurrencySlot = runtime.MaxConcurrentAgents is > 0
-            ? new SemaphoreSlim(runtime.MaxConcurrentAgents.Value)
-            : null;
+        _limit = runtime.MaxConcurrentAgents is > 0 ? runtime.MaxConcurrentAgents : null;
+        ConcurrencySlot = _limit is { } limit ? new SemaphoreSlim(limit) : null;
     }
+
+    /// <summary>The limit <see cref="ConcurrencySlot"/> was built for; null for unbounded.</summary>
+    private int? _limit;
 
     /// <summary>
     /// Builds one child. Its context is fresh and its own — <see cref="Agent"/> creates one when none
@@ -297,9 +299,18 @@ public sealed class SubAgentFactory
     /// <summary>
     /// A new limit for spawns from now on. A NEW SEMAPHORE, not a resized one: children already holding
     /// a slot release it into the semaphore they took it from, so the old count stays consistent.
+    ///
+    /// <para>ONLY WHEN THE LIMIT CHANGED. A new semaphore starts with every slot free while running
+    /// children still hold slots in the old one, so swapping on a save that left the limit alone would
+    /// let a second full batch start beside the first.</para>
     /// </summary>
-    public void SwapLimit(int? maxConcurrentAgents) =>
-        ConcurrencySlot = maxConcurrentAgents is > 0 ? new SemaphoreSlim(maxConcurrentAgents.Value) : null;
+    public void SwapLimit(int? maxConcurrentAgents)
+    {
+        var limit = maxConcurrentAgents is > 0 ? maxConcurrentAgents : null;
+        if (limit == _limit) return;
+        _limit = limit;
+        ConcurrencySlot = limit is { } n ? new SemaphoreSlim(n) : null;
+    }
 
     /// <summary>Where children resolve relative paths — the session's directory. Exposed so the
     /// spawner can check whether a planner wrote the file it was told to write, without the parent

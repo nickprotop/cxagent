@@ -21,8 +21,9 @@ public sealed record ConfigDialogHost(
     Func<Session> ActiveSession, McpCommand McpCommand)
 {
     /// <summary>
-    /// First run only: wires the startup session once the first instance is saved. That session has
-    /// no instance yet, so no rebind reaches it.
+    /// Wires the startup session when an instance is saved while it has no provider — on first run, or
+    /// later from F8 when first run was closed unsaved. That session has no instance, so no rebind
+    /// reaches it; once it has one, this does nothing.
     /// </summary>
     public Action<Core.Llm.ResolvedConfig>? WireFirst { get; init; }
 }

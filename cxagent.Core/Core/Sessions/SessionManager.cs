@@ -122,8 +122,9 @@ public sealed class SessionManager : IDisposable
     /// <para>EVERY SESSION adopts the new catalog, so <c>/model</c> and new tabs see the file as it now is.
     /// A change that reaches every session's wiring — the reviewer, the sub-agent limit, where agent
     /// types run — is refreshed in place in all of them. A session on an edited instance is then moved:
-    /// IN PLACE when its model is unchanged (a rotated key, a moved endpoint), which the model cannot
-    /// see; otherwise as <paramref name="choice"/> says, because a new model re-sends the conversation.</para>
+    /// IN PLACE when its model and endpoint are unchanged (a rotated key, new headers), which the model
+    /// cannot see; otherwise as <paramref name="choice"/> says, because a new model — or a new server,
+    /// which holds none of the cached prefix — re-sends the conversation.</para>
     /// </summary>
     public void ApplyConfig(ResolvedConfig fresh, ConfigChange change,
         CacheChoice choice = CacheChoice.ApplyNow)
@@ -148,22 +149,25 @@ public sealed class SessionManager : IDisposable
             var target = TargetFor(session, current, change);
             if (target is null) { session.SayNotRebound($"'{change.Follow(session.InstanceName)}' is no longer in the config"); continue; }
 
+            // EVERY MOVE BELOW READS THE CONFIG WHEN IT RUNS, not `current`: it may run a turn, a
+            // compression or a whole conversation later, and a save made in between — a rotated key, a
+            // new instance — would otherwise be undone for this one tab.
             if (!change.ModelChanged.Contains(session.InstanceName))
             {
-                session.RebindWhenIdle(() => PostRun(() => SwapWhenIdle(session, target, current, change.Note)));
+                session.RebindWhenIdle(() => PostRun(() => SwapWhenIdle(session, change)));
                 continue;
             }
 
             switch (choice)
             {
                 case CacheChoice.ApplyNow:
-                    session.RebindWhenIdle(() => Schedule(session, current, change));
+                    session.RebindWhenIdle(() => Schedule(session, change));
                     break;
                 case CacheChoice.CompressThenApply:
-                    session.RebindWhenIdle(() => PostRun(() => CompressThenRebind(session, current, change)));
+                    session.RebindWhenIdle(() => PostRun(() => CompressThenRebind(session, change)));
                     break;
                 case CacheChoice.AtNextClearOrCompression:
-                    session.PendUntilFresh(() => session.RebindWhenIdle(() => Schedule(session, current, change)));
+                    session.PendUntilFresh(() => session.RebindWhenIdle(() => Schedule(session, change)));
                     break;
                 case CacheChoice.NewTabsOnly:
                     break;
@@ -198,15 +202,24 @@ public sealed class SessionManager : IDisposable
 
     private void PostRun(Action run) => (Post ?? (r => r()))(run);
 
+    /// <summary>The config as it is now — what a move that was waiting applies when it finally runs.</summary>
+    private ResolvedConfig Live() { lock (_gate) return Config; }
+
     /// <summary>
     /// The in-place swap, on the front end's thread — and only when idle, asked again here for the same
     /// reason <see cref="RebindNow"/> asks: a turn may have started since the swap was scheduled, and a
     /// provider swapped under a running tool loop splits that loop across two objects.
     /// </summary>
-    private void SwapWhenIdle(Session session, ActiveModel target, ResolvedConfig config, string note)
+    private void SwapWhenIdle(Session session, ConfigChange change)
     {
-        if (session.IsBusy) { session.RebindWhenIdle(() => PostRun(() => SwapWhenIdle(session, target, config, note))); return; }
-        try { session.SwapInPlace(target, config, note); }
+        if (session.IsBusy) { session.RebindWhenIdle(() => PostRun(() => SwapWhenIdle(session, change))); return; }
+        var config = Live();
+        if (TargetFor(session, config, change) is not { } target)
+        {
+            NotRebound(session, config, $"'{change.Follow(session.InstanceName)}' is no longer in the config");
+            return;
+        }
+        try { session.SwapInPlace(target, config, change.Note); }
         catch (Exception ex)
         {
             // ON THE FRONT END'S THREAD, where an exception goes nowhere a user would see: said in the tab
@@ -219,15 +232,15 @@ public sealed class SessionManager : IDisposable
     /// Summarise first, then move: the new model is sent the summary rather than the whole conversation.
     /// A compression that cannot run here still moves the tab — the user asked for it to move.
     /// </summary>
-    private void CompressThenRebind(Session session, ResolvedConfig config, ConfigChange change)
+    private void CompressThenRebind(Session session, ConfigChange change)
     {
-        if (session.IsBusy) { session.RebindWhenIdle(() => PostRun(() => CompressThenRebind(session, config, change))); return; }
-        if (session.CompressNow(CancellationToken.None) is not { } compressing) { RebindNow(session, config, change); return; }
-        _ = compressing.ContinueWith(_ => PostRun(() => RebindNow(session, config, change)), TaskScheduler.Default);
+        if (session.IsBusy) { session.RebindWhenIdle(() => PostRun(() => CompressThenRebind(session, change))); return; }
+        if (session.CompressNow(CancellationToken.None) is not { } compressing) { RebindNow(session, change); return; }
+        _ = compressing.ContinueWith(_ => PostRun(() => RebindNow(session, change)), TaskScheduler.Default);
     }
 
-    private void Schedule(Session session, ResolvedConfig config, ConfigChange change) =>
-        PostRun(() => RebindNow(session, config, change));
+    private void Schedule(Session session, ConfigChange change) =>
+        PostRun(() => RebindNow(session, change));
 
     /// <summary>
     /// The rebind itself, on the front end's thread.
@@ -238,9 +251,10 @@ public sealed class SessionManager : IDisposable
     /// new host would start from a conversation missing that turn, and replace the host it was writing
     /// into. A session found busy waits for that turn instead.</para>
     /// </summary>
-    private void RebindNow(Session session, ResolvedConfig config, ConfigChange change)
+    private void RebindNow(Session session, ConfigChange change)
     {
-        if (session.IsBusy) { session.RebindWhenIdle(() => Schedule(session, config, change)); return; }
+        if (session.IsBusy) { session.RebindWhenIdle(() => Schedule(session, change)); return; }
+        var config = Live();
 
         var name = change.Follow(session.InstanceName);
 

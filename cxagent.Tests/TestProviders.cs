@@ -90,9 +90,9 @@ public sealed class RecordingSink : ISessionObserver
 /// <summary>
 /// A provider whose ChatAsync always throws. Promoted here (from AgentHostTests, where it was
 /// private) for P11 Task 3's fallback test — SessionCompressor must degrade to truncation, not crash,
-/// when the summarising call fails. Not a stand-in for the other two ThrowingProviders in
-/// LlmAgentJobPluginTests/ProviderProbeTests: those assert on a SPECIFIC exception shape
-/// (LlmProviderException / HttpRequestException) their own tests depend on, so they stay private —
+/// when the summarising call fails. Not a stand-in for the private ThrowingProviders
+/// some test classes keep: those throw a SPECIFIC exception shape their own tests depend on, so they
+/// stay private —
 /// this is the generic "just throw" fake shared by every caller that only needs ChatAsync to fail.
 /// </summary>
 public sealed class ThrowingProvider : ILlmProvider

@@ -98,8 +98,13 @@ public static class ModelPickerOverlay
         filter.Entered += (_, text) => Pick(list.Items.ElementAtOrDefault(list.SelectedIndex)?.Tag as string ?? text);
         list.ItemActivated += (_, item) => Pick(item?.Tag as string);
 
+        // BOUNDED, AND ENDED WITH THE PICKER: a server that accepts the connection and never answers
+        // would otherwise hold a request open for as long as the process runs, with no one to read it.
+        var listing = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         window.OnClosed += (_, _) =>
         {
+            listing.Cancel();
+            listing.Dispose();
             _result?.TrySetResult(null);
             _result = null;
             _window = null;
@@ -110,17 +115,18 @@ public static class ModelPickerOverlay
         system.SetActiveWindow(window);
         window.FocusManager.SetFocus(filter, FocusReason.Programmatic);
 
-        _ = Task.Run(() => ModelCatalogQuery.ListAsync(name, cfg, CancellationToken.None)).ContinueWith(t =>
+        var token = listing.Token;
+        _ = Task.Run(() => ModelCatalogQuery.ListAsync(name, cfg, token)).ContinueWith(t =>
             system.EnqueueOnUIThread(() =>
             {
                 if (_window != window) return;
-                var listing = t.IsCompletedSuccessfully ? t.Result : new ModelCatalogResult([], "could not list models");
-                if (listing.Models.Count == 0)
+                var listed = t.IsCompletedSuccessfully ? t.Result : new ModelCatalogResult([], "could not list models");
+                if (listed.Models.Count == 0)
                 {
-                    status.SetContent([$"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(listing.Error ?? "the endpoint listed no models")}[/] [{ColorScheme.MutedMarkup}]— type the id and press Enter.[/]"]);
+                    status.SetContent([$"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(listed.Error ?? "the endpoint listed no models")}[/] [{ColorScheme.MutedMarkup}]— type the id and press Enter.[/]"]);
                     return;
                 }
-                all = [.. listing.Models.OrderBy(m => m.Id, StringComparer.OrdinalIgnoreCase)];
+                all = [.. listed.Models.OrderBy(m => m.Id, StringComparer.OrdinalIgnoreCase)];
                 Fill();
             }, "modelPicker.Fill"), TaskScheduler.Default);
 

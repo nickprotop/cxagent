@@ -461,7 +461,9 @@ public sealed class McpTab
 
         SetStatus($"[{ColorScheme.MutedMarkup}]{(apply ? "Saving and restarting servers…" : "Saving…")}[/]");
         ConfigWrite result = apply
-            ? await ConfigApply.SaveMcpAsync(_host.Apply, edit)
+            // BOTH OFF THE UI THREAD: the write is file IO and the reload starts processes and waits on
+            // their handshakes, either of which would freeze every window while it ran.
+            ? await Task.Run(() => ConfigApply.SaveMcpAsync(_host.Apply, edit))
             : await Task.Run(() => ConfigFile.TryApply(new ConfigTarget(Path.Combine(_host.Apply.Paths.ConfigDir, "config.json"), _host.Apply.Env), edit));
 
         _host.System.EnqueueOnUIThread(() =>

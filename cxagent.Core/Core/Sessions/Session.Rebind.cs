@@ -57,7 +57,7 @@ public sealed partial class Session
     }
 
     /// <summary>
-    /// The same model behind a new provider object — a rotated key, a moved endpoint, new headers — swapped
+    /// The same model on the same endpoint behind a new provider object — a rotated key, new headers — swapped
     /// the way <c>/model</c> swaps: no new host, no new agent, so nothing the model sees changes and the
     /// prompt cache is kept. The session's own thinking level is kept too.
     /// </summary>

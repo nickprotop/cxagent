@@ -46,6 +46,31 @@ public static class SessionWiring
         PermissionPolicy Policy,
         string ConfigDir);
 
+    /// <summary>What a wire carries over from the session it rebuilds.</summary>
+    /// <param name="Mode">The working mode the new host starts in.</param>
+    /// <param name="Policy">The session's own policy, or null when a fresh one must be built.</param>
+    public readonly record struct Kept(WorkingMode Mode, PermissionPolicy? Policy);
+
+    /// <summary>
+    /// What re-wiring <paramref name="session"/> for a saved configuration keeps of it.
+    ///
+    /// <para>THE TAB'S MODE, NOT THE LAUNCH MODE. A model change is not a mode change: a tab the user
+    /// switched to accept-edits coming back in always-ask is a silent narrowing, and one launched
+    /// permissive coming back permissive after the user narrowed it is a silent widening.
+    /// <paramref name="launch"/> is only what a session that was never wired — that has no provider
+    /// yet — has.</para>
+    ///
+    /// <para>AND THE POLICY ENFORCING IT, which also holds the tab's session-scoped grants — unless the
+    /// session now works in a folder the policy was not built for, whose root and trust it would judge
+    /// against the wrong project.</para>
+    /// </summary>
+    public static Kept KeptByRebind(Session session, WorkingMode launch) =>
+        session.Provider is null
+            ? new(launch, null)
+            : new(session.Mode,
+                  session.Policy is { } own && string.Equals(own.Root, session.WorkingDirectory, StringComparison.Ordinal)
+                      ? own : null);
+
     /// <summary>
     /// The two sinks a tab needs, agreeing on where a round starts.
     ///

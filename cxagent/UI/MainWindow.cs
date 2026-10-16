@@ -1318,7 +1318,7 @@ public sealed class MainWindow : IDisposable
     private const string ComposerPlaceholder = "What should I do?";
 
     /// <summary>Shown instead when no provider resolved, so the empty box explains itself.</summary>
-    private const string NoProviderPlaceholder = "No provider configured — restart to set one up";
+    private const string NoProviderPlaceholder = "No provider configured — press F8 to set one up";
 
     /// <summary>
     /// Clears the composer's placeholder for good — called on the first submitted goal.
@@ -1748,9 +1748,9 @@ public sealed class MainWindow : IDisposable
         else
         {
             Chat.AddMessage(ChatRole.System,
-                // POINTS AT THE WIZARD, not at hand-editing config.json: the wizard is on screen
-                // offering to write that file, so any other instruction here contradicts it.
-                "**No LLM provider configured.**\n\nUse the setup wizard on this screen, or run "
+                // POINTS AT THE CONFIGURATION DIALOG, not at hand-editing config.json: the dialog is
+                // where providers are made, and it is on screen at first run offering to write that file.
+                "**No LLM provider configured.**\n\nAdd one in the Configuration dialog (F8), or run "
                 + "`/model` to pick a configured instance. `cxagent --mock` tries the UI without a "
                 + "provider.");
             // THROUGH THE SAME SEAM AS EVERY OTHER ERROR ROW, so a resolution failure is coloured
@@ -3453,7 +3453,9 @@ public sealed class MainWindow : IDisposable
         _mode = mode;
         // SetContent rather than a rebuild: the control is already placed in the grid, and replacing
         // it would detach the instance the layout holds.
-        _modeLine?.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.Session)]);
+        // THE TAB'S RESOLUTION FIRST: a tab wired after the window was built — first run, or a provider
+        // added from F8 — carries its model there, while the window's still names what it was built with.
+        _modeLine?.SetContent([ModeLineText(_mode, ActiveSessionTab.Resolution ?? _resolution, ActiveSessionTab.Session)]);
     }
 
     /// <summary>

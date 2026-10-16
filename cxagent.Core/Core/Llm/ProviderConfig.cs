@@ -517,9 +517,9 @@ public static class ProviderConfigLoader
     /// does not.
     ///
     /// <para>RELATIVE ENTRIES RESOLVE AGAINST <paramref name="configDir"/>, the only anchor available
-    /// at config-read time — <c>LoadAndValidate</c>'s four callers (both <c>ResolvedConfig</c> resolve
-    /// paths, <c>McpCommand</c>, <c>SettingsEntry</c>) all pass only an <c>AppPaths</c>, not a project
-    /// directory, so threading one through here would be a signature change to all four in service of
+    /// at config-read time — <c>LoadAndValidate</c>'s three callers (both <c>ResolvedConfig</c> resolve
+    /// paths and <c>McpCommand</c>) all pass only an <c>AppPaths</c>, not a project directory, so
+    /// threading one through here would be a signature change to all three in service of
     /// a check that is deliberately the EARLY half of a two-layer defence. A <c>pluginPaths</c> entry
     /// meant to be resolved against a project (e.g. <c>.cxagent/plugins</c>) is simply not found here.</para>
     ///

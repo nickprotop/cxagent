@@ -264,4 +264,26 @@ public class SubAgentFactoryTests
     {
         Assert.Equal("mock-model", NewFactory().Create().ModelId);
     }
+
+    // AN UNCHANGED LIMIT KEEPS ITS SEMAPHORE. A fresh one starts with every slot free while children
+    // still hold slots in the old one, so a save that touched nothing here — the reviewer, a type's
+    // routing — would let a second batch of children start beside the first.
+    [Fact]
+    public void SwapLimit_WithTheSameLimit_KeepsTheSemaphore()
+    {
+        var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = Answering(),
+            Executors = JobRegistry.CreateWithBuiltins(),
+            Ledger = new TokenLedger(),
+            MaxTurns = 50,
+            CompressAbove = 40_000,
+            MaxConcurrentAgents = 2,
+        });
+        var slot = factory.ConcurrencySlot;
+
+        factory.SwapLimit(2);
+
+        Assert.Same(slot, factory.ConcurrencySlot);
+    }
 }

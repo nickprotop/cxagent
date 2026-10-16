@@ -101,6 +101,46 @@ public class SessionInPlaceTests : IDisposable
         Assert.Equal("another-model", session.Provider!.ModelId);
     }
 
+    // A WAITING MOVE APPLIES THE FILE AS IT IS WHEN IT RUNS, not as it was when it was scheduled: a save
+    // in between would otherwise be undone for this tab — an old key back, a new instance missing.
+    [Fact]
+    public void AWaitingMove_AppliesTheLatestSave_NotTheOneThatScheduledIt()
+    {
+        var (manager, session) = Wired(Config(("local", new LevelledMock(["on"]))));
+        using var _m = manager;
+
+        manager.ApplyConfig(Config(("local", new MockLlmProvider("model-a"))), NewModel("local"),
+            CacheChoice.AtNextClearOrCompression);
+        manager.ApplyConfig(Config(("local", new MockLlmProvider("model-b")), ("extra", new LevelledMock(["on"]))),
+            new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), false, "extra added"),
+            CacheChoice.AtNextClearOrCompression);
+
+        session.ClearContext();
+
+        Assert.Equal("model-b", session.Provider!.ModelId);
+        Assert.Contains("extra", session.Resolution!.Providers!.InstanceNames);
+    }
+
+    // A RENAME SAVED WHILE A MOVE WAITS: the move finds the instance under its new name.
+    [Fact]
+    public void AWaitingMove_FollowsARenameSavedAfterIt()
+    {
+        var (manager, session) = Wired(Config(("local", new LevelledMock(["on"]))));
+        using var _m = manager;
+
+        manager.ApplyConfig(Config(("local", new MockLlmProvider("model-a"))), NewModel("local"),
+            CacheChoice.AtNextClearOrCompression);
+        manager.ApplyConfig(Config(("home", new MockLlmProvider("model-a"))),
+            new ConfigChange(new HashSet<string> { "local" }, new Dictionary<string, string> { ["local"] = "home" }, false, "renamed"),
+            CacheChoice.ApplyNow);
+
+        session.ClearContext();
+
+        Assert.Equal("model-a", session.Provider!.ModelId);
+        Assert.Equal("home", session.InstanceName);
+        Assert.False(session.ConfigPending);
+    }
+
     // THE DIALOG LISTS ONLY THE TABS WHOSE CACHE WOULD BREAK.
     [Fact]
     public void BreaksCache_IsTheTabsWhoseModelChanges()

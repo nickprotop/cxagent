@@ -67,7 +67,7 @@ public static class PluginConfigWriter
     internal static void Mutate(string configPath, Action<JsonObject> change)
         => MutateRoot(configPath, root =>
         {
-            // CREATED WHEN ABSENT, which is the common case: a config from the setup wizard has
+            // CREATED WHEN ABSENT, which is the common case: a config the Configuration dialog wrote has
             // providers, classifier, mcp, agents and orchestrator, and nothing has ever written a
             // plugins block.
             if (root["plugins"] is not JsonObject plugins)

@@ -11,6 +11,11 @@ public sealed record ConfigApplyContext(
     AppPaths Paths, IReadOnlyDictionary<string, string> Env, CurrentConfig Current,
     SessionManager Manager, Core.Mcp.McpManager Mcp);
 
+/// <summary>A written file, resolved — ready to go live once the user has said how.</summary>
+/// <param name="Write">What the write did.</param>
+/// <param name="Fresh">The file resolved, or null when the write failed or it resolved to no provider.</param>
+public sealed record PreparedSave(ConfigWrite Write, ResolvedConfig? Fresh);
+
 /// <summary>
 /// A save, made live: write through the one writer, resolve the file afresh, make that the current
 /// config, then move the sessions it touches.
@@ -19,11 +24,6 @@ public sealed record ConfigApplyContext(
 /// default and reviewer from what was just written — the same code startup runs — so nothing the
 /// edit changed can be left behind in a cache this class forgot.</para>
 /// </summary>
-/// <summary>A written file, resolved — ready to go live once the user has said how.</summary>
-/// <param name="Write">What the write did.</param>
-/// <param name="Fresh">The file resolved, or null when the write failed or it resolved to no provider.</param>
-public sealed record PreparedSave(ConfigWrite Write, ResolvedConfig? Fresh);
-
 public static class ConfigApply
 {
     private static string PathOf(AppPaths paths) => Path.Combine(paths.ConfigDir, "config.json");
