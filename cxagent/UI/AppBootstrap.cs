@@ -563,6 +563,7 @@ public static class AppBootstrap
         // HOW A CLOSED TAB'S SESSION IS TORN DOWN. The window decides WHICH conversation the user
         // meant; the manager owns unwiring its plugins, disposing its host and marking it finished.
         mainWindow.CloseSession = manager.Close;
+        mainWindow.ConfirmStopBackground = running => QuitGuard.ConfirmAsync(system, running);
 
         // ASKED BEFORE A RESUME DISCARDS A LIVE CONVERSATION. Core decides WHETHER there is anything
         // to lose; this decides how the question looks — see ConfirmReplaceConversation.
@@ -766,8 +767,9 @@ public static class AppBootstrap
                 // thing, so nothing changes for anybody who never opens a second.
                 if (mainWindow.CloseActiveSession()) return true;
 
-                cts.Cancel();
-                system.Shutdown();
+                // THE LAST SESSION'S EXIT IS A QUIT, so it asks what Ctrl+Q asks: a background agent's
+                // unreported work dies with the process.
+                _ = QuitAfterAsking(system, manager, cts);
                 return true;
             });
 
@@ -1903,7 +1905,7 @@ public static class AppBootstrap
         // which F-key", which is the point of having a nav pane at all.
         //
         keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.Q, "quit",
-            () => { cts.Cancel(); system.Shutdown(); });
+            () => _ = QuitAfterAsking(system, manager, cts));
         // BACK, WHILE THE MODEL IS ASKING. Only meaningful during a multi-question run, and a no-op
         // otherwise. Alt-modified because the field below is a text box: a bare Left or Backspace
         // shortcut would swallow the keys that edit a typed answer.
@@ -2449,4 +2451,17 @@ public static class AppBootstrap
         + $"{CxAgent.Core.Helpers.DisplayNumber.Fixed(stalledFor.TotalSeconds, 1)}s · phase {phase}"
         + (blockedIn is { Length: > 0 } where ? $" · in {where}" : " · no frame label");
 
+    /// <summary>
+    /// Quits — after asking, when any session still has background agents running.
+    ///
+    /// <para>ONE PATH FOR CTRL+Q AND THE LAST /exit, so the two ways of ending the app cannot disagree
+    /// about whether to ask. Started on the UI thread, so the dialog's answer resumes there too.</para>
+    /// </summary>
+    private static async Task QuitAfterAsking(ConsoleWindowSystem system, SessionManager manager,
+        CancellationTokenSource cts)
+    {
+        if (!await QuitGuard.ConfirmAsync(system, manager.Sessions.Sum(s => s.RunningBackgroundAgents))) return;
+        cts.Cancel();
+        system.Shutdown();
+    }
 }
