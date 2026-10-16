@@ -31,6 +31,13 @@ public interface ISubAgentSpawner
     /// </summary>
     void SwapDefaultProvider(ILlmProvider provider, int? contextWindow, string? instanceName);
 
+    /// <summary>
+    /// A saved config, in place: the limit on children running at once and the catalog a type
+    /// resolves against. Children already running keep what they started with. A spawner with nothing
+    /// to refresh ignores it.
+    /// </summary>
+    void Refresh(int? maxConcurrentAgents, AgentTypeCatalog types) { }
+
     /// <summary>The definition the model sees. Hand-built: a spawn tool has no executor and no
     /// <c>JobSchema</c>, so <c>ToolBindings.BuildDefinition</c>'s drift guard has nothing to guard
     /// against — <c>McpToolset.Definitions()</c> constructs its own the same way.</summary>

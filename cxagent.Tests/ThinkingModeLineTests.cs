@@ -61,4 +61,11 @@ public class ThinkingModeLineTests
     [InlineData("gpt-4.1", "gpt-4.1")]
     public void ModelName_DropsAModelFilesExtension_Only(string id, string shown) =>
         Assert.Equal(shown, MainWindow.ShortModelName(id));
+
+    [Fact]
+    public void APendingConfigChange_IsShownBesideTheModel()
+    {
+        Assert.Equal("local:qwen · ⟳ config pending", MainWindow.ModelWithPending("local:qwen", pending: true));
+        Assert.Equal("local:qwen", MainWindow.ModelWithPending("local:qwen", pending: false));
+    }
 }

@@ -7,6 +7,78 @@ namespace CxAgent.Core.Sessions;
 public sealed partial class Session
 {
     private Action? _pendingRebind;
+    private Action? _pendingFresh;
+
+    /// <summary>
+    /// The day this session began. Every agent wired for it puts this date in its system prompt, so a
+    /// re-wire on a later day sends the same prompt and keeps the cache.
+    /// </summary>
+    public DateOnly StartedOn { get; internal set; } = DateOnly.FromDateTime(DateTime.Now);
+
+    /// <summary>The conversation's size as the provider last measured it, in tokens; null before a turn.</summary>
+    public int? ContextUsed => Host?.Context.Used;
+
+    /// <summary>A saved change waits for this tab's next clear or compaction — the mode line says so.</summary>
+    public bool ConfigPending => Volatile.Read(ref _pendingFresh) is not null;
+
+    /// <summary>
+    /// Holds <paramref name="apply"/> until the conversation is fresh — cleared or compacted — when the
+    /// prompt cache is rebuilt anyway, so applying then costs nothing extra.
+    /// </summary>
+    internal void PendUntilFresh(Action apply)
+    {
+        Interlocked.Exchange(ref _pendingFresh, apply);
+        Announce(SessionChangeKind.Model);
+    }
+
+    /// <summary>The conversation was cleared or compacted: a change waiting for that, now.</summary>
+    internal void OnContextFresh()
+    {
+        if (Interlocked.Exchange(ref _pendingFresh, null) is not { } apply) return;
+        Announce(SessionChangeKind.Model);
+        apply();
+    }
+
+    /// <summary>
+    /// A <c>/model</c> switch drops a waiting change: the user chose a model from the catalog the change
+    /// already brought, and applying the wait afterwards would undo their choice.
+    /// </summary>
+    private void DropPendingFresh()
+    {
+        if (Interlocked.Exchange(ref _pendingFresh, null) is not null) Announce(SessionChangeKind.Model);
+    }
+
+    /// <summary>
+    /// The same model behind a new provider object — a rotated key, a moved endpoint, new headers — swapped
+    /// the way <c>/model</c> swaps: no new host, no new agent, so nothing the model sees changes and the
+    /// prompt cache is kept. The session's own thinking level is kept too.
+    /// </summary>
+    internal void SwapInPlace(ActiveModel next, ResolvedConfig fresh, string note)
+    {
+        if (Host is null) return;
+        var keep = next.Provider is IThinkingProvider thinker && Provider is IThinkingProvider
+            ? next with { Provider = thinker.WithThinking(ThinkingLevel) }
+            : next;
+        SwapModel(keep);
+        Resolution = fresh.WithModel(keep);
+        _catalog = fresh.Providers;
+        Announce(SessionChangeKind.Model);
+        Say(new Message($"{note} — applied in place; the prompt cache is kept."));
+    }
+
+    /// <summary>
+    /// What reaches every session's wiring without touching what the model sees: who reviews auto mode,
+    /// how many sub-agents may run at once, and where each agent type runs.
+    /// </summary>
+    internal void RefreshWide(ResolvedConfig fresh)
+    {
+        if (Policy is { } policy)
+            policy.Classifier = Permissions.PermissionDecider.ClassifierFor(
+                fresh.ClassifierInstance, fresh.Providers, fresh.ClassifierTimeoutSeconds);
+        var types = new Agents.AgentTypeCatalog(fresh.AgentTypes, fresh.Providers);
+        _spawner?.Refresh(fresh.MaxConcurrentAgents, types);
+        NoteAgentTypes(types);
+    }
 
     /// <summary>
     /// The new config's catalog, kept on this session without a re-wire — for a session the change does

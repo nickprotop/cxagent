@@ -407,6 +407,9 @@ public sealed partial class Session
 
         Host.Context.Clear();
 
+        // A FRESH CONVERSATION REBUILDS THE CACHE ANYWAY: a config change waiting for that, now.
+        OnContextFresh();
+
         // NOTHING LEFT TO ASK ABOUT: the fork follows the clear, and an aside forked from what was
         // just wiped ends with it.
         Host.RepublishContext();
@@ -541,27 +544,12 @@ public sealed partial class Session
         var previousWindow = Host.Context.Window;
         var used = Host.Context.Used;
 
-        Host.SwapProvider(next);
-
-        // AND THE CHILDREN'S DEFAULT. A child with no provider of its own inherits it from the
-        // spawner, which holds the model captured at wire time — leave it and every sub-agent keeps
-        // talking to the model the session started on, so the usage archive records the old instance
-        // for every run after a switch while the switch notice promises the opposite.
-        //
-        // FUTURE CHILDREN ONLY. One already running keeps its provider: it holds its own dialogue
-        // with that model, and moving it mid-flight would split that dialogue across two endpoints.
-        _spawner?.SwapDefaultProvider(next.Provider, next.ContextWindow, next.InstanceName);
-
-        // THE SESSION'S OWN COPIES FOLLOW. /model's completions and the panel read InstanceName from
-        // here, so leaving these behind would offer the user the model they just left.
-        Provider = next.Provider;
-        InstanceName = next.InstanceName;
-
-        // THE CATALOG IS UNTOUCHED, and unreachable from here: this method takes an ActiveModel, so
-        // there is no configuration in scope to replace by accident. That is the whole reason for
-        // the split — a single swap that moves the agent and the host but not the spawner leaves
-        // nothing naming the set that has to move together.
+        SwapModel(next);
         Resolution = Resolution?.WithModel(next) ?? new ResolvedConfig(next, Llm.ProviderCatalog.Empty, []);
+
+        // THE USER CHOSE A MODEL: a config change waiting for this tab's next clear is dropped, since
+        // applying it later would undo the choice just made.
+        DropPendingFresh();
 
         // RECORDED, BECAUSE NOTHING ELSE RECORDS IT. `/model` swaps the provider IN PLACE — it never
         // reaches SessionManager.Open, so the "rewire" line that a resume or a setup flow writes is
@@ -618,4 +606,32 @@ public sealed partial class Session
         : InstanceName is { Length: > 0 } instance
             ? $"{instance}:{Provider.ModelId}"
             : Provider.ModelId;
+
+    /// <summary>
+    /// Moves the agent, the children's default and the session's own copies to <paramref name="next"/> —
+    /// the set <c>/model</c> moves, shared with an in-place config swap so the two cannot drift.
+    /// </summary>
+    private void SwapModel(ActiveModel next)
+    {
+        Host!.SwapProvider(next);
+
+        // AND THE CHILDREN'S DEFAULT. A child with no provider of its own inherits it from the
+        // spawner, which holds the model captured at wire time — leave it and every sub-agent keeps
+        // talking to the model the session started on, so the usage archive records the old instance
+        // for every run after a switch while the switch notice promises the opposite.
+        //
+        // FUTURE CHILDREN ONLY. One already running keeps its provider: it holds its own dialogue
+        // with that model, and moving it mid-flight would split that dialogue across two endpoints.
+        _spawner?.SwapDefaultProvider(next.Provider, next.ContextWindow, next.InstanceName);
+
+        // THE SESSION'S OWN COPIES FOLLOW. /model's completions and the panel read InstanceName from
+        // here, so leaving these behind would offer the user the model they just left.
+        Provider = next.Provider;
+        InstanceName = next.InstanceName;
+
+        // THE CATALOG IS UNTOUCHED, and unreachable from here: this method takes an ActiveModel, so
+        // there is no configuration in scope to replace by accident. That is the whole reason for
+        // the split — a single swap that moves the agent and the host but not the spawner leaves
+        // nothing naming the set that has to move together.
+    }
 }

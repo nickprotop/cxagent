@@ -115,7 +115,10 @@ public sealed class Agent
     /// session running past midnight would otherwise rebuild it with a new date and throw away every
     /// cached read for the rest of the conversation. What day it is does not change the work.</para>
     /// </summary>
-    private readonly DateOnly _startedOn = DateOnly.FromDateTime(DateTime.Now);
+    private readonly DateOnly _startedOn;
+
+    /// <summary>The date the system prompt carries.</summary>
+    internal DateOnly StartedOn => _startedOn;
 
     /// <summary>
     /// Where the user's own instruction file lives, or null when there is none to read.
@@ -979,6 +982,7 @@ public sealed class Agent
     /// id, never its immediate parent's, because sub-agents cannot nest — every child's parent already
     /// IS the session.
     /// </param>
+    /// <param name="startedOn">The day the session began, for the system prompt; null is today.</param>
     public Agent(ILlmProvider provider, JobRegistry executors, TokenLedger ledger,
         ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null, string? globalInstructionsDir = null,
@@ -999,8 +1003,13 @@ public sealed class Agent
         Permissions.PermissionPolicy? policy = null,
         Permissions.ActionClassifier? classifier = null,
         IAgentDelivery? delivery = null,
-        string? sessionId = null)
+        string? sessionId = null,
+        DateOnly? startedOn = null)
     {
+        // THE SESSION'S DAY, NOT THIS AGENT'S: a re-wire builds a new agent, and a session that began
+        // yesterday must keep yesterday's date in its system prompt or the whole conversation is
+        // re-sent uncached.
+        _startedOn = startedOn ?? DateOnly.FromDateTime(DateTime.Now);
         // CARRIED FOR MCP, which builds its own PermissionRequest rather than going through
         // PermissionGatedExecutor. Without it the gate refuses every MCP call for want of a policy —
         // see McpToolset.TryInvokeAsync.

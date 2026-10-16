@@ -103,6 +103,9 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     private readonly Agent _agent;
 
+    /// <summary>The date this host's agent puts in its system prompt.</summary>
+    internal DateOnly AgentStartedOn => _agent.StartedOn;
+
 
     // The whole settings record rather than the one field read today: the compaction threshold is
     // derived from it per-agent (see BuildAgent), and the turn ceiling reads MaxTurns.
@@ -476,6 +479,9 @@ public sealed class AgentHost : IDisposable
         public Func<SteerDelivery?>? TakePendingSteer { get; init; }
 
         public string? Briefing { get; init; }
+
+        /// <summary>The day the session began, for the system prompt — carried across re-wires.</summary>
+        public DateOnly? StartedOn { get; init; }
         public ISubAgentSpawner? Spawner { get; init; }
 
         /// <summary>
@@ -773,6 +779,7 @@ public sealed class AgentHost : IDisposable
             globalInstructionsDir: _runtime.GlobalInstructionsDir,
             mcp: _runtime.Mcp,
             briefing: _runtime.Briefing,
+            startedOn: _runtime.StartedOn,
 
             // FORWARDED, and this is the third of the three signature changes the spec counted:
             // Agent takes it, AgentHost takes it, and BuildAgent must PASS it. Omitting this line

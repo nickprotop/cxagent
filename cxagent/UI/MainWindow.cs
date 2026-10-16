@@ -862,6 +862,13 @@ public sealed class MainWindow : IDisposable
     /// line name ITS model. As a property over `_resolution` there was one answer for the window, so
     /// every composer said whatever the last /model switch had chosen.
     /// </remarks>
+    /// <summary>
+    /// The model label, and "⟳ config pending" beside it when a saved change is waiting for this tab's
+    /// next clear or compaction — next to the model, because that is what it will change.
+    /// </summary>
+    public static string ModelWithPending(string model, bool pending) =>
+        pending ? $"{model} · ⟳ config pending" : model;
+
     private static string ModelLabelFor(ResolvedConfig resolution)
     {
         var model = resolution.Provider?.ModelId is { } id ? ShortModelName(id) : null;
@@ -3473,7 +3480,7 @@ public sealed class MainWindow : IDisposable
     /// <para>The model name is escaped (it comes from config); the mode words are ours.</para>
     /// </summary>
     private static string ModeLineText(WorkingMode mode, ResolvedConfig resolution, Session? session) =>
-        ModeLineText(mode, ModelLabelFor(resolution), PromptCacheOff(resolution),
+        ModeLineText(mode, ModelWithPending(ModelLabelFor(resolution), session?.ConfigPending == true), PromptCacheOff(resolution),
             ThinkingIndicator(session?.ThinkingLevel, session?.PendingThinking, session?.KnownThinkingOptions));
 
     private static string ModeLineText(WorkingMode mode, string model, bool cacheOff = false,

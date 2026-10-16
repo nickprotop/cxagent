@@ -272,17 +272,18 @@ internal sealed class LevelledMock : ILlmProvider, IThinkingProvider
         public bool Unanswered { get; set; }
     }
 
-    public LevelledMock(IReadOnlyList<string> levels, string? level = null) : this(levels, level, new Shared()) { }
-    private LevelledMock(IReadOnlyList<string> levels, string? level, Shared shared)
+    public LevelledMock(IReadOnlyList<string> levels, string? level = null, string model = "mock-model")
+        : this(levels, level, new Shared(), model) { }
+    private LevelledMock(IReadOnlyList<string> levels, string? level, Shared shared, string model)
     {
-        _levels = levels; _level = level; _shared = shared;
+        _levels = levels; _level = level; _shared = shared; ModelId = model;
     }
 
     public Shared State => _shared;
     public string? LastLevel => _shared.Seen.LastOrDefault();
     public string ProviderId => "mock";
     public string DisplayName => "Mock";
-    public string ModelId => "mock-model";
+    public string ModelId { get; }
     public bool SupportsToolCalling => true;
     public bool SupportsStreaming => true;
     public string? ThinkingLevel => _level;
@@ -290,7 +291,7 @@ internal sealed class LevelledMock : ILlmProvider, IThinkingProvider
         : _levels.Count > 0 ? new(_levels) : ThinkingOptions.None("no levels");
     public Task<ThinkingOptions> GetThinkingOptionsAsync(CancellationToken ct = default) =>
         Task.FromResult(KnownThinkingOptions ?? ThinkingOptions.None("the endpoint did not say what it accepts"));
-    public ILlmProvider WithThinking(string? level) => new LevelledMock(_levels, level, _shared);
+    public ILlmProvider WithThinking(string? level) => new LevelledMock(_levels, level, _shared, ModelId);
 
     public async Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t, CancellationToken ct)
     {

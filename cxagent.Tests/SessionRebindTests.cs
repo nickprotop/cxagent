@@ -54,7 +54,7 @@ public class SessionRebindTests : IDisposable
         await Turn(session, "remember the word heron");
         var count = session.Host!.Context.Snapshot().Count;
 
-        var after = new LevelledMock(["off", "on"]);
+        var after = new LevelledMock(["off", "on"], model: "next-model");
         manager.ApplyConfig(Config(("local", after)), Changed("local"));
 
         Assert.Same(after.State, Assert.IsType<LevelledMock>(session.Provider).State);
@@ -73,7 +73,7 @@ public class SessionRebindTests : IDisposable
         var started = Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("first"));
         while (before.State.Seen.IsEmpty) await Task.Delay(5);
 
-        var after = new LevelledMock(["off", "on"]);
+        var after = new LevelledMock(["off", "on"], model: "next-model");
         manager.ApplyConfig(Config(("local", after)), Changed("local"));
         Assert.Same(before.State, Assert.IsType<LevelledMock>(session.Provider).State);
 
@@ -90,7 +90,7 @@ public class SessionRebindTests : IDisposable
         session.SetThinking("off");
         await Turn(session, "hi");
 
-        manager.ApplyConfig(Config(("local", new LevelledMock(["off", "on"], level: "on"))), Changed("local"));
+        manager.ApplyConfig(Config(("local", new LevelledMock(["off", "on"], level: "on", model: "next-model"))), Changed("local"));
 
         Assert.Equal("off", session.ThinkingLevel);
     }
@@ -173,7 +173,7 @@ public class SessionRebindTests : IDisposable
         var (manager, session, posted, _) = Deferred(Config(("local", before)));
         using var _m = manager;
 
-        var after = new LevelledMock(["off", "on"]);
+        var after = new LevelledMock(["off", "on"], model: "next-model");
         manager.ApplyConfig(Config(("local", after)), Changed("local"));
 
         before.State.Hold = new TaskCompletionSource();
@@ -192,7 +192,7 @@ public class SessionRebindTests : IDisposable
         Assert.Equal(count, session.Host!.Context.Snapshot().Count);
     }
 
-    // TWO SAVES BEFORE THE UI THREAD RUNS EITHER: the second must not wire an empty conversation.
+    // TWO SAVES BEFORE THE UI THREAD RUNS EITHER, each a new model: the second must not wire an empty conversation.
     [Fact]
     public async Task TwoPostedRebinds_KeepTheConversation()
     {
@@ -201,8 +201,8 @@ public class SessionRebindTests : IDisposable
         await Turn(session, "remember heron");
         var count = session.Host!.Context.Snapshot().Count;
 
-        manager.ApplyConfig(Config(("local", new LevelledMock(["on"]))), Changed("local"));
-        manager.ApplyConfig(Config(("local", new LevelledMock(["on"]))), Changed("local"));
+        manager.ApplyConfig(Config(("local", new LevelledMock(["on"], model: "m2"))), Changed("local"));
+        manager.ApplyConfig(Config(("local", new LevelledMock(["on"], model: "m3"))), Changed("local"));
         Drain(posted);
 
         Assert.Equal(count, session.Host!.Context.Snapshot().Count);

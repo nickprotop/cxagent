@@ -1883,6 +1883,7 @@ public static class AppBootstrap
                 // dismissed with Escape at all — and worse, the key would reach the branches below and
                 // cancel a running turn, which is not remotely what the user asked for.
                 if (PluginManagerDialog.CloseIfOpen()) return true;
+                if (ApplyToTabsDialog.CloseIfOpen()) return true;
                 if (ModelPickerOverlay.CloseIfOpen()) return true;
                 if (ConfigDialog.CloseIfOpen()) return true;
 

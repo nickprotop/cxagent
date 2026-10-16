@@ -468,11 +468,32 @@ public sealed class ProvidersTab
             SetStatus($"[{ColorScheme.MutedMarkup}]Saving…[/]");
             var fields = draft.ToFields();
             var change = draft.ChangeFor(settings);
-            var result = await Task.Run(() => ConfigApply.Save(_host.Apply,
-                root => ProviderEdits.Update(root, draft.Name, fields), _ => change));
-            Saved(result, draft.Name, change);
+            await CommitAsync(root => ProviderEdits.Update(root, draft.Name, fields), change, draft.Name);
         }
         finally { _saving = false; }
+    }
+
+    /// <summary>
+    /// Writes the edit off the UI thread, asks how to treat the tabs whose cache it would break, then makes
+    /// it live — the one path every save on this tab takes.
+    /// </summary>
+    internal async Task CommitAsync(Action<System.Text.Json.Nodes.JsonObject> edit, ConfigChange change, string select)
+    {
+        var prepared = await Task.Run(() => ConfigApply.Prepare(_host.Apply, edit));
+        var done = new TaskCompletionSource();
+        _host.System.EnqueueOnUIThread(async () =>
+        {
+            try
+            {
+                var choice = CacheChoice.ApplyNow;
+                if (prepared.Fresh is { } fresh && _host.Apply.Manager.BreaksCache(fresh, change) is { Count: > 0 } breaks)
+                    choice = await ApplyToTabsDialog.AskAsync(_host.System, change.Note + ".", breaks);
+                ConfigApply.Commit(_host.Apply, prepared, change, choice);
+                Saved(prepared.Write, select, change);
+            }
+            finally { done.TrySetResult(); }
+        }, "providersTab.Commit");
+        await done.Task;
     }
 
     /// <summary>After a write: the errors beside the field, or the rail rebuilt from the new file.</summary>

@@ -295,6 +295,9 @@ internal static class SessionFactory
                 // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
                 GlobalInstructionsDir = shared.GlobalInstructionsDir,
 
+                // THE SESSION'S DAY, so a re-wire on a later day builds the same system prompt.
+                StartedOn = session.StartedOn,
+
                 // The real window (when config told us one), so auto-compression derives its
                 // threshold from actual headroom instead of the fixed constant. Null on
                 // --mock/no-provider and whenever contextWindow is not configured.
@@ -388,6 +391,10 @@ internal static class SessionFactory
         session.NoteCatalog(resolution, resolution.Providers, resolution.ClassifierInstance is { Length: > 0 });
 
         session.ReplaceHost(host, resolution.Provider!, resolution.InstanceName, executors);
+
+        // A COMPACTED CONVERSATION REBUILDS THE CACHE ANYWAY — automatic or /compress — so a config change
+        // waiting for that applies now. On the new host, every wire, so a re-wire does not lose the hook.
+        host.ContextCompressed += (_, _) => session.OnContextFresh();
 
         // THE LEVEL THE RESUMED SESSION WAS AT, the one place every resume passes — the command
         // line's -c and -r, the session picker, and a headless continue alike.

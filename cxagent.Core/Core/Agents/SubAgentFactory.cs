@@ -292,7 +292,14 @@ public sealed class SubAgentFactory
     /// <para>Held here rather than in the spawner because a session has one, whatever spawns come
     /// and go.</para>
     /// </summary>
-    public SemaphoreSlim? ConcurrencySlot { get; }
+    public SemaphoreSlim? ConcurrencySlot { get; private set; }
+
+    /// <summary>
+    /// A new limit for spawns from now on. A NEW SEMAPHORE, not a resized one: children already holding
+    /// a slot release it into the semaphore they took it from, so the old count stays consistent.
+    /// </summary>
+    public void SwapLimit(int? maxConcurrentAgents) =>
+        ConcurrencySlot = maxConcurrentAgents is > 0 ? new SemaphoreSlim(maxConcurrentAgents.Value) : null;
 
     /// <summary>Where children resolve relative paths — the session's directory. Exposed so the
     /// spawner can check whether a planner wrote the file it was told to write, without the parent

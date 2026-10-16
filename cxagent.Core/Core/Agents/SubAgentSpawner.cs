@@ -14,7 +14,8 @@ namespace CxAgent.Core.Agents;
 internal sealed class SubAgentSpawner : ISubAgentSpawner
 {
     private readonly SubAgentFactory _factory;
-    private readonly AgentTypeCatalog _types;
+    private volatile AgentTypeCatalog _types;
+    private ToolDefinition? _definition;
 
     /// <summary>Forwarded to the factory, which holds the default every child inherits.</summary>
     public void SwapDefaultProvider(ILlmProvider provider, int? contextWindow, string? instanceName) =>
@@ -220,7 +221,22 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     }
 
 
-    public ToolDefinition Definition => new(ToolName, DescriptionWithTypes(),
+    /// <inheritdoc/>
+    public void Refresh(int? maxConcurrentAgents, AgentTypeCatalog types)
+    {
+        _factory.SwapLimit(maxConcurrentAgents);
+        _types = types;
+    }
+
+    /// <summary>
+    /// The spawn tool as the model sees it — BUILT ONCE, at first use. It lists the agent types, and it
+    /// is part of the cached prompt prefix: rebuilt from a refreshed catalog it would change that prefix
+    /// and re-send the whole conversation. A type added since is announced in the conversation instead,
+    /// and resolves by name all the same.
+    /// </summary>
+    public ToolDefinition Definition => _definition ??= Build();
+
+    private ToolDefinition Build() => new(ToolName, DescriptionWithTypes(),
         JsonDocument.Parse(
             """
             {
