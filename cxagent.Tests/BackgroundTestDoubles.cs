@@ -118,3 +118,17 @@ internal sealed class RecordingDelivery : IAgentDelivery
 }
 
 internal sealed record Delivered(string To, AgentNotice Notice, bool Left);
+
+internal static class StoreClaims
+{
+    /// <summary>
+    /// Claims a kept child and announces its start, as a foreground send does once it has its slot — the
+    /// two steps every test that wants a busy, announced child needs together.
+    /// </summary>
+    public static bool ClaimAndAnnounce(this SubAgentStore store, string name)
+    {
+        if (!store.TryClaim(name)) return false;
+        store.AnnounceBegin(name);
+        return true;
+    }
+}

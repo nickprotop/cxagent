@@ -20,11 +20,8 @@ public sealed class JobsCommand(DetachedProcessRegistry registry)
     /// to apply here; that rule lives in <see cref="TaskTools"/>, which a sub-agent actually
     /// calls.</para>
     /// </summary>
-    public string Kill(string pidText)
+    public string Kill(int pid)
     {
-        if (!int.TryParse(pidText.Trim(), out var pid))
-            return $"'{pidText}' is not a pid. `/jobs` to see the ones running.";
-
         var entry = registry.Live.FirstOrDefault(j => j.Process.Pid == pid);
         if (entry is null)
             return $"no background command with pid {pid}.";

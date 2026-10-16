@@ -521,7 +521,7 @@ public class ChildLivenessTests
     /// A spawn registers the run before the store announces the claim.
     ///
     /// <para>THE ORDER IS THE WHOLE CONTRACT. SubAgentSpawner calls onChild, then Keep, then
-    /// TryBeginSend — so the registry entry exists by the time SendBegan arrives. Reverse those and
+    /// claims and announces it — so the registry entry exists by the time SendBegan arrives. Reverse those and
     /// the begin finds nothing, the timer never starts, and a freshly spawned row is as dead as the
     /// resumed one this work exists to fix.</para>
     /// </summary>
@@ -533,7 +533,7 @@ public class ChildLivenessTests
         string? beganFor = null;
 
         // LOOKED UP INSIDE THE HANDLER, which is the only place the ordering is observable. A lookup
-        // after the await finds the run registered whatever order onChild, Keep and TryBeginSend ran
+        // after the await finds the run registered whatever order onChild, Keep and the announcement ran
         // in — it asserts the run exists EVENTUALLY, which is not the contract. The contract is that
         // it existed BY THEN, and only a read taken at the announcement can tell the two apart.
         ChildRun? runAtBegin = null;
@@ -572,7 +572,7 @@ public class ChildLivenessTests
         // The spawn has returned, so the run is settled — exactly the state a resume starts from.
         Assert.False(run!.Working);
 
-        Assert.True(store.TryBeginSend(kept.Name));
+        Assert.True(store.ClaimAndAnnounce(kept.Name));
         Assert.True(run.Working);          // the claim alone starts the repaint
 
         store.EndSend(kept.Name);
@@ -597,7 +597,7 @@ public class ChildLivenessTests
         await parent.SendAsync("spawn a worker", CancellationToken.None);
         var kept = Assert.Single(store.All());
 
-        store.TryBeginSend(kept.Name);
+        store.ClaimAndAnnounce(kept.Name);
         store.EndSend(kept.Name);
 
         Assert.Equal(2, runs.Count);

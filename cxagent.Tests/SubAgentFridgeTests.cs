@@ -106,7 +106,7 @@ public class SubAgentFridgeTests
         await spawner.TryInvokeAsync(Spawn("check the parser", "look"),
             onChild: null, CancellationToken.None);
         // Claim it, as a send in flight would.
-        Assert.True(store.TryBeginSend("check-the-parser"));
+        Assert.True(store.ClaimAndAnnounce("check-the-parser"));
 
         var answer = await new AgentReachTools(store).SendAsync(new SendRequest(To: "check-the-parser", Prompt: "the schema changed", Background: false, ParentAgentId: null, FromUser: false), CancellationToken.None);
 
@@ -131,7 +131,7 @@ public class SubAgentFridgeTests
             onChild: null, CancellationToken.None);
 
         // Queued while busy, and the child never laps again.
-        Assert.True(store.TryBeginSend("check-the-parser"));
+        Assert.True(store.ClaimAndAnnounce("check-the-parser"));
         var reach = new AgentReachTools(store);
         await reach.SendAsync(new SendRequest(To: "check-the-parser", Prompt: "the schema changed", Background: false, ParentAgentId: null, FromUser: false), CancellationToken.None);
         store.EndSend("check-the-parser");
@@ -173,57 +173,20 @@ public class SubAgentFridgeTests
     }
 
     /// <summary>
-    /// A HANDLE IS CLAIMED BEFORE THE CHILD EXISTS, so the name the store ends up holding is decided
-    /// at dispatch rather than at completion — which is what lets task_list name a child while it is
-    /// still running, instead of answering "no sub-agents" for the whole of its run.
+    /// TWO CHILDREN DESCRIBED THE SAME WAY, KEPT AT ONCE, GET TWO HANDLES. Spawns run concurrently, and Keep
+    /// names under its lock — without it both would read the same taken-set and the second would replace
+    /// the first, leaving a receipt naming an agent the model can no longer reach.
     /// </summary>
     [Fact]
-    public async Task A_handle_is_reserved_before_the_child_exists()
+    public async Task Two_children_kept_at_once_with_one_description_get_distinct_handles()
     {
         var store = new SubAgentStore();
-        var name = store.Reserve("survey the notes", "call-1");
+        var children = Enumerable.Range(0, 16).Select(_ => FactoryOver(Answering("done")).Create()).ToList();
 
-        Assert.Equal("survey-the-notes", name);
-        // AND THE RESERVATION IS FINDABLE BY THE CALL, which is how the spawner claims it later.
-        Assert.Equal("survey-the-notes", store.ReservationFor("call-1"));
-    }
+        var names = await Task.WhenAll(children.Select(c => Task.Run(() => store.Keep(c, "review auth"))));
 
-    /// <summary>
-    /// A RESERVED NAME IS NOT AVAILABLE TO THE NEXT SPAWN. Two children described the same way in
-    /// one response would otherwise slug identically, and the second would take the first's handle —
-    /// leaving a receipt naming an agent the model can no longer reach.
-    /// </summary>
-    [Fact]
-    public void A_second_reservation_of_the_same_description_is_suffixed()
-    {
-        var store = new SubAgentStore();
-
-        Assert.Equal("review-auth", store.Reserve("review auth", "c1"));
-        Assert.Equal("review-auth-2", store.Reserve("review auth", "c2"));
-    }
-
-    /// <summary>
-    /// AND THE CHILD ENDS UP UNDER THE NAME THE RECEIPT PUBLISHED, rather than a freshly minted one.
-    /// </summary>
-    [Fact]
-    public async Task A_kept_child_takes_the_handle_that_was_reserved_for_it()
-    {
-        var store = new SubAgentStore();
-        var reserved = store.Reserve("survey the notes", "call-1");
-        var spawner = new SubAgentSpawner(FactoryOver(Answering("done")), null, store);
-
-        await spawner.TryInvokeAsync(
-            new ToolCall
-            {
-                Id = "call-1",
-                Name = "agent",
-                Arguments = JsonSerializer.SerializeToElement(
-                    new { description = "survey the notes", prompt = "read them" }),
-            },
-            onChild: null, CancellationToken.None);
-
-        Assert.NotNull(store.Find(reserved));
-        Assert.Single(store.All());
+        Assert.Equal(16, names.Distinct().Count());
+        Assert.Equal(16, store.All().Count);
     }
 
     [Fact]

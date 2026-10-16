@@ -18,7 +18,7 @@ public class SpawnedAgentsCommandTests
     {
         var store = new SubAgentStore();
         var name = store.Keep(Spawned(), description);
-        if (busy) Assert.True(store.TryBeginSend(name));
+        if (busy) Assert.True(store.ClaimAndAnnounce(name));
         return store;
     }
 
@@ -92,4 +92,18 @@ public class SpawnedAgentsCommandTests
 
     /// <summary>The listing marks a working agent, so a user can see which one their message queues
     /// behind — the state that no longer blocks a send still has to be visible.</summary>
+
+    /// <summary>
+    /// AN UNKNOWN NAME POINTS AT /tasks, the command that lists a session's agents — not a verb that no
+    /// longer exists, which would answer a lookup with a second dead end.
+    /// </summary>
+    [Fact]
+    public void AnUnknownName_PointsAtTasks()
+    {
+        var refusal = new SpawnedAgentsCommand(StoreWith("find thing", busy: false))
+            .RefuseSend("send nobody hello", out _, out _);
+
+        Assert.Contains("`/tasks`", refusal);
+        Assert.DoesNotContain("/agents list", refusal);
+    }
 }

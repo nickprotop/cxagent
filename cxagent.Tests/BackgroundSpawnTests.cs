@@ -8,8 +8,11 @@ namespace CxAgent.Tests;
 
 public class BackgroundSpawnTests
 {
-    private static (SubAgentSpawner Spawner, SubAgentStore Store, RecordingDelivery Delivery, SubAgentFactory Factory)
-        Wired(ILlmProvider provider, int? cap = null, bool allow = true)
+    /// <summary>A spawner wired for background work, and what a test reads back from it.</summary>
+    private sealed record Rig(SubAgentSpawner Spawner, SubAgentStore Store, RecordingDelivery Delivery,
+        SubAgentFactory Factory);
+
+    private static Rig Wired(ILlmProvider provider, int? cap = null, bool allow = true)
     {
         var delivery = new RecordingDelivery();
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
@@ -19,7 +22,7 @@ public class BackgroundSpawnTests
             Delivery = delivery, MaxConcurrentAgents = cap, AllowBackground = allow,
         });
         var store = new SubAgentStore();
-        return (new SubAgentSpawner(factory, store: store), store, delivery, factory);
+        return new Rig(new SubAgentSpawner(factory, store: store), store, delivery, factory);
     }
 
     private static MockLlmProvider Says(params string[] texts)

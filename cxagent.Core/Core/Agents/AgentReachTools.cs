@@ -33,7 +33,7 @@ public sealed record SendRequest(string To, string Prompt, bool Background, stri
 public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = null,
     IAgentDelivery? delivery = null)
 {
-    /// <summary>The store behind these tools, for a caller that must reserve a handle at dispatch.</summary>
+    /// <summary>The store behind these tools.</summary>
     public SubAgentStore Store => store;
 
     /// <summary>Whether this handles a call by that name.</summary>
@@ -71,12 +71,12 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
         // THE CLAIM IS ALSO HOW BUSY-NESS IS DISCOVERED, and it is the only atomic way to ask: a
         // separate IsBusy read would answer about a moment that has passed.
         //
-        // SILENT, AND HELD ACROSS THE CAP. TryBeginSend would announce a start here, and its release
-        // is the application's one announcement that a stretch has STOPPED — a listener archives a
-        // run on it. So a send that claimed loudly and handed the claim back to wait for a permit
-        // would fabricate a finished run of zero turns and zero cost, and that phantom is counted by
-        // /stats exactly as a real one is. Claiming silently keeps the exclusion for the whole wait
-        // and announces nothing until work actually begins.
+        // SILENT, AND HELD ACROSS THE CAP. An announced start pairs with EndSend, the application's one
+        // announcement that a stretch has STOPPED — a listener archives a run on it. So a send that
+        // announced at the claim and handed the claim back to wait for a permit would fabricate a
+        // finished run of zero turns and zero cost, and that phantom is counted by /stats exactly as a
+        // real one is. Claiming silently keeps the exclusion for the whole wait and announces nothing
+        // until work actually begins.
         if (!store.TryClaim(name))
             return Deliver(stored, name, request);
 

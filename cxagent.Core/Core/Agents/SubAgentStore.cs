@@ -36,68 +36,21 @@ public sealed class SubAgentStore
     private readonly object _naming = new();
 
     /// <summary>
-    /// Handles claimed by a spawn that has not finished starting.
-    ///
-    /// <para>SEPARATE FROM <c>_byName</c> because a reserved name has no agent behind it yet: putting
-    /// a placeholder in the store would make <c>Find</c> answer with something nobody can send to,
-    /// and <c>All</c> list a child that does not exist.</para>
-    /// </summary>
-    private readonly HashSet<string> _reserved = new(StringComparer.Ordinal);
-
-    /// <summary>Which reservation belongs to which tool call, so the spawner can claim it.</summary>
-    private readonly Dictionary<string, string> _reservedFor = new(StringComparer.Ordinal);
-
-    /// <summary>
-    /// Claims the handle a child will answer to, before it exists.
-    ///
-    /// <para>NEEDED BECAUSE THE RECEIPT IS WRITTEN FIRST. A background spawn returns before its child
-    /// answers, so it names one in a tool result while the child is still starting — and that name has to be
-    /// the one the child actually gets, or the model is told a handle that never resolves.</para>
-    ///
-    /// <para>THE RESERVATION IS WHAT MAKES THE SUFFIX RULE STILL WORK. Two children described the
-    /// same way are spawned in one response; without holding the first name at dispatch, both would
-    /// slug identically and the second would take the first one's handle.</para>
-    /// </summary>
-    /// <param name="callId">
-    /// The tool call this reservation belongs to — how the spawner finds it again.
-    ///
-    /// <para>KEYED ON THE CALL RATHER THAN PASSED DOWN, because <c>TryInvokeAsync</c> already takes
-    /// five parameters and a sixth would be the one nobody reads positionally (AV1561). Both sides
-    /// hold the call, so the call is the key they already share.</para>
-    /// </param>
-    /// <param name="description">What the spawn called this child; the handle is slugged from it.</param>
-    public string Reserve(string? description, string callId)
-    {
-        lock (_naming)
-        {
-            var name = Slug(description, [.. _byName.Keys, .. _reserved]);
-            _reserved.Add(name);
-            _reservedFor[callId] = name;
-            return name;
-        }
-    }
-
-    /// <summary>The handle reserved for this call, or null when nothing reserved one.</summary>
-    public string? ReservationFor(string callId)
-    {
-        lock (_naming) return _reservedFor.GetValueOrDefault(callId);
-    }
-
-    /// <summary>
-    /// Keeps this child, under <paramref name="reserved"/> when one was claimed for it.
+    /// Keeps this child under a handle slugged from its description, and answers the handle.
     ///
     /// <para>NAMED UNDER A LOCK because two spawns racing would otherwise both read the same
     /// taken-set and mint the same name, silently replacing one child with the other. Spawns ARE
     /// concurrent — SubAgentSpawner has a concurrency slot precisely because several run at once.</para>
+    ///
+    /// <para>KEPT BEFORE THE RECEIPT IS WRITTEN, which is why no handle needs reserving ahead of the child:
+    /// the spawner keeps the child the moment it is built and puts the name this returns in the receipt,
+    /// so the handle the model is told is the one the child already has.</para>
     /// </summary>
-    public string Keep(SubAgent agent, string? description, string? reserved = null)
+    public string Keep(SubAgent agent, string? description)
     {
         lock (_naming)
         {
-            var name = reserved ?? Slug(description, [.. _byName.Keys, .. _reserved]);
-            _reserved.Remove(name);
-            foreach (var (k, v) in _reservedFor.Where(e => e.Value == name).ToList())
-                _reservedFor.Remove(k);
+            var name = Slug(description, [.. _byName.Keys]);
             _byName[name] = new StoredAgent(name, agent.TypeName, description,
                 DateTimeOffset.UtcNow, agent);
             return name;
@@ -134,23 +87,12 @@ public sealed class SubAgentStore
     public bool IsBusy(string name) => _busy.ContainsKey(name);
 
     /// <summary>
-    /// Claims this agent for one send, or answers false when another already has it.
+    /// Takes the claim WITHOUT announcing a start, or answers false when another already holds it.
     ///
     /// <para>REFUSED RATHER THAN QUEUED. <c>Agent</c> relies on "ONE TURN AT A TIME is enforced by
     /// <c>Session.Submit</c>", and a stored sub-agent sits behind no such gate — two sends would
-    /// corrupt its context exactly as that comment warns. Queueing would make a tool call block on
-    /// unrelated work with no way to report why; a refusal naming the state is something the model
-    /// can act on immediately.</para>
-    /// </summary>
-    public bool TryBeginSend(string name)
-    {
-        if (!TryClaim(name)) return false;
-        AnnounceBegin(name);
-        return true;
-    }
-
-    /// <summary>
-    /// Takes the claim WITHOUT announcing a start, or answers false when another already holds it.
+    /// corrupt its context exactly as that comment warns. A caller that loses the claim delivers to
+    /// the child's mailbox instead.</para>
     ///
     /// <para>SEPARATE FROM THE ANNOUNCEMENT BECAUSE THE TWO HAVE DIFFERENT LIFETIMES. A caller that
     /// must hold the child against other senders while it waits for something else — a concurrency
@@ -174,7 +116,7 @@ public sealed class SubAgentStore
     internal void Release(string name) => _busy.TryRemove(name, out _);
 
     /// <summary>
-    /// Announces a start for a claim already held, as <see cref="TryBeginSend"/> does for its own.
+    /// Announces a start for a claim already held.
     ///
     /// <para>FOR A CALLER THAT CLAIMED SILENTLY and has now reached the moment the child really
     /// begins working. Pairing it with <see cref="EndSend"/> is what keeps the begin/end announcements
@@ -229,7 +171,7 @@ public sealed class SubAgentStore
     private readonly ConcurrentDictionary<string, BackgroundRun> _background = new(StringComparer.Ordinal);
 
     /// <summary>Records a background stretch starting for a kept child, replacing any ended one.</summary>
-    public BackgroundRun BeginBackground(BackgroundStart start, Jobs.ResultHandoff handoff)
+    internal BackgroundRun BeginBackground(BackgroundStart start, Jobs.ResultHandoff handoff)
     {
         var run = new BackgroundRun(start, handoff);
         _background[start.Name] = run;

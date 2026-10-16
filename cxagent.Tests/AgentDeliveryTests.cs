@@ -400,7 +400,7 @@ public class AgentDeliveryTests : IDisposable
     {
         var (delivery, store, child) = Wired();
         var name = store.Keep(child, "find thing");
-        Assert.True(store.TryBeginSend(name));       // busy == a loop is turning
+        Assert.True(store.ClaimAndAnnounce(name));       // busy == a loop is turning
 
         Assert.Equal(DeliveryOutcome.Injected, delivery.Tell(child.Agent.Id, "also check the loader"));
         Assert.Equal(["also check the loader"], child.Agent.Mailbox.Drain());

@@ -28,7 +28,6 @@ public class AgentMailboxTests
 
         Assert.Single(box.Drain());
         Assert.Empty(box.Drain());
-        Assert.False(box.HasPending);
     }
 
     [Fact]

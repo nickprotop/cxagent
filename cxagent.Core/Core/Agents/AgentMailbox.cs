@@ -82,10 +82,4 @@ public sealed class AgentMailbox
     /// work, and a request spent hearing so is a cost they did not ask for.</para>
     /// </summary>
     public bool HasWaking { get { lock (_lock) return _pending.Any(e => e.Wakes); } }
-
-    /// <summary>Whether anything is waiting — for a caller that wants to avoid an allocation.</summary>
-    public bool HasPending
-    {
-        get { lock (_lock) return _pending.Count > 0; }
-    }
 }

@@ -46,7 +46,7 @@ public class AgentReachToolsTests
     public async Task A_send_to_a_busy_agent_is_refused_and_says_why()
     {
         var store = new SubAgentStore();
-        store.TryBeginSend("worker");
+        store.ClaimAndAnnounce("worker");
         var tools = new AgentReachTools(store);
 
         // Find returns null before Keep, so this exercises the not-found path first; the busy path

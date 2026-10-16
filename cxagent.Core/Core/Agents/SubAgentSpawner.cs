@@ -361,8 +361,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         // task_output, task_stop — for the whole time it is running, which is exactly when the parent
         // wants to ask how far it has got or tell it something it needs. Kept only on completion, it
         // would be invisible to task_list for the whole of its run.
-        var keptAs = _store?.Keep(child, Read(call, "description"),
-            call.Id is { } spawnId ? _store.ReservationFor(spawnId) : null);
+        var keptAs = _store?.Keep(child, Read(call, "description"));
 
         // BACKGROUND BY DEFAULT, WHERE IT CAN WORK: a store (or nothing could reach or stop the child), a delivery
         // port and a parent id (or nobody could be told it ended), and a runtime that allows it — headless

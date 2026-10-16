@@ -56,11 +56,11 @@ public class SubAgentStoreTests
     {
         var store = new SubAgentStore();
 
-        Assert.True(store.TryBeginSend("a"));
-        Assert.False(store.TryBeginSend("a"));
+        Assert.True(store.ClaimAndAnnounce("a"));
+        Assert.False(store.ClaimAndAnnounce("a"));
 
         store.EndSend("a");
-        Assert.True(store.TryBeginSend("a"));
+        Assert.True(store.ClaimAndAnnounce("a"));
     }
 
     [Fact]

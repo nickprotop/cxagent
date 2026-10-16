@@ -46,7 +46,7 @@ public sealed class SpawnedAgentsCommand(SubAgentStore store)
             return $"'{name}' names an agent but asks it nothing. Add the prompt after it.";
 
         if (store.Find(name) is null)
-            return $"no sub-agent named '{name}' in this session. `/agents list` to see them.";
+            return $"no sub-agent named '{name}' in this session. `/tasks` to see them.";
 
         // A BUSY AGENT IS SENT TO, NOT REFUSED. The message goes to its mailbox and is injected at
         // the top of its next turn lap, which is the whole reason the mailbox exists — telling a

@@ -317,9 +317,9 @@ public sealed partial class Session
             return CommandStatus.Reported;
         }
 
-        if (int.TryParse(id, out _))
+        if (int.TryParse(id, out var pid))
         {
-            Say(new Message(new Commands.JobsCommand(DetachedProcessRegistry.Default).Kill(id),
+            Say(new Message(new Commands.JobsCommand(DetachedProcessRegistry.Default).Kill(pid),
                 Severity.Info));
             return CommandStatus.Reported;
         }

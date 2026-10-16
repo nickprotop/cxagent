@@ -55,7 +55,7 @@ internal sealed class JobTab
         _agent = agent;
         _follower = entry.Job.OutputPath is { } path ? new OutputFollower(path) : null;
 
-        // NO CONFIRMATION, as /jobs kill has none. OFF THE UI THREAD, because Kill waits up to five
+        // NO CONFIRMATION, as /tasks stop has none. OFF THE UI THREAD, because Kill waits up to five
         // seconds for the process to go and then raises the exit report inline — which submits to the
         // session — and neither belongs on the thread that paints the screen.
         _kill = new ButtonBuilder()
