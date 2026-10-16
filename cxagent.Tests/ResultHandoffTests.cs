@@ -137,6 +137,103 @@ public class ResultHandoffTests
     }
 
     /// <summary>
+    /// SILENCED, BUT SOMEONE WAS ALREADY WAITING. The waiter asked before the conversation began
+    /// closing, so it is answered — promptly, not after its timeout — and nothing is sent or left.
+    /// </summary>
+    [Fact]
+    public async Task Silenced_WithAWaiter_AnswersTheWaiter_AndSendsNothing()
+    {
+        var c = new Counter(); var h = new ResultHandoff(c.Leave);
+        var wait = h.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+        h.Silence();
+        h.Complete("r", c.Send);
+        Assert.Same(wait, await Task.WhenAny(wait, Task.Delay(TimeSpan.FromSeconds(2))));
+        Assert.Equal(new HandoffRead("r", true, false), await wait);
+        Assert.Equal(0, c.Sent);
+        Assert.Equal(0, c.Left);
+        Assert.True(h.Read().AlreadySent);
+    }
+
+    /// <summary>
+    /// SILENCED, AND THE ONE WAITER HANDED IT IS CANCELLED. A silenced result is never left; it waits for
+    /// a Read, which takes it exactly once. The cancel races the waiter's own continuation, so this
+    /// repeats until the cancel has won at least once — and checks the invariant whichever won.
+    /// </summary>
+    [Fact]
+    public async Task Silenced_ThenTheWaiterIsCancelled_LeavesNothing_AndReadTakesItOnce() =>
+        await CancelTheOnlyWaiter(silenceAfterComplete: false);
+
+    /// <summary>
+    /// SILENCED AFTER THE RESULT REACHED THE WAITERS. If they are then all cancelled, the leave that
+    /// would follow is a note into a closing conversation — so there is none.
+    /// </summary>
+    [Fact]
+    public async Task SilencedWhileWithTheWaiters_ThenTheyAreCancelled_LeavesNothing() =>
+        await CancelTheOnlyWaiter(silenceAfterComplete: true);
+
+    private static async Task CancelTheOnlyWaiter(bool silenceAfterComplete)
+    {
+        var cancelWon = 0;
+        for (var i = 0; i < 200 && cancelWon < 5; i++)
+        {
+            var c = new Counter(); var h = new ResultHandoff(c.Leave);
+            using var cts = new CancellationTokenSource();
+            var wait = h.WaitAsync(TimeSpan.FromSeconds(10), cts.Token);
+            if (!silenceAfterComplete) h.Silence();
+            h.Complete("r", c.Send);
+            if (silenceAfterComplete) h.Silence();
+            cts.Cancel();
+
+            HandoffRead? answer = null;
+            try { answer = await wait; }
+            catch (OperationCanceledException) { cancelWon++; }
+
+            Assert.Equal(0, c.Sent);
+            Assert.Equal(0, c.Left);
+            if (answer is null)
+            {
+                Assert.Equal(new HandoffRead("r", true, false), h.Read());
+                Assert.True(h.Read().AlreadySent);
+            }
+            else
+            {
+                Assert.Equal(new HandoffRead("r", true, false), answer);
+                Assert.True(h.Read().AlreadySent);
+            }
+        }
+        Assert.True(cancelWon > 0, "the cancel never beat the waiter's continuation");
+    }
+
+    /// <summary>
+    /// ONE OF TWO WAITERS IS CANCELLED AS THE RUN ENDS. The other receives it, so the cancelled one must
+    /// not also leave it: exactly one of answered, sent, left.
+    /// </summary>
+    [Fact]
+    public async Task OneOfTwoWaitersCancelledAtTheEnd_TheOtherHasIt_AndNothingIsLeft()
+    {
+        for (var i = 0; i < 500; i++)
+        {
+            var c = new Counter(); var h = new ResultHandoff(c.Leave);
+            using var cts = new CancellationTokenSource();
+            var cancelled = h.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
+            var other = h.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+            await Task.WhenAll(Task.Run(() => h.Complete("r", c.Send)), Task.Run(cts.Cancel));
+
+            var otherAnswered = (await other).Result == "r";
+            var cancelledAnswered = false;
+            try { cancelledAnswered = (await cancelled).Result == "r"; }
+            catch (OperationCanceledException) { }
+
+            if (otherAnswered)
+            {
+                Assert.Equal(0, c.Left);
+                Assert.Equal(0, c.Sent);
+            }
+            Assert.Equal(1, (otherAnswered || cancelledAnswered ? 1 : 0) + c.Sent + c.Left);
+        }
+    }
+
+    /// <summary>
     /// RANDOM INTERLEAVINGS: waits with random timeouts and cancels, reads, and the end, on many threads.
     /// Invariant: consumed exactly once. Waiters that all received it are one parent turn, so they count
     /// as one consumption.
@@ -144,7 +241,7 @@ public class ResultHandoffTests
     [Fact]
     public async Task TheHandoff_DeliversExactlyOnce_UnderRandomInterleaving() => await Soak(rounds: 300, seed: 20261016);
 
-    [Fact(Skip = "soak — run with --filter Category=Soak"), Trait("Category", "Soak")]
+    [Fact(Skip = "soak — remove this Skip, then run --filter Category=Soak"), Trait("Category", "Soak")]
     public async Task TheHandoff_Soak() => await Soak(rounds: 2000, seed: 7);
 
     private static async Task Soak(int rounds, int seed)

@@ -27,7 +27,10 @@ public sealed record HandoffRead(string? Result, bool Ended, bool AlreadySent);
 /// </param>
 public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
 {
-    private enum State { Pending, ToWaiters, Sending, Sent, Undelivered, Silenced, Taken }
+    // SilencedToWaiters IS ITS OWN STATE, not ToWaiters plus a flag, because the two differ in exactly
+    // the place that matters: when every waiter is cancelled, ToWaiters leaves the result as a note,
+    // and a silenced handoff must not — its conversation is closing, and nothing goes into one.
+    private enum State { Pending, ToWaiters, Sending, Sent, Undelivered, Silenced, SilencedToWaiters, Taken }
 
     // A PLAIN object, matching the rest of Core, which does not use System.Threading.Lock.
     private readonly object _lock = new();
@@ -72,9 +75,18 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
             if (_ended) return;
             _result = result;
             _ended = true;
-            // SILENCED keeps the result for Read but tells nobody: the conversation it would go to
-            // is closing.
-            if (_state == State.Silenced) return;
+            // SILENCED keeps the result for Read but sends nothing: the conversation it would go to
+            // is closing. A task_output already waiting is still answered — it asked, and making it
+            // sit out its timeout only to be told "not ended" would be a wrong answer, not a quiet one.
+            if (_state == State.Silenced)
+            {
+                if (_waiters > 0)
+                {
+                    _waiting!.TrySetResult(result);
+                    _state = State.SilencedToWaiters;
+                }
+                return;
+            }
             if (_waiters > 0)
             {
                 _waiting!.TrySetResult(result);
@@ -87,13 +99,18 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
     }
 
     /// <summary>
-    /// Stops a result that has not ended yet from being sent or left anywhere; <see cref="Read"/> still
-    /// returns it. Does nothing once the result is on its way.
+    /// Stops the result from being sent or left anywhere; waiters already handed it keep it, and
+    /// <see cref="Read"/> returns it when nobody else has. Does nothing once a send or a leave has begun.
     /// </summary>
     public void Silence()
     {
         lock (_lock)
+        {
+            // TO-WAITERS TOO: the result has reached waiters, but if they are all then cancelled the
+            // leave that would follow is a note into the closing conversation.
             if (_state == State.Pending) _state = State.Silenced;
+            else if (_state == State.ToWaiters) _state = State.SilencedToWaiters;
+        }
     }
 
     /// <summary>
@@ -145,6 +162,13 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
                 // CANCELLED BEFORE THE END, or with another waiter still holding it: nothing to do.
                 // WaitAsync can throw here even when the source completed in the same instant, so
                 // what decides is the state, not which way the await came out.
+                if (_state == State.SilencedToWaiters)
+                {
+                    // THE LAST WAITER HANDED IT IS GONE, and a silenced result is never left: it goes
+                    // back to waiting for a Read to take it. The source stays — it is already set.
+                    if (--_waiters == 0) _state = State.Silenced;
+                    throw;
+                }
                 if (_state != State.ToWaiters)
                 {
                     ForgetWaiterLocked();
@@ -159,8 +183,9 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
         }
     }
 
-    // A waiter leaving before the end. The last one drops the source, so the result is sent rather
-    // than handed to a source nobody is listening to.
+    // A waiter leaving without having been handed the result. The last one drops the source, so a
+    // later end sends the result rather than handing it to a source nobody is listening to. Never
+    // reached once the source is set: those paths keep it, and decide by the state instead.
     private void ForgetWaiterLocked()
     {
         if (--_waiters == 0) _waiting = null;
