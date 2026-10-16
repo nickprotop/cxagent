@@ -1,43 +1,16 @@
 namespace CxAgent.Core.Llm;
 
-/// <summary>Static, user-facing metadata for one provider kind.</summary>
-public record ProviderKindInfo(
-    string Kind,
-    string DisplayName,
-    bool RequiresApiKey,
-    bool RequiresBaseUrl,
-    string ModelHint);
-
 /// <summary>
-/// The provider kinds cxagent can configure, and the presets the Configuration dialog's gallery offers.
-/// <see cref="All"/> is kept in lockstep with ProviderConfigLoader.KnownKinds (a test asserts the two
-/// sets are equal), and every kind has a preset (another test), so adding a driver cannot leave it
-/// unreachable from the dialog.
+/// The presets the Configuration dialog's gallery offers. Every kind the loader knows has one, and no
+/// preset names a kind it does not (tests assert both), so adding a driver cannot leave it unreachable
+/// from the dialog.
 /// </summary>
 public static class ProviderKindCatalog
 {
-    public static IReadOnlyList<ProviderKindInfo> All { get; } = new[]
-    {
-        new ProviderKindInfo("anthropic", "Anthropic (Claude)",
-            RequiresApiKey: true,  RequiresBaseUrl: false, ModelHint: "claude-sonnet-4-5"),
-        // RequiresApiKey here DESCRIBES THE KIND, it is not a loader rule: the loader cannot tell an
-        // OpenRouter endpoint (needs a key) from a llama.cpp server on localhost (needs none) from
-        // the kind alone, so it never demands one, and the endpoint's own 401 is the honest failure.
-        new ProviderKindInfo("openai-compatible", "OpenAI-compatible endpoint",
-            RequiresApiKey: true,  RequiresBaseUrl: true,  ModelHint: "gpt-4o-mini"),
-        new ProviderKindInfo("ollama", "Ollama (local)",
-            RequiresApiKey: false, RequiresBaseUrl: true,  ModelHint: "llama3.1"),
-    };
-
-    public static ProviderKindInfo For(string kind) =>
-        All.FirstOrDefault(k => k.Kind == kind)
-        ?? throw new ArgumentOutOfRangeException(nameof(kind), kind, "unknown provider kind");
-
     /// <summary>
     /// A pre-filled starting point for a provider instance. A preset is NOT a kind — it selects an
-    /// existing kind and pre-fills baseUrl/headers/model hint. ProviderKindCatalog.All must stay
-    /// set-equal to ProviderConfigLoader.KnownKinds (a test asserts it), so adding an aggregator here
-    /// must never add a kind.
+    /// existing kind and pre-fills baseUrl/headers/model hint, so adding an aggregator here must never
+    /// add a kind.
     /// </summary>
     public record ProviderPreset(
         string Id,

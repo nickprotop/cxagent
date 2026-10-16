@@ -5,35 +5,10 @@ namespace CxAgent.Tests;
 
 public class ProviderKindCatalogTests
 {
-    [Fact]
-    public void All_CoversExactly_TheLoadersKnownKinds()
-    {
-        var catalogKinds = ProviderKindCatalog.All.Select(k => k.Kind).OrderBy(x => x);
-        var loaderKinds = ProviderConfigLoader.KnownKinds.OrderBy(x => x);
-        Assert.Equal(loaderKinds, catalogKinds);
-    }
-
-    [Fact]
-    public void Ollama_IsKeyless_ButNeedsBaseUrl()
-    {
-        var o = ProviderKindCatalog.All.Single(k => k.Kind == "ollama");
-        Assert.False(o.RequiresApiKey);
-        Assert.True(o.RequiresBaseUrl);
-    }
-
-    [Fact]
-    public void Anthropic_NeedsKey_ButNoBaseUrl()
-    {
-        var a = ProviderKindCatalog.All.Single(k => k.Kind == "anthropic");
-        Assert.True(a.RequiresApiKey);
-        Assert.False(a.RequiresBaseUrl);
-    }
-
     /// <summary>
     /// The loader refuses a keyless config for no kind — it cannot tell an OpenRouter endpoint (needs
     /// a key) from a llama.cpp server on localhost (needs none) from the kind alone, so a missing
     /// apiKey is not a config-time error and the endpoint's own 401 is the honest failure instead.
-    /// RequiresApiKey describes the kind and is not enforced — see the comment on ProviderKindCatalog.All.
     /// </summary>
     [Theory]
     [InlineData("anthropic")]
@@ -64,16 +39,6 @@ public class ProviderKindCatalogTests
     }
 
     [Fact]
-    public void EveryKind_HasDisplayNameAndModelHint()
-    {
-        Assert.All(ProviderKindCatalog.All, k =>
-        {
-            Assert.False(string.IsNullOrWhiteSpace(k.DisplayName));
-            Assert.False(string.IsNullOrWhiteSpace(k.ModelHint));
-        });
-    }
-
-    [Fact]
     public void Presets_CoverEveryKind_AndAddOpenRouter()
     {
         var presets = ProviderKindCatalog.Presets;
@@ -89,6 +54,14 @@ public class ProviderKindCatalogTests
         Assert.NotNull(or.ExtraHeaders);
         Assert.True(or.ExtraHeaders!.ContainsKey("X-Title"));
     }
+
+    [Fact]
+    public void EveryPreset_HasANameAndABlurb() =>
+        Assert.All(ProviderKindCatalog.Presets, p =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(p.DisplayName));
+            Assert.False(string.IsNullOrWhiteSpace(p.Blurb));
+        });
 
     [Fact]
     public void Presets_DoNotIntroduceUnknownKinds()
