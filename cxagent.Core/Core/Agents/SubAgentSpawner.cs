@@ -311,18 +311,18 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             turnTools: turnTools);
         onChild?.Invoke(child);
 
-        // KEPT THE MOMENT IT EXISTS, NOT WHEN IT FINISHES. A parent no longer waits at the spawn, so
-        // a child added only on completion is unreachable for the whole time it is running — which is
-        // exactly when the parent wants to ask how far it has got, or tell it something it needs. A
-        // live drive found this immediately: agent_list answered "no sub-agents have been spawned"
-        // while one was mid-run.
+        // KEPT THE MOMENT IT EXISTS, NOT WHEN IT FINISHES. A child is reachable — by agent_send,
+        // task_output, task_stop — for the whole time it is running, which is exactly when the parent
+        // wants to ask how far it has got or tell it something it needs. Kept only on completion, it
+        // would be invisible to agent_list for the whole of its run.
         var keptAs = _store?.Keep(child, Read(call, "description"),
             call.Id is { } spawnId ? _store.ReservationFor(spawnId) : null);
 
-        // AND MARKED BUSY FOR ITS WHOLE RUN, so a send while it works goes to its mailbox rather
-        // than starting a second turn on a context this one is actively appending to — the
-        // corruption SubAgentStore.TryBeginSend exists to prevent.
-        if (keptAs is not null) _store!.TryBeginSend(keptAs);
+        // CLAIMED SILENTLY FOR ITS WHOLE LIFE, ANNOUNCED ONLY WITH THE SLOT IN HAND — the order
+        // AgentReachTools keeps for a resume. The claim makes a send while it waits go to its mailbox
+        // rather than start a second turn on a context this one will append to; the announcement starts
+        // its row's clock and the archive's run, and a child sitting in a queue is doing neither.
+        if (keptAs is not null) _store!.TryClaim(keptAs);
 
         // THE CAP, WAITED HERE — inside the started task, never on the parent's walk. Waiting on the
         // walk would stall the turn's INLINE tools behind a queued child, turning a limit on
@@ -330,7 +330,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         //
         // Null when unconfigured, which is the default: whatever the model emits, runs.
         var slot = _factory.ConcurrencySlot;
-        if (slot is not null) await slot.WaitAsync(ct);
+        var announced = false;
 
         // THE ENVELOPE, HOISTED SO THE RELEASE CAN READ ITS STATE. The release is what announces the
         // stop, and the listener that writes this run's account runs inside it — so the outcome word
@@ -339,31 +339,43 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         string? envelope = null;
         try
         {
-            var result = await child.Agent.SendAsync(prompt, ct);
+            if (slot is not null) await slot.WaitAsync(ct);
+            try
+            {
+                if (keptAs is not null)
+                {
+                    announced = true;
+                    _store!.AnnounceBegin(keptAs);
+                }
 
-            // KEPT, BECAUSE THE CONTEXT IS THE AGENT. Everything else this child has is shared or
-            // reconstructible; its conversation is not, and re-running the same parameters later
-            // would rebuild an agent that must REDO the work to reach where this one already is.
-            // The name goes into the envelope so the model can reach it without a listing call.
-            // THE NAME IT WAS KEPT UNDER at spawn — a lookup, not a second Keep, which would
-            // re-register the same child and mint a second handle for it.
-            var name = keptAs;
+                var result = await child.Agent.SendAsync(prompt, ct);
 
-            return envelope = SubAgentEnvelope.Render(child.Agent.Id, name, result.Outcome,
-                WithPlanOutcome(result.Text, planPath));
+                // THE NAME IT WAS KEPT UNDER at spawn — a lookup, not a second Keep, which would
+                // re-register the same child and mint a second handle for it. It goes into the envelope
+                // so the model can reach the child without a listing call.
+                return envelope = SubAgentEnvelope.Render(child.Agent.Id, keptAs, result.Outcome,
+                    WithPlanOutcome(result.Text, planPath));
+            }
+            finally
+            {
+                slot?.Release();
+            }
         }
         finally
         {
-            slot?.Release();
-
-            // RELEASED WHATEVER HAPPENED, or a child that threw stays busy forever and every later
-            // send to it is answered with a delivery confirmation nobody drains.
+            // RELEASED WHATEVER HAPPENED, or a child that threw — or was cancelled while queued — stays
+            // claimed forever and every later send to it is answered with a delivery confirmation nobody
+            // drains. THROUGH WHICHEVER CALL MATCHES THE ANNOUNCEMENT: an announced stop is an archived
+            // run, and a run that never started must not archive one of zero turns that /stats averages.
             //
-            // READ BACK OUT OF THE ENVELOPE rather than passed from `result` directly: the envelope
-            // is the one artefact that always carries the state, so the word recorded here is the
-            // same word the parent's model reads — two copies of it could disagree, and both would
-            // be plausible strings.
-            if (keptAs is not null) _store!.EndSend(keptAs, SubAgentEnvelope.StateOf(envelope));
+            // THE STATE READ BACK OUT OF THE ENVELOPE rather than passed from `result`: the envelope is
+            // the one artefact that always carries it, so the word recorded is the word the parent's
+            // model reads — two copies could disagree, and both would be plausible strings.
+            if (keptAs is not null)
+            {
+                if (announced) _store!.EndSend(keptAs, SubAgentEnvelope.StateOf(envelope));
+                else _store!.Release(keptAs);
+            }
         }
     }
 

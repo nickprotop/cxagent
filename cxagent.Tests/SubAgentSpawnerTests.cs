@@ -70,6 +70,60 @@ public class SubAgentSpawnerTests
         Assert.Equal(CxAgent.Core.Jobs.Tool.Agent, spawner.Definition.Name);
     }
 
+    private static SubAgentFactory CappedFactory(ILlmProvider provider, int cap) =>
+        new(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = provider, Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000, MaxConcurrentAgents = cap,
+        });
+
+    /// <summary>
+    /// A CHILD WAITING FOR A SLOT IS NOT ANNOUNCED AS WORKING. Its row's clock and the archive's run both
+    /// start at the announcement, so announcing before the slot folds the queue into the run's duration.
+    /// </summary>
+    [Fact]
+    public async Task ASpawnWaitingForASlot_IsNotAnnouncedUntilItHasOne()
+    {
+        var factory = CappedFactory(Answering("done"), cap: 1);
+        var store = new CxAgent.Core.Agents.SubAgentStore();
+        var began = 0;
+        store.SendBegan += _ => Interlocked.Increment(ref began);
+        var spawner = new CxAgent.Core.Agents.SubAgentSpawner(factory, store: store);
+
+        await factory.ConcurrencySlot!.WaitAsync();
+        var spawn = spawner.TryInvokeAsync(SpawnCall(), null, CancellationToken.None);
+        await Task.Delay(200);
+
+        Assert.Equal(0, Volatile.Read(ref began));
+        Assert.True(store.IsBusy("find-thing"));
+
+        factory.ConcurrencySlot.Release();
+        Assert.Equal("completed", CxAgent.Core.Agents.SubAgentEnvelope.StateOf(await spawn));
+        Assert.Equal(1, Volatile.Read(ref began));
+    }
+
+    /// <summary>CANCELLED WHILE QUEUED: the claim is released silently and no run is archived.</summary>
+    [Fact]
+    public async Task ASpawnCancelledWhileQueued_ReleasesItsClaim_AndEndsNothing()
+    {
+        var factory = CappedFactory(Answering("done"), cap: 1);
+        var store = new CxAgent.Core.Agents.SubAgentStore();
+        var ended = 0;
+        store.SendEnded += (_, _) => Interlocked.Increment(ref ended);
+        var spawner = new CxAgent.Core.Agents.SubAgentSpawner(factory, store: store);
+        await factory.ConcurrencySlot!.WaitAsync();
+        using var cts = new CancellationTokenSource();
+
+        var spawn = spawner.TryInvokeAsync(SpawnCall(), null, cts.Token);
+        await Task.Delay(100);
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => spawn);
+
+        Assert.False(store.IsBusy("find-thing"));
+        Assert.Equal(0, Volatile.Read(ref ended));
+        factory.ConcurrencySlot.Release();
+    }
+
     private static ToolCall SpawnCall(string prompt = "find the thing", string description = "find thing") =>
         new()
         {

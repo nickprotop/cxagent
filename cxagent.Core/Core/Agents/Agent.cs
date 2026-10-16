@@ -2697,15 +2697,25 @@ public sealed class Agent
             var run = _childRuns.GetOrAdd(child.Agent.Id, _ => new ChildRun(child, job.Id));
             run.Prompt = childPrompt;
 
-            // AND STARTED HERE TOO, because a claim is not guaranteed. The store's claim is what
-            // normally begins a run — one mechanism serving spawn, agent_send, /agents send and a
-            // mailbox drain alike — but a spawner built without a store takes no claim and announces
-            // nothing, and this call is then the only thing that knows work has begun. Without it
-            // such a run's clock stays unset and its row renders the millennia since year one.
-            //
-            // A NO-OP WHEN THE CLAIM GETS THERE FIRST: Begin answers false while already working, so
-            // whichever of the two arrives first starts the single timer and the other does nothing.
-            if (run.Begin(_ => ReportChild(run))) ReportChild(run);
+            // STARTED HERE ONLY WHEN NOTHING ELSE WILL. A spawner with a store announces the run when
+            // the child actually starts — after any wait for a concurrency slot — and the store's claim
+            // is what begins it, one mechanism serving spawn, agent_send, /agents send and a mailbox
+            // drain alike; beginning here too would start the clock on a child still queued. A spawner
+            // without a store announces nothing, and this call is then the only thing that knows work
+            // has begun — without it such a run's clock stays unset and its row renders the millennia
+            // since year one.
+            if (_spawner?.Store is null)
+            {
+                if (run.Begin(_ => ReportChild(run))) ReportChild(run);
+            }
+            else if (_spawner.ConcurrencySlot is { CurrentCount: 0 })
+            {
+                // QUEUED, AND SAID SO: "starting…" over a child that may wait minutes for a slot reads as
+                // hung. A slot freeing between this read and the spawner's wait is harmless — the
+                // announcement repaints the row either way.
+                job.ProgressMessage = "queued — waiting for a free agent slot";
+                _jobs.ToolProgressed(job);
+            }
 
             // The child's own events, straight onto the row. These are EVENTS now rather than
             // settable callbacks, which is what lets a per-child reporter and a later session

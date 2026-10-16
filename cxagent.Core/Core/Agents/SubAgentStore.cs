@@ -50,8 +50,8 @@ public sealed class SubAgentStore
     /// <summary>
     /// Claims the handle a child will answer to, before it exists.
     ///
-    /// <para>NEEDED BECAUSE THE RECEIPT IS WRITTEN FIRST. A parent no longer waits for its children,
-    /// so it names one in a tool result while the child is still starting — and that name has to be
+    /// <para>NEEDED BECAUSE THE RECEIPT IS WRITTEN FIRST. A background spawn returns before its child
+    /// answers, so it names one in a tool result while the child is still starting — and that name has to be
     /// the one the child actually gets, or the model is told a handle that never resolves.</para>
     ///
     /// <para>THE RESERVATION IS WHAT MAKES THE SUFFIX RULE STILL WORK. Two children described the

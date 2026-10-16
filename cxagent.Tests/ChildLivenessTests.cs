@@ -73,6 +73,95 @@ public class ChildLivenessTests
         };
     }
 
+    /// <summary>
+    /// What a parent is built with, beyond the defaults every liveness test shares.
+    ///
+    /// <para>A RECORD, NOT A PARAMETER LIST: the background tests each need a different one or two of
+    /// these, and a list of eight optionals read positionally is where two of them get transposed.</para>
+    /// </summary>
+    private sealed record ParentSetup
+    {
+        /// <summary>maxConcurrentAgents, or null for uncapped.</summary>
+        public int? Cap { get; init; }
+
+        /// <summary>The parent's job panel, when a test reads the rows.</summary>
+        public IToolObserver? Jobs { get; init; }
+
+        /// <summary>The child's provider; a mock with a few answers by default.</summary>
+        public ILlmProvider? Child { get; init; }
+
+        /// <summary>Where background reports go; none means spawns stay in the foreground.</summary>
+        public IAgentDelivery? Delivery { get; init; }
+
+        /// <summary>Whether the scripted spawn asks for the background.</summary>
+        public bool Background { get; init; }
+
+        /// <summary>A second tool call the parent makes after the spawn, before it answers.</summary>
+        public ToolCall? FollowUp { get; init; }
+    }
+
+    /// <summary>A parent built from a setup, and what a test reaches through it.</summary>
+    private sealed record ParentRig(Agent Agent, SubAgentStore Store, SubAgentFactory Factory);
+
+    private static ParentRig Parent(ParentSetup setup)
+    {
+        var parent = new MockLlmProvider();
+        parent.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [Calls.Spawn(id: "call-1", background: setup.Background)],
+        });
+        if (setup.FollowUp is { } followUp)
+            parent.EnqueueResponse(new LlmResponse { Text = "", StopReason = "tool_use", ToolCalls = [followUp] });
+        parent.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+        var child = setup.Child;
+        if (child is null)
+        {
+            var mock = new MockLlmProvider();
+            for (var i = 0; i < 6; i++)
+                mock.EnqueueResponse(new LlmResponse { Text = $"answer {i}", StopReason = "end_turn" });
+            child = mock;
+        }
+
+        var store = new SubAgentStore();
+        var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = child,
+            Executors = JobRegistry.CreateWithBuiltins(),
+            Ledger = new TokenLedger(),
+            MaxTurns = 50,
+            CompressAbove = 40_000,
+            ContextWindow = 200_000,
+            MaxConcurrentAgents = setup.Cap,
+            Delivery = setup.Delivery,
+        });
+
+        var agent = new Agent(parent, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new RecordingSink(), setup.Jobs ?? new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(factory, store: store))
+        {
+            Mode = AgentMode.FanOut,
+        };
+        return new ParentRig(agent, store, factory);
+    }
+
+    /// <summary>A QUEUED CHILD'S ROW SAYS SO, and its clock starts only with a slot.</summary>
+    [Fact]
+    public async Task AQueuedChildsRow_SaysQueued_AndStartsTickingOnlyWithASlot()
+    {
+        var jobs = new BufferedJobPanel();
+        var rig = Parent(new ParentSetup { Cap = 1, Jobs = jobs });
+        await rig.Factory.ConcurrencySlot!.WaitAsync();
+
+        var turn = rig.Agent.SendAsync("go", CancellationToken.None);
+        Assert.True(await Poll.Until(() => jobs.Jobs.Any(j => j.ProgressMessage?.Contains("queued") == true)));
+
+        rig.Factory.ConcurrencySlot.Release();
+        await turn;
+        Assert.Contains(jobs.Jobs, j => j.ProgressMessage?.StartsWith("done") == true);
+    }
+
     [Fact]
     public void ARunsTurns_AccumulateAcrossStretches()
     {
