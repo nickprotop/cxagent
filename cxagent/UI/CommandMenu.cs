@@ -3,6 +3,7 @@ using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Core;
+using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
 
 namespace CxAgent.UI;
@@ -585,7 +586,14 @@ public sealed class CommandMenu
 
     private void Open()
     {
-        _list = new CommandMenuContent(this) { BackgroundColor = ColorScheme.PromptSurface };
+        _list = new CommandMenuContent(this)
+        {
+            BackgroundColor = ColorScheme.PromptSurface,
+            // STRETCH, so the control is as wide as the portal rather than as wide as its longest
+            // row — a control only paints inside its own bounds, which is what let the transcript
+            // show through on the right.
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
         Render();
 
         _rowsWhenOpened = _shown.Count;
@@ -609,11 +617,12 @@ public sealed class CommandMenu
     /// </summary>
     private System.Drawing.Rectangle Bounds()
     {
-        // WIDE ENOUGH THAT NOTHING WRAPS. At a third of the screen the longest summary folded onto a
-        // second line, which breaks the one-row-per-command reading the list depends on — a wrapped
-        // row looks like an entry with no name. Two thirds, capped, and Render truncates anything
-        // still too long: a clipped summary is legible, a wrapped one is not.
-        var width = Math.Min(72, Math.Max(32, _system.DesktopDimensions.Width * 2 / 3));
+        // FITTED TO THE LONGEST ROW, not capped at a fixed 72. A fixed cap clipped the summaries with
+        // "…" on a terminal with room to spare; the row that decides the width is the longest one
+        // actually shown, and only a terminal too narrow for it falls back to clipping in Render.
+        var nameColumn = NameColumnFor(_shown.Select(c => c.Label));
+        var longestSummary = _shown.Select(c => c.Summary.Length).DefaultIfEmpty(0).Max();
+        var width = WidthFor(_system.DesktopDimensions.Width, nameColumn, longestSummary);
 
         // A HEIGHT CAP, because the list is unbounded in principle. Four commands fit anywhere; a
         // future twenty would cover the transcript it is meant to sit over, and on a short terminal
@@ -633,6 +642,19 @@ public sealed class CommandMenu
     }
 
     /// <summary>
+    /// The menu's width: caret, name column, a space, the longest summary and a trailing space, but
+    /// no wider than the terminal less a column either side, and never narrower than 32.
+    ///
+    /// <para>A ROW IS ONE LINE. A summary that wrapped onto a second row looks like an entry with no
+    /// name, so the width grows to the text and the cap is the terminal, not a constant.</para>
+    /// </summary>
+    public static int WidthFor(int terminalWidth, int nameColumn, int longestSummary)
+    {
+        var wanted = 2 + nameColumn + 1 + longestSummary + 1;
+        return Math.Min(Math.Max(32, wanted), Math.Max(1, terminalWidth - 2));
+    }
+
+    /// <summary>
     /// How wide the name column is: the longest name shown, at least 12 and at most 24.
     ///
     /// <para>FITTED, NOT FIXED. Twelve suits the built-ins, and a custom command — /review-branch —
@@ -648,14 +670,15 @@ public sealed class CommandMenu
 
         // ONE ROW PER COMMAND. The summary is truncated to whatever is left after the caret and the
         // name column, so a long one is clipped rather than wrapped onto a row of its own.
-        var available = Bounds().Width;
+        var bounds = Bounds();
+        var available = bounds.Width;
         var nameColumn = NameColumnFor(_shown.Select(c => c.Label));
         var room = Math.Max(0, available - nameColumn - 4);
 
         // SHOW THE WINDOW AROUND THE SELECTION, not always the first N. With a height cap the list
         // can be taller than the box, and drawing from index 0 would make everything past the cap
         // unreachable — the caret would move onto rows nobody can see.
-        var visible = Bounds().Height;
+        var visible = bounds.Height;
         var first = Math.Clamp(_selected - visible / 2, 0, Math.Max(0, _shown.Count - visible));
         var last = Math.Min(_shown.Count, first + visible);
 
@@ -664,8 +687,14 @@ public sealed class CommandMenu
         {
             var c = _shown[i];
             var name = MarkupParser.Escape(c.Label).PadRight(nameColumn);
-            var summary = MarkupParser.Escape(
-                c.Summary.Length > room ? c.Summary[..Math.Max(0, room - 1)] + "…" : c.Summary);
+            var shownSummary = c.Summary.Length > room ? c.Summary[..Math.Max(0, room - 1)] + "…" : c.Summary;
+
+            // PADDED TO THE FULL WIDTH. The portal paints only what the content writes, so a row
+            // shorter than the box left the transcript showing through to its right. Spaces carry
+            // the row's own background out to the edge; the control is also stretched, so the two
+            // cover it between them.
+            var pad = new string(' ', Math.Max(0, available - 2 - nameColumn - 1 - shownSummary.Length));
+            var summary = MarkupParser.Escape(shownSummary) + pad;
 
             // The selected row is the accent; the rest recede. A caret rather than a background
             // highlight, because the portal is already a raised surface and two levels of emphasis

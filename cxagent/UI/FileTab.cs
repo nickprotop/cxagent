@@ -266,6 +266,7 @@ public static class FileTab
         StartWatching(host);
 
         host.Main.AddTab(title, content);
+        host.Main.SetTabMainControl(content, editor);
         Refresh(host.Main, title);
         Show(host.Main, title);
         host.Main.Window?.FocusManager.SetFocus(editor, FocusReason.Programmatic);

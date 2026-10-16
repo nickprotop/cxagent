@@ -569,7 +569,7 @@ public sealed partial class Session
     /// <param name="client">This plugin's handle on this session, retained so unwire can sever it.</param>
     public async Task<CommandStatus> LoadPlugin(Plugins.IPlugin plugin, Plugins.PluginManifest manifest,
         string loadSetDirectory, CancellationToken ct = default, IDisposable? context = null,
-        Plugins.SessionPluginClient? client = null)
+        Plugins.SessionPluginClient? client = null, bool announce = true)
     {
         if (RefusedWhileBusy()) return CommandStatus.Refused;
 
@@ -708,10 +708,36 @@ public sealed partial class Session
         }
 
         Announce(SessionChangeKind.Plugins);
-        Say(new Message($"plugin '{manifest.Name}' loaded — {manifest.Tools.Count} tool(s) offered.",
-            Severity.Info));
+        if (announce) AnnouncePluginsLoaded([manifest]);
         return CommandStatus.Changed;
     }
+
+    /// <summary>
+    /// Says which plugins just loaded, in one message — the startup path loads every configured
+    /// plugin with <c>announce: false</c> and calls this once at the end.
+    ///
+    /// <para>ONE LINE FOR THE LOT. Each load used to say its own "plugin 'x' loaded — n tool(s)
+    /// offered." in a System block of its own, so four plugins at startup were four blocks saying
+    /// one thing between them. A warning — declined, a collision, a failed start — still speaks for
+    /// itself as it happens, because each of those is different and needs reading.</para>
+    /// </summary>
+    public void AnnouncePluginsLoaded(IReadOnlyList<Plugins.PluginManifest> manifests)
+    {
+        if (FormatPluginsLoaded(manifests.Select(m => (m.Name, m.Tools.Count)).ToList()) is { } text)
+            Say(new Message(text, Severity.Info));
+    }
+
+    /// <summary>The loaded-plugins line, or null for none. One plugin keeps the sentence it always
+    /// had; several are listed by name with their tool counts.</summary>
+    public static string? FormatPluginsLoaded(IReadOnlyList<(string Name, int Tools)> loaded) =>
+        loaded.Count switch
+        {
+            0 => null,
+            1 => $"plugin '{loaded[0].Name}' loaded — {loaded[0].Tools} tool(s) offered.",
+            _ => $"{loaded.Count} plugins loaded — "
+                 + string.Join(", ", loaded.Select(p => $"{p.Name} ({p.Tools} tool{(p.Tools == 1 ? "" : "s")})"))
+                 + ".",
+        };
 
     /// <summary>
     /// Unwires one loaded plugin — cancel (if this plugin's own turn), deregister, drain, sever,

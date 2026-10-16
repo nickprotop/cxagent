@@ -389,6 +389,25 @@ public class ShellJobExecutorTests
         Assert.DoesNotContain("LATEOUTPUT", string.Join(" ", r.Output.Values));
     }
 
+    /// <summary>
+    /// The path is the one thing in the report that must not be broken across rows, and the
+    /// transcript breaks sentences at dots. A line holding only the path is the only shape it
+    /// survives in.
+    /// </summary>
+    [Fact]
+    public async Task Background_PutsTheOutputPathOnALineOfItsOwn()
+    {
+        using var fx = new BackgroundFixture();
+
+        var r = await fx.Executor.ExecuteAsync(
+            P(("command", "true"), ("background", true)), fx.Context, CancellationToken.None);
+        var path = Assert.IsType<string>(r.Output["output_file"]);
+
+        var told = await fx.Told.Next();
+
+        Assert.Contains(told.Text.Split('\n'), line => line == path);
+    }
+
     [Fact]
     public async Task Background_TellsTheAgentWhenItExits_WithTheExitCode()
     {

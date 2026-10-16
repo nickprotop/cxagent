@@ -109,6 +109,58 @@ public static class PluginDiscovery
     public sealed record UnconfiguredPlugin(string Name, string File, string Folder, int ToolCount);
 
     /// <summary>
+    /// The one startup notice for everything <see cref="FindUnconfigured"/> found, or null for none.
+    ///
+    /// <para>ONE BLOCK, NOT ONE PER PLUGIN. Each notice used to explain how to add a plugin, so four
+    /// finds meant four five-line "System" blocks repeating the same instructions and pushing the
+    /// first screen off the top. What differs between plugins is a name, a tool count and a folder;
+    /// the how-to is identical, so it is said once.</para>
+    ///
+    /// <para>A SINGLE FIND KEEPS ITS EXACT ENTRY, because there the config line can be written out
+    /// in full at no cost. With several, the entry is shown as a pattern — naming each plugin's
+    /// file would repeat the lines this exists to stop repeating.</para>
+    ///
+    /// <para>CAPPED, with the rest counted: a plugins folder with thirty entries must not become
+    /// thirty lines at startup. <c>/plugin</c> and F2 list every one.</para>
+    /// </summary>
+    public static string? FormatUnconfiguredNotice(IReadOnlyList<UnconfiguredPlugin> found)
+    {
+        if (found.Count == 0) return null;
+
+        // The settings caveat comes from a plugin that failed live (csharp-lsp loaded by hand, then
+        // refused: "requires a 'server' string in its settings"). A /plugin load carries no
+        // settings, so the config route is first and the command is hedged.
+        const string Caveat = "settings cannot be passed that way, so a plugin needing any will say so and unload.";
+
+        if (found.Count == 1)
+        {
+            var only = found[0];
+            // WHAT IS LOST RATHER THAN WHAT IS MISSING — "not configured" reads as misconfigured,
+            // which this plugin is not: it is installed and fine, and what it lacks is automatic
+            // loading. Same wording as the manager's row.
+            return $"plugin '{only.Name}' found in {only.Folder} ({only.ToolCount} tool(s)), no auto load. "
+                + "Add it under \"plugins\" in config.json:\n"
+                + $"    \"{only.Name}\": {{ \"file\": \"{only.File}\" }}\n"
+                // THE FILENAME, NOT THE MANIFEST NAME: PluginResolver.Resolve looks a target up in
+                // config first and otherwise treats it as a FILE.
+                + $"    Or `/plugin load {only.File}` to try it for this session — {Caveat}";
+        }
+
+        const int Shown = 6;
+        var lines = new List<string>
+        {
+            $"{found.Count} plugins found, not in config (no auto load):",
+        };
+        foreach (var plugin in found.Take(Shown))
+            lines.Add($"    {plugin.Name} — {plugin.ToolCount} tool(s), {plugin.Folder}");
+        if (found.Count > Shown) lines.Add($"    … and {found.Count - Shown} more (F2 lists them all)");
+
+        lines.Add("Add one under \"plugins\" in config.json: \"<name>\": { \"file\": \"<file>\" }");
+        lines.Add($"Or `/plugin load <file>` to try one for this session — {Caveat}");
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>
     /// Plugins present in <paramref name="searchFolders"/> that no <c>config.json</c> entry names —
     /// what a user gets after dropping a file into the plugins folder, or after an installer put one
     /// there.
@@ -217,6 +269,10 @@ public static class PluginDiscovery
         var children = new ChildProcessStore(configDir);
         var notLoaded = new List<PluginNotLoaded>();
 
+        // SAID ONCE, AT THE END — see Session.AnnouncePluginsLoaded. Each load runs with
+        // announce: false and adds its manifest here instead of writing a block of its own.
+        var loadedManifests = new List<PluginManifest>();
+
         foreach (var (name, config) in plugins.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
             // THE GATE, NOT A FILTER — false means no process, no tools, no prompt, nothing. A
@@ -304,9 +360,12 @@ public static class PluginDiscovery
                 }
 
                 var abiLoaded = (AbiPluginLoadResult.Loaded)abiResult;
-                if (await session.LoadPlugin(abiLoaded.Instance, abiLoaded.Manifest, loadSetDirectory, ct, context, client)
+                if (await session.LoadPlugin(abiLoaded.Instance, abiLoaded.Manifest, loadSetDirectory, ct, context, client,
+                        announce: false)
                     != CommandStatus.Changed)
                     notLoaded.Add(new(name, "not loaded — see warnings"));
+                else
+                    loadedManifests.Add(abiLoaded.Manifest);
                 continue;
             }
 
@@ -321,11 +380,15 @@ public static class PluginDiscovery
             // NOT CHANGED MEANS NOT LOADED: declined, a name collision, or a Start that failed and
             // was unwound. The session has already said which.
             var loaded = (ManagedPluginLoadResult.Loaded)result;
-            if (await session.LoadPlugin(loaded.Instance, loaded.Manifest, loadSetDirectory, ct, context, client)
+            if (await session.LoadPlugin(loaded.Instance, loaded.Manifest, loadSetDirectory, ct, context, client,
+                    announce: false)
                 != CommandStatus.Changed)
                 notLoaded.Add(new(name, "not loaded — see warnings"));
+            else
+                loadedManifests.Add(loaded.Manifest);
         }
 
+        session.AnnouncePluginsLoaded(loadedManifests);
         return notLoaded;
     }
 

@@ -754,13 +754,83 @@ public static class PluginManagerDialog
         // entry" is what the reader needs — leaving two different rows reading identically.
         // Folder is the "it is on disk here" fact, so it is also the test for whether a config
         // line is worth printing: a catalog-only row has nothing to say about config yet.
+        //
+        // NOT SAID TWICE. An unconfigured row's State already ends in "not in config" (the rail
+        // shows the same text), so appending it again printed "not in config · global · not in
+        // config". The suffix is only added where State has not already said it.
         if (row.Folder is not null)
-            parts.Add(row.Configured is { } config
-                ? config.Enabled ? "in config, auto-load" : "in config, no auto-load"
-                : "not in config");
+        {
+            if (row.Configured is { } config)
+                parts.Add(config.Enabled ? "in config, auto-load" : "in config, no auto-load");
+            else if (!row.State.Contains("not in config", StringComparison.Ordinal))
+                parts.Add("not in config");
+        }
 
         return parts.Count > 0 ? string.Join(" · ", parts) : "not installed";
     }
+
+    /// <summary>The state line for a row, as the details pane shows it. Public because this
+    /// assembly grants no InternalsVisibleTo; tests reach the private formatter through here.</summary>
+    public static string StateLineForTest(PluginRow row) => StateLine(row);
+
+    /// <summary>
+    /// Markdown with its hand-made line breaks removed, so the pane's wrap is the only wrap.
+    ///
+    /// <para>READMEs and catalog descriptions are hand-wrapped at a fixed width, and the markdown
+    /// view keeps a single newline as a line break. Wrapped again at the pane's width, every
+    /// hand-made break became a short ragged line ("spread over" / "several turns…"). So a newline
+    /// between two lines of the same paragraph becomes a space, which is what markdown itself
+    /// means by it.</para>
+    ///
+    /// <para>EVERYTHING ELSE KEEPS ITS LINES. A blank line is a paragraph break. Inside a ``` or ~~~
+    /// fence every line is code and stays as written — joined, two example lines would become one.
+    /// An indented line is code or a list continuation laid out by hand, a heading or table row
+    /// stands alone, a line ending in two spaces or a backslash is a hard break, and a line that
+    /// begins a list item, quote, heading or fence starts a block of its own. A list item's own
+    /// wrapped continuation does join, as markdown reads it.</para>
+    /// </summary>
+    public static string Unwrap(string text)
+    {
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        var result = new System.Text.StringBuilder();
+        var inFence = false;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var raw = lines[i];
+            var line = raw.TrimEnd();
+            var trimmed = line.TrimStart();
+            var isFence = IsFence(trimmed);
+            if (isFence) inFence = !inFence;
+
+            // Code keeps its trailing whitespace, and so does a hard break: in both it is the
+            // author's markup, not wrapping debris.
+            var hardBreak = raw.EndsWith("  ", StringComparison.Ordinal) || line.EndsWith('\\');
+            result.Append(inFence || isFence || hardBreak ? raw : line);
+            if (i == lines.Length - 1) break;
+
+            var next = lines[i + 1];
+            var nextTrimmed = next.Trim();
+            var joins = !inFence && !isFence && !hardBreak
+                && trimmed.Length > 0 && nextTrimmed.Length > 0
+                && !char.IsWhiteSpace(next[0])
+                && !trimmed.StartsWith('#') && !trimmed.StartsWith('|')
+                && !StartsBlock(nextTrimmed);
+            result.Append(joins ? ' ' : '\n');
+        }
+        return result.ToString();
+    }
+
+    /// <summary>A fence line: three backticks or tildes, optionally followed by a language.</summary>
+    private static bool IsFence(string trimmed) =>
+        trimmed.StartsWith("```", StringComparison.Ordinal) || trimmed.StartsWith("~~~", StringComparison.Ordinal);
+
+    /// <summary>A line that begins a markdown block — list item, fence, heading, quote, table row —
+    /// and so must keep its own line.</summary>
+    private static bool StartsBlock(string line) =>
+        line.StartsWith("- ", StringComparison.Ordinal) || line.StartsWith("* ", StringComparison.Ordinal)
+        || line.StartsWith("+ ", StringComparison.Ordinal) || IsFence(line) || line.StartsWith('#')
+        || line.StartsWith('>') || line.StartsWith('|')
+        || (line.Length > 2 && char.IsDigit(line[0]) && line[1] is '.' or ')');
 
     /// <summary>The installed sidecar's contract when there is one, else the catalog's claim —
     /// the sidecar wins because it describes the binary actually on disk.</summary>
@@ -817,7 +887,7 @@ public static class PluginManagerDialog
             {
                 if (File.Exists(readme))
                 {
-                    _detailBody!.SetMarkdown(File.ReadAllText(readme));
+                    _detailBody!.SetMarkdown(Unwrap(File.ReadAllText(readme)));
                     return;
                 }
             }
@@ -828,7 +898,7 @@ public static class PluginManagerDialog
             }
         }
 
-        _detailBody!.SetMarkdown(row.Catalog?.Description ?? "");
+        _detailBody!.SetMarkdown(Unwrap(row.Catalog?.Description ?? ""));
     }
 
     /// <summary>Where this plugin's files live, or null when it is not on disk. Configured rows

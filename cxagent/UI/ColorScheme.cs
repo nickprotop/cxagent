@@ -68,8 +68,8 @@ public static class ColorScheme
         Separator = PaletteColors.Tint(PaletteColors.Mix(ChatSurface, ComposerSurface, 0.5), 0.08);
         UserSurface = Raised(ChatSurface, 0.10);
         AssistantSurface = Raised(ChatSurface, 0.05);
-        ThinkingRgb = ColorRoleResolver.Resolve(Caution, theme).Text;
-        ThinkingSurface = PaletteColors.Mix(ChatSurface, ThinkingRgb, ThinkingTint);
+        ThinkingRgb = ThinkingFor(theme.WindowForegroundColor, AccentRgb, ChatSurface);
+        ThinkingSurface = PaletteColors.Mix(ChatSurface, AccentRgb, ThinkingTint);
 
         // MARKDOWN FOLLOWS THE THEME, UNLESS THE THEME HAS ALREADY CHOSEN. A crimson theme must
         // give crimson headings, not a fixed purple wearing crimson chrome around it — so every
@@ -456,26 +456,52 @@ public static class ColorScheme
     public static Color AssistantSurface { get; private set; } = PaletteColors.Tint(new Color(0x0d, 0x0d, 0x0d), 0.05);
 
     /// <summary>
-    /// Reasoning and any "thinking" label. Amber — the palette's warning hue, reused for exactly
-    /// this.
+    /// Reasoning and any "thinking" label: the theme's own text, leaning toward its accent and
+    /// stepped back toward the surface.
     /// </summary>
-    /// <para>THROUGH THE CAUTION ROLE, because amber IS this theme's warning hue and a theme that
-    /// picks a different one means it for the same reason. The literal stays as the fallback so a
-    /// host with no theme renders the colour the screenshots were taken with.</para>
-    public static string ThinkingMarkup => Markup(Caution, "#f5a742");
+    /// <para>NOT THE CAUTION ROLE ANY MORE. It was, and five of the eight themes resolve Caution to
+    /// the same #ffc107 — so thinking was one loud yellow whatever the theme, the brightest thing on
+    /// a screen whose answer it is meant to sit behind. Derived from the theme's foreground and
+    /// accent instead, it reads as this theme's voice, quieter than the answer. The literal stays
+    /// as the fallback so a host with no theme renders the colour the screenshots were taken with.</para>
+    public static string ThinkingMarkup => _theme is null ? "#f5a742" : ThinkingRgb.ToMarkup();
 
     /// <summary>The thinking colour as channels, for the rail beside a thinking block — a place a
     /// markup name cannot go.</summary>
     public static Color ThinkingRgb { get; private set; } = new(0xf5, 0xa7, 0x42);
 
     /// <summary>
-    /// A thinking block's ground: the chat surface with a trace of the thinking colour. Barely
-    /// raised — the block is read on demand, and a bright one beside every answer would outshout it.
+    /// A thinking block's ground: the chat surface with a trace of the accent. Barely raised — the
+    /// block is read on demand, and a bright one beside every answer would outshout it.
     /// </summary>
     public static Color ThinkingSurface { get; private set; } =
         PaletteColors.Mix(new Color(0x0d, 0x0d, 0x0d), new Color(0xf5, 0xa7, 0x42), ThinkingTint);
 
     private const double ThinkingTint = 0.06;
+
+    /// <summary>How far thinking leans from the text colour toward the accent: enough to carry the
+    /// theme's hue, not so far that it reads as a heading or a link.</summary>
+    private const double ThinkingAccent = 0.35;
+
+    /// <summary>How far it then steps back toward the surface, so it reads as secondary to the
+    /// answer's full-strength text.</summary>
+    private const double ThinkingRecede = 0.30;
+
+    /// <summary>
+    /// The thinking text colour for a theme. Public so a test can check every theme without
+    /// installing one process-wide.
+    ///
+    /// <para>A CONTRAST FLOOR, because receding toward the surface is the one step that can make
+    /// text unreadable, and on a light theme it moves the other way: the surface is near-white, so
+    /// stepping toward it lightens dark text. 70 points sits under the 80 readable text gets: this
+    /// is meant to recede, and it still has to be read.</para>
+    /// </summary>
+    public static Color ThinkingFor(Color foreground, Color accent, Color surface)
+    {
+        var leaning = PaletteColors.Mix(foreground, accent, ThinkingAccent);
+        var receded = PaletteColors.Mix(leaning, surface, ThinkingRecede);
+        return PaletteColors.EnsureContrast(receded, surface, 70.0);
+    }
 
     // --- Diff -------------------------------------------------------------------
     //

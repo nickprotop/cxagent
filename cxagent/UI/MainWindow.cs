@@ -368,6 +368,39 @@ public sealed class MainWindow : IDisposable
         FocusComposer();
     }
 
+    /// <summary>
+    /// Tells the strip which control a tab is FOR, so choosing it with the mouse can put the keyboard
+    /// there. Keyed on the tab's content, which the caller already holds, so a tab kind registers
+    /// where it is built and nothing here has to know about shells or files.
+    /// </summary>
+    public void SetTabMainControl(IWindowControl content, IFocusableControl main) =>
+        _tabMainControls.AddOrUpdate(content, main);
+
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<IWindowControl, IFocusableControl>
+        _tabMainControls = new();
+
+    /// <summary>
+    /// Puts the keyboard in the main control of the tab at <paramref name="index"/>: the composer for
+    /// a conversation, otherwise whatever the tab registered, otherwise its first focusable control.
+    /// Reached only from a mouse click — see <see cref="MouseAwareTabs"/>.
+    /// </summary>
+    public void FocusTabMainControl(int index)
+    {
+        if (Window?.FocusManager is not { } fm) return;
+
+        // FocusComposer, not a bare SetFocus(Input): it goes to the question instead when one is up.
+        if (IsSessionTab(index))
+        {
+            FocusComposer();
+            return;
+        }
+
+        if (Tabs.GetTab(index)?.Content is not { } content) return;
+
+        var target = _tabMainControls.TryGetValue(content, out var main) ? main : FirstFocusable(content);
+        if (target is not null) fm.SetFocus(target, SharpConsoleUI.Controls.FocusReason.Programmatic);
+    }
+
     /// <summary>Names the tab whose session is about to raise a prompt, by its session id.</summary>
     public void NotePromptTabBySessionId(string? sessionId)
     {
@@ -765,7 +798,7 @@ public sealed class MainWindow : IDisposable
     /// the last row. As an ordinary control it takes a grid cell under the composer, inside the
     /// chat column, and the panel runs unbroken to the bottom edge.</para>
     /// </summary>
-    public StatusBarControl StatusBar { get; } = new(stickyBottom: false)
+    public FittedStatusBar StatusBar { get; } = new(stickyBottom: false)
     {
         // A STEP LIGHTER THAN THE COMPOSER, so the column ascends toward the bottom: chat is the dark
         // field you read against, the composer sits on it, and the bar sits on the composer. It used
@@ -993,7 +1026,7 @@ public sealed class MainWindow : IDisposable
     /// <para>TAB ZERO IS NOT CLOSABLE. The conversation is the app; a close button on it would offer
     /// to remove the thing everything else hangs off.</para>
     /// </summary>
-    public TabControl Tabs { get; } = new()
+    public MouseAwareTabs Tabs { get; } = new()
     {
         ShowTabHeader = false,
 
@@ -1617,6 +1650,7 @@ public sealed class MainWindow : IDisposable
         _system = system;
         _resolution = resolution;
         _firstJobPanel = new JobPanelControl(system, logs);
+        StatusBar.FitReadout = FitReadout;
 
         // THE FIRST TAB EXISTS FROM CONSTRUCTION, so everything per-session resolves before Build.
         // StartupMode is an INIT property — it lands after this constructor and before Build — and
@@ -1868,6 +1902,13 @@ public sealed class MainWindow : IDisposable
             RefreshWaitingBar();
             ShowActiveSession();
         };
+
+        // A CLICK ON A TAB FOCUSES IT; ARROWING TO ONE DOES NOT. Selecting a tab hands focus back to
+        // the strip, so after a click the keyboard sat on a control nobody was looking at and the
+        // next thing typed went nowhere, with no sign it was lost. Only the mouse does this: moving
+        // through the strip with the keys is browsing, and ShowActiveSession deliberately leaves
+        // focus alone then.
+        Tabs.SelectedByMouse += FocusTabMainControl;
 
         _mainGrid = Controls.Grid()
             .Columns(GridLength.Star(1), GridLength.Cells(SessionPanel.WidthFor(_system.DesktopDimensions.Width)))
@@ -2538,6 +2579,7 @@ public sealed class MainWindow : IDisposable
 
         var tab = new JobTab(entry, session, AgentName(session, entry.Job.AgentId));
         AddTab(tab.Title(), tab.Content);
+        SetTabMainControl(tab.Content, tab.Scroll);
         _jobTabs[entry] = new JobTabSlot(tab, Tabs.GetTab(Tabs.TabCount - 1)!);
         FocusJobTab(tab);
     }
@@ -3054,6 +3096,9 @@ public sealed class MainWindow : IDisposable
             StartCollapsed = true,
             Rail = true,
             RailColor = ColorScheme.ThinkingRgb,
+            // THE FOLD ARROW TOO. Left to ColorRole it resolves Caution, which most themes make the
+            // same #ffc107 — one yellow glyph beside a header the theme had already recoloured.
+            BorderColor = ColorScheme.ThinkingRgb,
             Background = ColorScheme.ThinkingSurface,
             Header = static (_, author) => author ?? "Thinking",
         });
@@ -3708,21 +3753,54 @@ public sealed class MainWindow : IDisposable
         // Read from the resolution rather than a copied field: it is already here, and one source
         // cannot drift from another. Null (window unconfigured) falls back to the plain count — a
         // percentage needs a denominator, and a guessed one is worse than none.
-        var label = ContextLabel(_contextUsed, _lastTokens, _resolution.ContextWindow, _contextStale,
+        _tokenForms = ContextLabelForms(_contextUsed, _lastTokens, _resolution.ContextWindow, _contextStale,
             _contextDelta, _lastInput, _lastOutput);
-        if (label.Length == 0)
+        if (_tokenForms.Count == 0)
         {
             if (_tokenItem is not null) _tokenItem.IsVisible = false;
             return;
         }
 
+        // THE FORM THE BAR LAST SETTLED ON, not always the fullest: resetting to the richest on every
+        // refresh would show it for a frame before the fit shrank it again, on every token update.
+        var label = _tokenForms[Math.Min(_tokenForm, _tokenForms.Count - 1)];
+
         if (_tokenItem is null)
+        {
             _tokenItem = StatusBar.AddRight(string.Empty, label);
+            StatusBar.Readout = _tokenItem;
+        }
         else
         {
             _tokenItem.Label = label;
             _tokenItem.IsVisible = true;
         }
+    }
+
+    private IReadOnlyList<string> _tokenForms = [];
+    private int _tokenForm;
+
+    /// <summary>
+    /// Picks the readout's form for the room the bar has, called by the bar as it paints. Richest
+    /// that fits; hidden when not even the shortest does, because a readout overlapping the hints is
+    /// worse than none. Writes only on a change, so a settled bar does not keep invalidating itself.
+    /// </summary>
+    private void FitReadout(int room)
+    {
+        if (_tokenItem is null || _tokenForms.Count == 0) return;
+
+        var widths = _tokenForms.Select(SharpConsoleUI.Parsing.MarkupParser.StripLength).ToList();
+        var pick = FittedStatusBar.PickForm(widths, room);
+        if (pick < 0)
+        {
+            if (_tokenItem.IsVisible) _tokenItem.IsVisible = false;
+            return;
+        }
+
+        _tokenForm = pick;
+        if (!_tokenItem.IsVisible) _tokenItem.IsVisible = true;
+        if (!string.Equals(_tokenItem.Label, _tokenForms[pick], StringComparison.Ordinal))
+            _tokenItem.Label = _tokenForms[pick];
     }
 
 
@@ -3766,8 +3844,33 @@ public sealed class MainWindow : IDisposable
     private static string CompactTokens(int n) =>
         DisplayNumber.Compact(n);
 
+    /// <summary>How much of the readout to write, richest first. The order is the order of what a
+    /// reader can least do without: the percentage, then what has been spent, then the input/output
+    /// split, then the raw fraction of the window — which the percentage already summarises.</summary>
+    private enum ContextDetail { Full, NoFraction, NoSplit, PercentOnly }
+
+    /// <summary>The readout in every form, richest first, with forms that came out identical dropped
+    /// so the fitter never "shrinks" to the same text.</summary>
+    private static IReadOnlyList<string> ContextLabelForms(int? used, int spent, int? window, bool stale,
+        string? delta, int input, int output)
+    {
+        var forms = new List<string>(4);
+        foreach (var detail in Enum.GetValues<ContextDetail>())
+        {
+            var form = ContextLabel(used, spent, window, stale, delta, input, output, detail);
+            if (form.Length > 0 && !forms.Contains(form)) forms.Add(form);
+        }
+        return forms;
+    }
+
+    /// <summary>Test seam for <see cref="ContextLabelForms"/>; public because this codebase grants no
+    /// InternalsVisibleTo.</summary>
+    public static IReadOnlyList<string> ContextLabelFormsForTest(int? used, int spent, int? window,
+        int input = 0, int output = 0)
+        => ContextLabelForms(used, spent, window, stale: false, delta: null, input, output);
+
     private static string ContextLabel(int? used, int spent, int? window, bool stale = false,
-        string? delta = null, int input = 0, int output = 0)
+        string? delta = null, int input = 0, int output = 0, ContextDetail detail = ContextDetail.Full)
     {
         var parts = new List<string>(2);
 
@@ -3790,12 +3893,16 @@ public sealed class MainWindow : IDisposable
                 // wrong number the look of precision. The delta says what happened, the fraction
                 // says where that leaves us, and the "~" says the second is arithmetic rather than
                 // a measurement.
-                var detail = stale && delta is { Length: > 0 }
+                var fraction = stale && delta is { Length: > 0 }
                     ? $"{delta} · ~{DisplayNumber.Grouped(u)}/{DisplayNumber.Grouped(window.Value)}"
                     : $"{DisplayNumber.Grouped(u)}/{DisplayNumber.Grouped(window.Value)}";
 
-                parts.Add($"[{ColorScheme.MutedMarkup}]ctx[/] [{colour}]{tilde}{DisplayNumber.Fixed(percent, 0)}%[/] "
-                        + $"[{ColorScheme.MutedMarkup}]· {detail}[/]");
+                // THE FRACTION IS THE FIRST THING TO GO on a narrow bar: the percentage beside it is
+                // the same fact in four characters.
+                parts.Add(detail == ContextDetail.Full
+                    ? $"[{ColorScheme.MutedMarkup}]ctx[/] [{colour}]{tilde}{DisplayNumber.Fixed(percent, 0)}%[/] "
+                      + $"[{ColorScheme.MutedMarkup}]· {fraction}[/]"
+                    : $"[{ColorScheme.MutedMarkup}]ctx[/] [{colour}]{tilde}{DisplayNumber.Fixed(percent, 0)}%[/]");
             }
             else
             {
@@ -3803,7 +3910,7 @@ public sealed class MainWindow : IDisposable
             }
         }
 
-        if (spent > 0)
+        if (spent > 0 && detail != ContextDetail.PercentOnly)
         {
             // THE SPLIT RIDES WITH THE TOTAL, in the one readout that is always on screen. Input and
             // output behave nothing alike — input grows with the conversation because every turn
@@ -3813,7 +3920,7 @@ public sealed class MainWindow : IDisposable
             //
             // Compact, because this is a status bar: "↑153.1k ↓6.9k" is four columns of information
             // where the exact digits were never what the number is read for.
-            var split = input > 0 || output > 0
+            var split = (input > 0 || output > 0) && detail is ContextDetail.Full or ContextDetail.NoFraction
                 ? $" [{ColorScheme.MutedMarkup}]↑{CompactTokens(input)} ↓{CompactTokens(output)}[/]"
                 : "";
 

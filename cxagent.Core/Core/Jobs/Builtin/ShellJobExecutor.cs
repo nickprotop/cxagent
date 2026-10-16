@@ -450,8 +450,13 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
             var elapsed = DateTimeOffset.UtcNow - report.Job.Started;
             var text = $"The background command `{report.Job.Command}` finished with exit code "
                      + $"{exitCode} after {Describe(elapsed)}.";
+            // THE PATH ON A LINE OF ITS OWN. The transcript wraps at a "." before a letter and
+            // never at a "/", so a long path inside a sentence broke right after "/home/nick/." and
+            // the rest landed on the next row — a path that reads as two different ones. Alone on
+            // its line it can only run to the edge, and it is the one thing on screen that can be
+            // copied whole.
             if (report.Job.OutputPath is not null)
-                text += $" Its output is in {report.Job.OutputPath} — read it with read_file.";
+                text += $" Its output is in:\n{report.Job.OutputPath}\nRead it with read_file.";
 
             report.Delivery.Tell(report.Job.AgentId, text);
         }

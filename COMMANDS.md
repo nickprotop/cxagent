@@ -5,7 +5,7 @@ so they cost nothing — no request, no tokens.
 
 **Which means most of them work with no model configured.** A session opened before you have set up
 a provider can still run `/exit`, `/help`, `/stats`, `/sessions`, `/diff`, `/mode`, `/mcp`,
-`/skills`, `/commands`, `/agents`, `/clear`, `/think` — and `/model`, the one that fixes it. Only `/compress`, `/init` and
+`/skills`, `/commands`, `/agents`, `/clear`, `/think`, `/open` — and `/model`, the one that fixes it. Only `/compress`, `/init` and
 `/btw` need a model, because those genuinely talk to it; each says so rather than doing nothing.
 
 **Type `/` and the list appears.** Arrow to a command, Enter to fill it in. A command that takes
@@ -46,6 +46,8 @@ but not completed.
 | `/sessions new [folder]` | Open another conversation in its own tab |
 | `/sessions resume <n\|id>` | Restore one, by its number in the list or its id |
 | `/sessions all` | Every folder, not just this one |
+| `/open` | Pick a file to open in a tab |
+| `/open <path>` | Open that file in a tab — relative to this folder, or absolute |
 | `/shell` | Open a terminal you can type in — Linux and Windows |
 | `/shell <command>` | Run one command in it, and tell the agent what happened |
 | `/exit` | Quit |
@@ -596,6 +598,29 @@ Thirty days rather than the week this started with. Seven was right when these r
 invisible crash buffer, where nothing was lost by dropping one because nobody could name it. They
 are now a listing you read and an id you resume by, which makes the question *how far back would
 someone look* rather than *how long until a crash is stale*.
+
+---
+
+## `/open`
+
+Open a file in a tab of its own, beside the conversation.
+
+```
+/open                       pick a file from a dialog
+/open src/Program.cs        relative to this session's folder
+/open "My Notes/todo.md"    quote a path with spaces in it
+/open @src/Pro              the @ completion finishes the path for you
+```
+
+**Bare `/open` shows a picker**, starting in the session's folder. Cancelling it opens nothing.
+
+**A second `/open` of the same file finds the tab it already has** rather than making another, and
+`./a.cs` and `a.cs` count as the same file.
+
+**A file that cannot be opened says so in a tab**, not in the transcript: the tab is where you just
+asked to look, and a line in the conversation is read after you have switched away.
+
+**This is for you, not the model.** The agent has `read_file` and is not told about `/open`.
 
 ---
 

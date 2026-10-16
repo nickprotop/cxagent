@@ -107,6 +107,7 @@ internal static class ShellTab
             .Build();
 
         main.AddTab(title, content);
+        main.SetTabMainControl(content, terminal);
         Focus(main, terminal);
 
         // EXIT MEANS EXIT. The shell ended because the user typed `exit`, so the tab goes with it —
