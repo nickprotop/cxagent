@@ -350,4 +350,26 @@ public class BackgroundSpawnTests
         var message = contents.FindIndex(c => c.Contains("the schema changed"));
         Assert.True(brief >= 0 && brief < message);
     }
+
+    /// <summary>
+    /// A STOP SAYS WHO STOPPED IT. "Finished" over a stopped run is false, and a model not told the user
+    /// ended the work redoes it by hand — measured on the local model, two runs in three.
+    /// </summary>
+    [Theory]
+    [InlineData(true, "stopped by the user")]
+    [InlineData(false, "was stopped before it finished")]
+    public async Task AStoppedRunsReport_SaysItWasStopped_AndByWhom(bool byUser, string expected)
+    {
+        var held = new HeldProvider("never");
+        var (spawner, store, delivery, _) = Wired(held);
+        await Spawn(spawner);
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+
+        store.Stop("find-thing", byUser: byUser);
+        var d = await delivery.Next();
+
+        Assert.Contains(expected, d.Notice.ForModel);
+        Assert.DoesNotContain("has finished", d.Notice.ForModel);
+        if (byUser) Assert.Contains("Do not redo", d.Notice.ForModel);
+    }
 }

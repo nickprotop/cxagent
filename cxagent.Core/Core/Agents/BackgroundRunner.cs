@@ -111,10 +111,22 @@ internal static class BackgroundRunner
     /// </summary>
     internal static string ReportFor(BackgroundWork work, string envelope)
     {
-        var start = work.Run.Start;
+        var run = work.Run;
+        var start = run.Start;
+
+        // A STOP SAYS SO, AND SAYS WHO. "Finished" over a stopped run is false, and a model told only that
+        // the agent was cancelled treats the work as still owed — measured on the local model, it redid a
+        // user-stopped search by hand two runs in three. A user's stop is a decision about the work, not
+        // a failure of the agent, so the report carries that decision.
+        var ended = run.State != BackgroundState.Stopped ? "has finished."
+            : run.StoppedByUser
+                ? "was stopped by the user before it finished. Do not redo its work unless the user asks for "
+                  + "it again; tell them it was stopped."
+                : "was stopped before it finished.";
+
         var head = start.IsResume
-            ? $"The background agent '{start.Name}' has finished.\nYou asked it: {start.Brief}"
-            : $"The background agent '{start.Name}' ({work.Kept.TypeName}) has finished. You spawned it to: "
+            ? $"The background agent '{start.Name}' {ended}\nYou asked it: {start.Brief}"
+            : $"The background agent '{start.Name}' ({work.Kept.TypeName}) {ended} You spawned it to: "
               + $"{start.Description}\nIts brief was: {start.Brief}";
         return head + "\n" + envelope;
     }
