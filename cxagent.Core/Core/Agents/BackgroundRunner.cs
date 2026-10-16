@@ -56,7 +56,12 @@ internal static class BackgroundRunner
                     // prompt. A SPAWN DOES NOT — anything sent while it queued was sent after its brief, and
                     // the loop's own drain puts it there.
                     result = await kept.Agent.Agent.SendAsync(work.Prompt, run.Token, mailFirst: run.Start.IsResume);
-                    run.MarkAnswered();
+                    // AN ACCEPTED STOP WINS, even over an answer that came back in the same instant: the
+                    // stop has already told the user "stopped", and a "completed" report would contradict
+                    // that and leave a user-stop mark refusing the parent's next agent_send to a child it
+                    // was told finished. The answer is not lost — it stays in the child's context, where
+                    // the user's own /agents send reaches it.
+                    if (!run.MarkAnswered()) result = result with { Outcome = SendOutcome.Cancelled };
                 }
                 finally
                 {
