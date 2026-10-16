@@ -71,6 +71,10 @@ public sealed partial class Session
     /// tail window; the app never sets it.</summary>
     internal Action? BeforeTurnReleasedForTest { get; set; }
 
+    /// <summary>Runs at the top of every lap, before the lap's own error handling. Tests use it to fault the
+    /// loop's bookkeeping; the app never sets it.</summary>
+    internal Action? AtLapStartForTest { get; set; }
+
     /// <summary>Runs in Send just after it finds the turn owned, before the text is queued. Tests use it to
     /// hold a sender there while the owner releases and finishes its tail; the app never sets it.</summary>
     internal Action? AfterLosingTheTurnForTest { get; set; }
@@ -622,6 +626,12 @@ public sealed partial class Session
         }
         finally
         {
+            // ANSWERED HOWEVER THE LOOP LEFT. Every exit of a lap completes these itself; a throw outside
+            // a lap's own handling — the loop's bookkeeping — completes nothing, and a caller awaiting the
+            // turn's Result would then wait forever. Try, so the ordinary answer already given stands.
+            result.TrySetResult(null);
+            outcome.TrySetResult(SendOutcome.Failed);
+
             // RELEASED EVEN IF THE HOOK THROWS: a conversation left owned by a loop that has ended takes
             // every later message as a steer into nothing, for the rest of the session.
             try { BeforeTurnReleasedForTest?.Invoke(); }
@@ -779,6 +789,8 @@ public sealed partial class Session
         // provider call, or during a turn that never called a tool — which no barrier will reach.
         while (true)
         {
+            AtLapStartForTest?.Invoke();
+
             // A VERDICT DECIDES ONE ACTION, NOT A TURN, NOT A SESSION. PermissionDecider caches the
             // auto-mode classifier's verdicts (Task 10) and needs to forget them exactly here, at the
             // top of a lap, or a cached ALLOW would silently outlive the turn it was computed for and
