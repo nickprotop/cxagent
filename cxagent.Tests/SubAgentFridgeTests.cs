@@ -84,8 +84,7 @@ public class SubAgentFridgeTests
             onChild: null, CancellationToken.None);
 
         var reach = new AgentReachTools(store);
-        var answer = await reach.InvokeAsync("agent_send", "check-the-parser",
-            "now check the lexer", CancellationToken.None);
+        var answer = await reach.SendAsync(new SendRequest(To: "check-the-parser", Prompt: "now check the lexer", Background: false, ParentAgentId: null, FromUser: false), CancellationToken.None);
 
         Assert.Equal("and the lexer is too", answer);
 
@@ -109,8 +108,7 @@ public class SubAgentFridgeTests
         // Claim it, as a send in flight would.
         Assert.True(store.TryBeginSend("check-the-parser"));
 
-        var answer = await new AgentReachTools(store).InvokeAsync(
-            "agent_send", "check-the-parser", "the schema changed", CancellationToken.None);
+        var answer = await new AgentReachTools(store).SendAsync(new SendRequest(To: "check-the-parser", Prompt: "the schema changed", Background: false, ParentAgentId: null, FromUser: false), CancellationToken.None);
 
         Assert.Contains("delivered", answer, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("next turn", answer, StringComparison.OrdinalIgnoreCase);
@@ -135,12 +133,10 @@ public class SubAgentFridgeTests
         // Queued while busy, and the child never laps again.
         Assert.True(store.TryBeginSend("check-the-parser"));
         var reach = new AgentReachTools(store);
-        await reach.InvokeAsync("agent_send", "check-the-parser", "the schema changed",
-            CancellationToken.None);
+        await reach.SendAsync(new SendRequest(To: "check-the-parser", Prompt: "the schema changed", Background: false, ParentAgentId: null, FromUser: false), CancellationToken.None);
         store.EndSend("check-the-parser");
 
-        await reach.InvokeAsync("agent_send", "check-the-parser", "anything else?",
-            CancellationToken.None);
+        await reach.SendAsync(new SendRequest(To: "check-the-parser", Prompt: "anything else?", Background: false, ParentAgentId: null, FromUser: false), CancellationToken.None);
 
         // BOTH reached its context, the queued one first.
         var kept = store.Find("check-the-parser")!;
@@ -169,8 +165,7 @@ public class SubAgentFridgeTests
         var kept = store.Find("worker")!;
         kept.Agent.Agent.Mailbox.TryEnqueue("STOP: the schema changed", out _);
 
-        await new AgentReachTools(store).InvokeAsync("agent_send", "worker", "carry on",
-            CancellationToken.None);
+        await new AgentReachTools(store).SendAsync(new SendRequest(To: "worker", Prompt: "carry on", Background: false, ParentAgentId: null, FromUser: false), CancellationToken.None);
 
         Assert.NotNull(provider.LastMessages);
         Assert.Contains(provider.LastMessages!,
@@ -239,8 +234,7 @@ public class SubAgentFridgeTests
         await spawner.TryInvokeAsync(Spawn("review auth", "look"),
             onChild: null, CancellationToken.None);
 
-        var listing = await new AgentReachTools(store)
-            .InvokeAsync("agent_list", "", "", CancellationToken.None);
+        var listing = new AgentReachTools(store).List();
 
         Assert.Contains("review-auth", listing);
     }

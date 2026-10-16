@@ -6,20 +6,32 @@ using CxAgent.Core.Models;
 
 namespace CxAgent.Core.Agents;
 
+/// <summary>What an agent_send asks, of whom, and how its answer comes back.</summary>
+/// <param name="To">A handle, or a child's agent id.</param>
+/// <param name="Prompt">What it is asked.</param>
+/// <param name="Background">Resume in the background and report later, rather than wait.</param>
+/// <param name="ParentAgentId">Who a background resume reports to; null when nobody can be told.</param>
+/// <param name="FromUser">Typed by the user rather than called by the model — the one sender a user's
+/// stop does not refuse.</param>
+public sealed record SendRequest(string To, string Prompt, bool Background, string? ParentAgentId,
+    bool FromUser);
+
 /// <summary>
 /// Reaching a sub-agent this session already spawned.
 ///
-/// <para>TWO TOOLS, NOT FOUR. There is no <c>agent_stop</c>: a stored agent runs only while it is
-/// being asked something, and that turn is already cancellable by the token of the turn that asked,
-/// so a stop tool would name a state that does not exist. And no <c>agent_forget</c>: a context costs
-/// nothing per turn, so a tool that only deletes is a tool whose only use is a mistake.</para>
+/// <para>SENDING AND LISTING, NOT STOPPING. A child running in the background is stopped through the task
+/// tools, which stop background shells too — a parent asks "what is still running" about both kinds at
+/// once. A child resumed in the foreground stops with the turn that asked it, by that turn's token. No
+/// <c>agent_forget</c> either: a context costs nothing per turn, so a tool that only deletes is a tool
+/// whose only use is a mistake.</para>
 ///
 /// <para>OFFERED TO THE SESSION'S AGENT, NEVER TO A CHILD. The spawn prompt states "It cannot spawn
 /// sub-agents of its own", and these inherit that limit rather than quietly widening it — a child
 /// waking a sibling is recursion by another name, and none of the reasoning that forbids spawning
 /// would have been consulted.</para>
 /// </summary>
-public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = null)
+public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = null,
+    IAgentDelivery? delivery = null)
 {
     /// <summary>The store behind these tools, for a caller that must reserve a handle at dispatch.</summary>
     public SubAgentStore Store => store;
@@ -27,23 +39,13 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
     /// <summary>Whether this handles a call by that name.</summary>
     public bool Claims(string name) => name == Tool.AgentSend || name == Tool.AgentList;
 
-    /// <summary>Runs one call and answers what the parent's model should read.</summary>
-    public async Task<string> InvokeAsync(string toolName, string agentName, string prompt,
-        CancellationToken ct) =>
-        toolName switch
-        {
-            Tool.AgentList => List(),
-            Tool.AgentSend => await Send(agentName, prompt, ct),
-            _ => $"error: '{toolName}' is not a tool this handles.",
-        };
-
     /// <summary>
     /// What this session has spawned.
     ///
     /// <para>SAYS SO WHEN THERE IS NOTHING, rather than answering with an empty string: a blank reply
     /// reads as a tool that failed, and the model's next move is to call it again.</para>
     /// </summary>
-    private string List()
+    public string List()
     {
         var all = store.All();
         if (all.Count == 0)
@@ -60,17 +62,25 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
         return sb.ToString().TrimEnd();
     }
 
-    private async Task<string> Send(string agentName, string prompt, CancellationToken ct)
+    /// <summary>
+    /// Sends to a kept child: into its mailbox while it runs, otherwise resuming it — in the background
+    /// and reported later, or waited for.
+    /// </summary>
+    public async Task<string> SendAsync(SendRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(agentName))
-            return "error: 'name' is required — which sub-agent should answer? Call agent_list to "
-                 + "see the names.";
+        if (string.IsNullOrWhiteSpace(request.To))
+            return "error: 'to' is required — which sub-agent should answer? Call agent_list to see the "
+                 + "names.";
 
-        // NAMES THE REMEDY, NOT ONLY THE FAULT. A model that misremembers a handle needs to be told
-        // where the real ones are, or its next move is another guess.
-        if (store.Find(agentName) is not { } stored)
-            return $"error: no sub-agent named '{agentName}' in this session. "
+        // A HANDLE OR AN AGENT ID: the handle is what the receipt and agent_list show, the id is what an
+        // envelope carries, and a model holding either should not have to translate. NAMES THE REMEDY,
+        // NOT ONLY THE FAULT: a model that misremembers a handle needs to be told where the real ones
+        // are, or its next move is another guess.
+        var stored = store.Find(request.To) ?? store.FindByAgentId(request.To);
+        if (stored is null)
+            return $"error: no sub-agent named '{request.To}' in this session. "
                  + "Call agent_list to see which ones there are.";
+        var name = stored.Name;
 
         // A RUNNING CHILD IS SENT TO, NOT REFUSED — and the state decides the shape of the answer, so
         // the model never has to be told which mode it is in. It observes: an idle child answers, a
@@ -90,9 +100,44 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
         // would fabricate a finished run of zero turns and zero cost, and that phantom is counted by
         // /stats exactly as a real one is. Claiming silently keeps the exclusion for the whole wait
         // and announces nothing until work actually begins.
-        if (!store.TryClaim(agentName))
-            return Deliver(stored, agentName, prompt);
+        if (!store.TryClaim(name))
+            return Deliver(stored, name, request.Prompt);
 
+        // THE USER'S STOP STANDS AGAINST THE MODEL: resuming a child the user stopped would quietly undo
+        // their decision. The user's own send is the way back, and it hands the child back to the model.
+        if (store.BackgroundOf(name) is { StoppedByUser: true } last)
+        {
+            if (!request.FromUser)
+            {
+                store.Release(name);
+                return $"error: '{name}' was stopped by the user, so it will not be resumed. Say so in your "
+                     + "reply rather than starting the same work elsewhere.";
+            }
+            last.ClearUserStop();
+        }
+
+        // IN THE BACKGROUND WHERE IT CAN BE: a port to report through and a parent to report to. The
+        // claim taken above is the run's; the runner releases it when the stretch ends.
+        if (request.Background && delivery is not null && request.ParentAgentId is { } parent)
+        {
+            var run = store.BeginBackground(
+                new BackgroundStart(Name: name, ParentAgentId: parent, Brief: request.Prompt,
+                    Description: null, IsResume: true),
+                new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(delivery, parent, name)));
+            _ = BackgroundRunner.Start(new BackgroundWork(store, stored, run, request.Prompt, slot, delivery,
+                result => SubAgentEnvelope.Render(stored.Agent.Agent.Id, name, result.Outcome, result.Text)));
+            return $"'{name}' is working on it in the background — its answer will come to you as a "
+                 + $"message.\nIf your next step cannot go on without it: task_output {{\"id\": \"{name}\", "
+                 + "\"wait\": true}";
+        }
+
+        return await Foreground(stored, name, request.Prompt, ct);
+    }
+
+    /// <summary>Resumes a claimed child and waits for its answer.</summary>
+    private async Task<string> Foreground(StoredAgent stored, string agentName, string prompt,
+        CancellationToken ct)
+    {
         var announced = false;
         try
         {
@@ -173,7 +218,7 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
         // NAMES WHERE THE ANSWER IS NOT. Without that clause the obvious next move is to call
         // this again expecting a reply, which is the loop this exists to prevent.
         return $"delivered to '{agentName}' — it is mid-task and will see this on its next turn. "
-             + "It will not answer here; ask agent_send again later, or read its final report.";
+             + "It will not answer here: its report will come to you, and its progress shows in task_output.";
     }
 
     /// <summary>
@@ -193,22 +238,28 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
             + "it was originally told. Far cheaper than spawning a second agent over the same ground. "
             + "Works while it is still running: a message sent to a busy agent reaches it on its next "
             + "turn, so tell it as soon as you know rather than waiting for it to finish and "
-            + "re-spawning. That call confirms delivery instead of answering.",
+            + "re-spawning. That call confirms delivery instead of answering. A finished agent works "
+            + "on what you ask in the background by default and its answer comes to you as a message; "
+            + "pass background: false when your next step needs the answer now.",
             JsonDocument.Parse(
                 """
                 {
                   "type": "object",
                   "properties": {
-                    "name": {
+                    "to": {
                       "type": "string",
-                      "description": "The agent's handle, from the name= on its spawn result or from agent_list."
+                      "description": "The agent's handle, from the name= on its spawn result or from agent_list, or its agent id."
                     },
                     "prompt": {
                       "type": "string",
                       "description": "What you need from it now. It still has its own context, so do not repeat the original task."
+                    },
+                    "background": {
+                      "type": "boolean",
+                      "description": "Default true: it works while you carry on and its answer comes to you as a message. Pass false when your next step needs the answer now."
                     }
                   },
-                  "required": ["name", "prompt"]
+                  "required": ["to", "prompt"]
                 }
                 """).RootElement),
 

@@ -73,6 +73,10 @@ public class ChildLivenessTests
         };
     }
 
+    /// <summary>A model's foreground send, as the agent_send tool makes it.</summary>
+    private static SendRequest Ask(string to, string prompt) =>
+        new(To: to, Prompt: prompt, Background: false, ParentAgentId: "parent", FromUser: false);
+
     /// <summary>
     /// What a parent is built with, beyond the defaults every liveness test shares.
     ///
@@ -234,6 +238,24 @@ public class ChildLivenessTests
         }
     }
 
+    /// <summary>THE OLD ARGUMENT NAME STILL RESOLVES: a model with habits, or a resumed conversation, sends `name`.</summary>
+    [Fact]
+    public async Task AgentSend_AcceptsTheOldNameArgument()
+    {
+        var child = new MockLlmProvider();
+        child.EnqueueResponse(new LlmResponse { Text = "first", StopReason = "end_turn" });
+        child.EnqueueResponse(new LlmResponse { Text = "more done", StopReason = "end_turn" });
+        var rig = Parent(new ParentSetup
+        {
+            Child = child,
+            FollowUp = Calls.Named(Tool.AgentSend, new { name = "find-thing", prompt = "now the lexer", background = false }, id: "s2"),
+        });
+
+        await rig.Agent.SendAsync("go", CancellationToken.None);
+
+        Assert.Contains("now the lexer", child.Text());
+    }
+
     [Fact]
     public void ARunsTurns_AccumulateAcrossStretches()
     {
@@ -300,7 +322,7 @@ public class ChildLivenessTests
 
         await slot.WaitAsync();                       // the cap is full
 
-        var send = reach.InvokeAsync(CxAgent.Core.Jobs.Tool.AgentSend, "nobody", "hello", CancellationToken.None);
+        var send = reach.SendAsync(Ask("nobody", "hello"), CancellationToken.None);
         var finished = await Task.WhenAny(send, Task.Delay(200));
 
         // IT REFUSES BEFORE IT WAITS, and that is deliberate: a name nothing keeps can be answered
@@ -339,8 +361,7 @@ public class ChildLivenessTests
         var reach = new AgentReachTools(store, slot);
         await slot.WaitAsync();                       // the cap is full
 
-        var send = reach.InvokeAsync(
-            CxAgent.Core.Jobs.Tool.AgentSend, kept.Name, "more please", CancellationToken.None);
+        var send = reach.SendAsync(Ask(kept.Name, "more please"), CancellationToken.None);
 
         // HELD. A genuinely kept child has passed every refusal, so the only thing that can stop it
         // here is the semaphore.
@@ -386,8 +407,7 @@ public class ChildLivenessTests
         var reach = new AgentReachTools(store, slot);
         await slot.WaitAsync();                       // the cap is full
 
-        var send = reach.InvokeAsync(
-            CxAgent.Core.Jobs.Tool.AgentSend, kept.Name, "more please", CancellationToken.None);
+        var send = reach.SendAsync(Ask(kept.Name, "more please"), CancellationToken.None);
 
         // QUEUED, AND NOTHING FILED FOR IT YET. A row written here is a run that has not happened.
         Assert.NotSame(send, await Task.WhenAny(send, Task.Delay(200)));
@@ -570,8 +590,8 @@ public class ChildLivenessTests
         var spentAfterSpawn = kept.Agent.Agent.Spend;
 
         var reach = new AgentReachTools(store);
-        await reach.InvokeAsync(CxAgent.Core.Jobs.Tool.AgentSend, kept.Name, "more", CancellationToken.None);
-        await reach.InvokeAsync(CxAgent.Core.Jobs.Tool.AgentSend, kept.Name, "more again", CancellationToken.None);
+        await reach.SendAsync(Ask(kept.Name, "more"), CancellationToken.None);
+        await reach.SendAsync(Ask(kept.Name, "more again"), CancellationToken.None);
 
         Assert.Equal(3, runs.Count);
 

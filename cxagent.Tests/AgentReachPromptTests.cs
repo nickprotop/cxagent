@@ -39,12 +39,12 @@ public class AgentReachPromptTests
     }
 
     [Fact]
-    public void Agent_send_requires_both_a_name_and_a_prompt()
+    public void Agent_send_requires_both_a_target_and_a_prompt()
     {
         var def = AgentReachTools.Definitions.Single(d => d.Name == "agent_send");
         var schema = def.InputSchema.GetRawText();
 
-        Assert.Contains("\"name\"", schema);
+        Assert.Contains("\"to\"", schema);
         Assert.Contains("\"prompt\"", schema);
     }
 

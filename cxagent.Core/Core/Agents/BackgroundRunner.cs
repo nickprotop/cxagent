@@ -116,7 +116,7 @@ internal static class BackgroundRunner
     {
         var start = work.Run.Start;
         var head = start.IsResume
-            ? $"The background agent '{start.Name}' has finished what you asked it: {start.Brief}"
+            ? $"The background agent '{start.Name}' has finished.\nYou asked it: {start.Brief}"
             : $"The background agent '{start.Name}' ({work.Kept.TypeName}) has finished. You spawned it to: "
               + $"{start.Description}\nIts brief was: {start.Brief}";
         return head + "\n" + envelope;

@@ -365,8 +365,11 @@ public sealed partial class Session
                 // would bind whichever path happened to be wired rather than the concurrency it
                 // names.
                 var reach = new Agents.AgentReachTools(SubAgents, _spawner?.ConcurrencySlot);
-                var answer = await reach.InvokeAsync(
-                    Jobs.Tool.AgentSend, name, prompt, CancellationToken.None);
+                // THE ANSWER COMES TO THE USER WHO ASKED, so this waits rather than backgrounds: a
+                // background resume would report to the model, and the user would see their question
+                // answered to somebody else. FROM THE USER, so it resumes a child the user stopped.
+                var answer = await reach.SendAsync(new Agents.SendRequest(To: name, Prompt: prompt,
+                    Background: false, ParentAgentId: null, FromUser: true), CancellationToken.None);
                 Say(new Message(answer, Severity.Info));
             }
             catch (Exception ex)
