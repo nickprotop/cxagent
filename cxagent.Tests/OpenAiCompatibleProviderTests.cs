@@ -682,4 +682,12 @@ public class OpenAiCompatibleProviderTests : IDisposable
     public async Task OpenAi_OffersMinimalToHigh() =>
         Assert.Equal(["minimal", "low", "medium", "high"],
             (await ((IThinkingProvider)MakeDialect(ReasoningDialect.OpenAi, null, reasoning: true)).GetThinkingOptionsAsync()).Levels);
+
+    // KNOWN AT ONCE, without being asked: the configuration is the answer. The session's /think and
+    // F8 read only what is known, never waiting on a probe — a null here would read as "not said
+    // yet, try again" for as long as the session ran.
+    [Fact]
+    public void OpenAi_ItsLevels_AreKnownWithoutAProbe() =>
+        Assert.Equal(["minimal", "low", "medium", "high"],
+            ((IThinkingProvider)MakeDialect(ReasoningDialect.OpenAi, null, reasoning: true)).KnownThinkingOptions?.Levels);
 }

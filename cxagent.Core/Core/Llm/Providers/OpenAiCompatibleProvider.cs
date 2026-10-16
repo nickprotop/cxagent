@@ -78,7 +78,10 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
     }
 
     public string? ThinkingLevel => _options.Thinking;
-    public ThinkingOptions? KnownThinkingOptions => _caps.Known;
+    /// <summary>OpenAI's answer is the configuration's, so it is known from the start; the
+    /// others are known once their probe has answered.</summary>
+    public ThinkingOptions? KnownThinkingOptions =>
+        _options.Dialect == ReasoningDialect.OpenAi ? OpenAiOptions : _caps.Known;
     /// <summary>This provider at <paramref name="level"/>. VIRTUAL so a preset — Ollama — copies as
     /// itself, keeping what it adds over the base; the copy shares what the model said it offers.</summary>
     public virtual ILlmProvider WithThinking(string? level) => new OpenAiCompatibleProvider(this, level);
@@ -96,12 +99,14 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IThinkingPr
     public Task<ThinkingOptions> GetThinkingOptionsAsync(CancellationToken ct = default) =>
         _options.Dialect switch
         {
-            ReasoningDialect.OpenAi => Task.FromResult(_options.Reasoning
-                ? new ThinkingOptions([ThinkingLevels.Minimal, ThinkingLevels.Low, ThinkingLevels.Medium, ThinkingLevels.High])
-                : ThinkingOptions.None("OpenAI cannot say which models reason — set \"reasoning\": true on this instance if this one does")),
+            ReasoningDialect.OpenAi => Task.FromResult(OpenAiOptions),
             ReasoningDialect.OpenRouter => _caps.GetAsync(c => ProbeAsync("/models", ThinkingCapabilities.ParseOpenRouterModels, c), ct),
             _ => _caps.GetAsync(c => ProbeAsync("/props", (json, _) => ThinkingCapabilities.ParseLlamaProps(json), c), ct),
         };
+
+    private ThinkingOptions OpenAiOptions => _options.Reasoning
+        ? new ThinkingOptions([ThinkingLevels.Minimal, ThinkingLevels.Low, ThinkingLevels.Medium, ThinkingLevels.High])
+        : ThinkingOptions.None("OpenAI cannot say which models reason — set \"reasoning\": true on this instance if this one does");
 
     /// <summary>
     /// One bounded GET for what the endpoint takes. llama.cpp serves <c>/props</c> at the server
