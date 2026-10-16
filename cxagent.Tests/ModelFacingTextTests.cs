@@ -47,7 +47,7 @@ public class ModelFacingTextTests
         };
         foreach (var spawner in new[] { Spawner(true), Spawner(false) })
             texts.Add(spawner.Definition.Description + spawner.Definition.InputSchema.GetRawText());
-        foreach (var d in AgentReachTools.Definitions.Concat(TaskTools.Definitions))
+        foreach (var d in AgentReachTools.DefinitionsFor(true).Concat(AgentReachTools.DefinitionsFor(false)).Concat(TaskTools.Definitions))
             texts.Add(d.Description + d.InputSchema.GetRawText());
 
         foreach (var text in texts)
@@ -98,5 +98,23 @@ public class ModelFacingTextTests
     {
         Assert.True(((ISubAgentSpawner)Spawner(true)).CanBackground);
         Assert.False(((ISubAgentSpawner)Spawner(false)).CanBackground);
+    }
+
+    /// <summary>
+    /// agent_send, WHERE A RESUME CANNOT RUN IN THE BACKGROUND, offers no flag and promises no message:
+    /// the call waits, and a model told otherwise ends its turn before the answer it is about to be handed.
+    /// </summary>
+    [Fact]
+    public void AgentSend_WhereBackgroundCannotRun_OffersNoFlag_AndPromisesNoMessage()
+    {
+        var send = Assert.Single(new AgentReachTools(new SubAgentStore()).Definitions);
+        Assert.DoesNotContain("\"background\"", send.InputSchema.GetRawText());
+        Assert.DoesNotContain("comes to you as a message", send.Description);
+        Assert.DoesNotContain("background: false", send.Description);
+        Assert.Contains("waits", send.Description);
+
+        var backgrounding = Assert.Single(new AgentReachTools(new SubAgentStore(), delivery: new RecordingDelivery()).Definitions);
+        Assert.Contains("\"background\"", backgrounding.InputSchema.GetRawText());
+        Assert.Contains("comes to you as a message", backgrounding.Description);
     }
 }

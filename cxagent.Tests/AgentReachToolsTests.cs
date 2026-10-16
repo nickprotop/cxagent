@@ -168,10 +168,32 @@ public class AgentReachToolsTests
     [Fact]
     public void TheSendDefinition_TakesToAndBackground()
     {
-        var def = Assert.Single(AgentReachTools.Definitions, d => d.Name == "agent_send");
+        var def = Assert.Single(AgentReachTools.DefinitionsFor(canBackground: true), d => d.Name == "agent_send");
         var schema = def.InputSchema.GetRawText();
         Assert.Contains("\"to\"", schema);
         Assert.Contains("\"background\"", schema);
         Assert.DoesNotContain("\"name\"", schema);
+    }
+
+    /// <summary>
+    /// THE DELIVERY REPLY IS TRUE HOWEVER THE CHILD IS BUSY. task_output knows only a background run, so the
+    /// model is pointed at task_list, which shows a foreground run too; and the user, typing /agents send,
+    /// is told the answer goes to the agent that set the child working rather than promised it.
+    /// </summary>
+    [Fact]
+    public async Task ADeliveryReply_SaysWhereTheAnswerGoes_ToTheModelAndToTheUser()
+    {
+        var (store, _) = KeptChild(new HeldProvider("x"));
+        store.TryClaim("x");
+        var reach = new AgentReachTools(store);
+
+        var toModel = await reach.SendAsync(Ask("x"), CancellationToken.None);
+        Assert.Contains("task_list", toModel);
+        Assert.DoesNotContain("task_output", toModel);
+
+        var toUser = await reach.SendAsync(Ask("x", fromUser: true), CancellationToken.None);
+        Assert.Contains("not here", toUser);
+        Assert.DoesNotContain("come to you", toUser);
+        store.Release("x");
     }
 }

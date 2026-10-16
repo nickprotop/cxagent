@@ -1048,8 +1048,13 @@ public sealed class Agent
         //
         // THE SPAWNER'S OWN CAP, handed over with its own store: a resume is a child running, and
         // the two have to be the same semaphore or the limit bounds only the path that waits it.
+        //
+        // THE DELIVERY ONLY WHERE THE SPAWNER CAN BACKGROUND. A headless run has a delivery port too,
+        // but nothing reads a report that arrives after its one answer; a resume handed the port there
+        // would return a receipt and lose the answer. The spawner already decides this for a spawn, so
+        // a resume asks it rather than deciding a second time.
         _reach = spawner?.Store is { } kept
-            ? new AgentReachTools(kept, spawner.ConcurrencySlot, delivery)
+            ? new AgentReachTools(kept, spawner.ConcurrencySlot, spawner.CanBackground ? delivery : null)
             : null;
 
         // sessionId ?? Id: a null means nobody passed a parent, which is only ever true for the
@@ -1174,7 +1179,7 @@ public sealed class Agent
             // recursion by another name, without any of the reasoning that forbids spawning having
             // been consulted. And an agent with no kept children still gets them: task_list saying
             // "none yet" is an answer, where a missing tool is a capability the model cannot ask about.
-            .Concat(CanSpawn && _reach is not null ? AgentReachTools.Definitions : [])
+            .Concat(CanSpawn && _reach is not null ? _reach.Definitions : [])
             // THE JOB TOOLS, ALWAYS — NOT GATED ON CanSpawn. That gate keeps a child from waking a
             // sibling it never spawned; backgrounding a shell command is a different capability every
             // agent has regardless of whether it can spawn, so a sub-agent needs to see and stop its

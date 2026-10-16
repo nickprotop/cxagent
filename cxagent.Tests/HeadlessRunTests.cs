@@ -433,4 +433,34 @@ public class HeadlessRunTests : IDisposable
         Assert.Contains("state=\"completed\"", model.Text());
         Assert.DoesNotContain("state=\"running\"", model.Text());
     }
+
+    /// <summary>
+    /// A HEADLESS agent_send WAITS AND ANSWERS, as a headless spawn does: nothing reads a report that
+    /// arrives after the run's one answer, so a resume backgrounded here would be a lost answer.
+    /// </summary>
+    [Fact]
+    public async Task AHeadlessAgentSend_WaitsAndAnswers()
+    {
+        var model = new MockLlmProvider("m");
+        model.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [Calls.Named(Tool.Agent, new { description = "look", prompt = "find the word" }, id: "s1")],
+        });
+        model.EnqueueResponse(new LlmResponse { Text = "the word is heron", StopReason = "end_turn" });   // the child
+        model.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [Calls.Named(Tool.AgentSend, new { to = "look", prompt = "and the next one?" }, id: "s2")],
+        });
+        model.EnqueueResponse(new LlmResponse { Text = "the next is egret", StopReason = "end_turn" });   // the child again
+        model.EnqueueResponse(new LlmResponse { Text = "It is egret.", StopReason = "end_turn" });        // the parent
+
+        var (code, output, _) = await Run(model, null, "-p", "what are the words?");
+
+        Assert.Equal(0, code);
+        Assert.Contains("It is egret.", output);
+        Assert.Contains("the next is egret", model.Text());
+        Assert.DoesNotContain("in the background", model.Text());
+    }
 }

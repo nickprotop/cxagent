@@ -78,7 +78,7 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
         // /stats exactly as a real one is. Claiming silently keeps the exclusion for the whole wait
         // and announces nothing until work actually begins.
         if (!store.TryClaim(name))
-            return Deliver(stored, name, request.Prompt);
+            return Deliver(stored, name, request);
 
         // THE USER'S STOP STANDS AGAINST THE MODEL: resuming a child the user stopped would quietly undo
         // their decision. The user's own send is the way back, and it hands the child back to the model.
@@ -187,16 +187,32 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
     /// will drain on its own next turn; nothing new starts, so it waits no cap — which is what lets
     /// a parent correct a running child while every permit is held by other children.</para>
     /// </summary>
-    private static string Deliver(StoredAgent stored, string agentName, string prompt)
+    private static string Deliver(StoredAgent stored, string agentName, SendRequest request)
     {
-        if (!stored.Agent.Agent.Mailbox.TryEnqueue(prompt, out var full))
+        if (!stored.Agent.Agent.Mailbox.TryEnqueue(request.Prompt, out var full))
             return $"error: could not reach '{agentName}' — {full}";
 
-        // NAMES WHERE THE ANSWER IS NOT. Without that clause the obvious next move is to call
-        // this again expecting a reply, which is the loop this exists to prevent.
-        return $"delivered to '{agentName}' — it is mid-task and will see this on its next turn. "
-             + "It will not answer here: its report will come to you, and its progress shows in task_output.";
+        // NAMES WHERE THE ANSWER IS NOT. Without that clause the obvious next move is to call this again
+        // expecting a reply, which is the loop this exists to prevent.
+        //
+        // TRUE WHICHEVER WAY THE CHILD IS BUSY: a background run reports as a message, a foreground one
+        // answers the agent_send or spawn that is waiting on it — so the reply names the work already
+        // under way rather than one of the two, and task_list, which shows both as working, rather than
+        // task_output, which knows only the background run.
+        //
+        // THE USER IS TOLD WHERE IT GOES, NOT TOLD IT COMES TO THEM: whatever the child does with this
+        // reaches the model that started the work, and "its report will come to you" over a typed
+        // command would promise the user an answer that is addressed to somebody else.
+        return request.FromUser
+            ? $"delivered to '{agentName}' — it is mid-task and will see this on its next turn. Its answer "
+              + "goes to the agent that set it working, not here; /tasks shows whether it is still going."
+            : $"delivered to '{agentName}' — it is mid-task and will see this on its next turn. It will "
+              + "not answer here: what it makes of this comes back with the work it is already doing. "
+              + "task_list shows whether it is still working.";
     }
+
+    /// <summary>The send tool as this agent is offered it — see <see cref="DefinitionsFor"/>.</summary>
+    public IReadOnlyList<ToolDefinition> Definitions => DefinitionsFor(canBackground: delivery is not null);
 
     /// <summary>
     /// The send tool's definition, hand-built as the spawn tool's is.
@@ -204,8 +220,13 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
     /// <para>THE DESCRIPTION CARRIES WHAT THE MODEL GETS WRONG, which is the only thing worth paying
     /// schema bytes for: restating the original brief — the agent already has it, and repeating it wastes
     /// the very turn the tool exists to save.</para>
+    ///
+    /// <para>HOW A RESUME WAITS IS CHOSEN BY WHAT THIS AGENT CAN DO, as the spawn tool's is: where a
+    /// resume cannot run in the background — headless, no delivery port — there is no flag, and the text
+    /// says the call waits. A flag the send ignores, or a message promised that never comes, would have
+    /// the model end its turn before the answer it is about to be handed.</para>
     /// </summary>
-    public static IReadOnlyList<ToolDefinition> Definitions =>
+    public static IReadOnlyList<ToolDefinition> DefinitionsFor(bool canBackground) =>
     [
         new ToolDefinition(Tool.AgentSend,
             "Ask a sub-agent you already spawned for more. It REMEMBERS its own work — everything it "
@@ -213,29 +234,41 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
             + "it was originally told. Far cheaper than spawning a second agent over the same ground. "
             + "Works while it is still running: a message sent to a busy agent reaches it on its next "
             + "turn, so tell it as soon as you know rather than waiting for it to finish and "
-            + "re-spawning. That call confirms delivery instead of answering. A finished agent works "
-            + "on what you ask in the background by default and its answer comes to you as a message; "
-            + "pass background: false when your next step needs the answer now.",
-            JsonDocument.Parse(
-                """
-                {
-                  "type": "object",
-                  "properties": {
-                    "to": {
-                      "type": "string",
-                      "description": "The agent's handle, from the name= on its spawn result or from task_list, or its agent id."
-                    },
-                    "prompt": {
-                      "type": "string",
-                      "description": "What you need from it now. It still has its own context, so do not repeat the original task."
-                    },
+            + "re-spawning. That call confirms delivery instead of answering. "
+            + (canBackground
+                ? "A finished agent works on what you ask in the background by default and its answer "
+                  + "comes to you as a message; pass background: false when your next step needs the answer now."
+                : "A finished agent works on what you ask and the call waits for it: its answer is the result."),
+            JsonDocument.Parse(SchemaTemplate.Replace("{{BACKGROUND}}", canBackground ? BackgroundProperty : "",
+                StringComparison.Ordinal)).RootElement),
+    ];
+
+    /// <summary>The `background` argument, offered only where a resume can run in the background.</summary>
+    private const string BackgroundProperty =
+        """
+        ,
                     "background": {
                       "type": "boolean",
                       "description": "Default true: it works while you carry on and its answer comes to you as a message. Pass false when your next step needs the answer now."
                     }
-                  },
-                  "required": ["to", "prompt"]
-                }
-                """).RootElement),
-    ];
+        """;
+
+    /// <summary>The send tool's argument schema, with a slot for the background flag.</summary>
+    private const string SchemaTemplate =
+        """
+        {
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "string",
+              "description": "The agent's handle, from the name= on its spawn result or from task_list, or its agent id."
+            },
+            "prompt": {
+              "type": "string",
+              "description": "What you need from it now. It still has its own context, so do not repeat the original task."
+            }{{BACKGROUND}}
+          },
+          "required": ["to", "prompt"]
+        }
+        """;
 }
