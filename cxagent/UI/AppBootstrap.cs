@@ -103,7 +103,7 @@ public static class AppBootstrap
             // never take. Both go to stderr so a script redirecting stdout still sees why it failed.
             Console.Error.WriteLine($"cxagent: {error}");
             Console.Error.WriteLine();
-            Console.Error.WriteLine(Usage.Text);
+            Usage.Write(Console.Error);
             return 2;
         }
 
@@ -111,7 +111,7 @@ public static class AppBootstrap
         // reading config or building a window, so it works even when the app cannot start.
         if (options.ShowHelp)
         {
-            Console.WriteLine(Usage.Text);
+            Usage.Write(Console.Out);
             return 0;
         }
 
