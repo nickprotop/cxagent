@@ -1972,22 +1972,25 @@ public static class AppBootstrap
                 return false;
             });
 
-        // MainWindow stays independent of SetupWizard; AppBootstrap supplies the flow via these seams.
-
-        // THE WIZARD IS FIRST-RUN ONLY. There is deliberately no settings dialog beside it: config
-        // is not applied in place, so such a dialog would write a file and ask for a restart —
-        // hundreds of lines of editor for a job a text editor does better, over a file the user can
-        // open directly. What an editor CANNOT replace is the FIRST run, where there is no file to
-        // open and no schema to guess from, so that is the case the wizard covers.
+        // FIRST RUN IS THE CONFIGURATION DIALOG, on its preset cards: there is no file to open and no
+        // schema to guess, and the dialog is the one place providers are made. The first save wires the
+        // startup session onto it; the trust question waits for the dialog to close.
         //
         // Reached from exactly one place: startup with no usable provider.
-        async Task RunFirstRunSetupAsync()
+        Task RunFirstRunSetupAsync()
         {
-            // THE STARTUP SESSION EXPLICITLY. A setup flow re-resolves configuration for the session
-            // the app launched with; the lambda says so, where a method group would silently pick up
-            // the optional parameter's default and mean the same thing by accident.
-            await RunSetupFlowAsync(system, mainWindow, paths, env,
-                res => WireRunner(res, session), cts.Token);
+            var closed = new TaskCompletionSource();
+            var firstRun = configHost with
+            {
+                WireFirst = res =>
+                {
+                    WireRunner(res, session);
+                    mainWindow.Chat.AddMessage(ChatRole.System,
+                        $"Configuration saved. Model: {ModelLabelOf(res)}. Type a goal and press Enter.");
+                },
+            };
+            ConfigDialog.Show(firstRun, ConfigTab.Providers, firstRun: true, onClosed: () => closed.TrySetResult());
+            return closed.Task;
         }
 
         // (Task 2.5) The startup trust question: an unclassified folder must be asked about,
@@ -2034,7 +2037,7 @@ public static class AppBootstrap
 
         if (!startup.HasProvider)
         {
-            // Deferred onto the UI thread: the wizard's SwapContentHost needs the message loop that
+            // Deferred onto the UI thread: the configuration dialog needs the message loop that
             // system.Run() starts, so it cannot be awaited inline here. EnqueueOnUIThread runs it on the
             // first pump after Run() begins. Fire-and-forget is correct — InstallSynchronizationContext
             // resumes the continuation on the UI thread; blocking here would self-deadlock.
@@ -2052,7 +2055,7 @@ public static class AppBootstrap
         async Task RunWizardThenAskTrustAsync()
         {
             await RunFirstRunSetupAsync();
-            await AskTrustThenLoadPluginsAsync();   // sequenced AFTER the wizard, not concurrently
+            await AskTrustThenLoadPluginsAsync();   // sequenced AFTER first-run setup, not concurrently
         }
 
         // PLUGINS AFTER TRUST, NEVER BESIDE IT. Both ask through the same composer cell, and the
@@ -2243,52 +2246,6 @@ public static class AppBootstrap
         return code;
     }
 
-
-    /// <summary>
-    /// Runs the setup wizard (first-run launch), persists the result, and rewires the
-    /// live AgentHost so the same session becomes usable immediately — no restart. On cancel (null
-    /// result) or a wizard fault, this is a no-op beyond whatever the wizard itself already reported.
-    /// </summary>
-    private static async Task RunSetupFlowAsync(
-        ConsoleWindowSystem system,
-        MainWindow mainWindow,
-        AppPaths paths,
-        IReadOnlyDictionary<string, string> env,
-        Action<ResolvedConfig> wireRunner,
-        CancellationToken ct)
-    {
-        // Load what is already configured so the wizard APPENDS. Without this, a wizard run replaces
-        // the whole catalog (single-entry dictionary, empty roles) — destroying every other provider
-        // instance and every role binding the user had.
-        //
-        // An INVALID config is deliberately still passed as null: the wizard starts from empty rather
-        // than merging into something that did not parse. The cost is real — a wizard run over an
-        // invalid file rebuilds rather than merges — so it is stated here rather than left to be
-        // rediscovered.
-        var load = SettingsEntry.LoadSettings(paths, env);
-        var existing = load.Settings;
-        if (load.IsInvalid)
-        {
-            // THROUGH THE SINK'S OWN RULE, so this warning is coloured and rendered like every other
-            // one rather than carrying its own tag onto a row that renders markdown.
-            ChatTranscriptSink.Post(mainWindow.Chat, ChatTranscriptSink.Row(new Message(
-                "config.json did not load (" + load.ErrorText
-                + "), so setup starts fresh — existing providers and roles in that file will be replaced.",
-                Severity.Warning)));
-        }
-
-        var settings = await SetupWizard.RunAsync(system, mainWindow.Window, ct, existing);
-        if (settings is null) return;   // user cancelled
-
-        ProviderConfigWriter.Write(paths, settings);
-        // useMock: false — a --mock session already has a provider and never reaches first-run setup,
-        // and a re-run should re-resolve against the real config either way.
-        var reResolved = ConfigResolver.Resolve(paths, env, useMock: false);
-        wireRunner(reResolved);
-        mainWindow.Chat.AddMessage(ChatRole.System, reResolved.HasProvider
-            ? $"Configuration saved. Model: {ModelLabelOf(reResolved)}. Type a goal and press Enter."
-            : "Configuration saved, but it did not load cleanly: " + string.Join("; ", reResolved.Errors));
-    }
 
     /// <summary>
     /// The composer's line-continuation rule: the text to put back, or null to SUBMIT.

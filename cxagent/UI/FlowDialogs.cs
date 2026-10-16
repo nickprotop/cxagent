@@ -46,19 +46,4 @@ public static class FlowDialogs
 
         return result.Completed ? result.Value : null;
     }
-
-    /// <summary>
-    /// Presents a single free-text prompt and returns the entered text, or <c>null</c> on
-    /// cancel/dismiss/fault.
-    /// </summary>
-    public static async Task<string?> AskAsync(
-        ConsoleWindowSystem ws, Window? parent, string title, string message, string? initial, CancellationToken ct)
-    {
-        var result = await Flow.Run(ws, parent, async ctx =>
-        {
-            return await ctx.Prompt(title, message, initial: initial);
-        }, cancellationToken: ct);
-
-        return result.Completed ? result.Value : null;
-    }
 }

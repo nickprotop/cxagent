@@ -3,7 +3,7 @@ using Xunit;
 
 namespace CxAgent.Tests;
 
-public class ModelPickerTests
+public class ModelFilterTests
 {
     private static readonly string[] Catalog =
     {
@@ -49,31 +49,5 @@ public class ModelPickerTests
         // "no query" rather than matched literally (which would return zero rows).
         Assert.Equal(Catalog.Length, ModelFilter.Apply(Catalog, "   ").Count);
         Assert.NotEmpty(ModelFilter.Apply(Catalog, "   "));
-    }
-
-    // ModelPick exists so a wizard step can tell DISMISS from EMPTY. Collapsing them (as the
-    // string-returning PickAsync must) maps Escape onto "re-ask", trapping a user who pressed it to
-    // go back and fix an earlier answer.
-    [Fact]
-    public void ModelPick_Dismissed_IsDistinguishableFromAnEmptySubmission()
-    {
-        Assert.True(ModelPick.Dismissed.Cancelled);
-        Assert.Null(ModelPick.Dismissed.Model);
-
-        var empty = new ModelPick("", Cancelled: false);
-        Assert.False(empty.Cancelled);
-
-        // Both are "no usable model", so a caller keying only off the string cannot separate them —
-        // which is precisely why the flag exists.
-        Assert.True(string.IsNullOrWhiteSpace(ModelPick.Dismissed.Model));
-        Assert.True(string.IsNullOrWhiteSpace(empty.Model));
-    }
-
-    [Fact]
-    public void ModelPick_CarriesTheChosenModel()
-    {
-        var pick = new ModelPick("anthropic/claude-sonnet-4-5", Cancelled: false);
-        Assert.False(pick.Cancelled);
-        Assert.Equal("anthropic/claude-sonnet-4-5", pick.Model);
     }
 }

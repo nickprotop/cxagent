@@ -69,7 +69,7 @@ internal sealed class ChoiceStepContent : IFlowStepContent<string>
                 // it must observe the settled state. Resolving the TCS IS this content's state change,
                 // hence it goes first. Inert while presented with FlowButtons.None (no host button row
                 // consumes StateChanged), but wrong ordering here is a live bug the moment this is
-                // reused with a real button row — cf. MaskedPromptStep, which orders it the same way.
+                // reused with a real button row.
                 _tcs.TrySetResult(capture);
                 StateChanged?.Invoke();
             };

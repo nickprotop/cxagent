@@ -4,18 +4,10 @@ using Xunit;
 
 namespace CxAgent.Tests;
 
-/// <summary>
-/// The classifier that replaces three separate per-handler invalid-config guards (old F7 roles, old
-/// F8 providers, the F5 setup flow) with one decision table. See <see cref="SettingsEntry.Classify"/>
-/// for the rule: an unloadable config REFUSES except via F5, which stays the documented repair route.
-/// </summary>
-public class SettingsEntryTests
+/// <summary>Where Escape goes: a pure function of what is in front of it.</summary>
+public class EscapeRoutingTests
 {
-    private static ProviderSettings OneProvider(string name, string model) =>
-        ProviderCatalogEditor.AddOrReplace(
-            ProviderCatalogEditor.EmptyCatalog(), name,
-            new ProviderInstanceConfig("openai-compatible", model, "k", "https://x.invalid/v1", null),
-            makeDefault: true);
+
 
 
 

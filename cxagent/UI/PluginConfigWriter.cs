@@ -7,10 +7,10 @@ namespace CxAgent.UI;
 /// <summary>
 /// Writes a plugin's entry into <c>config.json</c>.
 ///
-/// <para>FOLLOWS <see cref="ProviderConfigWriter"/>, which already round-trips this exact file
-/// through <see cref="JsonNode"/> on every provider-settings save. One writer's habits for one
-/// file: a second mechanism carefully preserving formatting would be preserving something the next
-/// provider save destroys.</para>
+/// <para>FOLLOWS <c>Core.Config.ConfigFile</c>, which round-trips this exact file through
+/// <see cref="JsonNode"/> on every provider and MCP save. One writer's habits for one file: a second
+/// mechanism carefully preserving formatting would be preserving something the next provider save
+/// destroys.</para>
 ///
 /// <para>COMMENTS ARE NOT A CONSIDERATION. <c>ProviderConfig</c> parses with default options, which
 /// reject them outright — a commented config never loads at all. What the sample file uses instead
@@ -100,7 +100,7 @@ public static class PluginConfigWriter
 
         change(root);
 
-        // ATOMIC, like ProviderConfigWriter: a config half-written by an interrupted save is one
+        // ATOMIC, like ConfigFile: a config half-written by an interrupted save is one
         // cxagent will refuse to start from.
         var tmp = configPath + ".tmp";
         File.WriteAllText(tmp,

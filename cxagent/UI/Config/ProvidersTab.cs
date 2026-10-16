@@ -34,6 +34,10 @@ public sealed class ProvidersTab
     private readonly ButtonControl _revert;
 
     private ProviderSettings? _settings;
+    private bool _wiredFirst;
+
+    /// <summary>The field a new provider's editor starts on.</summary>
+    private IFocusableControl? _firstField;
     private InstanceDraft? _draft;
     private bool _saveAnyway;
     private bool _saving;
@@ -108,8 +112,9 @@ public sealed class ProvidersTab
     /// <summary>Re-reads the file and rebuilds the rail, selecting <paramref name="select"/> when it is there.</summary>
     public void Reload(string? select)
     {
-        try { _settings = ProviderConfigLoader.LoadAndValidate(_host.Apply.Paths, _host.Apply.Env); }
-        catch (ProviderConfigException ex)
+        var read = ProvidersFile.Read(_host.Apply.Paths, _host.Apply.Env);
+        _settings = read.Settings;
+        if (_settings is null)
         {
             // NOTHING IS EDITABLE OVER A FILE THE LOADER REFUSES: a save would have to start from it, and
             // starting fresh would delete what the user has. The reasons, and the way out, instead.
@@ -119,7 +124,7 @@ public sealed class ProvidersTab
             ShowLines([
                 $"[{ColorScheme.CautionMarkup}]config.json cannot be read, so it cannot be edited here.[/]",
                 "",
-                .. ex.Errors.Select(e => $"[{ColorScheme.CautionMarkup}]· {MarkupParser.Escape(e)}[/]"),
+                .. read.Errors.Select(e => $"[{ColorScheme.CautionMarkup}]· {MarkupParser.Escape(e)}[/]"),
                 "",
                 $"[{ColorScheme.MutedMarkup}]Fix it in an editor, then reopen this dialog.[/]",
             ]);
@@ -256,6 +261,7 @@ public sealed class ProvidersTab
         if (draft.IsNew)
         {
             var nameBox = new PromptControl { Input = draft.Name, HorizontalAlignment = HorizontalAlignment.Stretch };
+            _firstField = nameBox;
             nameBox.InputChanged += (_, text) => { draft.Name = text.Trim(); Changed(); };
             fields.Add("Name", "What /model, the rail and agent types call it. Letters, digits, - and _.", nameBox);
         }
@@ -580,22 +586,29 @@ public sealed class ProvidersTab
         grid.ColumnDefinitions.Add(GridLength.Cells(2));
         grid.ColumnDefinitions.Add(GridLength.Star(1));
         var presets = ProviderKindCatalog.Presets;
+        ButtonControl? first = null;
         for (var i = 0; i < presets.Count; i++)
         {
             if (i % 2 == 0) grid.RowDefinitions.Add(GridLength.Auto());
-            grid.Place(Card(presets[i]), i / 2, i % 2 == 0 ? 0 : 2);
+            var (card, button) = Card(presets[i]);
+            first ??= button;
+            grid.Place(card, i / 2, i % 2 == 0 ? 0 : 2);
         }
         _detail.AddControl(grid);
         _detail.AddControl(new MarkupControl(["", $"[{ColorScheme.MutedMarkup}]Tab moves between cards · Enter picks one[/]"]));
         SetStatus("");
+
+        // ON THE FIRST CARD: the gallery is a choice to make, so the keys start where the choice is.
+        if (first is not null) _window()?.FocusManager.SetFocus(first, FocusReason.Programmatic);
     }
 
-    private IWindowControl Card(ProviderKindCatalog.ProviderPreset preset)
+    private (IWindowControl Card, ButtonControl Button) Card(ProviderKindCatalog.ProviderPreset preset)
     {
         var card = new PanelControl { BorderStyle = BorderStyle.Rounded, HorizontalAlignment = HorizontalAlignment.Stretch };
-        card.AddControl(Controls.Button($" {preset.DisplayName} ").OnClick((_, _) => StartNew(preset)).Build());
+        var button = Controls.Button($" {preset.DisplayName} ").OnClick((_, _) => StartNew(preset)).Build();
+        card.AddControl(button);
         card.AddControl(new MarkupControl([$" [{ColorScheme.MutedMarkup}]{MarkupParser.Escape(preset.Blurb)}[/]"]));
-        return card;
+        return (card, button);
     }
 
     private void StartNew(ProviderKindCatalog.ProviderPreset preset)
@@ -603,6 +616,9 @@ public sealed class ProvidersTab
         _addingFrom = preset;
         _draft = PresetGallery.DraftFor(preset, PresetGallery.SuggestName(_settings!.Providers.Keys, preset));
         FillRail(_draft.Name);
+
+        // ON THE NAME: the card that had focus is gone with the gallery, and keys sent to it go nowhere.
+        if (_firstField is { } field) _window()?.FocusManager.SetFocus(field, FocusReason.Programmatic);
     }
 
     private void CancelNew()
@@ -693,6 +709,14 @@ public sealed class ProvidersTab
                 if (prepared.Fresh is { } fresh && _host.Apply.Manager.BreaksCache(fresh, change) is { Count: > 0 } breaks)
                     choice = await ApplyToTabsDialog.AskAsync(_host.System, change.Note + ".", breaks);
                 ConfigApply.Commit(_host.Apply, prepared, change, choice);
+
+                // THE FIRST PROVIDER, ON FIRST RUN: the startup session has no instance for a rebind to
+                // find, so it is wired onto the new config here, once.
+                if (prepared.Fresh is { } wired && _host.WireFirst is { } wireFirst && !_wiredFirst)
+                {
+                    _wiredFirst = true;
+                    wireFirst(wired);
+                }
                 Saved(prepared.Write, select, change);
             }
             finally { done.TrySetResult(); }

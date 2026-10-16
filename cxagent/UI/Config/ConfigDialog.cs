@@ -152,7 +152,10 @@ public static class ConfigDialog
         ws.AddWindow(window);
         SwitchTo(firstRun ? ConfigTab.Providers : tab ?? _lastTab);
         ws.SetActiveWindow(window);
-        if (_tabs.ActiveTabIndex == 0) window.FocusManager.SetFocus(_providers.Rail, FocusReason.Programmatic);
+        // FIRST RUN OPENS ON THE CARDS, focused: there is nothing to select yet, and choosing where the
+        // model runs is the one thing to do. Shown once the window is up, so a card can take focus.
+        if (firstRun) _providers.ShowGallery("cxagent needs one provider to start. Pick where your model runs.");
+        else if (_tabs.ActiveTabIndex == 0) window.FocusManager.SetFocus(_providers.Rail, FocusReason.Programmatic);
     }
 
     /// <summary>

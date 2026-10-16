@@ -9,7 +9,7 @@ public class AppPathsTests
     /// Regression (found by the P5c live drive): the config directory holds config.json, which holds
     /// API KEYS, plus cxagent.db and the job logs. `EnsureCreated` used a bare `Directory.CreateDirectory`
     /// with no explicit mode, so the directory inherited the process umask — observed 775 under the
-    /// default umask 0002, i.e. group- and world-readable. `ProviderConfigWriter` correctly forces the
+    /// default umask 0002, i.e. group- and world-readable. `ConfigFile` correctly forces the
     /// FILE to 0600, but a traversable directory still leaks the file listing (and anything a future
     /// writer forgets to chmod). The spec calls for 0700; enforce it here.
     /// </summary>

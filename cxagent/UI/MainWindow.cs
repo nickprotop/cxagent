@@ -820,11 +820,6 @@ public sealed class MainWindow : IDisposable
     public bool SubmissionEnabled { get; private set; }
     public Window? Window { get; private set; }
 
-    /// <summary>
-    /// Assigned by AppBootstrap to open the settings/first-run wizard flow. A property rather than a
-    /// constructor dependency so MainWindow stays independent of SetupWizard; null until wired.
-    /// </summary>
-    public Func<Task>? ShowSettings { get; set; }
 
 
     /// <summary>
@@ -911,11 +906,6 @@ public sealed class MainWindow : IDisposable
 
     private string? _workingDirectoryFallback;
 
-
-    // ShowSettings is the SINGLE entry point into the settings dialog. Roles and providers are pages
-    // of that one dialog, so separate hooks per page would each open the same window on a different
-    // page — that is a parameter, not a seam. The page choice lives inside the dialog, where all
-    // four names are visible together.
 
     private StatusBarItem? _tokenItem;
 
