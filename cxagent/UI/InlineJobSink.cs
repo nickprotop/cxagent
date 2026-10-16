@@ -151,7 +151,13 @@ public sealed class InlineJobSink : IToolObserver
     }
 
     public void ToolUpdated(Job job) =>
-        _system.EnqueueOnUIThread(() =>
+        _system.EnqueueOnUIThread(() => ToolUpdatedNow(job), "inline.ToolUpdated");
+
+    /// <summary>
+    /// The transition's actual work, split from its marshalling for <see cref="ToolsChangedNow"/>'s
+    /// reason. Must be on the UI thread; <see cref="ToolUpdated"/> is what guarantees it.
+    /// </summary>
+    public void ToolUpdatedNow(Job job)
         {
             _known[job.Id] = job;
 
@@ -413,7 +419,9 @@ public sealed class InlineJobSink : IToolObserver
                     if (otherJob.DependsOn.Contains(job.Id)
                         && _lines.TryGetValue(otherId, out var otherLine))
                         _chat.SetStatus(otherLine, StatusText(otherJob), SeverityFor(otherJob.State));
-        }, "inline.ToolUpdated");
+
+            HoldOpenForItsRun(job);
+        }
 
     /// <summary>
     /// The message body for a finished job: the model's text / the command's stdout, with the other
@@ -620,6 +628,7 @@ public sealed class InlineJobSink : IToolObserver
         {
             if (IsTerminal(job.State)) continue;
             if (!_lines.TryGetValue(job.Id, out var id)) continue;
+            if (SettledUnstarted(job)) continue;
 
             _chat.SetHeader(id, RunningHeader(job));
 
@@ -1816,10 +1825,9 @@ public sealed class InlineJobSink : IToolObserver
     /// slow first call, long after the user watched their send apparently ignored. The claim is
     /// taken before the send's first token, which is the moment the row should start spinning.</para>
     ///
-    /// <para>THE ROW IS THE AGENT'S LIFE, NOT ONE TASK WITHIN IT, so nothing is cleared. The table
-    /// keeps every call the agent has ever made and appends the new ones, and StartedAt is left
-    /// alone so the elapsed time still measures the agent rather than the latest thing asked of
-    /// it.</para>
+    /// <para>THE ROW IS THE AGENT'S LIFE, NOT ONE TASK WITHIN IT, so the table is not cleared: it keeps
+    /// every call the agent has ever made and appends the new ones. The CLOCK is the exception — see
+    /// <see cref="StartWorking"/>.</para>
     ///
     /// <para>AND THE ROW DOES NOT MOVE. It stays where the spawn drew it and is updated in place, so
     /// the transcript keeps reading in the order things happened — see the reasoning at the update
@@ -1848,12 +1856,33 @@ public sealed class InlineJobSink : IToolObserver
         // KEYED ON THE ROW rather than tracked per send, so a second claim on an already-reopened row
         // is a no-op instead of overwriting the outcome to restore with Running.
         if (!_settledAs.TryGetValue(jobId, out var settled)) return;
-        if (_reopenedFrom.ContainsKey(jobId)) return;
+
+        // A ROW HELD OPEN FOR A QUEUED RUN STARTS ITS CLOCK HERE — the run has its slot now. Any other
+        // row already reopened is a second claim on it, and a no-op.
+        if (_reopenedFrom.ContainsKey(jobId))
+        {
+            if (_heldForRun.TryRemove(jobId, out _)) StartWorking(jobId, job);
+            return;
+        }
 
         _reopenedFrom[jobId] = settled;
-        _reopenedAt[jobId] = DateTimeOffset.UtcNow;
         job.State = JobState.Running;
         job.CompletedAt = null;
+        StartWorking(jobId, job);
+    }
+
+    /// <summary>
+    /// Starts a reopened row's clock and draws it in its running shape.
+    ///
+    /// <para>THE CLOCK COUNTS FROM NOW, the moment the agent started working again, not from the spawn:
+    /// the row settles with the time since this moment, and a live counter running from the spawn would
+    /// tick past a figure the row then settles below — "00:00:19" live, "13.5s" done.</para>
+    /// </summary>
+    private void StartWorking(string jobId, Job job)
+    {
+        var now = DateTimeOffset.UtcNow;
+        _reopenedAt[jobId] = now;
+        job.StartedAt = now;
 
         // THE SPAWN'S LAST PROGRESS REPORT IS CLEARED, not kept for continuity: its trailing "· 14s"
         // age is exactly the shape ReportsItsOwnAge suppresses the header's own clock for, so a
@@ -1880,6 +1909,74 @@ public sealed class InlineJobSink : IToolObserver
         _chat.ClearStatus(id);
         _chat.UpdateMessage(id, RunningWorkerBody(job) ?? string.Empty);
         _chat.SetCompactFooter(id, true);
+    }
+
+    /// <summary>
+    /// Rows held open for a background run that has not started yet, with the run that will start them.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, BackgroundRun> _heldForRun = new();
+
+    /// <summary>
+    /// Keeps a background spawn's row live instead of settling it on its receipt.
+    ///
+    /// <para>THE RECEIPT IS NOT THE WORK. A background spawn's call returns at once, so a row that settled
+    /// on it would read "done · 0.0s" while its child waits for a slot or has barely begun — the run's
+    /// own end is what settles it, through <see cref="WorkerSettled"/>.</para>
+    ///
+    /// <para>QUEUED SAYS SO, as a queued foreground spawn's row does, with no clock: nothing is running
+    /// to time. The run's start, through <see cref="WorkerResumed"/>, starts it.</para>
+    ///
+    /// <para>A RUN ALREADY ENDED by the time this lands settles as usual — its end has been announced or
+    /// never will be, and holding the row would leave it spinning.</para>
+    /// </summary>
+    private void HoldOpenForItsRun(Job job)
+    {
+        if (job.JobType != "llm_agent" || !IsTerminal(job.State)) return;
+        if (!_lines.TryGetValue(job.Id, out var id)) return;
+        var content = RawContent(job);
+        if (SubAgentEnvelope.StateOf(content) != SubAgentEnvelope.Running) return;
+        if (SubAgentEnvelope.NameOf(content) is not { } name || SubAgents?.BackgroundOf(name) is not { } run) return;
+        if (run.State is not (BackgroundState.Queued or BackgroundState.Running)) return;
+        if (_reopenedFrom.ContainsKey(job.Id)) return;
+
+        _settledAs[job.Id] = job.State;
+        _reopenedFrom[job.Id] = job.State;
+        job.State = JobState.Running;
+        job.CompletedAt = null;
+
+        if (run.State == BackgroundState.Running)
+        {
+            StartWorking(job.Id, job);
+            return;
+        }
+
+        _heldForRun[job.Id] = run;
+        job.StartedAt = null;
+        job.ProgressMessage = QueuedForASlot;
+        _chat.SetHeader(id, CompactHeader(job));
+        _chat.ClearStatus(id);
+        _chat.SetCompactFooter(id, true);
+    }
+
+    /// <summary>What a row waiting for a concurrency slot says — Core's words for a queued foreground spawn.</summary>
+    private const string QueuedForASlot = "queued — waiting for a free agent slot";
+
+    /// <summary>
+    /// Settles a held row whose run ended without ever starting — stopped while queued. Such a run announces
+    /// no end, because it announced no start, so nothing else would.
+    /// </summary>
+    private bool SettledUnstarted(Job job)
+    {
+        if (!_heldForRun.TryGetValue(job.Id, out var run)) return false;
+        if (run.State is BackgroundState.Queued or BackgroundState.Running) return false;
+
+        _heldForRun.TryRemove(job.Id, out _);
+        _reopenedFrom.TryRemove(job.Id, out _);
+        job.State = run.State == BackgroundState.Stopped ? JobState.Cancelled : JobState.Succeeded;
+        job.CompletedAt = DateTimeOffset.UtcNow;
+        job.ProgressMessage = null;
+        ToolUpdatedNow(job);
+        return true;
     }
 
     /// <summary>

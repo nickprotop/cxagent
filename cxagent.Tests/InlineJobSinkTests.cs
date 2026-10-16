@@ -855,6 +855,118 @@ public class InlineJobSinkTests
         Assert.Equal(JobState.Succeeded, job.State);
     }
 
+    /// <summary>A background spawn's row as its receipt left it, with its run started in a store the sink reads.</summary>
+    private static (InlineJobSink Sink, Job Job, SubAgent Child, BackgroundRun Run) BackgroundRow()
+    {
+        var sink = HeadlessSink();
+        var store = new SubAgentStore();
+        sink.SubAgents = store;
+        var child = Child();
+        store.Keep(child, "find thing");
+        sink.NoteChild("j1", child);
+        var run = store.BeginBackground(new BackgroundStart(Name: "find-thing", ParentAgentId: "g1", Brief: "b",
+            Description: "find thing", IsResume: false), new CxAgent.Core.Jobs.ResultHandoff(_ => true));
+        var job = new Job
+        {
+            Id = "j1", AgentId = "g1", JobType = "llm_agent", DisplayName = "Find thing", State = JobState.Running,
+            CreatedAt = DateTimeOffset.UtcNow.AddSeconds(-30), StartedAt = DateTimeOffset.UtcNow.AddSeconds(-30),
+        };
+        sink.ToolsChangedNow(new[] { job });
+        job.State = JobState.Succeeded;
+        job.Result = new JobResult
+        {
+            Success = true, Duration = TimeSpan.FromMilliseconds(20),
+            Output = new Dictionary<string, object?> { ["content"] = SubAgentEnvelope.Receipt(child.Agent.Id, "find-thing", false) },
+        };
+        return (sink, job, child, run);
+    }
+
+    /// <summary>
+    /// A QUEUED BACKGROUND SPAWN'S ROW SAYS IT IS QUEUED, not "done · 0.0s": its receipt came back at once,
+    /// but the child has not started — it is waiting for a slot, as a queued foreground spawn's row says.
+    /// When the run starts the row goes live, its clock counting from the start rather than the spawn, and
+    /// it settles with the same span.
+    /// </summary>
+    [Fact]
+    public void AQueuedBackgroundRow_ReadsQueued_ThenCountsFromTheRunStart()
+    {
+        var (sink, job, child, run) = BackgroundRow();
+
+        sink.ToolUpdatedNow(job);
+
+        Assert.False(IsTerminalState(job.State), "the receipt settled a row whose run has not started");
+        var header = InlineJobSink.CompactHeaderForTest(job);
+        Assert.Contains("queued — waiting for a free agent slot", header);
+        Assert.DoesNotContain("done", header);
+
+        var before = DateTimeOffset.UtcNow;
+        run.MarkRunning();
+        sink.WorkerResumed(child.Agent.Id);
+        Assert.True(job.StartedAt >= before, $"the live clock counts from {job.StartedAt}, not the run start");
+        Assert.DoesNotContain("queued", InlineJobSink.CompactHeaderForTest(job));
+
+        Thread.Sleep(1100);
+        sink.WorkerSettled(child.Agent.Id);
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.InRange(job.Result!.Duration, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(10));
+    }
+
+    /// <summary>A BACKGROUND RUN ALREADY GOING WHEN ITS RECEIPT LANDS stays live, clocked from now.</summary>
+    [Fact]
+    public void ARunningBackgroundRow_StaysLive_WhenItsReceiptLands()
+    {
+        var (sink, job, _, run) = BackgroundRow();
+        run.MarkRunning();
+        var before = DateTimeOffset.UtcNow;
+
+        sink.ToolUpdatedNow(job);
+
+        Assert.False(IsTerminalState(job.State));
+        Assert.True(job.StartedAt >= before);
+        Assert.Equal(1, sink.RefreshRunningHeadersNow());
+    }
+
+    /// <summary>
+    /// A QUEUED RUN STOPPED BEFORE IT STARTED announces no end — it never announced a start — so the tick
+    /// is what settles its row, rather than leaving it queued forever.
+    /// </summary>
+    [Fact]
+    public void AQueuedBackgroundRow_StoppedBeforeItStarted_SettlesOnTheTick()
+    {
+        var (sink, job, _, run) = BackgroundRow();
+        sink.ToolUpdatedNow(job);
+
+        run.RequestStop(byUser: true);
+        run.Finish(BackgroundState.Stopped);
+
+        Assert.Equal(0, sink.RefreshRunningHeadersNow());
+        Assert.Equal(JobState.Cancelled, job.State);
+    }
+
+    /// <summary>
+    /// ANY REOPENED ROW'S LIVE CLOCK COUNTS FROM THE MOMENT ITS AGENT STARTED WORKING AGAIN, so the number it
+    /// ticks and the number it settles with are one span.
+    /// </summary>
+    [Fact]
+    public void AReopenedRow_CountsFromTheResume()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        var job = new Job
+        {
+            Id = "j1", AgentId = "g1", JobType = "llm_agent", DisplayName = "Find callers", State = JobState.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5), StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            Result = new JobResult { Success = true, Duration = TimeSpan.FromSeconds(30) },
+        };
+        sink.ToolsChangedNow(new[] { job });
+        sink.WorkerBodyForTest(job);
+
+        var before = DateTimeOffset.UtcNow;
+        sink.WorkerResumed(child.Agent.Id);
+        Assert.True(job.StartedAt >= before, $"the live clock counts from {job.StartedAt}, five minutes ago");
+    }
+
     /// <summary>
     /// A ROW THAT REOPENED SETTLES WITH THE TIME THE WORK TOOK, not the time its call took. A background
     /// spawn's call returns its receipt at once, so the spawn's own duration is near zero; a row that kept
