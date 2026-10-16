@@ -1400,6 +1400,11 @@ public sealed class Agent
                     // this is the PARENT case, which the structural gate alone cannot see.
                     CanSpawn = CanSpawn && SelectionAllows(Jobs.Tool.Agent, turnTools),
 
+                    // AND WHETHER THOSE SPAWNS RUN IN THE BACKGROUND — the spawner knows; a headless run's
+                    // does not, and its model must not be told to expect a message.
+                    CanBackground = CanSpawn && SelectionAllows(Jobs.Tool.Agent, turnTools)
+                        && _spawner!.CanBackground,
+
                     // Gated the same way, and false for a child by construction — _askUser is null
                     // for a sub-agent whatever the caller passed.
                     CanAskUser = _askUser is not null && SelectionAllows(Jobs.Tool.AskUser, turnTools),

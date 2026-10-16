@@ -89,6 +89,15 @@ public readonly record struct SystemPromptContext(
     public bool CanSpawn { get; init; }
 
     /// <summary>
+    /// True when a spawn runs in the background here, so its report arrives later as a message.
+    ///
+    /// <para>SEPARATE FROM <see cref="CanSpawn"/>: a headless run, or a host with no delivery port, spawns
+    /// in the foreground, and telling that model a report will come as a message would have it end its
+    /// turn waiting for something that has already been handed to it.</para>
+    /// </summary>
+    public bool CanBackground { get; init; }
+
+    /// <summary>
     /// True when this agent can put a question to a person and wait for the answer.
     ///
     /// <para>False for a sub-agent, which has no user, and for any headless host. Gated for the same
@@ -359,13 +368,27 @@ public static class SystemPrompt
             sb.AppendLine("<example>");
             sb.AppendLine("user: Find every place that hand-rolls this, and fix the ones that are "
                         + "safe to change.");
-            sb.AppendLine("assistant: [sends a sub-agent to find them all, then decides and edits "
-                        + "here — the finding is a search, the deciding needs this conversation]");
+            // THE DECIDING NEEDS THE FINDING, so where spawns run in the background this example waits
+            // for its answer: backgrounded, the parent would decide before the search came back.
+            sb.AppendLine(ctx.CanBackground
+                ? "assistant: [sends a sub-agent with background: false to find them all, then decides "
+                  + "and edits here — the finding is a search, the deciding needs this conversation and "
+                  + "its answer]"
+                : "assistant: [sends a sub-agent to find them all, then decides and edits "
+                  + "here — the finding is a search, the deciding needs this conversation]");
             sb.AppendLine("</example>");
             sb.AppendLine();
             sb.AppendLine("You are accountable for a sub-agent's work as if it were your own. If its "
                         + "report is thin or does not answer what you asked, say so or check it "
                         + "yourself — do not pass it on as fact.");
+
+            // WHERE SPAWNS RUN IN THE BACKGROUND, the report comes later and on its own. Said here, beside
+            // accountability, because what goes wrong is acting on work whose report has not been read —
+            // a background agent's findings reach the model as a message, not as the spawn's result.
+            if (ctx.CanBackground)
+                sb.AppendLine("A sub-agent you send runs in the background by default, and its report arrives "
+                            + "as a message — later in this turn, or as a new turn. Read it before you act on "
+                            + "that work, and check it as you would your own.");
             sb.AppendLine();
         }
         // THE USER IS ASKED TO APPROVE run_shell, and the prompt shows the command truncated with no

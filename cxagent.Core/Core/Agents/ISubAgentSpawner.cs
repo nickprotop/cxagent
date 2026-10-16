@@ -74,6 +74,16 @@ public interface ISubAgentSpawner
     SemaphoreSlim? ConcurrencySlot => null;
 
     /// <summary>
+    /// Whether a spawn may run in the background here — a store, a delivery port, and a runtime that
+    /// allows it.
+    ///
+    /// <para>ON THE INTERFACE FOR THE PROMPT: the agent tells its model that background reports arrive as
+    /// messages only when they can, and the spawner is the one that knows. A DEFAULT MEMBER, false, so an
+    /// existing implementation keeps compiling and keeps its foreground meaning.</para>
+    /// </summary>
+    bool CanBackground => false;
+
+    /// <summary>
     /// Runs the child and returns the envelope, or null if <paramref name="call"/> is not this
     /// spawner's tool.
     /// </summary>

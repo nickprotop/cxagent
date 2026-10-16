@@ -166,7 +166,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         """;
 
     /// <summary>Whether a spawn may run in the background here — the same test the spawn itself makes.</summary>
-    private bool CanBackground => _factory.AllowBackground && _factory.Delivery is not null && _store is not null;
+    public bool CanBackground => _factory.AllowBackground && _factory.Delivery is not null && _store is not null;
 
     /// <summary>
     /// HAND-BUILT, AND THAT IS NORMAL HERE. <c>McpToolset.Definitions()</c> constructs
