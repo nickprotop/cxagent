@@ -162,6 +162,78 @@ public class ChildLivenessTests
         Assert.Contains(jobs.Jobs, j => j.ProgressMessage?.StartsWith("done") == true);
     }
 
+    /// <summary>
+    /// THE ROW SETTLES WITH THE RECEIPT. The turn that spawned a background child ends long before the
+    /// child does, and a row ticking in scrollback above the conversation reads as work still holding that
+    /// turn open.
+    /// </summary>
+    [Fact]
+    public async Task ABackgroundSpawnsRow_SettlesAtTheReceipt_AndStopsRepainting()
+    {
+        var jobs = new BufferedJobPanel();
+        var child = new HeldProvider("found it");
+        var rig = Parent(new ParentSetup { Jobs = jobs, Child = child, Delivery = new RecordingDelivery(), Background = true });
+
+        await rig.Agent.SendAsync("go", CancellationToken.None);
+        var row = Assert.Single(jobs.Jobs, j => j.PlanLocalId == Tool.Agent);
+        Assert.Equal(JobState.Succeeded, row.State);
+        Assert.StartsWith("started in background", row.ProgressMessage);
+
+        var before = row.ProgressMessage;
+        Assert.True(await Poll.Until(() => child.Calls == 1));
+        await Task.Delay(2200);   // two ticks of the child's repaint
+        Assert.Equal(before, jobs.Jobs.Single(j => j.PlanLocalId == Tool.Agent).ProgressMessage);
+        child.Release();
+    }
+
+    /// <summary>AND ITS RUN IS ARCHIVED WHEN THE CHILD ENDS, not when the receipt is written.</summary>
+    [Fact]
+    public async Task ABackgroundRun_IsArchivedWhenTheChildEnds_NotAtTheReceipt()
+    {
+        var child = new HeldProvider("found it");
+        var rig = Parent(new ParentSetup { Child = child, Delivery = new RecordingDelivery(), Background = true });
+        var finished = new List<ChildRunReport>();
+        rig.Agent.ChildFinished += r => { lock (finished) finished.Add(r); };
+
+        await rig.Agent.SendAsync("go", CancellationToken.None);
+        lock (finished) Assert.Empty(finished);
+
+        child.Release();
+        Assert.True(await Poll.Until(() => { lock (finished) return finished.Count == 1; }));
+        Assert.Equal("completed", finished[0].Outcome);
+    }
+
+    /// <summary>A TOOL RESULT THAT MERELY LOOKS LIKE A RECEIPT is not one — only a spawn's is.</summary>
+    [Fact]
+    public async Task AReadFileOfReceiptText_DoesNotSettleAsBackground()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "receipt-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "receipt.txt"), SubAgentEnvelope.Receipt("id", "x", canWrite: false));
+            var model = new MockLlmProvider();
+            model.EnqueueResponse(new LlmResponse
+            {
+                Text = "", StopReason = "tool_use",
+                ToolCalls = [Calls.Named(Tool.ReadFile, new { path = Path.Combine(dir, "receipt.txt") })],
+            });
+            model.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+            var jobs = new BufferedJobPanel();
+            var agent = new Agent(model, JobRegistry.CreateWithBuiltins(), new TokenLedger(), new RecordingSink(),
+                jobs, logs: null, maxTurns: 50, workingDir: dir);
+
+            await agent.SendAsync("read it", CancellationToken.None);
+
+            var row = Assert.Single(jobs.Jobs);
+            Assert.DoesNotContain("started in background", row.ProgressMessage ?? "");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
     [Fact]
     public void ARunsTurns_AccumulateAcrossStretches()
     {

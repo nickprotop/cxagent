@@ -2029,20 +2029,21 @@ public sealed class Agent
                 // results to "fix" the order would be worse than useless — the cancellation backfill
                 // reads `messages` to find what is already answered, so buffered results would be
                 // invisible to it and every one of them double-answered.
-                // THE AWAIT IS THE WAIT, and it is the only thing in this loop that can be one. A
-                // spawn's whole purpose is its answer, so the call that made it is where the answer
-                // belongs — recorded as that call's result, in the turn that asked.
+                // THE AWAIT IS THE WAIT, for a spawn that asked for one. A `background: false` spawn's
+                // whole purpose is its answer, so the call that made it is where the answer belongs —
+                // recorded as that call's result, in the turn that asked. A background spawn's call
+                // returns its receipt at once, so awaiting it here costs nothing; its answer arrives later
+                // through the delivery port, as a message.
                 //
-                // STARTED ABOVE, AWAITED HERE: every child is already running by the time this runs,
-                // so several spawns in one turn work concurrently and report together. What is
-                // serialised is the reporting, not the work.
+                // STARTED ABOVE, AWAITED HERE: every child is already running by the time this runs, so
+                // several spawns in one turn work concurrently and report together. What is serialised is
+                // the reporting, not the work.
                 //
-                // AND WAITING CANNOT BE EXPRESSED ANY OTHER WAY HERE. This loop only advances by
-                // calling the model, so an agent with nothing to do but wait has no way to say so —
-                // asking the model to be patient costs a request per lap, buys no progress, and eats
-                // the turn cap until the goal ends with the answer still in flight. Measured on a
-                // live session: 16 turns of nudging, then the parent stopped 45 seconds before its
-                // child finished and the answer reached nobody.
+                // AND A TURN CANNOT WAIT ANY OTHER WAY. This loop only advances by calling the model, so an
+                // agent with nothing to do but wait has no way to say so — asking the model to be patient
+                // costs a request per lap, buys no progress, and eats the turn cap until the goal ends with
+                // the answer still in flight. That is why a background answer is DELIVERED, waking the
+                // agent, rather than left for the loop to wait on.
                 foreach (var (call, task) in spawned)
                     Record(call, await task);
 
@@ -2691,6 +2692,9 @@ public sealed class Agent
         // expand-the-row swap keys on.
         string? childId = null;
 
+        // SET WHEN THE SPAWN RETURNED A RECEIPT RATHER THAN AN ANSWER — see where it is set.
+        var backgrounded = false;
+
         // THE PROMPT THIS CHILD WAS GIVEN, read from the call rather than from the child: the child
         // holds it as a user message inside a buffered context, and digging it back out would couple
         // the row to the message layout. Read once — it never changes.
@@ -2975,6 +2979,19 @@ public sealed class Agent
                 ?? await ToolBindings.InvokeAsync(call, allowedBuiltins, _executors, ctx, ct, _mcp?.Names());
             // No Text() on the last two: they return the executor's own ToolOutcome, which is the
             // whole point of the chain's type — everything below builds job.Result from it.
+
+            // A RECEIPT FROM A SPAWN, NOT AN ANSWER — childId is what tells a spawn's result from text that
+            // merely looks like one (a read_file of a saved receipt). The child carries on after this call
+            // returns, so its row stops being repainted now: removed from _liveJobs FIRST, so no tick in
+            // flight writes after the settle. Its run is ended by the child's own release, not by this
+            // call's finally — the turn that owns this row is about to end, and the child is not.
+            if (childId is not null && SubAgentEnvelope.StateOf(outcome.Text) == SubAgentEnvelope.Running)
+            {
+                backgrounded = true;
+                _liveJobs.TryRemove(job.Id, out _);
+                job.ProgressBody = null;
+                job.ProgressMessage = $"started in background · {SubAgentEnvelope.NameOf(outcome.Text)}";
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -3061,7 +3078,7 @@ public sealed class Agent
             // IN A FINALLY because a cancelled spawn stops just as surely as a finished one; the
             // catch above rethrows, and a stop written only on the straight-line path would leave
             // the cancelled child's timer running.
-            if (childId is not null && _childRuns.GetValueOrDefault(childId) is { } spawnRun
+            if (!backgrounded && childId is not null && _childRuns.GetValueOrDefault(childId) is { } spawnRun
                 && spawnRun.End())
             {
                 ArchiveChildRun(spawnRun);
