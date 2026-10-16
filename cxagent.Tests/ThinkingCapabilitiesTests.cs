@@ -48,6 +48,32 @@ public class ThinkingCapabilitiesTests
         Assert.Null(cache.Known);
     }
 
+    private sealed class Clock : TimeProvider
+    {
+        public DateTimeOffset Now = DateTimeOffset.UnixEpoch;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    // A HANG IS NOT ASKED AGAIN AT ONCE. Every request with a level waits on the probe, so a gateway
+    // that never answers its probe route would add the whole timeout to each one.
+    [Fact]
+    public async Task Cache_AfterATimeout_WaitsBeforeAskingAgain()
+    {
+        var clock = new Clock();
+        var cache = new CapabilityCache(clock);
+        var calls = 0;
+        Task<ThinkingOptions?> Hangs(CancellationToken _) { calls++; throw new TaskCanceledException("timed out"); }
+
+        Assert.False((await cache.GetAsync(Hangs, default)).Any);
+        Assert.False((await cache.GetAsync(Hangs, default)).Any);
+        Assert.Equal(1, calls);
+
+        clock.Now += CapabilityCache.AfterATimeout;
+        await cache.GetAsync(Hangs, default);
+        Assert.Equal(2, calls);
+        Assert.Null(cache.Known);
+    }
+
     [Fact]
     public async Task Cache_RemembersADefinitiveNone()
     {

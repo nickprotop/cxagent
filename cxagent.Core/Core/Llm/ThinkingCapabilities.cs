@@ -123,11 +123,23 @@ public static class ThinkingCapabilities
 /// <c>/models</c> route would otherwise pay an extra request on every turn. Only NO answer at all
 /// (the probe threw or timed out) is asked again: that is one unreachable moment, and caching it
 /// would make it a session with no levels.</para>
+///
+/// <para>A TIMEOUT WAITS BEFORE IT IS ASKED AGAIN. A request with a level waits on this answer, so a
+/// gateway that never replies on its probe route would add the whole probe timeout to every request.
+/// For <see cref="AfterATimeout"/> the answer is "not said" at once — the request goes without level
+/// fields, as it would after the timeout anyway. A quick failure (refused, 503 while a model loads)
+/// costs nothing to repeat and is asked again every time.</para>
 /// </summary>
-public sealed class CapabilityCache
+/// <param name="clock">The time; the system clock unless a test sets one.</param>
+public sealed class CapabilityCache(TimeProvider? clock = null)
 {
+    /// <summary>How long a timed-out probe is left before it is asked again.</summary>
+    public static readonly TimeSpan AfterATimeout = TimeSpan.FromSeconds(60);
+
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private ThinkingOptions? _known;
+    private DateTimeOffset _askAgainAt = DateTimeOffset.MinValue;
 
     /// <summary>The cached answer, or null while none has been given.</summary>
     public ThinkingOptions? Known => Volatile.Read(ref _known);
@@ -146,13 +158,22 @@ public sealed class CapabilityCache
         try
         {
             if (Known is { } again) return again;
+            if (_clock.GetUtcNow() < _askAgainAt) return Unsaid;
             ThinkingOptions? answer;
             try { answer = await probe(ct).ConfigureAwait(false); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (OperationCanceledException)
+            {
+                // The probe's own bound fired, not the caller's: the endpoint hung.
+                _askAgainAt = _clock.GetUtcNow() + AfterATimeout;
+                answer = null;
+            }
             catch (Exception) { answer = null; }
             if (answer is not null) Volatile.Write(ref _known, answer);
-            return answer ?? ThinkingOptions.None("the endpoint did not say what it accepts");
+            return answer ?? Unsaid;
         }
         finally { _gate.Release(); }
     }
+
+    private static readonly ThinkingOptions Unsaid = ThinkingOptions.None("the endpoint did not say what it accepts");
 }
