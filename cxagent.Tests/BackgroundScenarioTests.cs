@@ -312,7 +312,9 @@ public class BackgroundScenarioTests : IDisposable
         child.Release();
         Assert.True(await Poll.Until(() => s.Sink.Notices.Count(n => n.Contains("background agent 'find-")) == 2),
             "both notes were not drawn");
-        Assert.Equal(3, parent.Calls);
+        // POLLED, NOT READ: the woken turn draws its note before it sends its request, so the two notes can
+        // be on screen an instant before the third request is.
+        Assert.True(await Poll.Until(() => parent.Calls == 3), $"the wake turn sent {parent.Calls} requests");
 
         hold.SetResult();
         await Idle(s.Session);
