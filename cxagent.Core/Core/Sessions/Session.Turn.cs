@@ -41,6 +41,26 @@ public sealed partial class Session
 
     private bool _busy;
 
+    /// <summary>
+    /// 1 while a RunTurnAsync owns this conversation — from the moment Send decides to start one until that
+    /// loop has finished its last lap.
+    ///
+    /// <para>NOT <see cref="IsBusy"/>, WHICH DROPS BETWEEN LAPS. _busy is cleared at the end of every lap and
+    /// set again at the top of the next, so a delivery arriving in that gap read "idle" and started a second
+    /// RunTurnAsync — two loops appending to one Context.Messages, which corrupts the conversation rather
+    /// than throwing. Background agents make deliveries routine, so the gap is no longer rare.</para>
+    ///
+    /// <para>TAKEN BY COMPARE-AND-SWAP so two senders racing at an idle session cannot both win.</para>
+    /// </summary>
+    private int _turnOwned;
+
+    /// <summary>Whether a turn loop owns this conversation.</summary>
+    public bool TurnOwned => Volatile.Read(ref _turnOwned) == 1;
+
+    /// <summary>Runs just before a finished turn gives up ownership. Tests use it to land a delivery in the
+    /// tail window; the app never sets it.</summary>
+    internal Action? BeforeTurnReleasedForTest { get; set; }
+
     /// <summary>Who asked for the turn in flight, or null when none is running.</summary>
     /// <remarks>
     /// WRITTEN ON THE TURN'S OWN THREAD beside <c>_busy</c>, and read by unwire from another. Volatile
@@ -56,13 +76,20 @@ public sealed partial class Session
     /// this flag, and anything but a test taking it would be racing the loop for it.</summary>
     internal IDisposable PretendBusyForTesting()
     {
+        // OWNED AS WELL AS BUSY: Send decides by ownership, so a session that only looked busy would
+        // start a real turn under a test that meant to exercise the queueing paths.
+        Volatile.Write(ref _turnOwned, 1);
         Volatile.Write(ref _busy, true);
         return new BusyScope(this);
     }
 
     private sealed class BusyScope(Session session) : IDisposable
     {
-        public void Dispose() => Volatile.Write(ref session._busy, false);
+        public void Dispose()
+        {
+            Volatile.Write(ref session._busy, false);
+            Volatile.Write(ref session._turnOwned, 0);
+        }
     }
 
     /// <summary>
@@ -416,10 +443,9 @@ public sealed partial class Session
         // agent gets round to taking it.
         if (IsTheUser(source, origin)) UserSpoke?.Invoke();
 
-        // ISBUSY, NOT A CALLER'S FLAG. The host writes it as the turn begins and clears it however
-        // the turn ends, including cancellation — so it cannot latch true the way a flag maintained
-        // beside the turn can.
-        if (IsBusy)
+        // OWNED, NOT MERELY BUSY — see _turnOwned. Losing the swap means a loop is running or about to, and this
+        // text joins it exactly as it would join a busy turn.
+        if (Interlocked.CompareExchange(ref _turnOwned, 1, 0) != 0)
         {
             // A COMMAND IS HELD, NEVER STEERED. RunCommand checks IsBusy too, but a turn can start
             // between that check and this one; steering here would deliver the raw "/name" line as
@@ -474,6 +500,15 @@ public sealed partial class Session
             text = injected + "\n\n" + text;
         }
 
+        return StartOwnedTurn(request with { Text = text, Echo = echo });
+    }
+
+    /// <summary>
+    /// Starts the turn loop for a request, on behalf of a caller that has already taken
+    /// <see cref="_turnOwned"/> — <see cref="Send"/>, or <see cref="ResumeIfPending"/>.
+    /// </summary>
+    private SubmitOutcome.Started StartOwnedTurn(TurnRequest request)
+    {
         // RunContinuationsAsynchronously: without it, whoever completes the source — RunTurnAsync,
         // on the turn's own thread — runs the awaiter's continuation inline, which for a plugin
         // awaiting Result means the plugin's own work executes on the turn loop's thread before
@@ -510,9 +545,7 @@ public sealed partial class Session
         System.Threading.SynchronizationContext.SetSynchronizationContext(null);
         try
         {
-            return new SubmitOutcome.Started(
-                RunTurnAsync(request with { Text = text, Echo = echo }, result, outcome),
-                result.Task, outcome.Task);
+            return new SubmitOutcome.Started(RunTurnAsync(request, result, outcome), result.Task, outcome.Task);
         }
         finally
         {
@@ -530,8 +563,135 @@ public sealed partial class Session
     ///
     /// <para>CANCELLATION IS NOT AN ERROR HERE. <see cref="CancelTurn"/> already said "Stopped." and
     /// handed the queue back; saying anything further would report one event twice.</para>
+    ///
+    /// <para>OWNERSHIP IS RELEASED HERE AND NOWHERE ELSE: every exit of the loop — answered, failed,
+    /// cancelled — comes back through this finally, so no path can leave the conversation owned by a loop
+    /// that has stopped.</para>
     /// </summary>
     private async Task RunTurnAsync(TurnRequest request, TaskCompletionSource<string?> result,
+        TaskCompletionSource<SendOutcome> outcome)
+    {
+        // FAILED UNTIL THE LOOP SAYS OTHERWISE: it catches what a turn throws, so anything escaping is a
+        // fault in the loop's own bookkeeping, and a failed turn's tail — run the held command — is the
+        // nearest honest account of that.
+        var end = TurnEnd.Failed;
+        try
+        {
+            end = await RunTurnLoopAsync(request, result, outcome);
+        }
+        finally
+        {
+            BeforeTurnReleasedForTest?.Invoke();
+            Volatile.Write(ref _turnOwned, 0);
+
+            // DROPPED AFTER OWNERSHIP IS RELEASED, NOT BEFORE. Hold stores a line whenever it finds the
+            // conversation owned, so a drop while still owned leaves a gap where a line is held, nothing
+            // drops it, and it runs after some later, unrelated turn. Once released, a Hold either stores
+            // before this take and is dropped by it, or runs its line itself as an idle session would
+            // (see Hold). Nothing is left in the slot.
+            if (end is TurnEnd.Cancelled) DropHeld();
+
+            // WHAT ARRIVED IN THE TAIL GOES FIRST, and what waited behind the turn — the held command,
+            // a plugin's goal — waits behind that too: a steer typed during this turn is a later lap of
+            // it as far as the user is concerned, and the lap it starts runs this same tail when it ends.
+            if (!ResumeIfPending(readMail: end is not TurnEnd.Cancelled) && end is not TurnEnd.Cancelled)
+                RunWhatWaited(end);
+        }
+    }
+
+    /// <summary>How a turn loop ended, which decides what its tail runs.</summary>
+    private enum TurnEnd { Finished, Failed, Cancelled }
+
+    /// <summary>
+    /// Starts the next lap for anything that arrived after the loop stopped looking. True when a loop owns
+    /// the conversation afterwards — started here, or by a sender that got there first.
+    ///
+    /// <para>THE TAIL WINDOW. The agent checks its mailbox before it returns and the loop checks the steer
+    /// queue before it exits — but saving the resume record and clearing busy come after both, and a report
+    /// or a steer landing there waited until the user next typed. Checked AFTER ownership is released and
+    /// retaken by the same swap Send uses, so a sender arriving at this instant and this method cannot both
+    /// start a loop.</para>
+    ///
+    /// <para>NO MAIL AFTER A CANCEL. Esc means stop, and a report waiting in the mailbox at that moment
+    /// starting a request of its own would undo it; it is read before the user's next message instead. A
+    /// steer is different — CancelTurn has already handed the queue back, so one found here was typed after
+    /// the stop, and is the user asking for the next thing.</para>
+    /// </summary>
+    private bool ResumeIfPending(bool readMail)
+    {
+        while (PendingSteer is not null || (readMail && (Host?.HasWakingMail ?? false)))
+        {
+            if (Interlocked.CompareExchange(ref _turnOwned, 1, 0) != 0) return true;   // someone else owns it now
+
+            if (TakeSteer() is { } steer)
+            {
+                StartOwnedTurn(new TurnRequest(steer.ForModel, steer.Shown, _turnTools, TurnOriginator.User,
+                    SubmitSource.User));
+                return true;
+            }
+
+            if (readMail && Host?.TakeMail() is { } mail)
+            {
+                // QUIET: mail is never drawn when a running turn reads it at a lap's top, and this lap is that
+                // same delivery arriving a moment late — drawing the joined text would put the reports
+                // themselves in the transcript.
+                StartOwnedTurn(new TurnRequest(mail, null, _turnTools, TurnOriginator.User, SubmitSource.System)
+                    { Quiet = true });
+                return true;
+            }
+
+            Volatile.Write(ref _turnOwned, 0);   // both emptied meanwhile: look again
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Runs what waited for the turn to end: the held command, and — after a turn that answered, when the
+    /// held command started nothing — one plugin goal.
+    ///
+    /// <para>AFTER OWNERSHIP IS RELEASED, because both start a turn of their own through Send, and Send
+    /// started while this loop still owned the conversation would find it owned and hold or steer them into
+    /// a loop that is already over.</para>
+    /// </summary>
+    private void RunWhatWaited(TurnEnd end)
+    {
+        // THE HELD COMMAND RUNS BEFORE ANY QUEUED PLUGIN GOAL: the user typed it while watching this
+        // turn, and the plugin's goal waits one more turn either way. Looked up again now — a file
+        // deleted meanwhile is "unknown", not a stale copy — and expanded now, against the state this
+        // turn left. In the MAIN conversation even if btw mode was entered meanwhile: see RunHeld.
+        //
+        // A FAILED TURN STILL RUNS IT, as an answered one does: the user typed it to come next, and a
+        // provider's hiccup on this turn is no reason to throw it away. A cancel is different — that is
+        // the user saying stop, and never reaches here.
+        //
+        // THE PLUGIN'S GOAL WAITS ONLY FOR A TURN THAT EXISTS: the held one's (Started), or one that
+        // began meanwhile and held the line again (Queued) — that turn's own tail drains it, and draining
+        // here would steer the goal into it. A held line that starts nothing — its file deleted, a
+        // refusal — falls through, or the goal would sit until some unrelated turn ended.
+        if (TakeHeld() is { } held && RunHeld(held) is SubmitOutcome.Started or SubmitOutcome.Queued)
+            return;
+
+        // A FAILED TURN DRAINS NO GOAL: only a turn that answered hands the session on to a plugin.
+        if (end is TurnEnd.Failed) return;
+
+        // A DIFFERENT QUEUE FROM THE STEER, and drained only here, once the loop is truly done rather
+        // than on every lap. Steer JOINS the running turn — it becomes a later lap of THE SAME
+        // RunTurnLoopAsync, still under the originator that loop was called with. Plugins.SubmitQueue
+        // starts a NEW turn after this one ends, through Session.Submit, which stamps its OWN originator
+        // (Plugin, not whatever this turn carried) — routing a plugin's goal through the steer queue
+        // instead would hand it the CALLING turn's originator, which for a user-started turn would let a
+        // plugin's work masquerade as the user's and defeat UnwirePluginAsync's sever check. ONE GOAL,
+        // NOT A LOOP: draining more than one here would let a plugin monopolise the session by keeping
+        // the queue non-empty, turn after turn, ahead of whatever the user typed next.
+        if (Plugins.SubmitQueue.DrainOne() is { } drained)
+            Submit(drained.Goal, origin: TurnOriginator.Plugin(drained.PluginName));
+    }
+
+    /// <summary>
+    /// The turn loop itself — every lap of one turn, until nothing is left to send. See
+    /// <see cref="RunTurnAsync"/>, which owns the conversation around it.
+    /// </summary>
+    private async Task<TurnEnd> RunTurnLoopAsync(TurnRequest request, TaskCompletionSource<string?> result,
         TaskCompletionSource<SendOutcome> outcome)
     {
         var text = request.Text;
@@ -543,6 +703,10 @@ public sealed partial class Session
         // ONLY THE FIRST LAP CAN BE THE APPLICATION'S. Every later lap is text the user typed while
         // this turn ran, and is announced as theirs.
         var announceAsNote = request.Source is SubmitSource.System;
+
+        // A QUIET REQUEST'S FIRST LAP DRAWS NOTHING — see TurnRequest.Quiet. Later laps are steered text,
+        // drawn as ever.
+        var firstLap = true;
 
         // A LOOP, NOT RECURSION. Text left over after a turn starts another one, and a caller queuing
         // faster than the model answers would grow the stack with a recursive call. This is also why
@@ -587,10 +751,6 @@ public sealed partial class Session
             Volatile.Write(ref _originator, origin ?? TurnOriginator.User);
             SendResult sent;
 
-            // WHAT THE TWO EARLY EXITS DO WITH A HELD COMMAND, acted on in the finally — see there for
-            // why neither can happen in the catch itself. A cancel drops it; a failure runs it.
-            var dropHeld = false;
-            var runHeld = false;
             try
             {
                 // THE TRANSCRIPT'S OWN TURNS, announced before the model is called so a watcher has a
@@ -603,8 +763,11 @@ public sealed partial class Session
                 // still receives it as a user-role message; only the attribution on screen differs.
                 // Nothing is lost by skipping UserTurnAdded here: the inline job rows settle on the
                 // round-ended callback AssistantTurnBegan raises on the next line, either way.
-                if (announceAsNote) _sink?.Said(new Message(echo ?? text, Severity.Info));
-                else _sink?.UserTurnAdded(NextTurnId(), echo ?? text);
+                if (!(request.Quiet && firstLap))
+                {
+                    if (announceAsNote) _sink?.Said(new Message(echo ?? text, Severity.Info));
+                    else _sink?.UserTurnAdded(NextTurnId(), echo ?? text);
+                }
 
                 var assistantId = NextTurnId();
                 _sink?.AssistantTurnBegan(assistantId);
@@ -668,10 +831,10 @@ public sealed partial class Session
                 outcome.TrySetResult(SendOutcome.Cancelled);
 
                 // A CANCELLED TURN RUNS NOTHING AFTER IT. CancelTurn has already taken the slot
-                // through HandBack, so this only names a command held when something other than
-                // CancelTurn cancelled the turn — running it would start work after a stop.
-                dropHeld = true;
-                return;
+                // through HandBack, so the drop RunTurnAsync makes for this only names a command held
+                // when something other than CancelTurn cancelled the turn — running it would start
+                // work after a stop.
+                return TurnEnd.Cancelled;
             }
             catch (Exception ex)
             {
@@ -684,16 +847,14 @@ public sealed partial class Session
                 // silently would leave a session that stopped working with nothing on screen.
                 Say(new Message(ex.Message, Severity.Error));
 
-                // A FAILED TURN STILL RUNS THE COMMAND HELD BEHIND IT, as an answered one does: the
-                // user typed it to come next, and a provider's hiccup on this turn is no reason to
-                // throw it away. A cancel is different — that is the user saying stop.
-                runHeld = true;
-
                 // A CALLER AWAITING Result MUST NOT HANG just because the turn failed rather than
                 // answered — null is the same "no text" signal a silent turn produces.
                 result.TrySetResult(null);
                 outcome.TrySetResult(SendOutcome.Failed);
-                return;
+
+                // A FAILED TURN STILL RUNS THE COMMAND HELD BEHIND IT — RunTurnAsync's tail, once the
+                // conversation is released.
+                return TurnEnd.Failed;
             }
 
             finally
@@ -721,18 +882,6 @@ public sealed partial class Session
                 // disposing under it throws from a place nobody is catching. Clearing the field is
                 // enough: CancelTurn reads null and answers false.
                 lock (_turnGate) { if (ReferenceEquals(_turn, scope)) _turn = null; }
-
-                // DROPPED AFTER _busy IS CLEARED, NOT IN THE CATCH. Hold stores a line whenever it
-                // sees the session busy, and only these two exits skip the tail that would run it —
-                // so a drop before _busy falls leaves a gap where a line is held, nothing drops it,
-                // and it runs after some later, unrelated turn. Once _busy is false, a Hold either
-                // stores before this take and is dropped by it, or runs its line itself as an idle
-                // session would (see Hold). Nothing is left in the slot.
-                if (dropHeld) DropHeld();
-
-                // AND RUN AFTER IT, for the same reason: with _busy clear, the held line starts its
-                // own turn rather than being held again. Its outcome is not this turn's.
-                if (runHeld && TakeHeld() is { } held) RunHeld(held);
             }
 
             // WHOLE OR NOT AT ALL, and never an echo: what goes in on a later lap is exactly what the
@@ -748,40 +897,15 @@ public sealed partial class Session
                 result.TrySetResult(string.IsNullOrWhiteSpace(sent.Text) ? null : sent.Text);
                 outcome.TrySetResult(sent.Outcome);
 
-                // THE HELD COMMAND RUNS BEFORE ANY QUEUED PLUGIN GOAL: the user typed it while
-                // watching this turn, and the plugin's goal waits one more turn either way. Looked up
-                // again now — a file deleted meanwhile is "unknown", not a stale copy — and expanded
-                // now, against the state this turn left. In the MAIN conversation even if btw mode
-                // was entered meanwhile: see RunHeld.
-                //
-                // THE PLUGIN'S GOAL WAITS ONLY FOR A TURN THAT EXISTS: the held one's (Started), or one
-                // that began meanwhile and held the line again (Queued) — that turn's own tail drains
-                // it, and draining here would steer the goal into it. A held line that starts nothing
-                // — its file deleted, a refusal — falls through, or the goal would sit until some
-                // unrelated turn ended.
-                if (TakeHeld() is { } held
-                    && RunHeld(held) is SubmitOutcome.Started or SubmitOutcome.Queued)
-                    return;
-
-                // A DIFFERENT QUEUE FROM THE STEER ABOVE, and drained only here, once this loop is
-                // truly done rather than on every lap. Steer JOINS the running turn — the text above
-                // becomes a later lap of THIS SAME RunTurnAsync, still under the originator this
-                // method was called with. Plugins.SubmitQueue starts a NEW turn after this one ends,
-                // through Session.Submit, which stamps its OWN originator (Plugin, not whatever this
-                // turn carried) — routing a plugin's goal through the steer queue instead would hand
-                // it the CALLING turn's originator, which for a user-started turn would let a plugin's
-                // work masquerade as the user's and defeat UnwirePluginAsync's sever check. ONE GOAL,
-                // NOT A LOOP: draining more than one here would let a plugin monopolise the session by
-                // keeping the queue non-empty, turn after turn, ahead of whatever the user typed next.
-                if (Plugins.SubmitQueue.DrainOne() is { } drained)
-                    Submit(drained.Goal, origin: TurnOriginator.Plugin(drained.PluginName));
-
-                return;
+                // THE HELD COMMAND AND A PLUGIN'S GOAL RUN FROM RunTurnAsync's tail, once this loop has
+                // given the conversation up — see RunWhatWaited.
+                return TurnEnd.Finished;
             }
 
             text = queued.ForModel;
             echo = queued.Shown;
             announceAsNote = false;
+            firstLap = false;
         }
     }
 
@@ -803,6 +927,16 @@ public sealed partial class Session
         /// turn.</para>
         /// </summary>
         public Func<CancellationToken, Task<string?>>? Expand { get; init; }
+
+        /// <summary>
+        /// A first lap that draws nothing on the transcript.
+        ///
+        /// <para>FOR MAIL READ IN A TURN'S TAIL. A running turn reads its mailbox at the top of a lap without
+        /// drawing anything, and a lap started for mail that missed that read must read it the same way —
+        /// otherwise whether a report appears on screen depends on which side of the turn's end it
+        /// landed.</para>
+        /// </summary>
+        public bool Quiet { get; init; }
     }
 
     /// <summary>

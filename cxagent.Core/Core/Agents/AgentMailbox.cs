@@ -25,14 +25,23 @@ public sealed class AgentMailbox
     /// <summary>How many messages may wait for one agent at once.</summary>
     public const int MaxDepth = 8;
 
-    private readonly Queue<string> _pending = new();
+    private readonly Queue<Entry> _pending = new();
+
+    /// <summary>One waiting message, and whether it asks to be acted on now — see <see cref="HasWaking"/>.</summary>
+    private readonly record struct Entry(string Text, bool Wakes);
 
     // A PLAIN object, matching PluginSubmitQueue and the rest of Core, which does not use
     // System.Threading.Lock anywhere.
     private readonly object _lock = new();
 
     /// <summary>Takes a message, or refuses it with a reason the caller can report.</summary>
-    public bool TryEnqueue(string message, out string? refusal)
+    /// <param name="message">What the agent should read.</param>
+    /// <param name="refusal">Why it was not taken, when it was not.</param>
+    /// <param name="wakes">
+    /// Whether this asks for a turn: false leaves a note that is read before the next answer but
+    /// neither extends a running turn nor starts one — see <see cref="HasWaking"/>.
+    /// </param>
+    public bool TryEnqueue(string message, out string? refusal, bool wakes = true)
     {
         lock (_lock)
         {
@@ -42,7 +51,7 @@ public sealed class AgentMailbox
                         + "messages yet.";
                 return false;
             }
-            _pending.Enqueue(message);
+            _pending.Enqueue(new Entry(message, wakes));
             refusal = null;
             return true;
         }
@@ -59,11 +68,20 @@ public sealed class AgentMailbox
         lock (_lock)
         {
             if (_pending.Count == 0) return [];
-            var all = _pending.ToArray();
+            var all = _pending.Select(e => e.Text).ToArray();
             _pending.Clear();
             return all;
         }
     }
+
+    /// <summary>
+    /// Whether anything waiting should be acted on now.
+    ///
+    /// <para>NOT EVERYTHING IN THE MAILBOX DOES. A note left without a wake — a stopped background agent —
+    /// must be read before the next answer but must not extend a turn or start one: the user stopped that
+    /// work, and a request spent hearing so is a cost they did not ask for.</para>
+    /// </summary>
+    public bool HasWaking { get { lock (_lock) return _pending.Any(e => e.Wakes); } }
 
     /// <summary>Whether anything is waiting — for a caller that wants to avoid an allocation.</summary>
     public bool HasPending

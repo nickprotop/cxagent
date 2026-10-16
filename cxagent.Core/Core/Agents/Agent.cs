@@ -1292,6 +1292,13 @@ public sealed class Agent
         // The user's prompt joins the agent's context. The caller puts its own copy on the session
         // transcript; this is the one the MODEL sees. A plain append unconditionally: nothing seeds
         // an empty context from a caller's list, so there is no first-message case to branch on.
+        //
+        // WHAT WAITED IN THE MAILBOX HAPPENED BEFORE THIS PROMPT, so it goes in front of it. Drained only at
+        // the top of a lap, a note left while idle would land AFTER the user's new message — and the newest
+        // thing in front of the model would be a stale fact rather than what was just asked.
+        foreach (var waiting in Mailbox.Drain())
+            messages.Add(new ChatMessage { Role = "user", Content = waiting, Timestamp = DateTimeOffset.UtcNow });
+
         messages.Add(new ChatMessage
         {
             Role = "user",
@@ -1774,8 +1781,10 @@ public sealed class Agent
                 // a background job finishing, a message to a child — has missed every drain this turn
                 // has left. Returning would leave it unread with nothing to wake the agent for it: a
                 // session clears busy without looking here, and a settled child is resumed only when
-                // asked. One more lap reads it, and the top of the loop is where that happens.
-                if (Mailbox.HasPending) continue;
+                // asked. One more lap reads it, and the top of the loop is where that happens. A note
+                // left without a wake waits for the next turn instead: it was left precisely so that it
+                // would not cost a request of its own.
+                if (Mailbox.HasWaking) continue;
 
                 // A turn with no tool calls is the model saying it is done. CHALLENGE IT if the goal
                 // asked for a change and nothing was written — the failure this mode exists to fix

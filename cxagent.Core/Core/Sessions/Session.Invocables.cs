@@ -128,11 +128,14 @@ public sealed partial class Session
         HeldChanged?.Invoke(line.Trim());
 
         // THE TURN MAY HAVE ENDED SINCE THE CALLER SAW IT BUSY. The tail takes the slot after
-        // clearing _busy; a line stored after that take has no turn left to run it, and would sit
+        // releasing ownership; a line stored after that take has no turn left to run it, and would sit
         // in the slot until some later turn happened to end. Checked AFTER storing, so one of the
         // two always sees the line: either the tail's take comes later and finds it, or this check
         // does. TakeHeld is atomic, so they never both run it.
-        if (!IsBusy && TakeHeld() is { } stranded) return RunHeld(stranded);
+        //
+        // OWNERSHIP, NOT IsBusy, which drops between laps of one turn: running the line in that gap
+        // would reach Send, find the turn owned, and be held again — here — round and round.
+        if (!TurnOwned && TakeHeld() is { } stranded) return RunHeld(stranded);
         return new SubmitOutcome.Queued();
     }
 
