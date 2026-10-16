@@ -605,6 +605,30 @@ public class AgentDeliveryTests : IDisposable
     }
 
     /// <summary>
+    /// A WOKEN CHILD'S ANSWER REACHES THE SESSION. The parent took the child's final report long ago,
+    /// so whatever the child does with a late message — a command it started finishing after it did —
+    /// is known to nobody unless it is told onward; and the notice that woke it travels too, because
+    /// the parent never saw that either.
+    /// </summary>
+    [Fact]
+    public async Task ASettledSubAgentsAnswer_IsToldToTheSession()
+    {
+        var (delivery, store, child) = Wired(out var provider, out _, out var childProvider);
+        childProvider.EnqueueResponse(new LlmResponse { Text = "tests now pass", StopReason = "end_turn" });
+        provider.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn" });
+        store.Keep(child, "fix the build");
+
+        delivery.Tell(child.Agent.Id, "the build finished, exit 1");
+
+        Assert.True(Reached(provider));
+        var told = string.Join("\n", provider.LastMessages!.Select(m => m.Content));
+        Assert.Contains("tests now pass", told);
+        Assert.Contains("fix-the-build", told);
+        Assert.Contains("the build finished, exit 1", told);
+        await Settled();
+    }
+
+    /// <summary>
     /// A SYSTEM PROMPT TO A BUSY SESSION IS INJECTED, NOT STEERED. Steer joins the running turn, is
     /// announced as a user turn and is drawn as the user's own queued block — all three wrong for
     /// text nobody typed. A system fact gets the agent's next lap instead.

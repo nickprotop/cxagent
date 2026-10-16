@@ -105,7 +105,7 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
             return Agents.DeliveryOutcome.Refused;
         }
 
-        RunSettled(store, kept);
+        RunSettled(kept);
         return Agents.DeliveryOutcome.Woke;
     }
 
@@ -130,34 +130,60 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
     /// spend nobody requested into the archive /stats averages over. <c>Release</c> is the pair the
     /// store documents for a claim that announced nothing.</para>
     ///
-    /// <para>SWALLOWS WHAT THE TURN THROWS, because there is nobody to throw to: this runs on a thread
-    /// no caller holds, and an escaping exception there takes the process down rather than reporting
-    /// anything. The child's own sink already recorded whatever failed.</para>
+    /// <para>THE ANSWER IS TOLD TO THE SESSION'S AGENT, because nobody else will ever read it. The
+    /// parent took this child's final report and moved on, so a child that acts on a late message —
+    /// a command it started finishing after it did — would otherwise edit the tree and conclude
+    /// something with no one told. The notice that woke it goes too: the parent never saw that
+    /// either, and the answer alone is a reply to a question it does not know was asked.</para>
+    ///
+    /// <para>A FAILURE IS TOLD AS WELL, as a failed envelope. This runs on a thread no caller holds,
+    /// so an escaping exception would take the process down rather than report anything; and
+    /// swallowing it silently is the lost answer again, in its unhappy form.</para>
     /// </summary>
-    private static void RunSettled(Agents.SubAgentStore store, Agents.StoredAgent kept)
+    private void RunSettled(Agents.StoredAgent kept)
         => _ = Task.Run(async () =>
         {
+            Agents.SendResult result;
+            IReadOnlyList<string> waiting = [];
             try
             {
                 // DRAINED, NOT READ THEN DRAINED. A second delivery cannot be running concurrently —
                 // it would have failed to claim — but the child's own loop drains this mailbox too,
                 // and taking it once is what keeps a message from being read in both places.
-                var waiting = kept.Agent.Agent.Mailbox.Drain();
+                waiting = kept.Agent.Agent.Mailbox.Drain();
                 if (waiting.Count == 0) return;
 
                 // CancellationToken.None, BECAUSE NO TURN OWNS THIS. Every other resume runs under
                 // the token of the turn that asked, so Escape cancels it; nothing asked for this one,
                 // and there is no token in scope that cancelling would be about.
-                await kept.Agent.Agent.SendAsync(string.Join("\n\n", waiting),
+                result = await kept.Agent.Agent.SendAsync(string.Join("\n\n", waiting),
                     CancellationToken.None);
             }
-            catch
+            catch (Exception ex)
             {
-                // Reported already by the child's own observer — see the doc above.
+                result = new Agents.SendResult(ex.Message, Agents.SendOutcome.Failed);
             }
             finally
             {
+                // RELEASED BEFORE THE SESSION IS TOLD, so a parent woken by the answer finds the child
+                // free to be asked a follow-up rather than busy with a run that has already ended.
                 store.Release(kept.Name);
+            }
+
+            try
+            {
+                // THROUGH Tell, so the session half's own rule — wake when idle, inject when busy —
+                // decides, and a re-wired session is still found by the id it has now.
+                if (session.SessionId is { } parent)
+                    Tell(parent, $"The sub-agent '{kept.Name}' had finished when this reached it:\n\n"
+                        + string.Join("\n\n", waiting)
+                        + "\n\nIt acted on it and answered:\n"
+                        + Agents.SubAgentEnvelope.Render(kept.Agent.Agent.Id, kept.Name,
+                            result.Outcome, result.Text));
+            }
+            catch
+            {
+                // Nobody to report to: the session that would have been told is what failed.
             }
         });
 }
