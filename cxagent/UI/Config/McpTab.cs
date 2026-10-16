@@ -49,7 +49,7 @@ public sealed class McpTab
         _root.RowDefinitions.Add(GridLength.Cells(1));
         _root.RowDefinitions.Add(GridLength.Star(1));
         _root.RowDefinitions.Add(GridLength.Cells(1));
-        _root.RowDefinitions.Add(GridLength.Cells(1));
+        _root.RowDefinitions.Add(GridLength.Cells(2));   // status — two lines, so a long one is not cut
         _root.RowDefinitions.Add(GridLength.Cells(1));
 
         var toolbar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };

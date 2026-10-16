@@ -54,13 +54,13 @@ public sealed class ProvidersTab
         _root.RowDefinitions.Add(GridLength.Cells(1));   // the toolbar
         _root.RowDefinitions.Add(GridLength.Star(1));    // rail | detail
         _root.RowDefinitions.Add(GridLength.Cells(1));   // a rule over the pinned actions
-        _root.RowDefinitions.Add(GridLength.Cells(1));   // status
+        _root.RowDefinitions.Add(GridLength.Cells(2));   // status — two lines, so a long one is not cut
         _root.RowDefinitions.Add(GridLength.Cells(1));   // Revert · Save
 
         Toolbar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         Toolbar.AddItem(Controls.Button(" + Add ").OnClick((_, _) => ShowGallery()).Build());
-        Toolbar.AddItem(Controls.Button(" Make default ").OnClick((_, _) => _ = MakeDefaultAsync()).Build());
-        Toolbar.AddItem(Controls.Button(" Auto-mode reviewer ").OnClick((_, _) => _ = ToggleReviewerAsync()).Build());
+        Toolbar.AddItem(Controls.Button(" ★ Default ").OnClick((_, _) => _ = MakeDefaultAsync()).Build());
+        Toolbar.AddItem(Controls.Button(" ◆ Reviewer ").OnClick((_, _) => _ = ToggleReviewerAsync()).Build());
         Toolbar.AddItem(Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build());
         Toolbar.AddItem(Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build());
         _root.Place(Toolbar, 0, 0, colSpan: 2);
@@ -740,7 +740,7 @@ public sealed class ProvidersTab
         // applied in place, and only one that breaks a tab's cache is a move.
         var moved = _host.Apply.Manager.Sessions.Count(s => s.InstanceName is { } n && change.ModelChanged.Contains(n));
         var tabs = moved == 0 ? "Applied to open tabs in place — no prompt cache is touched."
-            : $"{moved} tab{(moved == 1 ? "" : "s")} on a new model, as chosen.";
+            : $"{moved} tab{(moved == 1 ? "" : "s")} on it move{(moved == 1 ? "s" : "")} as you chose; the prompt cache rebuilds.";
         SetStatus(result.Errors.Count > 0
             ? $"[{ColorScheme.CautionMarkup}]Saved, but not live: {MarkupParser.Escape(string.Join("; ", result.Errors))}[/]"
             : $"[{ColorScheme.AffirmativeMarkup}]✔ Saved.[/] [{ColorScheme.MutedMarkup}]{tabs}[/]");
