@@ -196,4 +196,67 @@ public class AgentReachToolsTests
         Assert.DoesNotContain("come to you", toUser);
         store.Release("x");
     }
+
+    private static BackgroundRun EndedUndelivered(SubAgentStore store)
+    {
+        var run = store.BeginBackground(new BackgroundStart(Name: "x", ParentAgentId: "parent", Brief: "p",
+            Description: "x", IsResume: false), new CxAgent.Core.Jobs.ResultHandoff(_ => false));
+        run.Finish(BackgroundState.Finished);
+        run.Handoff.Complete("THE EARLIER REPORT", _ => false);
+        Assert.True(run.Handoff.Undelivered);
+        return run;
+    }
+
+    /// <summary>
+    /// A REPORT THAT NEVER REACHED THE PARENT COMES BACK WITH THE RESUME. A background resume replaces the
+    /// run that holds it, so left there it would be unreachable; handed over here, the model has it once.
+    /// </summary>
+    [Fact]
+    public async Task ABackgroundResume_HandsBackAnUndeliveredReport()
+    {
+        var held = new HeldProvider("later");
+        var (store, _) = KeptChild(held);
+        var earlier = EndedUndelivered(store);
+
+        var answer = await new AgentReachTools(store, delivery: new RecordingDelivery())
+            .SendAsync(Ask("x", background: true), CancellationToken.None);
+
+        Assert.Contains("THE EARLIER REPORT", answer);
+        Assert.Contains("in the background", answer);
+        Assert.False(earlier.Handoff.Undelivered);
+        Assert.True(earlier.Handoff.Read().AlreadySent);
+        held.Release();
+    }
+
+    /// <summary>A FOREGROUND RESUME HANDS IT BACK TOO, ahead of the new answer it was asked for.</summary>
+    [Fact]
+    public async Task AForegroundResume_HandsBackAnUndeliveredReport()
+    {
+        var (store, _) = KeptChild(Says("the new answer"));
+        var earlier = EndedUndelivered(store);
+
+        var answer = await new AgentReachTools(store).SendAsync(Ask("x"), CancellationToken.None);
+
+        Assert.Contains("THE EARLIER REPORT", answer);
+        Assert.Contains("the new answer", answer);
+        Assert.True(answer.IndexOf("THE EARLIER REPORT", StringComparison.Ordinal)
+                    < answer.IndexOf("the new answer", StringComparison.Ordinal));
+        Assert.False(earlier.Handoff.Undelivered);
+    }
+
+    /// <summary>
+    /// THE USER'S SEND LEAVES IT FOR THE MODEL: their answer is shown to them, not to the model, so taking
+    /// the report there would be the very loss this guards against.
+    /// </summary>
+    [Fact]
+    public async Task AUsersResume_LeavesAnUndeliveredReportForTheModel()
+    {
+        var (store, _) = KeptChild(Says("for the user"));
+        var earlier = EndedUndelivered(store);
+
+        var answer = await new AgentReachTools(store).SendAsync(Ask("x", fromUser: true), CancellationToken.None);
+
+        Assert.DoesNotContain("THE EARLIER REPORT", answer);
+        Assert.True(earlier.Handoff.Undelivered);
+    }
 }

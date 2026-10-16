@@ -97,18 +97,47 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
         // claim taken above is the run's; the runner releases it when the stretch ends.
         if (request.Background && delivery is not null && request.ParentAgentId is { } parent)
         {
+            // TAKEN BEFORE THE NEW RUN REPLACES THE ONE HOLDING IT — see UndeliveredReport.
+            var earlier = Earlier(request, name);
             var run = store.BeginBackground(
                 new BackgroundStart(Name: name, ParentAgentId: parent, Brief: request.Prompt,
                     Description: null, IsResume: true),
                 new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(delivery, parent, name)));
             _ = BackgroundRunner.Start(new BackgroundWork(store, stored, run, request.Prompt, slot, delivery,
                 result => SubAgentEnvelope.Render(stored.Agent.Agent.Id, name, result.Outcome, result.Text)));
-            return $"'{name}' is working on it in the background — its answer will come to you as a "
+            return earlier + $"'{name}' is working on it in the background — its answer will come to you as a "
                  + $"message.\nIf your next step cannot go on without it: task_output {{\"id\": \"{name}\", "
                  + "\"wait\": true}";
         }
 
-        return await Foreground(stored, name, request.Prompt, ct);
+        // TAKEN ONLY ONCE THE ANSWER IS IN: a foreground send leaves the earlier run in place, and one that
+        // throws — Escape on the asking turn — must not have taken a report it can no longer return.
+        var answer = await Foreground(stored, name, request.Prompt, ct);
+        return Earlier(request, name) + answer;
+    }
+
+    /// <summary>
+    /// The undelivered report this send hands back, or empty.
+    ///
+    /// <para>NOT FOR THE USER'S SEND: their answer is shown to them and never to the model, so taking the
+    /// report there would lose it after all. Left on its run, it is still the model's to read.</para>
+    /// </summary>
+    private string Earlier(SendRequest request, string name) => request.FromUser ? "" : UndeliveredReport(name);
+
+    /// <summary>
+    /// The child's last background report, if it was never delivered, taken so nothing hands it over twice
+    /// — with a line saying what it is; empty when there is none.
+    ///
+    /// <para>A REPORT THAT NEVER REACHED THE MODEL GOES BACK WITH A RESUME'S ANSWER. A background resume
+    /// replaces the run that holds it, after which nothing can reach it; the model would have lost work it
+    /// asked for with no sign that it existed.</para>
+    /// </summary>
+    private string UndeliveredReport(string name)
+    {
+        if (store.BackgroundOf(name) is not { Handoff.Undelivered: true } last) return "";
+        return last.Handoff.Read() is { AlreadySent: false, Result: { } report }
+            ? $"'{name}' had a report that never reached you; here it is:\n{report}\n\nAnd for this send:\n"
+            : "";
     }
 
     /// <summary>Resumes a claimed child and waits for its answer.</summary>
