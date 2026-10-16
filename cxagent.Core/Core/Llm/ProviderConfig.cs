@@ -534,12 +534,15 @@ public static class ProviderConfigLoader
     /// cannot see from where it stands.</para>
     /// </summary>
     internal static string? FindSidecar(
-        string file, IReadOnlyList<string> pluginPaths, string configDir)
+        string file, IReadOnlyList<string> pluginPaths, string? configDir)
     {
         foreach (var raw in pluginPaths)
         {
             var expanded = ConfigVariable.Expand(raw);
-            var dir = Path.IsPathRooted(expanded) ? expanded : Path.Combine(configDir, expanded);
+            // A RELATIVE ENTRY NEEDS THE CONFIG FOLDER to mean anything; without one it is skipped
+            // rather than resolved against whatever the working directory happens to be.
+            if (!Path.IsPathRooted(expanded) && configDir is null) continue;
+            var dir = Path.IsPathRooted(expanded) ? expanded : Path.Combine(configDir!, expanded);
 
             var assemblyPath = Path.Combine(dir, file);
             if (!File.Exists(assemblyPath)) continue;
@@ -630,13 +633,25 @@ public static class ProviderConfigLoader
 
     public static ProviderSettings LoadAndValidate(AppPaths paths, IReadOnlyDictionary<string, string> env)
     {
-        var errors = new List<string>();
         var path = Path.Combine(paths.ConfigDir, "config.json");
         if (!File.Exists(path))
             throw new ProviderConfigException(new[] { $"config.json not found at '{path}'." });
+        return Parse(File.ReadAllText(path), env, paths.ConfigDir);
+    }
 
+    /// <summary>
+    /// The loader's rules over a document in hand. A WRITER VALIDATES WITH THIS before it writes: the
+    /// file on disk is then never one startup would refuse, because the same code judged it.
+    /// </summary>
+    /// <param name="json">The whole config.json text.</param>
+    /// <param name="env">The environment, for the per-instance API-key overrides.</param>
+    /// <param name="configDir">The folder the file lives in, where a plugin's sidecar manifest is looked
+    /// for; null looks only beside the plugin itself.</param>
+    public static ProviderSettings Parse(string json, IReadOnlyDictionary<string, string> env, string? configDir = null)
+    {
+        var errors = new List<string>();
         JsonDocument doc;
-        try { doc = JsonDocument.Parse(File.ReadAllText(path)); }
+        try { doc = JsonDocument.Parse(json); }
         catch (JsonException ex) { throw new ProviderConfigException(new[] { $"config.json is not valid JSON: {ex.Message}" }); }
 
         using (doc)
@@ -1070,7 +1085,7 @@ public static class ProviderConfigLoader
                 }
 
             ValidatePluginCollisions(plugins,
-                config => FindSidecar(config.File, pluginPaths, paths.ConfigDir), errors);
+                config => FindSidecar(config.File, pluginPaths, configDir), errors);
 
             if (errors.Count > 0)
                 throw new ProviderConfigException(errors);
