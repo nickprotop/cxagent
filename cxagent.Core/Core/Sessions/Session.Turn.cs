@@ -702,6 +702,10 @@ public sealed partial class Session
                 // /plugin with a state the user changed some time ago.
                 CatchUpOnPlugins();
 
+                // AND WHAT THE CONFIG BECAME: a saved edit to this session's instance waited for the
+                // turn rather than replacing the host under it.
+                CatchUpOnConfig();
+
                 // THE SCOPE STAYS UNTIL THE NEXT LAP REPLACES IT, deliberately not disposed here. A
                 // cancellation callback can still be running on another thread as this unwinds, and
                 // disposing under it throws from a place nobody is catching. Clearing the field is

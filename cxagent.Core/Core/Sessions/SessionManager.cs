@@ -101,6 +101,43 @@ public sealed class SessionManager : IDisposable
     public Func<Session, bool>? RewireOne { get; set; }
 
     /// <summary>
+    /// Re-wires one session onto a given config. The front end's, because wiring builds its sinks; the
+    /// conversation is already carried (<see cref="Session.CarryToNextWire"/>) when this runs. Returns
+    /// whether it re-wired.
+    /// </summary>
+    public Func<Session, ResolvedConfig, bool>? RebindOne { get; set; }
+
+    /// <summary>
+    /// A saved config, live: every session adopts the new catalog, and the ones the change touches are
+    /// re-wired onto it — idle ones now, busy ones when their turn ends.
+    /// </summary>
+    public void ApplyConfig(ResolvedConfig fresh, Config.ConfigChange change)
+    {
+        // THE PLUGIN ENTRIES ARE THE MANAGER'S OWN LIVE STATE, not the file's: kept across the swap.
+        Config = fresh with { Entries = Config.Entries };
+        foreach (var session in Sessions)
+        {
+            if (!change.Affects(session.InstanceName)) { session.AdoptCatalog(fresh); continue; }
+            session.RebindWhenIdle(() => Rebind(session, fresh, change));
+        }
+    }
+
+    private void Rebind(Session session, ResolvedConfig fresh, Config.ConfigChange change)
+    {
+        if (RebindOne is not { } rebind) return;
+        var name = change.Follow(session.InstanceName);
+
+        // NO PROBE: this can run on the UI thread, and Use may ask an endpoint for its window. The
+        // registry's known window is enough; an unknown one is probed on first use, as at startup.
+        if (name is null || fresh.Providers is not { } registry || !registry.TryGet(name, out var provider)) return;
+        var window = registry.InstanceWindows.TryGetValue(name, out var known) ? known : null;
+        var target = fresh.WithModel(new ActiveModel(provider, name, provider.DisplayName, window));
+
+        if (!session.CarryToNextWire()) return;
+        if (rebind(session, target)) session.SayRebound(change.Note);
+    }
+
+    /// <summary>
     /// How a host confirms replacing a live conversation. See
     /// <see cref="SharedServices.ConfirmReplace"/>.
     /// </summary>

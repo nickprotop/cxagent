@@ -600,9 +600,12 @@ public sealed partial class Session
     {
         if (Host is null) return false;
 
+        // THE LEVEL GOES WITH THE CONVERSATION: a re-wire builds the provider from config, and without
+        // it a session the user turned to "off" would come back at the config's level.
         PendResume(new SessionSnapshot(
             Host.SessionId, Host.Context.Snapshot(),
-            Host.Ledger.InputTokens, Host.Ledger.OutputTokens, DateTimeOffset.UtcNow));
+            Host.Ledger.InputTokens, Host.Ledger.OutputTokens, DateTimeOffset.UtcNow,
+            Thinking: Host.SavedLevel()));
         CarryLedger(Host.Ledger);
         return true;
     }

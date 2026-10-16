@@ -16,7 +16,7 @@ public sealed record McpServerFields
 
     internal void ApplyTo(JsonObject server)
     {
-        // AN ARRAY: the loader reads `command` only as one (ProviderConfig.cs:856), and a string is
+        // AN ARRAY: the loader reads `command` only as one (ProviderConfigLoader), and a string is
         // skipped with a warning — so a command written any other way is a server that silently is not.
         if (Command is { } command) server["command"] = new JsonArray(command.Select(a => (JsonNode?)a).ToArray());
         if (Url is { } url) server["url"] = url;

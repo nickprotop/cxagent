@@ -650,7 +650,7 @@ public sealed class AgentHost : IDisposable
     // "default" FOR THE MODEL'S OWN, NOT NULL: null is what a header with nothing saved reads as,
     // and a resume would then take the config's level over the one the user chose. Null only where
     // the model has no levels at all.
-    private string? SavedLevel() =>
+    internal string? SavedLevel() =>
         _runtime.Provider is IThinkingProvider thinker ? thinker.ThinkingLevel ?? ThinkingLevels.Default : null;
 
     /// <summary>
