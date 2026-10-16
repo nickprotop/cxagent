@@ -11,7 +11,7 @@ namespace CxAgent.UI;
 ///
 /// <para>THE LIBRARY'S OVERFLOW RULE IS THE BUG. When the left items and the right group do not both
 /// fit, <see cref="StatusBarControl"/> starts the right group exactly where the left one ended — no
-/// gap, so "F7:Jobs" and "ctx 1%" read as one word — and then clips whatever runs past the edge,
+/// gap, so "F7:Tasks" and "ctx 1%" read as one word — and then clips whatever runs past the edge,
 /// which is how "↑58k" lost its "k". The bar is the chat column, not the terminal: the session panel
 /// takes a slice of it, so even 140 columns leaves little more than a hundred.</para>
 ///

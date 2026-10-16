@@ -240,10 +240,10 @@ public class MainWindowTests
     [Fact]
     public void JobsItemLabel_CountsMineAndElsewhere()
     {
-        Assert.Equal("Jobs", MainWindow.JobsItemLabel(mine: 0, elsewhere: 0));
-        Assert.Equal("Jobs 2", MainWindow.JobsItemLabel(mine: 2, elsewhere: 0));
-        Assert.Equal("Jobs 2+1", MainWindow.JobsItemLabel(mine: 2, elsewhere: 1));
-        Assert.Equal("Jobs 0+3", MainWindow.JobsItemLabel(mine: 0, elsewhere: 3));
+        Assert.Equal("Tasks", MainWindow.JobsItemLabel(mine: 0, elsewhere: 0));
+        Assert.Equal("Tasks 2", MainWindow.JobsItemLabel(mine: 2, elsewhere: 0));
+        Assert.Equal("Tasks 2+1", MainWindow.JobsItemLabel(mine: 2, elsewhere: 1));
+        Assert.Equal("Tasks 0+3", MainWindow.JobsItemLabel(mine: 0, elsewhere: 3));
     }
 
     [Fact]

@@ -1725,7 +1725,7 @@ public static class AppBootstrap
         // F7 IS THE JOBS PANEL, as F3 is the info panel: the right-hand column shows one or the other.
         // Declined while the plugin manager is open, as F6 is — a global takes its key from every
         // window, and the dialog's own keys come first.
-        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F7, "background jobs",
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F7, "background tasks",
             () => !PluginManagerDialog.IsOpen && mainWindow.ToggleJobsPanel());
 
         // F8 IS CONFIGURATION: providers and MCP servers, on the tab last used. Declined while the

@@ -2527,14 +2527,14 @@ public sealed class MainWindow : IDisposable
     /// The status item's text: the key's name, and while anything runs, how much.
     ///
     /// <para>RUNNING JOBS ONLY: a finished one is the panel's to show. Other sessions' are counted
-    /// apart — `Jobs 2+1` — because they are running in this process too and a narrow terminal has no
+    /// apart — `Tasks 2+1` — because they are running in this process too and a narrow terminal has no
     /// other way to say so. SHORT, because the bar has no gap to give: crowded, its left items run
     /// straight into the right group.</para>
     /// </summary>
     public static string JobsItemLabel(int mine, int elsewhere) =>
-        mine == 0 && elsewhere == 0 ? "Jobs"
-        : elsewhere == 0 ? $"Jobs {mine}"
-        : $"Jobs {mine}+{elsewhere}";
+        mine == 0 && elsewhere == 0 ? "Tasks"
+        : elsewhere == 0 ? $"Tasks {mine}"
+        : $"Tasks {mine}+{elsewhere}";
 
     /// <summary>
     /// Whose jobs the panel and the status item show: the session in front — or, while a job tab is in
@@ -2577,7 +2577,7 @@ public sealed class MainWindow : IDisposable
 
         // CREATED ON THE FIRST TICK, not at build: a status-bar change during construction blocks on a
         // render tick that does not exist yet (see ShowComposerHint).
-        _jobsItem ??= StatusBar.AddLeft(KeyHint("background jobs", "F7"), label, () => ToggleJobsPanel());
+        _jobsItem ??= StatusBar.AddLeft(KeyHint("background tasks", "F7"), label, () => ToggleJobsPanel());
         if (_jobsItem.Label != label) _jobsItem.Label = label;
 
         foreach (var slot in _jobTabs.Values)

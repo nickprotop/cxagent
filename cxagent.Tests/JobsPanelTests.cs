@@ -39,7 +39,7 @@ public class JobsPanelTests
     {
         var text = Render(Row("npm run dev", BackgroundJobState.Running, tail: ["compiled", "ready on :3000"]));
 
-        Assert.Contains("Jobs · 1 running", text, StringComparison.Ordinal);
+        Assert.Contains("Tasks · 1 running", text, StringComparison.Ordinal);
         Assert.Contains("npm run dev", text, StringComparison.Ordinal);
         Assert.Contains("1:14", text, StringComparison.Ordinal);
         Assert.Contains("running", text, StringComparison.Ordinal);

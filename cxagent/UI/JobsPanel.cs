@@ -128,7 +128,7 @@ public sealed class JobsPanel
     {
         var lines = new List<string>();
         var running = jobs.Count(j => j.View.State == BackgroundJobState.Running);
-        lines.Add($"[bold {ColorScheme.AccentMarkup}]{(running > 0 ? $"Jobs · {running} running" : "Jobs")}[/]");
+        lines.Add($"[bold {ColorScheme.AccentMarkup}]{(running > 0 ? $"Tasks · {running} running" : "Tasks")}[/]");
 
         if (jobs.Count == 0)
         {
