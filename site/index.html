@@ -101,6 +101,7 @@
       <button type="button" class="exp-item" role="tab" id="tab-31-headless" aria-controls="pane-31-headless"><span class="exp-icon">&#9881;&#65039;</span><span>Headless</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-32-custom-commands" aria-controls="pane-32-custom-commands"><span class="exp-icon">&#128221;</span><span>Your commands</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-33-thinking" aria-controls="pane-33-thinking"><span class="exp-icon">&#128161;</span><span>Thinking</span></button>
+      <button type="button" class="exp-item" role="tab" id="tab-34-configuration" aria-controls="pane-34-configuration"><span class="exp-icon">&#128295;</span><span>Configuration</span></button>
       </div>
       <div class="exp-body" id="panels">
       <div class="exp-pane" role="tabpanel" id="pane-session-overview" aria-labelledby="tab-session-overview">
@@ -163,11 +164,15 @@
         <div class="exp-shot"><a href="screenshots/33-thinking.png" title="Open the full-size capture"><img src="screenshots/33-thinking.png" alt="Each step's thinking folded between its tool calls, the latest opened, and the thinking level on the mode line" loading="lazy"></a></div>
         <div class="exp-text"><h3>What it thought, and how hard</h3><p>Each step that thought gets its own block, open while it streams and folded once the step moves on, so a run reads as thought, calls, thought, answer. <code>Ctrl+O</code> opens the latest; any other is a click away.</p><p class="exp-aside"><code>F10</code> and <code>/think</code> set the level the model offers — on or off for a llama.cpp server, low to max for Claude.</p></div>
       </div>
+      <div class="exp-pane" role="tabpanel" id="pane-34-configuration" aria-labelledby="tab-34-configuration">
+        <div class="exp-shot"><a href="screenshots/34-configuration.png" title="Open the full-size capture"><img src="screenshots/34-configuration.png" alt="The configuration dialog on its Providers tab: the instances on the left with the default starred, the selected one's endpoint, model, masked key and thinking level beside it" loading="lazy"></a></div>
+        <div class="exp-text"><h3>Providers, servers and agents, in the app</h3><p><code>F8</code> opens one dialog for providers, MCP servers and sub-agent types. A new provider starts from a card — Anthropic, OpenRouter, OpenAI, Ollama, llama.cpp or any OpenAI-compatible endpoint — and its model is picked from what that endpoint serves, with each model's window and, on OpenRouter, its price.</p><p class="exp-aside">A save is live. What the model cannot see — a new key, the reviewer, the default — applies in place; a new model would re-send each open tab's conversation, so you are asked how and when.</p></div>
+      </div>
       </div>
     </div>
   </div>
 
-  <p class="note" style="margin-top:1rem"><a href="docs/walkthrough.html">Twenty more, with the full walkthrough →</a></p>
+  <p class="note" style="margin-top:1rem"><a href="docs/walkthrough.html">Twenty-one more, with the full walkthrough →</a></p>
 </section>
 
 <section id="why">
