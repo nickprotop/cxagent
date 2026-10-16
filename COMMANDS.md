@@ -18,7 +18,8 @@ but not completed.
 |---|---|
 | `/help` | Keys and commands |
 | `/model` | Show or switch which configured model this session uses |
-| `/think` | Show or set how hard the model thinks (F8 cycles) |
+| `/think` | Show or set how hard the model thinks (F10 cycles) |
+| `/providers` | Add, edit or remove providers (F8) |
 | `/mode` | Show how this session works |
 | `/mode agent single` · `/mode agent fan-out` | Set delegation, live |
 | `/mode edits always-ask` · `/mode edits accept-edits` | Set when writes ask, live (Shift+Tab cycles) |
@@ -30,6 +31,7 @@ but not completed.
 | `/stats clear` | Delete all usage history, after confirming |
 | `/mcp` | List MCP servers, or inspect one |
 | `/mcp reload` | Re-read config and reconnect |
+| `/mcp edit` | Add, edit or remove MCP servers |
 | `/mcp login <server>` | Authorise a server that needs OAuth |
 | `/skills` | List available skills, and any `SKILL.md` that was skipped |
 | `/commands` | List your custom commands, and any file that was shadowed or skipped |
@@ -38,6 +40,7 @@ but not completed.
 | `/agents` | The sub-agent types this session can spawn |
 | `/agents <name>` | The full briefing that type is given |
 | `/agents list` | The sub-agents this session has actually spawned, and which are busy |
+| `/agents edit` | Add agent types, or set where the built-ins run |
 | `/agents send <name> <prompt>` | Ask one for more — it still has its own context |
 | `/init` | Write the project instruction file this agent reads each session |
 | `/diff` | What has changed in the working tree |
@@ -83,10 +86,9 @@ The conversation is kept. Sub-agents use this too unless their type names anothe
 Smaller window than before (212k → 32k); long conversations will compact sooner.
 ```
 
-**Not persisted**, like `/mode`. Adding a provider or editing an API key means editing
-`config.json` — there is deliberately no in-app editor, because config is read at startup and an
-editor would write a file and ask you to restart. `cxagent --model <name>` starts a session on one
-without touching config.
+**Not persisted**, like `/mode`. Adding a provider or changing a key is `/providers` (or `F8`): a saved
+change applies at once — see [Configuration](#configuration). `cxagent --model <name>` starts a session
+on one without touching config.
 
 Declined while a turn is running: re-wiring replaces the agent that turn is writing into.
 
@@ -104,7 +106,7 @@ Thinking
   - max
   - default
 
-  /think <level> sets it for this session · --save makes it the default · F8 cycles
+  /think <level> sets it for this session · --save makes it the default · F10 cycles
 ```
 
 **The levels are the model's own.** An Anthropic model lists the effort levels it accepts — and
@@ -117,8 +119,9 @@ list says it takes; a llama.cpp server whose template takes the switch offers `o
 gets it at once; nothing else in the file changes. A new tab starts at that saved default, not at the
 level of the tab it was opened from. A resumed session comes back at the level it was left at.
 
-**F8 steps to the next level**, wrapping around. The level sits on the line under the composer,
-after the model: `◆ medium (F8)`, or `◇ off (F8)`.
+**F10 steps to the next level**, wrapping around. The level sits on the line under the composer,
+after the model: `◆ medium (F10)`, or `◇ off (F10)`. (gnome-terminal opens its own menu on F10 unless
+that is turned off in its preferences.)
 
 **A change during a turn waits for your next message** — `◆ medium → high (next message)` until then.
 The level of a tool loop cannot change part-way: Anthropic turns thinking off for a request whose
@@ -343,6 +346,39 @@ works straight away, from the restored conversation.
 
 Clears the agent's context — the messages the model is sent on every turn. The transcript on screen
 is left alone; it is your record, not the model's memory.
+
+---
+
+## Configuration
+
+`F8`, `/providers`, `/mcp edit` and `/agents edit` open one dialog with three tabs — **Providers**, **MCP
+servers** and **Agents** — each a list on the left and the selected entry's fields beside it. Save writes
+`config.json` (only what you changed; every other key stays) and applies it at once.
+
+**Providers.** `+ Add` opens a card per kind of endpoint, then the fields: the endpoint, the key (typed
+masked, never shown again — only `set · …` and its last four characters), the model, picked from what
+the endpoint serves with each one's window and, on OpenRouter, its price, and the thinking level new
+sessions start at. Advanced holds the context window, sub-agent limit, prompt caching, the OpenAI
+reasoning switch, thinking display and extra headers. Save first asks the endpoint for its models — no
+tokens spent — and offers *Save anyway* when it does not answer. The toolbar sets the default (★) and the
+auto-mode reviewer (◆), renames an instance — every reference follows — and removes one, which is
+refused while a tab is on it.
+
+**What a save does to open tabs.** Anything the model cannot see — a new key, a moved endpoint, a
+rename, the reviewer, the default — applies in place and keeps every tab's prompt cache. A change to the
+model a tab is on would re-send its whole conversation, so Save asks: *Apply now*, *Compress, then
+apply*, *At next clear or compression* (the mode line shows `⟳ config pending` until then), or *Only new
+tabs*.
+
+**MCP servers.** Each server with what it is doing now — `● running`, `✖ failed` with the reason, `◌`
+needing a login, `○ off`. A command is one line, as you would type it; environment and header values are
+masked like a key. `Enable / Disable` keeps the command for later. MCP tools are shared by every tab, so
+a change to them asks whether to apply it now or save only, for `/mcp reload` or the next start.
+
+**Agents.** The shipped types, with their briefing shown read-only — the code around each depends on it
+— and where each runs, how many turns, and which tools editable; *Reset to shipped* removes your
+override. Types of your own take a description and a briefing. A saved type reaches running tabs in
+place, and the model is told of it at the front of its next message.
 
 ---
 

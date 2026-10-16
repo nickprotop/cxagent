@@ -356,6 +356,40 @@ before the first wire.
 `MarkFinished` matters because reaching it is the only evidence the process was not killed
 mid-session — that is what makes an unfinished row mean something.
 
+## Changing config while sessions run
+
+`CxAgent.Core.Config` edits `config.json` and the manager applies the result to running sessions.
+
+```csharp
+// Edits on the document — every key they do not own is kept, unknown ones included.
+ProviderEdits.Add / Update / Rename / Remove / SetDefault / SetReviewer(root, …)   // InstanceFields
+McpEdits.Add / Update / Rename / Remove / SetEnabled(root, …)                     // McpServerFields
+AgentEdits.SetOverride / ResetBuiltin / AddType / UpdateType / RenameType / RemoveType(root, …)
+
+// The one validating writer: read, edit, judge with the loader, write atomically at 0600.
+ConfigWrite ConfigFile.TryApply(ConfigTarget target, Action<JsonObject> edit)
+ProviderSettings ProviderConfigLoader.Parse(string json, env, string? configDir = null)
+
+// Live: every session adopts the new catalog; the ones a change touches move.
+manager.ApplyConfig(ResolvedConfig fresh, ConfigChange change, CacheChoice choice = ApplyNow)
+IReadOnlyList<Session> manager.BreaksCache(fresh, change)   // the tabs to ask about
+manager.Post      = run => ui.Enqueue(run);                 // where a rebind runs
+manager.RebindOne = (session, config) => { Rewire(session, config); return true; };
+```
+
+**`ConfigChange` says what the edit touched**: `Instances` edited, `Renamed` old → new, `Everyone` when
+the reviewer, the default's limit or an agent type changed, and `ModelChanged` — the instances whose model
+or endpoint changed, the only edits a tab's prompt cache does not survive. Everything else is applied in
+place: the provider object swapped as `/model` swaps it, the reviewer set on the session's policy, the
+sub-agent limit and agent types refreshed — no new host. A session on a `ModelChanged` instance moves as
+`CacheChoice` says: `ApplyNow`, `CompressThenApply`, `AtNextClearOrCompression` (`Session.ConfigPending`
+until then) or `NewTabsOnly`.
+
+**A move happens on your thread, and only when idle.** `Post` runs the step; inside it the session is
+asked again whether it is busy — a turn may have started since — and the conversation is carried and
+re-wired together. A busy session waits for its turn to end. A session that cannot move says why and
+keeps the new catalog.
+
 ---
 
 # What you supply

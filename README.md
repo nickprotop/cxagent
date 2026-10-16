@@ -63,8 +63,15 @@ cd cxagent
 ```
 
 **You do not need to write any configuration to start.** On first run — with no config file, or none
-that names a working provider — a setup wizard asks for a provider and model and writes the file for
-you. It is never stored in the repository.
+that names a working provider — the configuration dialog opens on a choice of where your model runs
+(Anthropic, OpenRouter, OpenAI, Ollama, llama.cpp, or any OpenAI-compatible endpoint), lists the
+models that endpoint serves, and writes the file for you. It is never stored in the repository.
+
+**After that, `F8` opens the same dialog** — providers, MCP servers and sub-agent types — and a saved
+change applies at once, with no restart. Changes the model cannot see (a rotated key, the auto-mode
+reviewer, where an agent type runs) apply in place and keep every tab's prompt cache; one that would
+re-send a conversation (a tab's model changing) asks first whether to apply it now, after compressing,
+at that tab's next clear or compaction, or only to new tabs.
 
 It lands in `~/.config/cxagent/config.json` on Linux (`$XDG_CONFIG_HOME` when set),
 `%APPDATA%\cxagent\config.json` on Windows, and
@@ -177,7 +184,7 @@ can only read. Enter keeps the side thread going; `Esc` stops an answer, then le
 
 **You see what the model thinks, and choose how hard.** Each step's thinking is its own block, open
 while it streams and folded to `◆ Thought for 9s · 412 words` once the answer starts — from a local
-llama.cpp model or from Claude. `Ctrl+O` opens or folds the latest; any other opens with a click. `/think` and `F8` set the level the
+llama.cpp model or from Claude. `Ctrl+O` opens or folds the latest; any other opens with a click. `/think` and `F10` set the level the
 model offers — `off`/`on` on llama.cpp, `low` to `max` on Claude, a model's own efforts on OpenRouter — for this session, kept on resume.
 See [COMMANDS.md](COMMANDS.md#think) and [CONFIG.md](CONFIG.md#providers--required).
 
@@ -458,7 +465,8 @@ one run before it was written down — and the full reference for options, outpu
 | `F4` | Put the cursor back in the composer |
 | `F6` | Focus the tab strip — then `←` `→` to change session, `F6` back to the composer |
 | `F7` | Jobs panel — background jobs in the right-hand column; `↑` `↓` and `Enter` open one. `F7` again hides it |
-| `F8` | Next thinking level this model offers — see `/think` |
+| `F8` | Configuration — providers, MCP servers, agent types |
+| `F10` | Next thinking level this model offers — see `/think`. (gnome-terminal opens its own menu on F10 unless that is turned off in its preferences) |
 | `F9` | Theme |
 | `Ctrl+O` | Open or fold the latest thinking block |
 | `Shift+Tab` | Cycle the edit mode — see [COMMANDS.md](COMMANDS.md) |

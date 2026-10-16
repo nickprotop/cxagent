@@ -424,8 +424,8 @@ words` as soon as the step moves on. The run reads as thought, calls, thought, c
 click, or Tab to one and Enter. The thinking is shown and nothing more: it is never sent back to the
 model and never saved.
 
-The mode line ends with `◆ on (F8)`: this server's chat template takes a thinking switch, so it offers
-`off` and `on`. `F8` steps through them, and `/think` lists them. A Claude model offers its effort
+The mode line ends with `◆ on (F10)`: this server's chat template takes a thinking switch, so it offers
+`off` and `on`. `F10` steps through them, and `/think` lists them. A Claude model offers its effort
 levels instead — `low` to `max` — and shows its thinking the same way.
 
 ---

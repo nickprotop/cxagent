@@ -13,8 +13,12 @@ a readable directory exposes the file listing even when the file itself is locke
 made before that was enforced is repaired on the next launch rather than staying loose.
 
 There is no config file until you make one. [`config.sample.json`](config.sample.json) documents every
-key inline, including what each one's absence means. On a first run with no config, cxagent walks you
-through making one; after that this file is yours to edit.
+key inline, including what each one's absence means. On a first run with no config, cxagent opens the
+configuration dialog to make one; after that `F8` edits it in the app, and the file is still yours to
+edit by hand. The dialog writes only what you changed — every other key, including ones it does not
+know, stays as it was — and it judges each save with the same rules startup uses, so it never writes a
+file the next start would refuse. A file that does not parse is never overwritten: the dialog says why
+and leaves it for you to fix.
 
 ---
 
@@ -48,7 +52,7 @@ wrote. Off by default because cache writes are billed (1.25x input for a five-mi
 tool loop the reads (0.1x) repay that from the second request. A local server caches on its own and
 needs nothing.
 
-**`thinking` sets how hard the model thinks** in a new session — `/think` and F8 change it for one
+**`thinking` sets how hard the model thinks** in a new session — `/think` and F10 change it for one
 session ([COMMANDS.md](COMMANDS.md#think)). Which values work is the model's own answer, not a list
 in cxagent:
 
