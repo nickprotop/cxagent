@@ -9,11 +9,22 @@ namespace CxAgent.Core.Jobs;
 /// <summary>What the task tools can see.</summary>
 /// <param name="Live">Shells running now.</param>
 /// <param name="Finished">Shells that have ended.</param>
-/// <param name="SessionId">The session agent's id — who may see and stop everything.</param>
+/// <param name="IsSessionAgent">
+/// Whether an agent id is, or was, the session's own agent — who may see and stop everything.
+///
+/// <para>A TEST, NOT AN ID: a re-wire mints a new session agent while a command the previous one started
+/// is still running and still the session's. Equality with the current id would name that command
+/// somebody else's and hide it once it ends.</para>
+/// </param>
 /// <param name="Agents">Kept sub-agents, or null for an agent that cannot spawn.</param>
-public sealed record TaskSources(DetachedProcessRegistry Live, FinishedShells Finished, string SessionId,
-    Agents.SubAgentStore? Agents)
+public sealed record TaskSources(DetachedProcessRegistry Live, FinishedShells Finished,
+    Func<string, bool> IsSessionAgent, Agents.SubAgentStore? Agents)
 {
+    /// <summary>For a caller that knows one session agent id and no other — a child, a test.</summary>
+    public TaskSources(DetachedProcessRegistry live, FinishedShells finished, string sessionId,
+        Agents.SubAgentStore? agents)
+        : this(live, finished, id => id == sessionId, agents) { }
+
     /// <summary>
     /// A token cancelled when the user types into the running turn, asked for as a wait begins; null
     /// where nobody can — a child, a headless run, /tasks.
@@ -58,11 +69,10 @@ public sealed class TaskTools(TaskSources sources)
         var id = ReadId(call.Arguments);
         if (id.Error is { } error) return error;
 
-        var wait = call.Arguments.ValueKind == JsonValueKind.Object
-            && call.Arguments.TryGetProperty("wait", out var w) && w.ValueKind == JsonValueKind.True;
-        int? timeout = call.Arguments.ValueKind == JsonValueKind.Object
-            && call.Arguments.TryGetProperty("timeout", out var t) && t.ValueKind == JsonValueKind.Number
-            && t.TryGetInt32(out var seconds) ? seconds : null;
+        // READ LENIENTLY, as every other flag the model sends is: a model that stringifies scalars meant
+        // the same thing, and a "true" read as false answers at once a question that asked to wait.
+        var wait = Agents.Args.ReadBool(call, "wait") ?? false;
+        var timeout = Agents.Args.ReadInt(call, "timeout");
 
         if (id.Pid is { } pid)
             return call.Name == Tool.TaskStop
@@ -72,7 +82,7 @@ public sealed class TaskTools(TaskSources sources)
         var handle = id.Handle!;
         if (call.Name == Tool.TaskStop) return Stop(callerAgentId, handle);
 
-        if (callerAgentId != sources.SessionId)
+        if (!sources.IsSessionAgent(callerAgentId))
             return "error: only the session agent can read a sub-agent's task.";
         return await OutputAsync(handle, wait, timeout, ct);
     }
@@ -89,7 +99,7 @@ public sealed class TaskTools(TaskSources sources)
 
     public string List(string callerAgentId)
     {
-        var isSession = callerAgentId == sources.SessionId;
+        var isSession = sources.IsSessionAgent(callerAgentId);
         var sb = new StringBuilder();
 
         if (isSession && sources.Agents is { } agents)
@@ -97,7 +107,17 @@ public sealed class TaskTools(TaskSources sources)
             foreach (var kept in agents.All())
             {
                 sb.Append("agent '").Append(kept.Name).Append("' (").Append(kept.TypeName).Append(") — ")
-                  .Append(AgentState(agents, kept.Name)).AppendLine();
+                  .Append(AgentState(agents, kept.Name));
+
+                // HOW LONG A RUN HAS GONE, AND WHAT THE CHILD WAS SPAWNED TO DO. The handle is a slug of
+                // the description, cut to forty characters; a model that has lost the spawn from its
+                // context has only this row to tell two agents apart by, and only the age to judge whether
+                // one is stuck or merely long.
+                if (agents.BackgroundOf(kept.Name) is { Handoff.Ended: false } going)
+                    sb.Append(" · ").Append(Age(going.Started));
+                if (kept.Description is { Length: > 0 } description)
+                    sb.Append(" — ").Append(description);
+                sb.AppendLine();
             }
         }
 
@@ -156,7 +176,7 @@ public sealed class TaskTools(TaskSources sources)
 
     private string Stop(string callerAgentId, string handle)
     {
-        if (callerAgentId != sources.SessionId) return "error: only the session agent can stop a sub-agent.";
+        if (!sources.IsSessionAgent(callerAgentId)) return "error: only the session agent can stop a sub-agent.";
         var agents = sources.Agents;
         if (agents?.Find(handle) is null) return $"no task '{handle}' — {Tool.TaskList} shows what exists.";
 
@@ -217,12 +237,13 @@ public sealed class TaskTools(TaskSources sources)
 
     /// <summary>
     /// Whether a finished command belongs in this caller's view: the session sees its own and its
-    /// children's, a child only its own.
+    /// children's; a child sees every one, as it sees every live command (spec decision 29) — hiding an
+    /// ended command it could list a moment ago would make a sibling's finished work look like it never ran.
     /// </summary>
     private bool Sees(string callerAgentId, string? owner) =>
         owner == callerAgentId
-        || (callerAgentId == sources.SessionId
-            && (owner == sources.SessionId || owner is not null && sources.Agents?.FindByAgentId(owner) is not null));
+        || !sources.IsSessionAgent(callerAgentId)
+        || owner is not null && (sources.IsSessionAgent(owner) || sources.Agents?.FindByAgentId(owner) is not null);
 
     /// <summary>How a row names who started a command: "me", "session", an agent id, or "unowned" for a
     /// process nothing ever described.</summary>
@@ -230,7 +251,7 @@ public sealed class TaskTools(TaskSources sources)
     {
         if (job is null) return "unowned";
         if (job.AgentId == callerAgentId) return "me";
-        if (job.AgentId == sources.SessionId) return "session";
+        if (sources.IsSessionAgent(job.AgentId)) return "session";
         return job.AgentId;
     }
 
@@ -253,9 +274,9 @@ public sealed class TaskTools(TaskSources sources)
                 : $"no background command with pid {pid}.";
 
         var owner = entry.Job?.AgentId;
-        if (callerAgentId != sources.SessionId && owner != callerAgentId)
+        if (!sources.IsSessionAgent(callerAgentId) && owner != callerAgentId)
         {
-            var who = owner is null || owner == sources.SessionId ? "the session" : owner;
+            var who = owner is null || sources.IsSessionAgent(owner) ? "the session" : owner;
             return who == "the session"
                 ? $"error: pid {pid} was started by the session, not you — only the session can stop it."
                 : $"error: pid {pid} was started by {who}, not you — only {who} or the session can stop it.";
@@ -274,8 +295,8 @@ public sealed class TaskTools(TaskSources sources)
         var live = sources.Live.Live.FirstOrDefault(j => j.Process.Pid == read.Pid);
         var job = live?.Job ?? sources.Finished.JobFor(read.Pid);
         if (job is null && live is null) return $"no background command with pid {read.Pid}.";
-        if (read.Caller != sources.SessionId && job?.AgentId != read.Caller)
-            return $"error: pid {read.Pid} was started by {(job is null || job.AgentId == sources.SessionId ? "the session" : job.AgentId)}, not you.";
+        if (!sources.IsSessionAgent(read.Caller) && job?.AgentId != read.Caller)
+            return $"error: pid {read.Pid} was started by {(job is null || sources.IsSessionAgent(job.AgentId) ? "the session" : job.AgentId)}, not you.";
 
         var handoff = sources.Finished.HandoffFor(read.Pid);
         if (live is not null && !(read.Wait && handoff is not null))

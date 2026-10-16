@@ -23,4 +23,20 @@ internal static class Args
             _ => null,
         };
     }
+
+    /// <summary>
+    /// A whole-number argument, read leniently for <see cref="ReadBool"/>'s reason: a JSON number, or a
+    /// string holding one. Anything else is null, which the caller turns into its default.
+    /// </summary>
+    public static int? ReadInt(ToolCall call, string name)
+    {
+        if (call.Arguments.ValueKind != JsonValueKind.Object || !call.Arguments.TryGetProperty(name, out var v))
+            return null;
+        return v.ValueKind switch
+        {
+            JsonValueKind.Number when v.TryGetInt32(out var n) => n,
+            JsonValueKind.String when int.TryParse(v.GetString(), out var n) => n,
+            _ => null,
+        };
+    }
 }

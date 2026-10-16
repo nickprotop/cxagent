@@ -284,7 +284,7 @@ public sealed partial class Session
     /// read the same rows; a second renderer is a second account that can disagree about a state.</para>
     /// </summary>
     private Jobs.TaskTools Tasks => new(new Jobs.TaskSources(DetachedProcessRegistry.Default,
-        FinishedShells.Default, SessionId ?? "", SubAgents));
+        FinishedShells.Default, IsSessionAgent, SubAgents));
 
     /// <summary>How many of this session's background agents are queued or running.</summary>
     public int RunningBackgroundAgents =>

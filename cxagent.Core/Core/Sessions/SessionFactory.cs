@@ -299,6 +299,10 @@ internal static class SessionFactory
                 // rather than holding their correction behind the work it waits on.
                 UserSpoke = session.UserSpokeToken,
 
+                // EVERY ID THIS SESSION'S AGENT HAS HAD, so the task tools still call a command the
+                // previous agent started the session's after a re-wire mints a new id.
+                IsSessionAgent = session.IsSessionAgent,
+
                 // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
                 GlobalInstructionsDir = shared.GlobalInstructionsDir,
 

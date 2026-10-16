@@ -606,6 +606,16 @@ public sealed class Agent
     public Func<CancellationToken>? UserSpoke { get; set; }
 
     /// <summary>
+    /// Whether an agent id is, or was, the session's own — beyond the one this agent was built with.
+    ///
+    /// <para>A RE-WIRE MINTS A NEW AGENT, while a background command the previous one started is still
+    /// running and still the session's. The task tools ask this, so that command is still named the
+    /// session's and still listed once it ends. Null where nothing earlier exists to recognise — a child,
+    /// a bare host.</para>
+    /// </summary>
+    public Func<string, bool>? IsSessionAgent { get; set; }
+
+    /// <summary>
     /// Points this agent at a different model, keeping everything else.
     ///
     /// <para>THE CONVERSATION NEVER MOVES, which is the whole reason this exists. The alternative —
@@ -1073,8 +1083,13 @@ public sealed class Agent
         //
         // THE USER-SPOKE TOKEN READ THROUGH THIS AGENT, not captured: the property is set after
         // construction, and a wait asks for the token at the moment it starts.
+        //
+        // AND ANY ID THE SESSION'S AGENT HAD BEFORE THIS ONE, asked through the property for the same
+        // reason the token is.
+        var session = sessionId ?? Id;
         _tasks = new Jobs.TaskTools(new Jobs.TaskSources(Execution.DetachedProcessRegistry.Default,
-            Execution.FinishedShells.Default, sessionId ?? Id, spawner?.Store)
+            Execution.FinishedShells.Default, id => id == session || (IsSessionAgent?.Invoke(id) ?? false),
+            spawner?.Store)
         {
             UserSpoke = () => UserSpoke?.Invoke() ?? CancellationToken.None,
         });

@@ -269,6 +269,48 @@ public class TaskToolsShellTests
         Assert.Equal(1, sent);
     }
 
+    /// <summary>
+    /// A SHELL THE SESSION'S PREVIOUS AGENT STARTED IS STILL THE SESSION'S. A re-wire mints a new agent id,
+    /// and an equality test against the current one would hide that agent's finished commands and name its
+    /// running ones as somebody else's.
+    /// </summary>
+    [Fact]
+    public void AShellOfAPreviousSessionAgent_IsTheSessions()
+    {
+        using var fx = new JobToolsFixture("OLD_SESSION");
+        var finished = new FinishedShells();
+        finished.Track(Job(4246, "OLD_SESSION"), _ => true);
+        finished.Finished(4246, exitCode: 0, killed: false);
+        var tools = new TaskTools(new TaskSources(fx.Registry, finished, id => id is "SESSION" or "OLD_SESSION", null));
+
+        var listing = Call(tools, "SESSION", Tool.TaskList, new { });
+
+        Assert.Contains($"shell pid {fx.Process.Pid} (", listing);
+        Assert.Contains("session) running", listing);
+        Assert.Contains("shell pid 4246 exited 0", listing);
+    }
+
+    /// <summary>
+    /// A CHILD'S task_list SHOWS EVERY SHELL (spec decision 29) — the ended ones too, whoever started them,
+    /// as its live rows already do.
+    /// </summary>
+    [Fact]
+    public void AChild_ListsEveryFinishedShell()
+    {
+        var finished = new FinishedShells();
+        foreach (var (pid, owner) in new[] { (4247, "SESSION"), (4248, "CHILD_A"), (4249, "CHILD_B") })
+        {
+            finished.Track(Job(pid, owner), _ => true);
+            finished.Finished(pid, exitCode: 0, killed: false);
+        }
+
+        var listing = Call(Tools(new DetachedProcessRegistry(), finished), "CHILD_A", Tool.TaskList, new { });
+
+        Assert.Contains("shell pid 4247 exited 0", listing);
+        Assert.Contains("shell pid 4248 exited 0", listing);
+        Assert.Contains("shell pid 4249 exited 0", listing);
+    }
+
     [Fact]
     public void AChild_ListsEveryLiveShell_ButStopsOnlyItsOwn()
     {

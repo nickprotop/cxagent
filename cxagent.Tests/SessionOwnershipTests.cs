@@ -83,4 +83,39 @@ public class SessionOwnershipTests : IDisposable
 
         Assert.Equal(DeliveryOutcome.Woke, outcome);
     }
+
+    /// <summary>
+    /// A COMMAND THE PREVIOUS AGENT STARTED IS LISTED AS THE SESSION'S, by /tasks and by the new agent's own
+    /// task_list: a re-wire mints a new id, and an equality test against it hides the old agent's ended
+    /// commands from both.
+    /// </summary>
+    [Fact]
+    public async Task ARewire_KeepsTheOldAgentsFinishedShell_InBothViews()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = Open(manager, new MockLlmProvider());
+        var before = session.SessionId!;
+
+        var model = new MockLlmProvider();
+        model.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [Calls.Named(CxAgent.Core.Jobs.Tool.TaskList, new { }, id: "l1")],
+        });
+        model.EnqueueResponse(new LlmResponse { Text = "listed", StopReason = "end_turn" });
+        var sink = new BufferedChatSink();
+        manager.Open(session, ResolvedConfig.ForTesting(model),
+            new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() });
+
+        var pid = 1_900_000_000 + Random.Shared.Next(1_000_000);
+        CxAgent.Core.Execution.FinishedShells.Default.Track(
+            new CxAgent.Core.Execution.BackgroundJob(pid, before, "make build", DateTimeOffset.UtcNow, null), _ => true);
+        CxAgent.Core.Execution.FinishedShells.Default.Finished(pid, exitCode: 0, killed: false);
+
+        session.ListTasks();
+        Assert.Contains(sink.Notices, n => n.Contains($"shell pid {pid} exited 0"));
+
+        await Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("what ran?")).Turn;
+        Assert.Contains($"shell pid {pid} exited 0", model.Text());
+    }
 }

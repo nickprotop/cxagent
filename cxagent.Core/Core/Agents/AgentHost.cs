@@ -491,6 +491,12 @@ public sealed class AgentHost : IDisposable
         /// </summary>
         public Func<CancellationToken>? UserSpoke { get; init; }
 
+        /// <summary>
+        /// Whether an agent id is, or was, the session's own — see <see cref="Agent.IsSessionAgent"/>. Null
+        /// for a host with no session behind it, which knows only its own agent's id.
+        /// </summary>
+        public Func<string, bool>? IsSessionAgent { get; init; }
+
         public string? Briefing { get; init; }
 
         /// <summary>The day the session began, for the system prompt — carried across re-wires.</summary>
@@ -907,6 +913,7 @@ public sealed class AgentHost : IDisposable
         // headless host and every child gets.
         agent.TakePendingSteer = _runtime.TakePendingSteer;
         agent.UserSpoke = _runtime.UserSpoke;
+        agent.IsSessionAgent = _runtime.IsSessionAgent;
 
         // THE SESSION'S MINTER WHEN IT GAVE ONE. A bare host — every AgentHostTests case — has no
         // session and no transcript to share, so the agent falls back to its own counter, which is

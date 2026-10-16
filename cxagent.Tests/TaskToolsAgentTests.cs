@@ -430,4 +430,48 @@ public class TaskToolsAgentTests
             Assert.True(inAnswer + sent + left == 1, $"iteration {i}: answer={inAnswer} sent={sent} left={left}: {answer}");
         }
     }
+
+    /// <summary>
+    /// wait AND timeout READ LENIENTLY: a model that stringifies scalars meant the same thing, and a wait read
+    /// as false — or a timeout read as absent — answers a question it was not asked.
+    /// </summary>
+    [Fact]
+    public async Task TaskOutput_ReadsWaitAndTimeout_AsStrings()
+    {
+        var held = new HeldProvider("x");
+        var r = Wired(held);
+        await Spawn(r);
+        Assert.Contains("Still running after 1s",
+            await Call(r, Tool.TaskOutput, new { id = "find-thing", wait = "true", timeout = "1" }));
+        held.Release();
+        await r.Delivery.Next();
+    }
+
+    /// <summary>A NUMBER IS STILL A NUMBER, and a string that is not one falls back to the default.</summary>
+    [Fact]
+    public void TheTimeout_IsReadAsANumberOrANumericString()
+    {
+        Assert.Equal(7, Args.ReadInt(Calls.Named(Tool.TaskOutput, new { timeout = 7 }), "timeout"));
+        Assert.Equal(7, Args.ReadInt(Calls.Named(Tool.TaskOutput, new { timeout = "7" }), "timeout"));
+        Assert.Null(Args.ReadInt(Calls.Named(Tool.TaskOutput, new { timeout = "soon" }), "timeout"));
+        Assert.Null(Args.ReadInt(Calls.Named(Tool.TaskOutput, new { }), "timeout"));
+    }
+
+    /// <summary>
+    /// AN AGENT ROW SAYS HOW LONG ITS RUN HAS GONE AND WHAT IT WAS SPAWNED TO DO: the handle is a slug, and
+    /// a model that has lost the spawn from its context has nothing else to tell its agents apart by.
+    /// </summary>
+    [Fact]
+    public async Task TaskList_AnAgentRow_CarriesItsElapsedTime_AndItsDescription()
+    {
+        var held = new HeldProvider("x");
+        var r = Wired(held);
+        await Spawn(r, description: "Find The Thing");
+
+        var row = (await Call(r, Tool.TaskList, new { })).Split('\n').Single(l => l.Contains("'find-the-thing'"));
+        Assert.Matches(@"running · \d+s", row);
+        Assert.Contains("Find The Thing", row);
+        held.Release();
+        await r.Delivery.Next();
+    }
 }
