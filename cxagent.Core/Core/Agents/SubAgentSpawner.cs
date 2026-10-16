@@ -375,7 +375,9 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                     _store!.AnnounceBegin(keptAs);
                 }
 
-                var result = await child.Agent.SendAsync(prompt, ct);
+                // MAIL AFTER THE BRIEF, as a background spawn reads it: anything sent while this child
+                // queued was sent after its brief, and is a correction to the work the brief sets.
+                var result = await child.Agent.SendAsync(prompt, ct, mailFirst: false);
 
                 // THE NAME IT WAS KEPT UNDER at spawn — a lookup, not a second Keep, which would
                 // re-register the same child and mint a second handle for it. It goes into the envelope

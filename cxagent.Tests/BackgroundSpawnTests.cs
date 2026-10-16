@@ -250,4 +250,104 @@ public class BackgroundSpawnTests
         var d = Assert.Single(delivery.Got);
         Assert.Contains("render failed", d.Notice.ForModel);
     }
+
+    // ---- the review's corners ---------------------------------------------------------------------
+
+    /// <summary>THE WRITE WARNING ONLY WHERE THE CHILD CAN WRITE: a read-only child's receipt does not carry it.</summary>
+    [Fact]
+    public async Task TheReceiptWarnsOfEdits_OnlyForAChildThatCanWrite()
+    {
+        var held = new HeldProvider("a", "b");
+        var (spawner, _, _, _) = Wired(held);
+
+        var writer = await Spawn(spawner, Calls.Spawn(id: "w", description: "writer"));
+        var reader = await spawner.TryInvokeAsync(Calls.Spawn(id: "r", description: "reader"), null,
+            CancellationToken.None, parentAgentId: "parent",
+            turnTools: new ToolSelection([Tool.Inherited, Tool.Not.WriteFile, "-" + Tool.ReplaceInFile]));
+
+        Assert.Contains("may edit files", writer);
+        Assert.DoesNotContain("may edit files", reader);
+        held.Release();
+    }
+
+    /// <summary>A STOP DURING THE SEND GIVES THE SLOT BACK, so the cap does not shrink by one per stop.</summary>
+    [Fact]
+    public async Task AStopDuringTheSend_GivesTheSlotBack()
+    {
+        var held = new HeldProvider("never");
+        var (spawner, store, delivery, factory) = Wired(held, cap: 1);
+        await Spawn(spawner);
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+        Assert.Equal(0, factory.ConcurrencySlot!.CurrentCount);
+
+        store.Stop("find-thing", byUser: true);
+        await delivery.Next();
+
+        Assert.True(await Poll.Until(() => factory.ConcurrencySlot.CurrentCount == 1));
+    }
+
+    /// <summary>A LISTENER THAT THROWS ON THE RELEASE does not stop the run ending and reporting.</summary>
+    [Fact]
+    public async Task AThrowingEndListener_StillEndsTheRun_AndReports()
+    {
+        var held = new HeldProvider("found it");
+        var (spawner, store, delivery, _) = Wired(held);
+        store.SendEnded += (_, _) => throw new InvalidOperationException("listener broke");
+        await Spawn(spawner);
+
+        held.Release();
+        var d = await delivery.Next();
+
+        Assert.Contains("found it", d.Notice.ForModel);
+        Assert.False(store.IsBusy("find-thing"));
+        Assert.Equal(BackgroundState.Finished, store.BackgroundOf("find-thing")!.State);
+    }
+
+    /// <summary>
+    /// A STOP AFTER THE WORK ENDED IS REFUSED — here, while the report is still being built. Accepted, it
+    /// would say "stopped" over a report saying "error", and leave a user-stop mark that refuses the
+    /// parent's next agent_send.
+    /// </summary>
+    [Fact]
+    public async Task AStopAfterTheWorkEnded_IsRefused()
+    {
+        var (_, store, delivery, factory) = Wired(new MockLlmProvider());   // the send throws: an error
+        var child = factory.Create(label: "late");
+        var name = store.Keep(child, "late");
+        store.TryClaim(name);
+        var run = store.BeginBackground(
+            new BackgroundStart(Name: name, ParentAgentId: "parent", Brief: "p", Description: "late", IsResume: false),
+            new ResultHandoff(_ => true));
+        var rendering = new TaskCompletionSource();
+        var proceed = new TaskCompletionSource();
+
+        var running = BackgroundRunner.Start(new BackgroundWork(store, store.Find(name)!, run, "p", null, delivery,
+            r => { rendering.TrySetResult(); proceed.Task.Wait(TimeSpan.FromSeconds(5)); return "<sub_agent id=\"x\" state=\"error\">\nboom\n</sub_agent>"; }));
+        await rendering.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.False(store.Stop(name, byUser: true));
+        Assert.False(run.StoppedByUser);
+        proceed.SetResult();
+        await running;
+    }
+
+    /// <summary>A FOREGROUND SPAWN ORDERS ITS MAIL AS A BACKGROUND ONE DOES: what arrived while it queued follows its brief.</summary>
+    [Fact]
+    public async Task AMessageSentWhileAForegroundSpawnQueued_IsReadAfterTheBrief()
+    {
+        var provider = Says("ok");
+        var (spawner, store, _, factory) = Wired(provider, cap: 1);
+        await factory.ConcurrencySlot!.WaitAsync();
+        var spawn = Spawn(spawner, Calls.Spawn(background: false));
+        Assert.True(await Poll.Until(() => store.Find("find-thing") is not null));
+
+        store.Find("find-thing")!.Agent.Agent.Mailbox.TryEnqueue("the schema changed", out _);
+        factory.ConcurrencySlot.Release();
+        await spawn;
+
+        var contents = provider.LastMessages!.Select(m => m.Content ?? "").ToList();
+        var brief = contents.FindIndex(c => c.Contains("find the thing"));
+        var message = contents.FindIndex(c => c.Contains("the schema changed"));
+        Assert.True(brief >= 0 && brief < message);
+    }
 }

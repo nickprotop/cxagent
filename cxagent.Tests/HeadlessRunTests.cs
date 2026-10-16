@@ -431,5 +431,6 @@ public class HeadlessRunTests : IDisposable
         Assert.Equal(0, code);
         Assert.Contains("It is heron.", output);
         Assert.Contains("state=\"completed\"", model.Text());
+        Assert.DoesNotContain("state=\"running\"", model.Text());
     }
 }

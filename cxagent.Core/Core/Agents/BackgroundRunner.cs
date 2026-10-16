@@ -52,13 +52,9 @@ internal static class BackgroundRunner
                     run.MarkRunning();
                     store.AnnounceBegin(kept.Name);
 
-                    // A RESUME DRAINS FIRST, AS AgentReachTools DOES: a message left for a settled child
-                    // predates this prompt. A SPAWN DOES NOT, here or in SendAsync (mailFirst) — anything
-                    // sent while it queued was sent after its brief, and the loop's own drain puts it there.
-                    if (run.Start.IsResume)
-                        foreach (var waiting in kept.Agent.Agent.Mailbox.Drain())
-                            kept.Agent.Agent.Context.Messages.Add(new Models.ChatMessage { Role = "user", Content = waiting });
-
+                    // A RESUME READS ITS MAIL FIRST: a message left for a settled child predates this
+                    // prompt. A SPAWN DOES NOT — anything sent while it queued was sent after its brief, and
+                    // the loop's own drain puts it there.
                     result = await kept.Agent.Agent.SendAsync(work.Prompt, run.Token, mailFirst: run.Start.IsResume);
                     run.MarkAnswered();
                 }
@@ -69,6 +65,11 @@ internal static class BackgroundRunner
             }
             catch (OperationCanceledException) { result = new SendResult("", SendOutcome.Cancelled); }
             catch (Exception ex) { result = new SendResult(ex.Message, SendOutcome.Failed); }
+
+            // ENDED THE MOMENT THE WORK IS, before the report is built or the claim released: a stop
+            // accepted after this point would tell the user "stopped" over a report that says "error" or
+            // "completed", and leave a user-stop mark that refuses the parent's next agent_send.
+            run.Finish(result.Outcome == SendOutcome.Cancelled ? BackgroundState.Stopped : BackgroundState.Finished);
 
             try { envelope = work.Render(result); }
             catch (Exception ex)
@@ -92,6 +93,9 @@ internal static class BackgroundRunner
             // A STOPPED RUN IS LEFT, NOT TOLD: somebody ended it on purpose, and waking the parent to say
             // so would start a turn about work that was meant to stop.
             var stopped = result.Outcome == SendOutcome.Cancelled;
+
+            // ALREADY FINISHED ON THE ORDINARY PATH; this covers a throw that skipped it. Finish only
+            // records the state, so a second call is harmless.
             run.Finish(stopped ? BackgroundState.Stopped : BackgroundState.Finished);
             var shown = Shown(run, state, stopped);
             run.Handoff.Complete(ReportFor(work, envelope), text => Delivered(stopped
