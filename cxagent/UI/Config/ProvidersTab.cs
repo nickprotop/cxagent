@@ -297,7 +297,7 @@ public sealed class ProvidersTab
         more.Add("Reasoning", "OpenAI cannot say which models reason; tick this for one that does.",
             Check("this model reasons", draft.Reasoning, v => draft.Reasoning = v));
         more.Add("Thinking display", "Anthropic: summarized shows the thinking, omitted hides its text.", DisplayEditor(draft));
-        more.Add("Extra headers", "One per line, Name: value — for gateways that route or bill by header.", HeadersEditor(draft));
+        more.Add("Extra headers", "One per line, Name: value — for gateways that route or bill by header. Enter to type, Esc when done.", HeadersEditor(draft));
         advanced.AddControl(more.Control);
 
         _detail.AddControl(fields.Control);

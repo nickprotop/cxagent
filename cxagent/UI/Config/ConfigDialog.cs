@@ -8,7 +8,7 @@ using SharpConsoleUI.Parsing;
 namespace CxAgent.UI.Config;
 
 /// <summary>Which half of the configuration dialog is in front.</summary>
-public enum ConfigTab { Providers, Mcp }
+public enum ConfigTab { Providers, Mcp, Agents }
 
 /// <summary>What the dialog needs from the app: where to draw, how a save becomes live, and who is in front.</summary>
 /// <param name="System">The window system.</param>
@@ -50,6 +50,7 @@ public static class ConfigDialog
     private static TabControl? _tabs;
     private static ProvidersTab? _providers;
     private static McpTab? _mcp;
+    private static AgentsTab? _agents;
     private static ConfigDialogHost? _host;
     private static Action? _onClosed;
 
@@ -101,6 +102,8 @@ public static class ConfigDialog
         _tabs.AddTab("Providers", _providers.Content);
         _mcp = new McpTab(host, () => _window);
         _tabs.AddTab("MCP servers", _mcp.Content);
+        _agents = new AgentsTab(host, () => _window);
+        _tabs.AddTab("Agents", _agents.Content);
         window.AddControl(_tabs);
 
         window.AddControl(new RuleControl
@@ -132,8 +135,12 @@ public static class ConfigDialog
         window.KeyPressed += (_, e) =>
         {
             if (e.KeyInfo.Key != ConsoleKey.S || e.KeyInfo.Modifiers != ConsoleModifiers.Control) return;
-            if (_tabs?.ActiveTabIndex == 1) _mcp?.SaveFromKey();
-            else _providers?.SaveFromKey();
+            switch (_tabs?.ActiveTabIndex)
+            {
+                case 1: _mcp?.SaveFromKey(); break;
+                case 2: _agents?.SaveFromKey(); break;
+                default: _providers?.SaveFromKey(); break;
+            }
             e.Handled = true;
         };
 
@@ -142,11 +149,12 @@ public static class ConfigDialog
             // REMEMBERED ON CLOSE, not as it moves: only the final resting place matters.
             _placement = (window.Left, window.Top);
             _size = (window.Width, window.Height);
-            if (_tabs is { } tabs) _lastTab = tabs.ActiveTabIndex == 1 ? ConfigTab.Mcp : ConfigTab.Providers;
+            if (_tabs is { } tabs) _lastTab = tabs.ActiveTabIndex switch { 1 => ConfigTab.Mcp, 2 => ConfigTab.Agents, _ => ConfigTab.Providers };
             _window = null;
             _tabs = null;
             _providers = null;
             _mcp = null;
+            _agents = null;
             var closed = _onClosed;
             _onClosed = null;
             closed?.Invoke();
@@ -159,7 +167,7 @@ public static class ConfigDialog
         // FIRST RUN OPENS ON THE CARDS, focused: there is nothing to select yet, and choosing where the
         // model runs is the one thing to do. Shown once the window is up, so a card can take focus.
         if (firstRun) _providers.ShowGallery("cxagent needs one provider to start. Pick where your model runs.");
-        else window.FocusManager.SetFocus(_tabs.ActiveTabIndex == 1 ? _mcp.Rail : _providers.Rail, FocusReason.Programmatic);
+        else window.FocusManager.SetFocus(_tabs.ActiveTabIndex switch { 1 => _mcp.Rail, 2 => _agents.Rail, _ => _providers.Rail }, FocusReason.Programmatic);
     }
 
     /// <summary>
@@ -169,10 +177,19 @@ public static class ConfigDialog
     public static bool CloseIfOpen()
     {
         if (_window is not { } window) return false;
+
+        // ESC WHILE TYPING IN A MULTI-LINE FIELD ENDS THE TYPING, not the dialog: Escape is claimed
+        // globally, so the editor never sees it, and leaving editing is what a reflex there means.
+        if (window.FocusManager.FocusedControl is MultilineEditControl { IsEditing: true } editor)
+        {
+            editor.IsEditing = false;
+            return true;
+        }
         if (_host is { } host)
         {
             if (_providers?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _providers.SelectedName!); return true; }
             if (_mcp?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _mcp.SelectedName!); return true; }
+            if (_agents?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _agents.SelectedName!); return true; }
         }
         window.Close();
         return true;
@@ -188,7 +205,7 @@ public static class ConfigDialog
     private static void SwitchTo(ConfigTab tab)
     {
         if (_tabs is null) return;
-        _tabs.ActiveTabIndex = tab == ConfigTab.Mcp ? 1 : 0;
+        _tabs.ActiveTabIndex = tab switch { ConfigTab.Mcp => 1, ConfigTab.Agents => 2, _ => 0 };
     }
 
 }

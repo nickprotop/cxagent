@@ -710,6 +710,9 @@ public static class AppBootstrap
         manager.Commands.RegisterVerb("/mcp",
             new CommandArgument("edit", "add, edit or remove MCP servers"),
             (_, _) => { ConfigDialog.Show(configHost, ConfigTab.Mcp); return true; });
+        manager.Commands.RegisterVerb("/agents",
+            new CommandArgument("edit", "add agent types, or set where the built-ins run"),
+            (_, _) => { ConfigDialog.Show(configHost, ConfigTab.Agents); return true; });
 
         manager.Commands.RegisterVerb("/plugin",
             new CommandArgument("browse", "open the plugin manager"),
