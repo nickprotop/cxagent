@@ -221,6 +221,55 @@ public sealed class SubAgentStore
     }
 
     /// <summary>
+    /// The latest background run per handle.
+    ///
+    /// <para>LATEST, NOT ALL: a child resumed in the background several times has one run that matters —
+    /// the one task_output reads and task_stop acts on. Earlier runs have ended and reported already.</para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, BackgroundRun> _background = new(StringComparer.Ordinal);
+
+    /// <summary>Records a background stretch starting for a kept child, replacing any ended one.</summary>
+    public BackgroundRun BeginBackground(BackgroundStart start, Jobs.ResultHandoff handoff)
+    {
+        var run = new BackgroundRun(start, handoff);
+        _background[start.Name] = run;
+        return run;
+    }
+
+    /// <summary>The latest background run kept under this handle, or null when it never ran in the background.</summary>
+    public BackgroundRun? BackgroundOf(string name) => _background.GetValueOrDefault(name);
+
+    /// <summary>Every handle's latest background run, oldest first.</summary>
+    public IReadOnlyList<BackgroundRun> Background() =>
+        _background.Values.OrderBy(r => r.Started).ToList();
+
+    /// <summary>Stops the background run kept under this handle; false when none is going.</summary>
+    public bool Stop(string name, bool byUser) =>
+        _background.GetValueOrDefault(name)?.RequestStop(byUser) ?? false;
+
+    /// <summary>
+    /// Stops every background run still going, and names them — reporting nothing.
+    ///
+    /// <para>FOR THE PLACES A SESSION ENDS WITH WORK OUTSTANDING: a tab closed, the app quit. There is no
+    /// conversation left to tell, and a report delivered into one that is closing writes into a sink
+    /// nobody draws and a mailbox nobody drains. The names are returned so the caller can say what it
+    /// stopped.</para>
+    ///
+    /// <para>SILENCED BEFORE IT IS STOPPED, so the report the stop provokes finds the handoff already
+    /// closed to messages.</para>
+    /// </summary>
+    public IReadOnlyList<string> StopAll()
+    {
+        var stopped = new List<string>();
+        foreach (var run in _background.Values)
+        {
+            run.Handoff.Silence();
+            if (run.RequestStop(byUser: true)) stopped.Add(run.Start.Name);
+        }
+        return stopped;
+    }
+
+    /// <summary>
     /// Raised with a child's AGENT id when a send-claim on it is taken, and when it is released.
     ///
     /// <para>THE AGENT ID RATHER THAN THE HANDLE, because a consumer that tracks children tracks
