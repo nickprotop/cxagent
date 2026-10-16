@@ -137,4 +137,146 @@ public class TurnOwnershipTests : IDisposable
 
         Assert.Equal(2, held.Calls);
     }
+
+    /// <summary>
+    /// TEXT QUEUED AFTER THE OWNER LET GO IS STILL READ. The sender finds the turn owned, and before it
+    /// queues, the owner releases and runs its whole tail — which finds nothing. The sender looks again
+    /// after storing, so neither a report nor a steer waits for the user to type.
+    /// </summary>
+    [Theory]
+    [InlineData(Session.SubmitSource.System)]
+    [InlineData(Session.SubmitSource.User)]
+    public async Task TextQueuedAfterTheOwnerLetGo_IsStillRead(Session.SubmitSource source)
+    {
+        var held = new HeldProvider();
+        var s = Open(held);
+        var first = Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("go"));
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+
+        var waiting = 0;
+        s.AfterLosingTheTurnForTest = () =>
+        {
+            Volatile.Write(ref waiting, 1);
+            first.Turn.Wait(TimeSpan.FromSeconds(5));
+        };
+        var late = Task.Run(() => s.Submit("the late one", source: source));
+        Assert.True(await Poll.Until(() => Volatile.Read(ref waiting) == 1));
+
+        held.Release();
+        Assert.IsType<Session.SubmitOutcome.Queued>(await late);
+        s.AfterLosingTheTurnForTest = null;
+        await Idle(s);
+
+        Assert.Equal(2, held.Calls);
+        Assert.Contains("the late one", held.Text());
+    }
+
+    /// <summary>
+    /// A SUBSCRIBER THAT THROWS DOES NOT LEAVE THE TURN OWNED. Taking a steer in the tail raises Drained;
+    /// a front end's handler failing there must not wedge every later message into a loop that is gone.
+    /// </summary>
+    [Fact]
+    public async Task AThrowingDrainedSubscriber_DoesNotLeaveTheTurnOwned()
+    {
+        var held = new HeldProvider();
+        held.Release();
+        var s = Open(held);
+        s.Drained += _ => throw new InvalidOperationException("a subscriber failed");
+        var once = 0;
+        s.BeforeTurnReleasedForTest = () => { if (Interlocked.Exchange(ref once, 1) == 0) s.Submit("also this"); };
+
+        var first = Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("go"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => first.Turn);
+
+        Assert.False(s.TurnOwned);
+        await Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("next")).Turn;
+    }
+
+    /// <summary>
+    /// MAIL WAITING AT ESCAPE STARTS NOTHING: Esc means stop. It is read in front of the user's next
+    /// prompt instead.
+    /// </summary>
+    [Fact]
+    public async Task MailWaitingAtEscape_StartsNoRequest_AndIsReadBeforeTheNextPrompt()
+    {
+        var held = new HeldProvider();
+        var s = Open(held);
+        s.Submit("go");
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+        Assert.IsType<Session.SubmitOutcome.Queued>(s.Submit("agent x finished", source: Session.SubmitSource.System));
+
+        Assert.True(s.CancelTurn());
+        await Idle(s);
+        await Task.Delay(200);
+        Assert.Equal(1, held.Calls);
+
+        held.Release();
+        await Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("what next?")).Turn;
+
+        Assert.Equal(2, held.Calls);
+        var contents = held.LastMessages!.Select(m => m.Content ?? "").ToList();
+        var note = contents.FindIndex(c => c.Contains("agent x finished"));
+        var prompt = contents.FindIndex(c => c.Contains("what next?"));
+        Assert.True(note >= 0 && note < prompt);
+    }
+
+    /// <summary>
+    /// A STEER TYPED AFTER THE STOP DOES START A LAP: CancelTurn handed the earlier queue back, so this is
+    /// the user asking for the next thing.
+    /// </summary>
+    [Fact]
+    public async Task ASteerTypedAfterEscape_StartsALap()
+    {
+        var held = new HeldProvider();
+        var s = Open(held);
+        var once = 0;
+        s.BeforeTurnReleasedForTest = () => { if (Interlocked.Exchange(ref once, 1) == 0) s.Submit("after the stop"); };
+        s.Submit("go");
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+
+        Assert.True(s.CancelTurn());
+        Assert.True(await Poll.Until(() => held.Calls == 2));
+        held.Release();
+        await Idle(s);
+
+        Assert.Equal(2, held.Calls);
+        Assert.Contains("after the stop", held.Text());
+    }
+
+    /// <summary>
+    /// A COMMAND TYPED WHILE THE TURN IS OWNED BUT NOT BUSY is held exactly once and run by the tail — not
+    /// run at once (Send would find the turn owned and hold it again, round and round) and not lost.
+    /// </summary>
+    [Fact]
+    public async Task ACommandTypedWhileOwnedButNotBusy_IsHeldOnce_AndRunByTheTail()
+    {
+        var folder = Path.Combine(_dir, ".cxagent", "commands");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "commit.md"), "Commit it.");
+        var held = new HeldProvider();
+        held.Release();
+        var s = Open(held);
+        var heldTimes = 0;
+        s.HeldChanged += line => { if (line is not null) Interlocked.Increment(ref heldTimes); };
+        var once = 0;
+        bool? busyThen = null, ownedThen = null;
+        Session.SubmitOutcome? typed = null;
+        s.BeforeTurnReleasedForTest = () =>
+        {
+            if (Interlocked.Exchange(ref once, 1) != 0) return;
+            (busyThen, ownedThen) = (s.IsBusy, s.TurnOwned);
+            typed = s.Submit("/commit");
+        };
+
+        await Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("go")).Turn;
+        await Idle(s);
+
+        Assert.Equal(false, busyThen);
+        Assert.Equal(true, ownedThen);
+        Assert.IsType<Session.SubmitOutcome.Queued>(typed);
+        Assert.Equal(1, heldTimes);
+        Assert.Null(s.HeldCommand);
+        Assert.Equal(2, held.Calls);
+        Assert.Contains("Commit it.", held.Text());
+    }
 }

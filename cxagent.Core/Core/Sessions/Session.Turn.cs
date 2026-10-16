@@ -46,9 +46,10 @@ public sealed partial class Session
     /// loop has finished its last lap.
     ///
     /// <para>NOT <see cref="IsBusy"/>, WHICH DROPS BETWEEN LAPS. _busy is cleared at the end of every lap and
-    /// set again at the top of the next, so a delivery arriving in that gap read "idle" and started a second
-    /// RunTurnAsync — two loops appending to one Context.Messages, which corrupts the conversation rather
-    /// than throwing. Background agents make deliveries routine, so the gap is no longer rare.</para>
+    /// set again at the top of the next, so a delivery deciding by it in that gap would read "idle" and
+    /// start a second RunTurnAsync — two loops appending to one Context.Messages, which corrupts the
+    /// conversation rather than throwing. Background agents deliver routinely, so the gap is hit in
+    /// ordinary use, not only under contrived timing.</para>
     ///
     /// <para>TAKEN BY COMPARE-AND-SWAP so two senders racing at an idle session cannot both win.</para>
     /// </summary>
@@ -60,6 +61,10 @@ public sealed partial class Session
     /// <summary>Runs just before a finished turn gives up ownership. Tests use it to land a delivery in the
     /// tail window; the app never sets it.</summary>
     internal Action? BeforeTurnReleasedForTest { get; set; }
+
+    /// <summary>Runs in Send just after it finds the turn owned, before the text is queued. Tests use it to
+    /// hold a sender there while the owner releases and finishes its tail; the app never sets it.</summary>
+    internal Action? AfterLosingTheTurnForTest { get; set; }
 
     /// <summary>Who asked for the turn in flight, or null when none is running.</summary>
     /// <remarks>
@@ -447,6 +452,8 @@ public sealed partial class Session
         // text joins it exactly as it would join a busy turn.
         if (Interlocked.CompareExchange(ref _turnOwned, 1, 0) != 0)
         {
+            AfterLosingTheTurnForTest?.Invoke();
+
             // A COMMAND IS HELD, NEVER STEERED. RunCommand checks IsBusy too, but a turn can start
             // between that check and this one; steering here would deliver the raw "/name" line as
             // prose and drop the expansion that was the whole point of the request.
@@ -465,13 +472,17 @@ public sealed partial class Session
                 // REFUSED RATHER THAN GROWN. The mailbox is bounded (AgentMailbox.MaxDepth), and a
                 // full one means the agent has not read the earlier messages — Queued would tell the
                 // caller this landed when it did not.
-                return Host.TryDeliver(text)
-                    ? new SubmitOutcome.Queued()
-                    : new SubmitOutcome.Refused("the agent has messages it has not read yet.");
+            {
+                if (!Host.TryDeliver(text))
+                    return new SubmitOutcome.Refused("the agent has messages it has not read yet.");
+                ResumeIfReleasedMeanwhile();
+                return new SubmitOutcome.Queued();
+            }
 
             // Steer raises Pending, so a watcher draws its own queued block. Nothing is said here:
             // the block IS the report, and a line saying "queued" beside it would say it twice.
             Steer(text);
+            ResumeIfReleasedMeanwhile();
 
             // A QUEUED MESSAGE IS NOT A SECOND REQUEST. It joins the running turn — taken at its
             // next tool barrier, or drained by the loop below into a later lap of the SAME
@@ -501,6 +512,21 @@ public sealed partial class Session
         }
 
         return StartOwnedTurn(request with { Text = text, Echo = echo });
+    }
+
+    /// <summary>
+    /// Starts a lap for text just queued behind a turn that has released the conversation since this sender
+    /// found it owned.
+    ///
+    /// <para>STORE, THEN LOOK AGAIN — what <see cref="Hold"/> does for a command. Losing the swap and queueing
+    /// are two steps, and the owner can release and run its whole tail between them; its tail then finds
+    /// nothing, and the text would wait in the mailbox or the steer queue until the user next typed. Looked
+    /// at AFTER storing, so one of the two always sees it: either the tail's check comes later and finds it,
+    /// or this one does. The swap inside ResumeIfPending keeps it to one loop either way.</para>
+    /// </summary>
+    private void ResumeIfReleasedMeanwhile()
+    {
+        if (!TurnOwned) ResumeIfPending(readMail: true);
     }
 
     /// <summary>
@@ -581,8 +607,10 @@ public sealed partial class Session
         }
         finally
         {
-            BeforeTurnReleasedForTest?.Invoke();
-            Volatile.Write(ref _turnOwned, 0);
+            // RELEASED EVEN IF THE HOOK THROWS: a conversation left owned by a loop that has ended takes
+            // every later message as a steer into nothing, for the rest of the session.
+            try { BeforeTurnReleasedForTest?.Invoke(); }
+            finally { Volatile.Write(ref _turnOwned, 0); }
 
             // DROPPED AFTER OWNERSHIP IS RELEASED, NOT BEFORE. Hold stores a line whenever it finds the
             // conversation owned, so a drop while still owned leaves a gap where a line is held, nothing
@@ -608,7 +636,8 @@ public sealed partial class Session
     ///
     /// <para>THE TAIL WINDOW. The agent checks its mailbox before it returns and the loop checks the steer
     /// queue before it exits — but saving the resume record and clearing busy come after both, and a report
-    /// or a steer landing there waited until the user next typed. Checked AFTER ownership is released and
+    /// or a steer landing there has no later check to find it: it would wait until the user next typed.
+    /// Checked AFTER ownership is released and
     /// retaken by the same swap Send uses, so a sender arriving at this instant and this method cannot both
     /// start a loop.</para>
     ///
@@ -623,14 +652,31 @@ public sealed partial class Session
         {
             if (Interlocked.CompareExchange(ref _turnOwned, 1, 0) != 0) return true;   // someone else owns it now
 
-            if (TakeSteer() is { } steer)
+            // TAKEN UNDER A CATCH THAT GIVES OWNERSHIP BACK. Taking the steer raises Drained to whatever
+            // the front end subscribed, and a subscriber that throws would otherwise leave the conversation
+            // owned with no loop running — every later message steered into nothing. Only the takes are
+            // covered: once StartOwnedTurn runs, ownership is that loop's to release, not this method's.
+            Agents.SteerDelivery? steer;
+            string? mail = null;
+            try
+            {
+                steer = TakeSteer();
+                if (steer is null && readMail) mail = Host?.TakeMail();
+            }
+            catch
+            {
+                Volatile.Write(ref _turnOwned, 0);
+                throw;
+            }
+
+            if (steer is not null)
             {
                 StartOwnedTurn(new TurnRequest(steer.ForModel, steer.Shown, _turnTools, TurnOriginator.User,
                     SubmitSource.User));
                 return true;
             }
 
-            if (readMail && Host?.TakeMail() is { } mail)
+            if (mail is not null)
             {
                 // QUIET: mail is never drawn when a running turn reads it at a lap's top, and this lap is that
                 // same delivery arriving a moment late — drawing the joined text would put the reports

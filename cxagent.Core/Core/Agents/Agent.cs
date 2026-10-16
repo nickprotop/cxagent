@@ -1779,9 +1779,11 @@ public sealed class Agent
                 // SOMETHING ARRIVED WHILE THE ANSWER WAS BEING WRITTEN, so the turn is not over. The
                 // mailbox is drained before each request, and a report landing during the last one —
                 // a background job finishing, a message to a child — has missed every drain this turn
-                // has left. Returning would leave it unread with nothing to wake the agent for it: a
-                // session clears busy without looking here, and a settled child is resumed only when
-                // asked. One more lap reads it, and the top of the loop is where that happens. A note
+                // has left. Continuing is the cheap way to read it. Returning would hand it to whoever
+                // runs this agent: a session's tail would find it and start a whole new turn for it —
+                // another lap of its loop, its own bookkeeping — and a settled child is resumed only
+                // when asked, so for a child it would sit unread. One more lap of THIS loop reads it,
+                // and the top of the loop is where that happens. A note
                 // left without a wake waits for the next turn instead: it was left precisely so that it
                 // would not cost a request of its own.
                 if (Mailbox.HasWaking) continue;
