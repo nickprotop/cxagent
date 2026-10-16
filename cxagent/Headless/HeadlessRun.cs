@@ -166,6 +166,15 @@ public static class HeadlessRun
         if (h.Thinking is { } level)
         {
             var offered = await session.ThinkingOptionsAsync();
+
+            // NO ANSWER IS NOT A WRONG LEVEL: the model was unreachable or hung, and the same command
+            // may well work in a minute — a failure (1), where a level it does not offer is usage (2).
+            if (session.KnownThinkingOptions is null)
+            {
+                r.Io.Err.WriteLine("cxagent: --thinking: the model did not answer when asked which levels "
+                    + "it offers, so the run did not start.");
+                return 1;
+            }
             if (!offered.Any)
             {
                 r.Io.Err.WriteLine($"cxagent: --thinking: {offered.Why}.");

@@ -62,6 +62,20 @@ public class HeadlessRunTests : IDisposable
         Assert.Empty(model.State.Seen);
     }
 
+    // NO ANSWER IS NOT A WRONG LEVEL. The level may well be offered; the model was not reachable to
+    // say so — a failure worth retrying, exit 1, not a usage error to fix in the command line.
+    [Fact]
+    public async Task Thinking_WhenTheModelDidNotAnswer_FailsWithExit1_SayingSo()
+    {
+        var model = new LevelledMock(["low", "high"]);
+        model.State.Unanswered = true;
+        var (code, _, err) = await Run(model, null, "-p", "x", "--thinking", "high");
+
+        Assert.Equal(1, code);
+        Assert.Contains("did not answer", err);
+        Assert.Empty(model.State.Seen);
+    }
+
     [Fact]
     public async Task Thinking_AnOfferedLevel_IsWhatTheRequestRunsAt()
     {

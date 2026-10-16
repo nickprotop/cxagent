@@ -268,6 +268,8 @@ internal sealed class LevelledMock : ILlmProvider, IThinkingProvider
         public System.Collections.Concurrent.ConcurrentQueue<string?> Seen { get; } = new();
         public TaskCompletionSource? Hold { get; set; }
         public bool Throw { get; set; }
+        /// <summary>The probe gets no answer: nothing is known, and asking says "not said".</summary>
+        public bool Unanswered { get; set; }
     }
 
     public LevelledMock(IReadOnlyList<string> levels, string? level = null) : this(levels, level, new Shared()) { }
@@ -284,9 +286,10 @@ internal sealed class LevelledMock : ILlmProvider, IThinkingProvider
     public bool SupportsToolCalling => true;
     public bool SupportsStreaming => true;
     public string? ThinkingLevel => _level;
-    public ThinkingOptions? KnownThinkingOptions => _levels.Count > 0 ? new(_levels) : ThinkingOptions.None("no levels");
+    public ThinkingOptions? KnownThinkingOptions => _shared.Unanswered ? null
+        : _levels.Count > 0 ? new(_levels) : ThinkingOptions.None("no levels");
     public Task<ThinkingOptions> GetThinkingOptionsAsync(CancellationToken ct = default) =>
-        Task.FromResult(KnownThinkingOptions!);
+        Task.FromResult(KnownThinkingOptions ?? ThinkingOptions.None("the endpoint did not say what it accepts"));
     public ILlmProvider WithThinking(string? level) => new LevelledMock(_levels, level, _shared);
 
     public async Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t, CancellationToken ct)

@@ -227,7 +227,7 @@ The run needs no permissions at all — everything it reads arrived through the 
 | `--include-partial-messages` | with `stream-json`: the answer's text as it streams |
 | `--verbose` | with `text`: progress, tool calls and a line per run of thinking on stderr |
 | `--max-turns N` | stop after N turns, exit 3 |
-| `--thinking <level>` | think at that level for this run — one the model offers, as `/think` lists them; cxagent's own option |
+| `--thinking <level>` | think at that level for this run — one the model offers, as `/think` lists them; cxagent's own option. A level it does not offer exits 2; a model that does not answer when asked exits 1 |
 | `--permission-mode M` | `default` or `dontAsk` (refuse what would ask), `acceptEdits`, `auto`, `bypassPermissions` |
 | `--dangerously-skip-permissions` | approve everything but writes into `.git`, `.vscode`, `.claude`, `.idea` |
 | `--trust` | trust this folder for this run only |
