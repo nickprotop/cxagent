@@ -417,7 +417,7 @@ skipped and why.
 ![A run on a local model with each step's thinking folded between its tool calls, the latest opened with Ctrl+O, and the mode line showing the thinking level](33-thinking.png)
 
 The same repository, on a local Qwen served by llama.cpp. Each step that thought has its own block,
-placed before what that step did: open while the thinking streams, folded to `◆ Thought for 1s · 29
+placed before what that step did: open while the thinking streams, folded to `◆ Thought for 1s · 22
 words` as soon as the step moves on. The run reads as thought, calls, thought, calls, answer.
 
 `Ctrl+O` opened the latest block — the reasoning behind the answer under it. The others open with a
