@@ -53,7 +53,7 @@ public static class ThinkCommand
             lines.Add(inUse ? $"- **▸ {level}** (in use)" : $"- {level}");
         }
         lines.Add("");
-        lines.Add("`/think <level>` sets it for this session · `--save` makes it the default · F8 cycles");
+        lines.Add("`/think <level>` sets it for this session · `--save` makes it the default · F10 cycles");
         return new Message(string.Join("\n", lines));
     }
 }

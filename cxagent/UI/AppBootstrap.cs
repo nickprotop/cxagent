@@ -13,6 +13,8 @@ using SharpConsoleUI.Configuration;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Drivers;
 
+using CxAgent.UI.Config;
+
 namespace CxAgent.UI;
 
 /// <summary>
@@ -531,6 +533,12 @@ public static class AppBootstrap
         // /mcp lives in its own type: this file decides WHAT EXISTS, not what a command does.
         var mcpCommand = new McpCommand(mcp, mcpTokens, httpForAuth, paths, env, mainWindow);
 
+        // WHAT THE CONFIGURATION DIALOG NEEDS, built once: F8, /providers, /mcp edit and first run all
+        // open the same dialog over the same live config.
+        var configHost = new ConfigDialogHost(system, mainWindow,
+            new ConfigApplyContext(paths, env, configNow, manager, mcp),
+            () => mainWindow.ActiveSession ?? session, mcpCommand);
+
 
 
         // WHAT THIS FRONT END OVERRIDES OR ADDS TO CORE'S SEEDING. Everything else acts on a
@@ -697,6 +705,12 @@ public static class AppBootstrap
 
         // THE VERB IS THE FRONT END'S, because a browser is not a word Core has. A headless embedder
         // does not register it and /plugin still lists, loads and unwires.
+        manager.Commands.Register(new SessionCommand("/providers", "add, edit or remove providers (F8)"),
+            (_, _) => { ConfigDialog.Show(configHost, ConfigTab.Providers); return true; });
+        manager.Commands.RegisterVerb("/mcp",
+            new CommandArgument("edit", "add, edit or remove MCP servers"),
+            (_, _) => { ConfigDialog.Show(configHost, ConfigTab.Mcp); return true; });
+
         manager.Commands.RegisterVerb("/plugin",
             new CommandArgument("browse", "open the plugin manager"),
             (s, _) =>
@@ -1609,6 +1623,15 @@ public static class AppBootstrap
         // ONE TOGGLE, TWO WAYS IN. The key and the status-bar item run this same local function, so
         // a click cannot drift from what F2 does — a second call site that opened the dialog its own
         // way is a second place for the close-if-open rule to be forgotten.
+        // ONE TOGGLE FOR THE KEY, as the plugin manager has: a second call site that opened the dialog
+        // its own way would be a second place for the close-if-open rule to be forgotten.
+        bool ToggleConfigDialog(ConfigTab? tab)
+        {
+            if (ConfigDialog.CloseIfOpen()) return true;
+            ConfigDialog.Show(configHost, tab);
+            return true;
+        }
+
         bool TogglePluginManager()
         {
             if (PluginManagerDialog.CloseIfOpen()) return true;
@@ -1658,11 +1681,19 @@ public static class AppBootstrap
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F7, "background jobs",
             () => !PluginManagerDialog.IsOpen && mainWindow.ToggleJobsPanel());
 
+        // F8 IS CONFIGURATION: providers and MCP servers, on the tab last used. Declined while the
+        // plugin manager is open — a global takes its key from every window, and that dialog's own keys
+        // come first (the rule F6 and F7 follow).
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F8, "configuration — providers and MCP servers",
+            () => !PluginManagerDialog.IsOpen && ToggleConfigDialog(null));
+
         // THE NEXT THINKING LEVEL this model offers, wrapping — the quick way; /think picks one by name.
-        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F8, "next thinking level",
+        // F10, since F8 opens configuration; gnome-terminal takes F10 for its menu unless that is turned
+        // off, which the docs say.
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F10, "next thinking level",
             () =>
             {
-                if (PluginManagerDialog.IsOpen) return false;
+                if (PluginManagerDialog.IsOpen || ConfigDialog.IsOpen) return false;
                 (mainWindow.ActiveTab.Session ?? session).CycleThinking();
                 return true;
             });
@@ -1798,6 +1829,7 @@ public static class AppBootstrap
         // OUTSIDE the theme feature's own branch, since the plugin manager does not stop existing
         // when the theme picker is turned off. It simply moves to the left end.
         mainWindow.ShowPluginItem(() => TogglePluginManager());
+        mainWindow.ShowConfigItem(() => ToggleConfigDialog(null));
 
         // AND THE TAB STRIP BESIDE IT, hidden until a second tab exists. Same shape as the two items
         // to its left: the key in the shortcut slot, and a click that runs exactly what the key runs
@@ -1843,6 +1875,7 @@ public static class AppBootstrap
                 // dismissed with Escape at all — and worse, the key would reach the branches below and
                 // cancel a running turn, which is not remotely what the user asked for.
                 if (PluginManagerDialog.CloseIfOpen()) return true;
+                if (ConfigDialog.CloseIfOpen()) return true;
 
                 // AND A FILE TAB'S QUESTION, for the same reason and with the same shape. Every one
                 // of them has "leave everything as it was" among its answers, so dismissing is the

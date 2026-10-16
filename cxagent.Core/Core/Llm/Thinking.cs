@@ -32,9 +32,9 @@ public static class ThinkingLevels
         level is not null && Known.Contains(level, StringComparer.Ordinal);
 }
 
-/// <summary>What one model offers. Empty means no levels: the indicator hides and F8 says why.</summary>
+/// <summary>What one model offers. Empty means no levels: the indicator hides and F10 says why.</summary>
 /// <param name="Levels">Offered levels, lowest first.</param>
-/// <param name="Why">When <see cref="Levels"/> is empty, one sentence saying why, for F8 and <c>/think</c>.</param>
+/// <param name="Why">When <see cref="Levels"/> is empty, one sentence saying why, for F10 and <c>/think</c>.</param>
 public sealed record ThinkingOptions(IReadOnlyList<string> Levels, string? Why = null)
 {
     /// <summary>An offering with no levels.</summary>

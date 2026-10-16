@@ -12,9 +12,9 @@ public class ThinkingModeLineTests
     public void ModeLine_ShowsTheLevel_AfterTheModel()
     {
         var line = MainWindow.ModeLineTextForTest(WorkingMode.Default, "anthropic:opus",
-            thinking: "◆ medium (F8)");
+            thinking: "◆ medium (F10)");
         Assert.True(line.IndexOf("anthropic:opus", StringComparison.Ordinal)
-                    < line.IndexOf("◆ medium (F8)", StringComparison.Ordinal));
+                    < line.IndexOf("◆ medium (F10)", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -25,20 +25,20 @@ public class ThinkingModeLineTests
 
     [Fact]
     public void Indicator_ALevel() =>
-        Assert.Equal("◆ high (F8)", MainWindow.ThinkingIndicator("high", null, new(["low", "high"])));
+        Assert.Equal("◆ high (F10)", MainWindow.ThinkingIndicator("high", null, new(["low", "high"])));
 
     [Fact]
     public void Indicator_Off_IsHollow() =>
-        Assert.Equal("◇ off (F8)", MainWindow.ThinkingIndicator("off", null, new(["off", "low"])));
+        Assert.Equal("◇ off (F10)", MainWindow.ThinkingIndicator("off", null, new(["off", "low"])));
 
     [Fact]
     public void Indicator_Pending_ShowsBoth() =>
-        Assert.Equal("◆ medium → high (next message) (F8)",
+        Assert.Equal("◆ medium → high (next message) (F10)",
             MainWindow.ThinkingIndicator("medium", "high", new(["medium", "high"])));
 
     [Fact]
     public void Indicator_ModelDefault_SaysDefault() =>
-        Assert.Equal("◆ default (F8)", MainWindow.ThinkingIndicator(null, null, new(["low", "high"])));
+        Assert.Equal("◆ default (F10)", MainWindow.ThinkingIndicator(null, null, new(["low", "high"])));
 
     [Fact]
     public void Indicator_NoLevels_IsAbsent() =>

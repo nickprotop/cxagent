@@ -3271,6 +3271,19 @@ public sealed class MainWindow : IDisposable
     private StatusBarItem? _pluginItem;
 
     /// <summary>
+    /// The configuration key, right of the plugin item: a way in, read as the key and what it opens,
+    /// and a click that runs the same toggle F8 does.
+    /// </summary>
+    /// <param name="onClick">Invoked when the item is clicked — the same toggle F8 uses.</param>
+    public void ShowConfigItem(Action onClick)
+    {
+        if (_configItem is not null) return;
+        _configItem = StatusBar.AddLeft(KeyHint("configuration — providers and MCP servers", "F8"), "Config", onClick);
+    }
+
+    private StatusBarItem? _configItem;
+
+    /// <summary>
     /// Puts the tab-strip key beside the plugin item, hidden until there is more than one tab.
     ///
     /// <para>RIGHT OF F2, so the bar reads as one column of keys in the order they were added — and
@@ -3491,8 +3504,8 @@ public sealed class MainWindow : IDisposable
     {
         if (options is not { Any: true }) return null;
         var now = level ?? "default";
-        if (pending is not null && pending != now) return $"◆ {now} → {pending} (next message) (F8)";
-        return now == Core.Llm.ThinkingLevels.Off ? "◇ off (F8)" : $"◆ {now} (F8)";
+        if (pending is not null && pending != now) return $"◆ {now} → {pending} (next message) (F10)";
+        return now == Core.Llm.ThinkingLevels.Off ? "◇ off (F10)" : $"◆ {now} (F10)";
     }
 
     /// <summary>

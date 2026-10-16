@@ -108,7 +108,7 @@ public static class SessionCommands
         ]),
         // THE LEVELS THIS MODEL OFFERS, live: they come from the model's own answer, so the palette
         // offers exactly what will be accepted rather than every name any provider knows.
-        new("/think", "show or set how hard the model thinks (F8 cycles)",
+        new("/think", "show or set how hard the model thinks (F10 cycles)",
         [
             new("<level>", "a level this model offers, or default · --save makes it the default",
                 Completes: false, Values: ValueSources.ThinkingLevels),

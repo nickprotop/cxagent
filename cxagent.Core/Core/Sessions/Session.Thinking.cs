@@ -4,7 +4,7 @@ using CxAgent.Core.Llm;
 namespace CxAgent.Core.Sessions;
 
 /// <summary>
-/// How hard this session's model thinks: chosen with <c>/think</c> or F8, pending until the next
+/// How hard this session's model thinks: chosen with <c>/think</c> or F10, pending until the next
 /// message, saved with the session, and checked against what the model offers.
 /// </summary>
 public sealed partial class Session
@@ -86,7 +86,7 @@ public sealed partial class Session
         return CommandStatus.Changed;
     }
 
-    /// <summary>F8: the next offered level, wrapping.</summary>
+    /// <summary>F10: the next offered level, wrapping.</summary>
     public CommandStatus CycleThinking()
     {
         var options = KnownOptionsOrNotYet();

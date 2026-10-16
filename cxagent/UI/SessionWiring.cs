@@ -217,8 +217,8 @@ public static class SessionWiring
         session.SaveThinkingDefault = level => Core.Config.ConfigFile.SaveThinkingDefault(
             Path.Combine(configDir, "config.json"), Startup.Env(), session.InstanceName, level);
 
-        // THE LEVELS ARE ASKED OF THE MODEL NOW, not at the first F8: the mode line shows the level
-        // once the model has said what it offers, and F8 never waits on a probe.
+        // THE LEVELS ARE ASKED OF THE MODEL NOW, not at the first F10: the mode line shows the level
+        // once the model has said what it offers, and F10 never waits on a probe.
         AskThinkingLevels(system, main, session);
 
         session.Changed += kind => system.EnqueueOnUIThread(() =>
