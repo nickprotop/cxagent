@@ -54,6 +54,7 @@ public sealed class ProvidersTab
         _root.RowDefinitions.Add(GridLength.Cells(1));   // Revert · Save
 
         Toolbar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
+        Toolbar.AddItem(Controls.Button(" + Add ").OnClick((_, _) => ShowGallery()).Build());
         _root.Place(Toolbar, 0, 0, colSpan: 2);
 
         _rail = new ListControl { VerticalAlignment = VerticalAlignment.Fill, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -137,12 +138,17 @@ public sealed class ProvidersTab
 
     private void FillRail(string? select)
     {
-        var rows = ProviderRows.For(_settings!, TabsByInstance(), _draft?.IsDirty == true ? _draft.Name : null);
+        var rows = ProviderRows.For(_settings!, TabsByInstance(), _draft?.IsDirty == true ? _draft.Name : null).ToList();
+
+        // A NEW INSTANCE IS ON THE RAIL BEFORE IT IS IN THE FILE, marked new — the user sees where it will
+        // be, and selecting another row asks about it like any unsaved edit.
+        if (_draft is { IsNew: true } fresh)
+            rows.Insert(0, new ProviderRow(fresh.Name, fresh.Model, "new", false, false, 0, Unsaved: true));
         _rail.ClearItems();
         foreach (var row in rows)
-            _rail.AddItem(new ListItem(RowText(row)) { Tag = row.Name });
+            _rail.AddItem(new ListItem(row.Preset == "new" ? NewRowText(row) : RowText(row)) { Tag = row.Name });
 
-        var index = rows.ToList().FindIndex(r => r.Name == select);
+        var index = rows.FindIndex(r => r.Name == select);
         if (index < 0 && rows.Count > 0) index = 0;
         _lastIndex = index;
         if (index >= 0)
@@ -170,6 +176,9 @@ public sealed class ProvidersTab
             row.Tabs > 0 ? $" [{ColorScheme.MutedMarkup}]· {row.Tabs} tab{(row.Tabs == 1 ? "" : "s")}[/]" : "");
         return $"[bold]{MarkupParser.Escape(row.Name)}[/]{marks}\n[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(row.Model)}[/]";
     }
+
+    private static string NewRowText(ProviderRow row) =>
+        $"[bold]{MarkupParser.Escape(row.Name)}[/] [{ColorScheme.CautionMarkup}]new[/]\n[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(row.Model.Length > 0 ? row.Model : "no model yet")}[/]";
 
     private void OnRailSelectionChanged(object? sender, int index)
     {
@@ -208,6 +217,12 @@ public sealed class ProvidersTab
 
     private void ShowInstance(string name)
     {
+        if (_draft is { IsNew: true } fresh && fresh.Name == name)
+        {
+            BuildDetail(fresh);
+            SetStatus($"[{ColorScheme.MutedMarkup}]Not saved yet — Save adds it to config.json.[/]");
+            return;
+        }
         if (_settings is null || !_settings.Providers.TryGetValue(name, out var cfg)) return;
         if (_draft?.Name != name) _draft = new InstanceDraft(name, cfg);
         _saveAnyway = false;
@@ -225,13 +240,29 @@ public sealed class ProvidersTab
     private void BuildDetail(InstanceDraft draft)
     {
         _detail.ClearContents();
-        var preset = ProviderRows.PresetLabel(draft.Original);
+        var preset = draft.IsNew ? _addingFrom?.DisplayName ?? draft.Original.Kind : ProviderRows.PresetLabel(draft.Original);
         _detail.AddControl(new MarkupControl([
-            $"[bold]{MarkupParser.Escape(draft.Name)}[/]  [{ColorScheme.MutedMarkup}]{MarkupParser.Escape(preset == draft.Original.Kind ? preset : $"{preset} · {draft.Original.Kind}")}[/]",
+            $"[bold]{MarkupParser.Escape(draft.IsNew ? "New provider" : draft.Name)}[/]  [{ColorScheme.MutedMarkup}]{MarkupParser.Escape(preset == draft.Original.Kind ? preset : $"{preset} · {draft.Original.Kind}")}[/]",
             "",
         ]));
 
         var fields = new FieldGrid();
+
+        // THE NAME IS SET ONCE, HERE. After this it is renamed with Rename, which moves every reference.
+        if (draft.IsNew)
+        {
+            var nameBox = new PromptControl { Input = draft.Name, HorizontalAlignment = HorizontalAlignment.Stretch };
+            nameBox.InputChanged += (_, text) => { draft.Name = text.Trim(); Changed(); };
+            fields.Add("Name", "What /model, the rail and agent types call it. Letters, digits, - and _.", nameBox);
+        }
+
+        // WHAT THIS PRESET IS TREATED AS, said where it matters: OpenAI cannot be asked whether a model
+        // reasons, and llama.cpp's thinking switch is read from the server's chat template.
+        if (_addingFrom?.Id == "openai" || (!draft.IsNew && draft.BaseUrl?.Contains("api.openai.com") == true))
+            fields.Add("Reasoning", "OpenAI cannot say which models reason — tick this for one that does (the o-series, GPT-5).",
+                Check("this model reasons", draft.Reasoning, v => draft.Reasoning = v));
+        if (_addingFrom?.Id == "llamacpp")
+            _detail.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]Thinking on/off is read from the server's chat template once it answers.[/]", ""]) { Wrap = true });
 
         var url = new PromptControl { Input = draft.BaseUrl ?? "", HorizontalAlignment = HorizontalAlignment.Stretch };
         url.InputChanged += (_, text) => { draft.BaseUrl = text; Changed(); };
@@ -422,11 +453,67 @@ public sealed class ProvidersTab
 
     private void Revert()
     {
+        if (_draft is { IsNew: true }) { CancelNew(); return; }
         if (_draft is null || _settings is null) return;
         var name = _draft.Name;
         _draft = null;
         ShowInstance(name);
         Changed();
+    }
+
+    // ---- adding: the gallery ----------------------------------------------------------------------
+
+    private ProviderKindCatalog.ProviderPreset? _addingFrom;
+
+    /// <summary>
+    /// The preset cards, in the detail pane. A card is a bordered panel with a button — Tab reaches it,
+    /// Enter or a click picks it — and one muted line saying what it is.
+    /// </summary>
+    public void ShowGallery(string? lead = null)
+    {
+        if (_settings is null) return;
+        _detail.ClearContents();
+        _detail.AddControl(new MarkupControl([
+            "[bold]Add a provider[/]",
+            .. lead is null ? Array.Empty<string>() : [$"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(lead)}[/]"],
+            "",
+        ]) { Wrap = true });
+
+        var grid = new GridControl { HorizontalAlignment = HorizontalAlignment.Stretch };
+        grid.ColumnDefinitions.Add(GridLength.Star(1));
+        grid.ColumnDefinitions.Add(GridLength.Cells(2));
+        grid.ColumnDefinitions.Add(GridLength.Star(1));
+        var presets = ProviderKindCatalog.Presets;
+        for (var i = 0; i < presets.Count; i++)
+        {
+            if (i % 2 == 0) grid.RowDefinitions.Add(GridLength.Auto());
+            grid.Place(Card(presets[i]), i / 2, i % 2 == 0 ? 0 : 2);
+        }
+        _detail.AddControl(grid);
+        _detail.AddControl(new MarkupControl(["", $"[{ColorScheme.MutedMarkup}]Tab moves between cards · Enter picks one[/]"]));
+        SetStatus("");
+    }
+
+    private IWindowControl Card(ProviderKindCatalog.ProviderPreset preset)
+    {
+        var card = new PanelControl { BorderStyle = BorderStyle.Rounded, HorizontalAlignment = HorizontalAlignment.Stretch };
+        card.AddControl(Controls.Button($" {preset.DisplayName} ").OnClick((_, _) => StartNew(preset)).Build());
+        card.AddControl(new MarkupControl([$" [{ColorScheme.MutedMarkup}]{MarkupParser.Escape(preset.Blurb)}[/]"]));
+        return card;
+    }
+
+    private void StartNew(ProviderKindCatalog.ProviderPreset preset)
+    {
+        _addingFrom = preset;
+        _draft = PresetGallery.DraftFor(preset, PresetGallery.SuggestName(_settings!.Providers.Keys, preset));
+        FillRail(_draft.Name);
+    }
+
+    private void CancelNew()
+    {
+        _draft = null;
+        _addingFrom = null;
+        FillRail(null);
     }
 
     // ---- saving -------------------------------------------------------------------------------
@@ -442,7 +529,9 @@ public sealed class ProvidersTab
     private async Task SaveAsync()
     {
         if (_saving || _draft is not { } draft || _settings is not { } settings) return;
-        if (!draft.IsDirty) { SetStatus($"[{ColorScheme.MutedMarkup}]Nothing to save.[/]"); return; }
+        if (!draft.IsDirty && !draft.IsNew) { SetStatus($"[{ColorScheme.MutedMarkup}]Nothing to save.[/]"); return; }
+        if (draft.IsNew && (string.IsNullOrWhiteSpace(draft.Name) || settings.Providers.ContainsKey(draft.Name)))
+        { SetStatus($"[{ColorScheme.CautionMarkup}]Choose a name no other provider has.[/]"); return; }
         if (string.IsNullOrWhiteSpace(draft.Model)) { SetStatus($"[{ColorScheme.CautionMarkup}]A model is required.[/]"); return; }
 
         _saving = true;
@@ -467,6 +556,17 @@ public sealed class ProvidersTab
 
             SetStatus($"[{ColorScheme.MutedMarkup}]Saving…[/]");
             var fields = draft.ToFields();
+            if (draft.IsNew)
+            {
+                // NOBODY IS ON A NEW INSTANCE, so no tab moves — unless it is the first one, which the edit
+                // makes the default, and the default's limit sizes every session's sub-agent semaphore.
+                var added = new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(),
+                    settings.DefaultProvider is null, $"{draft.Name} added");
+                var name = draft.Name;
+                await CommitAsync(root => ProviderEdits.Add(root, name, fields), added, name);
+                _addingFrom = null;
+                return;
+            }
             var change = draft.ChangeFor(settings);
             await CommitAsync(root => ProviderEdits.Update(root, draft.Name, fields), change, draft.Name);
         }

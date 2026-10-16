@@ -15,7 +15,10 @@ namespace CxAgent.UI.Config;
 /// </summary>
 public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
 {
-    public string Name { get; } = name;
+    public string Name { get; set; } = name;
+
+    /// <summary>Not in the file yet: everything it holds is written, its kind included.</summary>
+    public bool IsNew { get; init; }
     public ProviderInstanceConfig Original { get; } = original;
 
     public string Model { get; set; } = original.Model;
@@ -61,7 +64,8 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
         if (ClearApiKey && Original.ApiKey is not null) clear.Add("apiKey");
         var fields = new InstanceFields
         {
-            Model = Model != Original.Model ? Model.Trim() : null,
+            Kind = IsNew ? Original.Kind : null,
+            Model = Model != Original.Model || IsNew ? Model.Trim() : null,
             BaseUrl = Text(BaseUrl, Original.BaseUrl, "baseUrl"),
             ApiKey = !ClearApiKey && !string.IsNullOrEmpty(NewApiKey) ? NewApiKey : null,
             Thinking = Text(Thinking, Original.Thinking, "thinking"),
