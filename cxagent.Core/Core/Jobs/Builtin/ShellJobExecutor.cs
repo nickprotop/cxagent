@@ -35,10 +35,16 @@ namespace CxAgent.Core.Jobs.Builtin;
 /// SIGKILL or a crash leaves a backgrounded command running with nothing on disk naming it. The
 /// in-memory registry still reaps it at an orderly shutdown; only the crash case is uncovered.</para>
 /// </param>
+/// <param name="Finished">
+/// Where a backgrounded command is tracked past its exit, or null for the process-wide
+/// <see cref="FinishedShells.Default"/>. Injectable for the reason <paramref name="Registry"/> is: a test
+/// that reads what a command left behind must not share that record with every other test.
+/// </param>
 public sealed record ShellBackgrounding(
     DetachedProcessRegistry? Registry = null,
     bool DetachOnTimeout = true,
-    Plugins.ChildProcessStore? Children = null)
+    Plugins.ChildProcessStore? Children = null,
+    FinishedShells? Finished = null)
 {
     /// <summary>The process-wide registry, detaching on a deadline, and nothing persisted — what a
     /// caller that has read no config gets.</summary>
@@ -396,12 +402,22 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
         // outside it, so a subscription landing between them is reached by both. Interlocked makes
         // the first one win and the second a no-op — an agent told twice that a command finished
         // reports it twice, and a model reading two reports has no way to know it was one command.
-        var report = new BackgroundReport(delivery,
-            new BackgroundJob(detached.Pid, jc.AgentId, command, start, detached.OutputPath));
+        var job = new BackgroundJob(detached.Pid, jc.AgentId, command, start, detached.OutputPath);
+
+        // TRACKED SO THE EXIT OUTLIVES THE PROCESS, and handed over once: a task_output waiting on this
+        // command takes the report as its answer, and then no notice follows. A wait the user cancels
+        // at the instant the command ends leaves the report for the next turn instead of losing it.
+        var finished = _bg.Finished ?? FinishedShells.Default;
+        var handoff = finished.Track(job, text => Agents.DeliveryOutcomes.Delivered(delivery.Leave(jc.AgentId,
+            new Agents.AgentNotice(Shown: $"background command finished: {OutputTail.OneLine(command)}",
+                ForModel: text))));
+        var report = new BackgroundReport(delivery, job, handoff);
         var reported = 0;
         void ReportOnce(int code)
         {
-            if (Interlocked.Exchange(ref reported, 1) == 0) Report(report, code);
+            if (Interlocked.Exchange(ref reported, 1) != 0) return;
+            finished.Finished(detached.Pid, code, detached.Killed);
+            Report(report, code);
         }
 
         // Tell is synchronous by contract precisely so a caller in this position — a handler on
@@ -424,7 +440,9 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
     /// <param name="Delivery">Where to say it.</param>
     /// <param name="Job">Who started it, what it was, when, and where its output went — the same
     /// description the registry lists it under.</param>
-    private sealed record BackgroundReport(Agents.IAgentDelivery Delivery, BackgroundJob Job);
+    /// <param name="Handoff">Decides whether the report goes to a waiting task_output or out as a
+    /// notice — exactly one of them.</param>
+    private sealed record BackgroundReport(Agents.IAgentDelivery Delivery, BackgroundJob Job, ResultHandoff Handoff);
 
     /// <summary>
     /// Tells the agent that started the command how it ended.
@@ -458,7 +476,8 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
             if (report.Job.OutputPath is not null)
                 text += $" Its output is in:\n{report.Job.OutputPath}\nRead it with read_file.";
 
-            report.Delivery.Tell(report.Job.AgentId, text);
+            report.Handoff.Complete(text,
+                t => Agents.DeliveryOutcomes.Delivered(report.Delivery.Tell(report.Job.AgentId, t)));
         }
         catch (Exception)
         {

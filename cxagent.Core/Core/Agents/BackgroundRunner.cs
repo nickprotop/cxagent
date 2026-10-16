@@ -30,7 +30,7 @@ internal static class BackgroundRunner
     /// wake: the waiter was cancelled because the user pressed Escape.
     /// </summary>
     public static Func<string, bool> LeaveFor(IAgentDelivery delivery, string parentAgentId, string name) =>
-        text => Delivered(delivery.Leave(parentAgentId,
+        text => DeliveryOutcomes.Delivered(delivery.Leave(parentAgentId,
             new AgentNotice(Shown: $"background agent '{name}' — its result is waiting for the next turn", ForModel: text)));
 
     private static async Task RunAsync(BackgroundWork work)
@@ -98,15 +98,12 @@ internal static class BackgroundRunner
             // records the state, so a second call is harmless.
             run.Finish(stopped ? BackgroundState.Stopped : BackgroundState.Finished);
             var shown = Shown(run, state, stopped);
-            run.Handoff.Complete(ReportFor(work, envelope), text => Delivered(stopped
+            run.Handoff.Complete(ReportFor(work, envelope), text => DeliveryOutcomes.Delivered(stopped
                 ? work.Delivery.Leave(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))
                 : work.Delivery.Tell(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))));
         }
     }
 
-    /// <summary>Whether the parent has it now, or will before its next answer.</summary>
-    private static bool Delivered(DeliveryOutcome o) =>
-        o is DeliveryOutcome.Woke or DeliveryOutcome.Injected or DeliveryOutcome.Queued;
 
     /// <summary>
     /// The report, self-contained: it may arrive after a compaction or a /clear, at a context that no

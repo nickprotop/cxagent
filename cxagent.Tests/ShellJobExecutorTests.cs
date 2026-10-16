@@ -300,6 +300,7 @@ public class ShellJobExecutorTests
             Path.Combine(Path.GetTempPath(), "shell-bg-" + Guid.NewGuid().ToString("N"));
 
         public DetachedProcessRegistry Registry { get; } = new();
+        public FinishedShells Finished { get; } = new();
         public RecordingDelivery Told { get; } = new();
         public ShellJobExecutor Executor { get; }
         public JobContext Context { get; }
@@ -310,7 +311,7 @@ public class ShellJobExecutorTests
             var paths = new AppPaths(_dir);
             paths.EnsureCreated();
 
-            Executor = new ShellJobExecutor(new ShellBackgrounding(Registry));
+            Executor = new ShellJobExecutor(new ShellBackgrounding(Registry, Finished: Finished));
 
             // THE CONCRETE JobContext, NOT AN IJobContext DOUBLE, and that is the point of these
             // tests. Delivery and AgentId sit on the concrete class because IJobContext ships in the
@@ -346,6 +347,9 @@ public class ShellJobExecutorTests
             _arrived.Release();
             return DeliveryOutcome.Woke;
         }
+
+        /// <summary>How many deliveries have arrived.</summary>
+        public int Count { get { lock (_told) return _told.Count; } }
 
         /// <summary>Waits for one delivery, failing rather than hanging the suite.</summary>
         public async Task<(string AgentId, string Text)> Next()
@@ -447,6 +451,47 @@ public class ShellJobExecutorTests
         var (_, text) = await fx.Told.Next();
         Assert.Contains("exit code 7", text);
         Assert.Contains("exit 7", text);
+    }
+
+    /// <summary>
+    /// THE EXIT IS REMEMBERED AND REPORTED ONCE. A finished background command stays findable — its exit
+    /// code and its file — after the live registry has forgotten it, and the report goes out exactly once.
+    /// </summary>
+    [Fact]
+    public async Task Background_TheExitIsRemembered_AndReportedOnce()
+    {
+        using var fx = new BackgroundFixture();
+
+        var r = await fx.Executor.ExecuteAsync(
+            P(("command", "exit 3"), ("background", true)), fx.Context, CancellationToken.None);
+        var pid = Convert.ToInt32(r.Output["pid"]);
+
+        await fx.Told.Next();
+        Assert.True(await Poll.Until(() => fx.Finished.Find(pid) is not null));
+        Assert.Equal(3, fx.Finished.Find(pid)!.ExitCode);
+        await Task.Delay(200);
+        Assert.Equal(1, fx.Told.Count);
+    }
+
+    /// <summary>
+    /// A COMMAND WAITED ON THROUGH ITS HANDOFF sends no exit notice: the waiter has the result, and a
+    /// notice after it would be a wake that only repeats it.
+    /// </summary>
+    [Fact]
+    public async Task Background_AShellWaitedOn_SendsNoExitNotice()
+    {
+        using var fx = new BackgroundFixture();
+
+        var r = await fx.Executor.ExecuteAsync(
+            P(("command", "sleep 0.5; exit 0"), ("background", true)), fx.Context, CancellationToken.None);
+        var pid = Convert.ToInt32(r.Output["pid"]);
+        var read = await fx.Finished.HandoffFor(pid)!.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+
+        Assert.True(read.Ended);
+        Assert.False(read.AlreadySent);
+        Assert.Contains("exit code 0", read.Result);
+        await Task.Delay(300);
+        Assert.Equal(0, fx.Told.Count);
     }
 
     [Fact]

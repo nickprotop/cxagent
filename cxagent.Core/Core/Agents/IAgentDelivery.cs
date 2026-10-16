@@ -99,3 +99,16 @@ public interface IAgentDelivery
     /// </summary>
     DeliveryOutcome Leave(string agentId, AgentNotice notice) => DeliveryOutcome.Refused;
 }
+
+/// <summary>What a <see cref="DeliveryOutcome"/> means to a caller that only needs to know whether it landed.</summary>
+public static class DeliveryOutcomes
+{
+    /// <summary>
+    /// Whether the agent has it now, or will before its next answer.
+    ///
+    /// <para>QUEUED COUNTS: a note left for the next turn is read before the next answer, which is all a
+    /// report needs. Unknown and Refused do not — nothing will ever read it.</para>
+    /// </summary>
+    public static bool Delivered(DeliveryOutcome outcome) =>
+        outcome is DeliveryOutcome.Woke or DeliveryOutcome.Injected or DeliveryOutcome.Queued;
+}
