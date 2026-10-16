@@ -1612,7 +1612,13 @@ public static class AppBootstrap
         // one and would have sent this to a function key nobody's fingers know.
         keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.S,
             "save the file tab on screen",
-            () => FileTab.SaveActiveTab(new EditorHost(system, mainWindow, session)));
+            () =>
+            {
+                // DECLINED WHILE CONFIGURATION IS UP, so its window gets Ctrl+S for its own Save.
+                if (ConfigDialog.IsOpen) return false;
+                FileTab.SaveActiveTab(new EditorHost(system, mainWindow, session));
+                return true;
+            });
 
         // F2 OPENS THE PLUGIN MANAGER. Global rather than window-bound because globals are consulted
         // before the active window (InputCoordinator.cs:130-134) — a window.KeyPressed handler for a

@@ -4,32 +4,6 @@ using SharpConsoleUI;
 namespace CxAgent.UI;
 
 /// <summary>
-/// Pure narrowing of a model catalog. Separated from the UI step so the matching rules are
-/// unit-testable without a live window — OpenRouter returns several hundred ids, so getting the
-/// filter wrong is a usability failure that must be caught by tests, not by driving the app.
-/// </summary>
-public static class ModelFilter
-{
-    /// <summary>
-    /// Case-insensitive substring match against <paramref name="query"/>, capped at
-    /// <paramref name="limit"/> results. A blank/whitespace query is treated as "no query" (returns
-    /// everything, up to the limit) rather than matched literally. A non-blank query that matches
-    /// nothing returns an EMPTY list — it must never silently fall back to the full catalog, which
-    /// would hand the user the very 400-entry list they were trying to narrow.
-    /// </summary>
-    public static IReadOnlyList<string> Apply(IReadOnlyList<string> models, string? query, int limit = 40)
-    {
-        IEnumerable<string> seq = models;
-        if (!string.IsNullOrWhiteSpace(query))
-        {
-            var q = query.Trim();
-            seq = seq.Where(m => m.Contains(q, StringComparison.OrdinalIgnoreCase));
-        }
-        return seq.Take(limit).ToList();
-    }
-}
-
-/// <summary>
 /// The outcome of a model pick. <paramref name="Cancelled"/> is true only when the user DISMISSED
 /// the dialog (Escape/Cancel) — not when they submitted an empty value, which yields
 /// <c>("", false)</c>. Callers that drive a wizard step need the two apart: dismiss means "go back a

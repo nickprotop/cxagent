@@ -48,6 +48,8 @@ public static class ConfigDialog
     private static ConfigTab _lastTab = ConfigTab.Providers;
 
     private static TabControl? _tabs;
+    private static ProvidersTab? _providers;
+    private static ConfigDialogHost? _host;
     private static Action? _onClosed;
 
     /// <summary>Whether the dialog is up.</summary>
@@ -72,6 +74,7 @@ public static class ConfigDialog
         }
 
         _onClosed = onClosed;
+        _host = host;
 
         // 90% OF THE TERMINAL, CAPPED — the plugin manager's sizing, which is what this shape is proven at.
         var width = Math.Min((int)(Console.WindowWidth * 0.9), 150);
@@ -93,7 +96,8 @@ public static class ConfigDialog
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Fill,
         };
-        _tabs.AddTab("Providers", ProvidersContent(host, firstRun));
+        _providers = new ProvidersTab(host, () => _window);
+        _tabs.AddTab("Providers", _providers.Content);
         _tabs.AddTab("MCP servers", McpContent(host));
         window.AddControl(_tabs);
 
@@ -121,6 +125,15 @@ public static class ConfigDialog
 
         if (_placement is { } seen) { window.Left = seen.Left; window.Top = seen.Top; }
 
+        // CTRL+S SAVES THE INSTANCE ON SCREEN. The global Ctrl+S (a file tab's save) steps aside while
+        // this dialog is up, so the key reaches this window.
+        window.KeyPressed += (_, e) =>
+        {
+            if (e.KeyInfo.Key != ConsoleKey.S || e.KeyInfo.Modifiers != ConsoleModifiers.Control) return;
+            _providers?.SaveFromKey();
+            e.Handled = true;
+        };
+
         window.OnClosed += (_, _) =>
         {
             // REMEMBERED ON CLOSE, not as it moves: only the final resting place matters.
@@ -129,6 +142,7 @@ public static class ConfigDialog
             if (_tabs is { } tabs) _lastTab = tabs.ActiveTabIndex == 1 ? ConfigTab.Mcp : ConfigTab.Providers;
             _window = null;
             _tabs = null;
+            _providers = null;
             var closed = _onClosed;
             _onClosed = null;
             closed?.Invoke();
@@ -138,14 +152,30 @@ public static class ConfigDialog
         ws.AddWindow(window);
         SwitchTo(firstRun ? ConfigTab.Providers : tab ?? _lastTab);
         ws.SetActiveWindow(window);
+        if (_tabs.ActiveTabIndex == 0) window.FocusManager.SetFocus(_providers.Rail, FocusReason.Programmatic);
     }
 
-    /// <summary>Closes the dialog if it is open. Returns whether it was.</summary>
+    /// <summary>
+    /// Closes the dialog if it is open. Returns whether it was. UNSAVED EDITS ARE ASKED ABOUT, never
+    /// dropped by a reflexive Escape — the dialog stays up until the answer.
+    /// </summary>
     public static bool CloseIfOpen()
     {
         if (_window is not { } window) return false;
+        if (_providers?.HasUnsaved == true && _host is { } host)
+        {
+            _ = AskThenCloseAsync(host, window, _providers.SelectedName!);
+            return true;
+        }
         window.Close();
         return true;
+    }
+
+    private static async Task AskThenCloseAsync(ConfigDialogHost host, Window window, string name)
+    {
+        var answer = await FlowDialogs.ChooseAsync(host.System, window,
+            $"Unsaved changes to '{name}'", ["Keep editing", "Discard and close"], CancellationToken.None, appendCancel: false);
+        if (answer == "Discard and close") window.Close();
     }
 
     private static void SwitchTo(ConfigTab tab)
@@ -153,9 +183,6 @@ public static class ConfigDialog
         if (_tabs is null) return;
         _tabs.ActiveTabIndex = tab == ConfigTab.Mcp ? 1 : 0;
     }
-
-    private static IWindowControl ProvidersContent(ConfigDialogHost host, bool firstRun) =>
-        new MarkupControl(["Providers"]);
 
     private static IWindowControl McpContent(ConfigDialogHost host) =>
         new MarkupControl(["MCP servers"]);
