@@ -251,6 +251,37 @@ public class TurnOwnershipTests : IDisposable
     }
 
     /// <summary>
+    /// A TAIL THAT FAULTS STRANDS NOTHING. A Drained subscriber throwing in the tail fails the turn whose
+    /// tail it was before that turn reaches its held command — so the command must still run, from the tail
+    /// of the lap the steer started, not sit in the slot until some unrelated turn ends.
+    /// </summary>
+    [Fact]
+    public async Task AFaultingTail_StillRunsTheHeldCommand()
+    {
+        var folder = Path.Combine(_dir, ".cxagent", "commands");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "commit.md"), "Commit it.");
+        var held = new HeldProvider();
+        held.Release();
+        var s = Open(held);
+        s.Drained += _ => throw new InvalidOperationException("a subscriber failed");
+        var once = 0;
+        s.BeforeTurnReleasedForTest = () =>
+        {
+            if (Interlocked.Exchange(ref once, 1) != 0) return;
+            s.Submit("/commit");
+            s.Submit("also this");
+        };
+
+        var first = Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("go"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => first.Turn);
+        Assert.True(await Poll.Until(() => held.Calls == 3 && !s.TurnOwned));
+
+        Assert.Null(s.HeldCommand);
+        Assert.Contains("Commit it.", held.Text());
+    }
+
+    /// <summary>
     /// MAIL WAITING AT ESCAPE STARTS NOTHING: Esc means stop. It is read in front of the user's next
     /// prompt instead.
     /// </summary>
