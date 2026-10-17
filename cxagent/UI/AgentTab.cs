@@ -46,6 +46,7 @@ public sealed class AgentTab : IDisposable
     /// <summary>The follow-up field — the session composer's own kind, from the same factory.</summary>
     private readonly PromptControl _input = MainWindow.NewPrompt();
     private readonly ButtonControl _stop;
+    private readonly ButtonControl _move;
     private string _headerText = "";
     private string _hintText = "";
     private AgentRowView? _now;
@@ -63,14 +64,32 @@ public sealed class AgentTab : IDisposable
             .WithColorRole(ColorScheme.Destructive)
             .OnClick((object? _, ButtonControl button) =>
             {
-                _ = Task.Run(() => Session.StopTask($"stop {Kept.Name}"));
+                // A FOREGROUND AGENT IS STOPPED ALONE, its call answered and the parent's turn left to go on (Ctrl+B
+                // spec decision 11); a background one through /tasks stop, as before.
+                var foreground = CanMove;
+                _ = Task.Run(() =>
+                {
+                    if (foreground) Session.StopForeground(Kept.Name);
+                    else Session.StopTask($"stop {Kept.Name}");
+                });
 
                 // THE KEYBOARD TO THE COMPOSER NOW, not when the next tick hides the button: until then a space
                 // typed after the press presses Stop again.
                 button.GetParentWindow()?.FocusManager.SetFocus(MainControl, FocusReason.Programmatic);
             })
             .Build();
+        // BACKGROUND, BESIDE STOP, while the parent waits on this agent (Ctrl+B spec decision 7): the call is answered
+        // with a receipt, and the agent goes on in the background.
+        _move = new ButtonBuilder()
+            .WithText(" Background ")
+            .OnClick((object? _, ButtonControl button) =>
+            {
+                _ = Task.Run(() => Session.MoveToBackground(Kept.Name));
+                button.GetParentWindow()?.FocusManager.SetFocus(MainControl, FocusReason.Programmatic);
+            })
+            .Build();
         var bar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
+        bar.AddItem(_move);
         bar.AddItem(_stop);
 
         // THE SESSION'S COMPOSER, BUILT BY THE SAME CODE, with this agent's line in the mode line's place.
@@ -183,7 +202,13 @@ public sealed class AgentTab : IDisposable
     }
 
     /// <summary>Whether Stop is offered: running, in the background, in a session still open.</summary>
-    public bool CanStop => _now is { Running: true, Foreground: false } && !Session.SubAgents.Ended;
+    public bool CanStop => _now is { Running: true } && !Session.SubAgents.Ended;
+
+    /// <summary>Whether Background is offered: the parent's turn is waiting on this agent, in a session still open.</summary>
+    public bool CanMove => _now is { Running: true, Foreground: true } && !Session.SubAgents.Ended;
+
+    /// <summary>Test seam: the Background button.</summary>
+    public ButtonControl MoveForTest => _move;
 
     /// <summary>The tab title: the state first, as a job tab's.</summary>
     public string Title()
@@ -206,6 +231,10 @@ public sealed class AgentTab : IDisposable
         _now = AgentRows.Describe(Session.SubAgents, Kept, now);
         var stopHadFocus = _stop.HasFocus;
         if (_stop.Visible != CanStop) _stop.Visible = CanStop;
+        var moveHadFocus = _move.HasFocus;
+        if (_move.Visible != CanMove) _move.Visible = CanMove;
+        if (moveHadFocus && !_move.Visible)
+            _move.GetParentWindow()?.FocusManager.SetFocus(MainControl, FocusReason.Programmatic);
         if (_input.Visible != CanType) _input.Visible = CanType;
 
         // THE KEYBOARD LEAVES A STOP THAT HAS GONE. Clicked, Stop keeps the focus; hidden, it kept it still, so what
@@ -252,6 +281,8 @@ public sealed class AgentTab : IDisposable
 
         // A VIEW, AND IT SAYS SO (decision 29): a tab strip mixes these with session and shell tabs, whose closing
         // ends what is in them; this one's closing ends nothing, and how the agent is stopped is named beside it.
+        else if (_now is { Running: true, Foreground: true })
+            lines.Add(Muted("Ctrl+B or Background moves it to the background · Stop ends it, and the parent goes on"));
         else if (_now is { Running: true, Foreground: false })
             lines.Add(Muted("keeps running when you close this tab · Stop, or x in Tasks (F7), stops it"));
         else if (_now is { Running: false })

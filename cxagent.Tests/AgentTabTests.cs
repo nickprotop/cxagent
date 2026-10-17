@@ -175,15 +175,17 @@ public sealed class AgentTabTests : IDisposable
         Assert.Null(_window.ActiveAgentTab);
     }
 
+    /// <summary>Ctrl+B spec decision 11: a foreground child can be stopped alone, and moved — both from its tab.</summary>
     [Fact]
-    public void AForegroundChild_HasNoStop()
+    public void AForegroundChild_CanBeStoppedAndMoved()
     {
         _front.SubAgents.Keep(Child(Says()), "finder");
         _front.SubAgents.TryClaim("finder");
         _front.SubAgents.AnnounceBegin("finder");
         using var tab = new AgentTab(_front, _front.SubAgents.Find("finder")!, Inline(new ChatTranscriptControl()));
 
-        Assert.False(tab.CanStop);
+        Assert.True(tab.CanStop);
+        Assert.True(tab.CanMove);
         _front.SubAgents.Release("finder");
     }
 

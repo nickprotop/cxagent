@@ -255,6 +255,24 @@ public sealed class ViewTabTests : IDisposable
         Assert.Equal(ForegroundRelease.Move, run.Released.Result);
     }
 
+    /// <summary>Ctrl+B spec decisions 7 and 11: a foreground agent's tab offers Background and Stop.</summary>
+    [Fact]
+    public void AForegroundAgentsTab_OffersBackgroundAndStop()
+    {
+        var child = AgentTabTests.Child(AgentTabTests.Says());
+        _front.SubAgents.Keep(child, "finder");
+        _front.SubAgents.TryClaim("finder");
+        _front.SubAgents.AnnounceBegin("finder");
+        _front.SubAgents.BeginForeground("finder", CancellationToken.None);
+        _window.OpenAgentTab(_front, "finder");
+        var tab = _window.ActiveAgentTab!;
+        tab.Tick(DateTimeOffset.UtcNow);
+
+        Assert.True(tab.MoveForTest.Visible);
+        Assert.True(tab.StopForTest.Visible);
+        Assert.Contains("Ctrl+B or Background moves it to the background", tab.HeaderText, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ClosingAFinishedAgentTab_SaysNothing()
     {
