@@ -416,7 +416,18 @@ public static class ProcessRunner
         bool timedOut = false;
         try
         {
-            await process.WaitForExitAsync(linked.Token);
+            try
+            {
+                await process.WaitForExitAsync(linked.Token);
+            }
+            catch (OperationCanceledException) when (MoveRefusedAtTheCap(spec.Run, ct, registry))
+            {
+                // A MOVE THE REGISTRY HAS NO ROOM FOR GOES ON WAITING. Handing over at the cap kills the command, and
+                // the user pressed Ctrl+B to keep it going — so the call waits on the deadline and the caller only,
+                // exactly as it did before the key was pressed.
+                using var unmoved = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+                await process.WaitForExitAsync(unmoved.Token);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -428,7 +439,9 @@ public static class ProcessRunner
             //
             // THE USER'S MOVE IS THE DEADLINE, EARLY (Ctrl+B): the same hand-over, and regardless of DetachOnTimeout —
             // the user asked for exactly this.
-            var moved = spec.Run.DetachNow.IsCancellationRequested && !ct.IsCancellationRequested;
+            // NOT A MOVE WHEN THE DEADLINE ENDED IT: after a move refused at the cap the call waits on, and the deadline
+            // that later passes is a timeout like any other.
+            var moved = spec.Run.DetachNow.IsCancellationRequested && !ct.IsCancellationRequested && !timedOut;
             if (moved || (timedOut && spec.Run.DetachOnTimeout))
             {
                 var (o, e, os, es) = CloseAndRead();
@@ -479,6 +492,14 @@ public static class ProcessRunner
             StderrSpill = read.ErrSpill,
         };
     }
+
+    /// <summary>
+    /// Whether the wait ended on the user's move (and nothing else), with the registry already full. The check races a
+    /// slot freeing or filling in the same instant; a slot that fills there still ends in the refused hand-over's kill.
+    /// </summary>
+    private static bool MoveRefusedAtTheCap(RunOptions run, CancellationToken ct, DetachedProcessRegistry? registry) =>
+        run.DetachNow.IsCancellationRequested && !ct.IsCancellationRequested
+        && (registry ?? DetachedProcessRegistry.Default).Live.Count >= DetachedProcessRegistry.MaxConcurrent;
 
     /// <summary>
     /// Moves ownership of a still-running process to a <see cref="DetachedProcess"/>, or returns null

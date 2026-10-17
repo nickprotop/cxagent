@@ -167,6 +167,30 @@ public class ShellJobExecutorTests
         Assert.Null(shells.WaitingSince(_ => true));
     }
 
+    /// <summary>
+    /// A MOVE THE REGISTRY HAS NO ROOM FOR IS NOT A KILL. The user asked for the command to keep going; at the cap the
+    /// call keeps waiting in the foreground and the command finishes as if Ctrl+B had not been pressed.
+    /// </summary>
+    [Fact]
+    public async Task Execute_MovedAtTheCap_KeepsWaiting_RatherThanKilling()
+    {
+        using var fx = new BackgroundFixture();
+        for (var i = 0; i < DetachedProcessRegistry.MaxConcurrent; i++)
+            Assert.True((await fx.Executor.ExecuteAsync(
+                P(("command", "sleep 30"), ("background", true)), fx.Context, CancellationToken.None)).Success);
+        var shells = new ForegroundShells();
+        var exec = new ShellJobExecutor(new ShellBackgrounding(fx.Registry, Finished: fx.Finished, Foreground: shells));
+
+        var call = exec.ExecuteAsync(P(("command", "sleep 2; echo kept"), ("timeout_seconds", 600)), fx.Context,
+            CancellationToken.None);
+        Assert.True(await Poll.Until(() => shells.WaitingSince(_ => true) is not null));
+        shells.DetachWhere(_ => true);
+        var result = await call.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Contains("kept", result.Output!["stdout"]?.ToString());
+    }
+
     [Fact]
     public async Task Execute_Timeout_ReportsStillRunning_AndDoesNotSayItWasKilled()
     {
