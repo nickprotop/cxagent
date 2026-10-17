@@ -40,7 +40,14 @@ public sealed class AgentTab : IDisposable
     private readonly IDisposable _attached;
     private readonly MarkupControl _header = Controls.Markup().WithMargin(1, 0, 1, 0).Build();
     private readonly MarkupControl _hint = Controls.Markup().WithMargin(1, 0, 1, 0).Build();
-    private readonly PromptControl _input = Controls.Prompt().WithMargin(1, 0, 1, 0).Build();
+    /// <summary>
+    /// The follow-up field.
+    ///
+    /// <para>STRETCHED: a prompt field is otherwise measured from its content, and this one was fourteen columns wide,
+    /// showing only the tail of what was typed — the reason the session's composer stretches too.</para>
+    /// </summary>
+    private readonly PromptControl _input = Controls.Prompt().WithMargin(1, 0, 1, 0)
+        .WithAlignment(HorizontalAlignment.Stretch).Build();
     private readonly ButtonControl _stop;
     private string _headerText = "";
     private string _hintText = "";

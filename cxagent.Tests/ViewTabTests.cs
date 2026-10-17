@@ -140,6 +140,23 @@ public sealed class ViewTabTests : IDisposable
     }
 
     /// <summary>
+    /// THE TAB'S COMPOSER SPANS THE TAB. Measured from its content, as a prompt field is unless stretched, it was ten
+    /// or so columns wide and showed only the tail of what was typed.
+    /// </summary>
+    [Fact]
+    public void TheComposer_SpansTheTab()
+    {
+        _front.SubAgents.Keep(AgentTabTests.Child(AgentTabTests.Says()), "finder");
+        _window.OpenAgentTab(_front, "finder");
+        var input = (SharpConsoleUI.Controls.IWindowControl)_window.ActiveAgentTab!.MainControl;
+        var window = SharpConsoleUI.Extensions.WindowControlExtensions.GetParentWindow(input)!;
+
+        window.RenderAndGetVisibleContent();
+
+        Assert.True(input.ActualWidth > 100, $"the composer is {input.ActualWidth} columns wide");
+    }
+
+    /// <summary>
     /// PRESSING STOP HANDS THE KEYBOARD TO THE COMPOSER AT ONCE, not on the next tick: until the button hides, a space
     /// typed after the press presses it again.
     /// </summary>
