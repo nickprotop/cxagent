@@ -3,6 +3,7 @@ using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
+using SharpConsoleUI.Themes;
 
 namespace CxAgent.UI.Config;
 
@@ -17,7 +18,20 @@ namespace CxAgent.UI.Config;
 public static class ConfirmDialog
 {
     private static Window? _window;
+    private static ListControl? _list;
     private static TaskCompletionSource<string?>? _answer;
+
+    /// <summary>
+    /// The answer Enter would choose right now, or null when no question is up — what a test reads to learn
+    /// which answer a reflex reaches.
+    /// </summary>
+    public static string? Highlighted => _list?.SelectedItem?.Tag as string;
+
+    /// <summary>The fill the highlighted answer is drawn on, or null when no question is up.</summary>
+    public static SharpConsoleUI.Color? HighlightFill => _list?.HighlightBackgroundColor;
+
+    /// <summary>Whether the answers hold the keyboard focus, so the highlight is drawn at full strength.</summary>
+    public static bool AnswersFocused => _list?.HasFocus ?? false;
 
     /// <summary>Whether a question is up — Escape answers it before anything under it.</summary>
     public static bool IsOpen => _window is not null;
@@ -54,7 +68,11 @@ public static class ConfirmDialog
             .Build();
 
         window.AddControl(new MarkupControl([.. lines.Select(MarkupParser.Escape), ""]) { Wrap = true });
-        var list = new ListControl { HorizontalAlignment = HorizontalAlignment.Stretch };
+        // THE PRIMARY ROLE, so the highlighted answer is a full-strength bar in the theme's accent with text
+        // chosen to read on it. A theme's own selection bar is often a dark shade under rows drawn in that
+        // same bright accent, and in a two-answer question the answer NOT chosen then looks chosen — which,
+        // over a stop that cannot be undone, is the misread that matters.
+        var list = new ListControl { HorizontalAlignment = HorizontalAlignment.Stretch, ColorRole = ColorRole.Primary };
         foreach (var a in answers) list.AddItem(new ListItem($"[bold]{MarkupParser.Escape(a)}[/]") { Tag = a });
         list.ItemActivated += (_, item) =>
         {
@@ -69,9 +87,11 @@ public static class ConfirmDialog
             _answer?.TrySetResult(null);
             _answer = null;
             _window = null;
+            _list = null;
         };
 
         _window = window;
+        _list = list;
         system.AddWindow(window);
         system.SetActiveWindow(window);
         window.FocusManager.SetFocus(list, FocusReason.Programmatic);

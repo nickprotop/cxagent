@@ -22,9 +22,15 @@ public static class QuitGuard
         "Stopping now loses the work they have not reported.",
     ];
 
-    /// <summary>True to go ahead — nothing was running, or the user chose to stop them.</summary>
+    /// <summary>
+    /// True to go ahead — nothing was running, or the user chose to stop them.
+    ///
+    /// <para>CANCEL FIRST, because the dialog opens on its first answer and Enter is a reflex: a quit
+    /// pressed by habit must not end work that exists nowhere else. Stopping takes a deliberate move
+    /// down to it.</para>
+    /// </summary>
     public static async Task<bool> ConfirmAsync(ConsoleWindowSystem system, int running) =>
         Question(running) is not { } lines
-        || await ConfirmDialog.AskAsync(system, "Background agents are running", lines, ["Stop them", "Cancel"])
+        || await ConfirmDialog.AskAsync(system, "Background agents are running", lines, ["Cancel", "Stop them"])
             == "Stop them";
 }
