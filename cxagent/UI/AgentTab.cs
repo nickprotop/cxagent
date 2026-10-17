@@ -3,6 +3,7 @@ using CxAgent.Core.Agents;
 using CxAgent.Core.Sessions;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Extensions;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
 
@@ -114,6 +115,9 @@ public sealed class AgentTab : IDisposable
     /// <summary>Where the keyboard goes when the tab comes to the front.</summary>
     public IFocusableControl MainControl => CanType ? _input : _views.Chat;
 
+    /// <summary>Test seam: the Stop button, whose focus is what a test of its hiding reads.</summary>
+    public ButtonControl StopForTest => _stop;
+
     private IWindowControl? _prompt;
 
     /// <summary>Whether a permission prompt occupies the composer row.</summary>
@@ -195,8 +199,14 @@ public sealed class AgentTab : IDisposable
     public void Tick(DateTimeOffset now)
     {
         _now = AgentRows.Describe(Session.SubAgents, Kept, now);
+        var stopHadFocus = _stop.HasFocus;
         if (_stop.Visible != CanStop) _stop.Visible = CanStop;
         if (_input.Visible != CanType) _input.Visible = CanType;
+
+        // THE KEYBOARD LEAVES A STOP THAT HAS GONE. Clicked, Stop keeps the focus; hidden, it kept it still, so what
+        // was typed next went nowhere and every space pressed the hidden button again.
+        if (stopHadFocus && !_stop.Visible)
+            _stop.GetParentWindow()?.FocusManager.SetFocus(MainControl, FocusReason.Programmatic);
 
         // ONLY WHEN IT CHANGED: this runs every second for every open tab.
         var header = HeaderLines();

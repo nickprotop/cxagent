@@ -139,6 +139,29 @@ public sealed class ViewTabTests : IDisposable
         Assert.Contains("spent", _window.StatusBar.Readout!.Label, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// WHEN STOP GOES, THE KEYBOARD GOES TO THE COMPOSER. Clicked, Stop keeps the focus; hidden once the agent has
+    /// stopped, it kept it still — what was typed next went nowhere, and every space pressed the hidden button again,
+    /// one "nothing to stop" line in the session per press.
+    /// </summary>
+    [Fact]
+    public void WhenStopHides_TheKeyboardMovesToTheComposer()
+    {
+        var run = Running(_front, "finder");
+        _window.OpenAgentTab(_front, "finder");
+        var tab = _window.ActiveAgentTab!;
+        tab.Tick(DateTimeOffset.UtcNow);
+        var window = SharpConsoleUI.Extensions.WindowControlExtensions.GetParentWindow(tab.StopForTest)!;
+        window.FocusManager.SetFocus(tab.StopForTest, SharpConsoleUI.Controls.FocusReason.Mouse);
+        Assert.True(tab.StopForTest.HasFocus);
+
+        run.Finish(BackgroundState.Stopped);
+        tab.Tick(DateTimeOffset.UtcNow);
+
+        Assert.False(tab.StopForTest.Visible);
+        Assert.Same(tab.MainControl, window.FocusManager.FocusedControl);
+    }
+
     [Fact]
     public void ClosingAFinishedAgentTab_SaysNothing()
     {
