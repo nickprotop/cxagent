@@ -677,31 +677,27 @@ public sealed partial class Session
         {
             if (Interlocked.CompareExchange(ref _turnOwned, 1, 0) != 0) return true;   // someone else owns it now
 
-            // TAKEN UNDER A CATCH THAT GIVES OWNERSHIP BACK. Taking the steer raises Drained to whatever
-            // the front end subscribed, and a subscriber that throws would otherwise leave the conversation
-            // owned with no loop running — every later message steered into nothing. Only the takes are
-            // covered: once StartOwnedTurn runs, ownership is that loop's to release, not this method's.
-            Agents.SteerDelivery? steer;
-            TurnOriginator steerOrigin;
-            WaitingText? mail = null;
-            try
-            {
-                steer = TakeSteerWithOrigin(out steerOrigin);
-                if (steer is null && readMail) mail = Host?.TakeMail();
-            }
-            catch
-            {
-                Volatile.Write(ref _turnOwned, 0);
-                throw;
-            }
+            // TAKEN WITHOUT RAISING ANYTHING, so nothing a front end subscribed can fail between taking the
+            // steer and starting its lap. Drained is raised below, once the lap is certain to run.
+            var steer = TakeSteerUnannounced(out var steerOrigin);
+            var mail = steer is null && readMail ? Host?.TakeMail() : null;
 
             // THE ORIGINATOR OF WHAT WOKE IT, not User by default. This lap is a turn of its own, and an
             // unwire decides whether it may cancel a turn by its originator: a plugin's goal or mail
             // started here under User would make that plugin unrevocable for as long as the lap runs.
             if (steer is not null)
             {
-                StartOwnedTurn(new TurnRequest(steer.ForModel, steer.Shown, _turnTools, steerOrigin,
-                    SubmitSource.User));
+                // THE LAP STARTS EVEN IF A DRAINED SUBSCRIBER THROWS. The steer has already left the
+                // queue, so a handler failing here would otherwise lose the user's words and leave the
+                // conversation owned by no loop. Started in the finally, the lap owns the conversation
+                // and runs this same tail when it ends; the failure still propagates, to whoever awaits
+                // the turn this tail belongs to.
+                try { Drained?.Invoke(steer.Shown); }
+                finally
+                {
+                    StartOwnedTurn(new TurnRequest(steer.ForModel, steer.Shown, _turnTools, steerOrigin,
+                        SubmitSource.User));
+                }
                 return true;
             }
 

@@ -187,9 +187,33 @@ public class TurnOwnershipTests : IDisposable
 
         var first = Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("go"));
         await Assert.ThrowsAsync<InvalidOperationException>(() => first.Turn);
+        await Idle(s);
 
         Assert.False(s.TurnOwned);
         await Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("next")).Turn;
+    }
+
+    /// <summary>
+    /// A SUBSCRIBER THAT THROWS DOES NOT COST THE STEER. The steer has left the queue by the time Drained
+    /// is raised, so a handler failing there must not also take the user's words with it: the lap they
+    /// asked for still runs, and the failure still reaches whoever awaits the turn.
+    /// </summary>
+    [Fact]
+    public async Task AThrowingDrainedSubscriber_InTheTail_StillReadsTheSteer()
+    {
+        var held = new HeldProvider();
+        held.Release();
+        var s = Open(held);
+        s.Drained += _ => throw new InvalidOperationException("a subscriber failed");
+        var once = 0;
+        s.BeforeTurnReleasedForTest = () => { if (Interlocked.Exchange(ref once, 1) == 0) s.Submit("also this"); };
+
+        var first = Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("go"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => first.Turn);
+        await Idle(s);
+
+        Assert.Equal(2, held.Calls);
+        Assert.Contains("also this", held.Text());
     }
 
     /// <summary>

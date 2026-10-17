@@ -221,17 +221,24 @@ public sealed partial class Session
     /// part of the queued block drawn as the user's and of what Escape returns to their composer; kept
     /// apart until now, only the model ever sees the two together.</para>
     /// </summary>
-    public Agents.SteerDelivery? TakeSteer() => TakeSteerWithOrigin(out _);
+    public Agents.SteerDelivery? TakeSteer() =>
+        TakePendingSteer() is { Length: > 0 } shown ? WithInjected(shown) : null;
 
-    /// <summary><see cref="TakeSteer"/>, also answering whose the steer was — see <see cref="SteerAs"/>.</summary>
-    private Agents.SteerDelivery? TakeSteerWithOrigin(out TurnOriginator origin)
-    {
-        if (TakePendingSteerWithOrigin(out origin) is not { Length: > 0 } shown) return null;
+    /// <summary>
+    /// <see cref="TakeSteer"/> WITHOUT RAISING <see cref="Drained"/>, also answering whose the steer was —
+    /// see <see cref="SteerAs"/>. The caller raises Drained itself.
+    ///
+    /// <para>FOR A CALLER THAT MUST ACT ON THE STEER EVEN IF A SUBSCRIBER THROWS. Once the queue is emptied
+    /// the steer exists only in what this returns, so a Drained handler failing inside the take would throw
+    /// away the user's words with the return value — see ResumeIfPending.</para>
+    /// </summary>
+    private Agents.SteerDelivery? TakeSteerUnannounced(out TurnOriginator origin) =>
+        TakePendingUnannounced(out origin) is { Length: > 0 } shown ? WithInjected(shown) : null;
 
-        return TakeInjected() is { Length: > 0 } injected
+    private Agents.SteerDelivery WithInjected(string shown) =>
+        TakeInjected() is { Length: > 0 } injected
             ? new Agents.SteerDelivery(shown, injected + "\n\n" + shown)
             : new Agents.SteerDelivery(shown, shown);
-    }
 
     /// <summary>
     /// The source <see cref="UserSpokeToken"/> hands out while nothing is waiting; <see cref="Steer"/>
@@ -279,16 +286,9 @@ public sealed partial class Session
     /// promoted/pending split a single boolean everywhere else: the transcript block is removed, not
     /// shrunk, and Escape returns everything still here because everything here is un-delivered.</para>
     /// </summary>
-    public string? TakePendingSteer() => TakePendingSteerWithOrigin(out _);
-
-    private string? TakePendingSteerWithOrigin(out TurnOriginator origin)
+    public string? TakePendingSteer()
     {
-        string? taken;
-        lock (_pendingGate)
-        {
-            (taken, origin) = (_pending, _pendingOrigin);
-            (_pending, _pendingOrigin) = (null, TurnOriginator.User);
-        }
+        var taken = TakePendingUnannounced(out _);
 
         // OUTSIDE THE LOCK — see Steer. This one is raised from the agent's own flow while Steer
         // comes from the render loop, which is the two-thread pair the lock exists for and the pair
@@ -296,5 +296,16 @@ public sealed partial class Session
         if (taken is { Length: > 0 }) Drained?.Invoke(taken);
 
         return taken;
+    }
+
+    private string? TakePendingUnannounced(out TurnOriginator origin)
+    {
+        lock (_pendingGate)
+        {
+            var taken = _pending;
+            origin = _pendingOrigin;
+            (_pending, _pendingOrigin) = (null, TurnOriginator.User);
+            return taken;
+        }
     }
 }
