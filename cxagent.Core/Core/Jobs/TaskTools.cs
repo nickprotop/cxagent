@@ -79,7 +79,7 @@ public sealed class TaskTools(TaskSources sources)
                 ? StopShell(callerAgentId, pid)
                 : await ShellOutputAsync(new ShellRead(callerAgentId, pid, wait, timeout), ct);
 
-        var handle = id.Handle!;
+        var handle = sources.Agents?.HandleFor(id.Handle!) ?? id.Handle!;
         if (call.Name == Tool.TaskStop) return Stop(callerAgentId, handle);
 
         if (!sources.IsSessionAgent(callerAgentId))
@@ -92,6 +92,7 @@ public sealed class TaskTools(TaskSources sources)
     public string Describe(string id)
     {
         if (int.TryParse(id, out var pid)) return DescribeShell(pid);
+        id = sources.Agents?.HandleFor(id) ?? id;
         if (sources.Agents?.Find(id) is null) return $"no task '{id}'.";
         if (sources.Agents.BackgroundOf(id) is not { } run) return $"'{id}' is not running in the background.";
         return run.Handoff.Ended ? run.Handoff.Result ?? $"'{id}' has ended." : Progress(id, run);
@@ -431,7 +432,7 @@ public sealed class TaskTools(TaskSources sources)
             JsonDocument.Parse("""{ "type": "object", "properties": {} }""").RootElement),
 
         new ToolDefinition(Tool.TaskStop,
-            "Stop a background sub-agent (by handle) or shell command (by pid). A sub-agent you stop "
+            "Stop a background sub-agent (by handle or id) or shell command (by pid). A sub-agent you stop "
             + "reports as cancelled. You may stop shell commands you started, or any of them if you are "
             + "the session agent.",
             JsonDocument.Parse(
@@ -441,7 +442,7 @@ public sealed class TaskTools(TaskSources sources)
                   "properties": {
                     "id": {
                       "type": ["string", "integer"],
-                      "description": "A handle or a pid, from a receipt or task_list"
+                      "description": "A sub-agent's handle or id, or a shell's pid, from a receipt or task_list"
                     }
                   },
                   "required": ["id"]
@@ -460,7 +461,7 @@ public sealed class TaskTools(TaskSources sources)
                   "properties": {
                     "id": {
                       "type": ["string", "integer"],
-                      "description": "A handle or a pid, from a receipt or task_list"
+                      "description": "A sub-agent's handle or id, or a shell's pid, from a receipt or task_list"
                     },
                     "wait": {
                       "type": "boolean",

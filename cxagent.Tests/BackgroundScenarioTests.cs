@@ -544,6 +544,24 @@ public class BackgroundScenarioTests : IDisposable
         Assert.Contains("state=\"cancelled\"", parent.Last);
     }
 
+    /// <summary>/tasks stop TAKES THE AGENT'S ID as well as its handle, as the model's task_stop does.</summary>
+    [Fact]
+    public async Task UserStop_ByTheAgentsId_StopsIt()
+    {
+        var parent = new ScriptedProvider(Use(Calls.Spawn(id: "s1")), Answer("started"));
+        var child = new HeldProvider("never");
+        var s = Open(parent, child);
+
+        await Turn(s.Session, "go");
+        Assert.True(await Poll.Until(() => child.Calls == 1));
+        var agentId = s.Session.SubAgents.Find("find-thing")!.Agent.Agent.Id;
+
+        s.Session.StopTask("stop " + agentId);
+
+        Assert.True(await Poll.Until(() => RunOf(s).Handoff.Ended));
+        Assert.True(RunOf(s).StoppedByUser);
+    }
+
     /// <summary>
     /// S16. THE PARENT'S OWN task_stop: the cancelled report is read at its next step, and — the parent
     /// having stopped it, not the user — the model may resume it.

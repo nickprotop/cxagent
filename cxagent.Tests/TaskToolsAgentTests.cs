@@ -477,4 +477,56 @@ public class TaskToolsAgentTests
         held.Release();
         await r.Delivery.Next();
     }
+
+    /// <summary>
+    /// THE ID THE RECEIPT SHOWS WORKS AS WELL AS THE HANDLE. The spawn's receipt reads
+    /// <c>&lt;sub_agent id="…" name="…"&gt;</c>, and a model reaching for "the id" takes the first one; answering
+    /// "no task" sent it to task_list for a name it had already been given.
+    /// </summary>
+    [Fact]
+    public async Task TaskOutput_AcceptsTheAgentsId_AsWellAsItsHandle()
+    {
+        var held = new HeldProvider("never");
+        var r = Wired(held);
+        await Spawn(r);
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+        var agentId = r.Store.Find("find-thing")!.Agent.Agent.Id;
+
+        var output = await Call(r, Tool.TaskOutput, new { id = agentId });
+
+        Assert.Contains("'find-thing' is running", output);
+        held.Release();
+    }
+
+    [Fact]
+    public async Task TaskStop_AcceptsTheAgentsId()
+    {
+        var held = new HeldProvider("never");
+        var r = Wired(held);
+        await Spawn(r);
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+        var agentId = r.Store.Find("find-thing")!.Agent.Agent.Id;
+
+        Assert.Contains("stopping 'find-thing'", await Call(r, Tool.TaskStop, new { id = agentId }));
+        Assert.True((await r.Delivery.Next()).Left);
+    }
+
+    /// <summary>/tasks output READS THE SAME IDS the model's tool does.</summary>
+    [Fact]
+    public async Task Describe_AcceptsTheAgentsId()
+    {
+        var held = new HeldProvider("never");
+        var r = Wired(held);
+        await Spawn(r);
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+        var agentId = r.Store.Find("find-thing")!.Agent.Agent.Id;
+
+        Assert.Contains("'find-thing' is running", r.Tools.Describe(agentId));
+        held.Release();
+    }
+
+    /// <summary>A NAME THAT IS NEITHER is still "no task" — resolving an id must not invent one.</summary>
+    [Fact]
+    public void ResolvingAnUnknownId_LeavesItAsGiven() =>
+        Assert.Equal("nobody", new SubAgentStore().HandleFor("nobody"));
 }

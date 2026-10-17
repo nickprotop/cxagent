@@ -336,6 +336,8 @@ public sealed partial class Session
             return CommandStatus.Reported;
         }
 
+        // AN AGENT'S ID READ OFF A ROW WORKS AS ITS HANDLE DOES, as it does for the model's task_stop.
+        id = SubAgents.HandleFor(id);
         var said = SubAgents.Find(id) is null ? $"no task '{id}' — /tasks lists them."
             : SubAgents.Stop(id, byUser: true)
                 ? $"stopped '{id}' — the agent that started it will read that you stopped it."

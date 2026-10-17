@@ -95,6 +95,17 @@ public sealed class SubAgentStore
     /// pinned for the life of the session already, because agent_send resumes it on the context its
     /// spawn left behind; a second set of references elsewhere would pin the same Agents twice.</para>
     /// </summary>
+    /// <summary>
+    /// The handle a task is kept under, given its handle or its agent's id; anything else comes back as given,
+    /// for the caller to answer "no task" about.
+    ///
+    /// <para>BOTH, BECAUSE THE RECEIPT SHOWS BOTH: a spawn answers <c>&lt;sub_agent id="…" name="…"&gt;</c>, and a
+    /// model reaching for "the id" takes the first. Refusing it sent the model to task_list for a name it had
+    /// already been given — and a user reading the id off a row is no different.</para>
+    /// </summary>
+    public string HandleFor(string handleOrId) =>
+        _byName.ContainsKey(handleOrId) ? handleOrId : FindByAgentId(handleOrId)?.Name ?? handleOrId;
+
     public StoredAgent? FindByAgentId(string agentId) =>
         _byName.Values.FirstOrDefault(a => a.Agent.Agent.Id == agentId);
 
