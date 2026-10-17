@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Sessions;
 using SharpConsoleUI.Builders;
@@ -35,6 +36,7 @@ public sealed class AgentTab : IDisposable
     private readonly IDisposable _attached;
     private readonly MarkupControl _header = Controls.Markup().WithMargin(1, 0, 1, 0).Build();
     private readonly MarkupControl _hint = Controls.Markup().WithMargin(1, 0, 1, 0).Build();
+    private readonly PromptControl _input = Controls.Prompt().WithMargin(1, 0, 1, 0).Build();
     private readonly ButtonControl _stop;
     private string _headerText = "";
     private string _hintText = "";
@@ -58,11 +60,15 @@ public sealed class AgentTab : IDisposable
 
         Composer = Controls.Grid()
             .Columns(GridLength.Star(1))
-            .Rows(GridLength.Cells(1), GridLength.Cells(ComposerRows - 1))
+            .Rows(GridLength.Cells(1), GridLength.Cells(1), GridLength.Cells(1))
             .Place(new RuleControl { Color = ColorScheme.MutedRgb }, 0, 0)
-            .Place(_hint, 1, 0)
+            .Place(_input, 1, 0)
+            .Place(_hint, 2, 0)
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
+
+        // ON ENTER, NOT ON EVERY KEYSTROKE — the question prompt's lesson.
+        _input.Entered += (_, text) => _ = Submit(text);
 
         // THE HEADER PINNED ABOVE THE TRANSCRIPT, as the job tab's: following a long run must not carry the state
         // and the clock off the top. Cells for the composer, not Auto — see SessionTab.ComposerRows for the
@@ -100,7 +106,25 @@ public sealed class AgentTab : IDisposable
     public ChatTranscriptControl Chat => _views.Chat;
 
     /// <summary>Where the keyboard goes when the tab comes to the front.</summary>
-    public IFocusableControl MainControl => _views.Chat;
+    public IFocusableControl MainControl => CanType ? _input : _views.Chat;
+
+    /// <summary>Whether the composer takes a follow-up: not while the parent waits on this agent, nor once its session has ended.</summary>
+    public bool CanType => _now is not { Foreground: true, Running: true } && !Session.SubAgents.Ended;
+
+    /// <summary>
+    /// Sends what was typed, clears the composer, and shows the tab whatever the send says for itself.
+    ///
+    /// <para>THE ANSWER IS NOT WRITTEN HERE: the tab is attached to the child, and its answer arrives as it is
+    /// written, with the user's own turn above it. A refusal or a delivery note goes through the tab's own transcript
+    /// sink, which knows how to reach the UI thread.</para>
+    /// </summary>
+    public async Task Submit(string text)
+    {
+        if (!CanType || string.IsNullOrWhiteSpace(text)) return;
+        _input.Input = "";
+        if (await Session.SendFromAgentTab(Kept.Name, text) is { } line)
+            _views.Transcript.Said(new Message(line, Severity.Info));
+    }
 
     /// <summary>Whether Stop is offered: running, in the background, in a session still open.</summary>
     public bool CanStop => _now is { Running: true, Foreground: false } && !Session.SubAgents.Ended;
@@ -125,6 +149,7 @@ public sealed class AgentTab : IDisposable
     {
         _now = AgentRows.Describe(Session.SubAgents, Kept, now);
         if (_stop.Visible != CanStop) _stop.Visible = CanStop;
+        if (_input.Visible != CanType) _input.Visible = CanType;
 
         // ONLY WHEN IT CHANGED: this runs every second for every open tab.
         var header = HeaderLines();
@@ -167,9 +192,10 @@ public sealed class AgentTab : IDisposable
     }
 
     private string Hint() =>
-        _now is { Foreground: true, Running: true }
-            ? Muted("read-only — the parent is waiting on this agent's answer")
-            : Muted($"/agents send {Kept.Name} … asks it more");
+        _now is { Foreground: true, Running: true } ? Muted("read-only — the parent is waiting on this agent's answer")
+        : Session.SubAgents.Ended ? Muted("its session has ended")
+        : _now is { Running: true } ? Muted("Enter tells it — it reads this on its next turn")
+        : Muted("Enter asks it — its answer appears here");
 
     private static string Muted(string text) => $"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(text)}[/]";
 }

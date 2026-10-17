@@ -449,6 +449,58 @@ public sealed partial class Session
         return CommandStatus.Changed;
     }
 
+    /// <summary>
+    /// Sends a follow-up typed in a sub-agent's tab: to its mailbox while it works, a resume when it is idle or
+    /// stopped. Completes with a line for the tab, or null when the answer streamed into the tab itself.
+    ///
+    /// <para>THE PATH /agents send TAKES, NOT ITS REPORTING. The same reach, the same user token, the same right to
+    /// resume a child the user stopped — but the answer is the tab's, which is attached to the child and shows it
+    /// as it is written, so nothing of it is said here.</para>
+    ///
+    /// <para>ONE LINE FOR THE PARENT, AS A TRAIL. Its transcript should still say that its child was asked something
+    /// and by whom; the model is not told (core decision 25), and a System row reaches no context.</para>
+    /// </summary>
+    public Task<string?> SendFromAgentTab(string name, string prompt)
+    {
+        var text = prompt.Trim();
+        if (text.Length == 0) return Task.FromResult<string?>(null);
+        if (SubAgents.Find(name) is null)
+            return Task.FromResult<string?>($"no sub-agent named '{name}' in this session.");
+
+        // READ BEFORE THE SEND, as /agents send reads it: by the time the send returns, the state has changed.
+        var busy = SubAgents.IsBusy(name);
+        var shown = Jobs.OutputTail.OneLine(text);
+        Say(new Message($"you → '{name}' (from its tab): {(shown.Length <= 80 ? shown : shown[..79] + "…")}", Severity.Info));
+
+        return Task.Run<string?>(async () =>
+        {
+            var token = SubAgents.BeginUserSend(name);
+            try
+            {
+                var reach = new Agents.AgentReachTools(SubAgents, _spawner?.ConcurrencySlot);
+                var answer = await reach.SendAsync(new Agents.SendRequest(To: name, Prompt: text,
+                    Background: false, ParentAgentId: null, FromUser: true), token);
+
+                // A REFUSAL IS THE TAB'S TO SHOW; SO IS A DELIVERY, in the tab's own words — the reach's reply says
+                // the answer goes elsewhere, and from the tab the child's further work is right there.
+                if (answer.StartsWith("error:", StringComparison.Ordinal)) return answer;
+                return busy ? $"delivered — '{name}' reads this on its next turn; what it makes of it shows here." : null;
+            }
+            catch (OperationCanceledException)
+            {
+                return $"stopped — '{name}' did not finish answering.";
+            }
+            catch (Exception ex)
+            {
+                return $"'{name}' failed: {ex.Message}";
+            }
+            finally
+            {
+                SubAgents.EndUserSend(name);
+            }
+        });
+    }
+
     /// <summary>Says what changed in this session's working folder, per <c>git diff</c>.</summary>
     public CommandStatus ShowDiff(string arguments)
     {

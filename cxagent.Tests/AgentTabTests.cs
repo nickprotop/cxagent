@@ -186,4 +186,29 @@ public sealed class AgentTabTests : IDisposable
         Assert.False(tab.CanStop);
         _front.SubAgents.Release("finder");
     }
+
+    [Fact]
+    public async Task TheComposer_SendsToTheChild_AndClears()
+    {
+        _front.SubAgents.Keep(Child(Says("ok")), "finder");
+        var chat = new ChatTranscriptControl();
+        using var tab = new AgentTab(_front, _front.SubAgents.Find("finder")!, Inline(chat));
+
+        await tab.Submit("look again");
+
+        Assert.Contains(_parent.Notices, n => n.Contains("(from its tab): look again", StringComparison.Ordinal));
+        Assert.Contains(ChatRole.User, Roles(chat));
+    }
+
+    [Fact]
+    public void AForegroundChild_HasNoComposer()
+    {
+        _front.SubAgents.Keep(Child(Says()), "finder");
+        _front.SubAgents.TryClaim("finder");
+        _front.SubAgents.AnnounceBegin("finder");
+        using var tab = new AgentTab(_front, _front.SubAgents.Find("finder")!, Inline(new ChatTranscriptControl()));
+
+        Assert.False(tab.CanType);
+        _front.SubAgents.Release("finder");
+    }
 }
