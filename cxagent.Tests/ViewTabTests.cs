@@ -142,6 +142,21 @@ public sealed class ViewTabTests : IDisposable
     }
 
     /// <summary>
+    /// THE TAB'S COMPOSER IS THE SESSION'S KIND: the same three-row field, not a one-line box beside it.
+    /// </summary>
+    [Fact]
+    public void TheComposer_IsTheSessionsKind()
+    {
+        _front.SubAgents.Keep(AgentTabTests.Child(AgentTabTests.Says()), "finder");
+        _window.OpenAgentTab(_front, "finder");
+        var input = Assert.IsType<SharpConsoleUI.Controls.PromptControl>(_window.ActiveAgentTab!.MainControl);
+
+        Assert.True(input.Multiline);
+        Assert.Equal(_window.Input.MinRows, input.MinRows);
+        Assert.Equal(_window.Input.MaxRows, input.MaxRows);
+    }
+
+    /// <summary>
     /// THE TAB'S COMPOSER SPANS THE TAB. Measured from its content, as a prompt field is unless stretched, it was ten
     /// or so columns wide and showed only the tail of what was typed.
     /// </summary>

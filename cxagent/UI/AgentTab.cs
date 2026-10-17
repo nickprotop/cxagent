@@ -33,21 +33,18 @@ public sealed record AgentTabViews(ChatTranscriptControl Chat, ISessionObserver 
 /// </summary>
 public sealed class AgentTab : IDisposable
 {
-    /// <summary>Rule, input, hint — the composer row's height whatever it holds.</summary>
-    private const int ComposerRows = 3;
 
     private readonly AgentTabViews _views;
     private readonly IDisposable _attached;
     private readonly MarkupControl _header = Controls.Markup().WithMargin(1, 0, 1, 0).Build();
-    private readonly MarkupControl _hint = Controls.Markup().WithMargin(1, 0, 1, 0).Build();
     /// <summary>
-    /// The follow-up field.
-    ///
-    /// <para>STRETCHED: a prompt field is otherwise measured from its content, and this one was fourteen columns wide,
-    /// showing only the tail of what was typed — the reason the session's composer stretches too.</para>
+    /// The line under the field, where a session's composer has its mode line: what this agent is, and what Enter does
+    /// with what is typed — the session's permission and mode controls do not apply to it.
     /// </summary>
-    private readonly PromptControl _input = Controls.Prompt().WithMargin(1, 0, 1, 0)
-        .WithAlignment(HorizontalAlignment.Stretch).Build();
+    private readonly MarkupControl _hint = Controls.Markup().WithAlignment(HorizontalAlignment.Stretch)
+        .WithBackgroundColor(ColorScheme.ComposerSurface).Build();
+    /// <summary>The follow-up field — the session composer's own kind, from the same factory.</summary>
+    private readonly PromptControl _input = MainWindow.NewPrompt();
     private readonly ButtonControl _stop;
     private string _headerText = "";
     private string _hintText = "";
@@ -76,14 +73,8 @@ public sealed class AgentTab : IDisposable
         var bar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         bar.AddItem(_stop);
 
-        Composer = Controls.Grid()
-            .Columns(GridLength.Star(1))
-            .Rows(GridLength.Cells(1), GridLength.Cells(1), GridLength.Cells(1))
-            .Place(new RuleControl { Color = ColorScheme.MutedRgb }, 0, 0)
-            .Place(_input, 1, 0)
-            .Place(_hint, 2, 0)
-            .WithAlignment(HorizontalAlignment.Stretch)
-            .Build();
+        // THE SESSION'S COMPOSER, BUILT BY THE SAME CODE, with this agent's line in the mode line's place.
+        Composer = MainWindow.BuildComposer(_input, _hint).Composer;
 
         // ON ENTER, NOT ON EVERY KEYSTROKE — the question prompt's lesson.
         _input.Entered += (_, text) => _ = Submit(text);
@@ -94,7 +85,7 @@ public sealed class AgentTab : IDisposable
         Content = Controls.Grid()
             .Columns(GridLength.Star(1))
             .Rows(GridLength.Cells(1), GridLength.Cells(1), GridLength.Auto(), GridLength.Star(1),
-                  GridLength.Cells(ComposerRows))
+                  GridLength.Cells(MainWindow.ComposerRows))
             .Place(bar, 0, 0)
             .Place(new RuleControl { Color = ColorScheme.MutedRgb }, 1, 0)
             .Place(_header, 2, 0)
@@ -158,7 +149,7 @@ public sealed class AgentTab : IDisposable
     {
         if (!ReferenceEquals(_prompt, prompt)) return false;
         Content.ReplaceControl(prompt, Composer);
-        Content.RowDefinitions[4] = GridLength.Cells(ComposerRows);
+        Content.RowDefinitions[4] = GridLength.Cells(MainWindow.ComposerRows);
         _prompt = null;
         DenyPrompt = null;
         return true;
@@ -269,11 +260,16 @@ public sealed class AgentTab : IDisposable
         return lines;
     }
 
+    /// <summary>
+    /// The line under the field: the agent's type and model, as the session's mode line names its own, then what Enter
+    /// does now.
+    /// </summary>
     private string Hint() =>
-        _now is { Foreground: true, Running: true } ? Muted("read-only — the parent is waiting on this agent's answer")
-        : Session.SubAgents.Ended ? Muted("its session has ended")
-        : _now is { Running: true } ? Muted("Enter tells it — it reads this on its next turn")
-        : Muted("Enter asks it — its answer appears here");
+        Muted($" {Kept.Agent.TypeName} · {Kept.Agent.ModelId} · " + (
+            _now is { Foreground: true, Running: true } ? "read-only — the parent is waiting on this agent's answer"
+            : Session.SubAgents.Ended ? "its session has ended"
+            : _now is { Running: true } ? "Enter tells it — it reads this on its next turn"
+            : "Enter asks it — its answer appears here"));
 
     private static string Muted(string text) => $"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(text)}[/]";
 }

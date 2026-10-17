@@ -89,7 +89,7 @@ public sealed class MainWindow : IDisposable
     /// submitted at all. A drive found exactly that where a second tab's composer should have been,
     /// which is why this is shared rather than repeated.</para>
     /// </summary>
-    private static PromptControl NewPrompt() => new()
+    internal static PromptControl NewPrompt() => new()
     {
         // NO MARGIN. The cell already carries the composer's inset (_composer.Cell(0,0).Padding), and
         // the mode line beside it has none — so a margin here pushed the prompt one column right of
@@ -512,6 +512,36 @@ public sealed class MainWindow : IDisposable
         // bottom that belongs to the user — and stopping it at the prompt's last row split that
         // object in two, leaving the caption looking like something separate that had drifted
         // underneath. PromptRows + 1 is the prompt's viewport plus the mode line's single row.
+        _statusRule = Controls.RuleBuilder()
+            .WithColor(ColorScheme.Separator)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithMargin(1,0,1,0)
+            .Build();
+
+        var parts = BuildComposer(tab.Input, modeLine);
+
+        tab.ModeLine = modeLine;
+        tab.ComposerRule = parts.Rule;
+        tab.PromptBox = parts.PromptBox;
+        tab.Composer = parts.Composer;
+        tab.Grip = parts.Grip;
+
+        return parts.Composer;
+    }
+
+    /// <summary>A composer's parts, for the caller that restyles or swaps them later.</summary>
+    internal sealed record ComposerParts(GridControl Composer, GridControl PromptBox, MarkupControl Grip, RuleControl Rule);
+
+    /// <summary>
+    /// The composer: a rule, then the grip beside the prompt field with one line under it — the session's mode line,
+    /// or what an agent tab says about its agent.
+    ///
+    /// <para>ONE BUILDER FOR EVERY COMPOSER, so an agent tab's is the session's own rather than a copy that drifts.</para>
+    /// </summary>
+    /// <param name="input">The prompt field — <see cref="NewPrompt"/>'s.</param>
+    /// <param name="line">The line under it, on the composer surface.</param>
+    internal static ComposerParts BuildComposer(PromptControl input, MarkupControl line)
+    {
         var grip = Controls.Markup()
             .AddLine(string.Join('\n',
                 // ▌ (U+258C), A HALF BLOCK — the heaviest of these that still reads as a rule. It
@@ -532,8 +562,8 @@ public sealed class MainWindow : IDisposable
             .Columns(GridLength.Cells(1), GridLength.Star(1))
             .Rows(GridLength.Cells(PromptRows), GridLength.Auto())
             .Place(grip, 0, 0, rowSpan: 2)
-            .Place(tab.Input, 0, 1)
-            .Place(modeLine, 1, 1)
+            .Place(input, 0, 1)
+            .Place(line, 1, 1)
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
         promptBox.BackgroundColor = ColorScheme.ComposerSurface;
@@ -551,12 +581,6 @@ public sealed class MainWindow : IDisposable
         // UNPADDED, unlike the composer's rule. That one is inset a column so it stops at the card's
         // edges; the status bar fills the pane edge to edge, so a rule that stopped short of the
         // frame would leave a notch at each end.
-        _statusRule = Controls.RuleBuilder()
-            .WithColor(ColorScheme.Separator)
-            .WithAlignment(HorizontalAlignment.Stretch)
-            .WithMargin(1,0,1,0)
-            .Build();
-
         var composer = Controls.Grid()
             .Columns(GridLength.Star(1))
             // CELLS, not Auto, for the prompt's row. MultilineEditControl grows to fill its bounds
@@ -597,13 +621,7 @@ public sealed class MainWindow : IDisposable
 
         // THE PARTS GO ON THE TAB, because they are per conversation: a prompt swapped out for a
         // permission control belongs to the tab that asked, and a mode line reports that tab's mode.
-        tab.ModeLine = modeLine;
-        tab.ComposerRule = composerRule;
-        tab.PromptBox = promptBox;
-        tab.Composer = composer;
-        tab.Grip = grip;
-
-        return composer;
+        return new ComposerParts(composer, promptBox, grip, composerRule);
     }
 
     /// <summary>
