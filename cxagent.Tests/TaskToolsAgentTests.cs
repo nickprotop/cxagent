@@ -468,6 +468,9 @@ public class TaskToolsAgentTests
         var r = Wired(held);
         await Spawn(r, description: "Find The Thing");
 
+        // WAITED UNTIL THE CHILD IS ASKING ITS MODEL: the receipt returns before the run's own task has
+        // marked it running, and a list taken in that gap rightly says "queued".
+        Assert.True(await Poll.Until(() => held.Calls == 1));
         var row = (await Call(r, Tool.TaskList, new { })).Split('\n').Single(l => l.Contains("'find-the-thing'"));
         Assert.Matches(@"running · \d+s", row);
         Assert.Contains("Find The Thing", row);
