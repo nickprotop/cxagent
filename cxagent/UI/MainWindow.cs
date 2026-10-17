@@ -2526,8 +2526,8 @@ public sealed class MainWindow : IDisposable
     /// <summary>
     /// The status item's text: the key's name, and while anything runs, how much.
     ///
-    /// <para>RUNNING JOBS ONLY: a finished one is the panel's to show. Other sessions' are counted
-    /// apart — `Tasks 2+1` — because they are running in this process too and a narrow terminal has no
+    /// <para>RUNNING TASKS ONLY — shells and background agents: a finished one is the panel's to show.
+    /// Other sessions' are counted apart — `Tasks 2+1` — because they are running in this process too and a narrow terminal has no
     /// other way to say so. SHORT, because the bar has no gap to give: crowded, its left items run
     /// straight into the right group.</para>
     /// </summary>
@@ -2570,10 +2570,28 @@ public sealed class MainWindow : IDisposable
         : session.SubAgents.FindByAgentId(agentId)?.Name ?? agentId;
 
     /// <summary>The status item, and every open job tab, once a second.</summary>
+    /// <summary>The status item's text for the session in front, among the sessions this window has open.</summary>
+    /// <param name="front">Whose tasks count as "mine"; null counts every one elsewhere.</param>
+    /// <param name="open">Every session the window holds, the front one included.</param>
+    /// <param name="board">Where the running shells are read from.</param>
+    public static string JobsItemLabelFor(Core.Sessions.Session? front, IEnumerable<Core.Sessions.Session> open,
+        BackgroundJobBoard board)
+    {
+        var owns = front is { } session ? session.Owns : (Func<string, bool>)(_ => false);
+
+        // AGENTS AS WELL AS SHELLS, queued ones included: the item answers "is anything still going in the
+        // background", and counting shells alone showed nothing while only agents ran. Queued counts for
+        // the reason the quit question counts it — work that will run unless something stops it.
+        var agentsHere = front?.RunningBackgroundAgents ?? 0;
+        var agentsElsewhere = open.Where(s => !ReferenceEquals(s, front)).Sum(s => s.RunningBackgroundAgents);
+        return JobsItemLabel(board.For(owns).Count(e => !e.Finished) + agentsHere,
+            board.RunningElsewhere(owns) + agentsElsewhere);
+    }
+
     private void RefreshJobs()
     {
-        var owns = JobsSession is { } session ? session.Owns : (Func<string, bool>)(_ => false);
-        var label = JobsItemLabel(Jobs.For(owns).Count(e => !e.Finished), Jobs.RunningElsewhere(owns));
+        var label = JobsItemLabelFor(JobsSession,
+            _sessionTabs.Select(t => t.Session).OfType<Core.Sessions.Session>(), Jobs);
 
         // CREATED ON THE FIRST TICK, not at build: a status-bar change during construction blocks on a
         // render tick that does not exist yet (see ShowComposerHint).
