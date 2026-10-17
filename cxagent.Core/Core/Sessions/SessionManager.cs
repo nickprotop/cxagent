@@ -900,8 +900,13 @@ public sealed class SessionManager : IDisposable
                 // anyway would leave this session disabled in config and serving the tools, which is
                 // the divergence the whole design exists to prevent. Defer instead: it takes both
                 // the unwire and the entries when its turn ends.
-                if (session.UnwirePluginAsync(name, CancellationToken.None).GetAwaiter().GetResult()
-                    is CommandStatus.Refused)
+                //
+                // ON THE THREAD POOL: this is reached from the UI thread (/plugin disable, the plugin
+                // manager), whose context the unwire's awaits would post their continuations to — the
+                // thread blocked right here, so a plugin whose Stop was not instant froze the app.
+                var unwired = Task.Run(() => session.UnwirePluginAsync(name, CancellationToken.None))
+                    .GetAwaiter().GetResult();
+                if (unwired is CommandStatus.Refused)
                 {
                     session.DeferPlugins(Config.PluginSet, unwire);
                     continue;

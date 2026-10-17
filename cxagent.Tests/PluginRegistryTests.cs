@@ -479,6 +479,54 @@ public class PluginRegistryTests : IDisposable
         await ((Session.SubmitOutcome.Started)started).Turn.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    /// <summary>A plugin whose Stop finishes a moment later, as an LSP or ABI plugin's does.</summary>
+    private sealed class SlowStopPlugin : IPlugin
+    {
+        public Task<PluginManifest> Load(IPluginContext context, CancellationToken ct) =>
+            throw new NotSupportedException("the registry is handed an already-loaded plugin in these tests");
+
+        public Task Start(CancellationToken ct) => Task.CompletedTask;
+
+        public Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
+            CancellationToken ct) => Task.FromResult(new JobResult { Success = true });
+
+        public Task Stop(CancellationToken ct) => Task.Delay(50, CancellationToken.None);
+    }
+
+    /// <summary>Runs posted work only when its own thread is free — the UI thread's, which is blocked.</summary>
+    private sealed class BusyThreadContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) { }
+    }
+
+    /// <summary>
+    /// `/plugin disable` FROM THE UI THREAD, on a plugin whose Stop is not instant. The disable unwires it
+    /// synchronously, and the unwire's continuations were posted to the very thread blocked waiting for them — the
+    /// app froze, and the unwire's own ten-second bound could not fire either.
+    /// </summary>
+    [Fact]
+    public async Task DisablingALoadedPlugin_FromTheUiThread_DoesNotDeadlock()
+    {
+        var session = Wired(out var manager, new MockLlmProvider(), out _);
+        using var __ = manager;
+        Assert.IsType<PluginChangeResult.Applied>(
+            manager.AddPlugin(session, "slow", new PluginConfig(File: "slow.dll")));
+        Assert.Equal(CommandStatus.Changed,
+            await session.LoadPlugin(new SlowStopPlugin(), Manifest("slow", "slow_tool"), _dir));
+
+        PluginChangeResult? result = null;
+        var ui = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new BusyThreadContext());
+            result = manager.SetPluginEnabled(session, "slow", enabled: false);
+        }) { IsBackground = true };
+        ui.Start();
+
+        Assert.True(ui.Join(TimeSpan.FromSeconds(10)), "the disable never returned");
+        Assert.IsType<PluginChangeResult.Applied>(result);
+        Assert.Empty(session.Plugins.CurrentTools());
+    }
+
     /// <summary>Off the busy path entirely: a plugin loads and unwires cleanly at an ordinary turn
     /// boundary, and both report Changed.</summary>
     [Fact]
