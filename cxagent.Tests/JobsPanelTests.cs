@@ -322,6 +322,34 @@ public class JobsPanelTests
     }
 
     /// <summary>
+    /// ↓ PAST THE LAST RUNNING CARD GOES ON INTO FINISHED, and ↑ comes back: the column reads as one list, and the
+    /// keys stopped dead at a section's end with more cards visible below.
+    /// </summary>
+    [Fact]
+    public void TheArrows_CrossBetweenSections()
+    {
+        var system = new SharpConsoleUI.ConsoleWindowSystem(new SharpConsoleUI.Drivers.HeadlessConsoleDriver(60, 40));
+        CxAgentTheme.Install(system, null);
+        var panel = new JobsPanel();
+        var window = new SharpConsoleUI.Window(system) { Left = 0, Top = 0, Width = 44, Height = 40 };
+        window.AddControl(panel.Control);
+        system.AddWindow(window);
+        var running = Agent("worker", AgentRowState.Running);
+        var done = Agent("old-done", AgentRowState.Done);
+        panel.Refresh(new JobsPanel.JobsShown(JobsPanel.Order([running, done]), 1), SessionPanel.MaxWidth);
+        window.RenderAndGetVisibleContent();
+        var chosen = new List<JobsPanel.RowChoice>();
+        panel.RowChosen += chosen.Add;
+
+        Assert.True(panel.MoveSelection(down: true));
+        panel.ChooseSelected();
+        Assert.True(panel.MoveSelection(down: false));
+        panel.ChooseSelected();
+
+        Assert.Equal([done, running], chosen.Select(c => c.Row));
+    }
+
+    /// <summary>
     /// x THEN x AGAIN ACTS ON ONE CARD (decision 13). Stopping the last running card moves it to Finished; the
     /// keyboard goes with it, so the second x deletes that card — not whichever finished card was selected before,
     /// with no highlight to say so.

@@ -174,7 +174,20 @@ public sealed class JobsPanel
     public bool MoveSelection(bool down)
     {
         if (Active() is not { } section) return false;
-        section.Index = Math.Clamp(section.Index + (down ? 1 : -1), 0, section.Rows.Count - 1);
+
+        // PAST A SECTION'S END INTO THE NEXT, so the column reads as one list: ↓ on the last running card goes on to
+        // the first finished one, ↑ on the first finished card back to the last running one.
+        var next = section.Index + (down ? 1 : -1);
+        var other = ReferenceEquals(section, _running) ? _finished : _running;
+        var crossing = down ? ReferenceEquals(section, _running) && next >= section.Rows.Count
+                            : ReferenceEquals(section, _finished) && next < 0;
+        if (crossing && other.Rows.Count > 0 && other.Take(other.Rows[down ? 0 : ^1].Key))
+        {
+            Redraw();
+            return true;
+        }
+
+        section.Index = Math.Clamp(next, 0, section.Rows.Count - 1);
         Redraw();
         return true;
     }
