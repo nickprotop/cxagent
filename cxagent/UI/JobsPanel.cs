@@ -92,9 +92,10 @@ public sealed class JobsPanel
 
     /// <summary>
     /// The columns a card's text cannot use: the panel's two margins, the two its scroll panel reserves for a
-    /// scrollbar, and the mark with its space — a line sized without them wraps the moment the bar arrives.
+    /// scrollbar, the selection bar with its space, and the mark with its space — a line sized without them wraps the
+    /// moment the bar arrives.
     /// </summary>
-    private const int Chrome = 6;
+    private const int Chrome = 8;
 
     private readonly MarkupControl _heading = Ctl.Markup().WithMargin(1, 1, 1, 0).Build();
     private readonly MarkupControl _empty = Ctl.Markup().WithMargin(1, 1, 1, 0).Build();
@@ -104,16 +105,12 @@ public sealed class JobsPanel
     private int _count;
     private int _width = SessionPanel.MaxWidth;
 
-    /// <summary>Test seam: the Running section's list, which a click test sends its mouse events to.</summary>
-    public ListControl RunningListForTest => _running.List;
-
     /// <summary>A card was chosen — by a click, Enter, its ⏹ or ✕, or <c>x</c>.</summary>
     public event Action<RowChoice>? RowChosen;
 
     public JobsPanel()
     {
         _running = new Section(this, "Running");
-
         _finished = new Section(this, "Finished");
 
         _host = Ctl.ScrollablePanel().WithVerticalAlignment(VerticalAlignment.Fill).Build();
@@ -128,13 +125,13 @@ public sealed class JobsPanel
     public IWindowControl Control => _host;
 
     /// <summary>
-    /// What takes the keyboard when F7 brings the panel up: the Running list, or Finished's when only it has cards
-    /// to show.
+    /// What takes the keyboard when F7 brings the panel up: the selected card's link, or the column itself with no
+    /// cards to show.
     /// </summary>
-    public IFocusableControl Rows => Active()?.List ?? _running.List;
+    public IFocusableControl Rows => SelectedCard()?.Anchor ?? (IFocusableControl)_host;
 
-    /// <summary>Whether either list has the keyboard — when the window forwards the panel's keys to it.</summary>
-    public bool RowsHaveFocus => _running.List.HasFocus || _finished.List.HasFocus;
+    /// <summary>Whether a card has the keyboard — when the window forwards the panel's keys to it.</summary>
+    public bool RowsHaveFocus => AllCards().Any(c => c.HasFocus);
 
     /// <summary>
     /// The panel as text: the heading, each section's header and cards, and the key hint — what the controls show,
@@ -142,13 +139,21 @@ public sealed class JobsPanel
     /// </summary>
     public string RenderedText { get; private set; } = "";
 
-    /// <summary>Re-applies the surface after a theme change — see SessionPanel.ReapplyTheme.</summary>
+    /// <summary>Re-applies the surfaces after a theme change — see SessionPanel.ReapplyTheme.</summary>
     public void ReapplyTheme()
     {
         _host.BackgroundColor = ColorScheme.PanelSurface;
-        _running.ReapplyTheme();
-        _finished.ReapplyTheme();
+        foreach (var card in AllCards()) card.Paint();
     }
+
+    /// <summary>Test seam: a card's ⏹ or ✕ button, by its row's key — what a click test presses.</summary>
+    public ButtonControl? ControlForTest(string key) => AllCards().FirstOrDefault(c => c.Row.Key == key)?.Button;
+
+    /// <summary>Test seam: a card's own surface, by its row's key.</summary>
+    public PanelControl? CardForTest(string key) => AllCards().FirstOrDefault(c => c.Row.Key == key)?.Box;
+
+    /// <summary>Test seam: a card's "View …" link, by its row's key.</summary>
+    public MarkupControl? LinkForTest(string key) => AllCards().FirstOrDefault(c => c.Row.Key == key)?.Anchor;
 
     /// <summary>
     /// Acts as a click on one of the panel's targets would. PUBLIC so a test can click without a mouse.
@@ -163,39 +168,29 @@ public sealed class JobsPanel
             : url.StartsWith("delete:", StringComparison.Ordinal) ? 7 : 0;
         var stop = prefix > 0;
         var key = url[prefix..];
-        var row = _running.Rows.Concat(_finished.Rows).FirstOrDefault(r => r.Key == key);
+        var row = AllRows().FirstOrDefault(r => r.Key == key);
         if (row is not null) RowChosen?.Invoke(new RowChoice(row, stop ? RowAction.StopOrForget : RowAction.Open));
     }
 
     /// <summary>
-    /// Moves the selection one card up or down in the active list. False when no open section has cards, so the
-    /// key is not swallowed.
+    /// Moves the selection one card up or down. False with no card showing, so the key is not swallowed.
+    ///
+    /// <para>ONE LIST ACROSS BOTH SECTIONS: ↓ on the last running card goes on to the first finished one, and ↑ comes
+    /// back — the column reads as one list of tasks.</para>
     /// </summary>
     public bool MoveSelection(bool down)
     {
-        if (Active() is not { } section) return false;
-
-        // PAST A SECTION'S END INTO THE NEXT, so the column reads as one list: ↓ on the last running card goes on to
-        // the first finished one, ↑ on the first finished card back to the last running one.
-        var next = section.Index + (down ? 1 : -1);
-        var other = ReferenceEquals(section, _running) ? _finished : _running;
-        var crossing = down ? ReferenceEquals(section, _running) && next >= section.Rows.Count
-                            : ReferenceEquals(section, _finished) && next < 0;
-        if (crossing && other.Rows.Count > 0 && other.Take(other.Rows[down ? 0 : ^1].Key))
-        {
-            Redraw();
-            return true;
-        }
-
-        section.Index = Math.Clamp(next, 0, section.Rows.Count - 1);
-        Redraw();
+        var cards = AllCards();
+        if (cards.Count == 0) return false;
+        var at = SelectedCard() is { } current ? cards.IndexOf(current) : 0;
+        Select(cards[Math.Clamp(at + (down ? 1 : -1), 0, cards.Count - 1)], focus: true);
         return true;
     }
 
-    /// <summary>Opens the selected card — Enter on the rows. False with no card showing.</summary>
+    /// <summary>Opens the selected card — Enter on the cards. False with no card showing.</summary>
     public bool ChooseSelected()
     {
-        if (Active()?.Selected is not { } row) return false;
+        if (SelectedCard()?.Row is not { } row) return false;
         RowChosen?.Invoke(new RowChoice(row, RowAction.Open));
         return true;
     }
@@ -209,14 +204,14 @@ public sealed class JobsPanel
     /// </summary>
     public bool ActOnSelected()
     {
-        if (Active()?.Selected is not { } row) return false;
+        if (SelectedCard()?.Row is not { } row) return false;
         if (row is AgentRow { View: { Foreground: true, Running: true } }) return true;
         RowChosen?.Invoke(new RowChoice(row, RowAction.StopOrForget));
         return true;
     }
 
-    /// <summary>Redraws with the last rows given — for a change of focus, selection or section between ticks.</summary>
-    public void Redraw() => Refresh(new JobsShown([.. _running.Rows, .. _finished.Rows], _count), _width);
+    /// <summary>Redraws with the last rows given — for a change of focus or selection between ticks.</summary>
+    public void Redraw() => Refresh(new JobsShown(AllRows(), _count), _width);
 
     /// <param name="shown">The rows and the running count.</param>
     /// <param name="width">The column's width as laid out — see SessionPanel.SessionPanelState.Width.</param>
@@ -225,16 +220,24 @@ public sealed class JobsPanel
         _count = shown.Running;
         _width = width;
         var usable = Math.Max(1, width - Chrome);
-        var held = RowsHaveFocus ? Active()?.Selected?.Key : null;
+        var hadFocus = RowsHaveFocus;
+        var before = AllRows().Select(r => r.Key).ToList();
         _running.Show([.. shown.Rows.Where(r => r.Running)], usable);
         _finished.Show([.. shown.Rows.Where(r => !r.Running)], usable);
 
-        // THE KEYBOARD FOLLOWS ITS CARD ACROSS SECTIONS. A card that stops moves from Running to Finished; left
-        // behind, the keyboard would sit on an emptied list while x acted on another finished card, unhighlighted,
-        // and the x-then-x of decision 13 would delete the wrong agent.
-        if (held is not null)
-            foreach (var section in new[] { _running, _finished })
-                if (!section.List.HasFocus && section.Take(held)) break;
+        // THE SELECTION FOLLOWS ITS CARD, across sections too: a card that stops moves from Running to Finished and
+        // stays selected, so the x-then-x of decision 13 deletes the card it stopped. A card that is gone hands the
+        // selection to the card now where it was.
+        var cards = AllCards();
+        if (_selected is not null && cards.All(c => c.Row.Key != _selected) && cards.Count > 0)
+        {
+            var was = Math.Max(0, before.IndexOf(_selected));
+            _selected = cards[Math.Min(was, cards.Count - 1)].Row.Key;
+        }
+        foreach (var card in cards) card.Selected = card.Row.Key == SelectedCard()?.Row.Key;
+
+        // AND THE KEYBOARD WITH IT, when a card had it: the one it was on may have gone, or moved section.
+        if (hadFocus && !RowsHaveFocus && SelectedCard() is { } keep) Focus(keep);
 
         var heading = $"[bold {ColorScheme.AccentMarkup}]{(_count > 0 ? $"Tasks · {_count} running" : "Tasks")}[/]";
         SetIfChanged(_heading, [heading]);
@@ -249,10 +252,10 @@ public sealed class JobsPanel
         // THE KEYS, WHILE THEY WORK, under the section whose card has the keyboard. A hint with nothing selected
         // names keys that would act on nothing. Only the keys a card does not show: each card already says how it
         // is viewed, and the column has room for little else.
-        var focused = RowsHaveFocus ? Active() : null;
+        var chosen = RowsHaveFocus ? SelectedCard() : null;
         string HintFor(Section section) =>
-            !ReferenceEquals(section, focused) || section.Selected is not { } chosen ? ""
-            : Muted(Cut(chosen switch
+            chosen is null || !section.Holds(chosen) ? ""
+            : Muted(Cut(chosen.Row switch
             {
                 AgentRow { View: { Foreground: true, Running: true } } => "x — the parent waits on it",
                 { Running: true } => "x stop",
@@ -272,16 +275,32 @@ public sealed class JobsPanel
         RenderedText = string.Join("\n", text);
     }
 
-    /// <summary>
-    /// The section whose list acts for the keys: the one with the keyboard, else the first with cards.
-    ///
-    /// <para>WHILE THE CARDS HAVE THE KEYBOARD, ONLY THE FOCUSED SECTION: its selection is the one highlighted, and a
-    /// key acting on the other section's remembered card would act on one the user cannot see chosen.</para>
-    /// </summary>
-    private Section? Active() =>
-        RowsHaveFocus
-            ? new[] { _running, _finished }.FirstOrDefault(s => s.List.HasFocus && s.Rows.Count > 0)
-            : new[] { _running, _finished }.FirstOrDefault(s => s.Rows.Count > 0);
+    /// <summary>The selected card's row key; null before anything has been selected.</summary>
+    private string? _selected;
+
+    /// <summary>Every card, Running's then Finished's — the order ↑ and ↓ walk.</summary>
+    private List<Card> AllCards() => [.. _running.Cards, .. _finished.Cards];
+
+    private List<PanelRow> AllRows() => [.. AllCards().Select(c => c.Row)];
+
+    /// <summary>The selected card, or the first when none has been chosen yet.</summary>
+    private Card? SelectedCard()
+    {
+        var cards = AllCards();
+        return cards.FirstOrDefault(c => c.Row.Key == _selected) ?? cards.FirstOrDefault();
+    }
+
+    /// <summary>Selects a card — a click, a key, its link taking the keyboard — and redraws the marks and hints.</summary>
+    private void Select(Card card, bool focus)
+    {
+        var changed = _selected != card.Row.Key;
+        _selected = card.Row.Key;
+        if (focus) Focus(card);
+        if (changed || focus) Redraw();
+    }
+
+    private static void Focus(Card card) =>
+        card.Anchor.GetParentWindow()?.FocusManager.SetFocus(card.Anchor, FocusReason.Programmatic);
 
     // ONLY WHEN IT CHANGED. The clocks change every second while a task runs, but an idle panel re-set on every tick
     // would invalidate layout for nothing.
@@ -292,7 +311,7 @@ public sealed class JobsPanel
     }
 
     /// <summary>
-    /// One section: a heading over a list of cards.
+    /// One section: a heading over its cards.
     ///
     /// <para>NOTHING COLLAPSES (decision 33′). A folded Finished section is one more thing to learn and to wonder
     /// about; the column scrolls, and x deletes what the user is done with.</para>
@@ -307,66 +326,17 @@ public sealed class JobsPanel
             _owner = owner;
             _title = title;
             Panel = Ctl.CollapsiblePanel(title).WithMargin(1, 1, 1, 0).NonCollapsible().Build();
-            List = NewList();
-            Panel.AddControl(List);
-
         }
 
-        public ListControl List { get; private set; }
+        public CollapsiblePanel Panel { get; }
 
         /// <summary>This section's key hint, placed under it by the panel.</summary>
         public MarkupControl Hint { get; } = Ctl.Markup().WithMargin(1, 0, 1, 0).Build();
 
-        /// <summary>
-        /// Which card the keys act on in this section — remembered while the list does not have the keyboard.
-        ///
-        /// <para>A LIST SHOWS A SELECTION ONLY WHILE IT HAS THE KEYBOARD. Two lists each drawing their own would make
-        /// two cards look chosen at once, and "x stop" under a finished card would read as stopping it. The position is
-        /// kept here and handed back when the list is focused again.</para>
-        /// </summary>
-        public int Index
-        {
-            get => List.SelectedIndex >= 0 ? List.SelectedIndex : _remembered;
-            set
-            {
-                _remembered = value;
-                if (List.HasFocus) List.SelectedIndex = value;
-            }
-        }
+        /// <summary>The cards, in the order shown.</summary>
+        public List<Card> Cards { get; } = [];
 
-        private int _remembered;
-
-        /// <summary>
-        /// Whether a click at this list-relative point is on the selected card's control.
-        ///
-        /// <para>WHERE THE GLYPH IS DRAWN, NOT THE LIST'S EDGE. The cards stop short of the list's right edge — the
-        /// panel keeps columns for its scrollbar — so an edge test never meets the glyph. And on the title line only:
-        /// the same column one line down is the card's facts.</para>
-        ///
-        /// <para>THE CARD'S TOP COUNTED FROM THE FIRST ITEM: a section's list is sized to all its cards and never
-        /// scrolls inside itself — the column does that.</para>
-        /// </summary>
-        private static bool OnControl(ListControl list, System.Drawing.Point at)
-        {
-            var index = list.SelectedIndex;
-            if (index < 0 || index >= list.Items.Count) return false;
-            var top = list.Items.Take(index).Sum(i => i.Text.Split('\n').Length);
-            if (at.Y - list.Margin.Top != top) return false;
-            var title = MarkupParser.Remove(list.Items[index].Text.Split('\n')[0]);
-            var glyph = title.IndexOfAny(['⏹', '✕']);
-            return glyph >= 0 && Math.Abs(at.X - list.Margin.Left - Columns(title[..glyph])) <= 1;
-        }
-
-        /// <summary>Selects the card with this key and takes the keyboard; false when this section does not hold it.</summary>
-        public bool Take(string key)
-        {
-            var at = Rows.ToList().FindIndex(r => r.Key == key);
-            if (at < 0 || List.GetParentWindow() is not { } window) return false;
-            _remembered = at;
-            List.SelectedIndex = at;
-            window.FocusManager.SetFocus(List, FocusReason.Programmatic);
-            return true;
-        }
+        public bool Holds(Card card) => Cards.Contains(card);
 
         public void ShowHint(string hint)
         {
@@ -374,107 +344,25 @@ public sealed class JobsPanel
             if (Hint.Text != hint) Hint.SetContent([hint]);
         }
 
-        /// <summary>A list wired to this section: Enter or a double-click opens a card, a click on its control acts.</summary>
-        private ListControl NewList()
-        {
-            var list = new ListControl { HoverHighlightsItems = true, BackgroundColor = ColorScheme.PanelSurface };
-
-            // THE SELECTION FOLLOWS THE KEYBOARD — see Index.
-            list.GotFocus += (_, _) =>
-            {
-                // ONE TEXT COLOUR FOR AN UNSELECTED CARD, focused list or not: the theme dims a focused list's other
-                // items, so the list without the keyboard drew its cards brighter — and read as the one selected.
-                list.FocusedForegroundColor = list.ForegroundColor;
-                if (list.SelectedIndex < 0 && Rows.Count > 0) list.SelectedIndex = Math.Clamp(_remembered, 0, Rows.Count - 1);
-                _owner.Redraw();
-            };
-            list.LostFocus += (_, _) =>
-            {
-                if (list.SelectedIndex >= 0) _remembered = list.SelectedIndex;
-                list.SelectedIndex = -1;
-                _owner.Redraw();
-            };
-
-            // ENTER OR A DOUBLE-CLICK OPENS THE CARD — the list's own activation.
-            list.ItemActivated += (_, item) =>
-            {
-                if (item.Tag is PanelRow row) _owner.RowChosen?.Invoke(new RowChoice(row, RowAction.Open));
-            };
-
-            // A CARD'S ONE CONTROL — ⏹ on a running card, ✕ on a finished one — and a click on it does what x does.
-            // The click has already selected the card, so the selection says which.
-            list.MouseClick += (_, args) =>
-            {
-                if (Selected is { } row && row is not AgentRow { View: { Foreground: true, Running: true } }
-                    && OnControl(list, args.Position))
-                    _owner.RowChosen?.Invoke(new RowChoice(row, RowAction.StopOrForget));
-            };
-            return list;
-        }
-
         /// <summary>
-        /// Replaces the list with a fresh one holding these cards — when the number of cards changes.
+        /// Shows these rows, each as a card.
         ///
-        /// <para>A LIST THAT HAS BEEN PAINTED REMEMBERS HOW MANY ITEMS FITTED, and both its scroll and its measured
-        /// height read that count before the one this panel sets. A card arriving above the selected one then scrolls
-        /// the list by one and measures it from there — one card tall, for good — and the second running task gets no
-        /// line on screen. A list never painted has no such count.</para>
-        ///
-        /// <para>THE KEYBOARD GOES WITH IT when the old list had it, or a card arriving would take focus away from
-        /// a user mid-way through the list.</para>
-        /// </summary>
-        private void Replace(List<ListItem> cards, int selected)
-        {
-            var old = List;
-            var hadFocus = old.HasFocus;
-            var window = old.GetParentWindow();
-            List = NewList();
-            List.MaxVisibleItems = Math.Max(1, cards.Count);
-            List.Items = cards;
-            _remembered = Math.Max(0, selected);
-            List.SelectedIndex = hadFocus ? selected : -1;
-            Panel.RemoveControl(old);
-            Panel.AddControl(List);
-            if (hadFocus) window?.FocusManager.SetFocus(List, FocusReason.Programmatic);
-        }
-
-        public CollapsiblePanel Panel { get; }
-
-        public IReadOnlyList<PanelRow> Rows { get; private set; } = [];
-
-
-        public PanelRow? Selected => Index >= 0 && Index < Rows.Count ? Rows[Index] : null;
-
-        public void ReapplyTheme() => List.BackgroundColor = ColorScheme.PanelSurface;
-
-        /// <summary>
-        /// Shows these cards, keeping the selection on the row it was on.
-        ///
-        /// <para>IN PLACE WHEN THE ROWS ARE THE SAME ONES, which every tick of a running clock is: rebuilding the
-        /// items each second would reset the list's scroll and flicker its highlight.</para>
+        /// <para>A CARD IS KEPT FOR ITS ROW, and updated in place on every tick of a running clock: rebuilt each second,
+        /// it would drop the keyboard and the mouse's hover. Only a change in which rows there are, or their order,
+        /// re-seats the cards.</para>
         /// </summary>
         public void Show(IReadOnlyList<PanelRow> rows, int usable)
         {
-            var keep = Rows.Count > 0 ? Selected?.Key : null;
-            var cards = rows.Select(r => Card(r, usable)).ToList();
-            var same = List.Items.Count == rows.Count && rows.Select(r => r.Key).SequenceEqual(Rows.Select(r => r.Key));
+            var byKey = Cards.ToDictionary(c => c.Row.Key);
+            var next = rows.Select(r => byKey.TryGetValue(r.Key, out var kept) ? kept : new Card(_owner)).ToList();
+            for (var i = 0; i < rows.Count; i++) next[i].Show(rows[i], usable);
 
-            // THE NEW ROWS ARE THE SECTION'S BEFORE THE LIST IS REPLACED: handing the keyboard to the new list
-            // redraws the panel from Rows, and a redraw that read the old ones would put the old list back.
-            Rows = rows;
-            if (same)
+            if (!next.SequenceEqual(Cards))
             {
-                for (var i = 0; i < cards.Count; i++)
-                {
-                    var item = List.Items[i];
-                    if (item.Text != cards[i].Text) item.Text = cards[i].Text;
-                    item.Tag = rows[i];
-                }
-            }
-            else
-            {
-                var at = keep is null ? 0 : Math.Max(0, rows.ToList().FindIndex(r => r.Key == keep));
-                Replace(cards, rows.Count == 0 ? -1 : Math.Min(at, rows.Count - 1));
+                foreach (var card in Cards) Panel.RemoveControl(card.Box);
+                foreach (var card in next) Panel.AddControl(card.Box);
+                Cards.Clear();
+                Cards.AddRange(next);
             }
 
             Panel.Visible = rows.Count > 0;
@@ -484,22 +372,166 @@ public sealed class JobsPanel
         /// <summary>The section as text — its heading, then its cards.</summary>
         public IEnumerable<string> Text()
         {
-            if (Rows.Count == 0) yield break;
+            if (Cards.Count == 0) yield break;
             yield return _title;
-            foreach (var item in List.Items) foreach (var line in item.Text.Split('\n')) yield return line;
+            foreach (var card in Cards) foreach (var line in card.Text) yield return line;
         }
     }
 
-    /// <summary>A card: the list item for one row, its icon the kind while it runs and ✓ or ✗ once it has ended.</summary>
-    private static ListItem Card(PanelRow row, int usable) => row switch
+    /// <summary>
+    /// One card: a row drawn as real controls — its title with the ⏹ or ✕ button at the right, its facts, and a link
+    /// that opens it — on a surface of its own (decision 34).
+    ///
+    /// <para>REAL CONTROLS, NOT A LIST ITEM'S TEXT: the link and the button take a click and the keyboard as
+    /// themselves, where a list item's text could only be hit-tested by column. A click anywhere else on the card
+    /// selects it.</para>
+    ///
+    /// <para>THE KEYBOARD SITS ON THE LINK of the selected card, so Enter opens it and the panel's ↑ ↓ and x act on
+    /// the card the bar marks.</para>
+    /// </summary>
+    private sealed class Card
     {
-        JobRow job => ShellCard(job, usable),
-        AgentRow agent => AgentCard(agent, usable),
-        _ => throw new ArgumentOutOfRangeException(nameof(row)),
-    };
+        private readonly JobsPanel _owner;
+        private readonly MarkupControl _title = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
+        private readonly MarkupControl _facts = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
+        private bool _hover;
+        private bool _selected;
+        private string? _glyph;
+
+        public Card(JobsPanel owner)
+        {
+            _owner = owner;
+            Anchor = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
+            Button = new SharpConsoleUI.Builders.ButtonBuilder().WithText("⏹").WithBorder(ButtonBorderStyle.None).Build();
+
+            var top = Ctl.Grid()
+                .Columns(GridLength.Star(1), GridLength.Auto())
+                .Rows(GridLength.Cells(1))
+                .Place(_title, 0, 0)
+                .Place(Button, 0, 1)
+                .WithAlignment(HorizontalAlignment.Stretch)
+                .Build();
+            Box = Ctl.Panel().NoBorder().WithPadding(0).AddControl(top).AddControl(_facts).AddControl(Anchor).Build();
+            Box.Margin = new Margin(0, 0, 0, 1);
+
+            // A CLICK ANYWHERE ON THE CARD SELECTS IT; the link opens it, the button does what x does.
+            Box.MouseClick += (_, _) => _owner.Select(this, focus: true);
+            Box.MouseEnter += (_, _) => { _hover = true; Paint(); };
+            Box.MouseLeave += (_, _) => { _hover = false; Paint(); };
+            Anchor.LinkClicked += (_, _) => _owner.RowChosen?.Invoke(new RowChoice(Row, RowAction.Open));
+            Anchor.GotFocus += (_, _) => _owner.Select(this, focus: false);
+            Button.GotFocus += (_, _) => _owner.Select(this, focus: false);
+            Button.Click += (_, _) => _owner.RowChosen?.Invoke(new RowChoice(Row, RowAction.StopOrForget));
+
+            // ON ITS SURFACE FROM THE START, not only once selected or hovered.
+            Paint();
+        }
+
+        public PanelRow Row { get; private set; } = null!;
+
+        public PanelControl Box { get; }
+
+        /// <summary>The "View …" link — where the keyboard sits while this card is selected.</summary>
+        public MarkupControl Anchor { get; }
+
+        /// <summary>⏹ or ✕ — hidden on a foreground agent, which the parent's turn is waiting on.</summary>
+        public ButtonControl Button { get; }
+
+        public bool HasFocus => Anchor.HasFocus || Button.HasFocus;
+
+        /// <summary>The card as text, for the panel's RenderedText.</summary>
+        public IReadOnlyList<string> Text { get; private set; } = [];
+
+        public bool Selected
+        {
+            get => _selected;
+            set
+            {
+                if (_selected == value) return;
+                _selected = value;
+                Paint();
+                Redraw();
+            }
+        }
+
+        private CardText _shown = null!;
+
+        public void Show(PanelRow row, int usable)
+        {
+            Row = row;
+            var text = CardText.For(row);
+            if (_shown == text && _usable == usable) return;
+            _shown = text;
+            _usable = usable;
+            Redraw();
+        }
+
+        private int _usable;
+
+        /// <summary>The card's lines, set into its controls and kept as text.</summary>
+        private void Redraw()
+        {
+            if (_shown is null) return;
+            var bar = _selected ? $"[{ColorScheme.AccentMarkup}]▐[/] " : "  ";
+            // THE BUTTON TAKES THREE COLUMNS AT THE RIGHT — " ⏹ " — and the bar two at the left.
+            var room = Math.Max(1, _usable - (_shown.Control is null ? 0 : 3));
+            var title = $"{_shown.Mark} {Value(Cut(_shown.Title, room))}";
+            var facts = $"  {Muted(Cut(string.Join(" · ", _shown.Facts), _usable))}";
+            var link = $"  [link=open]{Value(_shown.View)} ›[/]";
+            SetIfChanged(_title, [bar + title]);
+            SetIfChanged(_facts, [bar + facts]);
+            SetIfChanged(Anchor, [bar + link]);
+
+            if (_glyph != _shown.Control)
+            {
+                _glyph = _shown.Control;
+                Button.Visible = _glyph is not null;
+                if (_glyph is not null) Button.Text = _glyph;
+            }
+
+            Text = [$"{_shown.Mark} {TitleLine(_shown.Title, _shown.Control, _usable)}", facts, $"  {Value(_shown.View)} ›"];
+        }
+
+        /// <summary>The card's surface — hovered, selected or plain — from the theme's current colours.</summary>
+        public void Paint()
+        {
+            var surface = _selected ? ColorScheme.CardSelectedSurface
+                : _hover ? ColorScheme.CardHoverSurface
+                : ColorScheme.CardSurface;
+            Box.BackgroundColor = surface;
+            Button.BackgroundColor = surface;
+            Button.ForegroundColor = ColorScheme.MutedRgb;
+        }
+    }
+
+    /// <summary>What a card says, independent of how it is drawn — compared to tell whether a tick changed it.</summary>
+    /// <param name="Mark">The kind while it runs, ✓ or ✗ once it has ended, as markup.</param>
+    /// <param name="Title">The command, or what the agent was asked to do.</param>
+    /// <param name="Control">⏹ or ✕, or null for a foreground agent.</param>
+    /// <param name="Facts">Its kind, how it stands, how long.</param>
+    /// <param name="View">What opening it shows.</param>
+    private sealed record CardText(string Mark, string Title, string? Control, EquatableList Facts, string View)
+    {
+        public static CardText For(PanelRow row) => row switch
+        {
+            JobRow job => ShellCard(job),
+            AgentRow agent => AgentCard(agent),
+            _ => throw new ArgumentOutOfRangeException(nameof(row)),
+        };
+    }
+
+    /// <summary>A list compared by its items, so two CardTexts with the same facts are equal.</summary>
+    private sealed class EquatableList(IReadOnlyList<string> items) : IEnumerable<string>
+    {
+        private readonly IReadOnlyList<string> _items = items;
+        public override bool Equals(object? obj) => obj is EquatableList o && _items.SequenceEqual(o._items);
+        public override int GetHashCode() => _items.Aggregate(0, (h, s) => HashCode.Combine(h, s));
+        public IEnumerator<string> GetEnumerator() => _items.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
 
     /// <summary>A shell's card: its command, then "Shell · how it ended · how long", then "View output".</summary>
-    private static ListItem ShellCard(JobRow job, int usable)
+    private static CardText ShellCard(JobRow job)
     {
         var view = job.View;
         var running = view.State == BackgroundJobState.Running;
@@ -511,10 +543,9 @@ public sealed class JobsPanel
         facts.Add(DisplayNumber.Took(view.Elapsed));
         if (job.Agent is { } agent) facts.Add(agent);
 
-        var mark = Mark(running, view.State == BackgroundJobState.Exited && view.ExitCode == 0, "▭");
-        return new ListItem($"{mark} {TitleLine(OutputTail.OneLine(view.Job.Command), CardControl(running, foreground: false), usable)}\n"
-                            + DetailLines(facts, "View output", usable))
-        { Tag = job };
+        return new CardText(Mark(running, view.State == BackgroundJobState.Exited && view.ExitCode == 0, "▭"),
+            OutputTail.OneLine(view.Job.Command), CardControl(running, foreground: false), new EquatableList(facts),
+            "View output");
     }
 
     /// <summary>
@@ -525,7 +556,7 @@ public sealed class JobsPanel
     ///
     /// <para>NO ⏹ ON A FOREGROUND AGENT: the parent's turn is waiting on its answer (decision 9).</para>
     /// </summary>
-    private static ListItem AgentCard(AgentRow row, int usable)
+    private static CardText AgentCard(AgentRow row)
     {
         var view = row.View;
         var title = view.Kept.Description is { Length: > 0 } d ? d : view.Kept.Name;
@@ -534,10 +565,8 @@ public sealed class JobsPanel
         if (view.Foreground && view.Running) facts.Add("foreground");
         facts.Add(DisplayNumber.Took(view.Elapsed));
 
-        var mark = Mark(view.Running, view.State == AgentRowState.Done, "◇");
-        return new ListItem($"{mark} {TitleLine(OutputTail.OneLine(title), CardControl(view.Running, view.Foreground), usable)}\n"
-                            + DetailLines(facts, "View transcript", usable))
-        { Tag = row };
+        return new CardText(Mark(view.Running, view.State == AgentRowState.Done, "◇"), OutputTail.OneLine(title),
+            CardControl(view.Running, view.Foreground), new EquatableList(facts), "View transcript");
     }
 
     /// <summary>A card's mark, as markup: the kind while it runs, ✓ or ✗ once it has ended (decision 16).</summary>
@@ -564,14 +593,6 @@ public sealed class JobsPanel
         var text = Cut(title, room);
         return $"{Value(text)}{new string(' ', Math.Max(0, room - Columns(text)))} {Muted(control)}";
     }
-
-    /// <summary>
-    /// A card's last two lines, under the title: its facts, then how to view it — each on its own line, as the sheet
-    /// draws them, because the column is at most 34 characters of text and "Agent · waiting for permission ·
-    /// 1m 14s" alone fills it.
-    /// </summary>
-    private static string DetailLines(IReadOnlyList<string> facts, string view, int usable) =>
-        $"  {Muted(Cut(string.Join(" · ", facts), usable))}\n  {Value(view)}";
 
     /// <summary>
     /// The text cut to fit this many columns, with "…" when it does not.

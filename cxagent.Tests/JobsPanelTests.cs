@@ -283,12 +283,11 @@ public class JobsPanelTests
     }
 
     /// <summary>
-    /// A CLICK ON ⏹ WHERE IT IS DRAWN STOPS THE CARD. The cards stop short of the list's right edge — the panel keeps
-    /// columns for its scrollbar — so a hit-test at the list's edge never met the glyph, and a real click did nothing.
-    /// A click in the same column one line down, on the card's facts, is not the control.
+    /// A CARD'S BUTTON AND LINK ARE REAL CONTROLS (decision 34): a click on ⏹ stops the card, a click on "View
+    /// transcript" opens it — each taken by the control itself rather than hit-tested by column.
     /// </summary>
     [Fact]
-    public void AClickOnTheDrawnStop_StopsTheCard_AndOnlyOnItsLine()
+    public void TheCardsButtonStops_AndItsLinkOpens()
     {
         var system = new SharpConsoleUI.ConsoleWindowSystem(new SharpConsoleUI.Drivers.HeadlessConsoleDriver(60, 40));
         CxAgentTheme.Install(system, null);
@@ -298,27 +297,35 @@ public class JobsPanelTests
         system.AddWindow(window);
         var agent = Agent("worker", AgentRowState.Running, description: "Summarise prices.py");
         panel.Refresh(new JobsPanel.JobsShown([agent], 1), SessionPanel.MaxWidth);
-        var painted = window.RenderAndGetVisibleContent()
-            .Select(l => System.Text.RegularExpressions.Regex.Replace(l, "\u001b\\[[0-9;]*m", "")).ToList();
-        var row = painted.FindIndex(l => l.Contains('⏹'));
-        var col = painted[row].IndexOf('⏹');
-        var list = panel.RunningListForTest;
+        window.RenderAndGetVisibleContent();
         var chosen = new List<JobsPanel.RowChoice>();
         panel.RowChosen += chosen.Add;
 
-        Click(list, col - list.ActualX, row + 1 - list.ActualY);
-        Assert.Empty(chosen);
-        Click(list, col - list.ActualX, row - list.ActualY);
+        Click(panel.ControlForTest(agent.Key)!, 1, 0);
+        Click(panel.LinkForTest(agent.Key)!, 6, 0);
 
-        Assert.Equal([new JobsPanel.RowChoice(agent, JobsPanel.RowAction.StopOrForget)], chosen);
+        Assert.Equal([new JobsPanel.RowChoice(agent, JobsPanel.RowAction.StopOrForget),
+                      new JobsPanel.RowChoice(agent, JobsPanel.RowAction.Open)], chosen);
     }
 
-    private static void Click(SharpConsoleUI.Controls.ListControl list, int x, int y)
+    /// <summary>EVERY CARD SITS ON ITS SURFACE from the start, not only once it has been selected or hovered.</summary>
+    [Fact]
+    public void AnUnselectedCard_IsOnTheCardSurface()
+    {
+        var panel = new JobsPanel();
+        var first = Agent("first", AgentRowState.Running);
+        var second = Agent("second", AgentRowState.Running);
+        panel.Refresh(new JobsPanel.JobsShown([first, second], 2), SessionPanel.MaxWidth);
+
+        var box = panel.CardForTest(second.Key)!;
+        Assert.Equal(ColorScheme.CardSurface, box.BackgroundColor);
+    }
+
+    private static void Click(SharpConsoleUI.Controls.IMouseAwareControl control, int x, int y)
     {
         var at = new System.Drawing.Point(x, y);
-        list.ProcessMouseEvent(new SharpConsoleUI.Events.MouseEventArgs(
+        control.ProcessMouseEvent(new SharpConsoleUI.Events.MouseEventArgs(
             [SharpConsoleUI.Drivers.MouseFlags.Button1Clicked], at, at, at));
-        Thread.Sleep(600);   // past the list's double-click window, so the next click is a click of its own
     }
 
     /// <summary>
@@ -386,6 +393,7 @@ public class JobsPanelTests
         var worker = Agent("worker", AgentRowState.Running);
         panel.Refresh(new JobsPanel.JobsShown(JobsPanel.Order([worker, old]), 1), SessionPanel.MaxWidth);
         window.RenderAndGetVisibleContent();
+        window.FocusManager.SetFocus(panel.Rows, SharpConsoleUI.Controls.FocusReason.Keyboard);   // as F7 does
         Assert.True(panel.RowsHaveFocus);
 
         var stopped = new JobsPanel.AgentRow(worker.View with
@@ -420,8 +428,8 @@ public class JobsPanelTests
         panel.Refresh(new JobsPanel.JobsShown([agent], 1), SessionPanel.MaxWidth);
         window.RenderAndGetVisibleContent();
         window.RenderAndGetVisibleContent();
-        // WITH THE KEYBOARD ON THE CARDS — the window gives it to the only focusable control. Handing it to the
-        // replacement list redraws the panel mid-update, which once put the one-card list back.
+        // WITH THE KEYBOARD ON THE CARDS, as F7 leaves it: a card arriving while they have it must still be drawn.
+        window.FocusManager.SetFocus(panel.Rows, SharpConsoleUI.Controls.FocusReason.Keyboard);
         Assert.True(panel.RowsHaveFocus);
 
         var shell = Row("sleep 120", BackgroundJobState.Running, pid: 7);

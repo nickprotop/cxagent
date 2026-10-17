@@ -65,6 +65,12 @@ public static class ColorScheme
         AccentRgb = ColorRoleResolver.Resolve(Accent, theme).Text;
         AsideRgb = ColorRoleResolver.Resolve(Structure, theme).Text;
 
+        // THE TASKS PANEL'S CARDS, a step off the panel each: a card, the card under the mouse, the selected one —
+        // which leans toward the accent its bar is drawn in, so the two read as one mark.
+        CardSurface = Raised(PanelSurface, 0.05);
+        CardHoverSurface = Raised(PanelSurface, 0.09);
+        CardSelectedSurface = PaletteColors.Mix(Raised(PanelSurface, 0.09), AccentRgb, 0.10);
+
         Separator = PaletteColors.Tint(PaletteColors.Mix(ChatSurface, ComposerSurface, 0.5), 0.08);
         UserSurface = Raised(ChatSurface, 0.10);
         AssistantSurface = Raised(ChatSurface, 0.05);
@@ -331,6 +337,15 @@ public static class ColorScheme
     /// by side.</para>
     /// </summary>
     public static Color PanelSurface { get; private set; } = new(0x1e, 0x1e, 0x1e);
+
+    /// <summary>A Tasks panel card's surface — see where it is derived.</summary>
+    public static Color CardSurface { get; private set; } = new(0x2a, 0x2a, 0x2a);
+
+    /// <summary>The surface of the card under the mouse.</summary>
+    public static Color CardHoverSurface { get; private set; } = new(0x33, 0x33, 0x33);
+
+    /// <summary>The selected card's surface, leaning toward the accent of its bar.</summary>
+    public static Color CardSelectedSurface { get; private set; } = new(0x3a, 0x33, 0x2d);
 
     /// <summary>
     /// The LEFT column's surface — the transcript and the composer cell under it: almost black.
