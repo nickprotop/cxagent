@@ -61,15 +61,76 @@ public class SilentRunTests
         Assert.Equal(SendOutcome.Completed, result.Outcome);
     }
 
-    // THE PARENT'S MODEL IS TOLD WHAT IT MEANS, in the envelope shape it was told to expect — and
-    // told to check the tree, because a child can die having already written files.
-    [Fact]
-    public void TheEnvelopeExplainsASilentChild()
+    /// <summary>
+    /// WHY IT WAS EMPTY, FROM THE REPLY ITSELF. An empty reply is not always a lost request: a reasoning model can
+    /// spend its whole reply thinking, and only a reply with no stop reason looks like a cut connection.
+    /// </summary>
+    [Theory]
+    [InlineData("end_turn", "weighing the options", "reasoned but ended its reply without writing an answer")]
+    [InlineData("", null, "ended without a stop reason")]
+    [InlineData("end_turn", null, "its reply was empty")]
+    public async Task AnEmptyReply_SaysWhy(string stop, string? thinking, string why)
     {
-        var rendered = SubAgentEnvelope.Render("child-1", null, SendOutcome.Silent, "");
+        var provider = new MockLlmProvider();
+        // REASONING INLINE, as a local reasoning model sends it: the reply is "<think>…</think>" and nothing after.
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = thinking is null ? "" : $"<think>{thinking}</think>", StopReason = stop,
+        });
+        var sink = new RecordingSink();
+        var agent = NewAgent(provider, sink);
 
-        Assert.Contains("no-answer", rendered);
-        Assert.Contains("did not come back", rendered);
+        var result = await agent.SendAsync("go", CancellationToken.None);
+
+        Assert.Equal(SendOutcome.Silent, result.Outcome);
+        Assert.Contains(why, result.Why, StringComparison.Ordinal);
+        Assert.Contains(sink.Errors, e => e.Contains(why, StringComparison.Ordinal));
+        Assert.Equal(result.Why, agent.LastEmptyReply);
+    }
+
+    /// <summary>The next run that answers clears the reason, so it never describes a later run.</summary>
+    [Fact]
+    public async Task AnAnswer_ClearsTheLastEmptyReply()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse { Text = "", StopReason = "end_turn" });
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+        var agent = NewAgent(provider, new RecordingSink());
+
+        await agent.SendAsync("go", CancellationToken.None);
+        await agent.SendAsync("again", CancellationToken.None);
+
+        Assert.Null(agent.LastEmptyReply);
+    }
+
+    /// <summary>
+    /// THE PARENT'S MODEL IS TOLD WHY, WHAT THE CHILD DID, AND THE CHEAP WAY OUT. A kept child still holds what it
+    /// read, so asking it for its answer recovers the work; re-running it redoes every turn.
+    /// </summary>
+    [Fact]
+    public void TheEnvelopeExplainsASilentKeptChild()
+    {
+        var rendered = SubAgentEnvelope.Render("child-1", "finder",
+            new SendResult("", SendOutcome.Silent, "it reasoned but ended its reply without writing an answer"),
+            work: "20 tool calls; latest: read a.cs, grep \"Usage\"");
+
+        Assert.Contains("state=\"no-answer\"", rendered);
+        Assert.Contains("it reasoned but ended its reply without writing an answer", rendered);
+        Assert.Contains("20 tool calls; latest: read a.cs", rendered);
+        Assert.Contains("agent_send {\"to\": \"finder\"", rendered);
+        Assert.Contains("task_output {\"id\": \"finder\"}", rendered);
+        Assert.DoesNotContain("did not come back", rendered);
+    }
+
+    /// <summary>A child nothing kept cannot be asked again: the envelope says to check the tree and re-run.</summary>
+    [Fact]
+    public void TheEnvelopeForAnUnkeptSilentChild_AdvisesARerun()
+    {
+        var rendered = SubAgentEnvelope.Render("child-1", null,
+            new SendResult("", SendOutcome.Silent, "its reply was empty"), work: null);
+
+        Assert.Contains("its reply was empty", rendered);
         Assert.Contains("check the tree", rendered);
+        Assert.DoesNotContain("agent_send", rendered);
     }
 }

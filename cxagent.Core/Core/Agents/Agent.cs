@@ -1335,6 +1335,9 @@ public sealed class Agent
     private async Task<SendResult> SendCoreAsync(string prompt, CancellationToken ct,
         Jobs.ToolSelection? turnTools, string? shown, bool mailFirst)
     {
+        // A NEW RUN, SO NO EMPTY REPLY YET: the reason describes the run that had one, never a later one.
+        LastEmptyReply = null;
+
         // HELD FOR THE TURN so the dispatch site can see what the offer site showed.
         //
         // ASSIGNED, NOT SCOPED. A try/finally around a method with several returns and a thousand
@@ -1882,11 +1885,13 @@ public sealed class Agent
                 // terse answer, so a parent read "" and had to guess; see SendOutcome.Silent.
                 if (string.IsNullOrWhiteSpace(text))
                 {
+                    var why = EmptyReplyReason(response);
+                    LastEmptyReply = why;
                     _sink.Said(new Message(
-                        "the model returned no answer — the request may have been dropped or timed "
-                        + "out. Nothing was lost, but this run produced no result.", Severity.Error));
+                        $"the model's reply held no answer — {why}. Nothing was lost, but this run produced no result.",
+                        Severity.Error));
 
-                    return new SendResult(text, SendOutcome.Silent);
+                    return new SendResult(text, SendOutcome.Silent, why);
                 }
 
                 return new SendResult(text, SendOutcome.Completed);
@@ -2357,6 +2362,28 @@ public sealed class Agent
         }
     }
 
+    /// <summary>
+    /// Why the last run's reply held no answer, or null when it had one — see <see cref="EmptyReplyReason"/>. Kept on
+    /// the agent so a parent asking after it later (task_output) is told the same thing its receipt said.
+    /// </summary>
+    public string? LastEmptyReply { get; private set; }
+
+    /// <summary>
+    /// Why a reply came back with no text and no tool call, read off the reply itself.
+    ///
+    /// <para>NOT "THE REQUEST WAS LOST" BY DEFAULT. A request that times out or errors throws, and that run is
+    /// failed, not silent. A reply that arrives empty usually means something else: a reasoning model spent the reply
+    /// thinking, or the stream ended with no stop reason — the one case that does look like a cut connection.</para>
+    /// </summary>
+    internal static string EmptyReplyReason(LlmResponse response) =>
+        string.IsNullOrEmpty(response.StopReason)
+            ? "its reply ended without a stop reason, so the connection may have been cut"
+        : !string.IsNullOrWhiteSpace(response.Thinking) || response.ThinkingBlocks.Count > 0
+            ? "it reasoned but ended its reply without writing an answer"
+        : response.StopReason is "end_turn" or "stop"
+            ? "its reply was empty"
+        : $"its reply ended ({response.StopReason}) without an answer";
+
     private void LogTurn(string agentId, int turn, LlmResponse response)
     {
         if (_logs is null) return;
@@ -2369,7 +2396,12 @@ public sealed class Agent
             foreach (var call in response.ToolCalls)
                 sb.AppendLine($"→ {call.Name} {call.Arguments}");
 
-            if (sb.Length == 0) return;
+            // AN EMPTY REPLY IS LOGGED TOO, with what it can say about itself: a turn that left no file read as a
+            // request that never happened, and the stop reason is the evidence of why.
+            if (sb.Length == 0)
+                sb.AppendLine($"(no answer · stop: {(response.StopReason is { Length: > 0 } stop ? stop : "none")}"
+                    + $" · reasoning: {(response.Thinking ?? "").Length:N0} chars"
+                    + $" · output: {response.Usage.OutputTokens:N0} tokens)");
 
             // "log", not "response": PathFor VALIDATES the stream against log/stdout/stderr and
             // throws on anything else. An invented name would have thrown on every turn, been
@@ -3272,6 +3304,10 @@ public sealed class Agent
         // before the first tool call, because that is when the reader's attention moves on — and a
         // step that only calls tools sends no text to end it otherwise.
         var blocks = new List<ThinkingBlock>();
+
+        // THE REASONING'S TEXT, from both sources, kept on the response: a reply that held only reasoning is told
+        // apart from an empty one by it (see EmptyReplyReason), and the turn log says how much there was.
+        var reasoningText = new StringBuilder();
         var thinking = new ThinkingRun(
             text => _sink.AssistantThinkingAppended(turnId, text),
             summary => _sink.AssistantThinkingEnded(turnId, summary));
@@ -3280,7 +3316,11 @@ public sealed class Agent
         {
             await foreach (var chunk in _provider.ChatStreamAsync(messages, tools, ct))
             {
-                if (chunk.ThinkingDelta is { } delta) thinking.Add(delta, chunk.ThinkingRedacted);
+                if (chunk.ThinkingDelta is { } delta)
+                {
+                    thinking.Add(delta, chunk.ThinkingRedacted);
+                    reasoningText.Append(delta);
+                }
                 if (chunk.ThinkingBlock is { } block) blocks.Add(block);
 
                 if (!string.IsNullOrEmpty(chunk.TextDelta))
@@ -3300,6 +3340,7 @@ public sealed class Agent
                     var reasoning = ModelOutput.ExtractReasoning(accumulated);
                     if (reasoning.Length > shownReasoning)
                     {
+                        reasoningText.Append(reasoning[shownReasoning..]);
                         thinking.Add(reasoning[shownReasoning..]);
                         shownReasoning = reasoning.Length;
                     }
@@ -3332,7 +3373,7 @@ public sealed class Agent
         return new LlmResponse
         {
             Text = text.ToString(), ToolCalls = calls, Usage = usage, StopReason = stop,
-            ThinkingBlocks = blocks,
+            ThinkingBlocks = blocks, Thinking = reasoningText.Length > 0 ? reasoningText.ToString() : null,
         };
     }
 

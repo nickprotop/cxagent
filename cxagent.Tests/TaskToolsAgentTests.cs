@@ -31,6 +31,33 @@ public class TaskToolsAgentTests
     private static Task<string> Call(Rig r, string tool, object args, string caller = "session",
         CancellationToken ct = default) => r.Tools.InvokeAsync(caller, Calls.Named(tool, args), ct);
 
+    /// <summary>
+    /// A FOREGROUND CHILD THAT ANSWERED NOTHING CAN STILL BE LOOKED INTO. Its receipt says why and what it did, and
+    /// task_output reports its last run — where it used to say only that it was not running in the background, which
+    /// left the model nothing to go on but a re-run.
+    /// </summary>
+    [Fact]
+    public async Task ASilentForegroundChild_CanBeLookedInto()
+    {
+        var child = new MockLlmProvider();
+        child.EnqueueResponse(new LlmResponse { Text = "", StopReason = "end_turn" });
+        var r = Wired(child);
+
+        var receipt = await Spawn(r, background: false);
+
+        Assert.Contains("state=\"no-answer\"", receipt);
+        Assert.Contains("its reply was empty", receipt);
+        Assert.Contains("agent_send {\"to\": \"find-thing\"", receipt);
+
+        var output = await Call(r, Tool.TaskOutput, new { id = "find-thing" });
+
+        Assert.Contains("no-answer", output);
+        Assert.Contains("its reply was empty", output);
+        Assert.Contains("0 tool calls", output);
+        Assert.Contains(Tool.AgentSend, output);
+        Assert.DoesNotContain("not running in the background", output);
+    }
+
     [Fact]
     public async Task TaskList_ShowsEveryKeptChild_WithItsState()
     {

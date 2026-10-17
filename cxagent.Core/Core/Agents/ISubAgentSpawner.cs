@@ -130,7 +130,7 @@ public static class SubAgentEnvelope
     /// <summary>
     /// Reads the <c>state</c> back out of a rendered envelope, or null if this is not one.
     ///
-    /// <para>THE INVERSE OF <see cref="Render"/>, and deliberately parsed rather than threaded
+    /// <para>THE INVERSE OF <see cref="Render(string, string?, SendResult, string?)"/>, and deliberately parsed rather than threaded
     /// alongside: the envelope is the one artefact that always carries the outcome, so a caller that
     /// has the string has the truth. Threading a second copy of the same fact through the spawn
     /// dispatch would create two things that can disagree — and the failure would be silent, since
@@ -239,8 +239,21 @@ public static class SubAgentEnvelope
     /// </param>
     /// <param name="outcome">How the run ended — completed, capped, stuck, cancelled or failed.</param>
     /// <param name="text">The child's answer, or its account of why there is not one.</param>
-    public static string Render(string childId, string? name, SendOutcome outcome, string text)
+    public static string Render(string childId, string? name, SendOutcome outcome, string text) =>
+        Render(childId, name, new SendResult(text, outcome), work: null);
+
+    /// <summary>
+    /// The envelope for a finished run, with — for one that answered nothing — why, what the child did first, and how
+    /// to get its answer.
+    /// </summary>
+    /// <param name="childId">The child's agent id.</param>
+    /// <param name="name">The handle it is kept under; null when nothing kept it.</param>
+    /// <param name="result">How the run ended, its text, and why an empty one was empty.</param>
+    /// <param name="work">What the child did, from <see cref="WorkOf"/>; null when it is not known.</param>
+    public static string Render(string childId, string? name, SendResult result, string? work)
     {
+        var outcome = result.Outcome;
+        var text = result.Text;
         var state = WordFor(outcome);
 
         // A NOTE ON THE UNHAPPY STATES, because "capped" alone is a word the model has to interpret.
@@ -258,10 +271,7 @@ public static class SubAgentEnvelope
                 "\nThis agent failed. What follows is the error, not an answer.",
             SendOutcome.Cancelled =>
                 "\nThis agent was cancelled before finishing.",
-            SendOutcome.Silent =>
-                "\nThis agent produced no answer — its request to the model did not come back. It may "
-                + "have completed some of its work before that happened, so check the tree before "
-                + "assuming nothing changed, and re-run it if the work is still needed.",
+            SendOutcome.Silent => Silent(name, result.Why, work),
             _ => "",
         };
 
@@ -270,5 +280,35 @@ public static class SubAgentEnvelope
         // send to; omitting the attribute says plainly that there is nothing to reach.
         var handle = name is null ? "" : $" name=\"{name}\"";
         return $"<sub_agent id=\"{childId}\"{handle} state=\"{state}\">{note}\n{text}\n</sub_agent>";
+    }
+
+    /// <summary>
+    /// What a run that answered nothing tells the parent: why, what the child did first, and the way on.
+    ///
+    /// <para>ASK IT, DON'T RE-RUN IT, WHEN IT IS KEPT. A kept child still holds everything it read and found, so a
+    /// send asking for its answer recovers the work in one turn; a re-run starts from nothing and redoes every turn.
+    /// A child nothing kept cannot be asked, so it is checked for and re-run.</para>
+    /// </summary>
+    private static string Silent(string? name, string? why, string? work)
+    {
+        var said = $"\nThis agent produced no answer — {why ?? "its reply was empty"}.";
+        if (work is not null) said += $" Before that it made {work}.";
+        if (name is null)
+            return said + " It may have changed files first, so check the tree before assuming nothing changed, "
+                 + "and re-run it if the work is still needed.";
+        return said + " It still has what it read and found. To get its answer without redoing the work: "
+             + $"agent_send {{\"to\": \"{name}\", \"prompt\": \"Answer from what you have found so far.\"}}"
+             + $"\nTo see what it did first: task_output {{\"id\": \"{name}\"}}";
+    }
+
+    /// <summary>
+    /// What a child did, for a parent deciding what to make of a run: how many tool calls, and the latest few.
+    /// </summary>
+    public static string WorkOf(SubAgent child)
+    {
+        var jobs = child.Jobs.Jobs;
+        var latest = jobs.OrderBy(j => j.CreatedAt).TakeLast(3).Select(j => j.DisplayName).ToList();
+        var count = jobs.Count == 1 ? "1 tool call" : $"{jobs.Count} tool calls";
+        return latest.Count == 0 ? count : $"{count}; latest: {string.Join(", ", latest)}";
     }
 }

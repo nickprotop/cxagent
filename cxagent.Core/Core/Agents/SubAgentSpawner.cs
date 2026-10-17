@@ -407,8 +407,8 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                 new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(delivery, parentAgentId, keptAs)));
             _ = BackgroundRunner.Start(new BackgroundWork(_store, _store.Find(keptAs)!, run, prompt,
                 _factory.ConcurrencySlot, delivery,
-                result => SubAgentEnvelope.Render(child.Agent.Id, keptAs, result.Outcome,
-                    WithPlanOutcome(result.Text, planPath))));
+                result => SubAgentEnvelope.Render(child.Agent.Id, keptAs,
+                    result with { Text = WithPlanOutcome(result.Text, planPath) }, SubAgentEnvelope.WorkOf(child))));
             return SubAgentEnvelope.Receipt(child.Agent.Id, keptAs, ChildCanWrite(turnTools, type));
         }
 
@@ -452,8 +452,8 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                 // THE NAME IT WAS KEPT UNDER at spawn — a lookup, not a second Keep, which would
                 // re-register the same child and mint a second handle for it. It goes into the envelope
                 // so the model can reach the child without a listing call.
-                return envelope = SubAgentEnvelope.Render(child.Agent.Id, keptAs, result.Outcome,
-                    WithPlanOutcome(result.Text, planPath));
+                return envelope = SubAgentEnvelope.Render(child.Agent.Id, keptAs,
+                    result with { Text = WithPlanOutcome(result.Text, planPath) }, SubAgentEnvelope.WorkOf(child));
             }
             finally
             {

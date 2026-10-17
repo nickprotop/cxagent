@@ -118,7 +118,8 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                     Description: null, IsResume: true),
                 new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(delivery, parent, name)));
             _ = BackgroundRunner.Start(new BackgroundWork(store, stored, run, request.Prompt, slot, delivery,
-                result => SubAgentEnvelope.Render(stored.Agent.Agent.Id, name, result.Outcome, result.Text)));
+                result => SubAgentEnvelope.Render(stored.Agent.Agent.Id, name, result,
+                    SubAgentEnvelope.WorkOf(stored.Agent))));
             return earlier + $"'{name}' is working on it in the background — its answer will come to you as a "
                  + $"message.\nIf your next step cannot go on without it: task_output {{\"id\": \"{name}\", "
                  + "\"wait\": true}";
@@ -230,6 +231,12 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                     throw;
                 }
                 store.NoteOutcome(agentName, SubAgentEnvelope.WordFor(result.Outcome));
+
+                // AN EMPTY ANSWER IS SAID, NOT RETURNED AS "": the caller — the model, or the user's own send — would
+                // read nothing at all. The child still holds what it read, so asking again is the way on.
+                if (result.Outcome == SendOutcome.Silent)
+                    return $"'{agentName}' produced no answer — {result.Why ?? "its reply was empty"}. It still has "
+                         + "what it read; ask it again to answer from that.";
                 return result.Text;
             }
             finally

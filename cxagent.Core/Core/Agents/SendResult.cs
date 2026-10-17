@@ -72,7 +72,9 @@ public enum SendOutcome
 /// </summary>
 /// <param name="Text">The final assistant text, reasoning already stripped.</param>
 /// <param name="Outcome">How the request ended.</param>
-public readonly record struct SendResult(string Text, SendOutcome Outcome)
+/// <param name="Why">For a <see cref="SendOutcome.Silent"/> run, why its reply held no answer — read off the reply
+/// itself, so the parent is not told a request was lost when it came back empty. Null otherwise.</param>
+public readonly record struct SendResult(string Text, SendOutcome Outcome, string? Why = null)
 {
     /// <summary>
     /// The text, for the ~69 call sites that await and discard, and the four that read it. Keeps

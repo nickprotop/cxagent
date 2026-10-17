@@ -95,7 +95,7 @@ public sealed class TaskTools(TaskSources sources)
         id = sources.Agents?.HandleFor(id) ?? id;
         if (sources.Agents?.WasForgotten(id) == true) return Agents.SubAgentStore.Dismissed(id);
         if (sources.Agents?.Find(id) is null) return $"no task '{id}'.";
-        if (sources.Agents.BackgroundOf(id) is not { } run) return $"'{id}' is not running in the background.";
+        if (sources.Agents.BackgroundOf(id) is not { } run) return LastRun(sources.Agents, id);
         return run.Handoff.Ended ? run.Handoff.Result ?? $"'{id}' has ended." : Progress(id, run);
     }
 
@@ -213,8 +213,7 @@ public sealed class TaskTools(TaskSources sources)
         if (agents?.Find(handle) is null) return $"no task '{handle}' — {Tool.TaskList} shows what exists.";
 
         var run = agents.BackgroundOf(handle);
-        if (run is null)
-            return $"'{handle}' is not running in the background; {Tool.AgentSend} asks it something.";
+        if (run is null) return LastRun(agents, handle);
 
         if (!run.Handoff.Ended && !wait) return Progress(handle, run);
 
@@ -402,6 +401,25 @@ public sealed class TaskTools(TaskSources sources)
         if (elapsed.TotalMinutes < 1) return $"{(int)elapsed.TotalSeconds}s";
         if (elapsed.TotalHours < 1) return $"{(int)elapsed.TotalMinutes}m";
         return $"{(int)elapsed.TotalHours}h";
+    }
+
+    /// <summary>
+    /// A kept agent with no background run: working in the foreground, or how its last run ended and what it did.
+    ///
+    /// <para>SO A FOREGROUND AGENT CAN BE LOOKED INTO TOO. One that answered nothing left the model nothing to go on
+    /// but a re-run, which redoes every turn; what it did and why it came back empty say whether asking it again is
+    /// enough.</para>
+    /// </summary>
+    private static string LastRun(Agents.SubAgentStore agents, string handle)
+    {
+        var kept = agents.Find(handle)!;
+        var work = Agents.SubAgentEnvelope.WorkOf(kept.Agent);
+        if (agents.IsBusy(handle)) return $"'{handle}' is working in the foreground · {work}.";
+        if (agents.LastEnd(handle) is not { } end) return $"'{handle}' has not run yet; {Tool.AgentSend} asks it something.";
+
+        var why = end.Outcome == "no-answer" && kept.Agent.Agent.LastEmptyReply is { } reason ? $" — {reason}" : "";
+        return $"'{handle}' is idle. Its last run ended {end.Outcome ?? "without a recorded outcome"}{why}, after {work}. "
+             + $"{Tool.AgentSend} asks it something.";
     }
 
     private string Progress(string handle, Agents.BackgroundRun run)

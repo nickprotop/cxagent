@@ -241,8 +241,8 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
                     Tell(parent, $"The sub-agent '{kept.Name}' had finished when this reached it:\n\n"
                         + string.Join("\n\n", waiting)
                         + "\n\nIt acted on it and answered:\n"
-                        + Agents.SubAgentEnvelope.Render(kept.Agent.Agent.Id, kept.Name,
-                            result.Outcome, result.Text));
+                        + Agents.SubAgentEnvelope.Render(kept.Agent.Agent.Id, kept.Name, result,
+                            Agents.SubAgentEnvelope.WorkOf(kept.Agent)));
             }
             catch
             {
