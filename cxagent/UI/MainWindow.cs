@@ -678,6 +678,9 @@ public sealed class MainWindow : IDisposable
         CloseTab(strip);
         RelabelSessionTabs();
 
+        // ITS AGENT TABS GO WITH IT: closing the session ended their agents (core decision 32).
+        if (tab.Session is { } closed) CloseAgentTabsOf(closed);
+
         // THE TAB NOW IN FRONT IS SHOWN AGAIN, once the mapping is whole. The strip's change handler ran
         // inside CloseTab, before the session mapping shifted, and found no session at the new index — so
         // the side panel kept painting the closed conversation's turns, tool calls and spend.
@@ -1738,6 +1741,7 @@ public sealed class MainWindow : IDisposable
                 OpenJobTab(entry, session);
         };
         Tabs.TabCloseRequested += OnJobTabCloseRequested;
+        Tabs.TabCloseRequested += OnAgentTabCloseRequested;
 
         // EVERY ROLE RENDERS MARKDOWN. Core writes markdown — the same dialect the models write —
         // so the transcript has one dialect instead of two, and a command's `## heading` or pipe
@@ -2541,6 +2545,92 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private readonly Dictionary<BackgroundJobEntry, JobTabSlot> _jobTabs = [];
 
+    /// <summary>
+    /// The open agent tabs, by the child's agent id — one per child, so Enter on its row focuses the tab already open.
+    ///
+    /// <para>BY AGENT ID, NOT HANDLE: the id is what a permission request and a tool call carry.</para>
+    /// </summary>
+    private readonly Dictionary<string, AgentTabSlot> _agentTabs = new(StringComparer.Ordinal);
+
+    /// <summary>An agent tab and the strip page it sits on.</summary>
+    private sealed record AgentTabSlot(AgentTab Tab, SharpConsoleUI.Controls.TabPage Page);
+
+    /// <summary>The agent tab in front, or null when the tab in front is not one.</summary>
+    public AgentTab? ActiveAgentTab =>
+        _agentTabs.Values.FirstOrDefault(s => ReferenceEquals(s.Page, Tabs.GetTab(Tabs.ActiveTabIndex)))?.Tab;
+
+    /// <summary>
+    /// Opens a kept agent's tab, or focuses it when it is already open; answers why not when it cannot.
+    /// </summary>
+    /// <param name="session">The session that keeps the agent.</param>
+    /// <param name="handleOrId">Its handle, or its agent id as a row carries it.</param>
+    public string? OpenAgentTab(Session session, string handleOrId)
+    {
+        var store = session.SubAgents;
+        if (store.Ended)
+            return $"'{handleOrId}' belongs to a session that has ended — its agents were stopped with it.";
+        if (store.Find(store.HandleFor(handleOrId)) is not { } kept)
+            return store.WasForgotten(handleOrId)
+                ? SubAgentStore.Dismissed(handleOrId)
+                : $"no sub-agent named '{handleOrId}' in this session — /tasks lists them.";
+
+        if (_agentTabs.TryGetValue(kept.Agent.Agent.Id, out var open) && IndexOf(open.Page) is { } at)
+        {
+            Tabs.ActiveTabIndex = at;
+            FocusAgentTab(open.Tab);
+            return null;
+        }
+
+        var tab = new AgentTab(session, kept, NewAgentViews());
+        AddTab(tab.Title(), tab.Content);
+        SetTabMainControl(tab.Content, tab.MainControl);
+        _agentTabs[tab.AgentId] = new AgentTabSlot(tab, Tabs.GetTab(Tabs.TabCount - 1)!);
+        FocusAgentTab(tab);
+        return null;
+    }
+
+    /// <summary>
+    /// The real sinks over a fresh transcript, paired as a session tab's are — the round's tool row needs both.
+    /// </summary>
+    private AgentTabViews NewAgentViews()
+    {
+        var chat = NewTranscript();
+        ApplyRoleStyles(chat);
+        var transcript = new ChatTranscriptSink(_system, chat);
+        var jobs = new InlineJobSink(_system, chat);
+        transcript.OnUserTurnAdded = jobs.TurnBegan;
+        transcript.OnAssistantRoundEnded = jobs.RoundEnded;
+        return new AgentTabViews(chat, transcript, jobs, jobs.RecordToolCall,
+            () => { jobs.RefreshRunningHeaders(); transcript.RefreshThinkingHeaders(); },
+            action => _system.EnqueueOnUIThread(action, "agentTab.Post"));
+    }
+
+    /// <summary>The keyboard goes with the tab — see <see cref="FocusJobTab"/>.</summary>
+    private void FocusAgentTab(AgentTab tab) =>
+        Window?.FocusManager.SetFocus(tab.MainControl, SharpConsoleUI.Controls.FocusReason.Programmatic);
+
+    /// <summary>Closes an agent tab: its view detaches, and the agent works on.</summary>
+    public void CloseAgentTab(AgentTab tab)
+    {
+        if (!_agentTabs.Remove(tab.AgentId, out var slot)) return;
+        tab.Dispose();
+        if (IndexOf(slot.Page) is { } index) CloseTab(index);
+        ShowChatTab();
+    }
+
+    private void OnAgentTabCloseRequested(object? sender, SharpConsoleUI.Events.TabEventArgs e)
+    {
+        if (_agentTabs.Values.FirstOrDefault(s => ReferenceEquals(s.Page, e.TabPage)) is { } slot)
+            CloseAgentTab(slot.Tab);
+    }
+
+    /// <summary>A closed session's agent tabs — core decision 32 has ended the agents they show.</summary>
+    private void CloseAgentTabsOf(Session session)
+    {
+        foreach (var slot in _agentTabs.Values.Where(s => ReferenceEquals(s.Tab.Session, session)).ToList())
+            CloseAgentTab(slot.Tab);
+    }
+
     /// <summary>A job tab and the strip page it sits on.</summary>
     private sealed record JobTabSlot(JobTab Tab, SharpConsoleUI.Controls.TabPage Page);
 
@@ -2566,6 +2656,7 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private Session? JobsSession =>
         _jobTabs.Values.FirstOrDefault(s => ReferenceEquals(s.Page, Tabs.GetTab(Tabs.ActiveTabIndex)))?.Tab.Session
+        ?? ActiveAgentTab?.Session
         ?? ActiveSession;
 
     /// <summary>The jobs panel, from the board, for the session whose jobs are in front.</summary>
@@ -2626,6 +2717,13 @@ public sealed class MainWindow : IDisposable
         foreach (var slot in _jobTabs.Values)
         {
             slot.Tab.Tick();
+            if (IndexOf(slot.Page) is { } index) SetTabTitleText(index, slot.Tab.Title());
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var slot in _agentTabs.Values)
+        {
+            slot.Tab.Tick(now);
             if (IndexOf(slot.Page) is { } index) SetTabTitleText(index, slot.Tab.Title());
         }
     }
@@ -3252,6 +3350,15 @@ public sealed class MainWindow : IDisposable
             // THINKING TEXT CARRIES ITS COLOUR IN ITS MARKUP, written when it arrived, so a restyle
             // cannot reach it: the sink rewrites each block from the plain text it kept.
             tab.ChatSink?.Recolour();
+        }
+
+        // AND EVERY AGENT TAB, whose transcript captured its role styles the same way.
+        foreach (var slot in _agentTabs.Values)
+        {
+            slot.Tab.Chat.MessageRailColor = ColorScheme.Grip;
+            ApplyRoleStyles(slot.Tab.Chat);
+            slot.Tab.Chat.RestyleMessages();
+            slot.Tab.Recolour();
         }
 
         // The session panel captured its own surfaces the same way this window did.
