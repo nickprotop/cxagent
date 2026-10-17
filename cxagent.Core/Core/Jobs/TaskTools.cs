@@ -93,6 +93,7 @@ public sealed class TaskTools(TaskSources sources)
     {
         if (int.TryParse(id, out var pid)) return DescribeShell(pid);
         id = sources.Agents?.HandleFor(id) ?? id;
+        if (sources.Agents?.WasForgotten(id) == true) return Agents.SubAgentStore.Dismissed(id);
         if (sources.Agents?.Find(id) is null) return $"no task '{id}'.";
         if (sources.Agents.BackgroundOf(id) is not { } run) return $"'{id}' is not running in the background.";
         return run.Handoff.Ended ? run.Handoff.Result ?? $"'{id}' has ended." : Progress(id, run);
@@ -179,6 +180,7 @@ public sealed class TaskTools(TaskSources sources)
     {
         if (!sources.IsSessionAgent(callerAgentId)) return "error: only the session agent can stop a sub-agent.";
         var agents = sources.Agents;
+        if (agents?.WasForgotten(handle) == true) return Agents.SubAgentStore.DismissedForModel(handle);
         if (agents?.Find(handle) is null) return $"no task '{handle}' — {Tool.TaskList} shows what exists.";
 
         var run = agents.BackgroundOf(handle);
@@ -200,6 +202,7 @@ public sealed class TaskTools(TaskSources sources)
     private async Task<string> OutputAsync(string handle, bool wait, int? timeout, CancellationToken ct)
     {
         var agents = sources.Agents;
+        if (agents?.WasForgotten(handle) == true) return Agents.SubAgentStore.DismissedForModel(handle);
         if (agents?.Find(handle) is null) return $"no task '{handle}' — {Tool.TaskList} shows what exists.";
 
         var run = agents.BackgroundOf(handle);

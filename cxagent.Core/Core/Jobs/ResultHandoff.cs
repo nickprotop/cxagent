@@ -63,6 +63,36 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
     public bool Undelivered { get { lock (_lock) return _state == State.Undelivered; } }
 
     /// <summary>
+    /// Hands a result that could not be sent to the parent as a note — the same leave an abandoned wait uses, so
+    /// no turn starts — and answers whether anything is still owed.
+    ///
+    /// <para>FOR A FORGET (spec decision 14): the agent is about to go, and its report must not go with it. ONCE:
+    /// the state moves out of Undelivered under the lock before the leave runs, so a <see cref="Read"/> racing this
+    /// either took the result first (nothing owed) or finds it already handed over.</para>
+    ///
+    /// <para>FALSE ONLY WHEN THE LEAVE WAS REFUSED, or a send is still in flight; the result is then still owed and
+    /// stays readable.</para>
+    /// </summary>
+    internal bool HandOverUndelivered()
+    {
+        string result;
+        lock (_lock)
+        {
+            if (_state == State.Sending) return false;
+            if (_state != State.Undelivered) return true;
+            _state = State.Sending;
+            result = _result!;
+        }
+
+        bool left;
+        try { left = leaveIfAbandoned(result); }
+        catch (Exception) { left = false; }
+
+        lock (_lock) _state = left ? State.Sent : State.Undelivered;
+        return left;
+    }
+
+    /// <summary>
     /// Records the result and hands it on: to the waiters if there are any, otherwise through
     /// <paramref name="send"/>. A second call is ignored — the first result is the one reported.
     /// Never throws: the work that produced the result is finishing, and has nobody to report a

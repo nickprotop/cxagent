@@ -45,6 +45,7 @@ public sealed class SpawnedAgentsCommand(SubAgentStore store)
         if (prompt.Length == 0)
             return $"'{name}' names an agent but asks it nothing. Add the prompt after it.";
 
+        if (store.Find(name) is null && store.WasForgotten(name)) return SubAgentStore.Dismissed(name);
         if (store.Find(name) is null)
             return $"no sub-agent named '{name}' in this session. `/tasks` to see them.";
 

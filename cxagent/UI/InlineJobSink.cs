@@ -1346,6 +1346,12 @@ public sealed class InlineJobSink : IToolObserver
     private readonly ConcurrentDictionary<string, List<ToolCallReport>> _workerCalls = new();
 
     /// <summary>
+    /// Lets go of a forgotten child's recorded calls — kept for a kept child so a resume continues its table, and
+    /// there is no resume any more. Its row keeps what it last drew.
+    /// </summary>
+    public void ForgetChild(string agentId) => _workerCalls.TryRemove(agentId, out _);
+
+    /// <summary>
     /// Records one finished tool call. Wired to <c>Agent.ToolCallFinished</c>, which a parent raises
     /// for its own calls AND for every one of its children's.
     ///

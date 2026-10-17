@@ -153,6 +153,10 @@ public static class SessionWiring
         session.SubAgents.SendEnded += (agentId, outcome) =>
             system.EnqueueOnUIThread(() => tab.JobSink?.WorkerSettled(agentId, outcome), "sessionWiring.Subscribe");
 
+        // A FORGOTTEN CHILD'S CALLS GO WITH IT, through the tab's current sink for the reason the two above give.
+        session.SubAgents.Forgotten += agentId =>
+            system.EnqueueOnUIThread(() => tab.JobSink?.ForgetChild(agentId), "sessionWiring.Subscribe");
+
         session.TokensUpdated += (_, _) => system.EnqueueOnUIThread(() =>
         {
             // THE PARENT'S OWN SPEND, not the event's total. The event carries Ledger.TotalTokens,

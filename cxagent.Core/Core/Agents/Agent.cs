@@ -1125,6 +1125,8 @@ public sealed class Agent
         {
             claims.SendBegan += OnChildBegan;
             claims.SendEnded += OnChildEnded;
+            // A FORGOTTEN CHILD'S RUN RECORD GOES: it holds the child, and the user asked for it to be gone.
+            claims.Forgotten += id => _childRuns.TryRemove(id, out _);
         }
 
         // RESOLVED PER CALL, not captured here: the catalog is read from disk each turn, so a skill

@@ -55,9 +55,12 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
         // are, or its next move is another guess.
         var stored = store.Find(request.To) ?? store.FindByAgentId(request.To);
         if (stored is null)
-            return $"error: no sub-agent named '{request.To}' in this session. "
-                 + "Call task_list to see which ones there are.";
+            return store.WasForgotten(request.To)
+                ? request.FromUser ? SubAgentStore.Dismissed(request.To) : SubAgentStore.DismissedForModel(request.To)
+                : $"error: no sub-agent named '{request.To}' in this session. "
+                  + "Call task_list to see which ones there are.";
         var name = stored.Name;
+        AfterLookupForTest?.Invoke();
 
         // A RUNNING CHILD IS SENT TO, NOT REFUSED — and the state decides the shape of the answer, so
         // the model never has to be told which mode it is in. It observes: an idle child answers, a
@@ -77,8 +80,19 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
         // finished run of zero turns and zero cost, and that phantom is counted by /stats exactly as a
         // real one is. Claiming silently keeps the exclusion for the whole wait and announces nothing
         // until work actually begins.
+        // A LOST CLAIM MAY BE A FORGET'S, which holds it for all of its work — so the send waits for any forget to
+        // finish before deciding: gone, it is answered "dismissed"; still kept (the forget backed off, or the claim
+        // was a run's), the message is delivered as to any busy child.
         if (!store.TryClaim(name))
-            return Deliver(stored, name, request);
+            return store.AfterAnyForget(() => store.WasForgotten(name) ? Dismissed(name, request) : Deliver(stored, name, request));
+
+        // A FORGET THAT FINISHED BETWEEN THE LOOKUP AND THE CLAIM released its claim after writing the tombstone,
+        // so this claim succeeded on an agent that is gone — caught here rather than resumed.
+        if (store.WasForgotten(name))
+        {
+            store.Release(name);
+            return Dismissed(name, request);
+        }
 
         // THE USER'S STOP STANDS AGAINST THE MODEL: resuming a child the user stopped would quietly undo
         // their decision. The user's own send is the way back, and it hands the child back to the model.
@@ -139,6 +153,16 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
             ? $"'{name}' had a report that never reached you; here it is:\n{report}\n\nAnd for this send:\n"
             : "";
     }
+
+    /// <summary>
+    /// Runs between the lookup and the claim — a test's way into the window where a forget can finish after this
+    /// send found the agent and before it claimed it. The app never sets it.
+    /// </summary>
+    internal Action? AfterLookupForTest { get; set; }
+
+    /// <summary>The refusal for a forgotten agent: the user's line for the user, the model's for the model.</summary>
+    private static string Dismissed(string name, SendRequest request) =>
+        request.FromUser ? SubAgentStore.Dismissed(name) : SubAgentStore.DismissedForModel(name);
 
     /// <summary>Resumes a claimed child and waits for its answer.</summary>
     private async Task<string> Foreground(StoredAgent stored, SendRequest request, CancellationToken ct)

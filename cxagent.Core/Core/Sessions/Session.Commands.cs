@@ -331,6 +331,12 @@ public sealed partial class Session
     /// <para>NO OWNERSHIP CHECK FOR A COMMAND. This IS the session typing directly — there is no
     /// sub-agent identity to weigh it against.</para>
     /// </summary>
+    /// <summary>
+    /// Forgets a kept agent — the panel's x on a finished row. Says nothing to the parent model (decision 15) and
+    /// nothing in this transcript: the row leaving the panel is what the user sees.
+    /// </summary>
+    public Agents.ForgetOutcome ForgetAgent(string name) => SubAgents.Forget(name);
+
     public CommandStatus StopTask(string arguments)
     {
         // THE VERB'S OWN WORD, STRIPPED. RegisterVerb hands the handler everything typed including "stop"
@@ -351,7 +357,8 @@ public sealed partial class Session
 
         // AN AGENT'S ID READ OFF A ROW WORKS AS ITS HANDLE DOES, as it does for the model's task_stop.
         id = SubAgents.HandleFor(id);
-        var said = SubAgents.Find(id) is null ? $"no task '{id}' — /tasks lists them."
+        var said = SubAgents.Find(id) is null
+                ? SubAgents.WasForgotten(id) ? Agents.SubAgentStore.Dismissed(id) : $"no task '{id}' — /tasks lists them."
             : SubAgents.Stop(id, byUser: true)
                 ? $"stopped '{id}' — the agent that started it will read that you stopped it."
             // THE USER'S OWN SEND, when no background run is going: nobody else is waiting on it, so nobody is told.

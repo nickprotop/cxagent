@@ -8,28 +8,22 @@ namespace CxAgent.Core.Agents;
 public sealed record StoredAgent(string Name, string TypeName, string? Description,
     DateTimeOffset At, SubAgent Agent);
 
-/// <summary>
-/// The sub-agents one session has spawned, kept so they can be asked more.
-///
-/// <para>THE CONTEXT IS THE AGENT, OPERATIONALLY, WHICH IS WHY KEEPING IT IS THE WHOLE FEATURE.
-/// Everything else a child has — the executor registry, the provider, the type config — is shared or
-/// reconstructible; the conversation is not. Re-running the original parameters would rebuild an
-/// agent that must REDO the work to reach where this one already is, so asking the kept one skips
-/// the file reads, the tool outputs and the dead ends it already ruled out.</para>
-///
-/// <para>NO BOUND, AND THE ARITHMETIC IS THE ARGUMENT. A context is a list of strings already in
-/// memory; even a million-token conversation is roughly 4 MB. A resident context costs NOTHING PER
-/// TURN — the parent's window is untouched, which is the entire point of a sub-agent — so there is
-/// no per-turn cost to degrade and eviction would be machinery guarding an idle allocation.</para>
-///
-/// <para>ADDRESSED BY NAME RATHER THAN A NUMBER, which is where this diverges from a trigger id
-/// deliberately. That is a small integer because a HUMAN retypes it from a listing; an agent handle
-/// is typed only by the MODEL, whose failure mode is not mistyping but MISREMEMBERING. A name
-/// carries its own meaning and is wrong VISIBLY when it is wrong.</para>
-///
-/// <para>BUSY IS HELD HERE AND NEVER PERSISTED. A crash mid-turn would otherwise leave a flag on
-/// disk and the agent permanently unreachable, with nothing able to clear it.</para>
-/// </summary>
+/// <summary>What a forget came to.</summary>
+public enum ForgetOutcome
+{
+    /// <summary>It is gone, everywhere this store answers for.</summary>
+    Forgotten,
+
+    /// <summary>Nothing kept goes by that handle or id.</summary>
+    Unknown,
+
+    /// <summary>It is working — a run, a send or a spawn holds it. x stops it first.</summary>
+    Working,
+
+    /// <summary>Its report could not reach the parent, and stays with it until it can.</summary>
+    ReportOwed,
+}
+
 /// <summary>
 /// How one stretch of a kept agent's work ended — a spawn's run, a resume, a background run.
 ///
@@ -48,6 +42,29 @@ public sealed record AgentEnd(string? Outcome, DateTimeOffset Began, DateTimeOff
     public bool Succeeded => Outcome == "completed";
 }
 
+/// <summary>
+/// The sub-agents one session has spawned, kept so they can be asked more.
+///
+/// <para>THE CONTEXT IS THE AGENT, OPERATIONALLY, WHICH IS WHY KEEPING IT IS THE WHOLE FEATURE.
+/// Everything else a child has — the executor registry, the provider, the type config — is shared or
+/// reconstructible; the conversation is not. Re-running the original parameters would rebuild an
+/// agent that must REDO the work to reach where this one already is, so asking the kept one skips
+/// the file reads, the tool outputs and the dead ends it already ruled out.</para>
+///
+/// <para>NO BOUND THE STORE CHOOSES, AND THE ARITHMETIC IS THE ARGUMENT. A context is a list of strings already
+/// in memory; even a million-token conversation is roughly 4 MB, and a resident context costs nothing per turn.
+/// What leaves, leaves because the USER said so: <see cref="Forget"/>, the x on a finished row (spec decision
+/// 13). A forgotten handle is kept as a tombstone, so a reach for it is answered "dismissed" rather than "no such
+/// agent", and is never minted again.</para>
+///
+/// <para>ADDRESSED BY NAME RATHER THAN A NUMBER, which is where this diverges from a trigger id
+/// deliberately. That is a small integer because a HUMAN retypes it from a listing; an agent handle
+/// is typed only by the MODEL, whose failure mode is not mistyping but MISREMEMBERING. A name
+/// carries its own meaning and is wrong VISIBLY when it is wrong.</para>
+///
+/// <para>BUSY IS HELD HERE AND NEVER PERSISTED. A crash mid-turn would otherwise leave a flag on
+/// disk and the agent permanently unreachable, with nothing able to clear it.</para>
+/// </summary>
 public sealed class SubAgentStore
 {
     /// <summary>A store over the process-wide shell registry and record, which every production path uses.</summary>
@@ -95,7 +112,9 @@ public sealed class SubAgentStore
     {
         lock (_naming)
         {
-            var name = Slug(description, [.. _byName.Keys]);
+            // A FORGOTTEN HANDLE IS TAKEN FOR GOOD: minted again, the model's stale reach for the old agent would
+            // land on the new one.
+            var name = Slug(description, [.. _byName.Keys, .. _forgotten.Keys]);
             _byName[name] = new StoredAgent(name, agent.TypeName, description,
                 DateTimeOffset.UtcNow, agent);
             return name;
@@ -141,6 +160,90 @@ public sealed class SubAgentStore
     public IReadOnlyList<StoredAgent> All() => _byName.Values.OrderBy(a => a.At).ToList();
 
     public bool IsBusy(string name) => _busy.ContainsKey(name);
+
+    /// <summary>Forgotten handles, with the agent id each one had — the tombstone.</summary>
+    private readonly ConcurrentDictionary<string, string> _forgotten = new(StringComparer.Ordinal);
+
+    /// <summary>Raised with the forgotten agent's id, so whatever else holds it — the parent's run record, a
+    /// transcript's recorded calls, an open tab — lets go.</summary>
+    public event Action<string>? Forgotten;
+
+    /// <summary>
+    /// Forgets a kept agent everywhere this store answers for: its handle, its runs, its record, its claim.
+    ///
+    /// <para>CLAIMED FIRST, AND HELD TO THE END. The claim is how busy-ness is discovered, so taking it is the
+    /// atomic "is it idle" — and holding it means no send can start on the agent while it is being removed. A send
+    /// that loses the claim to this finds the tombstone (see AgentReachTools.SendAsync).</para>
+    ///
+    /// <para>ITS REPORT FIRST (decision 14), handed to the parent as a note; refused, the agent stays.</para>
+    ///
+    /// <para>ITS SHELLS END: a shell left running would address its exit to an agent that no longer exists.</para>
+    /// </summary>
+    public ForgetOutcome Forget(string handleOrId)
+    {
+        lock (_forgetting) return ForgetLocked(HandleFor(handleOrId));
+    }
+
+    /// <summary>
+    /// Runs <paramref name="decide"/> once no forget is under way, for a send that lost the claim.
+    ///
+    /// <para>A FORGET HOLDS THE CLAIM FOR ALL OF ITS WORK, and writes its tombstone only after handing the report
+    /// over and stopping the shells — so a send that loses the claim to it cannot tell, at that moment, whether the
+    /// agent is going or staying. Waiting here for the forget to finish lets it see which: the tombstone, or the
+    /// agent still kept because the forget backed off.</para>
+    /// </summary>
+    internal T AfterAnyForget<T>(Func<T> decide)
+    {
+        lock (_forgetting) return decide();
+    }
+
+    /// <summary>Serialises forgets with a send deciding what its lost claim meant — see <see cref="AfterAnyForget"/>.</summary>
+    private readonly object _forgetting = new();
+
+    private ForgetOutcome ForgetLocked(string name)
+    {
+        if (Find(name) is not { } kept) return ForgetOutcome.Unknown;
+        if (!TryClaim(name)) return ForgetOutcome.Working;
+
+        if (BackgroundOf(name) is { } run && !run.Handoff.HandOverUndelivered())
+        {
+            Release(name);
+            return ForgetOutcome.ReportOwed;
+        }
+
+        var agentId = kept.Agent.Agent.Id;
+        StopShellsOf(name);
+        lock (_naming)
+        {
+            // THE TOMBSTONE BEFORE THE REMOVAL, so a reach that looks between the two finds one or the other.
+            _forgotten[name] = agentId;
+            _byName.TryRemove(name, out _);
+        }
+        _background.TryRemove(name, out _);
+        _ends.TryRemove(name, out _);
+        _since.TryRemove(name, out _);
+        _noted.TryRemove(name, out _);
+        _userSends.TryRemove(name, out _);
+        _busy.TryRemove(name, out _);
+
+        Forgotten?.Invoke(agentId);
+        return ForgetOutcome.Forgotten;
+    }
+
+    /// <summary>Whether this handle or agent id belonged to an agent the user forgot.</summary>
+    public bool WasForgotten(string handleOrId) =>
+        _forgotten.ContainsKey(handleOrId) || _forgotten.Values.Contains(handleOrId);
+
+    /// <summary>What a person is told about a forgotten agent.</summary>
+    public static string Dismissed(string handle) => $"'{handle}' was dismissed — it is gone, with its context.";
+
+    /// <summary>
+    /// What the model is told when it reaches for one — decision 15: no message when it happened, this answer when
+    /// it asks. NAMES THE REMEDY, as every refusal to the model here does.
+    /// </summary>
+    internal static string DismissedForModel(string handle) =>
+        $"error: the user dismissed '{handle}' — it is gone, with its context. Do not try to reach it again; spawn a "
+        + "new agent if the work still needs one.";
 
     /// <summary>When the stretch now under way was announced; null when none is.</summary>
     public DateTimeOffset? WorkingSince(string name) => _since.TryGetValue(name, out var at) ? at : null;
