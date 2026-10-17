@@ -122,4 +122,18 @@ public sealed class ForegroundRunTests
 
         Assert.False(run.TryAnswer());
     }
+
+    /// <summary>
+    /// A STOP RACING THE END OF A MOVED RUN DOES NOT THROW. The background run's stop reaches the child through
+    /// <c>Cancel</c>, and the run may have ended and disposed it in the same instant.
+    /// </summary>
+    [Fact]
+    public void Cancel_AfterDispose_DoesNotThrow()
+    {
+        var store = Store("finder");
+        var run = store.BeginForeground("finder", CancellationToken.None);
+        run.Dispose();
+
+        run.Cancel();
+    }
 }

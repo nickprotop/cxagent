@@ -68,8 +68,15 @@ public sealed class ForegroundRun : IDisposable
     /// </summary>
     internal bool TryAnswer() => Interlocked.Exchange(ref _settled, 1) == 0;
 
-    /// <summary>Cancels the child — the adopted background run's stop, after a move.</summary>
-    internal void Cancel() => _own.Cancel();
+    /// <summary>
+    /// Cancels the child — the adopted background run's stop, after a move. A no-op once disposed: that stop can land in
+    /// the instant the run ends and disposes this, and a throw there escapes the user's stop.
+    /// </summary>
+    internal void Cancel()
+    {
+        try { _own.Cancel(); }
+        catch (ObjectDisposedException) { }
+    }
 
     public void Dispose()
     {
