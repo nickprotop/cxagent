@@ -27,6 +27,17 @@ public sealed class JobsPanel
     /// <param name="Agent">The sub-agent that started it, or null for the session's own agent.</param>
     public sealed record JobRow(JobView View, IReadOnlyList<string> Tail, string? Agent);
 
+    /// <summary>
+    /// What one refresh shows: the shell rows, and how many tasks the heading says are running.
+    ///
+    /// <para>THE COUNT IS GIVEN, NOT TAKEN FROM THE ROWS. The rows are shells only, while the heading counts
+    /// every running task — background agents too — and must say what the F7 item it was opened from
+    /// says. Both read <see cref="MainWindow.RunningTasksOf"/>, so neither can drift from the other.</para>
+    /// </summary>
+    /// <param name="Jobs">The shells, in the order to show them.</param>
+    /// <param name="Running">Running tasks of the session in front — shells and background agents, queued included.</param>
+    public sealed record JobsShown(IReadOnlyList<JobRow> Jobs, int Running);
+
     /// <summary>How many of a job's last lines it shows. Three is a result and its context — an error
     /// and the line before it — without one chatty job filling the column.</summary>
     public const int TailLines = 3;
@@ -35,6 +46,7 @@ public sealed class JobsPanel
     private readonly ScrollablePanelControl _host;
     private string _rendered = "";
     private IReadOnlyList<JobRow> _jobs = [];
+    private int _running;
     private int _width = SessionPanel.MaxWidth;
 
     /// <summary>
@@ -102,19 +114,21 @@ public sealed class JobsPanel
     }
 
     /// <summary>Redraws with the last rows given — for a change of focus or selection between ticks.</summary>
-    public void Redraw() => Refresh(_jobs, _width);
+    public void Redraw() => Refresh(new JobsShown(_jobs, _running), _width);
 
-    /// <param name="jobs">The jobs, in the order to show them.</param>
+    /// <param name="shown">The shells and the running count.</param>
     /// <param name="width">The column's width as laid out — see SessionPanel.SessionPanelState.Width.</param>
-    public void Refresh(IReadOnlyList<JobRow> jobs, int width)
+    public void Refresh(JobsShown shown, int width)
     {
+        var jobs = shown.Jobs;
         _jobs = jobs;
+        _running = shown.Running;
         _width = width;
         _selected = jobs.Count == 0 ? 0 : Math.Clamp(_selected, 0, jobs.Count - 1);
 
         // THE SELECTION SHOWS ONLY WHILE THE ROWS HAVE THE KEYBOARD: a highlight with nothing able to
         // act on it reads as a row that is somehow different from the others.
-        var lines = Render(jobs, width, _body.HasFocus ? _selected : -1);
+        var lines = Render(shown, width, _body.HasFocus ? _selected : -1);
 
         // ONLY WHEN IT CHANGED. The clocks change every second while a job runs, but an idle panel
         // re-set on every tick would invalidate layout for nothing.
@@ -124,15 +138,20 @@ public sealed class JobsPanel
         _body.SetContent(lines);
     }
 
-    private static List<string> Render(IReadOnlyList<JobRow> jobs, int width, int selected)
+    private static List<string> Render(JobsShown listed, int width, int selected)
     {
         var lines = new List<string>();
-        var running = jobs.Count(j => j.View.State == BackgroundJobState.Running);
+        var jobs = listed.Jobs;
+        var running = listed.Running;
         lines.Add($"[bold {ColorScheme.AccentMarkup}]{(running > 0 ? $"Tasks · {running} running" : "Tasks")}[/]");
 
         if (jobs.Count == 0)
         {
-            lines.Add(Muted("Nothing running in the background."));
+            // NOT "NOTHING RUNNING" WHILE AGENTS ARE: the heading has just counted them, and the panel lists
+            // shells only, so it says where the agents are listed instead.
+            lines.Add(Muted(running > 0
+                ? "No background shells. /tasks lists the running agents."
+                : "Nothing running in the background."));
             lines.Add("");
             lines.Add(Muted("A command the agent starts with background: true appears here, with what it last printed."));
             return lines;

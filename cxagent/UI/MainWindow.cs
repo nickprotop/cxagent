@@ -2572,7 +2572,7 @@ public sealed class MainWindow : IDisposable
                 e.View(),
                 OutputTail.LastLines(e.Job.OutputPath, JobsPanel.TailLines),
                 AgentName(session, e.Job.AgentId)))];
-        JobsPanel.Refresh(rows, _panelWidth);
+        JobsPanel.Refresh(new JobsPanel.JobsShown(rows, RunningTasksOf(JobsSession, Jobs)), _panelWidth);
     }
 
     /// <summary>Null for the session's own agent; the sub-agent's name otherwise.</summary>
@@ -2593,11 +2593,20 @@ public sealed class MainWindow : IDisposable
         // AGENTS AS WELL AS SHELLS, queued ones included: the item answers "is anything still going in the
         // background", and counting shells alone showed nothing while only agents ran. Queued counts for
         // the reason the quit question counts it — work that will run unless something stops it.
-        var agentsHere = front?.RunningBackgroundAgents ?? 0;
         var agentsElsewhere = open.Where(s => !ReferenceEquals(s, front)).Sum(s => s.RunningBackgroundAgents);
-        return JobsItemLabel(board.For(owns).Count(e => !e.Finished) + agentsHere,
-            board.RunningElsewhere(owns) + agentsElsewhere);
+        return JobsItemLabel(RunningTasksOf(front, board), board.RunningElsewhere(owns) + agentsElsewhere);
     }
+
+    /// <summary>
+    /// The running tasks of the session in front: its live shells and its background agents, queued
+    /// included; none with no session.
+    ///
+    /// <para>ONE COUNT FOR THE F7 ITEM AND THE PANEL'S HEADING, because the panel is what the item opens: a
+    /// heading counted any other way says a different number from the one the user just pressed F7 on.</para>
+    /// </summary>
+    public static int RunningTasksOf(Core.Sessions.Session? front, BackgroundJobBoard board) =>
+        front is not { } session ? 0
+        : board.For(session.Owns).Count(e => !e.Finished) + session.RunningBackgroundAgents;
 
     private void RefreshJobs()
     {

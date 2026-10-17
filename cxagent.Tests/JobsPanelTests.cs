@@ -20,10 +20,14 @@ public class JobsPanelTests
     /// doubled — asserting on it would test the escaping rather than what a reader sees.</summary>
     private static string Plain(JobsPanel panel) => MarkupParser.Remove(panel.RenderedText);
 
+    /// <summary>The rows with the count the window would give for them with no agents running.</summary>
+    private static JobsPanel.JobsShown Shown(params JobsPanel.JobRow[] jobs) =>
+        new(jobs, jobs.Count(j => j.View.State == BackgroundJobState.Running));
+
     private static string Render(int width, params JobsPanel.JobRow[] jobs)
     {
         var panel = new JobsPanel();
-        panel.Refresh(jobs, width);
+        panel.Refresh(Shown(jobs), width);
         return Plain(panel);
     }
 
@@ -99,7 +103,7 @@ public class JobsPanelTests
     public void Selection_MovesAndClamps_AndEnterChoosesTheSelectedJob()
     {
         var panel = new JobsPanel();
-        panel.Refresh([Row("a", BackgroundJobState.Running, pid: 11), Row("b", BackgroundJobState.Running, pid: 22)],
+        panel.Refresh(Shown(Row("a", BackgroundJobState.Running, pid: 11), Row("b", BackgroundJobState.Running, pid: 22)),
             SessionPanel.MaxWidth);
         int? chosen = null;
         panel.JobChosen += pid => chosen = pid;
@@ -119,7 +123,7 @@ public class JobsPanelTests
     public void Selection_DeclinesTheKeys_WithNoJobs()
     {
         var panel = new JobsPanel();
-        panel.Refresh([], SessionPanel.MaxWidth);
+        panel.Refresh(Shown(), SessionPanel.MaxWidth);
 
         Assert.False(panel.MoveSelection(down: true));
         Assert.False(panel.ChooseSelected());

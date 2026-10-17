@@ -5,6 +5,10 @@ using CxAgent.Core.Llm;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
 using CxAgent.UI;
+using SharpConsoleUI;
+using SharpConsoleUI.Configuration;
+using SharpConsoleUI.Drivers;
+using SharpConsoleUI.Parsing;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -75,5 +79,32 @@ public sealed class TasksItemCountTests : IDisposable
         Run(front, "stopped", BackgroundState.Stopped);
 
         Assert.Equal("Tasks", MainWindow.JobsItemLabelFor(front, [front], NoShells()));
+    }
+    /// <summary>
+    /// THE PANEL F7 OPENS COUNTS WHAT THE ITEM COUNTS. The heading counted shells alone, so with only agents
+    /// going the item said "Tasks 2" and the panel it opened said nothing was running. A real window, so the
+    /// heading is the one its own refresh paints.
+    /// </summary>
+    [Fact]
+    public void ThePanelHeading_CountsTheSameRunningTasksAsTheItem()
+    {
+        var paths = new AppPaths(_dir);
+        paths.EnsureCreated();
+        var window = new MainWindow(new ConsoleWindowSystem(new HeadlessConsoleDriver(200, 40),
+                new ConsoleWindowSystemOptions(InstallSynchronizationContext: true)),
+            ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths));
+        window.Build();
+        var front = Open();
+        window.NoteFirstSession(front);
+        Run(front, "a", BackgroundState.Running);
+        Run(front, "b", BackgroundState.Queued);
+        Run(front, "done", BackgroundState.Finished);
+
+        window.ToggleJobsPanel();
+
+        Assert.Equal("Tasks 2", MainWindow.JobsItemLabelFor(front, [front], window.Jobs));
+        var panel = MarkupParser.Remove(window.JobsPanel.RenderedText);
+        Assert.Contains("Tasks · 2 running", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("Nothing running", panel, StringComparison.Ordinal);
     }
 }
