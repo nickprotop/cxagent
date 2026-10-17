@@ -807,6 +807,31 @@ public class InlineJobSinkTests
     }
 
     /// <summary>
+    /// A CHILD THE USER STOPPED DOES NOT READ "✔ done". Its call returns a report rather than throwing, so the job
+    /// itself succeeds; the report's own state is what says how the child ended.
+    /// </summary>
+    [Fact]
+    public void AStoppedChildsRow_SettlesCancelled()
+    {
+        var report = SubAgentEnvelope.Render("c1", "alpha",
+            new SendResult("stopped by the user", SendOutcome.Cancelled), work: null);
+        var job = new Job
+        {
+            Id = "j1", AgentId = "g1", JobType = "llm_agent", DisplayName = "Alpha", State = JobState.Succeeded,
+            Result = new JobResult
+            {
+                Success = true, Duration = TimeSpan.FromSeconds(4),
+                Output = new Dictionary<string, object?> { ["content"] = report },
+            },
+        };
+
+        InlineJobSink.SettleAsReportedForTest(job);
+
+        Assert.Equal(JobState.Cancelled, job.State);
+        Assert.DoesNotContain("done", InlineJobSink.StatusTextForTest(job));
+    }
+
+    /// <summary>
     /// A SETTLED RESUME IS DONE TICKING.
     ///
     /// <para>USER-REPORTED: after a resumed worker's row settled it kept a spinning glyph and a

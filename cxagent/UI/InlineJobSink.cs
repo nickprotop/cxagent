@@ -160,6 +160,7 @@ public sealed class InlineJobSink : IToolObserver
     public void ToolUpdatedNow(Job job)
         {
             _known[job.Id] = job;
+            SettleAsReported(job);
 
             // A hidden job gains a row only if it later FAILS — ShouldShow flips then, and the
             // adopt-on-first-update path below creates the line it never had.
@@ -435,6 +436,21 @@ public sealed class InlineJobSink : IToolObserver
     /// <para>Returns null when there is nothing to show, leaving the title in place rather than
     /// blanking the message.</para>
     /// </summary>
+    /// <summary>
+    /// Settles a finished call whose report says it was cancelled as Cancelled.
+    ///
+    /// <para>A FOREGROUND CHILD THE USER STOPPED RETURNS A REPORT RATHER THAN THROWING — the turn carries on, so the
+    /// call has to answer — and the job therefore succeeds. Left Succeeded, its row reads "✔ done" beside a body
+    /// saying the user stopped it.</para>
+    /// </summary>
+    private static void SettleAsReported(Job job)
+    {
+        if (job.State == JobState.Succeeded && SubAgentEnvelope.StateOf(RawContent(job)) == "cancelled")
+            job.State = JobState.Cancelled;
+    }
+
+    public static void SettleAsReportedForTest(Job job) => SettleAsReported(job);
+
     /// <summary>The job's UNCLIPPED output text, for counting. <see cref="BodyFor"/> clips for
     /// display; a size summary must measure what actually came back.</summary>
     private static string? RawContent(Job job)
