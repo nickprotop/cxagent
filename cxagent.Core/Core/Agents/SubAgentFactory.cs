@@ -18,7 +18,14 @@ namespace CxAgent.Core.Agents;
 /// same model, and a bare model name reports the interesting case as no change at all.
 /// </param>
 public sealed record SubAgent(Agent Agent, BufferedChatSink Sink, BufferedJobPanel Jobs,
-    string TypeName, string? ModelId);
+    string TypeName, string? ModelId)
+{
+    /// <summary>
+    /// The child's observer: its two buffers, and any view of it — an agent tab — attached and detached as it is
+    /// opened and closed. See <see cref="ChildFeed"/>.
+    /// </summary>
+    public required ChildFeed Feed { get; init; }
+}
 
 /// <summary>
 /// A child, paired with the parent row that started it — what <see cref="Agent.ChildSpawned"/>
@@ -356,6 +363,10 @@ public sealed class SubAgentFactory
         var sink = new BufferedChatSink();
         var jobs = new BufferedJobPanel();
 
+        // ONE OBSERVER OVER BOTH BUFFERS, so a tab can attach to the child later and be replayed what it missed.
+        // The buffers are told first and stay this child's record either way.
+        var feed = new ChildFeed(sink, jobs);
+
         // A TYPE'S PROVIDER BRINGS ITS OWN WINDOW, or neither is used — and the threshold follows
         // the window, since it is derived from it. Falling back per-field would pair provider A with
         // the session's window, which is the exact failure the runtime's own doc describes.
@@ -378,10 +389,10 @@ public sealed class SubAgentFactory
             provider,
             _runtime.Executors,
             _runtime.Ledger,
-            // BOTH BUFFERED, and both are required. A buffered chat sink with the parent's job panel
-            // still leaks a row per tool call into the parent's transcript.
-            sink,
-            jobs,
+            // BOTH OBSERVERS ARE THE FEED, whose buffers are the child's own. A buffered chat sink with the parent's
+            // job panel still leaks a row per tool call into the parent's transcript.
+            feed,
+            feed,
             // ITS OWN LOG DIRECTORY, keyed by the child's id and NESTED UNDER THE PARENT'S. The only
             // surface on which a finished child is inspectable after the fact — and while it sat at
             // the top level it was indistinguishable from a session, so `ls -t` showed a child above
@@ -436,6 +447,10 @@ public sealed class SubAgentFactory
             // it belongs to.
             sessionId: parentAgentId);
 
+        // THE TRANSCRIPT'S TOOL ROWS ARE DRAWN FROM FINISHED CALLS, which reach no observer — so the feed hears them
+        // here, for a tab that opens later.
+        agent.ToolCallFinished += feed.CallFinished;
+
         // NOTE WHAT IS NOT PASSED, because both absences are load-bearing:
         //
         //   * NO SESSION STORE — Agent has no such parameter at all. Only AgentHost persists, which
@@ -458,6 +473,9 @@ public sealed class SubAgentFactory
             TypeName: type?.Name ?? AgentTypeCatalog.DefaultTypeName,
             ModelId: runtime.InstanceName is { Length: > 0 } instance
                 ? $"{instance}:{provider.ModelId}"
-                : provider.ModelId);
+                : provider.ModelId)
+        {
+            Feed = feed,
+        };
     }
 }
