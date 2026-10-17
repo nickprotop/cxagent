@@ -160,7 +160,8 @@ running" when it asks, for a server or a watcher meant to outlive the tab. An ag
 that it was stopped, and the model is refused if it tries to restart it — the user's own `/agents send`,
 or a line typed in the agent's tab, is the way back. Once it has finished, `x` on its card deletes it:
 gone from the panel, `/tasks`, `/agents open` and the model's reach, after any report it still owed the
-model has been handed over. Headless runs (`-p`) spawn in the foreground, since a run with one answer has to wait
+model has been handed over. If commands it started are still running, it asks first whether to stop them
+or keep them running. Headless runs (`-p`) spawn in the foreground, since a run with one answer has to wait
 for the work that answer needs.
 
 **A sub-agent is kept, not thrown away.** When one finishes, its context — everything it read, ran

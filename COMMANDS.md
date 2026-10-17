@@ -12,7 +12,8 @@ a provider can still run `/exit`, `/help`, `/stats`, `/sessions`, `/diff`, `/mod
 arguments shows them as a hint — `/stats  usage: …  [<days>|all|clear]` — and typing a space
 descends into them: `/mcp ` offers `reload`, `login` and `<server>`, `/mcp re` narrows to `reload`,
 Enter completes the whole thing. `<angle brackets>` mark a value you supply, so those rows are shown
-but not completed.
+but not completed. A line that is already a whole command runs on Enter, even with longer matches still
+listed: `/model local` uses `local` when `local2` is configured too — arrow to `local2` to choose it.
 
 | Command | What it does |
 |---|---|
@@ -520,8 +521,9 @@ done, `✗` failed or stopped — and its first line says the agent keeps runnin
 Closing it stops nothing, and the status bar says where the agent went ("keeps running — F7 shows
 it"). It opens beside its session's tab, and closing the session's tab closes its agents' tabs too,
 since that ends the agents. A command's output tab from `F7` behaves the same way. When the agent asks
-permission while its tab is in front, the prompt is in the tab; otherwise it is in the session's tab —
-and it stays where it was raised. Either way it is answered once.
+permission while its tab is in front, the prompt is in the tab; otherwise it is in the session's tab.
+Closing the agent's tab with a prompt up moves it to the session's tab, after any prompt already showing
+there; closing the session denies it, since that ends the agent. Either way it is answered once.
 
 **A deleted agent is gone.** `x` on a finished agent's card in `F7` removes it from this session — the
 panel, `/tasks`, `/agents open`, the palette — and closes its tab; its context is freed. A report the
@@ -798,8 +800,8 @@ does — and deletes a finished one: a command's record leaves `/tasks` and `tas
 sub-agent the parent is waiting on has no control, and `x` does nothing on it; the hint under its card
 says so. `F7` again hides the column; `F3` switches back to info.
 
-While the panel has the keyboard, `↑` `↓` choose a card and `Enter` opens it in a tab — so does a
-double-click. The status bar shows `F7:Tasks`, with a count of running background commands and agents while any
+While the panel has the keyboard, `↑` `↓` choose a card, moving on from one section into the next, and
+`Enter` opens it in a tab — so does a double-click. The status bar shows `F7:Tasks`, with a count of running background commands and agents while any
 run, and other session tabs' as `+N` (`Tasks 2+1`).
 
 **The tab follows the output** as it is written, stops following when you scroll up, and starts again
