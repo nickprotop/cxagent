@@ -757,9 +757,17 @@ public class InlineJobSinkTests
 
         // AND IT WENT UP, not merely changed: an "is different" assertion alone would pass on a
         // clock that reset to zero every tick, which is a different frozen clock wearing a disguise.
-        Assert.Contains("00:00:05", before);
-        Assert.Contains("00:00:06", after);
+        // BY AT LEAST THE WAIT, NOT TO AN EXACT READING: under a loaded suite the delay and the reads
+        // around it can each run late, so "00:00:06" exactly fails a clock that is working.
+        var (was, now) = (ClockIn(before), ClockIn(after));
+        Assert.True(was >= TimeSpan.FromSeconds(5), $"the clock started at {was}, not from the job's start");
+        Assert.True(now - was >= TimeSpan.FromSeconds(1), $"the clock went from {was} to {now}");
     }
+
+    /// <summary>The hh:mm:ss clock in a running row's header.</summary>
+    private static TimeSpan ClockIn(string header) =>
+        TimeSpan.ParseExact(System.Text.RegularExpressions.Regex.Match(header, @"\d\d:\d\d:\d\d").Value,
+            @"hh\:mm\:ss", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// THE TICK DOES NOT RE-OPEN A ROW THE USER COLLAPSED.
