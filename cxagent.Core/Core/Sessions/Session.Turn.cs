@@ -79,6 +79,11 @@ public sealed partial class Session
     /// hold a sender there while the owner releases and finishes its tail; the app never sets it.</summary>
     internal Action? AfterLosingTheTurnForTest { get; set; }
 
+    /// <summary>Runs after a lap has stopped being busy, just before the loop looks for a steer. Tests use it
+    /// to land a submit in that window, where the session reads idle but the turn is still owned; the app
+    /// never sets it.</summary>
+    internal Action? AfterLapForTest { get; set; }
+
     /// <summary>Who asked for the turn in flight, or null when none is running.</summary>
     /// <remarks>
     /// WRITTEN ON THE TURN'S OWN THREAD beside <c>_busy</c>, and read by unwire from another. Volatile
@@ -498,6 +503,21 @@ public sealed partial class Session
                 return new SubmitOutcome.Queued();
             }
 
+            // A PLUGIN'S GOAL WAITS IN THE PLUGIN QUEUE, NEVER THE STEER. Its client queues there itself
+            // while the session is busy, but between a lap clearing busy and the loop's own steer check
+            // the session reads idle while the turn is still owned, and the goal lands here. Steered, the
+            // loop would take it as a later lap of the running turn — under that turn's originator, which
+            // for the user's turn defeats UnwirePluginAsync's sever check — and Pending would draw it as
+            // the user's own queued block. Queued, it runs as the plugin's turn once this one ends, as a
+            // goal queued while busy does.
+            if (origin?.PluginName is { } plugin)
+            {
+                if (!Plugins.SubmitQueue.TryEnqueue(plugin, text, out var refusal))
+                    return new SubmitOutcome.Refused(refusal ?? "the session's submit queue is full.");
+                RunGoalIfReleasedMeanwhile();
+                return new SubmitOutcome.Queued();
+            }
+
             // Steer raises Pending, so a watcher draws its own queued block. Nothing is said here:
             // the block IS the report, and a line saying "queued" beside it would say it twice.
             SteerAs(text, origin ?? TurnOriginator.User);
@@ -553,6 +573,29 @@ public sealed partial class Session
         try
         {
             if (!TurnOwned) ResumeIfPending(readMail: true);
+        }
+        catch (Exception ex)
+        {
+            Say(new Message(ex.Message, Severity.Error));
+        }
+    }
+
+    /// <summary>
+    /// Runs one plugin goal when the turn a sender found owned has released the conversation since.
+    ///
+    /// <para>STORE, THEN LOOK AGAIN, for the reason <see cref="ResumeIfReleasedMeanwhile"/> does: the owner
+    /// can release and run its whole tail between this sender losing the swap and queueing, and the goal
+    /// would then wait for some later turn to end. ONE GOAL, as the tail drains one — see RunWhatWaited.</para>
+    ///
+    /// <para>NOTHING THROWN HERE REACHES THE SENDER: its goal is already queued, and an exception would tell
+    /// it otherwise.</para>
+    /// </summary>
+    private void RunGoalIfReleasedMeanwhile()
+    {
+        try
+        {
+            if (!TurnOwned && Plugins.SubmitQueue.DrainOne() is { } goal)
+                Submit(goal.Goal, origin: TurnOriginator.Plugin(goal.PluginName));
         }
         catch (Exception ex)
         {
@@ -968,6 +1011,8 @@ public sealed partial class Session
                 // enough: CancelTurn reads null and answers false.
                 lock (_turnGate) { if (ReferenceEquals(_turn, scope)) _turn = null; }
             }
+
+            AfterLapForTest?.Invoke();
 
             // WHOLE OR NOT AT ALL, and never an echo: what goes in on a later lap is exactly what the
             // user typed, so it is displayed as itself.

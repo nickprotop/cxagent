@@ -206,6 +206,42 @@ public class TurnOwnershipTests : IDisposable
     }
 
     /// <summary>
+    /// A PLUGIN'S GOAL QUEUED BEHIND A TURN THAT HAS SINCE ENDED STILL RUNS. The plugin found the turn
+    /// owned and was held there while the owner released and ran its whole tail, which found nothing; the
+    /// goal it then queues is run by its own sender's second look, as the plugin's turn, rather than
+    /// waiting for some later turn to end.
+    /// </summary>
+    [Fact]
+    public async Task APluginGoalQueuedAfterTheOwnersTail_StillRunsAsThePlugins()
+    {
+        var seen = new List<TurnOriginator?>();
+        Session? session = null;
+        var held = new HeldProvider { OnCall = () => { lock (seen) seen.Add(session!.CurrentOriginator); } };
+        var s = session = Open(held);
+        var first = Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("go"));
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+
+        var waiting = 0;
+        s.AfterLosingTheTurnForTest = () =>
+        {
+            Volatile.Write(ref waiting, 1);
+            first.Turn.Wait(TimeSpan.FromSeconds(5));
+        };
+        var late = Task.Run(() => s.Submit("the plugin's goal", origin: TurnOriginator.Plugin("events")));
+        Assert.True(await Poll.Until(() => Volatile.Read(ref waiting) == 1));
+
+        held.Release();
+        var outcome = await late;
+        s.AfterLosingTheTurnForTest = null;
+        Assert.True(await Poll.Until(() => held.Calls == 2));
+        await Idle(s);
+
+        Assert.IsType<Session.SubmitOutcome.Queued>(outcome);
+        Assert.Contains("the plugin's goal", held.Text());
+        lock (seen) Assert.True(seen[1]?.IsFrom("events"), $"the goal ran as {seen[1]}");
+    }
+
+    /// <summary>
     /// A SUBSCRIBER THAT THROWS DOES NOT LEAVE THE TURN OWNED. Taking a steer in the tail raises Drained;
     /// a front end's handler failing there must not wedge every later message into a loop that is gone.
     /// </summary>
