@@ -529,4 +529,26 @@ public class TaskToolsAgentTests
     [Fact]
     public void ResolvingAnUnknownId_LeavesItAsGiven() =>
         Assert.Equal("nobody", new SubAgentStore().HandleFor("nobody"));
+
+    /// <summary>Decision 10: what is still going is what a listing is read for, so it comes first.</summary>
+    [Fact]
+    public async Task TaskList_PutsRunningAgentsBeforeFinishedOnes()
+    {
+        var store = new SubAgentStore();
+        var tools = new TaskTools(new TaskSources(DetachedProcessRegistry.Default, new FinishedShells(), "session", store));
+        store.Keep(AgentTabTests.Child(AgentTabTests.Says()), "older-done");
+        var done = store.BeginBackground(new BackgroundStart("older-done", "session", "b", "older-done", false),
+            new ResultHandoff(_ => true));
+        done.MarkRunning();
+        done.Finish(BackgroundState.Finished);
+        done.Handoff.Complete("report", _ => true);
+        store.Keep(AgentTabTests.Child(AgentTabTests.Says()), "newer-going");
+        store.BeginBackground(new BackgroundStart("newer-going", "session", "b", "newer-going", false),
+            new ResultHandoff(_ => true)).MarkRunning();
+
+        var list = await tools.InvokeAsync("session", Calls.Named(Tool.TaskList, new { }), CancellationToken.None);
+
+        Assert.True(list.IndexOf("newer-going", StringComparison.Ordinal) < list.IndexOf("older-done", StringComparison.Ordinal));
+        Assert.Contains("finished", list, StringComparison.Ordinal);
+    }
 }

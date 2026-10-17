@@ -106,7 +106,10 @@ public sealed class TaskTools(TaskSources sources)
 
         if (isSession && sources.Agents is { } agents)
         {
-            foreach (var kept in agents.All())
+            // WHAT IS STILL GOING FIRST, each group in spawn order: a listing is read for what is running, and a
+            // session that has spawned twenty agents should not bury the two still working under eighteen that
+            // finished. The sort is stable, so within a group the order is the store's.
+            foreach (var kept in agents.All().OrderBy(k => IsGoing(agents, k.Name) ? 0 : 1))
             {
                 sb.Append("agent '").Append(kept.Name).Append("' (").Append(kept.TypeName).Append(") — ")
                   .Append(AgentState(agents, kept.Name));
@@ -158,6 +161,10 @@ public sealed class TaskTools(TaskSources sources)
 
         return sb.Length == 0 ? "nothing is running in the background." : sb.ToString().TrimEnd();
     }
+
+    /// <summary>Queued, running or busy — what <see cref="AgentState"/> reports as anything but ended or idle.</summary>
+    private static bool IsGoing(Agents.SubAgentStore agents, string name) =>
+        AgentState(agents, name) is "queued" or "running" or "busy";
 
     private static string AgentState(Agents.SubAgentStore agents, string name)
     {

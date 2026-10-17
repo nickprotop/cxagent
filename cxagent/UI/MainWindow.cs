@@ -2615,6 +2615,23 @@ public sealed class MainWindow : IDisposable
     }
 
     /// <summary>
+    /// <c>/agents open &lt;name&gt;</c>: an agent's tab, opened or focused; a refusal goes to the asking session's
+    /// transcript, where the command was typed.
+    ///
+    /// <para>HOW AN AGENT IS REACHED when its card is out of sight — in a closed Finished section, or in another
+    /// session's panel: the store keeps it for the session, and the palette offers its handle.</para>
+    /// </summary>
+    /// <param name="session">The session the command was typed in.</param>
+    /// <param name="arguments">Everything typed after the command, verb included — RegisterVerb's shape.</param>
+    public void OpenAgentTabFor(Session session, string arguments)
+    {
+        var name = (arguments.Split(' ', 2) is [_, var rest] ? rest : "").Trim();
+        var refusal = name.Length == 0 ? "say which agent: `/agents open <name>` — /tasks lists them."
+            : OpenAgentTab(session, name);
+        if (refusal is not null) session.NotifyWarning(refusal);
+    }
+
+    /// <summary>
     /// The real sinks over a fresh transcript, paired as a session tab's are — the round's tool row needs both.
     /// </summary>
     private AgentTabViews NewAgentViews()

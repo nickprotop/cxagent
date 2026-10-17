@@ -602,6 +602,14 @@ public static class AppBootstrap
                         "ask a sub-agent you already spawned for more",
                         Completes: false, Values: ValueSources.SpawnedAgents),
                     (current, arguments) => current.SendToSpawnedAgent(arguments).Handled());
+
+                // AND ITS TAB, for an agent whose panel card is out of sight. The window opens tabs, so this verb is
+                // this front end's. ON THE UI THREAD already: commands dispatch from the composer's key handler.
+                manager.Commands.RegisterVerb("/agents",
+                    new CommandArgument("open <name>",
+                        "open a sub-agent's tab — its transcript, and a composer to ask it more",
+                        Completes: false, Values: ValueSources.SpawnedAgents),
+                    (current, arguments) => { mainWindow.OpenAgentTabFor(current, arguments); return true; });
             }
 
             // THE VERBS ONLY. The bare listing needs no window — it is registered in SessionManager,

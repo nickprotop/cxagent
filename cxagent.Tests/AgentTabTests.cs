@@ -266,4 +266,44 @@ public sealed class AgentTabTests : IDisposable
 
         Assert.Same(prompt, _window.SessionTabs[0].ActivePrompt);
     }
+
+    [Fact]
+    public void AgentsOpen_OpensTheTab_ThenFocusesIt()
+    {
+        _front.SubAgents.Keep(Child(Says()), "finder");
+
+        _window.OpenAgentTabFor(_front, "open finder");
+        var count = _window.Tabs.TabCount;
+        _window.Tabs.ActiveTabIndex = 0;
+        _window.OpenAgentTabFor(_front, "open finder");
+
+        Assert.Equal(count, _window.Tabs.TabCount);
+        Assert.Equal("finder", _window.ActiveAgentTab!.Kept.Name);
+    }
+
+    [Fact]
+    public void AgentsOpen_WithNoName_SaysHowToUseIt()
+    {
+        _window.OpenAgentTabFor(_front, "open");
+
+        Assert.Contains(_parent.Notices, n => n.Contains("/agents open <name>", StringComparison.Ordinal));
+        Assert.Null(_window.ActiveAgentTab);
+    }
+
+    /// <summary>The palette offers this session's kept agents — the set /agents send already completes from — and
+    /// not one the user forgot (decision 13).</summary>
+    [Fact]
+    public void AgentsOpen_CompletesFromTheKeptAgents_NotTheForgotten()
+    {
+        _front.SubAgents.Keep(Child(Says()), "finder");
+        _front.SubAgents.Keep(Child(Says()), "gone");
+        _front.SubAgents.TryClaim("gone");
+        _front.SubAgents.AnnounceBegin("gone");
+        _front.SubAgents.EndSend("gone", "completed");
+        _front.SubAgents.Forget("gone");
+
+        var offered = _front.Values(CompletionSets.SpawnedAgents);
+        Assert.Contains(offered, v => v.Name == "finder");
+        Assert.DoesNotContain(offered, v => v.Name == "gone");
+    }
 }
