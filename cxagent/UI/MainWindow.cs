@@ -3104,16 +3104,37 @@ public sealed class MainWindow : IDisposable
         else
         {
             var moved = ActiveSession?.MoveAllToBackground() ?? 0;
-            note = moved switch
-            {
-                0 => "nothing is waiting in the foreground",
-                1 => "moved to the background — F7 shows it",
-                _ => $"{moved} tasks moved to the background — F7 shows them",
-            };
+            note = MoveNote(moved, ActiveSession?.QueuedInForeground ?? 0);
         }
         ShowNote(note);
         return note;
     }
+
+    /// <summary>
+    /// What Ctrl+B in a session tab says: what moved, and what it left queued.
+    ///
+    /// <para>A QUEUED CHILD IS NAMED: it is not running, so it cannot move, yet the turn still waits on it — "nothing
+    /// is waiting" beside a hint that still counts it reads as a key that broke.</para>
+    /// </summary>
+    private static string MoveNote(int moved, int queued)
+    {
+        var movedText = moved switch
+        {
+            0 => null,
+            1 => "moved to the background — F7 shows it",
+            _ => $"{moved} tasks moved to the background — F7 shows them",
+        };
+        var queuedText = queued switch
+        {
+            0 => null,
+            1 => "1 task is queued — Ctrl+B moves it once it starts",
+            _ => $"{queued} tasks are queued — Ctrl+B moves them once they start",
+        };
+        return movedText is null && queuedText is null ? "nothing is waiting in the foreground"
+            : string.Join(" · ", new[] { movedText, queuedText }.OfType<string>());
+    }
+
+    public static string MoveNoteForTest(int moved, int queued) => MoveNote(moved, queued);
 
     /// <summary>Test seams: the one-second tick's note step, and the note's time running out.</summary>
     public void TickNoteForTest() => TickNote();

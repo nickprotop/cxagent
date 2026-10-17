@@ -869,6 +869,19 @@ public class MainWindowTests
         Assert.Equal(settled, mw.StatusBar.Readout!.Label);
     }
 
+    /// <summary>
+    /// CTRL+B'S NOTE SAYS WHAT IT LEFT QUEUED. A queued child is not running and cannot move; "nothing is waiting"
+    /// beside a turn still waiting on it reads as a key that broke.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0, "nothing is waiting in the foreground")]
+    [InlineData(1, 0, "moved to the background — F7 shows it")]
+    [InlineData(2, 0, "2 tasks moved to the background — F7 shows them")]
+    [InlineData(0, 1, "1 task is queued — Ctrl+B moves it once it starts")]
+    [InlineData(1, 2, "moved to the background — F7 shows it · 2 tasks are queued — Ctrl+B moves them once they start")]
+    public void TheMoveNote(int moved, int queued, string expected) =>
+        Assert.Equal(expected, MainWindow.MoveNoteForTest(moved, queued));
+
     [Theory]
     [InlineData(1, 2, null)]
     [InlineData(1, 4, "waiting on 1 task · Ctrl+B moves it to the background (twice in tmux)")]

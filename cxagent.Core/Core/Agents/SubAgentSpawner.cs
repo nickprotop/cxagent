@@ -441,7 +441,13 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         string? envelope = null;
         try
         {
-            if (slot is not null) await slot.WaitAsync(ct);
+            if (slot is not null)
+            {
+                // QUEUED IS STILL WAITED ON: the hint counts it, and Ctrl+B says it cannot move it yet.
+                if (keptAs is not null) _store!.BeginQueued(keptAs);
+                try { await slot.WaitAsync(ct); }
+                finally { if (keptAs is not null) _store!.EndQueued(keptAs); }
+            }
             try
             {
                 if (keptAs is not null)

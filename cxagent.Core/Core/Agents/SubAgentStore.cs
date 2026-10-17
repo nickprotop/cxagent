@@ -115,12 +115,28 @@ public sealed class SubAgentStore
     /// <summary>Forgets it as foreground — when its call is answered, however.</summary>
     internal void EndForeground(string name) => _foreground.TryRemove(name, out _);
 
+    // FOREGROUND CHILDREN STILL WAITING FOR A SLOT: the turn waits on them as on a running one, but there is nothing to
+    // move yet — the hint counts them, and Ctrl+B says it left them queued.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _foregroundQueued = new();
+
+    /// <summary>Notes a foreground child waiting for a concurrency slot; ended when it gets one or gives up.</summary>
+    internal void BeginQueued(string name) => _foregroundQueued[name] = _clock.GetUtcNow();
+
+    internal void EndQueued(string name) => _foregroundQueued.TryRemove(name, out _);
+
+    /// <summary>How many foreground children are waiting for a slot.</summary>
+    public int QueuedInForeground => _foregroundQueued.Count;
+
     /// <summary>The foreground children the turn is waiting on, in no particular order.</summary>
-    public IReadOnlyList<string> ForegroundNames() => [.. _foreground.Keys];
+    /// <remarks>A child already moved or stopped is left out: its call is being answered, and the turn no longer waits
+    /// on it — the hint drops it at once rather than when the call returns.</remarks>
+    public IReadOnlyList<string> ForegroundNames() =>
+        [.. _foreground.Where(e => !e.Value.Released.IsCompleted).Select(e => e.Key)];
 
     /// <summary>When the turn began waiting on its earliest foreground child; null with none.</summary>
     public DateTimeOffset? ForegroundSince() =>
-        _foreground.Values.Select(r => (DateTimeOffset?)r.Since).Min();
+        _foreground.Values.Where(r => !r.Released.IsCompleted).Select(r => (DateTimeOffset?)r.Since)
+            .Concat(_foregroundQueued.Values.Select(t => (DateTimeOffset?)t)).Min();
 
     /// <summary>Moves a foreground child to the background; false when none is waiting under that name.</summary>
     public bool MoveToBackground(string name) => _foreground.TryGetValue(name, out var run) && run.TryMove();

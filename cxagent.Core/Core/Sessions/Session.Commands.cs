@@ -357,7 +357,10 @@ public sealed partial class Session
 
     /// <summary>How many things the turn is waiting on in the foreground — the composer's hint names the count.</summary>
     public int WaitingOnForeground =>
-        SubAgents.ForegroundNames().Count + ForegroundShells.Count(IsSessionAgent);
+        SubAgents.ForegroundNames().Count + SubAgents.QueuedInForeground + ForegroundShells.Count(IsSessionAgent);
+
+    /// <summary>How many foreground sub-agents are still waiting for a slot — waited on, but not movable yet.</summary>
+    public int QueuedInForeground => SubAgents.QueuedInForeground;
 
     /// <summary>Since when the turn has waited on foreground work; null when it is not.</summary>
     public DateTimeOffset? WaitingOnForegroundSince() =>
