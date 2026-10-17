@@ -12,14 +12,14 @@ namespace CxAgent.UI;
 /// The Tasks view of the right-hand column: every background shell and sub-agent of the session in front, as a
 /// card each — a Running section, then a Finished one (spec decisions 4′, 32, 33).
 ///
-/// <para>CARDS, AS THE CLAUDE APP'S OWN BACKGROUND-TASKS SHEET DRAWS THEM: a kind and a title with a stop control,
+/// <para>CARDS, AS THE CLAUDE APP'S OWN BACKGROUND-TASKS SHEET DRAWS THEM: a kind and a title with one control,
 /// then what kind of task it is, how long it has run and how to view it. Two lines, so a column of them reads as a
 /// list of tasks rather than a log.</para>
 ///
 /// <para>THE LIBRARY'S CONTROLS, NOT HAND-DRAWN MARKUP: each section is a <see cref="CollapsiblePanel"/> holding a
 /// <see cref="ListControl"/>, so collapsing, selection, scrolling, truncation and Enter or a double-click to open
-/// are the library's own. What this class adds is the cards' text, which row a click or a key means, and the keys
-/// a list has no notion of — x to stop or forget, f to open or close Finished.</para>
+/// are the library's own. What this class adds is the cards' text, which row a click or a key means, and the one
+/// key a list has no notion of — x, which does what the card's control does.</para>
 ///
 /// <para>ITS OWN PANEL, NOT A SECTION OF THE INFO PANEL. The info panel is reference — limits, ids, spend — and a
 /// section of live tasks at its top pushed all of that down while it ran. F3 and F7 choose which of the two the
@@ -75,7 +75,8 @@ public sealed class JobsPanel
         /// <summary>Enter or a double-click — the card's tab.</summary>
         Open,
 
-        /// <summary><c>x</c> or ⏹ — stop it while it runs; forget it, everywhere, once it has ended (decision 13).</summary>
+        /// <summary><c>x</c> or the card's own control — ⏹ stops it while it runs, ✕ deletes it, everywhere, once it has
+        /// ended (decision 13).</summary>
         StopOrForget,
     }
 
@@ -103,16 +104,14 @@ public sealed class JobsPanel
     private int _count;
     private int _width = SessionPanel.MaxWidth;
 
-    /// <summary>A card was chosen — by a click, Enter, ⏹ or <c>x</c>.</summary>
+    /// <summary>A card was chosen — by a click, Enter, its ⏹ or ✕, or <c>x</c>.</summary>
     public event Action<RowChoice>? RowChosen;
 
     public JobsPanel()
     {
-        _running = new Section(this, "Running", expanded: true);
+        _running = new Section(this, "Running");
 
-        // FINISHED STARTS CLOSED (decision 33): finished work stays until it is dismissed, and left open it would
-        // push what is running out of sight.
-        _finished = new Section(this, "Finished", expanded: false, key: "f");
+        _finished = new Section(this, "Finished");
 
         _host = Ctl.ScrollablePanel().WithVerticalAlignment(VerticalAlignment.Fill).Build();
         _host.BackgroundColor = ColorScheme.PanelSurface;
@@ -152,26 +151,17 @@ public sealed class JobsPanel
     /// Acts as a click on one of the panel's targets would. PUBLIC so a test can click without a mouse.
     /// </summary>
     /// <param name="url">
-    /// <c>job:</c>pid or <c>agent:</c>id to open it; <c>stop:job:</c>pid or <c>stop:agent:</c>id for its ⏹;
-    /// <c>section:running</c> or <c>section:finished</c> for a section's header.
+    /// <c>job:</c>pid or <c>agent:</c>id to open it; <c>stop:</c>… for a running card's ⏹ and <c>delete:</c>… for
+    /// a finished card's ✕ — the one control at a card's right edge, which does what x does.
     /// </param>
     public void Follow(string url)
     {
-        if (url == "section:running") { _running.Panel.Toggle(); Redraw(); return; }
-        if (url == "section:finished") { ToggleFinished(); return; }
-
-        var stop = url.StartsWith("stop:", StringComparison.Ordinal);
-        var key = stop ? url[5..] : url;
+        var prefix = url.StartsWith("stop:", StringComparison.Ordinal) ? 5
+            : url.StartsWith("delete:", StringComparison.Ordinal) ? 7 : 0;
+        var stop = prefix > 0;
+        var key = url[prefix..];
         var row = _running.Rows.Concat(_finished.Rows).FirstOrDefault(r => r.Key == key);
         if (row is not null) RowChosen?.Invoke(new RowChoice(row, stop ? RowAction.StopOrForget : RowAction.Open));
-    }
-
-    /// <summary>Opens or closes the Finished section — <c>f</c> on the rows, or a click on its header.</summary>
-    public bool ToggleFinished()
-    {
-        _finished.Panel.Toggle();
-        Redraw();
-        return true;
     }
 
     /// <summary>
@@ -236,15 +226,13 @@ public sealed class JobsPanel
         // names keys that would act on nothing. Only the keys a card does not show: each card already says how it
         // is viewed, and the column has room for little else.
         var focused = RowsHaveFocus ? Active() : null;
-        // f IS NAMED ON THE FINISHED HEADER ITSELF (see Section's title), so the running cards' hint needs only x: a
-        // "f collapse finished" under them read as folding Running, and did not fit the column.
         string HintFor(Section section) =>
             !ReferenceEquals(section, focused) || section.Selected is not { } chosen ? ""
             : Muted(Cut(chosen switch
             {
                 AgentRow { View: { Foreground: true, Running: true } } => "x — the parent waits on it",
                 { Running: true } => "x stop",
-                _ => "x delete · f collapse",
+                _ => "x delete",
             }, width - 4));
         var runningHint = HintFor(_running);
         var finishedHint = HintFor(_finished);
@@ -262,8 +250,8 @@ public sealed class JobsPanel
 
     /// <summary>The open section whose list acts for the keys: the one with the keyboard, else the first with cards.</summary>
     private Section? Active() =>
-        new[] { _running, _finished }.FirstOrDefault(s => s.List.HasFocus && s.Open && s.Rows.Count > 0)
-        ?? new[] { _running, _finished }.FirstOrDefault(s => s.Open && s.Rows.Count > 0);
+        new[] { _running, _finished }.FirstOrDefault(s => s.List.HasFocus && s.Rows.Count > 0)
+        ?? new[] { _running, _finished }.FirstOrDefault(s => s.Rows.Count > 0);
 
     // ONLY WHEN IT CHANGED. The clocks change every second while a task runs, but an idle panel re-set on every tick
     // would invalidate layout for nothing.
@@ -273,26 +261,25 @@ public sealed class JobsPanel
         control.SetContent(lines);
     }
 
-    /// <summary>One section: a collapsible header over a list of cards.</summary>
+    /// <summary>
+    /// One section: a heading over a list of cards.
+    ///
+    /// <para>NOTHING COLLAPSES (decision 33′). A folded Finished section was one more thing to learn and to wonder
+    /// about; the column scrolls, and x deletes what the user is done with.</para>
+    /// </summary>
     private sealed class Section
     {
         private readonly JobsPanel _owner;
         private readonly string _title;
-        private readonly string _key;
 
-        /// <param name="key">The key that opens and closes it, named on its header; null for none.</param>
-        public Section(JobsPanel owner, string title, bool expanded, string? key = null)
+        public Section(JobsPanel owner, string title)
         {
             _owner = owner;
             _title = title;
-            _key = key is null ? "" : $" · {key}";
-            var builder = Ctl.CollapsiblePanel(title).WithMargin(1, 1, 1, 0).WithIcons("▾", "▸");
-            Panel = (expanded ? builder.Expanded() : builder.Collapsed()).Build();
+            Panel = Ctl.CollapsiblePanel(title).WithMargin(1, 1, 1, 0).NonCollapsible().Build();
             List = NewList();
             Panel.AddControl(List);
 
-            // A HEADER CLICK TOGGLES THE SECTION ITSELF; the header's count and the hint follow it.
-            Panel.ExpandedChanged += (_, _) => _owner.Redraw();
         }
 
         public ListControl List { get; private set; }
@@ -325,7 +312,7 @@ public sealed class JobsPanel
             if (Hint.Text != hint) Hint.SetContent([hint]);
         }
 
-        /// <summary>A list wired to this section: Enter or a double-click opens a card, a click on ⏹ stops it.</summary>
+        /// <summary>A list wired to this section: Enter or a double-click opens a card, a click on its control acts.</summary>
         private ListControl NewList()
         {
             var list = new ListControl { HoverHighlightsItems = true, BackgroundColor = ColorScheme.PanelSurface };
@@ -352,11 +339,11 @@ public sealed class JobsPanel
                 if (item.Tag is PanelRow row) _owner.RowChosen?.Invoke(new RowChoice(row, RowAction.Open));
             };
 
-            // ⏹ IS THE RUNNING CARD'S RIGHT EDGE: a click there stops it, as x does. The click has already selected
-            // the card, so the selection says which.
+            // A CARD'S RIGHT EDGE IS ITS ONE CONTROL — ⏹ on a running card, ✕ on a finished one — and a click there
+            // does what x does. The click has already selected the card, so the selection says which.
             list.MouseClick += (_, args) =>
             {
-                if (Selected is { Running: true } row && row is not AgentRow { View.Foreground: true }
+                if (Selected is { } row && row is not AgentRow { View: { Foreground: true, Running: true } }
                     && args.Position.X >= list.ActualWidth - list.Margin.Right - 2)
                     _owner.RowChosen?.Invoke(new RowChoice(row, RowAction.StopOrForget));
             };
@@ -393,7 +380,6 @@ public sealed class JobsPanel
 
         public IReadOnlyList<PanelRow> Rows { get; private set; } = [];
 
-        public bool Open => Panel.IsExpanded;
 
         public PanelRow? Selected => Index >= 0 && Index < Rows.Count ? Rows[Index] : null;
 
@@ -409,7 +395,12 @@ public sealed class JobsPanel
         {
             var keep = Rows.Count > 0 ? Selected?.Key : null;
             var cards = rows.Select(r => Card(r, usable)).ToList();
-            if (List.Items.Count == rows.Count && rows.Select(r => r.Key).SequenceEqual(Rows.Select(r => r.Key)))
+            var same = List.Items.Count == rows.Count && rows.Select(r => r.Key).SequenceEqual(Rows.Select(r => r.Key));
+
+            // THE NEW ROWS ARE THE SECTION'S BEFORE THE LIST IS REPLACED: handing the keyboard to the new list
+            // redraws the panel from Rows, and a redraw that still read the old ones put the old list back.
+            Rows = rows;
+            if (same)
             {
                 for (var i = 0; i < cards.Count; i++)
                 {
@@ -423,19 +414,16 @@ public sealed class JobsPanel
                 var at = keep is null ? 0 : Math.Max(0, rows.ToList().FindIndex(r => r.Key == keep));
                 Replace(cards, rows.Count == 0 ? -1 : Math.Min(at, rows.Count - 1));
             }
-            Rows = rows;
 
             Panel.Visible = rows.Count > 0;
-            var header = Open ? $"{_title}{_key}" : $"{_title} ({rows.Count}){_key}";
-            if (Panel.Title != header) Panel.Title = header;
+            if (Panel.Title != _title) Panel.Title = _title;
         }
 
         /// <summary>The section as text — its header as the library draws it, then its cards if it is open.</summary>
         public IEnumerable<string> Text()
         {
             if (Rows.Count == 0) yield break;
-            yield return Open ? $"▾ {_title}{_key}" : $"▸ {_title} ({Rows.Count}){_key}";
-            if (!Open) yield break;
+            yield return _title;
             foreach (var item in List.Items) foreach (var line in item.Text.Split('\n')) yield return line;
         }
     }
@@ -462,7 +450,7 @@ public sealed class JobsPanel
         if (job.Agent is { } agent) facts.Add(agent);
 
         var mark = Mark(running, view.State == BackgroundJobState.Exited && view.ExitCode == 0, "▭");
-        return new ListItem($"{mark} {TitleLine(OutputTail.OneLine(view.Job.Command), stop: running, usable)}\n"
+        return new ListItem($"{mark} {TitleLine(OutputTail.OneLine(view.Job.Command), CardControl(running, foreground: false), usable)}\n"
                             + DetailLines(facts, "View output", usable))
         { Tag = job };
     }
@@ -485,7 +473,7 @@ public sealed class JobsPanel
         facts.Add(DisplayNumber.Took(view.Elapsed));
 
         var mark = Mark(view.Running, view.State == AgentRowState.Done, "◇");
-        return new ListItem($"{mark} {TitleLine(OutputTail.OneLine(title), stop: view.Running && !view.Foreground, usable)}\n"
+        return new ListItem($"{mark} {TitleLine(OutputTail.OneLine(title), CardControl(view.Running, view.Foreground), usable)}\n"
                             + DetailLines(facts, "View transcript", usable))
         { Tag = row };
     }
@@ -496,13 +484,23 @@ public sealed class JobsPanel
         : succeeded ? $"[{ColorScheme.AffirmativeMarkup}]✓[/]"
         : $"[{ColorScheme.DangerMarkup}]✗[/]";
 
-    /// <summary>The title, and — on a running card — ⏹ at the right edge, the title padded so every ⏹ lines up.</summary>
-    private static string TitleLine(string title, bool stop, int usable)
+    /// <summary>
+    /// A card's one control — ⏹ to stop it while it runs, ✕ to delete it once it has ended — or null for a foreground
+    /// agent, which the parent's turn is waiting on (decision 9).
+    ///
+    /// <para>ONE PLACE AND ONE KEY FOR BOTH (decision 33′): the control sits at the same edge on every card, and x
+    /// does what it does, so there is one thing to learn about a card rather than one per state.</para>
+    /// </summary>
+    private static string? CardControl(bool running, bool foreground) =>
+        running ? (foreground ? null : "⏹") : "✕";
+
+    /// <summary>The title, and the card's control at the right edge, the title padded so every control lines up.</summary>
+    private static string TitleLine(string title, string? control, int usable)
     {
-        if (!stop) return Value(Cut(title, usable));
+        if (control is null) return Value(Cut(title, usable));
         var room = Math.Max(1, usable - 2);
         var text = Cut(title, room);
-        return $"{Value(text)}{new string(' ', room - text.Length)} {Muted("⏹")}";
+        return $"{Value(text)}{new string(' ', room - text.Length)} {Muted(control)}";
     }
 
     /// <summary>

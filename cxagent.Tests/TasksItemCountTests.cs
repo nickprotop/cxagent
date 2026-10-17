@@ -187,7 +187,6 @@ public sealed class TasksItemCountTests : IDisposable
         {
             Assert.True(Poll.Until(() => window.Jobs.For(front.Owns).All(e => e.Finished)).GetAwaiter().GetResult());
             window.ToggleJobsPanel();
-            window.JobsPanel.ToggleFinished();
 
             Assert.True(window.JobsPanel.ActOnSelected());
 
@@ -217,7 +216,6 @@ public sealed class TasksItemCountTests : IDisposable
         var tabs = window.Tabs.TabCount;
         window.Tabs.ActiveTabIndex = 0;
         window.ToggleJobsPanel();
-        window.JobsPanel.ToggleFinished();
 
         Assert.True(window.JobsPanel.ActOnSelected());
 

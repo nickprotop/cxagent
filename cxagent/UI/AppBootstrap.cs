@@ -1371,7 +1371,7 @@ public static class AppBootstrap
                 return;
             }
 
-            // ↑ ↓, ENTER, x AND f ON THE TASKS PANEL'S CARDS, only while they have the keyboard — the composer's
+            // ↑ ↓, ENTER AND x ON THE TASKS PANEL'S CARDS, only while they have the keyboard — the composer's
             // own ↑ ↓ (history, the command list) never reach here, because the composer has the
             // keyboard then. Forwarded rather than left to the focused list, so the panel decides which of its
             // two lists the key is for.
@@ -1383,7 +1383,6 @@ public static class AppBootstrap
                     ConsoleKey.DownArrow => jobsWindow.JobsPanel.MoveSelection(down: true),
                     ConsoleKey.Enter => jobsWindow.JobsPanel.ChooseSelected(),
                     ConsoleKey.X when e.KeyInfo.Modifiers == 0 => jobsWindow.JobsPanel.ActOnSelected(),
-                    ConsoleKey.F when e.KeyInfo.Modifiers == 0 => jobsWindow.JobsPanel.ToggleFinished(),
                     _ => false,
                 };
                 if (handled)

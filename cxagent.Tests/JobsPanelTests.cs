@@ -36,17 +36,16 @@ public class JobsPanelTests
     /// doubled — asserting on it would test the escaping rather than what a reader sees.</summary>
     private static string Plain(JobsPanel panel) => MarkupParser.Remove(panel.RenderedText);
 
-    /// <summary>A panel showing these rows, with the count the window would give and Finished opened when asked.</summary>
-    private static JobsPanel Panel(int width, bool finishedOpen, params JobsPanel.PanelRow[] rows)
+    /// <summary>A panel showing these rows, with the count the window would give.</summary>
+    private static JobsPanel Panel(int width, params JobsPanel.PanelRow[] rows)
     {
         var panel = new JobsPanel();
         panel.Refresh(new JobsPanel.JobsShown(JobsPanel.Order(rows), rows.Count(r => r.Running)), width);
-        if (finishedOpen) panel.ToggleFinished();
         return panel;
     }
 
     private static string Render(params JobsPanel.PanelRow[] rows) =>
-        Plain(Panel(SessionPanel.MaxWidth, finishedOpen: true, rows));
+        Plain(Panel(SessionPanel.MaxWidth, rows));
 
     /// <summary>An empty panel says what would appear there, so the key that opened it is learned.</summary>
     [Fact]
@@ -109,7 +108,7 @@ public class JobsPanelTests
             Row("npm run dev", BackgroundJobState.Running, pid: 2));
 
         var finished = text.IndexOf("Finished", StringComparison.Ordinal);
-        Assert.True(text.IndexOf("▾ Running", StringComparison.Ordinal) < text.IndexOf("find-loader", StringComparison.Ordinal));
+        Assert.True(text.IndexOf("Running", StringComparison.Ordinal) < text.IndexOf("find-loader", StringComparison.Ordinal));
         Assert.True(text.IndexOf("npm run dev", StringComparison.Ordinal) < finished);
         Assert.True(text.IndexOf("find-loader", StringComparison.Ordinal) < finished);
         Assert.Contains("✓ map-auth", text, StringComparison.Ordinal);
@@ -119,31 +118,46 @@ public class JobsPanelTests
         Assert.Contains("Shell · exit 1", text, StringComparison.Ordinal);
     }
 
-    /// <summary>Decision 33: Finished starts closed, says how many it holds, and opens on a click or f.</summary>
+    /// <summary>Decision 33′: both sections are plain headings, and a finished card is shown without opening anything.</summary>
     [Fact]
-    public void TheFinishedSection_StartsClosed_AndOpensOnAClick()
+    public void TheSections_ArePlainHeadings_AndFinishedCardsAreShown()
     {
-        var panel = Panel(SessionPanel.MaxWidth, finishedOpen: false,
-            Agent("map-auth", AgentRowState.Done), Agent("find-loader", AgentRowState.Running));
-        Assert.Contains("▸ Finished (1) · f", Plain(panel), StringComparison.Ordinal);
-        Assert.DoesNotContain("map-auth", Plain(panel), StringComparison.Ordinal);
+        var text = Render(Agent("map-auth", AgentRowState.Done), Agent("find-loader", AgentRowState.Running));
 
-        panel.Follow("section:finished");
+        Assert.Contains("\nRunning\n", text, StringComparison.Ordinal);
+        Assert.Contains("\nFinished\n", text, StringComparison.Ordinal);
+        Assert.Contains("map-auth", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("▸", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("▾", text, StringComparison.Ordinal);
+    }
 
-        Assert.Contains("▾ Finished · f", Plain(panel), StringComparison.Ordinal);
-        Assert.Contains("map-auth", Plain(panel), StringComparison.Ordinal);
+    /// <summary>Decision 33′: one control per card, at the same edge — ⏹ while it runs, ✕ once it has ended.</summary>
+    [Fact]
+    public void AFinishedCard_CarriesDelete_WhereARunningCardCarriesStop()
+    {
+        var text = Render(Agent("map-auth", AgentRowState.Done), Agent("find-loader", AgentRowState.Running));
+        var lines = text.Split('\n');
+
+        var running = Assert.Single(lines, l => l.Contains("find-loader", StringComparison.Ordinal));
+        var finished = Assert.Single(lines, l => l.Contains("map-auth", StringComparison.Ordinal));
+        Assert.EndsWith("⏹", running.TrimEnd(), StringComparison.Ordinal);
+        Assert.EndsWith("✕", finished.TrimEnd(), StringComparison.Ordinal);
+        Assert.Equal(running.TrimEnd().Length, finished.TrimEnd().Length);
     }
 
     [Fact]
-    public void TheRunningSection_ClosesOnAClick()
+    public void AFinishedCardsDelete_IsClickable()
     {
-        var panel = Panel(SessionPanel.MaxWidth, finishedOpen: false, Agent("find-loader", AgentRowState.Running));
+        var row = Agent("a", AgentRowState.Done);
+        var panel = Panel(SessionPanel.MaxWidth, row);
+        JobsPanel.RowChoice? chosen = null;
+        panel.RowChosen += c => chosen = c;
 
-        panel.Follow("section:running");
+        panel.Follow($"delete:agent:{row.View.AgentId}");
 
-        Assert.Contains("▸ Running (1)", Plain(panel), StringComparison.Ordinal);
-        Assert.DoesNotContain("find-loader", Plain(panel), StringComparison.Ordinal);
+        Assert.Equal(new JobsPanel.RowChoice(row, JobsPanel.RowAction.StopOrForget), chosen);
     }
+
 
     [Fact]
     public void WithNothingFinished_ThereIsNoFinishedSection() =>
@@ -154,7 +168,7 @@ public class JobsPanelTests
     public void StopAndView_AreClickable()
     {
         var row = Agent("a", AgentRowState.Running);
-        var panel = Panel(SessionPanel.MaxWidth, finishedOpen: false, row);
+        var panel = Panel(SessionPanel.MaxWidth, row);
         var chosen = new List<JobsPanel.RowChoice>();
         panel.RowChosen += chosen.Add;
 
@@ -172,7 +186,7 @@ public class JobsPanelTests
     public void X_StopsOrForgets_ButNotAForegroundAgent(AgentRowState state, bool foreground, bool raised)
     {
         var row = Agent("a", state, foreground);
-        var panel = Panel(SessionPanel.MaxWidth, finishedOpen: true, row);
+        var panel = Panel(SessionPanel.MaxWidth, row);
         JobsPanel.RowChoice? chosen = null;
         panel.RowChosen += c => chosen = c;
 
@@ -185,7 +199,7 @@ public class JobsPanelTests
     public void Enter_OnAnAgentRow_OpensIt()
     {
         var row = Agent("a", AgentRowState.Running, foreground: true);
-        var panel = Panel(SessionPanel.MaxWidth, finishedOpen: false, row);
+        var panel = Panel(SessionPanel.MaxWidth, row);
         JobsPanel.RowChoice? chosen = null;
         panel.RowChosen += c => chosen = c;
 
@@ -198,7 +212,7 @@ public class JobsPanelTests
     [Fact]
     public void Selection_MovesAndClamps_AndEnterChoosesTheSelectedRow()
     {
-        var panel = Panel(SessionPanel.MaxWidth, finishedOpen: false,
+        var panel = Panel(SessionPanel.MaxWidth,
             Row("a", BackgroundJobState.Running, pid: 11), Row("b", BackgroundJobState.Running, pid: 22));
         int? chosen = null;
         panel.RowChosen += c => chosen = ((JobsPanel.JobRow)c.Row).View.Job.Pid;
@@ -216,22 +230,24 @@ public class JobsPanelTests
         Assert.Equal(first, chosen);
     }
 
-    /// <summary>A closed section's rows are not selectable — the keys act only on what is shown.</summary>
+    /// <summary>With only finished cards, the keys act on them — nothing has to be opened first.</summary>
     [Fact]
-    public void Selection_SkipsAClosedSection()
+    public void Selection_ReachesFinishedCards_WithNothingRunning()
     {
-        var panel = Panel(SessionPanel.MaxWidth, finishedOpen: false, Agent("done-one", AgentRowState.Done));
+        var row = Agent("done-one", AgentRowState.Done);
+        var panel = Panel(SessionPanel.MaxWidth, row);
+        JobsPanel.RowChoice? chosen = null;
+        panel.RowChosen += c => chosen = c;
 
-        Assert.False(panel.MoveSelection(down: true));
-        Assert.False(panel.ChooseSelected());
-        Assert.False(panel.ActOnSelected());
+        Assert.True(panel.ActOnSelected());
+        Assert.Equal(new JobsPanel.RowChoice(row, JobsPanel.RowAction.StopOrForget), chosen);
     }
 
     /// <summary>With nothing listed, the keys are not the panel's to swallow.</summary>
     [Fact]
     public void Selection_DeclinesTheKeys_WithNoRows()
     {
-        var panel = Panel(SessionPanel.MaxWidth, finishedOpen: false);
+        var panel = Panel(SessionPanel.MaxWidth);
 
         Assert.False(panel.MoveSelection(down: true));
         Assert.False(panel.ChooseSelected());
@@ -254,7 +270,7 @@ public class JobsPanelTests
     [Fact]
     public void Cards_FitTheNarrowestColumn()
     {
-        var text = Plain(Panel(SessionPanel.MinWidth, finishedOpen: true,
+        var text = Plain(Panel(SessionPanel.MinWidth,
             Row("for i in $(seq 1 200); do echo tick $i; sleep 1; done", BackgroundJobState.Running, agent: "explore-auth"),
             Agent(new string('h', 40), AgentRowState.WaitingForPermission,
                 description: "a very long description of what this agent was asked to do")));
@@ -284,6 +300,9 @@ public class JobsPanelTests
         panel.Refresh(new JobsPanel.JobsShown([agent], 1), SessionPanel.MaxWidth);
         window.RenderAndGetVisibleContent();
         window.RenderAndGetVisibleContent();
+        // WITH THE KEYBOARD ON THE CARDS — the window gives it to the only focusable control. Handing it to the
+        // replacement list redraws the panel mid-update, which once put the one-card list back.
+        Assert.True(panel.RowsHaveFocus);
 
         var shell = Row("sleep 120", BackgroundJobState.Running, pid: 7);
         panel.Refresh(new JobsPanel.JobsShown(JobsPanel.Order([shell, agent]), 2), SessionPanel.MaxWidth);
