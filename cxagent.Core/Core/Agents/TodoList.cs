@@ -89,6 +89,13 @@ public sealed class TodoList
         sb.AppendLine();
         sb.AppendLine("# Your task list");
         sb.AppendLine();
+        // WHO WROTE THIS, SAID OUTRIGHT. The list travels as a user-role message — the newest end of the
+        // conversation is where it costs nothing to cache — and a local model took each copy for the user
+        // prodding it: turn after turn opened "You're right — I'm still on step 3" and re-read the file
+        // instead of editing it. The role cannot say otherwise, so the text does.
+        sb.AppendLine("cxagent adds this after each step. It is not a message from the user, asks for "
+                      + "nothing new, and needs no reply.");
+        sb.AppendLine();
         sb.AppendLine(toolOffered
             ? "You wrote this. Keep it current with todowrite as you work — mark an item "
               + "in_progress before starting it and completed once it is actually done."

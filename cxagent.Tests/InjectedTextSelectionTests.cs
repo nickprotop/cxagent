@@ -44,6 +44,26 @@ public class InjectedTextSelectionTests
         Assert.Contains("ship it", rendered);
     }
 
+    /// <summary>
+    /// IT SAYS IT IS NOT THE USER. The list travels as a user-role message, and a local model read each
+    /// copy as the user prodding it: fifteen turns in a row opened "You're right — I'm still on step 3"
+    /// and re-read the file instead of editing it. Saying who wrote the note, and that it asks nothing,
+    /// is what the role cannot.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheTodoHeader_SaysItIsNotFromTheUser(bool toolOffered)
+    {
+        var list = new TodoList();
+        list.Replace([new TodoItem("ship it", TodoStatus.InProgress)]);
+
+        var rendered = list.Render(toolOffered);
+
+        Assert.Contains("not a message from the user", rendered);
+        Assert.Contains("needs no reply", rendered);
+    }
+
     [Fact]
     public void AnEmptyListRendersNothingEitherWay()
     {
