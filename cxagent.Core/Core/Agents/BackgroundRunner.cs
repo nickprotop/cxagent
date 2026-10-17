@@ -99,7 +99,11 @@ internal static class BackgroundRunner
             // WHATEVER HAPPENED ABOVE, THE RUN ENDS HERE: a run left Running holds its claim forever, and a
             // task_output wait on it burns its whole timeout for an answer that never comes.
             envelope ??= SubAgentEnvelope.Render(kept.Agent.Agent.Id, kept.Name, SendOutcome.Failed, "the run failed");
-            var state = SubAgentEnvelope.StateOf(envelope) ?? "error";
+            // A STOP THAT OVERTOOK THE ANSWER IS ANNOUNCED AS ONE: the envelope carries the answer's own
+            // "completed", but the row this word settles must read as the report and the notice do — cancelled.
+            var state = overtaken is not null
+                ? SubAgentEnvelope.WordFor(SendOutcome.Cancelled)
+                : SubAgentEnvelope.StateOf(envelope) ?? "error";
 
             // THROUGH WHICHEVER CALL MATCHES THE ANNOUNCEMENT, as the foreground spawn does: an announced
             // stop is an archived run, and a run that never started must not archive one of zero turns.

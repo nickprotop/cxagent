@@ -141,6 +141,23 @@ public static class SubAgentEnvelope
     public static string? StateOf(string? envelope) => Attribute(envelope, "state=\"");
 
     /// <summary>
+    /// The envelope's state word for an outcome — the word <see cref="StateOf"/> reads back.
+    ///
+    /// <para>ONE MAPPING, for a caller that must announce how a run ended when the envelope it rendered
+    /// describes something else: a stop that overtook a whole answer renders the answer as completed, but the
+    /// run was cancelled.</para>
+    /// </summary>
+    internal static string WordFor(SendOutcome outcome) => outcome switch
+    {
+        SendOutcome.Completed => "completed",
+        SendOutcome.Capped => "capped",
+        SendOutcome.Stuck => "stuck",
+        SendOutcome.Cancelled => "cancelled",
+        SendOutcome.Silent => "no-answer",
+        _ => "error",
+    };
+
+    /// <summary>
     /// Reads the child's <c>id</c> back out of a rendered envelope, or null if this is not one.
     ///
     /// <para>PARSED RATHER THAN THREADED, for the reason <see cref="StateOf"/> gives at length: the
@@ -224,15 +241,7 @@ public static class SubAgentEnvelope
     /// <param name="text">The child's answer, or its account of why there is not one.</param>
     public static string Render(string childId, string? name, SendOutcome outcome, string text)
     {
-        var state = outcome switch
-        {
-            SendOutcome.Completed => "completed",
-            SendOutcome.Capped => "capped",
-            SendOutcome.Stuck => "stuck",
-            SendOutcome.Cancelled => "cancelled",
-            SendOutcome.Silent => "no-answer",
-            _ => "error",
-        };
+        var state = WordFor(outcome);
 
         // A NOTE ON THE UNHAPPY STATES, because "capped" alone is a word the model has to interpret.
         // The parent must know that what follows is an ACCOUNT OF UNFINISHED WORK rather than an

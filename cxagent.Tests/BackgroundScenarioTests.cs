@@ -629,6 +629,30 @@ public class BackgroundScenarioTests : IDisposable
     }
 
     /// <summary>
+    /// S18, THE ROW. The stop that overtakes the answer must settle the child's row as the report and the
+    /// notice do — cancelled. The row reads the outcome word the claim's release announces, and the answer
+    /// that came back in the same instant carries "completed", which settles the row "done" beside a notice
+    /// saying it was stopped.
+    /// </summary>
+    [Fact]
+    public async Task StopRacingTheAnswer_SettlesTheRowCancelled()
+    {
+        var parent = new ScriptedProvider(Use(Calls.Spawn(id: "s1")), Answer("started"));
+        Session? session = null;
+        var child = new StoppingProvider("found it", () => session!.StopTask("stop find-thing"));
+        var s = Open(parent, child);
+        session = s.Session;
+        var ended = new List<string?>();
+        s.Session.SubAgents.SendEnded += (_, outcome) => { lock (ended) ended.Add(outcome); };
+
+        await Turn(s.Session, "go");
+        Assert.True(await Poll.Until(() => RunOf(s).Handoff.Ended));
+
+        Assert.Equal(BackgroundState.Stopped, RunOf(s).State);
+        lock (ended) Assert.Equal(["cancelled"], ended);
+    }
+
+    /// <summary>
     /// S20. THE USER'S /agents send TO A CHILD THEY STOPPED resumes it, the answer comes to the user and
     /// not to the model, and the model may resume it afterwards.
     ///
