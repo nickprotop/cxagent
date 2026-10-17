@@ -843,6 +843,32 @@ public class MainWindowTests
         Assert.DoesNotContain("50%", after, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// AFTER A NOTE, THE READOUT RETURNS IN THE FORM THE BAR HAD SETTLED ON — not its widest for a frame before the
+    /// fit shrinks it again, a flicker on every note.
+    /// </summary>
+    [Fact]
+    public void AfterANote_TheReadoutReturnsAsItWas()
+    {
+        var res = ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock").WithContextWindow(200_000);
+        var mw = new MainWindow(SysOfWidth(200), res, Logs());
+        mw.Build();
+        mw.SetContextUsed(100_000);
+        mw.SetTokenTotal(24_000);
+        var forms = MainWindow.ContextLabelFormsForTest(100_000, 24_000, 200_000);
+        Assert.True(forms.Count > 1);
+        mw.StatusBar.FitReadout!(SharpConsoleUI.Parsing.MarkupParser.StripLength(forms[^1]));
+        var settled = mw.StatusBar.Readout!.Label;
+
+        mw.ShowNoteForTest("'finder' keeps running — F7 shows it");
+        mw.TickNoteForTest();
+        mw.StatusBar.FitReadout!(60);
+        mw.ExpireNoteForTest();
+        mw.TickNoteForTest();
+
+        Assert.Equal(settled, mw.StatusBar.Readout!.Label);
+    }
+
     [Fact]
     public void SessionPanel_ShowsTheAgentIdForLogCorrelation()
     {

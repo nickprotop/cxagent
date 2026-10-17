@@ -3010,6 +3010,12 @@ public sealed class MainWindow : IDisposable
     /// <summary>Whether the readout is showing the note rather than the context and spend.</summary>
     private bool _noteShown;
 
+    /// <summary>The note's short form, for a bar with too little room for the whole of it.</summary>
+    private const string NoteBrief = "keeps running — F7";
+
+    /// <summary>The readout form the bar had settled on before a note took its place — what it returns to.</summary>
+    private int _formBeforeNote;
+
     /// <summary>How long a note stays: long enough to read after the tab vanishes, short enough not to go stale.</summary>
     private static readonly TimeSpan NoteFor = TimeSpan.FromSeconds(6);
 
@@ -3030,6 +3036,8 @@ public sealed class MainWindow : IDisposable
 
     public void ExpireNoteForTest() => _noteUntil = DateTimeOffset.MinValue;
 
+    public void ShowNoteForTest(string text) => ShowNote(text);
+
     /// <summary>
     /// Puts the status note up, or takes it down once it has been up long enough — the one-second tick's.
     ///
@@ -3042,6 +3050,11 @@ public sealed class MainWindow : IDisposable
         if (StatusNote is not null && DateTimeOffset.UtcNow >= _noteUntil) StatusNote = null;
         var shown = StatusNote is not null;
         if (shown == _noteShown && !shown) return;
+
+        // THE READOUT RETURNS AS IT WAS. The note's forms index the same field, and the readout's widest form drawn
+        // for a frame before the fit shrinks it again is a flicker on every note.
+        if (shown && !_noteShown) _formBeforeNote = _tokenForm;
+        if (!shown && _noteShown) _tokenForm = _formBeforeNote;
         _noteShown = shown;
         RefreshTokenItem();
     }
@@ -4236,8 +4249,11 @@ public sealed class MainWindow : IDisposable
         // Read from the resolution rather than a copied field: it is already here, and one source
         // cannot drift from another. Null (window unconfigured) falls back to the plain count — a
         // percentage needs a denominator, and a guessed one is worse than none.
+        // TWO FORMS FOR THE NOTE, as the readout has several: the whole of it, then a short one, so a narrow bar
+        // still says the task went on rather than showing nothing.
         _tokenForms = _noteShown && StatusNote is { } note
-            ? [$"[{ColorScheme.MutedMarkup}]{SharpConsoleUI.Parsing.MarkupParser.Escape(note)}[/]"]
+            ? [$"[{ColorScheme.MutedMarkup}]{SharpConsoleUI.Parsing.MarkupParser.Escape(note)}[/]",
+               $"[{ColorScheme.MutedMarkup}]{NoteBrief}[/]"]
             : ContextLabelForms(_contextUsed, _lastTokens, _resolution.ContextWindow, _contextStale,
                 _contextDelta, _lastInput, _lastOutput);
         if (_tokenForms.Count == 0)

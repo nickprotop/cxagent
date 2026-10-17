@@ -200,6 +200,22 @@ public sealed class ViewTabTests : IDisposable
         Assert.Same(tab.MainControl, window.FocusManager.FocusedControl);
     }
 
+    /// <summary>THE NOTE HAS A SHORT FORM for a bar with little room, rather than vanishing.</summary>
+    [Fact]
+    public void TheNote_ShortensToFit()
+    {
+        _window.SetTokenTotal(24_000);
+        Running(_front, "a-rather-long-agent-handle");
+        _window.OpenAgentTab(_front, "a-rather-long-agent-handle");
+        _window.CloseAgentTab(_window.ActiveAgentTab!);
+        _window.TickNoteForTest();
+
+        _window.StatusBar.FitReadout!(24);
+
+        Assert.True(_window.StatusBar.Readout!.IsVisible);
+        Assert.Contains("keeps running", _window.StatusBar.Readout.Label, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ClosingAFinishedAgentTab_SaysNothing()
     {
