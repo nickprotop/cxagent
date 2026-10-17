@@ -60,7 +60,9 @@ public sealed class McpCommand(
                 return;
             }
 
-            await mcp.ReloadAsync(configured, CancellationToken.None);
+            // ON THE POOL: disposing each old server waits up to a second for it to exit, and this is typed on the
+            // UI thread. The await brings what follows — the warnings and the panel — back to that thread.
+            await Task.Run(() => mcp.ReloadAsync(configured, CancellationToken.None));
 
             foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
                 Say(message, Severity.Warning);
