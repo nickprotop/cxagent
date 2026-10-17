@@ -312,7 +312,8 @@ public sealed class TasksItemCountTests : IDisposable
             Assert.Equal(answer == AgentDelete.StopCommands, shell.Killed);
             Assert.Equal(answer != AgentDelete.StopCommands,
                 window.Jobs.For(front.Owns).Any(e => e.Job.Pid == shell.Pid && !e.Finished));
-            Assert.True(window.JobsRowsHaveFocus, "the keyboard did not come back to the cards");
+            // AWAITED, as the delete is: it finishes on the pool, and the keyboard comes back after it.
+            Assert.True(await Poll.Until(() => window.JobsRowsHaveFocus), "the keyboard did not come back to the cards");
         }
         finally { shell.Kill(); }
     }

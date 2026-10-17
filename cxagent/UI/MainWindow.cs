@@ -2829,7 +2829,13 @@ public sealed class MainWindow : IDisposable
         int commands)
     {
         var answer = await ask(view.Kept.Name, commands);
-        if (answer != AgentDelete.Cancel) Delete(session, view, keepShells: answer == AgentDelete.KeepCommands);
+        if (answer != AgentDelete.Cancel)
+        {
+            // THE FORGET ON THE POOL: stopping the commands waits for each to exit — up to five seconds when one is
+            // stuck — and this answer arrives on the UI thread. The await brings the rest back to it.
+            var keep = answer == AgentDelete.KeepCommands;
+            Deleted(session, view, await Task.Run(() => session.ForgetAgent(view.Kept.Name, keep)));
+        }
         RefreshJobsPanel();
 
         // THE KEYBOARD BACK ON THE CARDS, where x was pressed. The dialog took it, and handed it back to nothing the
@@ -2841,9 +2847,13 @@ public sealed class MainWindow : IDisposable
         }
     }
 
-    private void Delete(Session session, AgentRowView view, bool keepShells)
+    private void Delete(Session session, AgentRowView view, bool keepShells) =>
+        Deleted(session, view, session.ForgetAgent(view.Kept.Name, keepShells));
+
+    /// <summary>What a delete's outcome changes on screen: its tab closes, or the user is told why it stayed.</summary>
+    private void Deleted(Session session, AgentRowView view, ForgetOutcome outcome)
     {
-        switch (session.ForgetAgent(view.Kept.Name, keepShells))
+        switch (outcome)
         {
             case ForgetOutcome.Forgotten:
                 if (_agentTabs.TryGetValue(view.AgentId, out var open)) CloseAgentTab(open.Tab);

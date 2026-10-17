@@ -622,7 +622,13 @@ public static class AppBootstrap
                 manager.Commands.RegisterVerb("/tasks",
                     new CommandArgument("stop <handle|pid>", "stop one", Completes: false,
                         Values: ValueSources.Tasks),
-                    (current, arguments) => current.StopTask(arguments).Handled());
+                    // ON THE POOL: each shell it kills is waited for — up to five seconds when a process is stuck —
+                    // and this is typed on the UI thread. What it stopped is said when it is done.
+                    (current, arguments) =>
+                    {
+                        _ = Task.Run(() => current.StopTask(arguments));
+                        return true;
+                    });
                 manager.Commands.RegisterVerb("/tasks",
                     new CommandArgument("output <handle|pid>", "how far it has got, or what it left",
                         Completes: false, Values: ValueSources.Tasks),
