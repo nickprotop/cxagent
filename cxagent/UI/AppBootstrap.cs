@@ -178,9 +178,18 @@ public static class AppBootstrap
 
         var configNow = new CurrentConfig(startup);
 
+        // WHERE CTRL+Q READS AND WRITES "Don't ask again", and why a write that failed is reported once the
+        // terminal is back — see QuitFromTheKey and the end of this method.
+        var configFile = Path.Combine(paths.ConfigDir, "config.json");
+        string? quitPreferenceNotSaved = null;
+
         var driver = new NetConsoleDriver();
+        // NO FRAMEWORK EXIT KEY. Its default is Ctrl+Q, quitting at once; the binding below owns that key so
+        // it can ask first. Global shortcuts are consulted before the exit key today, but leaving the
+        // framework's own quit armed makes the question depend on that ordering.
         var system = new ConsoleWindowSystem(driver,
-            new ConsoleWindowSystemOptions(InstallSynchronizationContext: true, ShowTopPanel: false, ShowBottomPanel: false));
+            new ConsoleWindowSystemOptions(InstallSynchronizationContext: true, ShowTopPanel: false, ShowBottomPanel: false,
+                ExitKey: null));
 
         // THE PALETTE, EXPRESSED IN WHATEVER THEME IS ACTIVE — before any window is built, because
         // MainWindow reads ColorScheme's surfaces in its own field initialisers and a palette derived
@@ -1928,8 +1937,28 @@ public static class AppBootstrap
         // focus stop — so the choice is "read the page names in front of you" rather than "remember
         // which F-key", which is the point of having a nav pane at all.
         //
-        keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.Q, "quit",
-            () => _ = QuitAfterAsking(system, manager, cts));
+        keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.Q, "quit", () => _ = QuitFromTheKey());
+
+        // "QUIT CXAGENT?" IS CTRL+Q'S ALONE. The last /exit is typed out, so it is already the decision this
+        // question would ask for; a key is one press away from a slip. Both still go through
+        // QuitAfterAsking, so running agents are asked about either way, and never in place of this.
+        async Task QuitFromTheKey()
+        {
+            if (QuitGuard.AsksQuitCxagent(manager.Sessions.Sum(s => s.AgentsClosingWouldEnd), QuitPreference.Asks(configFile)))
+            {
+                var choice = await QuitDialog.AskAsync(system);
+                if (choice == QuitChoice.Cancel) return;
+                if (choice == QuitChoice.QuitAndStopAsking)
+                {
+                    try { QuitPreference.StopAsking(configFile); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+                    {
+                        quitPreferenceNotSaved = ex.Message;
+                    }
+                }
+            }
+            await QuitAfterAsking(system, manager, cts);
+        }
         // BACK, WHILE THE MODEL IS ASKING. Only meaningful during a multi-question run, and a no-op
         // otherwise. Alt-modified because the field below is a text box: a bare Left or Backspace
         // shortcut would swallow the keys that edit a typed answer.
@@ -1947,6 +1976,7 @@ public static class AppBootstrap
                 // cancel a running turn, which is not remotely what the user asked for.
                 if (PluginManagerDialog.CloseIfOpen()) return true;
                 if (ConfirmDialog.CloseIfOpen()) return true;
+                if (QuitDialog.CloseIfOpen()) return true;
                 if (ApplyToTabsDialog.CloseIfOpen()) return true;
                 if (ModelPickerOverlay.CloseIfOpen()) return true;
                 if (ConfigDialog.CloseIfOpen()) return true;
@@ -2296,6 +2326,12 @@ public static class AppBootstrap
         // you have already stopped using.
         if (SessionHints.Farewell(endedSessionId, spend) is { } farewell)
             Console.WriteLine(farewell);
+
+        // HERE AND NOT AS A TOAST: the failure happens on the way out, and a toast would go down with the
+        // window it was shown in. Said at all because the next Ctrl+Q asks again, which otherwise looks
+        // like the box did nothing.
+        if (quitPreferenceNotSaved is { } reason)
+            Console.Error.WriteLine($"cxagent: \"Don't ask again\" was not saved ({reason}); Ctrl+Q will still ask.");
 
         return code;
     }

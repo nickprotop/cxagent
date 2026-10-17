@@ -82,4 +82,26 @@ public class QuitGuardTests
         Assert.Contains("'server' started 1 background command that is still running", string.Join(" ", question.Lines));
         Assert.Equal("Delete, keep 1 command running", question.Answers[2]);
     }
+
+    /// <summary>
+    /// WHICH QUESTION CTRL+Q ASKS. "Quit cxagent?" only when nothing is running and it has not been turned
+    /// off; with agents running, the agents question is asked instead, and turning the plain one off never
+    /// skips it.
+    /// </summary>
+    [Theory]
+    [InlineData(0, true, true)]
+    [InlineData(0, false, false)]
+    [InlineData(2, true, false)]
+    [InlineData(2, false, false)]
+    public void CtrlQ_AsksQuitCxagent_OnlyWithNothingRunning(int running, bool confirmQuit, bool asks) =>
+        Assert.Equal(asks, QuitGuard.AsksQuitCxagent(running, confirmQuit));
+
+    [Theory]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public void WithAgentsRunning_TheAgentsQuestionIsAsked_WhateverTheBoxSaid(int running, bool confirmQuit)
+    {
+        Assert.False(QuitGuard.AsksQuitCxagent(running, confirmQuit));
+        Assert.NotNull(QuitGuard.Question(running));
+    }
 }

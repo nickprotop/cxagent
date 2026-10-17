@@ -23,6 +23,15 @@ public static class QuitGuard
     ];
 
     /// <summary>
+    /// Whether Ctrl+Q asks "Quit cxagent?" (<see cref="QuitDialog"/>) before going on to <see cref="ConfirmAsync"/>.
+    ///
+    /// <para>ONLY WITH NOTHING RUNNING. With agents running, <see cref="ConfirmAsync"/> asks the question that
+    /// matters, and asking both would put a "yes, quit" in front of the "yes, lose their work". Turning the
+    /// plain question off is therefore never a way past the agents one: that one is not this one.</para>
+    /// </summary>
+    public static bool AsksQuitCxagent(int running, bool confirmQuit) => running == 0 && confirmQuit;
+
+    /// <summary>
     /// True to go ahead — nothing was running, or the user chose to stop them.
     ///
     /// <para>CANCEL FIRST, because the dialog opens on its first answer and Enter is a reflex: a quit
