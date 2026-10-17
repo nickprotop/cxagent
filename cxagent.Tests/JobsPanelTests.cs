@@ -125,12 +125,12 @@ public class JobsPanelTests
     {
         var panel = Panel(SessionPanel.MaxWidth, finishedOpen: false,
             Agent("map-auth", AgentRowState.Done), Agent("find-loader", AgentRowState.Running));
-        Assert.Contains("▸ Finished (1)", Plain(panel), StringComparison.Ordinal);
+        Assert.Contains("▸ Finished (1) · f", Plain(panel), StringComparison.Ordinal);
         Assert.DoesNotContain("map-auth", Plain(panel), StringComparison.Ordinal);
 
         panel.Follow("section:finished");
 
-        Assert.Contains("▾ Finished", Plain(panel), StringComparison.Ordinal);
+        Assert.Contains("▾ Finished · f", Plain(panel), StringComparison.Ordinal);
         Assert.Contains("map-auth", Plain(panel), StringComparison.Ordinal);
     }
 

@@ -112,11 +112,11 @@ public sealed class JobsPanel
 
         // FINISHED STARTS CLOSED (decision 33): finished work stays until it is dismissed, and left open it would
         // push what is running out of sight.
-        _finished = new Section(this, "Finished", expanded: false);
+        _finished = new Section(this, "Finished", expanded: false, key: "f");
 
         _host = Ctl.ScrollablePanel().WithVerticalAlignment(VerticalAlignment.Fill).Build();
         _host.BackgroundColor = ColorScheme.PanelSurface;
-        // EACH SECTION'S KEY HINT SITS UNDER IT, so "x stop" is read beside the running cards it stops and "x forget"
+        // EACH SECTION'S KEY HINT SITS UNDER IT, so "x stop" is read beside the running cards it stops and "x delete"
         // beside the finished ones — a single hint at the foot of the column read as being about whatever was last.
         foreach (var control in new IWindowControl[] { _heading, _empty, _running.Panel, _running.Hint, _finished.Panel, _finished.Hint })
             _host.AddControl(control);
@@ -236,14 +236,15 @@ public sealed class JobsPanel
         // names keys that would act on nothing. Only the keys a card does not show: each card already says how it
         // is viewed, and the column has room for little else.
         var focused = RowsHaveFocus ? Active() : null;
-        var showOrHide = _finished.Rows.Count == 0 ? "" : _finished.Open ? " · f hide finished" : " · f show finished";
+        // f IS NAMED ON THE FINISHED HEADER ITSELF (see Section's title), so the running cards' hint needs only x: a
+        // "f collapse finished" under them read as folding Running, and did not fit the column.
         string HintFor(Section section) =>
             !ReferenceEquals(section, focused) || section.Selected is not { } chosen ? ""
             : Muted(Cut(chosen switch
             {
                 AgentRow { View: { Foreground: true, Running: true } } => "x — the parent waits on it",
-                { Running: true } => "x stop" + showOrHide,
-                _ => "x forget" + showOrHide,
+                { Running: true } => "x stop",
+                _ => "x delete · f collapse",
             }, width - 4));
         var runningHint = HintFor(_running);
         var finishedHint = HintFor(_finished);
@@ -277,11 +278,14 @@ public sealed class JobsPanel
     {
         private readonly JobsPanel _owner;
         private readonly string _title;
+        private readonly string _key;
 
-        public Section(JobsPanel owner, string title, bool expanded)
+        /// <param name="key">The key that opens and closes it, named on its header; null for none.</param>
+        public Section(JobsPanel owner, string title, bool expanded, string? key = null)
         {
             _owner = owner;
             _title = title;
+            _key = key is null ? "" : $" · {key}";
             var builder = Ctl.CollapsiblePanel(title).WithMargin(1, 1, 1, 0).WithIcons("▾", "▸");
             Panel = (expanded ? builder.Expanded() : builder.Collapsed()).Build();
             List = NewList();
@@ -422,7 +426,7 @@ public sealed class JobsPanel
             Rows = rows;
 
             Panel.Visible = rows.Count > 0;
-            var header = Open ? _title : $"{_title} ({rows.Count})";
+            var header = Open ? $"{_title}{_key}" : $"{_title} ({rows.Count}){_key}";
             if (Panel.Title != header) Panel.Title = header;
         }
 
@@ -430,7 +434,7 @@ public sealed class JobsPanel
         public IEnumerable<string> Text()
         {
             if (Rows.Count == 0) yield break;
-            yield return Open ? $"▾ {_title}" : $"▸ {_title} ({Rows.Count})";
+            yield return Open ? $"▾ {_title}{_key}" : $"▸ {_title} ({Rows.Count}){_key}";
             if (!Open) yield break;
             foreach (var item in List.Items) foreach (var line in item.Text.Split('\n')) yield return line;
         }
