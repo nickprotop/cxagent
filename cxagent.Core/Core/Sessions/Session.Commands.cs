@@ -298,6 +298,19 @@ public sealed partial class Session
     public IReadOnlyList<string> EndBackgroundWork(bool keepCommands = false) =>
         SubAgents.StopAll(IsSessionAgent, keepCommands);
 
+    /// <summary>Every working agent of this session — background, foreground, or the user's own send (decision 22).</summary>
+    public int RunningAgents => SubAgents.Working;
+
+    /// <summary>
+    /// The agents closing this session's tab or quitting would end without anyone having asked for that: background
+    /// runs and the user's own sends.
+    ///
+    /// <para>NOT A FOREGROUND CHILD. Its parent's turn is waiting on it, a tab is refused closing while its session
+    /// is busy, and quitting interrupts that turn as such — the child goes with it, and asking about it apart
+    /// would count one piece of work twice.</para>
+    /// </summary>
+    public int AgentsClosingWouldEnd => RunningBackgroundAgents + SubAgents.UserSendsAlone;
+
     /// <summary>How many of this session's background agents are queued or running.</summary>
     public int RunningBackgroundAgents =>
         SubAgents.Background().Count(r => r.State is Agents.BackgroundState.Queued or Agents.BackgroundState.Running);
@@ -341,6 +354,9 @@ public sealed partial class Session
         var said = SubAgents.Find(id) is null ? $"no task '{id}' — /tasks lists them."
             : SubAgents.Stop(id, byUser: true)
                 ? $"stopped '{id}' — the agent that started it will read that you stopped it."
+            // THE USER'S OWN SEND, when no background run is going: nobody else is waiting on it, so nobody is told.
+            : SubAgents.StopUserSend(id)
+                ? $"stopped your send to '{id}'."
                 : $"'{id}' is not running in the background, so there is nothing to stop.";
         Say(new Message(said, Severity.Info));
         return CommandStatus.Reported;
@@ -392,6 +408,8 @@ public sealed partial class Session
 
         _ = Task.Run(async () =>
         {
+            // THE USER'S OWN TOKEN, held by the store, so /tasks stop, a panel's x or a tab's Stop ends this send.
+            var token = SubAgents.BeginUserSend(name);
             try
             {
                 // THE SPAWNER'S OWN CAP, as the agent_send tool path passes it. A resume is a child
@@ -404,12 +422,20 @@ public sealed partial class Session
                 // background resume would report to the model, and the user would see their question
                 // answered to somebody else. FROM THE USER, so it resumes a child the user stopped.
                 var answer = await reach.SendAsync(new Agents.SendRequest(To: name, Prompt: prompt,
-                    Background: false, ParentAgentId: null, FromUser: true), CancellationToken.None);
+                    Background: false, ParentAgentId: null, FromUser: true), token);
                 Say(new Message(answer, Severity.Info));
+            }
+            catch (OperationCanceledException)
+            {
+                Say(new Message($"stopped your send to '{name}' before it answered.", Severity.Info));
             }
             catch (Exception ex)
             {
                 Say(new Message($"'{name}' failed: {ex.Message}", Severity.Error));
+            }
+            finally
+            {
+                SubAgents.EndUserSend(name);
             }
         });
 

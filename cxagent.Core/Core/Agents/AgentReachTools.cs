@@ -188,7 +188,24 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                 // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child
                 // died with the turn that called `agent`; a wake is governed by the turn that ASKED,
                 // so Escape cancels it like any other tool call.
-                var result = await stored.Agent.Agent.SendAsync(prompt, ct);
+                // NOTED, NOT ANNOUNCED: the release below names no outcome — its listeners settle a resume as they
+                // always have — and the store's record of how this stretch ended takes the word from here.
+                SendResult result;
+                try
+                {
+                    result = await stored.Agent.Agent.SendAsync(prompt, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    store.NoteOutcome(agentName, SubAgentEnvelope.WordFor(SendOutcome.Cancelled));
+                    throw;
+                }
+                catch (Exception)
+                {
+                    store.NoteOutcome(agentName, SubAgentEnvelope.WordFor(SendOutcome.Failed));
+                    throw;
+                }
+                store.NoteOutcome(agentName, SubAgentEnvelope.WordFor(result.Outcome));
                 return result.Text;
             }
             finally

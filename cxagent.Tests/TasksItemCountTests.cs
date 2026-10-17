@@ -138,4 +138,27 @@ public sealed class TasksItemCountTests : IDisposable
             registry.ReapAll();
         }
     }
+
+    /// <summary>Decision 22: a foreground child counts in F7, so the item says what the running rows show.</summary>
+    [Fact]
+    public void AForegroundChild_IsCountedInTheItem_ButNotInTheCloseQuestion()
+    {
+        var front = Open();
+        front.SubAgents.Keep(AgentBookkeepingTests.ChildForTests(), "fg");
+        front.SubAgents.TryClaim("fg");
+
+        Assert.Equal("Tasks 1", MainWindow.JobsItemLabelFor(front, [front], NoShells()));
+        Assert.Equal(new TabWork(Agents: 0, Commands: 0), MainWindow.TabWorkFor(front, NoShells()));
+    }
+
+    /// <summary>Q12: the user's own send is work a close ends, so the close question names it.</summary>
+    [Fact]
+    public void TheUsersOwnSend_IsInTheCloseQuestion()
+    {
+        var front = Open();
+        front.SubAgents.Keep(AgentBookkeepingTests.ChildForTests(), "mine");
+        front.SubAgents.BeginUserSend("mine");
+
+        Assert.Equal(new TabWork(Agents: 1, Commands: 0), MainWindow.TabWorkFor(front, NoShells()));
+    }
 }

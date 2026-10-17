@@ -713,7 +713,7 @@ public sealed class MainWindow : IDisposable
     /// showing — the session's own count of agents, and the board's shells this session owns.</para>
     /// </summary>
     public static TabWork TabWorkFor(Core.Sessions.Session session, BackgroundJobBoard board) =>
-        new(session.RunningBackgroundAgents, board.For(session.Owns).Count(e => !e.Finished));
+        new(session.AgentsClosingWouldEnd, board.For(session.Owns).Count(e => !e.Finished));
 
     /// <summary>
     /// Closes the tab as the user answered: stopping everything, or keeping its commands running.
@@ -2604,23 +2604,24 @@ public sealed class MainWindow : IDisposable
     {
         var owns = front is { } session ? session.Owns : (Func<string, bool>)(_ => false);
 
-        // AGENTS AS WELL AS SHELLS, queued ones included: the item answers "is anything still going in the
-        // background", and counting shells alone showed nothing while only agents ran. Queued counts for
-        // the reason the quit question counts it — work that will run unless something stops it.
-        var agentsElsewhere = open.Where(s => !ReferenceEquals(s, front)).Sum(s => s.RunningBackgroundAgents);
+        // AGENTS AS WELL AS SHELLS — every working agent, foreground children and the user's sends as well as
+        // background runs, queued ones included (decision 22): the number matches the running rows the panel
+        // shows, and counting shells alone showed nothing while only agents ran.
+        var agentsElsewhere = open.Where(s => !ReferenceEquals(s, front)).Sum(s => s.RunningAgents);
         return JobsItemLabel(RunningTasksOf(front, board), board.RunningElsewhere(owns) + agentsElsewhere);
     }
 
     /// <summary>
-    /// The running tasks of the session in front: its live shells and its background agents, queued
-    /// included; none with no session.
+    /// The running tasks of the session in front: its live shells and every working agent — foreground
+    /// children and the user's sends as well as background runs, queued included (decision 22); none with no
+    /// session.
     ///
     /// <para>ONE COUNT FOR THE F7 ITEM AND THE PANEL'S HEADING, because the panel is what the item opens: a
     /// heading counted any other way says a different number from the one the user just pressed F7 on.</para>
     /// </summary>
     public static int RunningTasksOf(Core.Sessions.Session? front, BackgroundJobBoard board) =>
         front is not { } session ? 0
-        : board.For(session.Owns).Count(e => !e.Finished) + session.RunningBackgroundAgents;
+        : board.For(session.Owns).Count(e => !e.Finished) + session.RunningAgents;
 
     private void RefreshJobs()
     {

@@ -30,6 +30,24 @@ public sealed record StoredAgent(string Name, string TypeName, string? Descripti
 /// <para>BUSY IS HELD HERE AND NEVER PERSISTED. A crash mid-turn would otherwise leave a flag on
 /// disk and the agent permanently unreachable, with nothing able to clear it.</para>
 /// </summary>
+/// <summary>
+/// How one stretch of a kept agent's work ended — a spawn's run, a resume, a background run.
+///
+/// <para>THE STORE'S, NOT THE RUN'S. A background run knows its state but not its word, and a foreground stretch
+/// has no run at all; a panel row has to mark either one ✔ or ✗.</para>
+/// </summary>
+/// <param name="Outcome">The envelope's word — <c>completed</c>, <c>capped</c>, <c>cancelled</c>…; null when the stretch threw before it had one.</param>
+/// <param name="Began">When the work started — the announcement, not the queue.</param>
+/// <param name="At">When it ended.</param>
+public sealed record AgentEnd(string? Outcome, DateTimeOffset Began, DateTimeOffset At)
+{
+    /// <summary>
+    /// Only a completed stretch. A capped one's answer is an account of unfinished work, and a stuck, silent or
+    /// failed one is a reason to look — none of them earns the success mark.
+    /// </summary>
+    public bool Succeeded => Outcome == "completed";
+}
+
 public sealed class SubAgentStore
 {
     /// <summary>A store over the process-wide shell registry and record, which every production path uses.</summary>
@@ -40,11 +58,21 @@ public sealed class SubAgentStore
     /// <see cref="Jobs.Builtin.ShellBackgrounding"/>'s registry is: a test's ReapAll must not kill another
     /// test's process.
     /// </summary>
-    internal SubAgentStore(DetachedProcessRegistry shells, FinishedShells finished)
+    /// <param name="shells">The registry a stop kills shells in.</param>
+    /// <param name="finished">Where a killed shell is recorded.</param>
+    /// <param name="clock">When stretches begin and end — a test's own; the system clock otherwise.</param>
+    internal SubAgentStore(DetachedProcessRegistry shells, FinishedShells finished, TimeProvider? clock = null)
     {
         _shells = shells;
         _finished = finished;
+        _clock = clock ?? TimeProvider.System;
     }
+
+    private readonly TimeProvider _clock;
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _since = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, AgentEnd> _ends = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string> _noted = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _userSends = new(StringComparer.Ordinal);
 
     private readonly DetachedProcessRegistry _shells;
     private readonly FinishedShells _finished;
@@ -114,6 +142,71 @@ public sealed class SubAgentStore
 
     public bool IsBusy(string name) => _busy.ContainsKey(name);
 
+    /// <summary>When the stretch now under way was announced; null when none is.</summary>
+    public DateTimeOffset? WorkingSince(string name) => _since.TryGetValue(name, out var at) ? at : null;
+
+    /// <summary>How this agent's latest stretch ended; null before any has.</summary>
+    public AgentEnd? LastEnd(string name) => _ends.GetValueOrDefault(name);
+
+    /// <summary>The word a release that announces none records — see <see cref="EndSend"/>.</summary>
+    internal void NoteOutcome(string name, string outcome) => _noted[name] = outcome;
+
+    /// <summary>
+    /// The token a send the USER started runs on — the tab's composer, <c>/agents send</c>.
+    ///
+    /// <para>HELD HERE SO A STOP CAN REACH IT. That send waits in the foreground for its answer, and nothing else
+    /// holds its work: a background run has its own token and a foreground spawn the parent's turn.</para>
+    ///
+    /// <para>AND IT TELLS A PANEL WHO IS WAITING. A claimed child with no run going is a parent waiting on its
+    /// answer — read-only, unstoppable from the panel — unless it is the user's own send.</para>
+    /// </summary>
+    internal CancellationToken BeginUserSend(string name)
+    {
+        var cancel = new CancellationTokenSource();
+        _userSends[name] = cancel;
+        return cancel.Token;
+    }
+
+    /// <summary>Forgets the user's send once it has ended, whichever way.</summary>
+    internal void EndUserSend(string name) => _userSends.TryRemove(name, out _);
+
+    /// <summary>Whether a send the user started is under way.</summary>
+    public bool IsUserSend(string name) => _userSends.ContainsKey(name);
+
+    /// <summary>
+    /// Stops a send the user started, with the shells its child started; false when none is going.
+    ///
+    /// <para>NOT A USER STOP OF THE AGENT. The model never asked for this work, so there is nothing for its next
+    /// agent_send to be refused over.</para>
+    /// </summary>
+    public bool StopUserSend(string name)
+    {
+        if (!_userSends.TryRemove(name, out var cancel)) return false;
+        cancel.Cancel();
+        StopShellsOf(name);
+        return true;
+    }
+
+    /// <summary>
+    /// How many kept agents are working: background runs queued or running, and every claimed agent with no such
+    /// run — a foreground child the parent waits on, or the user's own send.
+    ///
+    /// <para>WHAT THE PANEL'S HEADING AND F7 SAY (spec decision 22), so the number matches the running rows. Counted
+    /// from the runs as well as the claims, because a background run is claimed and counted once, not twice.</para>
+    /// </summary>
+    public int Working =>
+        _background.Values.Count(r => r.State is BackgroundState.Queued or BackgroundState.Running)
+        + _busy.Keys.Count(name => !Going(name));
+
+    /// <summary>
+    /// The user's sends that are not also a background run — work a closing tab or a quit ends that nothing is
+    /// waiting on, and so worth asking about.
+    /// </summary>
+    public int UserSendsAlone => _userSends.Keys.Count(name => !Going(name));
+
+    private bool Going(string name) =>
+        BackgroundOf(name) is { State: BackgroundState.Queued or BackgroundState.Running };
+
     /// <summary>
     /// Takes the claim WITHOUT announcing a start, or answers false when another already holds it.
     ///
@@ -152,6 +245,8 @@ public sealed class SubAgentStore
     /// </summary>
     internal void AnnounceBegin(string name)
     {
+        _since[name] = _clock.GetUtcNow();
+
         // ANNOUNCED, BECAUSE NOTHING ELSE MARKS THE START OF A SEND. agent_send never becomes a job,
         // so no row is created for it and no tool report fires until the child's first call FINISHES
         // — which on a slow first call is long after the child started working. A front end showing
@@ -182,6 +277,13 @@ public sealed class SubAgentStore
         // ONLY WHEN A CLAIM WAS ACTUALLY RELEASED. EndSend runs in two finallys (the spawner's and
         // agent_send's), so an unconditional announcement would say "stopped" twice for one stop.
         if (!_busy.TryRemove(name, out _)) return;
+
+        // THE RECORD TAKES A NOTED WORD WHEN THE RELEASE NAMES NONE. A foreground resume announces no outcome —
+        // listeners settle and archive it as they always have — but its row still has to say how it ended.
+        var recorded = outcome ?? (_noted.TryRemove(name, out var noted) ? noted : null);
+        _noted.TryRemove(name, out _);
+        var began = _since.TryRemove(name, out var since) ? since : _clock.GetUtcNow();
+        _ends[name] = new AgentEnd(recorded, began, _clock.GetUtcNow());
 
         // ANNOUNCED, BECAUSE NOTHING ELSE MARKS THE END OF A SEND. agent_send never becomes a job,
         // so no tool report fires when it returns; and a child raises nothing when it goes idle,
@@ -266,6 +368,14 @@ public sealed class SubAgentStore
             run.Handoff.Silence();
             if (run.RequestStop(byUser: true)) stopped.Add(run.Start.Name);
         }
+
+        // THE USER'S OWN SENDS END TOO. Each waits for an answer to show a person in a conversation that is closing,
+        // and left running it would answer into a sink nobody draws.
+        foreach (var (name, cancel) in _userSends)
+        {
+            cancel.Cancel();
+            stopped.Add(name);
+        }
         foreach (var kept in _byName.Values) StopShellsOf(kept.Name);
         if (isSessionAgent is not null) EndShellsWhere(isSessionAgent);
         return stopped;
@@ -277,8 +387,10 @@ public sealed class SubAgentStore
     ///
     /// <para>ONE-WAY, because every caller of StopAll is a session ending — a tab closed, the app quit, a
     /// headless run finished — and none of those comes back to the same store.</para>
+    ///
+    /// <para>PUBLIC because a front end must refuse to open a tab onto a child whose session has ended.</para>
     /// </summary>
-    internal bool Ended => _ended;
+    public bool Ended => _ended;
 
     private volatile bool _ended;
 

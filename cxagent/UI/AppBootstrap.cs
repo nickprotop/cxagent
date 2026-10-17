@@ -2457,7 +2457,7 @@ public static class AppBootstrap
     private static async Task QuitAfterAsking(ConsoleWindowSystem system, SessionManager manager,
         CancellationTokenSource cts)
     {
-        if (!await QuitGuard.ConfirmAsync(system, manager.Sessions.Sum(s => s.RunningBackgroundAgents))) return;
+        if (!await QuitGuard.ConfirmAsync(system, manager.Sessions.Sum(s => s.AgentsClosingWouldEnd))) return;
 
         // EVERY TAB'S AGENTS, STOPPED AND SILENCED BEFORE ANYTHING ELSE ENDS. The count just confirmed was
         // summed over every session, and the user agreed to stop all of them; a busy tab, or one not in
