@@ -150,13 +150,30 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// at once would have it end its turn before the answer it is about to be handed.</para>
     /// </summary>
     private const string WaitingInTheBackground =
-        """
+        $"""
         IT RUNS IN THE BACKGROUND by default: the call returns at once, you carry on, and its report comes
         to you as a message when it is done — in this turn if you are still working, as a new turn if you
-        are not. Do not poll for it and do not do its work yourself. Pass background: false when your next
-        step cannot start without its answer; then the call waits and its report IS the result. If you
-        backgrounded it and then find you need it now, task_output with wait: true waits for it.
+        are not. Do not poll for it and do not do its work yourself. {AskedForBackground} Otherwise, pass
+        background: false only when this turn can do nothing else until its answer arrives; then the call
+        waits and its report IS the result. If you backgrounded it and then find you need it now,
+        task_output with wait: true waits for it.
         """;
+
+    /// <summary>
+    /// The rule that the user's ask for a background agent settles the flag — one sentence, read in the
+    /// system prompt, this tool's description and the flag's own.
+    ///
+    /// <para>STATED WHERE THE FLAG IS CHOSEN, because the rule the model already had ("false when your next
+    /// step needs the answer") is a judgement about the task, and a model that judges an explore request to
+    /// be such a step blocks the parent's turn — measured live, on "explore … with an background agent",
+    /// with the user's next message left waiting behind it. The user's words are the one input that judgement
+    /// must not override.</para>
+    ///
+    /// <para>ONE CONSTANT for the three places, so they cannot come to say different things.</para>
+    /// </summary>
+    internal const string AskedForBackground =
+        "When the user asks for a background agent, or to keep working or talking while it runs, use the "
+        + "default and never pass background: false.";
 
     /// <summary>How a spawn waits, for a spawner that runs every spawn in the foreground.</summary>
     private const string WaitingInTheForeground =
@@ -269,11 +286,11 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// <see cref="CanBackground"/>. A flag the spawn ignores is a promise the schema cannot keep.
     /// </summary>
     private const string BackgroundProperty =
-        """
+        $$"""
         ,
                         "background": {
                           "type": "boolean",
-                          "description": "Default true: the agent runs while you carry on, and its report comes to you when it is done. Pass false only when your next step cannot start without its answer."
+                          "description": "Default true: the agent runs while you carry on, and its report comes to you when it is done. {{AskedForBackground}} Otherwise, pass false only when this turn can do nothing else until its answer arrives."
                         }
         """;
 

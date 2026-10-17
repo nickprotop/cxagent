@@ -1,4 +1,4 @@
-// THE BACKGROUND SUB-AGENT EVAL, AGAINST A REAL LOCAL MODEL. Ten scenarios, three runs each, scoring
+// THE BACKGROUND SUB-AGENT EVAL, AGAINST A REAL LOCAL MODEL. Eleven scenarios, three runs each, scoring
 // whether the model uses background agents the way the tool descriptions and receipts teach it to — the
 // part of the feature no scripted provider can test, since a script says what the model does instead of
 // asking it.
@@ -63,6 +63,33 @@ public class LocalModelEval
         return copy;
     }
 
+    /// <summary>
+    /// A one-file console program whose Main parses its arguments — for a scenario about exploring a command
+    /// line, which the shop fixture does not have. Written per run for the reason FreshShop copies.
+    /// </summary>
+    private static string FreshCli()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxagent-eval", "cli-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "Program.cs"), """
+            var verbose = false;
+            string? output = null;
+            for (var i = 0; i < args.Length; i++)
+            {
+                switch (args[i])
+                {
+                    case "-v" or "--verbose": verbose = true; break;
+                    case "-o" or "--output": output = args[++i]; break;
+                    case "--help": Console.WriteLine("usage: tool [-v] [-o file] input"); return 0;
+                    default: Console.WriteLine($"input: {args[i]}"); break;
+                }
+            }
+            Console.WriteLine($"verbose={verbose} output={output}");
+            return 0;
+            """);
+        return dir;
+    }
+
     /// <summary>A child that answers by keyword after a delay, or never until stopped.</summary>
     private sealed class StubChild(int delayMs, bool slow) : ILlmProvider
     {
@@ -88,7 +115,10 @@ public class LocalModelEval
 
     private sealed record Rig(Session Session, BufferedChatSink Sink, BufferedJobPanel Jobs, SessionManager Manager);
 
-    private static Rig Open(ILlmProvider kid, bool background = true)
+    /// <param name="kid">What every child answers from.</param>
+    /// <param name="background">Whether spawns may run in the background, as the TUI allows and headless does not.</param>
+    /// <param name="folder">The folder the session works in; a fresh copy of the shop fixture when null.</param>
+    private static Rig Open(ILlmProvider kid, bool background = true, string? folder = null)
     {
         var local = new OpenAiCompatibleProvider(new OpenAiProviderOptions
         {
@@ -106,7 +136,7 @@ public class LocalModelEval
         var manager = SessionManager.Create(new AppPaths(dir));
         var sink = new BufferedChatSink();
         var jobs = new BufferedJobPanel();
-        var session = manager.Open(FreshShop(), config, new SessionPorts
+        var session = manager.Open(folder ?? FreshShop(), config, new SessionPorts
         {
             Observer = sink, ToolObserver = jobs, BackgroundAgents = background,
         }, AgentMode.FanOut);
@@ -294,5 +324,28 @@ public class LocalModelEval
         var final = Final(r);
         var calls = CallsOf(r);
         Record("S10 headless (foreground)", run, final.Contains("BatchOrders") && !calls.Any(c => c.StartsWith("task_")), calls, final);
+    }
+    /// <summary>
+    /// The user's own words, asking for a background agent. Measured live: the model passed background: false
+    /// explicitly, so the parent's turn blocked and the user's next message waited behind it. Passes when the
+    /// first spawn leaves the flag at its default, or sets it true.
+    /// </summary>
+    [EvalTheory, MemberData(nameof(Runs))]
+    public async Task S11_AskedForABackgroundAgent(int run)
+    {
+        var r = Open(new StubChild(3000, false), folder: FreshCli());
+        r.Session.Submit("Explore the command line arguments with an background agent.");
+        await Idle(r.Session);
+        var calls = CallsOf(r);
+        var first = calls.FirstOrDefault(c => c.StartsWith("agent ", StringComparison.Ordinal));
+        var pass = first is not null && !first.Replace(" ", "", StringComparison.Ordinal)
+            .Contains("\"background\":false", StringComparison.Ordinal);
+        // THE FLAG IS NAMED IN THE RECORD, because Record cuts each call at 220 characters and a spawn's prompt
+        // pushes the flag past the cut — the one fact this scenario scores would otherwise be unreadable.
+        var flag = first is null ? "no spawn"
+            : System.Text.RegularExpressions.Regex.Match(first, "\"background\"\\s*:\\s*(true|false)") is { Success: true } m
+                ? "background: " + m.Groups[1].Value
+                : "background omitted";
+        Record("S11 asked for a background agent", run, pass, [$"[first spawn: {flag}]", .. calls], Final(r));
     }
 }

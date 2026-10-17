@@ -82,6 +82,40 @@ public class ModelFacingTextTests
         Assert.Contains("background: false", example);
     }
 
+    /// <summary>
+    /// THE USER'S ASK FOR A BACKGROUND AGENT SETTLES THE FLAG, in every place the model reads about it: the
+    /// prompt, the spawn tool's description, and the flag's own description. Measured live, "explore … with
+    /// an background agent" drew an explicit background: false, and the user's next message waited behind
+    /// the parent's blocked turn.
+    /// </summary>
+    [Fact]
+    public void TheModelIsTold_AnAskedForBackgroundAgentNeverPassesFalse_WhereBackgroundRuns()
+    {
+        const string rule = "never pass background: false";
+        Assert.Contains(rule, Prompt(canSpawn: true, canBackground: true));
+        var spawner = Spawner(true).Definition;
+        Assert.Contains(rule, spawner.Description);
+        var flag = spawner.InputSchema.GetProperty("properties").GetProperty("background").GetProperty("description").GetString();
+        Assert.Contains(rule, flag);
+
+        Assert.DoesNotContain(rule, Prompt(canSpawn: true, canBackground: false));
+        Assert.DoesNotContain(rule, Spawner(false).Definition.Description);
+    }
+
+    /// <summary>
+    /// THE WAITING EXAMPLE WAITS BECAUSE NOTHING CAN START WITHOUT THE ANSWER, not because it is a search: an
+    /// example that reads "finding means foreground" pulls an explore request into a blocked turn.
+    /// </summary>
+    [Fact]
+    public void TheDependentExample_GivesTheDependencyAsTheReasonToWait()
+    {
+        var prompt = Prompt(canSpawn: true, canBackground: true);
+        var example = prompt[prompt.IndexOf("Find every place that hand-rolls this", StringComparison.Ordinal)..];
+        example = example[..example.IndexOf("</example>", StringComparison.Ordinal)];
+        Assert.Contains("nothing here can start until", example);
+        Assert.DoesNotContain("the finding is a search", example);
+    }
+
     /// <summary>A CHILD'S PROMPT TEACHES NO DELEGATION: it has no spawn tool and nothing to send to.</summary>
     [Fact]
     public void AChildPrompt_NamesNoSubAgentTool()

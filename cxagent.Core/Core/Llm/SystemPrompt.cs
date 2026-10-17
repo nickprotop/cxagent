@@ -370,10 +370,14 @@ public static class SystemPrompt
                         + "safe to change.");
             // THE DECIDING NEEDS THE FINDING, so where spawns run in the background this example waits
             // for its answer: backgrounded, the parent would decide before the search came back.
+            //
+            // THE REASON GIVEN IS THE DEPENDENCY, NOT THE SEARCH. Worded "the finding is a search" beside
+            // background: false, the example reads as "exploring means foreground", and an explore request
+            // the user asked to run in the background matches it and blocks the turn.
             sb.AppendLine(ctx.CanBackground
-                ? "assistant: [sends a sub-agent with background: false to find them all, then decides "
-                  + "and edits here — the finding is a search, the deciding needs this conversation and "
-                  + "its answer]"
+                ? "assistant: [sends a sub-agent to find them all with background: false, since nothing "
+                  + "here can start until it has; then decides and edits here — the deciding needs this "
+                  + "conversation and its answer]"
                 : "assistant: [sends a sub-agent to find them all, then decides and edits "
                   + "here — the finding is a search, the deciding needs this conversation]");
             sb.AppendLine("</example>");
@@ -388,7 +392,8 @@ public static class SystemPrompt
             if (ctx.CanBackground)
                 sb.AppendLine("A sub-agent you send runs in the background by default, and its report arrives "
                             + "as a message — later in this turn, or as a new turn. Read it before you act on "
-                            + "that work, and check it as you would your own.");
+                            + "that work, and check it as you would your own. "
+                            + Agents.SubAgentSpawner.AskedForBackground);
             sb.AppendLine();
         }
         // THE USER IS ASKED TO APPROVE run_shell, and the prompt shows the command truncated with no
