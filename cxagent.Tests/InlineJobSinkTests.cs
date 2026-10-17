@@ -978,6 +978,28 @@ public class InlineJobSinkTests
     }
 
     /// <summary>
+    /// A ROW THE USER MOVED KEEPS ITS CLOCK. Its child has been working since the spawn, so counting from the moment
+    /// of the move would understate the run, live and settled.
+    /// </summary>
+    [Fact]
+    public void AMovedRow_KeepsCountingFromItsSpawn()
+    {
+        var (sink, job, child, run) = BackgroundRow();
+        run.MarkRunning();
+        var spawned = job.StartedAt;
+        job.Result = job.Result! with
+        {
+            Output = new Dictionary<string, object?> { ["content"] = SubAgentEnvelope.Moved(child.Agent.Id, "find-thing", false) },
+        };
+
+        sink.ToolUpdatedNow(job);
+        sink.WorkerSettled(child.Agent.Id);
+
+        Assert.Equal(spawned, job.StartedAt);
+        Assert.InRange(job.Result!.Duration, TimeSpan.FromSeconds(29), TimeSpan.FromSeconds(60));
+    }
+
+    /// <summary>
     /// A QUEUED RUN STOPPED BEFORE IT STARTED announces no end — it never announced a start — so the tick
     /// is what settles its row, rather than leaving it queued forever.
     /// </summary>

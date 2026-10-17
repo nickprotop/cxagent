@@ -224,7 +224,13 @@ public static class SubAgentEnvelope
     /// </summary>
     public static string Moved(string childId, string name, bool canWrite) =>
         Receipt(childId, name, canWrite).Replace("\nRunning in the background.",
-            "\nThe user moved it to the background. Running in the background.", StringComparison.Ordinal);
+            $"\n{MovedByTheUser} Running in the background.", StringComparison.Ordinal);
+
+    private const string MovedByTheUser = "The user moved it to the background.";
+
+    /// <summary>Whether a receipt is <see cref="Moved"/>'s — a child that has been working since its spawn, not since now.</summary>
+    public static bool WasMoved(string? envelope) =>
+        StateOf(envelope) == Running && envelope!.Contains(MovedByTheUser, StringComparison.Ordinal);
 
     public static string Receipt(string childId, string name, bool canWrite) =>
         $"<sub_agent id=\"{childId}\" name=\"{name}\" state=\"{Running}\">\n"

@@ -1900,13 +1900,17 @@ public sealed class InlineJobSink : IToolObserver
     /// <summary>
     /// Starts a reopened row's clock and draws it in its running shape.
     ///
-    /// <para>THE CLOCK COUNTS FROM NOW, the moment the agent started working again, not from the spawn:
+    /// <para>THE CLOCK COUNTS FROM NOW, the moment the agent started working again, not from the spawn — unless it never
+    /// stopped working, as a child moved to the background mid-run:
     /// the row settles with the time since this moment, and a live counter running from the spawn would
     /// tick past a figure the row then settles below — "00:00:19" live, "13.5s" done.</para>
     /// </summary>
-    private void StartWorking(string jobId, Job job)
+    /// <param name="jobId">The row's job.</param>
+    /// <param name="job">The job itself, whose clock this sets.</param>
+    /// <param name="since">When the work began, if before now — a child the user moved to the background mid-run.</param>
+    private void StartWorking(string jobId, Job job, DateTimeOffset? since = null)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = since ?? DateTimeOffset.UtcNow;
         _reopenedAt[jobId] = now;
         job.StartedAt = now;
 
@@ -1972,7 +1976,8 @@ public sealed class InlineJobSink : IToolObserver
 
         if (run.State == BackgroundState.Running)
         {
-            StartWorking(job.Id, job);
+            // A MOVED CHILD HAS BEEN WORKING SINCE ITS SPAWN; a background spawn's receipt lands as its run begins.
+            StartWorking(job.Id, job, SubAgentEnvelope.WasMoved(content) ? job.StartedAt : null);
             return;
         }
 
