@@ -292,8 +292,9 @@ internal static class SessionFactory
                 // THE SESSION OWNS WHAT WAS TYPED MID-TURN, and this is the only line that connects
                 // it to the turn loop. A method group rather than a lambda over the text: the agent
                 // must read it at the barrier, not at wiring time, or it would capture whatever was
-                // pending when the session was wired — which is nothing, forever.
-                TakePendingSteer = session.TakeSteer,
+                // pending when the session was wired — which is nothing, forever. The turn's own take, so
+                // a Drained subscriber failing at the barrier does not cost the steer — see TakeSteerForTurn.
+                TakePendingSteer = session.TakeSteerForTurn,
 
                 // AND WHETHER SOMETHING TYPED IS WAITING, so a task_output wait ends when the user speaks
                 // rather than holding their correction behind the work it waits on.

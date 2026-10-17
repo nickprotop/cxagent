@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+
 namespace CxAgent.Core.Sessions;
 
 /// <summary>
@@ -234,6 +236,38 @@ public sealed partial class Session
     /// </summary>
     private Agents.SteerDelivery? TakeSteerUnannounced(out TurnOriginator origin) =>
         TakePendingUnannounced(out origin) is { Length: > 0 } shown ? WithInjected(shown) : null;
+
+    /// <summary>
+    /// <see cref="TakeSteer"/> for the running turn — its tool barrier and its loop's check between laps —
+    /// which reads the steer even when a <see cref="Drained"/> subscriber throws.
+    ///
+    /// <para>THE FAILURE IS KEPT, NOT THROWN HERE. Thrown at the barrier it fails the turn before the model
+    /// sees the steer; thrown at the loop's check it leaves the loop with the steer that had already left
+    /// the queue. Either way the user's words are gone. Kept, the turn goes on to read them and
+    /// RunTurnAsync rethrows the failure once the turn is over, to whoever awaits it — where a failure in
+    /// the tail's take goes too.</para>
+    ///
+    /// <para>THE FIRST FAILURE, if several laps' takes fail: one is enough to say the subscriber is
+    /// broken, and the first is the one nearest its cause.</para>
+    /// </summary>
+    internal Agents.SteerDelivery? TakeSteerForTurn()
+    {
+        if (TakeSteerUnannounced(out _) is not { } steer) return null;
+
+        try { Drained?.Invoke(steer.Shown); }
+        catch (Exception ex)
+        {
+            Interlocked.CompareExchange(ref _drainedFault, ExceptionDispatchInfo.Capture(ex), null);
+        }
+        return steer;
+    }
+
+    /// <summary>
+    /// What a Drained subscriber threw while the running turn took its steer, waiting for the turn to end
+    /// — see <see cref="TakeSteerForTurn"/>. Only the turn that owns the conversation writes it, and
+    /// RunTurnAsync takes it before its tail can start the next one.
+    /// </summary>
+    private ExceptionDispatchInfo? _drainedFault;
 
     private Agents.SteerDelivery WithInjected(string shown) =>
         TakeInjected() is { Length: > 0 } injected

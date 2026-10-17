@@ -675,12 +675,17 @@ public sealed partial class Session
         // fault in the loop's own bookkeeping, and a failed turn's tail — run the held command — is the
         // nearest honest account of that.
         var end = TurnEnd.Failed;
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? drainedFault = null;
         try
         {
             end = await RunTurnLoopAsync(request, result, outcome);
         }
         finally
         {
+            // TAKEN BEFORE THE TAIL, which can start the next turn: that turn's own takes write the same
+            // field, and a failure of theirs must surface from their turn, not this one.
+            drainedFault = Interlocked.Exchange(ref _drainedFault, null);
+
             // ANSWERED HOWEVER THE LOOP LEFT. Every exit of a lap completes these itself; a throw outside
             // a lap's own handling — the loop's bookkeeping — completes nothing, and a caller awaiting the
             // turn's Result would then wait forever. Try, so the ordinary answer already given stands.
@@ -705,6 +710,12 @@ public sealed partial class Session
             if (!ResumeIfPending(readMail: end is not TurnEnd.Cancelled) && end is not TurnEnd.Cancelled)
                 RunWhatWaited(end);
         }
+
+        // A DRAINED SUBSCRIBER'S FAILURE DURING THE TURN, thrown now that the steer it was raised for has
+        // been read and the tail has run — to whoever awaits this turn, where a failure in the tail's own
+        // take goes. After the finally rather than inside it, so it never replaces a fault already
+        // unwinding through it.
+        drainedFault?.Throw();
     }
 
     /// <summary>How a turn loop ended, which decides what its tail runs.</summary>
@@ -1016,7 +1027,10 @@ public sealed partial class Session
 
             // WHOLE OR NOT AT ALL, and never an echo: what goes in on a later lap is exactly what the
             // user typed, so it is displayed as itself.
-            if (TakeSteer() is not { } queued)
+            //
+            // THE TURN'S OWN TAKE, which keeps the steer when a Drained subscriber throws — see
+            // TakeSteerForTurn.
+            if (TakeSteerForTurn() is not { } queued)
             {
                 // THE LAST LAP'S TEXT IS THE ANSWER TO THIS Submit, not the first: a caller that
                 // queued mid-turn asked a follow-up, and the reply to the follow-up is what

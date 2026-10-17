@@ -287,6 +287,99 @@ public class TurnOwnershipTests : IDisposable
     }
 
     /// <summary>
+    /// THE LOOP'S OWN TAKE KEEPS THE STEER TOO. Typed during the last provider call, the steer is taken by
+    /// the loop once the lap ends, as a later lap of the same turn; a Drained handler failing there must
+    /// not take the user's words with it. The lap runs, and the failure reaches whoever awaits the turn,
+    /// as it does from the tail.
+    /// </summary>
+    [Fact]
+    public async Task AThrowingDrainedSubscriber_AtTheLoopsTake_StillReadsTheSteer()
+    {
+        var held = new HeldProvider();
+        var s = Open(held);
+        var first = Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("go"));
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+        s.Drained += _ => throw new InvalidOperationException("a subscriber failed");
+        Assert.IsType<Session.SubmitOutcome.Queued>(s.Submit("also this"));
+
+        held.Release();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => first.Turn);
+        await Idle(s);
+
+        Assert.Equal(2, held.Calls);
+        Assert.Contains("also this", held.Text());
+    }
+
+    /// <summary>
+    /// THE TOOL BARRIER'S TAKE KEEPS THE STEER TOO. A steer typed while the model works is read at the next
+    /// barrier, and a Drained handler failing there must not cost it: the model's next request carries it
+    /// — in the same turn, so there are two requests and not a third lap for it — and the failure reaches
+    /// whoever awaits the turn, as it does from the tail.
+    /// </summary>
+    [Fact]
+    public async Task AThrowingDrainedSubscriber_AtTheToolBarrier_StillReadsTheSteer()
+    {
+        Session? session = null;
+        var model = new ScriptedProvider(onFirstCall: () =>
+            Assert.IsType<Session.SubmitOutcome.Queued>(session!.Submit("also this")));
+        var s = session = Open(model);
+        s.Drained += _ => throw new InvalidOperationException("a subscriber failed");
+
+        var first = Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("go"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => first.Turn);
+        await Idle(s);
+
+        Assert.Equal(2, model.Calls);
+        Assert.Contains(model.SecondRequest!, m => m.Role == "user" && (m.Content ?? "").Contains("also this"));
+    }
+
+    /// <summary>Asks for one glob, then answers; runs a callback while the first request is in flight.</summary>
+    private sealed class ScriptedProvider(Action onFirstCall) : ILlmProvider
+    {
+        private int _calls;
+        public int Calls => Volatile.Read(ref _calls);
+        public List<CxAgent.Core.Models.ChatMessage>? SecondRequest { get; private set; }
+
+        public string ProviderId => "scripted";
+        public string ModelId => "scripted";
+        public string DisplayName => "Scripted";
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => false;
+
+        public Task<LlmResponse> ChatAsync(List<CxAgent.Core.Models.ChatMessage> messages,
+            List<ToolDefinition>? tools, CancellationToken ct)
+        {
+            if (Interlocked.Increment(ref _calls) == 1)
+            {
+                onFirstCall();
+                return Task.FromResult(new LlmResponse
+                {
+                    Text = "",
+                    ToolCalls = [new CxAgent.Core.Models.ToolCall
+                    {
+                        Id = "g0", Name = "glob",
+                        Arguments = System.Text.Json.JsonSerializer.SerializeToElement(new { pattern = "*.none" }),
+                    }],
+                    StopReason = "tool_use",
+                    Usage = new LlmUsage(),
+                });
+            }
+
+            SecondRequest ??= [.. messages];
+            return Task.FromResult(new LlmResponse { Text = "done", StopReason = "end_turn" });
+        }
+
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<CxAgent.Core.Models.ChatMessage> messages,
+            List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            var r = await ChatAsync(messages, tools, ct);
+            yield return new LlmStreamChunk(r.Text, r.ToolCalls.FirstOrDefault(), true, Usage: r.Usage,
+                StopReason: r.StopReason);
+        }
+    }
+
+    /// <summary>
     /// A TAIL THAT FAULTS STRANDS NOTHING. A Drained subscriber throwing in the tail fails the turn whose
     /// tail it was before that turn reaches its held command — so the command must still run, from the tail
     /// of the lap the steer started, not sit in the slot until some unrelated turn ends.
