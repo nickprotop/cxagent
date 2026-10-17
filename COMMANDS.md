@@ -513,8 +513,9 @@ live. What you sent it shows as your turn; what the parent model sent it shows a
 parent agent". Its composer sends what `send` sends, without retyping the handle: to the mailbox while
 it works, a resume once it has finished or was stopped. The answer appears in the tab; the session you
 started it from gets one line saying you asked, and its model is told nothing. **Stop** ends a
-background run or your own send. A sub-agent the parent is waiting on has a read-only tab — no composer
-and no Stop — because the parent's turn is waiting for its answer.
+background run or your own send. A sub-agent the parent is waiting on has **Background** and **Stop**
+instead of a composer: Background — or Ctrl+B in its tab — moves it to the background, its call answered
+with a receipt; Stop ends it alone, its call answered "stopped by the user", and the parent's turn goes on.
 
 **A view, not an owner.** The tab's title leads with the agent's state — `●` running, `○` queued, `✓`
 done, `✗` failed or stopped — and its first line says the agent keeps running when you close it.
@@ -797,8 +798,9 @@ Every card has one button at its right edge: `⏹` while it runs, `✕` once it 
 or `x` on the selected card, stops a running task — a command is killed at once, with no confirmation, as its tab's Kill
 does — and deletes a finished one: a command's record leaves `/tasks` and `task_list`; for an agent, see
 [`/agents`](#agents). Nothing leaves on its own, except that past 64 finished commands the oldest go. A
-sub-agent the parent is waiting on has no control, and `x` does nothing on it; the hint under its card
-says so. `F7` again hides the column; `F3` switches back to info.
+sub-agent the parent is waiting on has two: `⇥` moves it to the background and `⏹` stops it alone —
+`b` and `x` from the keyboard; the hint under its card says so. While a turn waits on foreground work, the
+composer's line says so after a few seconds, with Ctrl+B to move all of it to the background. `F7` again hides the column; `F3` switches back to info.
 
 A click anywhere on a card selects it, marked by a bar at its left. While the panel has the keyboard,
 `↑` `↓` choose a card, moving on from one section into the next, and `Enter` opens it in a tab, as its

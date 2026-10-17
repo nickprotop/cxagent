@@ -153,7 +153,10 @@ the agent; the parent carries on, and the agent's report reaches it as a message
 later in the same turn if the parent is still working, or as a new turn if it is not. A result is
 delivered exactly once: if the parent asked for it with `task_output` and `wait: true`, no message
 follows. `background: false` makes the spawn wait for its answer, for work the next step cannot start
-without. Escape never stops a background agent; `task_stop`, `/tasks stop`, `x` on its card in `F7`,
+without — and **Ctrl+B** (twice in tmux) moves what the turn is waiting on to the background mid-run: every
+foreground sub-agent and command at once, its call answered with a receipt and its report arriving later as
+a background one's does. One foreground agent can be stopped alone, too — its call is answered "stopped by
+the user" and the turn carries on. Escape never stops a background agent; `task_stop`, `/tasks stop`, `x` on its card in `F7`,
 closing its session's tab and quitting do — closing the agent's own tab does not, and closing or quitting asks first while one is running. A tab closes as a whole: its
 background commands — its own and its sub-agents' — end with it too, unless you choose "keep N commands
 running" when it asks, for a server or a watcher meant to outlive the tab. An agent the user stopped reports
@@ -480,6 +483,7 @@ one run before it was written down — and the full reference for options, outpu
 | `F3` | Session panel (show / hide / automatic) |
 | `F4` | Put the cursor back in the composer |
 | `F6` | Focus the tab strip — then `←` `→` to change session, `F6` back to the composer |
+| `Ctrl+B` | Move what the turn is waiting on to the background — every foreground sub-agent and command (twice in tmux) |
 | `F7` | Tasks panel — background commands and sub-agents in the right-hand column; `↑` `↓` choose, `Enter` opens, `x` stops a running one and deletes a finished one. `F7` again hides it |
 | `F8` | Configuration — providers, MCP servers, agent types |
 | `F10` | Next thinking level this model offers — see `/think`. (gnome-terminal opens its own menu on F10 unless that is turned off in its preferences) |
