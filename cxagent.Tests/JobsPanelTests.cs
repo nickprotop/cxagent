@@ -108,7 +108,6 @@ public class JobsPanelTests
             Row("npm run dev", BackgroundJobState.Running, pid: 2));
 
         var finished = text.IndexOf("Finished", StringComparison.Ordinal);
-        Assert.True(text.IndexOf("Running", StringComparison.Ordinal) < text.IndexOf("find-loader", StringComparison.Ordinal));
         Assert.True(text.IndexOf("npm run dev", StringComparison.Ordinal) < finished);
         Assert.True(text.IndexOf("find-loader", StringComparison.Ordinal) < finished);
         Assert.Contains("✓ map-auth", text, StringComparison.Ordinal);
@@ -118,13 +117,14 @@ public class JobsPanelTests
         Assert.Contains("Shell · exit 1", text, StringComparison.Ordinal);
     }
 
-    /// <summary>Decision 33′: both sections are plain headings, and a finished card is shown without opening anything.</summary>
+    /// <summary>Decision 33′: Finished is a plain heading, Running has none, and a finished card is shown without opening anything.</summary>
     [Fact]
     public void TheSections_ArePlainHeadings_AndFinishedCardsAreShown()
     {
         var text = Render(Agent("map-auth", AgentRowState.Done), Agent("find-loader", AgentRowState.Running));
 
-        Assert.Contains("\nRunning\n", text, StringComparison.Ordinal);
+        // NO "Running" HEADING: the panel's own title already says how many run, so the running cards sit under it.
+        Assert.DoesNotContain("\nRunning\n", text, StringComparison.Ordinal);
         Assert.Contains("\nFinished\n", text, StringComparison.Ordinal);
         Assert.Contains("map-auth", text, StringComparison.Ordinal);
         Assert.DoesNotContain("▸", text, StringComparison.Ordinal);
@@ -319,6 +319,10 @@ public class JobsPanelTests
 
         var box = panel.CardForTest(second.Key)!;
         Assert.Equal(ColorScheme.CardSurface, box.BackgroundColor);
+
+        // THE TITLE ROW TOO: it is a grid of its own, which paints its own surface unless told the card's.
+        var row = Assert.Single(box.Children.OfType<SharpConsoleUI.Controls.GridControl>());
+        Assert.Equal(ColorScheme.CardSurface, row.BackgroundColor);
     }
 
     private static void Click(SharpConsoleUI.Controls.IMouseAwareControl control, int x, int y)

@@ -788,20 +788,21 @@ same mechanism `/agents send` uses — so nobody has to retype a handle or a pid
 
 **You do not have to ask.** `F7` turns the right-hand column into the Tasks panel, as `F3` is the info
 panel: a card for each of this session's background commands (`▭`) and sub-agents (`◇`, foreground ones
-included), under a **Running** heading, then a **Finished** one where a card is marked `✓` for success
-and `✗` for anything else. A card is three lines — the command or what the agent was asked to do; `Shell`
-or `Agent` with how long it has run, or how it ended; and what opening it shows, its output or its
-transcript.
+included) — the running ones first, under the panel's "Tasks · N running", then a **Finished** heading
+over the ended ones, marked `✓` for success and `✗` for anything else. A card is three lines on a surface
+of its own — the command or what the agent was asked to do; `Shell` or `Agent` with how long it has run,
+or how it ended; and a link, **View output ›** or **View transcript ›**, that opens it in a tab.
 
-Every card has one control at its right edge: `⏹` while it runs, `✕` once it has ended. A click on it,
-or `x`, stops a running task — a command is killed at once, with no confirmation, as its tab's Kill
+Every card has one button at its right edge: `⏹` while it runs, `✕` once it has ended. A click on it,
+or `x` on the selected card, stops a running task — a command is killed at once, with no confirmation, as its tab's Kill
 does — and deletes a finished one: a command's record leaves `/tasks` and `task_list`; for an agent, see
 [`/agents`](#agents). Nothing leaves on its own, except that past 64 finished commands the oldest go. A
 sub-agent the parent is waiting on has no control, and `x` does nothing on it; the hint under its card
 says so. `F7` again hides the column; `F3` switches back to info.
 
-While the panel has the keyboard, `↑` `↓` choose a card, moving on from one section into the next, and
-`Enter` opens it in a tab — so does a double-click. The status bar shows `F7:Tasks`, with a count of running background commands and agents while any
+A click anywhere on a card selects it, marked by a bar at its left. While the panel has the keyboard,
+`↑` `↓` choose a card, moving on from one section into the next, and `Enter` opens it in a tab, as its
+link does. The status bar shows `F7:Tasks`, with a count of running background commands and agents while any
 run, and other session tabs' as `+N` (`Tasks 2+1`).
 
 **The tab follows the output** as it is written, stops following when you scroll up, and starts again

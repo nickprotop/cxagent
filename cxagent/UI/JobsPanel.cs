@@ -110,7 +110,9 @@ public sealed class JobsPanel
 
     public JobsPanel()
     {
-        _running = new Section(this, "Running");
+        // NO HEADING OVER THE RUNNING CARDS: the panel's own title says how many run, and a "Running" under it
+        // said the same thing twice. Finished keeps its heading — it is what separates the two.
+        _running = new Section(this, title: null);
         _finished = new Section(this, "Finished");
 
         _host = Ctl.ScrollablePanel().WithVerticalAlignment(VerticalAlignment.Fill).Build();
@@ -319,13 +321,15 @@ public sealed class JobsPanel
     private sealed class Section
     {
         private readonly JobsPanel _owner;
-        private readonly string _title;
+        private readonly string? _title;
 
-        public Section(JobsPanel owner, string title)
+        /// <param name="title">The section's heading; null for none.</param>
+        public Section(JobsPanel owner, string? title)
         {
             _owner = owner;
             _title = title;
-            Panel = Ctl.CollapsiblePanel(title).WithMargin(1, 1, 1, 0).NonCollapsible().Build();
+            var builder = Ctl.CollapsiblePanel(title ?? "").WithMargin(1, 1, 1, 0).NonCollapsible();
+            Panel = (title is null ? builder.HideHeader() : builder).Build();
         }
 
         public CollapsiblePanel Panel { get; }
@@ -366,14 +370,14 @@ public sealed class JobsPanel
             }
 
             Panel.Visible = rows.Count > 0;
-            if (Panel.Title != _title) Panel.Title = _title;
+            if (_title is not null && Panel.Title != _title) Panel.Title = _title;
         }
 
         /// <summary>The section as text — its heading, then its cards.</summary>
         public IEnumerable<string> Text()
         {
             if (Cards.Count == 0) yield break;
-            yield return _title;
+            if (_title is not null) yield return _title;
             foreach (var card in Cards) foreach (var line in card.Text) yield return line;
         }
     }
@@ -394,6 +398,7 @@ public sealed class JobsPanel
         private readonly JobsPanel _owner;
         private readonly MarkupControl _title = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
         private readonly MarkupControl _facts = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
+        private readonly GridControl _top;
         private bool _hover;
         private bool _selected;
         private string? _glyph;
@@ -404,14 +409,14 @@ public sealed class JobsPanel
             Anchor = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
             Button = new SharpConsoleUI.Builders.ButtonBuilder().WithText("⏹").WithBorder(ButtonBorderStyle.None).Build();
 
-            var top = Ctl.Grid()
+            _top = Ctl.Grid()
                 .Columns(GridLength.Star(1), GridLength.Auto())
                 .Rows(GridLength.Cells(1))
                 .Place(_title, 0, 0)
                 .Place(Button, 0, 1)
                 .WithAlignment(HorizontalAlignment.Stretch)
                 .Build();
-            Box = Ctl.Panel().NoBorder().WithPadding(0).AddControl(top).AddControl(_facts).AddControl(Anchor).Build();
+            Box = Ctl.Panel().NoBorder().WithPadding(0).AddControl(_top).AddControl(_facts).AddControl(Anchor).Build();
             Box.Margin = new Margin(0, 0, 0, 1);
 
             // A CLICK ANYWHERE ON THE CARD SELECTS IT; the link opens it, the button does what x does.
@@ -499,6 +504,9 @@ public sealed class JobsPanel
                 : _hover ? ColorScheme.CardHoverSurface
                 : ColorScheme.CardSurface;
             Box.BackgroundColor = surface;
+            // THE TITLE ROW IS A GRID OF ITS OWN, and a grid paints its own surface unless told the card's — the title
+            // line then sat on a different shade from the rest of the card.
+            _top.BackgroundColor = surface;
             Button.BackgroundColor = surface;
             Button.ForegroundColor = ColorScheme.MutedRgb;
         }
