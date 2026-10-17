@@ -60,4 +60,26 @@ public class QuitGuardTests
         Assert.Contains("1 agent and 1 command are still running", string.Join(" ", question.Lines));
         Assert.Equal("Close, keep 1 command running", question.Answers[2]);
     }
+
+    /// <summary>
+    /// DELETING AN AGENT WITH COMMANDS STILL RUNNING ASKS AS CLOSING A TAB DOES: the same Cancel-first order, and
+    /// keeping them offered by count.
+    /// </summary>
+    [Fact]
+    public void DeletingAnAgent_WithCommands_AsksLikeClosingATab()
+    {
+        var question = QuitGuard.DeleteQuestion("server", commands: 2);
+
+        Assert.Equal(["Cancel", "Delete and stop them", "Delete, keep 2 commands running"], question.Answers);
+        Assert.Contains("'server' started 2 background commands that are still running", string.Join(" ", question.Lines));
+    }
+
+    [Fact]
+    public void DeletingAnAgent_WithOneCommand_SaysItInTheSingular()
+    {
+        var question = QuitGuard.DeleteQuestion("server", commands: 1);
+
+        Assert.Contains("'server' started 1 background command that is still running", string.Join(" ", question.Lines));
+        Assert.Equal("Delete, keep 1 command running", question.Answers[2]);
+    }
 }

@@ -177,12 +177,30 @@ public sealed class SubAgentStore
     ///
     /// <para>ITS REPORT FIRST (decision 14), handed to the parent as a note; refused, the agent stays.</para>
     ///
-    /// <para>ITS SHELLS END: a shell left running would address its exit to an agent that no longer exists.</para>
+    /// <para>ITS SHELLS END, OR ARE KEPT, as the user chose when asked — a dev server or a watcher it started may be
+    /// meant to outlive it, as a tab's commands may outlive the tab. Either way each is silenced first: its exit
+    /// would be addressed to an agent that no longer exists.</para>
     /// </summary>
-    public ForgetOutcome Forget(string handleOrId)
+    /// <param name="handleOrId">The agent's handle or agent id.</param>
+    /// <param name="keepShells">Leave its running shells running, as the session's.</param>
+    public ForgetOutcome Forget(string handleOrId, bool keepShells = false)
     {
-        lock (_forgetting) return ForgetLocked(HandleFor(handleOrId));
+        lock (_forgetting) return ForgetLocked(HandleFor(handleOrId), keepShells);
     }
+
+    /// <summary>How many shells this agent started are still running — what deleting it would end.</summary>
+    public int LiveShellsOf(string handleOrId) =>
+        Find(HandleFor(handleOrId))?.Agent.Agent.Id is { } agentId
+            ? _shells.Live.Count(j => j.Job?.AgentId == agentId)
+            : 0;
+
+    /// <summary>
+    /// The handle a deleted agent had, by its agent id; null for one never deleted.
+    ///
+    /// <para>FOR THE SHELLS IT LEFT RUNNING: their card still says whose they were, rather than an agent id.</para>
+    /// </summary>
+    public string? ForgottenHandle(string agentId) =>
+        _forgotten.FirstOrDefault(f => f.Value == agentId).Key;
 
     /// <summary>
     /// Runs <paramref name="decide"/> once no forget is under way, for a send that lost the claim.
@@ -200,7 +218,7 @@ public sealed class SubAgentStore
     /// <summary>Serialises forgets with a send deciding what its lost claim meant — see <see cref="AfterAnyForget"/>.</summary>
     private readonly object _forgetting = new();
 
-    private ForgetOutcome ForgetLocked(string name)
+    private ForgetOutcome ForgetLocked(string name, bool keepShells)
     {
         if (Find(name) is not { } kept) return ForgetOutcome.Unknown;
         if (!TryClaim(name)) return ForgetOutcome.Working;
@@ -212,7 +230,7 @@ public sealed class SubAgentStore
         }
 
         var agentId = kept.Agent.Agent.Id;
-        StopShellsOf(name);
+        EndShellsWhere(id => id == agentId, keep: keepShells);
         lock (_naming)
         {
             // THE TOMBSTONE BEFORE THE REMOVAL, so a reach that looks between the two finds one or the other.
@@ -539,14 +557,15 @@ public sealed class SubAgentStore
     }
 
     /// <summary>
-    /// Silences every live shell whose owner matches, and kills it unless the session ended keeping its shells.
+    /// Silences every live shell whose owner matches, and kills it unless the session ended keeping its shells or
+    /// the caller asked to keep them.
     /// </summary>
-    private void EndShellsWhere(Func<string, bool> owner)
+    private void EndShellsWhere(Func<string, bool> owner, bool keep = false)
     {
         foreach (var live in _shells.Live.Where(j => j.Job?.AgentId is { } id && owner(id)))
         {
             _finished.HandoffFor(live.Process.Pid)?.Silence();
-            if (_keepShells) continue;
+            if (keep || _keepShells) continue;
             live.Process.Kill();
             _finished.Finished(live.Process.Pid, live.Process.ExitCode, killed: true);
         }

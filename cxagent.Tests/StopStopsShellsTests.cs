@@ -73,6 +73,57 @@ public sealed class StopStopsShellsTests : IDisposable
         Assert.Equal(0, sent());   // its exit is told to nobody: the agent it would reach is the one stopped
     }
 
+    /// <summary>The delete question counts what would end with the agent: its shells still running.</summary>
+    [Fact]
+    public void LiveShellsOf_CountsAnAgentsRunningShells()
+    {
+        var store = new SubAgentStore(_registry, _finished);
+        var child = Child();
+        var name = store.Keep(child, "find thing");
+        Assert.Equal(0, store.LiveShellsOf(name));
+
+        Shell(child.Agent.Id);
+        Shell(child.Agent.Id);
+
+        Assert.Equal(2, store.LiveShellsOf(name));
+    }
+
+    /// <summary>
+    /// "Delete, keep N commands running": the agent goes and its shells do not. Their exit is told to nobody — the
+    /// agent it was addressed to is gone — and the handle they ran under is still known, so a card can name it.
+    /// </summary>
+    [Fact]
+    public void DeletingAnAgent_KeepingItsShells_LeavesThemRunning_AndTellsNobody()
+    {
+        var store = new SubAgentStore(_registry, _finished);
+        var child = Child();
+        var name = store.Keep(child, "find thing");
+        var (shell, sent) = Shell(child.Agent.Id);
+
+        Assert.Equal(ForgetOutcome.Forgotten, store.Forget(name, keepShells: true));
+
+        Assert.False(shell.Finished);
+        Assert.Equal(name, store.ForgottenHandle(child.Agent.Id));
+        shell.Kill();
+        Assert.Equal(0, sent());
+    }
+
+    /// <summary>"Delete and stop them": the shells end with the agent, recorded as stopped.</summary>
+    [Fact]
+    public void DeletingAnAgent_StoppingItsShells_KillsThem()
+    {
+        var store = new SubAgentStore(_registry, _finished);
+        var child = Child();
+        var name = store.Keep(child, "find thing");
+        var (shell, sent) = Shell(child.Agent.Id);
+
+        Assert.Equal(ForgetOutcome.Forgotten, store.Forget(name, keepShells: false));
+
+        Assert.True(shell.Killed);
+        Assert.True(_finished.Find(shell.Pid)!.Killed);
+        Assert.Equal(0, sent());
+    }
+
     [Fact]
     public void StopAll_KillsTheShellsOfEveryAgentItStops()
     {

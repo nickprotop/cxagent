@@ -19,7 +19,11 @@ namespace CxAgent.Tests;
 ///
 /// <para>COUNTING SHELLS ALONE SHOWED NOTHING while only agents ran, so the one readout a narrow terminal
 /// has for background work said there was none.</para>
+///
+/// <para>IN THE DEFAULT-REGISTRY COLLECTION: the delete question is asked of a sub-agent's shell, which the session's
+/// store reads from the process-wide registry — where another class's teardown would kill it mid-test.</para>
 /// </summary>
+[Collection(DefaultShellRegistryCollection.Name)]
 public sealed class TasksItemCountTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "tasks-item-" + Guid.NewGuid().ToString("N"));
@@ -222,6 +226,57 @@ public sealed class TasksItemCountTests : IDisposable
         Assert.Null(front.SubAgents.Find("finder"));
         Assert.Equal(tabs - 1, window.Tabs.TabCount);
         Assert.DoesNotContain("finder", MarkupParser.Remove(window.JobsPanel.RenderedText), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// DELETING AN AGENT WHOSE COMMANDS STILL RUN ASKS FIRST, as closing a tab does — Cancel keeps both, "stop them"
+    /// ends both, "keep" leaves the commands running and on this session's panel.
+    /// </summary>
+    [Theory]
+    [InlineData(AgentDelete.Cancel)]
+    [InlineData(AgentDelete.StopCommands)]
+    [InlineData(AgentDelete.KeepCommands)]
+    public async Task X_OnAFinishedAgent_WithACommandRunning_AsksFirst(AgentDelete answer)
+    {
+        var paths = new AppPaths(_dir);
+        paths.EnsureCreated();
+        // THE DEFAULT REGISTRY, because the session's store reads its agents' shells there; the shell is killed by
+        // hand below, never by ReapAll, which would reach other tests' processes.
+        var registry = DetachedProcessRegistry.Default;
+        var window = new MainWindow(new ConsoleWindowSystem(new HeadlessConsoleDriver(200, 40),
+                new ConsoleWindowSystemOptions(InstallSynchronizationContext: true)),
+            ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths))
+        { Jobs = new BackgroundJobBoard(registry), Shells = new FinishedShells() };
+        (string Name, int Commands)? asked = null;
+        window.AskDelete = (name, commands) => { asked = (name, commands); return Task.FromResult(answer); };
+        window.Build();
+        var front = Open();
+        window.NoteFirstSession(front);
+        var child = AgentTabTests.Child(AgentTabTests.Says());
+        front.SubAgents.Keep(child, "finder");
+        front.SubAgents.TryClaim("finder");
+        front.SubAgents.AnnounceBegin("finder");
+        front.SubAgents.EndSend("finder", "completed");
+        var shell = ProcessRunner.DetachAsync(
+            new ProcessSpec("/bin/sh", ["-c", "sleep 30"], new RunOptions(WorkingDir: TestProcesses.WorkingDir,
+                SpillDir: Path.Combine(_dir, "spill"))), new CollectingContext(), registry).GetAwaiter().GetResult();
+        registry.Describe(shell, new BackgroundJob(shell.Pid, child.Agent.Id, "sleep 30", DateTimeOffset.UtcNow,
+            shell.OutputPath));
+        try
+        {
+            window.ToggleJobsPanel();
+
+            window.JobsPanel.Follow($"delete:agent:{child.Agent.Id}");
+
+            Assert.True(await Poll.Until(() => asked is not null));
+            Assert.Equal(("finder", 1), asked);
+            var gone = answer != AgentDelete.Cancel;
+            Assert.True(await Poll.Until(() => (front.SubAgents.Find("finder") is null) == gone));
+            Assert.Equal(answer == AgentDelete.StopCommands, shell.Killed);
+            Assert.Equal(answer != AgentDelete.StopCommands,
+                window.Jobs.For(front.Owns).Any(e => e.Job.Pid == shell.Pid && !e.Finished));
+        }
+        finally { shell.Kill(); }
     }
 
     /// <summary>

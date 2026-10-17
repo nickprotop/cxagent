@@ -335,7 +335,7 @@ public sealed partial class Session
     /// Forgets a kept agent — the panel's x on a finished row. Says nothing to the parent model (decision 15) and
     /// nothing in this transcript: the row leaving the panel is what the user sees.
     /// </summary>
-    public Agents.ForgetOutcome ForgetAgent(string name) => SubAgents.Forget(name);
+    public Agents.ForgetOutcome ForgetAgent(string name, bool keepShells = false) => SubAgents.Forget(name, keepShells);
 
     public CommandStatus StopTask(string arguments)
     {

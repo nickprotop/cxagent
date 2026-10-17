@@ -564,6 +564,7 @@ public static class AppBootstrap
         // meant; the manager owns unwiring its plugins, disposing its host and marking it finished.
         mainWindow.CloseSession = manager.Close;
         mainWindow.ConfirmCloseTab = work => QuitGuard.ConfirmCloseTabAsync(system, work);
+        mainWindow.AskDelete = (name, commands) => QuitGuard.ConfirmDeleteAsync(system, name, commands);
 
         // ASKED BEFORE A RESUME DISCARDS A LIVE CONVERSATION. Core decides WHETHER there is anything
         // to lose; this decides how the question looks — see ConfirmReplaceConversation.

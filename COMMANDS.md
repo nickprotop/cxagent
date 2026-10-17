@@ -527,7 +527,9 @@ and it stays where it was raised. Either way it is answered once.
 panel, `/tasks`, `/agents open`, the palette — and closes its tab; its context is freed. A report the
 model had not yet received is handed to the model first; if it still cannot be, the agent stays and
 says so. The model is not told, and if it reaches for the agent it is told you dismissed it. Its handle
-is not used again in the session.
+is not used again in the session. When commands it started are still running, it asks first, as closing
+a tab does: **Cancel**, **Delete and stop them**, or **Delete, keep N commands running** — kept, they stay
+on the panel as the session's, each with its own `⏹`.
 
 ## `/init`
 

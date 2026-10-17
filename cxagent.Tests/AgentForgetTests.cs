@@ -78,6 +78,23 @@ public sealed class AgentForgetTests : IDisposable
     }
 
     /// <summary>Decision 13: a running row's first x stops it; only an idle agent is forgotten.</summary>
+    /// <summary>
+    /// A DELETED AGENT'S KEPT SHELLS ARE STILL THE SESSION'S: the panel, the F7 count and the status bar all ask
+    /// Owns, and shells the user chose to keep running must not drop off them with the agent.
+    /// </summary>
+    [Fact]
+    public void ADeletedAgentsId_IsStillOwnedByItsSession()
+    {
+        var s = Open();
+        var child = Child();
+        s.SubAgents.Keep(child, "finder");
+        Finished(s.SubAgents, "finder");
+
+        Assert.Equal(ForgetOutcome.Forgotten, s.ForgetAgent("finder", keepShells: true));
+
+        Assert.True(s.Owns(child.Agent.Id));
+    }
+
     [Fact]
     public void AWorkingAgent_IsNotForgotten()
     {

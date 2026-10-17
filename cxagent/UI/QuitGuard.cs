@@ -76,6 +76,33 @@ public static class QuitGuard
             : TabClose.Cancel;
     }
 
+    /// <summary>
+    /// The question before deleting a finished agent whose commands still run.
+    ///
+    /// <para>ASKED AS CLOSING A TAB IS, because it is the same moment: work would end as a side effect of
+    /// something else, and a dev server or a watcher an agent started may be meant to outlive it. Cancel first,
+    /// and keeping them offered by count, as there.</para>
+    ///
+    /// <para>THE HANDLE IN THE BODY, NOT THE TITLE: a dialog's title is cut to its width, and a handle the model
+    /// wrote from a description is long enough to lose its end there.</para>
+    /// </summary>
+    public static TabCloseQuestion DeleteQuestion(string name, int commands) => new(
+        [$"'{name}' started {Count(commands, "background command")} that {(commands == 1 ? "is" : "are")} still running."],
+        [CancelAnswer, DeleteStopAnswer, DeleteKeepAnswer(commands)]);
+
+    /// <summary>Asks <see cref="DeleteQuestion"/> and answers what the user chose.</summary>
+    public static async Task<AgentDelete> ConfirmDeleteAsync(ConsoleWindowSystem system, string name, int commands)
+    {
+        var question = DeleteQuestion(name, commands);
+        var answer = await ConfirmDialog.AskAsync(system, "This agent has background work", question.Lines, question.Answers);
+        return answer == DeleteStopAnswer ? AgentDelete.StopCommands
+            : answer == DeleteKeepAnswer(commands) ? AgentDelete.KeepCommands
+            : AgentDelete.Cancel;
+    }
+
+    private const string DeleteStopAnswer = "Delete and stop them";
+    private static string DeleteKeepAnswer(int commands) => $"Delete, keep {Count(commands, "command")} running";
+
     private const string CancelAnswer = "Cancel";
     private const string StopAnswer = "Close and stop everything";
     private static string KeepAnswer(int commands) => $"Close, keep {Count(commands, "command")} running";
@@ -98,5 +125,16 @@ public enum TabClose
     /// <summary>Close it, stopping its agents and its commands.</summary>
     StopEverything,
     /// <summary>Close it, stopping its agents but leaving its commands running.</summary>
+    KeepCommands,
+}
+
+/// <summary>What the user chose when deleting an agent whose commands still run.</summary>
+public enum AgentDelete
+{
+    /// <summary>Keep the agent, and its commands.</summary>
+    Cancel,
+    /// <summary>Delete it, stopping its commands.</summary>
+    StopCommands,
+    /// <summary>Delete it, leaving its commands running as the session's.</summary>
     KeepCommands,
 }

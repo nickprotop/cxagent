@@ -710,6 +710,12 @@ public sealed class MainWindow : IDisposable
     public Func<TabWork, Task<TabClose>>? ConfirmCloseTab { get; set; }
 
     /// <summary>
+    /// Asks what to do with a finished agent's running commands in order to delete it, given its handle and how
+    /// many. Null deletes without asking, stopping them — a host with no dialog to show.
+    /// </summary>
+    public Func<string, int, Task<AgentDelete>>? AskDelete { get; set; }
+
+    /// <summary>
     /// What closing this session's tab would end: its queued and running agents, and its running shells.
     ///
     /// <para>FROM THE SAME SOURCES AS THE STATUS ITEM, so the number the question names is the number F7 was
@@ -2756,7 +2762,29 @@ public sealed class MainWindow : IDisposable
     /// <summary>Forgets an ended agent, and closes its tab — there is nothing left for it to show.</summary>
     private void Forget(Session session, AgentRowView view)
     {
-        switch (session.ForgetAgent(view.Kept.Name))
+        // ASKED FIRST WHEN ITS COMMANDS STILL RUN, as closing a tab is — they would end with it otherwise. The
+        // answer comes from a dialog, so the delete is finished after it rather than here.
+        var commands = session.SubAgents.LiveShellsOf(view.Kept.Name);
+        if (commands > 0 && AskDelete is { } ask)
+        {
+            _ = DeleteAfterAsking(ask, session, view, commands);
+            return;
+        }
+        Delete(session, view, keepShells: false);
+    }
+
+    private async Task DeleteAfterAsking(Func<string, int, Task<AgentDelete>> ask, Session session, AgentRowView view,
+        int commands)
+    {
+        var answer = await ask(view.Kept.Name, commands);
+        if (answer == AgentDelete.Cancel) return;
+        Delete(session, view, keepShells: answer == AgentDelete.KeepCommands);
+        RefreshJobsPanel();
+    }
+
+    private void Delete(Session session, AgentRowView view, bool keepShells)
+    {
+        switch (session.ForgetAgent(view.Kept.Name, keepShells))
         {
             case ForgetOutcome.Forgotten:
                 if (_agentTabs.TryGetValue(view.AgentId, out var open)) CloseAgentTab(open.Tab);
@@ -2784,10 +2812,10 @@ public sealed class MainWindow : IDisposable
             _panelWidth);
     }
 
-    /// <summary>Null for the session's own agent; the sub-agent's name otherwise.</summary>
+    /// <summary>Null for the session's own agent; the sub-agent's name otherwise, a deleted one's included.</summary>
     private static string? AgentName(Session session, string agentId) =>
         session.IsSessionAgent(agentId) ? null
-        : session.SubAgents.FindByAgentId(agentId)?.Name ?? agentId;
+        : session.SubAgents.FindByAgentId(agentId)?.Name ?? session.SubAgents.ForgottenHandle(agentId) ?? agentId;
 
     /// <summary>The status item, and every open job tab, once a second.</summary>
     /// <summary>The status item's text for the session in front, among the sessions this window has open.</summary>

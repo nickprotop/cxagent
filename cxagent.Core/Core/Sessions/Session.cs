@@ -167,9 +167,13 @@ public sealed partial class Session
     /// <summary>
     /// Whether work done under this agent id belongs to this session: its own agent, past or present,
     /// or one of its kept sub-agents. The one rule the jobs panel, the status bar and F7 all ask.
+    ///
+    /// <para>A DELETED SUB-AGENT'S TOO: the user can delete one and keep the commands it started running,
+    /// and those must stay on this session's panel and count rather than vanish with the agent.</para>
     /// </summary>
     public bool Owns(string agentId) =>
-        IsSessionAgent(agentId) || SubAgents.FindByAgentId(agentId) is not null;
+        IsSessionAgent(agentId) || SubAgents.FindByAgentId(agentId) is not null
+        || SubAgents.ForgottenHandle(agentId) is not null;
 
     /// <summary>
     /// True when there is something to come back to.
