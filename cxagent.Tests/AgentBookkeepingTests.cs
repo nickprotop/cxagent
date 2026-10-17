@@ -104,8 +104,28 @@ public sealed class AgentBookkeepingTests : IDisposable
         Assert.True(token.IsCancellationRequested);
         Assert.False(store.StopUserSend("finder"));
 
-        store.EndUserSend("finder");
+        store.EndUserSend("finder", token);
         Assert.False(store.IsUserSend("finder"));
+    }
+
+    /// <summary>
+    /// A SECOND SEND WHILE THE FIRST IS ANSWERING leaves the first stoppable when it ends. The second goes to the
+    /// mailbox and returns at once; ending it must not take the first's token, or the first loses its Stop, its
+    /// count and its composer, and reads as the parent waiting on it.
+    /// </summary>
+    [Fact]
+    public void ASecondSend_EndingFirst_LeavesTheFirstStoppable()
+    {
+        var store = new SubAgentStore();
+        store.Keep(Child(), "finder");
+        var first = store.BeginUserSend("finder");
+        var second = store.BeginUserSend("finder");
+
+        store.EndUserSend("finder", second);
+
+        Assert.True(store.IsUserSend("finder"));
+        Assert.True(store.StopUserSend("finder"));
+        Assert.True(first.IsCancellationRequested);
     }
 
     /// <summary>`/tasks stop` reaches the user's own send, and says it stopped that rather than a background run.</summary>

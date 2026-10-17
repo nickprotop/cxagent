@@ -442,7 +442,7 @@ public sealed partial class Session
             }
             finally
             {
-                SubAgents.EndUserSend(name);
+                SubAgents.EndUserSend(name, token);
             }
         });
 
@@ -496,7 +496,7 @@ public sealed partial class Session
             }
             finally
             {
-                SubAgents.EndUserSend(name);
+                SubAgents.EndUserSend(name, token);
             }
         });
     }

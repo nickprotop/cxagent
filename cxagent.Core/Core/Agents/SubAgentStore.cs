@@ -262,16 +262,28 @@ public sealed class SubAgentStore
     ///
     /// <para>AND IT TELLS A PANEL WHO IS WAITING. A claimed child with no run going is a parent waiting on its
     /// answer — read-only, unstoppable from the panel — unless it is the user's own send.</para>
+    ///
+    /// <para>THE FIRST SEND KEEPS THE SLOT. A second one while it answers goes to the mailbox and returns at once; had
+    /// it replaced the first's token, its ending would have taken the first's Stop and count with it. It runs on a
+    /// token linked to the first's instead, so a stop still ends both.</para>
     /// </summary>
     internal CancellationToken BeginUserSend(string name)
     {
-        var cancel = new CancellationTokenSource();
-        _userSends[name] = cancel;
-        return cancel.Token;
+        var mine = new CancellationTokenSource();
+        var held = _userSends.GetOrAdd(name, mine);
+        if (ReferenceEquals(held, mine)) return mine.Token;
+        mine.Dispose();
+        return CancellationTokenSource.CreateLinkedTokenSource(held.Token).Token;
     }
 
-    /// <summary>Forgets the user's send once it has ended, whichever way.</summary>
-    internal void EndUserSend(string name) => _userSends.TryRemove(name, out _);
+    /// <summary>Forgets the user's send once it has ended, whichever way — only the send that holds the slot.</summary>
+    /// <param name="name">The agent the send went to.</param>
+    /// <param name="token">The token <see cref="BeginUserSend"/> gave this send.</param>
+    internal void EndUserSend(string name, CancellationToken token)
+    {
+        if (_userSends.TryGetValue(name, out var held) && held.Token == token)
+            _userSends.TryRemove(new KeyValuePair<string, CancellationTokenSource>(name, held));
+    }
 
     /// <summary>Whether a send the user started is under way.</summary>
     public bool IsUserSend(string name) => _userSends.ContainsKey(name);
