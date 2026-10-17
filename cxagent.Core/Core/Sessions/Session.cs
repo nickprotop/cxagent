@@ -988,8 +988,10 @@ public sealed partial class Session
         if (CxAgent.Core.Plugins.PluginResolver.IsNativeLibrary(assemblyPath))
         {
             var hostDllPath = CxAgent.Core.Plugins.PluginResolver.PluginHostDllPath();
-            var abiResult = await CxAgent.Core.Plugins.Abi.AbiPluginLoader.Load(
-                hostDllPath, assemblyPath, context, ct);
+            // ON THE POOL: launching the host, its handshake, and disposing it when that fails — a wait of up to two
+            // seconds for it to exit — are not the UI thread's to sit through, and /plugin load is typed there.
+            var abiResult = await Task.Run(() => CxAgent.Core.Plugins.Abi.AbiPluginLoader.Load(
+                hostDllPath, assemblyPath, context, ct));
             if (abiResult is CxAgent.Core.Plugins.Abi.AbiPluginLoadResult.Failed abiFailed)
             {
                 Say(new Message($"plugin '{target}': {abiFailed.Reason}", Severity.Warning));

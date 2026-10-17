@@ -49,4 +49,17 @@ public class UiThreadSourceTests
 
         Assert.Contains("await Task.Run(() => session.ForgetAgent(", source, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// /plugin load OF A NATIVE PLUGIN LAUNCHES ITS HOST ON THE POOL. A host that fails is disposed by waiting up to two
+    /// seconds for it to exit, and the load is typed on the UI thread.
+    /// </summary>
+    [Fact]
+    public void ANativePluginLoad_RunsOnThePool()
+    {
+        var source = File.ReadAllText(Path.Combine(Repo(), "cxagent.Core", "Core", "Sessions", "Session.cs"));
+
+        Assert.Contains("await Task.Run(() => CxAgent.Core.Plugins.Abi.AbiPluginLoader.Load(", source,
+            StringComparison.Ordinal);
+    }
 }
