@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text;
+using CxAgent.Core.Execution;
 
 namespace CxAgent.Core.Agents;
 
@@ -31,6 +32,22 @@ public sealed record StoredAgent(string Name, string TypeName, string? Descripti
 /// </summary>
 public sealed class SubAgentStore
 {
+    /// <summary>A store over the process-wide shell registry and record, which every production path uses.</summary>
+    public SubAgentStore() : this(DetachedProcessRegistry.Default, FinishedShells.Default) { }
+
+    /// <summary>
+    /// A store whose stops reach the shells in this registry and record — injectable for the reason
+    /// <see cref="Jobs.Builtin.ShellBackgrounding"/>'s registry is: a test's ReapAll must not kill another
+    /// test's process.
+    /// </summary>
+    internal SubAgentStore(DetachedProcessRegistry shells, FinishedShells finished)
+    {
+        _shells = shells;
+        _finished = finished;
+    }
+
+    private readonly DetachedProcessRegistry _shells;
+    private readonly FinishedShells _finished;
     private readonly ConcurrentDictionary<string, StoredAgent> _byName = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _busy = new(StringComparer.Ordinal);
     private readonly object _naming = new();
@@ -185,12 +202,21 @@ public sealed class SubAgentStore
     public IReadOnlyList<BackgroundRun> Background() =>
         _background.Values.OrderBy(r => r.Started).ToList();
 
-    /// <summary>Stops the background run kept under this handle; false when none is going.</summary>
-    public bool Stop(string name, bool byUser) =>
-        _background.GetValueOrDefault(name)?.RequestStop(byUser) ?? false;
+    /// <summary>
+    /// Stops the background run kept under this handle, and the shells its child started; false when none
+    /// is going — and then its shells are left alone, since an agent that already answered may yet be told
+    /// how they end.
+    /// </summary>
+    public bool Stop(string name, bool byUser)
+    {
+        if (_background.GetValueOrDefault(name)?.RequestStop(byUser) != true) return false;
+        StopShellsOf(name);
+        return true;
+    }
 
     /// <summary>
-    /// Stops every background run still going, and names them — reporting nothing.
+    /// Stops every background run still going, with the shells their children started, and names them —
+    /// reporting nothing.
     ///
     /// <para>FOR THE PLACES A SESSION ENDS WITH WORK OUTSTANDING: a tab closed, the app quit. There is no
     /// conversation left to tell, and a report delivered into one that is closing writes into a sink
@@ -206,9 +232,42 @@ public sealed class SubAgentStore
         foreach (var run in _background.Values)
         {
             run.Handoff.Silence();
-            if (run.RequestStop(byUser: true)) stopped.Add(run.Start.Name);
+            if (!run.RequestStop(byUser: true)) continue;
+            StopShellsOf(run.Start.Name);
+            stopped.Add(run.Start.Name);
         }
         return stopped;
+    }
+
+    /// <summary>
+    /// Kills every background shell the child kept under this handle started, recording each as stopped.
+    ///
+    /// <para>STOPPING AN AGENT STOPS ITS SHELLS. A shell outliving the agent that started it keeps running
+    /// work somebody ended, and its exit notice is addressed to the stopped agent: delivered, it wakes that
+    /// agent into a turn whose answer reaches the parent as fresh work — a stopped agent reporting
+    /// "completed".</para>
+    ///
+    /// <para>SILENCED BEFORE IT IS KILLED, so the exit the kill provokes is told to nobody: the agent it
+    /// would reach is the one just stopped. The record still says how it ended, so task_list shows it
+    /// stopped and task_output can read it.</para>
+    ///
+    /// <para>RECORDED HERE AS WELL AS BY THE EXECUTOR'S OWN EXIT HANDLER, which normally gets there first
+    /// inside Kill: the store's promise that a stopped agent's shells read as stopped must not rest on a
+    /// subscription in another class. FinishedShells keeps the first record, so a shell that exited on its
+    /// own an instant before the kill keeps its real exit code.</para>
+    ///
+    /// <para>INTERNAL BECAUSE THE RUNNER CALLS IT AGAIN when a stopped run ends: a shell the child's last
+    /// tool call detached after the stop's sweep would otherwise survive it.</para>
+    /// </summary>
+    internal void StopShellsOf(string name)
+    {
+        if (Find(name)?.Agent.Agent.Id is not { } agentId) return;
+        foreach (var live in _shells.Live.Where(j => j.Job?.AgentId == agentId))
+        {
+            _finished.HandoffFor(live.Process.Pid)?.Silence();
+            live.Process.Kill();
+            _finished.Finished(live.Process.Pid, live.Process.ExitCode, killed: true);
+        }
     }
 
     /// <summary>

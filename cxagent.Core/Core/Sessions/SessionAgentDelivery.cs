@@ -69,6 +69,16 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
         // that holds an id and no handle.
         if (store.FindByAgentId(agentId) is not { } kept) return Agents.DeliveryOutcome.Unknown;
 
+        // A CHILD THE USER STOPPED IS LEFT A NOTE, NEVER WOKEN OR INJECTED — before the claim, so it holds
+        // while the stopped run is still unwinding with its claim held. Stopping an agent kills its shells
+        // and silences their reports, but an exit can race that sweep; delivered as usual, it would start a
+        // turn the user ended, and the answer would reach the parent as work the agent "completed". The
+        // note keeps the fact for the resume the user may ask for, which is also what clears the mark.
+        if (store.BackgroundOf(kept.Name) is { StoppedByUser: true })
+            return kept.Agent.Agent.Mailbox.TryEnqueue(text, out _, wakes: false)
+                ? Agents.DeliveryOutcome.Queued
+                : Agents.DeliveryOutcome.Refused;
+
         // CLAIMED, NOT READ. The claim is the one authority on whether a loop is turning — a child
         // raises nothing when it goes idle, because a turn ending and a goal ending look identical
         // from outside — and it must be a TEST-AND-SET rather than an IsBusy read, because the idle

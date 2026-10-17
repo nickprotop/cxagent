@@ -113,6 +113,10 @@ internal static class BackgroundRunner
             // ALREADY FINISHED ON THE ORDINARY PATH; this covers a throw that skipped it. Finish only
             // records the state, so a second call is harmless.
             run.Finish(stopped ? BackgroundState.Stopped : BackgroundState.Finished);
+
+            // A STOPPED RUN'S SHELLS ARE SWEPT AGAIN NOW IT HAS ENDED: the stop killed what was running
+            // then, but the child's last tool call may have handed a command to the background after it.
+            if (stopped) store.StopShellsOf(kept.Name);
             var shown = Shown(run, state, stopped);
             run.Handoff.Complete(ReportFor(work, envelope, stoppedAsItFinished: overtaken is not null), text => DeliveryOutcomes.Delivered(stopped
                 ? work.Delivery.Leave(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))

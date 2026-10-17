@@ -827,4 +827,62 @@ public class AgentDeliveryTests : IDisposable
         Assert.True(await Poll.Until(() => parentModel.ChatCallCount == 3));
         Assert.Contains("found it", parentModel.Text());
     }
+
+    /// <summary>A background run for a kept child, stopped by the user — as /tasks stop leaves it.</summary>
+    private static BackgroundRun UserStopped(SubAgentStore store, string name)
+    {
+        var run = store.BeginBackground(new BackgroundStart(name, "parent", "do it", "find thing", IsResume: false),
+            new ResultHandoff(_ => true));
+        Assert.True(store.Stop(name, byUser: true));
+        return run;
+    }
+
+    /// <summary>
+    /// A SHELL'S EXIT NOTICE NEVER WAKES AN AGENT THE USER STOPPED. Waking it runs a turn nobody asked for,
+    /// and its answer reaches the parent as "it acted on it and answered … completed" — the parent then
+    /// tells the user that the agent they stopped finished its work.
+    ///
+    /// <para>BOTH HALVES ARE ASSERTED: the child's provider is never asked (no resume), and the session's is
+    /// never asked either (no report reaches the parent). The notice is kept as a note, so a resume the user
+    /// asks for later still learns how its command ended.</para>
+    /// </summary>
+    [Fact]
+    public async Task AnExitNotice_ToAUserStoppedChild_NeitherWakesItNorReachesTheParent()
+    {
+        var (delivery, store, child) = Wired(out var provider, out _, out var childProvider);
+        childProvider.EnqueueResponse(new LlmResponse { Text = "tests pass", StopReason = "end_turn" });
+        provider.EnqueueResponse(new LlmResponse { Text = "it completed", StopReason = "end_turn" });
+        var name = store.Keep(child, "find thing");
+        UserStopped(store, name).Finish(BackgroundState.Stopped);
+
+        var outcome = delivery.Tell(child.Agent.Id, "The background command `sleep 120` finished with exit code 0.");
+
+        Assert.NotEqual(DeliveryOutcome.Woke, outcome);
+        Assert.False(Reached(childProvider));
+        Assert.Equal(0, provider.ChatCallCount);
+        Assert.False(store.IsBusy(name));
+        Assert.False(child.Agent.Mailbox.HasWaking);
+        await Settled();
+    }
+
+    /// <summary>
+    /// THE SAME WHEN THE STOP RACES THE EXIT: the run has been stopped but is still unwinding, so the claim is
+    /// still held. A notice injected as a waking message would be read on the next lap of a loop the user
+    /// ended; it is left as a note instead.
+    /// </summary>
+    [Fact]
+    public void AnExitNotice_ToAUserStoppedChildStillUnwinding_IsLeftNotInjected()
+    {
+        var (delivery, store, child) = WiredWithChild(out var childProvider);
+        var name = store.Keep(child, "find thing");
+        Assert.True(store.TryClaim(name));
+        UserStopped(store, name);
+
+        var outcome = delivery.Tell(child.Agent.Id, "The background command `sleep 120` finished with exit code 0.");
+
+        Assert.Equal(DeliveryOutcome.Queued, outcome);
+        Assert.False(child.Agent.Mailbox.HasWaking);
+        Assert.Equal(0, childProvider.ChatCallCount);
+        store.Release(name);
+    }
 }
