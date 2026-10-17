@@ -235,7 +235,7 @@ public sealed class TasksItemCountTests : IDisposable
     [Theory]
     [InlineData(false, ForegroundRelease.Stop)]
     [InlineData(true, ForegroundRelease.Move)]
-    public void OnAForegroundCard_XStops_AndBMoves(bool move, ForegroundRelease expected)
+    public async Task OnAForegroundCard_XStops_AndBMoves(bool move, ForegroundRelease expected)
     {
         var paths = new AppPaths(_dir);
         paths.EnsureCreated();
@@ -254,7 +254,8 @@ public sealed class TasksItemCountTests : IDisposable
 
         Assert.True(move ? window.JobsPanel.BackgroundSelected() : window.JobsPanel.ActOnSelected());
 
-        Assert.True(run.Released.IsCompletedSuccessfully);
+        // OFF THE UI THREAD, a stop: it may fall through to /tasks stop, which blocks.
+        Assert.True(await Poll.Until(() => run.Released.IsCompletedSuccessfully));
         Assert.Equal(expected, run.Released.Result);
     }
 

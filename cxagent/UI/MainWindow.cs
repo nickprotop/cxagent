@@ -2809,9 +2809,9 @@ public sealed class MainWindow : IDisposable
                 {
                     if (OpenAgentTab(session, view.Kept.Name) is { } refusal) session.NotifyWarning(refusal);
                 }
-                // THROUGH /tasks stop, so the transcript records the stop as the command would.
-                else if (view is { Running: true, Foreground: true }) session.StopForeground(view.Kept.Name);
-                else if (view.Running) _ = Task.Run(() => session.StopTask($"stop {view.Kept.Name}"));
+                // ALONE IF THE TURN WAITS ON IT, THROUGH /tasks stop OTHERWISE — decided by StopAgent, not this view,
+                // which can still say foreground for a second after a move.
+                else if (view.Running) _ = Task.Run(() => session.StopAgent(view.Kept.Name));
                 else Forget(session, view);
                 break;
         }

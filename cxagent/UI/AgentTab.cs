@@ -65,13 +65,9 @@ public sealed class AgentTab : IDisposable
             .OnClick((object? _, ButtonControl button) =>
             {
                 // A FOREGROUND AGENT IS STOPPED ALONE, its call answered and the parent's turn left to go on (Ctrl+B
-                // spec decision 11); a background one through /tasks stop, as before.
-                var foreground = CanMove;
-                _ = Task.Run(() =>
-                {
-                    if (foreground) Session.StopForeground(Kept.Name);
-                    else Session.StopTask($"stop {Kept.Name}");
-                });
+                // spec decision 11); a background one through /tasks stop. StopAgent decides which, not this tab's
+                // view, which can still say foreground for a second after a move.
+                _ = Task.Run(() => Session.StopAgent(Kept.Name));
 
                 // THE KEYBOARD TO THE COMPOSER NOW, not when the next tick hides the button: until then a space
                 // typed after the press presses Stop again.

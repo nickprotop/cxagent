@@ -618,6 +618,30 @@ public class BackgroundScenarioTests : IDisposable
         Assert.Contains("found more", parent.Last);
     }
 
+    /// <summary>
+    /// A STOP PRESSED JUST AFTER A MOVE STILL STOPS. The panel and the tab decide from a view a second old, so the stop
+    /// cannot ask that view whether the agent is still in the foreground.
+    /// </summary>
+    [Fact]
+    public async Task StopAgent_JustAfterAMove_StopsTheMovedRun()
+    {
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check", type = "explore", background = false }, id: "s1")),
+            Answer("carried on"), Answer("read it"));
+        var foreground = new HeldProvider("checked it");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 1));
+        Assert.True(s.Session.MoveToBackground("check-it"));
+        Assert.True(await Poll.Until(() => s.Session.SubAgents.BackgroundOf("check-it") is not null));
+
+        s.Session.StopAgent("check-it");
+
+        Assert.True(s.Session.SubAgents.BackgroundOf("check-it")!.StoppedByUser);
+        Assert.True(await Poll.Until(() => s.Session.SubAgents.BackgroundOf("check-it")!.Handoff.Ended));
+    }
+
     /// <summary>REVIEW FOCUS 2: Escape after a move ends the turn, not the moved child.</summary>
     [Fact]
     public async Task Escape_AfterAMove_LeavesTheMovedChildRunning()

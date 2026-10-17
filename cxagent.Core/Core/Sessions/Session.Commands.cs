@@ -329,6 +329,19 @@ public sealed partial class Session
     public bool StopForeground(string name) => SubAgents.StopForeground(name);
 
     /// <summary>
+    /// Stops one sub-agent wherever it runs — the panel's x and the agent tab's Stop: alone if the turn is waiting on
+    /// it, through /tasks stop otherwise, so the transcript records it as the command would.
+    ///
+    /// <para>DECIDED HERE, NOT BY THE CALLER: the panel and the tab hold a view up to a second old, and a stop pressed
+    /// just after a move would ask the foreground for an agent that has already left it. Blocks on /tasks stop, so a UI
+    /// caller runs it off the UI thread.</para>
+    /// </summary>
+    public void StopAgent(string name)
+    {
+        if (!StopForeground(name)) StopTask($"stop {name}");
+    }
+
+    /// <summary>
     /// Moves one foreground sub-agent the turn is waiting on to the background — the panel's b and ⇥, the agent tab's
     /// Background. Its call is answered with a receipt; it reports later (Ctrl+B spec decision 3). False when it is
     /// not waiting.
