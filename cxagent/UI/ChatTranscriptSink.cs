@@ -291,7 +291,8 @@ public sealed class ChatTranscriptSink : ISessionObserver
                 known.Started = DateTimeOffset.UtcNow;
                 // A SECOND RUN STARTS ON ITS OWN PARAGRAPH, not run on from the first's last word.
                 if (known.Body.Length > 0) known.Pending = "\n\n";
-                _chat.SetExpanded(known.Id, true);
+                // LEFT AS THE USER HAS IT. Thinking resuming is not a request to read it, and a block that
+                // sprang open again mid-answer would push the answer down under text nobody asked for.
             }
             return known;
         }
@@ -305,7 +306,9 @@ public sealed class ChatTranscriptSink : ISessionObserver
         // THE THINKING ROLE, whose style — rail, ground, plain markup body — is set once in MainWindow.
         var added = _chat.AddMessage(ChatRole.Thinking, "");
         _chat.SetHeader(added, $"[{ColorScheme.ThinkingMarkup}]{LiveHeader(TimeSpan.Zero)}[/]");
-        _chat.SetExpanded(added, true);
+        // FOLDED FROM THE START. The ticking header already says thinking is under way; the text is for
+        // whoever wants it — Ctrl+O, a click, or Tab and Enter — not a stream every reader scrolls past.
+        _chat.SetExpanded(added, false);
         _allBlocks.Add(added);
         var block = new Block(added) { Started = DateTimeOffset.UtcNow };
         _blocks[id.Value] = block;

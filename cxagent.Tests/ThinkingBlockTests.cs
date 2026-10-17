@@ -7,7 +7,7 @@ using ChatMessageId = CxAgent.Core.Sessions.ChatMessageId;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// A step's thinking as its own block: placed where the spinner was, folded when the answer starts,
+/// A step's thinking as its own block: placed where the spinner was, folded from the start,
 /// one block per step, and the latest opened or folded by Ctrl+O.
 /// </summary>
 public class ThinkingBlockTests
@@ -43,13 +43,42 @@ public class ThinkingBlockTests
         Assert.False(chat.IsExpanded(ids[0]));
     }
 
+    /// <summary>
+    /// FOLDED FROM THE START: the ticking header says thinking is happening, and the text itself is there
+    /// for whoever opens it rather than streaming past everyone.
+    /// </summary>
     [Fact]
-    public void WhileThinking_TheBlockIsOpen()
+    public void WhileThinking_TheBlockIsFolded()
     {
         var (sink, chat) = Sink();
         sink.AssistantTurnBegan(T1);
         sink.AssistantThinkingAppended(T1, "hmm");
+        Assert.False(chat.IsExpanded(Assert.Single(Blocks(chat))));
+    }
+
+    [Fact]
+    public void CtrlO_OpensABlockStillThinking()
+    {
+        var (sink, chat) = Sink();
+        sink.AssistantTurnBegan(T1);
+        sink.AssistantThinkingAppended(T1, "hmm");
+
+        sink.ToggleLatestThinking();
         Assert.True(chat.IsExpanded(Assert.Single(Blocks(chat))));
+    }
+
+    /// <summary>A SECOND RUN IN THE STEP DOES NOT POP IT OPEN: thinking resuming is not the user asking to read it.</summary>
+    [Fact]
+    public void ThinkingResumed_LeavesTheBlockFolded()
+    {
+        var (sink, chat) = Sink();
+        sink.AssistantTurnBegan(T1);
+        sink.AssistantThinkingAppended(T1, "a");
+        sink.AssistantThinkingEnded(T1, Sum());
+        sink.AssistantTextAppended(T1, "b");
+        sink.AssistantThinkingAppended(T1, "c");
+
+        Assert.False(chat.IsExpanded(Assert.Single(Blocks(chat))));
     }
 
     [Fact]
