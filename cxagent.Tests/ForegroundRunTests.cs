@@ -90,4 +90,36 @@ public sealed class ForegroundRunTests
 
         Assert.False(store.WasStoppedByUser("finder"));
     }
+
+    /// <summary>
+    /// A STOP OR A MOVE THAT LANDS AFTER THE ANSWER IS REFUSED. The answer reaches the parent either way, so a stop
+    /// accepted there would kill the child's shells and refuse the model's next send to a child that finished.
+    /// </summary>
+    [Fact]
+    public void AfterTheAnswer_StopAndMoveAreRefused()
+    {
+        var store = Store("finder");
+        using var turn = new CancellationTokenSource();
+        var run = store.BeginForeground("finder", turn.Token);
+
+        Assert.True(run.TryAnswer());
+
+        Assert.False(store.StopForeground("finder"));
+        Assert.False(store.MoveToBackground("finder"));
+        Assert.False(store.WasStoppedByUser("finder"));
+        Assert.False(run.Token.IsCancellationRequested);
+    }
+
+    /// <summary>A release that landed first wins over the answer: the caller answers as released.</summary>
+    [Fact]
+    public void AfterAStop_TheAnswerIsRefused()
+    {
+        var store = Store("finder");
+        using var turn = new CancellationTokenSource();
+        var run = store.BeginForeground("finder", turn.Token);
+
+        Assert.True(store.StopForeground("finder"));
+
+        Assert.False(run.TryAnswer());
+    }
 }

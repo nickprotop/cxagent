@@ -463,7 +463,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                     var send = child.Agent.SendAsync(prompt, foreground?.Token ?? ct, mailFirst: false);
 
                     // THE ANSWER, OR WHATEVER LET IT GO FIRST: a stop answers the call now, and the turn goes on.
-                    var released = foreground is null || await Task.WhenAny(send, foreground.Released) == send
+                    // AN ANSWER THAT WON THE RACE IS CLAIMED, so a stop or move landing before this call returns is
+                    // refused rather than accepted for a child that already finished.
+                    var released = foreground is null
+                        || (await Task.WhenAny(send, foreground.Released) == send && foreground.TryAnswer())
                         ? (ForegroundRelease?)null
                         : await foreground.Released;
 

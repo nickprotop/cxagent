@@ -225,7 +225,9 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                 try
                 {
                     var send = stored.Agent.Agent.SendAsync(prompt, foreground?.Token ?? ct);
-                    var released = foreground is null || await Task.WhenAny(send, foreground.Released) == send
+                    // AN ANSWER THAT WON THE RACE IS CLAIMED, as the spawner claims it — see ForegroundRun.
+                    var released = foreground is null
+                        || (await Task.WhenAny(send, foreground.Released) == send && foreground.TryAnswer())
                         ? (ForegroundRelease?)null
                         : await foreground.Released;
 

@@ -16,7 +16,9 @@ public enum ForegroundRelease
 /// the background must outlive Escape. So the child runs here, and the turn reaches it through a link that a move
 /// disposes.</para>
 ///
-/// <para>ONE RELEASE: a move and a stop race, and whichever lands first is what the waiting call answers.</para>
+/// <para>ONE OUTCOME: a move, a stop and the child's own answer race, and whichever lands first is what the waiting
+/// call answers. The answer counts, because a stop accepted after it would kill the shells of a child that finished
+/// and mark it stopped while the parent reads its answer.</para>
 /// </summary>
 public sealed class ForegroundRun : IDisposable
 {
@@ -24,6 +26,8 @@ public sealed class ForegroundRun : IDisposable
     private readonly CancellationTokenRegistration _turnLink;
     private readonly TaskCompletionSource<ForegroundRelease> _released =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+    // 0 while the child is still the turn's; 1 once it answered or was released — whichever claimed it first.
+    private int _settled;
 
     internal ForegroundRun(CancellationToken turn, DateTimeOffset since)
     {
@@ -43,7 +47,8 @@ public sealed class ForegroundRun : IDisposable
     /// <summary>Moves it: Escape no longer reaches it. False once released either way.</summary>
     internal bool TryMove()
     {
-        if (!_released.TrySetResult(ForegroundRelease.Move)) return false;
+        if (Interlocked.Exchange(ref _settled, 1) != 0) return false;
+        _released.SetResult(ForegroundRelease.Move);
         _turnLink.Dispose();
         return true;
     }
@@ -51,10 +56,17 @@ public sealed class ForegroundRun : IDisposable
     /// <summary>Stops it alone. False once released either way.</summary>
     internal bool TryStop()
     {
-        if (!_released.TrySetResult(ForegroundRelease.Stop)) return false;
+        if (Interlocked.Exchange(ref _settled, 1) != 0) return false;
+        _released.SetResult(ForegroundRelease.Stop);
         _own.Cancel();
         return true;
     }
+
+    /// <summary>
+    /// Claims the child's answer for its call. False when a move or a stop landed first: the call then answers as
+    /// <see cref="Released"/> says.
+    /// </summary>
+    internal bool TryAnswer() => Interlocked.Exchange(ref _settled, 1) == 0;
 
     /// <summary>Cancels the child — the adopted background run's stop, after a move.</summary>
     internal void Cancel() => _own.Cancel();
