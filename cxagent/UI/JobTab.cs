@@ -153,6 +153,11 @@ internal sealed class JobTab
             lines.Add(Muted($"showing the last {OutputFollower.MaxInitialBytes / 1024} KB — "
                             + $"all of it is in {view.Job.OutputPath}"));
         if (_unavailable) lines.Add(Muted("output unavailable"));
+
+        // A VIEW, AND IT SAYS SO (decision 29): closing a session or a manual shell tab ends what is in it; closing
+        // this one ends nothing, and how the command is stopped is named beside it.
+        if (view.State == BackgroundJobState.Running)
+            lines.Add(Muted("keeps running when you close this tab · Kill, or x in Tasks (F7), stops it"));
         lines.Add("");
         return lines;
     }

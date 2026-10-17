@@ -2607,9 +2607,9 @@ public sealed class MainWindow : IDisposable
         }
 
         var tab = new AgentTab(session, kept, NewAgentViews());
-        AddTab(tab.Title(), tab.Content);
+        var placed = InsertViewTab(session, tab.Title(), tab.Content);
         SetTabMainControl(tab.Content, tab.MainControl);
-        _agentTabs[tab.AgentId] = new AgentTabSlot(tab, Tabs.GetTab(Tabs.TabCount - 1)!);
+        _agentTabs[tab.AgentId] = new AgentTabSlot(tab, Tabs.GetTab(placed)!);
         FocusAgentTab(tab);
         return null;
     }
@@ -2655,6 +2655,12 @@ public sealed class MainWindow : IDisposable
     public void CloseAgentTab(AgentTab tab)
     {
         if (!_agentTabs.Remove(tab.AgentId, out var slot)) return;
+
+        // A VIEW CLOSING ASKS NOTHING AND STOPS NOTHING (decision 30) — so it says where the agent went, because a
+        // tab that disappears looks like the work went with it. Only while it runs: an ended agent is nowhere to go.
+        if (!tab.Session.SubAgents.Ended
+            && AgentRows.Describe(tab.Session.SubAgents, tab.Kept, DateTimeOffset.UtcNow) is { Running: true })
+            ShowNote($"'{tab.Kept.Name}' keeps running — F7 shows it");
 
         // A PROMPT UP HERE IS STILL UNANSWERED, and its agent is waiting on it: it moves to the session's tab rather
         // than closing with this one.
@@ -2828,6 +2834,8 @@ public sealed class MainWindow : IDisposable
             if (IndexOf(slot.Page) is { } index) SetTabTitleText(index, slot.Tab.Title());
         }
 
+        TickNote();
+
         var now = DateTimeOffset.UtcNow;
         foreach (var slot in _agentTabs.Values)
         {
@@ -2850,9 +2858,9 @@ public sealed class MainWindow : IDisposable
         }
 
         var tab = new JobTab(entry, session, AgentName(session, entry.Job.AgentId));
-        AddTab(tab.Title(), tab.Content);
+        var placed = InsertViewTab(session, tab.Title(), tab.Content);
         SetTabMainControl(tab.Content, tab.Scroll);
-        _jobTabs[entry] = new JobTabSlot(tab, Tabs.GetTab(Tabs.TabCount - 1)!);
+        _jobTabs[entry] = new JobTabSlot(tab, Tabs.GetTab(placed)!);
         FocusJobTab(tab);
     }
 
@@ -2873,7 +2881,95 @@ public sealed class MainWindow : IDisposable
 
         _jobTabs.Remove(slot.Key);
         if (IndexOf(slot.Value.Page) is { } index) CloseTab(index);
+        if (!slot.Key.Finished) ShowNote($"pid {slot.Key.Job.Pid} keeps running — F7 shows it");
         ShowChatTab();
+    }
+
+    /// <summary>
+    /// Adds a view tab — a background command's output or a sub-agent's transcript — right after its session's tab
+    /// and that session's other view tabs, and brings it to the front; answers where it went.
+    ///
+    /// <para>BESIDE ITS SESSION (decision 31), because a view belongs to the conversation whose task it shows: opened
+    /// at the end of a long strip it reads as a tab of its own, and its closing would look like it could end
+    /// something.</para>
+    ///
+    /// <para>EVERYTHING KEPT BY STRIP POSITION SHIFTS WITH IT — titles, waiting dots, the session mapping and the
+    /// prompt's remembered tab — as <see cref="CloseTab"/> shifts them the other way; left alone they would name a
+    /// position that now holds something else.</para>
+    /// </summary>
+    private int InsertViewTab(Session session, string title, IWindowControl content)
+    {
+        var owner = _sessionTabs.FindIndex(t => ReferenceEquals(t.Session, session));
+        if (owner < 0 || owner >= _sessionStripIndex.Count)
+        {
+            AddTab(title, content);
+            return Tabs.TabCount - 1;
+        }
+
+        var index = _sessionStripIndex[owner] + 1;
+        while (index < Tabs.TabCount && IsViewTabOf(session, Tabs.GetTab(index)!)) index++;
+
+        Tabs.InsertTab(index, title, content);
+        Tabs.GetTab(index)!.IsClosable = true;
+        _tabTitles.Insert(Math.Min(index, _tabTitles.Count), title);
+
+        var shifted = _waitingTabs.Select(t => t >= index ? t + 1 : t).ToList();
+        _waitingTabs.Clear();
+        foreach (var t in shifted) _waitingTabs.Add(t);
+        for (var i = 0; i < _sessionStripIndex.Count; i++)
+            if (_sessionStripIndex[i] >= index) _sessionStripIndex[i]++;
+        if (_promptTab >= index) _promptTab++;
+
+        RefreshTabStrip();
+        Tabs.ActiveTabIndex = index;
+        return index;
+    }
+
+    /// <summary>Whether a strip page is a view tab — a job's or an agent's — of this session.</summary>
+    private bool IsViewTabOf(Session session, SharpConsoleUI.Controls.TabPage page) =>
+        _jobTabs.Values.Any(s => ReferenceEquals(s.Page, page) && ReferenceEquals(s.Tab.Session, session))
+        || _agentTabs.Values.Any(s => ReferenceEquals(s.Page, page) && ReferenceEquals(s.Tab.Session, session));
+
+    /// <summary>
+    /// The short note on the status bar — "'x' keeps running — F7 shows it" — or null with none showing. Public for
+    /// tests, which read what the user was told.
+    /// </summary>
+    public string? StatusNote { get; private set; }
+
+    private DateTimeOffset _noteUntil;
+    private StatusBarItem? _noteItem;
+
+    /// <summary>How long a note stays: long enough to read after the tab vanishes, short enough not to go stale.</summary>
+    private static readonly TimeSpan NoteFor = TimeSpan.FromSeconds(6);
+
+    /// <summary>
+    /// Shows a short note on the status bar for a few seconds.
+    ///
+    /// <para>DRAWN ON THE NEXT TICK, NOT HERE: a status-bar change outside the render loop can block on a tick that
+    /// is not coming (see ShowComposerHint), and a note seconds late is still on time.</para>
+    /// </summary>
+    private void ShowNote(string text)
+    {
+        StatusNote = text;
+        _noteUntil = DateTimeOffset.UtcNow + NoteFor;
+    }
+
+    /// <summary>Draws the status note, or takes it down once it has been up long enough — the one-second tick's.</summary>
+    private void TickNote()
+    {
+        if (StatusNote is { } note && DateTimeOffset.UtcNow < _noteUntil)
+        {
+            var label = $"[{ColorScheme.MutedMarkup}]{SharpConsoleUI.Parsing.MarkupParser.Escape(note)}[/]";
+            if (_noteItem is null) _noteItem = StatusBar.AddRight(string.Empty, label);
+            else if (_noteItem.Label != label) _noteItem.Label = label;
+            return;
+        }
+        StatusNote = null;
+        if (_noteItem is not null)
+        {
+            StatusBar.RemoveRight(_noteItem);
+            _noteItem = null;
+        }
     }
 
     /// <summary>A page's position in the strip, or null when it is no longer there.</summary>

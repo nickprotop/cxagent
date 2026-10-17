@@ -103,6 +103,9 @@ public sealed class AgentTab : IDisposable
 
     public GridControl Content { get; }
 
+    /// <summary>The header as last drawn, as markup — for tests, which read what the tab says about itself.</summary>
+    public string HeaderText => _headerText;
+
     /// <summary>The composer row — what a permission prompt takes the place of.</summary>
     internal GridControl Composer { get; }
 
@@ -231,6 +234,13 @@ public sealed class AgentTab : IDisposable
         lines.Add(Muted(facts));
         if (Kept.Description is { Length: > 0 } description) lines.Add(Muted(description));
         if (Session.SubAgents.Ended) lines.Add(Muted("its session has ended — this agent was stopped with it"));
+
+        // A VIEW, AND IT SAYS SO (decision 29): a tab strip mixes these with session and shell tabs, whose closing
+        // ends what is in them; this one's closing ends nothing, and how the agent is stopped is named beside it.
+        else if (_now is { Running: true, Foreground: false })
+            lines.Add(Muted("keeps running when you close this tab · Stop, or x in Tasks (F7), stops it"));
+        else if (_now is { Running: false })
+            lines.Add(Muted("closing this tab keeps it · x in Tasks (F7) forgets it"));
         lines.Add("");
         return lines;
     }
