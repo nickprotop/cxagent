@@ -259,6 +259,11 @@ public class BackgroundScenarioTests : IDisposable
     [Fact]
     public async Task DuringALongTool_ReadAfterIt()
     {
+        // POSIX ONLY, AND SKIPPED BY AN EARLY RETURN — xUnit 2 has no runtime skip; see AbiPluginHostTests.
+        // The row needs a tool call that stays running until the test says so, and run_shell hands the
+        // command to cmd.exe on Windows, which has no one-line loop that waits on a file.
+        if (OperatingSystem.IsWindows()) return;
+
         var go = Path.Combine(_dir, "go");
         var parent = new ScriptedProvider(
             Use(Calls.Spawn(id: "s1")),
@@ -823,26 +828,41 @@ public class BackgroundScenarioTests : IDisposable
     ///
     /// <para>Guards BackgroundRunner.RunAsync's <c>await work.Slot.WaitAsync(run.Token)</c>: without it
     /// all five run at once.</para>
+    ///
+    /// <para>NO SLEEP STANDS FOR "NOTHING MORE STARTED". The children answer one per step, so between
+    /// steps the two in flight stay in flight and a queued child can start only when one of them ends:
+    /// each count waited for below is a state that holds until the test moves it. Without the cap all
+    /// five reach the provider while it is still holding the first two, and the exact counts are never
+    /// seen.</para>
     /// </summary>
     [Fact]
     public async Task CapTwo_FiveSpawns_AllReport()
     {
         var spawns = Enumerable.Range(0, 5).Select(i => Calls.Spawn(id: $"s{i}", description: $"job {i}")).ToArray();
         var parent = new ScriptedProvider(Use(spawns), Answer("started five"));
-        var child = new HeldProvider();
+        var child = new SteppedProvider();
         var s = Open(parent, new SceneSetup { Child = child, Cap = 2 });
 
         await Turn(s.Session, "go");
         Assert.True(await Poll.Until(() => child.Calls == 2));
-        await Task.Delay(100);
         var states = s.Session.SubAgents.Background().Select(r => r.State).ToList();
         Assert.Equal(2, states.Count(st => st == BackgroundState.Running));
         Assert.Equal(3, states.Count(st => st == BackgroundState.Queued));
 
-        child.Release();
+        // EACH STEP ENDS ONE CHILD AND LETS EXACTLY ONE QUEUED CHILD IN: the count rises by one and stops.
+        for (var started = 3; started <= 5; started++)
+        {
+            child.Step();
+            var expected = started;
+            Assert.True(await Poll.Until(() => child.Calls == expected), $"expected {expected} started, saw {child.Calls}");
+        }
+        child.Step();
+        child.Step();
+
         Assert.True(await Poll.Until(() => Enumerable.Range(0, 5).All(i => parent.All.Contains($"background agent 'job-{i}'"))),
             "not every queued child reported");
         await Idle(s.Session);
+        Assert.Equal(5, child.Calls);
         Assert.Equal(2, child.MaxInFlight);
     }
 
@@ -851,6 +871,11 @@ public class BackgroundScenarioTests : IDisposable
     ///
     /// <para>Guards SubAgentSpawner.TryInvokeAsync's foreground <c>await slot.WaitAsync(ct)</c>: one cap,
     /// shared by both (spec decision 6).</para>
+    ///
+    /// <para>ORDER, NOT A QUIET WINDOW. The foreground child's provider answers at once, so the only thing
+    /// that can hold its request back is the slot. Its request is checked against the background child's
+    /// answer at the moment it arrives: after it means it waited for the slot the background child held;
+    /// before it means it never waited at all.</para>
     /// </summary>
     [Fact]
     public async Task ForegroundQueuesBehindBackground()
@@ -860,20 +885,24 @@ public class BackgroundScenarioTests : IDisposable
             Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check the thing", type = "explore", background = false }, id: "s2")),
             Answer("both in"));
         var background = new HeldProvider("found it");
-        var foreground = new HeldProvider("checked it");
+        int? backgroundAnsweredWhenForegroundAsked = null;
+        var foreground = new HeldProvider("checked it") { OnCall = () => backgroundAnsweredWhenForegroundAsked ??= background.Answered };
         foreground.Release();
         var s = Open(parent, new SceneSetup { Child = background, Explore = foreground, Cap = 1 });
 
         s.Session.Submit("go");
-        Assert.True(await Poll.Until(() => parent.Calls == 2 && background.Calls == 1));
-        Assert.True(await StaysAt(parent, 2));
-        Assert.Equal(0, foreground.Calls);
+        Assert.True(await Poll.Until(() => parent.Calls >= 2 && background.Calls == 1));
+
+        // THE FOREGROUND SPAWN IS UNDER WAY — kept under its handle, which happens before it asks for the
+        // slot — so releasing the background child now races nothing the test has not already seen begin.
+        Assert.True(await Poll.Until(() => s.Session.SubAgents.Find("check-it") is not null));
 
         background.Release();
         Assert.True(await Poll.Until(() => parent.Calls == 3));
         await Idle(s.Session);
         Assert.Contains("checked it", parent.Last);
         Assert.Equal(1, foreground.Calls);
+        Assert.Equal(1, backgroundAnsweredWhenForegroundAsked);
     }
 
     // ---- S34–S37: how a child ends -----------------------------------------------------------------------

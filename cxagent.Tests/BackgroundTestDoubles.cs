@@ -14,6 +14,16 @@ internal sealed class HeldProvider(params string[] answers) : ILlmProvider
     public int MaxInFlight => Volatile.Read(ref _maxInFlight);
     public List<ChatMessage>? LastMessages { get; private set; }
 
+    /// <summary>How many requests have been answered — counted as each one returns, unlike <see cref="Calls"/>.</summary>
+    public int Answered => Volatile.Read(ref _answered);
+    private int _answered;
+
+    /// <summary>
+    /// Runs as each request arrives, before it waits — for a test that has to know what was true at that
+    /// moment rather than poll for it afterwards.
+    /// </summary>
+    public Action? OnCall { get; init; }
+
     /// <summary>Lets every request so far, and every later one, answer.</summary>
     public void Release() => _gate.TrySetResult();
 
@@ -31,13 +41,64 @@ internal sealed class HeldProvider(params string[] answers) : ILlmProvider
         while (now > (seen = Volatile.Read(ref _maxInFlight))
                && Interlocked.CompareExchange(ref _maxInFlight, now, seen) != seen) { }
         LastMessages = [.. messages];
+        OnCall?.Invoke();
         try
         {
             // A DEADLINE, so a test that forgets to release fails instead of hanging the suite.
             await _gate.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
             string text;
             lock (_answers) text = _answers.Count > 0 ? _answers.Dequeue() : "ok";
+            Interlocked.Increment(ref _answered);
             return new LlmResponse { Text = text, StopReason = "end_turn" };
+        }
+        finally { Interlocked.Decrement(ref _inFlight); }
+    }
+
+    public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages, List<ToolDefinition>? tools,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var r = await ChatAsync(messages, tools, ct);
+        yield return new LlmStreamChunk(r.Text, null, true);
+    }
+}
+
+/// <summary>
+/// Answers one request per <see cref="Step"/>; counts requests and the most ever in flight.
+///
+/// <para>FOR A ROW WHOSE POINT IS A LIMIT. Released one at a time, every state between steps is stable —
+/// the requests in flight stay in flight until the test lets one go — so the test can wait for an exact
+/// count instead of sleeping and hoping nothing more arrives. <see cref="HeldProvider"/> releases all at
+/// once, which turns a cap's queue into a race.</para>
+/// </summary>
+internal sealed class SteppedProvider : ILlmProvider
+{
+    private readonly SemaphoreSlim _steps = new(0);
+    private int _inFlight, _maxInFlight, _calls;
+    public int Calls => Volatile.Read(ref _calls);
+    public int MaxInFlight => Volatile.Read(ref _maxInFlight);
+
+    /// <summary>Lets one waiting request — or the next to arrive — answer.</summary>
+    public void Step() => _steps.Release();
+
+    public string ProviderId => "stepped";
+    public string ModelId => "stepped";
+    public string DisplayName => "Stepped";
+    public bool SupportsToolCalling => true;
+    public bool SupportsStreaming => false;
+
+    public async Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct)
+    {
+        Interlocked.Increment(ref _calls);
+        var now = Interlocked.Increment(ref _inFlight);
+        int seen;
+        while (now > (seen = Volatile.Read(ref _maxInFlight))
+               && Interlocked.CompareExchange(ref _maxInFlight, now, seen) != seen) { }
+        try
+        {
+            // A DEADLINE, as HeldProvider's: a test that forgets a step fails instead of hanging the suite.
+            if (!await _steps.WaitAsync(TimeSpan.FromSeconds(15), ct))
+                throw new TimeoutException("no step came for this request");
+            return new LlmResponse { Text = "ok", StopReason = "end_turn" };
         }
         finally { Interlocked.Decrement(ref _inFlight); }
     }

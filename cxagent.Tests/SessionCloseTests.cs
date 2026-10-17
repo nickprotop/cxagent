@@ -15,6 +15,7 @@ namespace CxAgent.Tests;
 /// open in the manager: its plugins stayed wired with their child processes running for the life of
 /// the app, and the store still offered it to `--resume` as unfinished.</para>
 /// </summary>
+[Collection(DefaultShellRegistryCollection.Name)]
 public class SessionCloseTests : IDisposable
 {
     private readonly string _dir =

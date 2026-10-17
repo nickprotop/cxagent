@@ -13,6 +13,7 @@ namespace CxAgent.Tests;
 /// live command, <c>task_stop</c> stops only what the caller is allowed to, <c>task_output</c> reads one —
 /// running or ended.
 /// </summary>
+[Collection(DefaultShellRegistryCollection.Name)]
 public class TaskToolsShellTests
 {
     private static TaskTools Tools(DetachedProcessRegistry live, FinishedShells? finished = null) =>
