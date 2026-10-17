@@ -267,6 +267,60 @@ public sealed class AgentTabTests : IDisposable
         Assert.Same(prompt, _window.SessionTabs[0].ActivePrompt);
     }
 
+    /// <summary>
+    /// CLOSING THE SESSION DENIES ITS AGENT TAB'S PROMPT rather than moving it: the session's close ends the agent,
+    /// and a moved prompt landed in whichever other session's composer was left in front.
+    /// </summary>
+    [Fact]
+    public void ClosingTheSession_DeniesItsAgentTabsPrompt_RatherThanMovingIt()
+    {
+        var second = Open();
+        _window.AddSessionTab(second);
+        var child = Child(Says());
+        _front.SubAgents.Keep(child, "finder");
+        _window.Tabs.ActiveTabIndex = 0;
+        _window.OpenAgentTab(_front, "finder");
+        var prompt = APrompt();
+        var denied = false;
+        _window.ShowPermissionPrompt(prompt, () => denied = true, child.Agent.Id);
+
+        _window.Tabs.ActiveTabIndex = 0;
+        Assert.True(_window.CloseActiveSession(confirmed: true));
+
+        Assert.True(denied);
+        Assert.DoesNotContain(_window.SessionTabs, t => ReferenceEquals(t.ActivePrompt, prompt));
+    }
+
+    /// <summary>
+    /// A MOVED PROMPT WAITS FOR THE ONE ALREADY UP on the session's tab, and Escape answers the one on screen. It was
+    /// shown nowhere while taking over Escape, so Escape denied a prompt the user could not see.
+    /// </summary>
+    [Fact]
+    public void AMovedPrompt_WaitsForTheOneAlreadyUp()
+    {
+        var child = Child(Says());
+        _front.SubAgents.Keep(child, "finder");
+        var visible = APrompt();
+        var visibleDenied = false;
+        _window.NotePromptTabBySessionId(_front.Id);
+        _window.ShowPermissionPrompt(visible, () => visibleDenied = true);
+        _window.OpenAgentTab(_front, "finder");
+        var moved = APrompt();
+        var movedDenied = false;
+        _window.ShowPermissionPrompt(moved, () => movedDenied = true, child.Agent.Id);
+
+        _window.CloseAgentTab(_window.ActiveAgentTab!);
+
+        Assert.Same(visible, _window.SessionTabs[0].ActivePrompt);
+        Assert.True(_window.TryDenyPermission());
+        Assert.True(visibleDenied);
+        Assert.False(movedDenied);
+
+        _window.RestoreComposer(visible);
+
+        Assert.Same(moved, _window.SessionTabs[0].ActivePrompt);
+    }
+
     [Fact]
     public void AgentsOpen_OpensTheTab_ThenFocusesIt()
     {

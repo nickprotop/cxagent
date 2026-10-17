@@ -2666,7 +2666,10 @@ public sealed class MainWindow : IDisposable
         Window?.FocusManager.SetFocus(tab.MainControl, SharpConsoleUI.Controls.FocusReason.Programmatic);
 
     /// <summary>Closes an agent tab: its view detaches, and the agent works on.</summary>
-    public void CloseAgentTab(AgentTab tab)
+    public void CloseAgentTab(AgentTab tab) => CloseAgentTab(tab, sessionClosing: false);
+
+    /// <param name="sessionClosing">Its session is closing, which ends the agent.</param>
+    private void CloseAgentTab(AgentTab tab, bool sessionClosing)
     {
         if (!_agentTabs.Remove(tab.AgentId, out var slot)) return;
 
@@ -2677,12 +2680,20 @@ public sealed class MainWindow : IDisposable
             ShowNote($"'{tab.Kept.Name}' keeps running — F7 shows it");
 
         // A PROMPT UP HERE IS STILL UNANSWERED, and its agent is waiting on it: it moves to the session's tab rather
-        // than closing with this one.
+        // than closing with this one — after any prompt already showing there, which keeps the screen and Escape.
+        //
+        // UNLESS THE SESSION IS CLOSING: that ends the agent, so the question is denied rather than moved into
+        // whichever other session's composer is left in front.
         if (tab.TakePrompt() is { } held)
         {
             if (IndexOf(slot.Page) is { } at) SetWaiting(at, waiting: false);
-            NotePromptTabBySessionId(tab.Session.Id);
-            ShowPermissionPrompt(held.Prompt, held.Deny);
+            if (sessionClosing) held.Deny?.Invoke();
+            else if (TabFor(tab.Session) is { ActivePrompt: not null } busy) busy.WaitingPrompts.Enqueue(held);
+            else
+            {
+                NotePromptTabBySessionId(tab.Session.Id);
+                ShowPermissionPrompt(held.Prompt, held.Deny);
+            }
         }
         tab.Dispose();
         if (IndexOf(slot.Page) is { } index) CloseTab(index);
@@ -2699,7 +2710,7 @@ public sealed class MainWindow : IDisposable
     private void CloseAgentTabsOf(Session session)
     {
         foreach (var slot in _agentTabs.Values.Where(s => ReferenceEquals(s.Tab.Session, session)).ToList())
-            CloseAgentTab(slot.Tab);
+            CloseAgentTab(slot.Tab, sessionClosing: true);
     }
 
     /// <summary>A closed session's command output tabs — see where it is called.</summary>
@@ -3376,6 +3387,13 @@ public sealed class MainWindow : IDisposable
             if (!ReferenceEquals(tab.DenyOwner, prompt)) continue;
             tab.DenyPrompt = null;
             tab.DenyOwner = null;
+        }
+
+        // A PROMPT MOVED HERE WHILE THIS ONE SHOWED is next — see SessionTab.WaitingPrompts.
+        if (owner is { ActivePrompt: null } && owner.WaitingPrompts.TryDequeue(out var next))
+        {
+            ShowPromptOn(owner, next.Prompt, next.Deny);
+            return;
         }
 
         FocusComposer();

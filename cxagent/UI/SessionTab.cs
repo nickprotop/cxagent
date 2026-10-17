@@ -166,6 +166,15 @@ public sealed class SessionTab
     /// </summary>
     public IWindowControl? ActivePrompt { get; set; }
 
+    /// <summary>
+    /// Prompts moved here from a closed agent tab while this one already showed a prompt, shown in turn as each is
+    /// answered.
+    ///
+    /// <para>WAITING, NOT SHOWN OVER THE ONE ON SCREEN: the composer holds one prompt, and a moved prompt that took
+    /// over Escape without being drawn let Escape deny a question the user could not see.</para>
+    /// </summary>
+    public Queue<HeldPrompt> WaitingPrompts { get; } = new();
+
     /// <summary>How to answer this tab's prompt with "no", for the Escape shortcut.</summary>
     /// <remarks>
     /// AND THE CONTENT IT BELONGS TO, tracked separately: a replacement prompt shown before the
