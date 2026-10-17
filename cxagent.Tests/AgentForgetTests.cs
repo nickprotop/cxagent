@@ -192,8 +192,9 @@ public sealed class AgentForgetTests : IDisposable
     }
 
     /// <summary>
-    /// REVIEW FOCUS 4: a forget and a send racing — exactly one wins. Forgotten, the send is answered "dismissed";
-    /// resumed, the agent is still kept and the forget was refused as working.
+    /// REVIEW FOCUS 4: a forget and a send racing — a forgotten agent is never resumed. Overlapping, exactly one wins:
+    /// forgotten, the send is answered "dismissed"; resumed, the forget is refused as working. In sequence, the send's
+    /// stretch ends before the forget.
     /// </summary>
     [Fact]
     public async Task AForget_AndASend_NeverBothWin()
@@ -203,6 +204,9 @@ public sealed class AgentForgetTests : IDisposable
             var store = new SubAgentStore();
             store.Keep(Child("ok"), "finder");
             Finished(store, "finder");
+            var order = new System.Collections.Concurrent.ConcurrentQueue<string>();
+            store.SendEnded += (_, _) => order.Enqueue("send ended");
+            store.Forgotten += _ => order.Enqueue("forgotten");
             using var go = new ManualResetEventSlim();
 
             var forget = Task.Run(() => { go.Wait(); return store.Forget("finder"); });
@@ -212,7 +216,12 @@ public sealed class AgentForgetTests : IDisposable
             go.Set();
             var (outcome, answer) = (await forget, await send);
 
-            if (outcome == ForgetOutcome.Forgotten)
+            // BOTH CAN HAPPEN ONE AFTER THE OTHER: the send resumes the idle agent and finishes, and only then does
+            // the forget claim it. What must never happen is a resume of an agent already forgotten — so a send that
+            // answered normally must have ended before the forget.
+            if (outcome == ForgetOutcome.Forgotten && !answer.Contains("dismissed", StringComparison.Ordinal))
+                Assert.Equal(["send ended", "forgotten"], order.ToArray());
+            else if (outcome == ForgetOutcome.Forgotten)
                 Assert.Contains("dismissed", answer, StringComparison.Ordinal);
             else
             {
