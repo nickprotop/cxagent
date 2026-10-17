@@ -97,7 +97,6 @@ public sealed class JobsPanel
 
     private readonly MarkupControl _heading = Ctl.Markup().WithMargin(1, 1, 1, 0).Build();
     private readonly MarkupControl _empty = Ctl.Markup().WithMargin(1, 1, 1, 0).Build();
-    private readonly MarkupControl _hint = Ctl.Markup().WithMargin(1, 1, 1, 0).Build();
     private readonly Section _running;
     private readonly Section _finished;
     private readonly ScrollablePanelControl _host;
@@ -117,7 +116,9 @@ public sealed class JobsPanel
 
         _host = Ctl.ScrollablePanel().WithVerticalAlignment(VerticalAlignment.Fill).Build();
         _host.BackgroundColor = ColorScheme.PanelSurface;
-        foreach (var control in new IWindowControl[] { _heading, _empty, _running.Panel, _finished.Panel, _hint })
+        // EACH SECTION'S KEY HINT SITS UNDER IT, so "x stop" is read beside the running cards it stops and "x forget"
+        // beside the finished ones — a single hint at the foot of the column read as being about whatever was last.
+        foreach (var control in new IWindowControl[] { _heading, _empty, _running.Panel, _running.Hint, _finished.Panel, _finished.Hint })
             _host.AddControl(control);
     }
 
@@ -180,7 +181,7 @@ public sealed class JobsPanel
     public bool MoveSelection(bool down)
     {
         if (Active() is not { } section) return false;
-        section.List.SelectedIndex = Math.Clamp(section.List.SelectedIndex + (down ? 1 : -1), 0, section.Rows.Count - 1);
+        section.Index = Math.Clamp(section.Index + (down ? 1 : -1), 0, section.Rows.Count - 1);
         Redraw();
         return true;
     }
@@ -231,22 +232,30 @@ public sealed class JobsPanel
         _empty.Visible = nothing;
         SetIfChanged(_empty, empty);
 
-        // THE KEYS, WHILE THEY WORK. A hint with nothing selected names keys that would act on nothing. Only the keys a
-        // card does not show: each card already says how it is viewed, and the column has room for little else.
-        var hint = RowsHaveFocus && Active()?.Selected is { } chosen ? Muted(Cut(chosen switch
-        {
-            AgentRow { View: { Foreground: true, Running: true } } => "x — the parent waits on it",
-            { Running: true } => "x stop · f finished",
-            _ => "x forget · f finished",
-        }, width - 4)) : "";
-        _hint.Visible = hint.Length > 0;
-        SetIfChanged(_hint, [hint]);
+        // THE KEYS, WHILE THEY WORK, under the section whose card has the keyboard. A hint with nothing selected
+        // names keys that would act on nothing. Only the keys a card does not show: each card already says how it
+        // is viewed, and the column has room for little else.
+        var focused = RowsHaveFocus ? Active() : null;
+        var showOrHide = _finished.Rows.Count == 0 ? "" : _finished.Open ? " · f hide finished" : " · f show finished";
+        string HintFor(Section section) =>
+            !ReferenceEquals(section, focused) || section.Selected is not { } chosen ? ""
+            : Muted(Cut(chosen switch
+            {
+                AgentRow { View: { Foreground: true, Running: true } } => "x — the parent waits on it",
+                { Running: true } => "x stop" + showOrHide,
+                _ => "x forget" + showOrHide,
+            }, width - 4));
+        var runningHint = HintFor(_running);
+        var finishedHint = HintFor(_finished);
+        _running.ShowHint(runningHint);
+        _finished.ShowHint(finishedHint);
 
         var text = new List<string> { heading };
         text.AddRange(empty);
         text.AddRange(_running.Text());
+        if (runningHint.Length > 0) text.Add(runningHint);
         text.AddRange(_finished.Text());
-        if (hint.Length > 0) text.Add(hint);
+        if (finishedHint.Length > 0) text.Add(finishedHint);
         RenderedText = string.Join("\n", text);
     }
 
@@ -284,10 +293,54 @@ public sealed class JobsPanel
 
         public ListControl List { get; private set; }
 
+        /// <summary>This section's key hint, placed under it by the panel.</summary>
+        public MarkupControl Hint { get; } = Ctl.Markup().WithMargin(1, 0, 1, 0).Build();
+
+        /// <summary>
+        /// Which card the keys act on in this section — remembered while the list does not have the keyboard.
+        ///
+        /// <para>A LIST SHOWS A SELECTION ONLY WHILE IT HAS THE KEYBOARD. Two lists each drawing their own made two
+        /// cards look chosen at once, and "x stop" under a finished card read as stopping it. The position is kept
+        /// here and handed back when the list is focused again.</para>
+        /// </summary>
+        public int Index
+        {
+            get => List.SelectedIndex >= 0 ? List.SelectedIndex : _remembered;
+            set
+            {
+                _remembered = value;
+                if (List.HasFocus) List.SelectedIndex = value;
+            }
+        }
+
+        private int _remembered;
+
+        public void ShowHint(string hint)
+        {
+            Hint.Visible = hint.Length > 0;
+            if (Hint.Text != hint) Hint.SetContent([hint]);
+        }
+
         /// <summary>A list wired to this section: Enter or a double-click opens a card, a click on ⏹ stops it.</summary>
         private ListControl NewList()
         {
             var list = new ListControl { HoverHighlightsItems = true, BackgroundColor = ColorScheme.PanelSurface };
+
+            // THE SELECTION FOLLOWS THE KEYBOARD — see Index.
+            list.GotFocus += (_, _) =>
+            {
+                // ONE TEXT COLOUR FOR AN UNSELECTED CARD, focused list or not: the theme dims a focused list's other
+                // items, so the list without the keyboard drew its cards brighter — and read as the one selected.
+                list.FocusedForegroundColor = list.ForegroundColor;
+                if (list.SelectedIndex < 0 && Rows.Count > 0) list.SelectedIndex = Math.Clamp(_remembered, 0, Rows.Count - 1);
+                _owner.Redraw();
+            };
+            list.LostFocus += (_, _) =>
+            {
+                if (list.SelectedIndex >= 0) _remembered = list.SelectedIndex;
+                list.SelectedIndex = -1;
+                _owner.Redraw();
+            };
 
             // ENTER OR A DOUBLE-CLICK OPENS THE CARD — the list's own activation.
             list.ItemActivated += (_, item) =>
@@ -325,7 +378,8 @@ public sealed class JobsPanel
             List = NewList();
             List.MaxVisibleItems = Math.Max(1, cards.Count);
             List.Items = cards;
-            List.SelectedIndex = selected;
+            _remembered = Math.Max(0, selected);
+            List.SelectedIndex = hadFocus ? selected : -1;
             Panel.RemoveControl(old);
             Panel.AddControl(List);
             if (hadFocus) window?.FocusManager.SetFocus(List, FocusReason.Programmatic);
@@ -337,8 +391,7 @@ public sealed class JobsPanel
 
         public bool Open => Panel.IsExpanded;
 
-        public PanelRow? Selected =>
-            List.SelectedIndex >= 0 && List.SelectedIndex < Rows.Count ? Rows[List.SelectedIndex] : null;
+        public PanelRow? Selected => Index >= 0 && Index < Rows.Count ? Rows[Index] : null;
 
         public void ReapplyTheme() => List.BackgroundColor = ColorScheme.PanelSurface;
 
@@ -350,7 +403,7 @@ public sealed class JobsPanel
         /// </summary>
         public void Show(IReadOnlyList<PanelRow> rows, int usable)
         {
-            var keep = Selected?.Key;
+            var keep = Rows.Count > 0 ? Selected?.Key : null;
             var cards = rows.Select(r => Card(r, usable)).ToList();
             if (List.Items.Count == rows.Count && rows.Select(r => r.Key).SequenceEqual(Rows.Select(r => r.Key)))
             {
