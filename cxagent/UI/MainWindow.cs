@@ -2797,6 +2797,12 @@ public sealed class MainWindow : IDisposable
                 else session.NotifyWarning($"pid {entry.Job.Pid}'s exit report could not reach its agent yet — x again once it has.");
                 break;
             case JobsPanel.AgentRow { View: var view }:
+                // b OR ⇥ MOVES A FOREGROUND AGENT TO THE BACKGROUND; x OR ⏹ STOPS IT ALONE (Ctrl+B spec 6′, 11).
+                if (choice.Action == JobsPanel.RowAction.Background)
+                {
+                    session.MoveToBackground(view.Kept.Name);
+                    break;
+                }
                 // A REFUSAL IS SAID, as /agents open says it: a card that will not open and stays silent reads as a
                 // key that does nothing.
                 if (choice.Action == JobsPanel.RowAction.Open)
@@ -2804,6 +2810,7 @@ public sealed class MainWindow : IDisposable
                     if (OpenAgentTab(session, view.Kept.Name) is { } refusal) session.NotifyWarning(refusal);
                 }
                 // THROUGH /tasks stop, so the transcript records the stop as the command would.
+                else if (view is { Running: true, Foreground: true }) session.StopForeground(view.Kept.Name);
                 else if (view.Running) _ = Task.Run(() => session.StopTask($"stop {view.Kept.Name}"));
                 else Forget(session, view);
                 break;

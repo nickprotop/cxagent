@@ -78,6 +78,9 @@ public sealed class JobsPanel
         /// <summary><c>x</c> or the card's own control — ⏹ stops it while it runs, ✕ deletes it, everywhere, once it has
         /// ended (decision 13).</summary>
         StopOrForget,
+
+        /// <summary><c>b</c> or ⇥ on a foreground card — moves it to the background (Ctrl+B spec decision 6′).</summary>
+        Background,
     }
 
     /// <summary>A card and what was asked of it — for the window, which owns tabs, stops and forgetting.</summary>
@@ -200,15 +203,24 @@ public sealed class JobsPanel
     /// <summary>
     /// <c>x</c> on the selected card. False with no card showing, so the key is not swallowed.
     ///
-    /// <para>NOTHING FOR A FOREGROUND AGENT WHILE IT RUNS: the parent's turn is waiting on its answer, and stopping
-    /// it from here would hand that turn a cancellation it never asked for. The key hint says so; the key is still
-    /// the panel's, so it does not fall through to anything else.</para>
+    /// <para>A FOREGROUND AGENT STOPS TOO: stopping it alone answers its call "stopped by the user" and the parent's
+    /// turn goes on (Ctrl+B spec decision 11), so x means the same on every running card.</para>
     /// </summary>
     public bool ActOnSelected()
     {
         if (SelectedCard()?.Row is not { } row) return false;
-        if (row is AgentRow { View: { Foreground: true, Running: true } }) return true;
         RowChosen?.Invoke(new RowChoice(row, RowAction.StopOrForget));
+        return true;
+    }
+
+    /// <summary>
+    /// <c>b</c> on the selected card: moves a foreground agent to the background (Ctrl+B spec decision 6′). False on any
+    /// other card, so the key is not the panel's to swallow there.
+    /// </summary>
+    public bool BackgroundSelected()
+    {
+        if (SelectedCard()?.Row is not AgentRow { View: { Foreground: true, Running: true } } row) return false;
+        RowChosen?.Invoke(new RowChoice(row, RowAction.Background));
         return true;
     }
 
@@ -259,7 +271,7 @@ public sealed class JobsPanel
             chosen is null || !section.Holds(chosen) ? ""
             : Muted(Cut(chosen.Row switch
             {
-                AgentRow { View: { Foreground: true, Running: true } } => "x — the parent waits on it",
+                AgentRow { View: { Foreground: true, Running: true } } => "x stop · b background",
                 { Running: true } => "x stop",
                 _ => "x delete",
             }, width - 4));
@@ -408,12 +420,15 @@ public sealed class JobsPanel
             _owner = owner;
             Anchor = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
             Button = new SharpConsoleUI.Builders.ButtonBuilder().WithText("⏹").WithBorder(ButtonBorderStyle.None).Build();
+            Move = new SharpConsoleUI.Builders.ButtonBuilder().WithText("⇥").WithBorder(ButtonBorderStyle.None).Build();
+            Move.Visible = false;
 
             _top = Ctl.Grid()
-                .Columns(GridLength.Star(1), GridLength.Auto())
+                .Columns(GridLength.Star(1), GridLength.Auto(), GridLength.Auto())
                 .Rows(GridLength.Cells(1))
                 .Place(_title, 0, 0)
-                .Place(Button, 0, 1)
+                .Place(Move, 0, 1)
+                .Place(Button, 0, 2)
                 .WithAlignment(HorizontalAlignment.Stretch)
                 .Build();
             Box = Ctl.Panel().NoBorder().WithPadding(0).AddControl(_top).AddControl(_facts).AddControl(Anchor).Build();
@@ -427,6 +442,8 @@ public sealed class JobsPanel
             Anchor.GotFocus += (_, _) => _owner.Select(this, focus: false);
             Button.GotFocus += (_, _) => _owner.Select(this, focus: false);
             Button.Click += (_, _) => _owner.RowChosen?.Invoke(new RowChoice(Row, RowAction.StopOrForget));
+            Move.GotFocus += (_, _) => _owner.Select(this, focus: false);
+            Move.Click += (_, _) => _owner.RowChosen?.Invoke(new RowChoice(Row, RowAction.Background));
 
             // ON ITS SURFACE FROM THE START, not only once selected or hovered.
             Paint();
@@ -439,10 +456,13 @@ public sealed class JobsPanel
         /// <summary>The "View …" link — where the keyboard sits while this card is selected.</summary>
         public MarkupControl Anchor { get; }
 
+        /// <summary>⇥ — shown on a foreground agent's card, before ⏹, to move it to the background.</summary>
+        public ButtonControl Move { get; }
+
         /// <summary>⏹ or ✕ — hidden on a foreground agent, which the parent's turn is waiting on.</summary>
         public ButtonControl Button { get; }
 
-        public bool HasFocus => Anchor.HasFocus || Button.HasFocus;
+        public bool HasFocus => Anchor.HasFocus || Button.HasFocus || Move.HasFocus;
 
         /// <summary>The card as text, for the panel's RenderedText.</summary>
         public IReadOnlyList<string> Text { get; private set; } = [];
@@ -478,8 +498,9 @@ public sealed class JobsPanel
         {
             if (_shown is null) return;
             var bar = _selected ? $"[{ColorScheme.AccentMarkup}]▐[/] " : "  ";
-            // THE BUTTON TAKES THREE COLUMNS AT THE RIGHT — " ⏹ " — and the bar two at the left.
-            var room = Math.Max(1, _usable - (_shown.Control is null ? 0 : 3));
+            // EACH BUTTON TAKES THREE COLUMNS AT THE RIGHT — " ⏹ " — and the bar two at the left.
+            var buttons = (_shown.Control is null ? 0 : 1) + (_shown.Movable ? 1 : 0);
+            var room = Math.Max(1, _usable - 3 * buttons);
             var title = $"{_shown.Mark} {Value(Cut(_shown.Title, room))}";
             var facts = $"  {Muted(Cut(string.Join(" · ", _shown.Facts), _usable))}";
             var link = $"  [link=open]{Value(_shown.View)} ›[/]";
@@ -487,6 +508,7 @@ public sealed class JobsPanel
             SetIfChanged(_facts, [bar + facts]);
             SetIfChanged(Anchor, [bar + link]);
 
+            if (Move.Visible != _shown.Movable) Move.Visible = _shown.Movable;
             if (_glyph != _shown.Control)
             {
                 _glyph = _shown.Control;
@@ -494,7 +516,8 @@ public sealed class JobsPanel
                 if (_glyph is not null) Button.Text = _glyph;
             }
 
-            Text = [$"{_shown.Mark} {TitleLine(_shown.Title, _shown.Control, _usable)}", facts, $"  {Value(_shown.View)} ›"];
+            var controls = _shown.Movable ? $"⇥ {_shown.Control}" : _shown.Control;
+            Text = [$"{_shown.Mark} {TitleLine(_shown.Title, controls, _usable)}", facts, $"  {Value(_shown.View)} ›"];
         }
 
         /// <summary>The card's surface — hovered, selected or plain — from the theme's current colours.</summary>
@@ -509,6 +532,8 @@ public sealed class JobsPanel
             _top.BackgroundColor = surface;
             Button.BackgroundColor = surface;
             Button.ForegroundColor = ColorScheme.MutedRgb;
+            Move.BackgroundColor = surface;
+            Move.ForegroundColor = ColorScheme.MutedRgb;
         }
     }
 
@@ -518,7 +543,9 @@ public sealed class JobsPanel
     /// <param name="Control">⏹ or ✕, or null for a foreground agent.</param>
     /// <param name="Facts">Its kind, how it stands, how long.</param>
     /// <param name="View">What opening it shows.</param>
-    private sealed record CardText(string Mark, string Title, string? Control, EquatableList Facts, string View)
+    /// <param name="Movable">A foreground agent's card: ⇥ before ⏹, to move it to the background (Ctrl+B spec 6′).</param>
+    private sealed record CardText(string Mark, string Title, string? Control, EquatableList Facts, string View,
+        bool Movable = false)
     {
         public static CardText For(PanelRow row) => row switch
         {
@@ -552,7 +579,7 @@ public sealed class JobsPanel
         if (job.Agent is { } agent) facts.Add(agent);
 
         return new CardText(Mark(running, view.State == BackgroundJobState.Exited && view.ExitCode == 0, "▭"),
-            OutputTail.OneLine(view.Job.Command), CardControl(running, foreground: false), new EquatableList(facts),
+            OutputTail.OneLine(view.Job.Command), CardControl(running), new EquatableList(facts),
             "View output");
     }
 
@@ -574,7 +601,7 @@ public sealed class JobsPanel
         facts.Add(DisplayNumber.Took(view.Elapsed));
 
         return new CardText(Mark(view.Running, view.State == AgentRowState.Done, "◇"), OutputTail.OneLine(title),
-            CardControl(view.Running, view.Foreground), new EquatableList(facts), "View transcript");
+            CardControl(view.Running), new EquatableList(facts), "View transcript", Movable: view is { Running: true, Foreground: true });
     }
 
     /// <summary>A card's mark, as markup: the kind while it runs, ✓ or ✗ once it has ended (decision 16).</summary>
@@ -584,20 +611,19 @@ public sealed class JobsPanel
         : $"[{ColorScheme.DangerMarkup}]✗[/]";
 
     /// <summary>
-    /// A card's one control — ⏹ to stop it while it runs, ✕ to delete it once it has ended — or null for a foreground
-    /// agent, which the parent's turn is waiting on (decision 9).
+    /// A card's one control — ⏹ to stop it while it runs, ✕ to delete it once it has ended. A foreground agent's
+    /// card has ⏹ too, since stopping it alone answers its call and the turn goes on (Ctrl+B spec decision 11).
     ///
     /// <para>ONE PLACE AND ONE KEY FOR BOTH (decision 33′): the control sits at the same edge on every card, and x
     /// does what it does, so there is one thing to learn about a card rather than one per state.</para>
     /// </summary>
-    private static string? CardControl(bool running, bool foreground) =>
-        running ? (foreground ? null : "⏹") : "✕";
+    private static string? CardControl(bool running) => running ? "⏹" : "✕";
 
     /// <summary>The title, and the card's control at the right edge, the title padded so every control lines up.</summary>
     private static string TitleLine(string title, string? control, int usable)
     {
         if (control is null) return Value(Cut(title, usable));
-        var room = Math.Max(1, usable - 2);
+        var room = Math.Max(1, usable - 1 - Columns(control));
         var text = Cut(title, room);
         return $"{Value(text)}{new string(' ', Math.Max(0, room - Columns(text)))} {Muted(control)}";
     }

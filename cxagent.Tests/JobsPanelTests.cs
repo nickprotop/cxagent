@@ -87,15 +87,26 @@ public class JobsPanelTests
     public void AnAgentNotPlainlyRunning_SaysHowItStands(AgentRowState state, string expected) =>
         Assert.Contains(expected, Render(Agent("a", state)), StringComparison.Ordinal);
 
-    /// <summary>Decision 9: a foreground agent's card has no ⏹ and says the parent is waiting on it.</summary>
+    /// <summary>Ctrl+B spec decision 6′: a foreground card carries ⇥ then ⏹; x stops it, b moves it.</summary>
     [Fact]
-    public void AForegroundAgent_HasNoStop()
+    public void AForegroundCard_CarriesMoveAndStop()
     {
-        var text = Render(Agent("a", AgentRowState.Running, foreground: true));
+        var row = Agent("a", AgentRowState.Running, foreground: true);
+        var panel = Panel(SessionPanel.MaxWidth, row);
+        var chosen = new List<JobsPanel.RowChoice>();
+        panel.RowChosen += chosen.Add;
 
-        Assert.DoesNotContain("⏹", text, StringComparison.Ordinal);
-        Assert.Contains("foreground", text, StringComparison.Ordinal);
+        Assert.True(panel.ActOnSelected());
+        Assert.True(panel.BackgroundSelected());
+
+        Assert.Equal([new JobsPanel.RowChoice(row, JobsPanel.RowAction.StopOrForget),
+                      new JobsPanel.RowChoice(row, JobsPanel.RowAction.Background)], chosen);
+        Assert.Contains("⇥", Render(row), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BackgroundSelected_OnABackgroundCard_IsNotThePanelsKey() =>
+        Assert.False(Panel(SessionPanel.MaxWidth, Agent("a", AgentRowState.Running)).BackgroundSelected());
 
     [Fact]
     public void RunningCardsComeFirst_ThenAFinishedSection_WithTheirMarks()
@@ -182,8 +193,8 @@ public class JobsPanelTests
     [Theory]
     [InlineData(AgentRowState.Running, false, true)]
     [InlineData(AgentRowState.Failed, false, true)]
-    [InlineData(AgentRowState.Running, true, false)]
-    public void X_StopsOrForgets_ButNotAForegroundAgent(AgentRowState state, bool foreground, bool raised)
+    [InlineData(AgentRowState.Running, true, true)]   // Ctrl+B spec decision 11: a foreground agent stops too
+    public void X_StopsOrForgets_EveryCard(AgentRowState state, bool foreground, bool raised)
     {
         var row = Agent("a", state, foreground);
         var panel = Panel(SessionPanel.MaxWidth, row);

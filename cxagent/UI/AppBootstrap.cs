@@ -1390,6 +1390,7 @@ public static class AppBootstrap
                     ConsoleKey.DownArrow => jobsWindow.JobsPanel.MoveSelection(down: true),
                     ConsoleKey.Enter => jobsWindow.JobsPanel.ChooseSelected(),
                     ConsoleKey.X when e.KeyInfo.Modifiers == 0 => jobsWindow.JobsPanel.ActOnSelected(),
+                    ConsoleKey.B when e.KeyInfo.Modifiers == 0 => jobsWindow.JobsPanel.BackgroundSelected(),
                     _ => false,
                 };
                 if (handled)

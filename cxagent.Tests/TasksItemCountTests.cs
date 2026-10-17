@@ -229,6 +229,36 @@ public sealed class TasksItemCountTests : IDisposable
     }
 
     /// <summary>
+    /// Ctrl+B spec decisions 6′ and 11: ON A FOREGROUND CARD, x STOPS THE AGENT ALONE AND b MOVES IT to the background —
+    /// each reaching the session's own action.
+    /// </summary>
+    [Theory]
+    [InlineData(false, ForegroundRelease.Stop)]
+    [InlineData(true, ForegroundRelease.Move)]
+    public void OnAForegroundCard_XStops_AndBMoves(bool move, ForegroundRelease expected)
+    {
+        var paths = new AppPaths(_dir);
+        paths.EnsureCreated();
+        var window = new MainWindow(new ConsoleWindowSystem(new HeadlessConsoleDriver(200, 40),
+                new ConsoleWindowSystemOptions(InstallSynchronizationContext: true)),
+            ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths))
+        { Jobs = NoShells(), Shells = new FinishedShells() };
+        window.Build();
+        var front = Open();
+        window.NoteFirstSession(front);
+        front.SubAgents.Keep(AgentTabTests.Child(AgentTabTests.Says()), "finder");
+        front.SubAgents.TryClaim("finder");
+        front.SubAgents.AnnounceBegin("finder");
+        var run = front.SubAgents.BeginForeground("finder", CancellationToken.None);
+        window.ToggleJobsPanel();
+
+        Assert.True(move ? window.JobsPanel.BackgroundSelected() : window.JobsPanel.ActOnSelected());
+
+        Assert.True(run.Released.IsCompletedSuccessfully);
+        Assert.Equal(expected, run.Released.Result);
+    }
+
+    /// <summary>
     /// ENTER ON A CARD THAT CANNOT OPEN SAYS WHY, as <c>/agents open</c> does — here an agent deleted elsewhere
     /// before the panel's next refresh. Silence read as a key that did nothing.
     /// </summary>
