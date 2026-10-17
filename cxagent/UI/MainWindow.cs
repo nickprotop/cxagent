@@ -2301,6 +2301,13 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public bool TryDenyPermission()
     {
+        // THE AGENT TAB IN FRONT ANSWERS ITS OWN PROMPT — Escape answers what the user is looking at.
+        if (ActiveAgentTab?.DenyPrompt is { } agentDeny)
+        {
+            agentDeny();
+            return true;
+        }
+
         if (_denyActivePrompt is not { } deny) return false;
         deny();
         return true;
@@ -2324,6 +2331,29 @@ public sealed class MainWindow : IDisposable
     public bool TryQuestionBack() => _activeQuestion?.Back() ?? false;
 
     public void ShowPermissionPrompt(IWindowControl prompt) => ShowPermissionPrompt(prompt, null);
+
+    /// <summary>
+    /// Shows a permission prompt — in the agent tab in front when the asking agent is its child, otherwise on the
+    /// asking session's tab as before.
+    ///
+    /// <para>DECIDED WHEN IT IS RAISED. A prompt that followed the user from tab to tab would move under the mouse of
+    /// someone reaching for its buttons; the waiting dot on its tab's strip entry is how it is found again.</para>
+    /// </summary>
+    /// <param name="prompt">The question.</param>
+    /// <param name="deny">How Escape answers it with "no".</param>
+    /// <param name="requesterAgentId">The asking agent's id; null routes as before.</param>
+    public void ShowPermissionPrompt(IWindowControl prompt, Action? deny, string? requesterAgentId)
+    {
+        if (requesterAgentId is not null && ActiveAgentTab is { } front && front.AgentId == requesterAgentId)
+        {
+            front.ShowPrompt(prompt, deny);
+            SetWaiting(Tabs.ActiveTabIndex, waiting: true);
+            if (Window?.FocusManager is { } fm && FirstFocusable(prompt) is { } first)
+                fm.SetFocus(first, SharpConsoleUI.Controls.FocusReason.Programmatic);
+            return;
+        }
+        ShowPermissionPrompt(prompt, deny);
+    }
 
     /// <summary>
     /// Shows a permission prompt, and records how to answer "no" to it from a keystroke.
@@ -2608,6 +2638,15 @@ public sealed class MainWindow : IDisposable
     public void CloseAgentTab(AgentTab tab)
     {
         if (!_agentTabs.Remove(tab.AgentId, out var slot)) return;
+
+        // A PROMPT UP HERE IS STILL UNANSWERED, and its agent is waiting on it: it moves to the session's tab rather
+        // than closing with this one.
+        if (tab.TakePrompt() is { } held)
+        {
+            if (IndexOf(slot.Page) is { } at) SetWaiting(at, waiting: false);
+            NotePromptTabBySessionId(tab.Session.Id);
+            ShowPermissionPrompt(held.Prompt, held.Deny);
+        }
         tab.Dispose();
         if (IndexOf(slot.Page) is { } index) CloseTab(index);
         ShowChatTab();
@@ -3112,6 +3151,15 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public void RestoreComposer(IWindowControl prompt)
     {
+        // AN AGENT TAB'S PROMPT FIRST: the session tabs never held it.
+        foreach (var slot in _agentTabs.Values)
+        {
+            if (!slot.Tab.RestorePrompt(prompt)) continue;
+            if (IndexOf(slot.Page) is { } index) SetWaiting(index, waiting: false);
+            if (ReferenceEquals(ActiveAgentTab, slot.Tab)) FocusAgentTab(slot.Tab);
+            return;
+        }
+
         // THE TAB THIS PROMPT IS ON, found from the prompt itself rather than from a remembered
         // index. A restore arrives from the answering turn, which may be any session — and by then
         // the user may have opened or closed tabs, so an index recorded when the question was asked

@@ -211,4 +211,59 @@ public sealed class AgentTabTests : IDisposable
         Assert.False(tab.CanType);
         _front.SubAgents.Release("finder");
     }
+
+    private static IWindowControl APrompt() => SharpConsoleUI.Builders.Controls.Markup().Build();
+
+    [Fact]
+    public void APromptFromTheChildInFront_ShowsInItsTab_AndIsAnsweredOnce()
+    {
+        var child = Child(Says());
+        _front.SubAgents.Keep(child, "finder");
+        _window.OpenAgentTab(_front, "finder");
+        var prompt = APrompt();
+        var denied = 0;
+
+        _window.ShowPermissionPrompt(prompt, () => denied++, child.Agent.Id);
+
+        Assert.True(_window.ActiveAgentTab!.HasPrompt);
+        Assert.Null(_window.SessionTabs[0].ActivePrompt);
+        Assert.True(_window.TryDenyPermission());
+        Assert.Equal(1, denied);
+
+        _window.RestoreComposer(prompt);
+        Assert.False(_window.ActiveAgentTab!.HasPrompt);
+        Assert.False(_window.TryDenyPermission());
+    }
+
+    [Fact]
+    public void APromptFromAChildNotInFront_ShowsInTheSessionTab()
+    {
+        var child = Child(Says());
+        _front.SubAgents.Keep(child, "finder");
+        _window.OpenAgentTab(_front, "finder");
+        var tab = _window.ActiveAgentTab!;
+        _window.Tabs.ActiveTabIndex = 0;
+        var prompt = APrompt();
+
+        _window.NotePromptTabBySessionId(_front.Id);
+        _window.ShowPermissionPrompt(prompt, () => { }, child.Agent.Id);
+
+        Assert.Same(prompt, _window.SessionTabs[0].ActivePrompt);
+        Assert.False(tab.HasPrompt);
+    }
+
+    /// <summary>REVIEW FOCUS 5: a prompt must not vanish with its tab and leave the child waiting forever.</summary>
+    [Fact]
+    public void ClosingAnAgentTab_WithAPromptUp_MovesThePromptToTheSessionTab()
+    {
+        var child = Child(Says());
+        _front.SubAgents.Keep(child, "finder");
+        _window.OpenAgentTab(_front, "finder");
+        var prompt = APrompt();
+        _window.ShowPermissionPrompt(prompt, () => { }, child.Agent.Id);
+
+        _window.CloseAgentTab(_window.ActiveAgentTab!);
+
+        Assert.Same(prompt, _window.SessionTabs[0].ActivePrompt);
+    }
 }

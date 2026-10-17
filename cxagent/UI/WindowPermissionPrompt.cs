@@ -128,7 +128,8 @@ public static class WindowPermissionPrompt
                 ? () => { mw.TabForSessionId(sessionId)?.Session?.CancelTurn(); }
                 : (Action?)null;
             var escape = EscapeAction(request, prompt.TryCancel, stopTurn);
-            system.EnqueueOnUIThread(() => mw.ShowPermissionPrompt(content, escape), "windowPermissionPrompt.ShowOneAtATime");
+            system.EnqueueOnUIThread(() => mw.ShowPermissionPrompt(content, escape, request.RequesterAgentId),
+                "windowPermissionPrompt.ShowOneAtATime");
             return await AwaitAndRestore(prompt, ct,
                 () => system.EnqueueOnUIThread(() => mw.RestoreComposer(content),
                     "windowPermissionPrompt.RestoreComposer"));

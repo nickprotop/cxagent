@@ -77,6 +77,8 @@ public sealed class PermissionGatedExecutor : IJobExecutor
                     request with
                     {
                         Requester = context.Requester,
+                        // THE ID TOO, from the concrete context: IJobContext is published and carries no agent id.
+                        RequesterAgentId = (context as Execution.JobContext)?.AgentId,
                         Policy = _policy,
                         OnReviewing = context.ReportReviewing,
                     }, ct);

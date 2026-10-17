@@ -70,6 +70,16 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// </summary>
     public string? Requester { get; init; }
 
+    /// <summary>
+    /// The asking agent's id — the key a front end looks the agent up by, beside <see cref="Requester"/>, which is
+    /// a label to show.
+    ///
+    /// <para>A LABEL CANNOT ROUTE. Two children of one type carry the same one, and a prompt shown in the tab of the
+    /// wrong child would be answered by someone reading another agent's work. Null where the asker is not an agent
+    /// with an id — an MCP call, which carries only its label.</para>
+    /// </summary>
+    public string? RequesterAgentId { get; init; }
+
     /// <summary>What the classifier is shown about this action, or null when nothing was gathered.</summary>
     public ActionFacts? Facts { get; init; }
 

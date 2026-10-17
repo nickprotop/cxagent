@@ -15,6 +15,9 @@ namespace CxAgent.UI;
 /// <param name="Calls">The finished calls the job sink draws a round's row from; null draws none.</param>
 /// <param name="Clock">Advances live rows and thinking headers — the window's one-second tick.</param>
 /// <param name="Post">Runs an action on the UI thread.</param>
+/// <summary>A prompt taken off a closing tab, with how Escape answers it — for the window to raise elsewhere.</summary>
+public sealed record HeldPrompt(IWindowControl Prompt, Action? Deny);
+
 public sealed record AgentTabViews(ChatTranscriptControl Chat, ISessionObserver Transcript, IToolObserver Tools,
     Action<ToolCallReport>? Calls, Action Clock, Action<Action> Post);
 
@@ -107,6 +110,47 @@ public sealed class AgentTab : IDisposable
 
     /// <summary>Where the keyboard goes when the tab comes to the front.</summary>
     public IFocusableControl MainControl => CanType ? _input : _views.Chat;
+
+    private IWindowControl? _prompt;
+
+    /// <summary>Whether a permission prompt occupies the composer row.</summary>
+    public bool HasPrompt => _prompt is not null;
+
+    /// <summary>How Escape answers the prompt here with "no"; null with none up.</summary>
+    public Action? DenyPrompt { get; private set; }
+
+    /// <summary>
+    /// Puts a prompt in the composer's place, as a session tab does — the same widget, so it is answered the same
+    /// way. The row grows to the question's height while it is up.
+    /// </summary>
+    public void ShowPrompt(IWindowControl prompt, Action? deny)
+    {
+        if (_prompt is not null) return;
+        Content.ReplaceControl(Composer, prompt);
+        Content.RowDefinitions[4] = GridLength.Auto();
+        _prompt = prompt;
+        DenyPrompt = deny;
+    }
+
+    /// <summary>Puts the composer back if this prompt is the one up here; false when it is not.</summary>
+    public bool RestorePrompt(IWindowControl prompt)
+    {
+        if (!ReferenceEquals(_prompt, prompt)) return false;
+        Content.ReplaceControl(prompt, Composer);
+        Content.RowDefinitions[4] = GridLength.Cells(ComposerRows);
+        _prompt = null;
+        DenyPrompt = null;
+        return true;
+    }
+
+    /// <summary>Takes the prompt off the tab, unanswered — the tab is closing and the question still needs one.</summary>
+    public HeldPrompt? TakePrompt()
+    {
+        if (_prompt is not { } prompt) return null;
+        var held = new HeldPrompt(prompt, DenyPrompt);
+        RestorePrompt(prompt);
+        return held;
+    }
 
     /// <summary>Whether the composer takes a follow-up: not while the parent waits on this agent, nor once its session has ended.</summary>
     public bool CanType => _now is not { Foreground: true, Running: true } && !Session.SubAgents.Ended;
