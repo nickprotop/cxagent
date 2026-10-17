@@ -48,6 +48,7 @@ internal static class SessionFactory
             : JobRegistry.CreateWithBuiltins(resolution.Providers, shared.Gate, ports.Policy,
                 new Jobs.Builtin.ShellBackgrounding(
                     DetachOnTimeout: resolution.ShellDetachOnTimeout,
+                    Foreground: session.ForegroundShells,
                     Children: shared.GlobalInstructionsDir is { } childDir
                         ? new Plugins.ChildProcessStore(childDir)
                         : null));

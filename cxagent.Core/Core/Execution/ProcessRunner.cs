@@ -68,12 +68,17 @@ public record ProcessSpec(
 /// <para>FALSE IS FOR A CALLER THAT NEEDS THE DEADLINE TO BE A KILL — a command whose side effects
 /// must not outlive its call, or a host that will not be alive to hear the exit report.</para>
 /// </param>
+/// <param name="DetachNow">
+/// Cancelled when the user moves the call to the background (Ctrl+B): the deadline's hand-over, now, whatever
+/// <paramref name="DetachOnTimeout"/> says. Distinct from the call's own token, which still kills.
+/// </param>
 public record RunOptions(
     string? WorkingDir = null,
     IReadOnlyDictionary<string, string>? Env = null,
     int? TimeoutSeconds = null,
     string? SpillDir = null,
-    bool DetachOnTimeout = true)
+    bool DetachOnTimeout = true,
+    CancellationToken DetachNow = default)
 {
     /// <summary>Every default: the process's own directory, an inherited environment, no deadline and
     /// no spill file. Shared rather than allocated per call, since the record is immutable.</summary>
@@ -107,6 +112,12 @@ public sealed record Spill(string Path, long TotalBytes);
 /// <param name="TimedOut">Whether it was killed for exceeding its deadline rather than exiting.</param>
 public record ProcessResult(int ExitCode, bool TimedOut, string Stdout = "", string Stderr = "")
 {
+    /// <summary>
+    /// Set when the user moved the command to the background (Ctrl+B) — handed over as at its deadline, but the call
+    /// must not say a deadline passed.
+    /// </summary>
+    public bool MovedByUser { get; init; }
+
     /// <summary>Set when stdout did not fit inline and its full text was written out; null when the
     /// inline extract IS the whole of it, or when no <c>SpillDir</c> was given.</summary>
     public Spill? StdoutSpill { get; init; }
@@ -386,7 +397,7 @@ public static class ProcessRunner
         using var timeoutCts = spec.Run.TimeoutSeconds is int secs
             ? new CancellationTokenSource(TimeSpan.FromSeconds(secs))
             : new CancellationTokenSource();
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token, spec.Run.DetachNow);
 
         // Everything this method returns, read under the output lock at whichever exit it takes.
         // A local function rather than four copies, because the ORDER matters: the writers are
@@ -414,7 +425,11 @@ public static class ProcessRunner
             // THE DEADLINE HANDS THE COMMAND OVER; A CANCEL KILLS IT. Only a timeout takes this
             // branch: `ct` firing is a user or a caller deciding the command should stop, and a
             // decision to stop is not satisfied by letting it run somewhere else.
-            if (timedOut && spec.Run.DetachOnTimeout)
+            //
+            // THE USER'S MOVE IS THE DEADLINE, EARLY (Ctrl+B): the same hand-over, and regardless of DetachOnTimeout —
+            // the user asked for exactly this.
+            var moved = spec.Run.DetachNow.IsCancellationRequested && !ct.IsCancellationRequested;
+            if (moved || (timedOut && spec.Run.DetachOnTimeout))
             {
                 var (o, e, os, es) = CloseAndRead();
                 var handover = HandOver(process, spec.Run.SpillDir, resourceMonitor, registry,
@@ -422,7 +437,7 @@ public static class ProcessRunner
                 if (handover is not null)
                     return new ProcessResult(-1, TimedOut: true, o, e)
                     {
-                        StdoutSpill = os, StderrSpill = es, Detached = handover,
+                        StdoutSpill = os, StderrSpill = es, Detached = handover, MovedByUser = moved,
                     };
 
                 // THE HANDOVER FAILED, SO THE OLD BEHAVIOUR IS THE ONLY HONEST ONE LEFT. The

@@ -374,6 +374,12 @@ public sealed partial class Session
     /// </summary>
     public Agents.SubAgentStore SubAgents { get; } = new();
 
+    /// <summary>
+    /// This session's foreground shell calls, each movable to the background by the user (Ctrl+B). The session's, so
+    /// a re-wire keeps it, and Ctrl+B in one tab never moves another tab's command.
+    /// </summary>
+    public Execution.ForegroundShells ForegroundShells { get; } = new();
+
     /// <summary>Public form of <see cref="RefusedWhileBusy"/>, for the manager's resume — which is a
     /// session operation performed from outside because the store belongs to the manager.</summary>
     public bool RefuseIfBusy() => RefusedWhileBusy();

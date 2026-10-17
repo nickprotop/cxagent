@@ -143,6 +143,30 @@ public class ShellJobExecutorTests
     /// <para>AND IT MUST STILL FAIL. The call did not produce what was asked for — a plan step that
     /// read Success would otherwise move on believing the command was done.</para>
     /// </summary>
+    /// <summary>
+    /// Ctrl+B spec decision 9: A FOREGROUND COMMAND MOVED BY THE USER IS HANDED OVER AS AT ITS DEADLINE — still running,
+    /// told when it exits — and the call says the user moved it, not that a timeout passed.
+    /// </summary>
+    [Fact]
+    public async Task Execute_MovedByTheUser_HandsTheCommandOverStillRunning()
+    {
+        using var fx = new BackgroundFixture();
+        var shells = new ForegroundShells();
+        var exec = new ShellJobExecutor(new ShellBackgrounding(fx.Registry, Finished: fx.Finished, Foreground: shells));
+
+        var call = exec.ExecuteAsync(P(("command", "sleep 30"), ("timeout_seconds", 600)), fx.Context,
+            CancellationToken.None);
+        Assert.True(await Poll.Until(() => shells.WaitingSince(_ => true) is not null));
+
+        Assert.Equal(1, shells.DetachWhere(_ => true));
+        var result = await call.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Contains("moved to the background by the user", result.ErrorMessage);
+        Assert.DoesNotContain("still running after", result.ErrorMessage);
+        Assert.True(LiveProcess(Convert.ToInt32(result.Output!["pid"])));
+        Assert.Null(shells.WaitingSince(_ => true));
+    }
+
     [Fact]
     public async Task Execute_Timeout_ReportsStillRunning_AndDoesNotSayItWasKilled()
     {

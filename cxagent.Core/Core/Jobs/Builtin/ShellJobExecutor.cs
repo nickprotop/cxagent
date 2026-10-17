@@ -40,11 +40,16 @@ namespace CxAgent.Core.Jobs.Builtin;
 /// <see cref="FinishedShells.Default"/>. Injectable for the reason <paramref name="Registry"/> is: a test
 /// that reads what a command left behind must not share that record with every other test.
 /// </param>
+/// <param name="Foreground">
+/// The session's foreground shell calls, each movable to the background by the user (Ctrl+B); null when nothing can
+/// move them — a headless run, a test.
+/// </param>
 public sealed record ShellBackgrounding(
     DetachedProcessRegistry? Registry = null,
     bool DetachOnTimeout = true,
     Plugins.ChildProcessStore? Children = null,
-    FinishedShells? Finished = null)
+    FinishedShells? Finished = null,
+    ForegroundShells? Foreground = null)
 {
     /// <summary>The process-wide registry, detaching on a deadline, and nothing persisted — what a
     /// caller that has read no config gets.</summary>
@@ -128,7 +133,12 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
         if (ShellArguments.IsBackground(parameters))
             return await StartInBackgroundAsync(command, spec, context, start);
 
-        var result = await ProcessRunner.RunAsync(spec, context, ct, _bg.Registry);
+        // REGISTERED WHILE IT RUNS, so the user can move it to the background (Ctrl+B) — the deadline's hand-over,
+        // now. A call with no job context has no agent to file it under, and cannot be moved.
+        using var foreground = context is JobContext job ? _bg.Foreground?.Begin(job.AgentId) : null;
+        var result = await ProcessRunner.RunAsync(
+            foreground is null ? spec : spec with { Options = spec.Run with { DetachNow = foreground.Token } },
+            context, ct, _bg.Registry);
         var duration = DateTimeOffset.UtcNow - start;
 
         // CHECKED BEFORE TimedOut, BECAUSE BOTH ARE SET AND THEY MEAN OPPOSITE THINGS. The deadline
@@ -136,7 +146,7 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
         // advice must not tell the model to run it again: a second `npm install` alongside the first
         // is the failure the old message caused.
         if (result.Detached is { } handedOver)
-            return StillRunning(command, timeout, handedOver, context, start, duration);
+            return StillRunning(new HandedOver(command, timeout, handedOver, context, start, duration, result.MovedByUser));
 
         if (result.TimedOut)
             return new JobResult { Success = false, ExitCode = -1, Duration = duration,
@@ -215,9 +225,14 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
     /// plan step on to the next job believing this one was done, and there is no exit code to judge
     /// it by yet — a zero here would make every eventual failure invisible.</para>
     /// </summary>
-    private JobResult StillRunning(string command, int timeout, DetachedProcess detached,
-        IJobContext context, DateTimeOffset start, TimeSpan duration)
+    /// <summary>A command handed over still running — at its deadline, or by the user's move.</summary>
+    private sealed record HandedOver(string Command, int Timeout, DetachedProcess Detached, IJobContext Context,
+        DateTimeOffset Start, TimeSpan Duration, bool MovedByUser);
+
+    private JobResult StillRunning(HandedOver over)
     {
+        var (command, timeout, detached, context, start, duration) =
+            (over.Command, over.Timeout, over.Detached, over.Context, over.Start, over.Duration);
         var reporting = ArrangeTheReport(detached, command, context, start);
         RecordForTheNextLaunch(detached);
 
@@ -242,7 +257,10 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
             // THE WORD "KILLED" APPEARS NOWHERE, not even to deny it. A model skimming a long
             // result for a verb finds the one that is there, and "not killed" read as "killed" is
             // precisely the wrong conclusion — it would decide the work was lost and start again.
-            ErrorMessage = $"still running after {timeout}s: the command was left to finish and this "
+            // MOVED BY THE USER SAYS SO: "after {timeout}s" would tell the model a deadline passed that did not.
+            ErrorMessage = (over.MovedByUser
+                              ? "moved to the background by the user: the command was left to finish and this "
+                              : $"still running after {timeout}s: the command was left to finish and this ")
                          + "call stopped waiting for it. DO NOT run it again — it is still working, "
                          + "and a second copy would duplicate whatever it is doing. "
                          + (reporting
