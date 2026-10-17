@@ -10,11 +10,10 @@ public enum AgentRowState { Queued, Running, WaitingForPermission, Done, Stopped
 /// <param name="State">How it stands.</param>
 /// <param name="Foreground">The parent's turn is waiting on its answer — no composer and no <c>x</c> while it runs.</param>
 /// <param name="Elapsed">Since its stretch began, or how long the stretch took once ended.</param>
-/// <param name="LatestCall">The newest tool call it started, or null before its first.</param>
 /// <param name="Began">When the stretch began — the sort key among rows.</param>
 /// <param name="End">How it ended, or null while it is going — the ✔/✗ mark (decision 16).</param>
 public sealed record AgentRowView(StoredAgent Kept, AgentRowState State, bool Foreground, TimeSpan Elapsed,
-    string? LatestCall, DateTimeOffset Began, AgentEnd? End)
+    DateTimeOffset Began, AgentEnd? End)
 {
     public string AgentId => Kept.Agent.Agent.Id;
 
@@ -37,15 +36,14 @@ public static class AgentRows
     {
         var name = kept.Name;
         var run = store.BackgroundOf(name);
-        var latest = LatestCall(kept.Agent);
 
         if (run is { State: BackgroundState.Queued })
-            return new(kept, AgentRowState.Queued, false, now - run.Started, latest, run.Started, null);
+            return new(kept, AgentRowState.Queued, false, now - run.Started, run.Started, null);
 
         if (run is { State: BackgroundState.Running })
         {
             var since = store.WorkingSince(name) ?? run.Started;
-            return new(kept, Working(kept), false, now - since, latest, since, null);
+            return new(kept, Working(kept), false, now - since, since, null);
         }
 
         // A CLAIM WITH NO RUN GOING IS SOMEONE WAITING ON THE ANSWER — the parent's turn, unless it is the user's
@@ -55,11 +53,11 @@ public static class AgentRows
             var since = store.WorkingSince(name);
             var state = since is null ? AgentRowState.Queued : Working(kept);
             var began = since ?? now;
-            return new(kept, state, Foreground: !store.IsUserSend(name), now - began, latest, began, null);
+            return new(kept, state, Foreground: !store.IsUserSend(name), now - began, began, null);
         }
 
         if (EndOf(store, name, run) is { } end)
-            return new(kept, Ended(end), false, end.At - end.Began, latest, end.Began, end);
+            return new(kept, Ended(end), false, end.At - end.Began, end.Began, end);
 
         return null;
     }
@@ -107,7 +105,4 @@ public static class AgentRows
         return recorded;
     }
 
-    /// <summary>The newest call the child started — the panel's "what is it doing" line.</summary>
-    private static string? LatestCall(SubAgent child) =>
-        child.Jobs.Jobs.OrderByDescending(j => j.StartedAt ?? j.CreatedAt).FirstOrDefault()?.DisplayName;
 }

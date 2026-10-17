@@ -323,6 +323,12 @@ public sealed partial class Session
     }
 
     /// <summary>
+    /// Forgets a kept agent — the panel's x on a finished row. Says nothing to the parent model (decision 15) and
+    /// nothing in this transcript: the row leaving the panel is what the user sees.
+    /// </summary>
+    public Agents.ForgetOutcome ForgetAgent(string name, bool keepShells = false) => SubAgents.Forget(name, keepShells);
+
+    /// <summary>
     /// Stops a background agent or command, typed rather than called as <c>task_stop</c>.
     ///
     /// <para>AN AGENT STOPPED HERE IS STOPPED BY THE USER, which the model's agent_send then respects: the
@@ -331,12 +337,6 @@ public sealed partial class Session
     /// <para>NO OWNERSHIP CHECK FOR A COMMAND. This IS the session typing directly — there is no
     /// sub-agent identity to weigh it against.</para>
     /// </summary>
-    /// <summary>
-    /// Forgets a kept agent — the panel's x on a finished row. Says nothing to the parent model (decision 15) and
-    /// nothing in this transcript: the row leaving the panel is what the user sees.
-    /// </summary>
-    public Agents.ForgetOutcome ForgetAgent(string name, bool keepShells = false) => SubAgents.Forget(name, keepShells);
-
     public CommandStatus StopTask(string arguments)
     {
         // THE VERB'S OWN WORD, STRIPPED. RegisterVerb hands the handler everything typed including "stop"

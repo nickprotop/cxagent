@@ -10,15 +10,15 @@ namespace CxAgent.UI;
 
 /// <summary>
 /// The Tasks view of the right-hand column: every background shell and sub-agent of the session in front, as a
-/// card each — a Running section, then a Finished one (spec decisions 4′, 32, 33).
+/// card each — a Running section, then a Finished one (spec decisions 4′, 32, 33′).
 ///
 /// <para>CARDS, AS THE CLAUDE APP'S OWN BACKGROUND-TASKS SHEET DRAWS THEM: a kind and a title with one control,
-/// then what kind of task it is, how long it has run and how to view it. Two lines, so a column of them reads as a
-/// list of tasks rather than a log.</para>
+/// then what kind of task it is and how long it has run, then how to view it. Three short lines, so a column of
+/// them reads as a list of tasks rather than a log.</para>
 ///
-/// <para>THE LIBRARY'S CONTROLS, NOT HAND-DRAWN MARKUP: each section is a <see cref="CollapsiblePanel"/> holding a
-/// <see cref="ListControl"/>, so collapsing, selection, scrolling, truncation and Enter or a double-click to open
-/// are the library's own. What this class adds is the cards' text, which row a click or a key means, and the one
+/// <para>THE LIBRARY'S CONTROLS, NOT HAND-DRAWN MARKUP: each section is a <see cref="CollapsiblePanel"/>, fixed open,
+/// holding a <see cref="ListControl"/>, so the heading, selection, scrolling, truncation and Enter or a double-click
+/// to open are the library's own. What this class adds is the cards' text, which row a click or a key means, and the one
 /// key a list has no notion of — x, which does what the card's control does.</para>
 ///
 /// <para>ITS OWN PANEL, NOT A SECTION OF THE INFO PANEL. The info panel is reference — limits, ids, spend — and a
@@ -119,7 +119,7 @@ public sealed class JobsPanel
         _host = Ctl.ScrollablePanel().WithVerticalAlignment(VerticalAlignment.Fill).Build();
         _host.BackgroundColor = ColorScheme.PanelSurface;
         // EACH SECTION'S KEY HINT SITS UNDER IT, so "x stop" is read beside the running cards it stops and "x delete"
-        // beside the finished ones — a single hint at the foot of the column read as being about whatever was last.
+        // beside the finished ones — a single hint at the foot of the column reads as being about whatever is last.
         foreach (var control in new IWindowControl[] { _heading, _empty, _running.Panel, _running.Hint, _finished.Panel, _finished.Hint })
             _host.AddControl(control);
     }
@@ -216,9 +216,9 @@ public sealed class JobsPanel
         _running.Show([.. shown.Rows.Where(r => r.Running)], usable);
         _finished.Show([.. shown.Rows.Where(r => !r.Running)], usable);
 
-        // THE KEYBOARD FOLLOWS ITS CARD ACROSS SECTIONS. A card that stopped moves from Running to Finished; left
-        // behind, the keyboard sat on an emptied list while x acted on another finished card, unhighlighted — so the
-        // x-then-x of decision 13 deleted the wrong agent.
+        // THE KEYBOARD FOLLOWS ITS CARD ACROSS SECTIONS. A card that stops moves from Running to Finished; left
+        // behind, the keyboard would sit on an emptied list while x acted on another finished card, unhighlighted,
+        // and the x-then-x of decision 13 would delete the wrong agent.
         if (held is not null)
             foreach (var section in new[] { _running, _finished })
                 if (!section.List.HasFocus && section.Take(held)) break;
@@ -281,7 +281,7 @@ public sealed class JobsPanel
     /// <summary>
     /// One section: a heading over a list of cards.
     ///
-    /// <para>NOTHING COLLAPSES (decision 33′). A folded Finished section was one more thing to learn and to wonder
+    /// <para>NOTHING COLLAPSES (decision 33′). A folded Finished section is one more thing to learn and to wonder
     /// about; the column scrolls, and x deletes what the user is done with.</para>
     /// </summary>
     private sealed class Section
@@ -307,9 +307,9 @@ public sealed class JobsPanel
         /// <summary>
         /// Which card the keys act on in this section — remembered while the list does not have the keyboard.
         ///
-        /// <para>A LIST SHOWS A SELECTION ONLY WHILE IT HAS THE KEYBOARD. Two lists each drawing their own made two
-        /// cards look chosen at once, and "x stop" under a finished card read as stopping it. The position is kept
-        /// here and handed back when the list is focused again.</para>
+        /// <para>A LIST SHOWS A SELECTION ONLY WHILE IT HAS THE KEYBOARD. Two lists each drawing their own would make
+        /// two cards look chosen at once, and "x stop" under a finished card would read as stopping it. The position is
+        /// kept here and handed back when the list is focused again.</para>
         /// </summary>
         public int Index
         {
@@ -327,7 +327,7 @@ public sealed class JobsPanel
         /// Whether a click at this list-relative point is on the selected card's control.
         ///
         /// <para>WHERE THE GLYPH IS DRAWN, NOT THE LIST'S EDGE. The cards stop short of the list's right edge — the
-        /// panel keeps columns for its scrollbar — so an edge test never met the glyph. And on the title line only:
+        /// panel keeps columns for its scrollbar — so an edge test never meets the glyph. And on the title line only:
         /// the same column one line down is the card's facts.</para>
         ///
         /// <para>THE CARD'S TOP COUNTED FROM THE FIRST ITEM: a section's list is sized to all its cards and never
@@ -403,9 +403,9 @@ public sealed class JobsPanel
         /// Replaces the list with a fresh one holding these cards — when the number of cards changes.
         ///
         /// <para>A LIST THAT HAS BEEN PAINTED REMEMBERS HOW MANY ITEMS FITTED, and both its scroll and its measured
-        /// height read that count before the one this panel sets. A card arriving above the selected one then
-        /// scrolled the list by one and measured it from there — one card tall, for good — so the second running
-        /// task had no line on screen. A list never painted has no such count.</para>
+        /// height read that count before the one this panel sets. A card arriving above the selected one then scrolls
+        /// the list by one and measures it from there — one card tall, for good — and the second running task gets no
+        /// line on screen. A list never painted has no such count.</para>
         ///
         /// <para>THE KEYBOARD GOES WITH IT when the old list had it, or a card arriving would take focus away from
         /// a user mid-way through the list.</para>
@@ -447,7 +447,7 @@ public sealed class JobsPanel
             var same = List.Items.Count == rows.Count && rows.Select(r => r.Key).SequenceEqual(Rows.Select(r => r.Key));
 
             // THE NEW ROWS ARE THE SECTION'S BEFORE THE LIST IS REPLACED: handing the keyboard to the new list
-            // redraws the panel from Rows, and a redraw that still read the old ones put the old list back.
+            // redraws the panel from Rows, and a redraw that read the old ones would put the old list back.
             Rows = rows;
             if (same)
             {
@@ -468,7 +468,7 @@ public sealed class JobsPanel
             if (Panel.Title != _title) Panel.Title = _title;
         }
 
-        /// <summary>The section as text — its header as the library draws it, then its cards if it is open.</summary>
+        /// <summary>The section as text — its heading, then its cards.</summary>
         public IEnumerable<string> Text()
         {
             if (Rows.Count == 0) yield break;

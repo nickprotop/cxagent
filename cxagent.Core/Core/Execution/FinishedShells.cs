@@ -83,7 +83,6 @@ public sealed class FinishedShells
         }
     }
 
-    /// <summary>What a tracked command was started to do, running or ended; null when nothing tracks it.</summary>
     /// <summary>
     /// Forgets an ended command — x on its row — so /tasks and task_list stop listing it. False while it runs, and
     /// while its exit report is still owed to the agent that started it and cannot be handed over (decision 14's
@@ -111,6 +110,7 @@ public sealed class FinishedShells
         return true;
     }
 
+    /// <summary>What a tracked command was started to do, running or ended; null when nothing tracks it.</summary>
     public BackgroundJob? JobFor(int pid)
     {
         lock (_gate) return _byPid.GetValueOrDefault(pid)?.Job;

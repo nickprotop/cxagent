@@ -29,7 +29,7 @@ public class JobsPanelTests
         var began = DateTimeOffset.UtcNow.AddSeconds(-74);
         var ended = state is AgentRowState.Done or AgentRowState.Stopped or AgentRowState.Failed;
         return new(new AgentRowView(new StoredAgent(handle, "explore", description, began, child), state, foreground,
-            TimeSpan.FromSeconds(74), null, began, ended ? new AgentEnd("error", began, began.AddSeconds(74)) : null));
+            TimeSpan.FromSeconds(74), began, ended ? new AgentEnd("error", began, began.AddSeconds(74)) : null));
     }
 
     /// <summary>THE PANEL'S TEXT AS SHOWN. RenderedText is markup source, where a literal bracket is

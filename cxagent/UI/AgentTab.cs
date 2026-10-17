@@ -9,6 +9,9 @@ using SharpConsoleUI.Parsing;
 
 namespace CxAgent.UI;
 
+/// <summary>A prompt taken off a closing tab, with how Escape answers it — for the window to raise elsewhere.</summary>
+public sealed record HeldPrompt(IWindowControl Prompt, Action? Deny);
+
 /// <summary>What an agent tab draws with, built by the window.</summary>
 /// <param name="Chat">The transcript control — the same one a session tab uses, styled by the window.</param>
 /// <param name="Transcript">Writes the child's words into <paramref name="Chat"/>.</param>
@@ -16,9 +19,6 @@ namespace CxAgent.UI;
 /// <param name="Calls">The finished calls the job sink draws a round's row from; null draws none.</param>
 /// <param name="Clock">Advances live rows and thinking headers — the window's one-second tick.</param>
 /// <param name="Post">Runs an action on the UI thread.</param>
-/// <summary>A prompt taken off a closing tab, with how Escape answers it — for the window to raise elsewhere.</summary>
-public sealed record HeldPrompt(IWindowControl Prompt, Action? Deny);
-
 public sealed record AgentTabViews(ChatTranscriptControl Chat, ISessionObserver Transcript, IToolObserver Tools,
     Action<ToolCallReport>? Calls, Action Clock, Action<Action> Post);
 

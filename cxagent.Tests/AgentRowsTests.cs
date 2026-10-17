@@ -119,19 +119,6 @@ public class AgentRowsTests
         Assert.Equal(AgentRowState.Stopped, AgentRows.Describe(store, kept, DateTimeOffset.UtcNow)!.State);
     }
 
-    [Fact]
-    public void TheLatestCall_IsTheNewestJobTheChildStarted()
-    {
-        var (store, kept) = Kept();
-        Background(store).MarkRunning();
-        var at = DateTimeOffset.UtcNow;
-        kept.Agent.Jobs.ToolsChanged([
-            new CxAgent.Core.Models.Job { Id = "1", AgentId = "c", JobType = "file", DisplayName = "read a.cs", StartedAt = at },
-            new CxAgent.Core.Models.Job { Id = "2", AgentId = "c", JobType = "file", DisplayName = "read b.cs", StartedAt = at.AddSeconds(1) },
-        ]);
-
-        Assert.Equal("read b.cs", AgentRows.Describe(store, kept, at)!.LatestCall);
-    }
 
     [Fact]
     public void AKeptAgentThatNeverRan_HasNoRow()
