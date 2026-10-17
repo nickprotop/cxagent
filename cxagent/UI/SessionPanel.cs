@@ -566,9 +566,24 @@ public sealed class SessionPanel
     }
 
     /// <summary>Branch and working-tree summary, as one cached answer.</summary>
-    private readonly record struct GitInfo(string Branch, string? Status);
+    public sealed record GitInfo(string Branch, string? Status);
 
-    private GitInfo? _git;
+    /// <summary>The last reading — written on the pool, read by the refresh on the UI thread.</summary>
+    private volatile GitInfo? _git;
+
+    /// <summary>The reading under way, if one is.</summary>
+    private Task? _gitReading;
+
+    /// <summary>Test seam: reads git in place of the real processes.</summary>
+    public Func<GitInfo?> ReadGitForTest { set => _readGit = value; }
+
+    private Func<GitInfo?> _readGit = ReadGit;
+
+    /// <summary>The branch and the working tree's state, from git in the current directory; null outside a repo.</summary>
+    private static GitInfo? ReadGit() => GitBranch() is { Length: > 0 } branch ? new GitInfo(branch, GitStatus()) : null;
+
+    /// <summary>Test seam: the working-tree summary for a folder.</summary>
+    public static string? GitStatusForTest(string dir) => GitStatus(dir);
     private DateTimeOffset _gitTakenAt = DateTimeOffset.MinValue;
 
     /// <summary>
@@ -594,13 +609,22 @@ public sealed class SessionPanel
     /// </summary>
     public void InvalidateGit() => _gitTakenAt = DateTimeOffset.MinValue;
 
+    /// <summary>
+    /// The last git reading, and a fresh one started when it has gone stale.
+    ///
+    /// <para>ON THE POOL, NEVER IN THE REFRESH: the refresh runs on the UI thread every second, and git can take its
+    /// full timeout on a slow or network filesystem. The refresh shows the last reading at once; a fresh one appears
+    /// on a later refresh.</para>
+    /// </summary>
     private GitInfo? CachedGit()
     {
         var now = DateTimeOffset.UtcNow;
-        if (now - _gitTakenAt < GitCacheFor) return _git;
-
-        _gitTakenAt = now;
-        _git = GitBranch() is { Length: > 0 } branch ? new GitInfo(branch, GitStatus()) : null;
+        if (now - _gitTakenAt >= GitCacheFor && _gitReading is null or { IsCompleted: true })
+        {
+            _gitTakenAt = now;
+            var read = _readGit;
+            _gitReading = Task.Run(() => _git = read());
+        }
         return _git;
     }
 
@@ -614,23 +638,27 @@ public sealed class SessionPanel
     /// is explicitly not. Same bounded, never-throwing shape as <see cref="GitBranch"/>: git may be
     /// absent, the tree may be huge, and neither is worth a frozen panel.</para>
     /// </summary>
-    private static string? GitStatus()
+    private static string? GitStatus(string? dir = null)
     {
         try
         {
             using var p = Process.Start(new ProcessStartInfo("git", "status --porcelain")
             {
+                WorkingDirectory = dir ?? "",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
             });
             if (p is null) return null;
 
+            // READ BEFORE WAITING. Past a pipe's worth of status — about 1,500 files — git blocks until someone
+            // drains it, so waiting first timed out and the tree showed clean.
+            var output = p.StandardOutput.ReadToEndAsync();
             if (!p.WaitForExit(500)) { try { p.Kill(true); } catch (Exception) { } return null; }
             if (p.ExitCode != 0) return null;
 
             int changed = 0, untracked = 0;
-            foreach (var line in p.StandardOutput.ReadToEnd().Split('\n'))
+            foreach (var line in output.GetAwaiter().GetResult().Split('\n'))
             {
                 if (line.Length < 2) continue;
                 if (line.StartsWith("??", StringComparison.Ordinal)) untracked++;

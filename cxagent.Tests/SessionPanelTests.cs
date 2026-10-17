@@ -668,4 +668,43 @@ public class SessionPanelTests
 
         Assert.Contains("session $1.42", panel.RenderedText, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// A WORKING TREE WITH MORE THAN A PIPE'S WORTH OF STATUS IS STILL COUNTED. Waiting for git to exit before reading
+    /// its output left git blocked on a full pipe: past about 1,500 files the read timed out and the tree showed clean.
+    /// </summary>
+    [Fact]
+    public void ALargeWorkingTree_IsCounted_NotShownClean()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "git-many-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            using (var init = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("git", "init -q")
+                   { WorkingDirectory = dir, UseShellExecute = false }))
+                init!.WaitForExit();
+            for (var i = 0; i < 2000; i++) File.WriteAllText(Path.Combine(dir, $"file-with-a-longish-name-{i:0000}.txt"), "x");
+
+            Assert.Equal("2000 untracked", SessionPanel.GitStatusForTest(dir));
+        }
+        finally { try { Directory.Delete(dir, recursive: true); } catch (Exception) { } }
+    }
+
+    /// <summary>
+    /// A SLOW GIT DOES NOT HOLD THE REFRESH. The refresh runs on the UI thread every second; the reading is taken on
+    /// the pool and shown on a later refresh.
+    /// </summary>
+    [Fact]
+    public void ASlowGit_DoesNotHoldTheRefresh()
+    {
+        var panel = new SessionPanel
+        {
+            ReadGitForTest = () => { Thread.Sleep(3000); return new SessionPanel.GitInfo("main", null); },
+        };
+
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        panel.Refresh(new SessionPanel.SessionPanelState { Endpoint = "", Rules = 0 });
+
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(1), $"the refresh waited {timer.Elapsed} for git");
+    }
 }
