@@ -229,6 +229,37 @@ public sealed class TasksItemCountTests : IDisposable
     }
 
     /// <summary>
+    /// ENTER ON A CARD THAT CANNOT OPEN SAYS WHY, as <c>/agents open</c> does — here an agent deleted elsewhere
+    /// before the panel's next refresh. Silence read as a key that did nothing.
+    /// </summary>
+    [Fact]
+    public void Enter_OnACardThatCannotOpen_SaysWhy()
+    {
+        var paths = new AppPaths(_dir);
+        paths.EnsureCreated();
+        var window = new MainWindow(new ConsoleWindowSystem(new HeadlessConsoleDriver(200, 40),
+                new ConsoleWindowSystemOptions(InstallSynchronizationContext: true)),
+            ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths))
+        { Jobs = NoShells(), Shells = new FinishedShells() };
+        window.Build();
+        var sink = new BufferedChatSink();
+        var front = _manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
+            new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
+        window.NoteFirstSession(front);
+        var child = AgentTabTests.Child(AgentTabTests.Says());
+        front.SubAgents.Keep(child, "finder");
+        front.SubAgents.TryClaim("finder");
+        front.SubAgents.AnnounceBegin("finder");
+        front.SubAgents.EndSend("finder", "completed");
+        window.ToggleJobsPanel();
+        front.SubAgents.Forget("finder");
+
+        window.JobsPanel.Follow($"agent:{child.Agent.Id}");
+
+        Assert.Contains(sink.Notices, n => n.Contains("dismissed", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// DELETING AN AGENT WHOSE COMMANDS STILL RUN ASKS FIRST, as closing a tab does — Cancel keeps both, "stop them"
     /// ends both, "keep" leaves the commands running and on this session's panel.
     /// </summary>

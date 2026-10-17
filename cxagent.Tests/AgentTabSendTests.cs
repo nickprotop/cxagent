@@ -1,3 +1,4 @@
+using CxAgent.Core.Agents;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
@@ -68,6 +69,16 @@ public sealed class AgentTabSendTests : IDisposable
 
         Assert.Null(await s.SendFromAgentTab("finder", "carry on"));
         Assert.False(run.StoppedByUser);
+    }
+
+    /// <summary>A deleted agent is answered as everywhere else: dismissed, not unknown.</summary>
+    [Fact]
+    public async Task ADeletedAgent_IsAnsweredDismissed()
+    {
+        var s = Open();
+        s.SubAgents.Forget("finder");
+
+        Assert.Equal(SubAgentStore.Dismissed("finder"), await s.SendFromAgentTab("finder", "look again"));
     }
 
     /// <summary>REVIEW FOCUS 5: an empty line sends nothing and leaves no trail.</summary>

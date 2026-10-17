@@ -465,7 +465,9 @@ public sealed partial class Session
         var text = prompt.Trim();
         if (text.Length == 0) return Task.FromResult<string?>(null);
         if (SubAgents.Find(name) is null)
-            return Task.FromResult<string?>($"no sub-agent named '{name}' in this session.");
+            return Task.FromResult<string?>(SubAgents.WasForgotten(name)
+                ? Agents.SubAgentStore.Dismissed(name)
+                : $"no sub-agent named '{name}' in this session.");
 
         // READ BEFORE THE SEND, as /agents send reads it: by the time the send returns, the state has changed.
         var busy = SubAgents.IsBusy(name);
