@@ -43,18 +43,37 @@ public sealed class ForegroundShells
         return new Registration(this, id, detach);
     }
 
-    /// <summary>Moves every waiting call whose agent matches; answers how many.</summary>
+    /// <summary>
+    /// Moves every waiting call whose agent matches; answers how many.
+    ///
+    /// <para>A CALL ALREADY MOVED IS SKIPPED: it stays registered until its call returns, and a second Ctrl+B (tmux
+    /// needs two) would otherwise report it moved again. A command that exits in the same instant still counts — the
+    /// answer is given before the runner sees either.</para>
+    /// </summary>
     public int DetachWhere(Func<string, bool> owner)
     {
         var moved = 0;
-        foreach (var entry in _calls.Values.Where(e => owner(e.AgentId)))
+        foreach (var entry in Waiting(owner))
         {
             try { entry.Detach.Cancel(); moved++; } catch (ObjectDisposedException) { }
         }
         return moved;
     }
 
+    /// <summary>How many matching calls are waiting — one task each in the composer's hint.</summary>
+    public int Count(Func<string, bool> owner) => Waiting(owner).Count();
+
     /// <summary>When the earliest matching call began waiting; null with none.</summary>
     public DateTimeOffset? WaitingSince(Func<string, bool> owner) =>
-        _calls.Values.Where(e => owner(e.AgentId)).Select(e => (DateTimeOffset?)e.Since).Min();
+        Waiting(owner).Select(e => (DateTimeOffset?)e.Since).Min();
+
+    /// <summary>The matching calls still waiting — not yet moved, so still the turn's.</summary>
+    private IEnumerable<Entry> Waiting(Func<string, bool> owner) =>
+        _calls.Values.Where(e => owner(e.AgentId) && !IsMoved(e));
+
+    private static bool IsMoved(Entry entry)
+    {
+        try { return entry.Detach.IsCancellationRequested; }
+        catch (ObjectDisposedException) { return true; }
+    }
 }
