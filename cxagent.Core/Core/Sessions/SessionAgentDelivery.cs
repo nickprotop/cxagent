@@ -78,7 +78,7 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
         // THE SAME FOR EVERY CHILD OF A SESSION THAT HAS ENDED, stopped or not: closing the tab kills the shells
         // its children started, and an exit racing that kill would otherwise resume a finished child into a
         // conversation nobody can see, and submit its answer to a session whose host is going away.
-        if (store.Ended || store.BackgroundOf(kept.Name) is { StoppedByUser: true })
+        if (store.Ended || store.WasStoppedByUser(kept.Name))
             return kept.Agent.Agent.Mailbox.TryEnqueue(text, out _, wakes: false)
                 ? Agents.DeliveryOutcome.Queued
                 : Agents.DeliveryOutcome.Refused;

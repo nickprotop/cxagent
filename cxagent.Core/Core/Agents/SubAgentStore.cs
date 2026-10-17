@@ -91,6 +91,59 @@ public sealed class SubAgentStore
     private readonly ConcurrentDictionary<string, string> _noted = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _userSends = new(StringComparer.Ordinal);
 
+    /// <summary>Foreground children the parent's turn is waiting on, by handle — what Ctrl+B and a card move or stop.</summary>
+    private readonly ConcurrentDictionary<string, ForegroundRun> _foreground = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Children the user stopped while in the foreground. A background run carries its own mark; a foreground child
+    /// has no run to carry one, so the store holds it — read with the run's by <see cref="WasStoppedByUser"/>.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, byte> _foregroundStops = new(StringComparer.Ordinal);
+
+    /// <summary>Registers a foreground child the turn is about to wait on, on its own linked token.</summary>
+    internal ForegroundRun BeginForeground(string name, CancellationToken turn)
+    {
+        var run = new ForegroundRun(turn, _clock.GetUtcNow());
+        _foreground[name] = run;
+        return run;
+    }
+
+    /// <summary>Forgets it as foreground — when its call is answered, however.</summary>
+    internal void EndForeground(string name) => _foreground.TryRemove(name, out _);
+
+    /// <summary>The foreground children the turn is waiting on, in no particular order.</summary>
+    public IReadOnlyList<string> ForegroundNames() => [.. _foreground.Keys];
+
+    /// <summary>When the turn began waiting on its earliest foreground child; null with none.</summary>
+    public DateTimeOffset? ForegroundSince() =>
+        _foreground.Values.Select(r => (DateTimeOffset?)r.Since).Min();
+
+    /// <summary>Moves a foreground child to the background; false when none is waiting under that name.</summary>
+    public bool MoveToBackground(string name) => _foreground.TryGetValue(name, out var run) && run.TryMove();
+
+    /// <summary>
+    /// Stops one foreground child — the user's stop, so the model is refused if it tries to resume it (spec decision
+    /// 11). False when none is waiting under that name.
+    /// </summary>
+    public bool StopForeground(string name)
+    {
+        if (!_foreground.TryGetValue(name, out var run) || !run.TryStop()) return false;
+        _foregroundStops[name] = 0;
+        StopShellsOf(name);
+        return true;
+    }
+
+    /// <summary>Whether the user's stop stands against this agent — from its background run or its foreground stop.</summary>
+    public bool WasStoppedByUser(string name) =>
+        BackgroundOf(name) is { StoppedByUser: true } || _foregroundStops.ContainsKey(name);
+
+    /// <summary>Clears the user's stop — their own send hands the agent back to the model.</summary>
+    internal void ClearUserStop(string name)
+    {
+        BackgroundOf(name)?.ClearUserStop();
+        _foregroundStops.TryRemove(name, out _);
+    }
+
     private readonly DetachedProcessRegistry _shells;
     private readonly FinishedShells _finished;
     private readonly ConcurrentDictionary<string, StoredAgent> _byName = new(StringComparer.Ordinal);
@@ -242,6 +295,8 @@ public sealed class SubAgentStore
         _since.TryRemove(name, out _);
         _noted.TryRemove(name, out _);
         _userSends.TryRemove(name, out _);
+        _foreground.TryRemove(name, out _);
+        _foregroundStops.TryRemove(name, out _);
         _busy.TryRemove(name, out _);
 
         Forgotten?.Invoke(agentId);

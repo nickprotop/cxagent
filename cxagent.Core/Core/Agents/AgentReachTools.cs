@@ -96,7 +96,7 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
 
         // THE USER'S STOP STANDS AGAINST THE MODEL: resuming a child the user stopped would quietly undo
         // their decision. The user's own send is the way back, and it hands the child back to the model.
-        if (store.BackgroundOf(name) is { StoppedByUser: true } last)
+        if (store.WasStoppedByUser(name))
         {
             if (!request.FromUser)
             {
@@ -104,7 +104,7 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                 return $"error: '{name}' was stopped by the user, so it will not be resumed. Say so in your "
                      + "reply rather than starting the same work elsewhere.";
             }
-            last.ClearUserStop();
+            store.ClearUserStop(name);
         }
 
         // IN THE BACKGROUND WHERE IT CAN BE: a port to report through and a parent to report to. The

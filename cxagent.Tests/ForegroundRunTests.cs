@@ -1,0 +1,93 @@
+using CxAgent.Core.Agents;
+using Xunit;
+
+namespace CxAgent.Tests;
+
+/// <summary>
+/// A foreground child's own token, linked to the turn's: the turn's cancel still reaches it until it is moved, a move
+/// unlinks it, and a stop cancels it alone (spec decisions 5–11).
+/// </summary>
+public sealed class ForegroundRunTests
+{
+    private static SubAgentStore Store(string name)
+    {
+        var store = new SubAgentStore();
+        store.Keep(AgentTabTests.Child(AgentTabTests.Says()), name);
+        return store;
+    }
+
+    [Fact]
+    public void TheTurnsCancel_ReachesAChildThatWasNotMoved()
+    {
+        var store = Store("finder");
+        using var turn = new CancellationTokenSource();
+        var run = store.BeginForeground("finder", turn.Token);
+
+        turn.Cancel();
+
+        Assert.True(run.Token.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task AMove_UnlinksTheTurn_AndReleasesAsMove()
+    {
+        var store = Store("finder");
+        using var turn = new CancellationTokenSource();
+        var run = store.BeginForeground("finder", turn.Token);
+
+        Assert.True(store.MoveToBackground("finder"));
+        turn.Cancel();
+
+        Assert.Equal(ForegroundRelease.Move, await run.Released);
+        Assert.False(run.Token.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task AStop_CancelsTheChildAlone_AndMarksTheUsersStop()
+    {
+        var store = Store("finder");
+        using var turn = new CancellationTokenSource();
+        var run = store.BeginForeground("finder", turn.Token);
+
+        Assert.True(store.StopForeground("finder"));
+
+        Assert.Equal(ForegroundRelease.Stop, await run.Released);
+        Assert.True(run.Token.IsCancellationRequested);
+        Assert.False(turn.IsCancellationRequested);
+        Assert.True(store.WasStoppedByUser("finder"));
+    }
+
+    [Fact]
+    public void OnlyTheFirstRelease_Counts()
+    {
+        var store = Store("finder");
+        store.BeginForeground("finder", CancellationToken.None);
+
+        Assert.True(store.MoveToBackground("finder"));
+        Assert.False(store.StopForeground("finder"));
+        Assert.False(store.WasStoppedByUser("finder"));
+    }
+
+    [Fact]
+    public void NothingInTheForeground_IsNotMovable()
+    {
+        var store = Store("finder");
+        Assert.False(store.MoveToBackground("finder"));
+        Assert.False(store.StopForeground("finder"));
+        Assert.Empty(store.ForegroundNames());
+        Assert.Null(store.ForegroundSince());
+    }
+
+    [Fact]
+    public void AUsersStop_IsClearedByTheirOwnSend()
+    {
+        var store = Store("finder");
+        store.BeginForeground("finder", CancellationToken.None);
+        store.StopForeground("finder");
+        store.EndForeground("finder");
+
+        store.ClearUserStop("finder");
+
+        Assert.False(store.WasStoppedByUser("finder"));
+    }
+}
