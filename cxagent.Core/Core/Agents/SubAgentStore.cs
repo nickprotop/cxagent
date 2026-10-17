@@ -225,19 +225,38 @@ public sealed class SubAgentStore
     ///
     /// <para>SILENCED BEFORE IT IS STOPPED, so the report the stop provokes finds the handoff already
     /// closed to messages.</para>
+    ///
+    /// <para>EVERY KEPT CHILD'S SHELLS DIE, NOT ONLY THE STOPPED RUNS'. A child that already answered has no
+    /// run to stop, but a shell it left running would outlive the session and, on exit, address its notice
+    /// to that child — a wake into a conversation nobody can see. Only the stopped runs are named, because
+    /// those are the work the caller is reporting it ended.</para>
+    ///
+    /// <para>MARKED ENDED FIRST, so an exit that races the sweep finds <see cref="Ended"/> already true and the
+    /// delivery leaves its notice rather than waking anyone.</para>
     /// </summary>
     public IReadOnlyList<string> StopAll()
     {
+        _ended = true;
         var stopped = new List<string>();
         foreach (var run in _background.Values)
         {
             run.Handoff.Silence();
-            if (!run.RequestStop(byUser: true)) continue;
-            StopShellsOf(run.Start.Name);
-            stopped.Add(run.Start.Name);
+            if (run.RequestStop(byUser: true)) stopped.Add(run.Start.Name);
         }
+        foreach (var kept in _byName.Values) StopShellsOf(kept.Name);
         return stopped;
     }
+
+    /// <summary>
+    /// True once <see cref="StopAll"/> has run: the session these children belong to has ended, and none of
+    /// them is to be woken again.
+    ///
+    /// <para>ONE-WAY, because every caller of StopAll is a session ending — a tab closed, the app quit, a
+    /// headless run finished — and none of those comes back to the same store.</para>
+    /// </summary>
+    internal bool Ended => _ended;
+
+    private volatile bool _ended;
 
     /// <summary>
     /// Kills every background shell the child kept under this handle started, recording each as stopped.

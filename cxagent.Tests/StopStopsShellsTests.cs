@@ -90,6 +90,30 @@ public sealed class StopStopsShellsTests : IDisposable
         Assert.True(shellB.Killed);
     }
 
+    /// <summary>
+    /// A SESSION ENDING ENDS EVERY SHELL ITS CHILDREN STARTED, NOT ONLY THE RUNNING ONES'. A child that already
+    /// answered has no run to stop, but a shell it left behind would outlive the tab and, on exit, address a
+    /// notice to an agent in a conversation nobody can see. Both kinds of finished child are covered: one
+    /// whose background run answered, and one that only ever ran in the foreground.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void StopAll_KillsTheShellsOfAChildThatHadAlreadyFinished(bool ranInTheBackground)
+    {
+        var store = new SubAgentStore(_registry, _finished);
+        var child = Child();
+        var name = store.Keep(child, "find thing");
+        if (ranInTheBackground) Begin(store, name).MarkAnswered();
+        var (shell, sent) = Shell(child.Agent.Id);
+
+        Assert.Empty(store.StopAll());   // no run was going, so nothing is named as stopped
+
+        Assert.True(shell.Killed);
+        Assert.True(_finished.Find(shell.Pid)!.Killed);
+        Assert.Equal(0, sent());
+    }
+
     /// <summary>ONLY ITS OWN: the session's shells and a sibling's are not the stopped agent's to end.</summary>
     [Fact]
     public void StoppingAnAgent_LeavesOtherAgentsShellsRunning()

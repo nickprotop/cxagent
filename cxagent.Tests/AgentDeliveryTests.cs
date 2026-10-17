@@ -885,4 +885,28 @@ public class AgentDeliveryTests : IDisposable
         Assert.Equal(0, childProvider.ChatCallCount);
         store.Release(name);
     }
+    /// <summary>
+    /// NOTHING WAKES A CHILD OF A SESSION THAT HAS ENDED. Closing a tab kills the shells its children started,
+    /// but an exit can race that sweep; a finished child — never stopped, so the user-stop guard does not hold
+    /// it — would otherwise be resumed into a closed conversation and its answer submitted to a session whose
+    /// host is going away.
+    /// </summary>
+    [Fact]
+    public async Task AnExitNotice_ToAFinishedChildOfAnEndedSession_NeitherWakesItNorReachesTheParent()
+    {
+        var (delivery, store, child) = Wired(out var provider, out _, out var childProvider);
+        childProvider.EnqueueResponse(new LlmResponse { Text = "tests pass", StopReason = "end_turn" });
+        provider.EnqueueResponse(new LlmResponse { Text = "it completed", StopReason = "end_turn" });
+        var name = store.Keep(child, "find thing");
+        store.StopAll();
+
+        var outcome = delivery.Tell(child.Agent.Id, "The background command `sleep 120` finished with exit code 0.");
+
+        Assert.NotEqual(DeliveryOutcome.Woke, outcome);
+        Assert.False(Reached(childProvider));
+        Assert.Equal(0, provider.ChatCallCount);
+        Assert.False(store.IsBusy(name));
+        Assert.False(child.Agent.Mailbox.HasWaking);
+        await Settled();
+    }
 }
