@@ -57,7 +57,14 @@ public sealed class AgentTab : IDisposable
         _stop = new ButtonBuilder()
             .WithText(" Stop ")
             .WithColorRole(ColorScheme.Destructive)
-            .OnClick((_, _) => Task.Run(() => Session.StopTask($"stop {Kept.Name}")))
+            .OnClick((object? _, ButtonControl button) =>
+            {
+                _ = Task.Run(() => Session.StopTask($"stop {Kept.Name}"));
+
+                // THE KEYBOARD TO THE COMPOSER NOW, not when the next tick hides the button: until then a space
+                // typed after the press presses Stop again.
+                button.GetParentWindow()?.FocusManager.SetFocus(MainControl, FocusReason.Programmatic);
+            })
             .Build();
         var bar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         bar.AddItem(_stop);

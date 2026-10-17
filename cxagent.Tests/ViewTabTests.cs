@@ -140,6 +140,25 @@ public sealed class ViewTabTests : IDisposable
     }
 
     /// <summary>
+    /// PRESSING STOP HANDS THE KEYBOARD TO THE COMPOSER AT ONCE, not on the next tick: until the button hides, a space
+    /// typed after the press presses it again.
+    /// </summary>
+    [Fact]
+    public void PressingStop_MovesTheKeyboardToTheComposerAtOnce()
+    {
+        Running(_front, "finder");
+        _window.OpenAgentTab(_front, "finder");
+        var tab = _window.ActiveAgentTab!;
+        tab.Tick(DateTimeOffset.UtcNow);
+        var window = SharpConsoleUI.Extensions.WindowControlExtensions.GetParentWindow(tab.StopForTest)!;
+        window.FocusManager.SetFocus(tab.StopForTest, SharpConsoleUI.Controls.FocusReason.Mouse);
+
+        tab.StopForTest.ProcessKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+
+        Assert.Same(tab.MainControl, window.FocusManager.FocusedControl);
+    }
+
+    /// <summary>
     /// WHEN STOP GOES, THE KEYBOARD GOES TO THE COMPOSER. Clicked, Stop keeps the focus; hidden once the agent has
     /// stopped, it kept it still — what was typed next went nowhere, and every space pressed the hidden button again,
     /// one "nothing to stop" line in the session per press.
