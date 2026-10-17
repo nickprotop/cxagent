@@ -2937,7 +2937,9 @@ public sealed class MainWindow : IDisposable
     public string? StatusNote { get; private set; }
 
     private DateTimeOffset _noteUntil;
-    private StatusBarItem? _noteItem;
+
+    /// <summary>Whether the readout is showing the note rather than the context and spend.</summary>
+    private bool _noteShown;
 
     /// <summary>How long a note stays: long enough to read after the tab vanishes, short enough not to go stale.</summary>
     private static readonly TimeSpan NoteFor = TimeSpan.FromSeconds(6);
@@ -2954,22 +2956,25 @@ public sealed class MainWindow : IDisposable
         _noteUntil = DateTimeOffset.UtcNow + NoteFor;
     }
 
-    /// <summary>Draws the status note, or takes it down once it has been up long enough — the one-second tick's.</summary>
+    /// <summary>Test seams: the one-second tick's note step, and the note's time running out.</summary>
+    public void TickNoteForTest() => TickNote();
+
+    public void ExpireNoteForTest() => _noteUntil = DateTimeOffset.MinValue;
+
+    /// <summary>
+    /// Puts the status note up, or takes it down once it has been up long enough — the one-second tick's.
+    ///
+    /// <para>IN THE READOUT'S PLACE, NOT BESIDE IT: the hints, the readout and a note together overran the bar at
+    /// 150 columns and cut the note off mid-word. The readout is already fitted to the room left, so the note gets
+    /// that fitting for free, and the readout is back on the tick after.</para>
+    /// </summary>
     private void TickNote()
     {
-        if (StatusNote is { } note && DateTimeOffset.UtcNow < _noteUntil)
-        {
-            var label = $"[{ColorScheme.MutedMarkup}]{SharpConsoleUI.Parsing.MarkupParser.Escape(note)}[/]";
-            if (_noteItem is null) _noteItem = StatusBar.AddRight(string.Empty, label);
-            else if (_noteItem.Label != label) _noteItem.Label = label;
-            return;
-        }
-        StatusNote = null;
-        if (_noteItem is not null)
-        {
-            StatusBar.RemoveRight(_noteItem);
-            _noteItem = null;
-        }
+        if (StatusNote is not null && DateTimeOffset.UtcNow >= _noteUntil) StatusNote = null;
+        var shown = StatusNote is not null;
+        if (shown == _noteShown && !shown) return;
+        _noteShown = shown;
+        RefreshTokenItem();
     }
 
     /// <summary>A page's position in the strip, or null when it is no longer there.</summary>
@@ -4129,7 +4134,8 @@ public sealed class MainWindow : IDisposable
         _lastTokens = total;
         RefreshSessionPanel();
 
-        if (total == 0)
+        // A NOTE STAYS UP through a zero: it is the readout's to show for now, whatever the count says.
+        if (total == 0 && !_noteShown)
         {
             if (_tokenItem is not null) _tokenItem.IsVisible = false;
             return;
@@ -4154,8 +4160,10 @@ public sealed class MainWindow : IDisposable
         // Read from the resolution rather than a copied field: it is already here, and one source
         // cannot drift from another. Null (window unconfigured) falls back to the plain count — a
         // percentage needs a denominator, and a guessed one is worse than none.
-        _tokenForms = ContextLabelForms(_contextUsed, _lastTokens, _resolution.ContextWindow, _contextStale,
-            _contextDelta, _lastInput, _lastOutput);
+        _tokenForms = _noteShown && StatusNote is { } note
+            ? [$"[{ColorScheme.MutedMarkup}]{SharpConsoleUI.Parsing.MarkupParser.Escape(note)}[/]"]
+            : ContextLabelForms(_contextUsed, _lastTokens, _resolution.ContextWindow, _contextStale,
+                _contextDelta, _lastInput, _lastOutput);
         if (_tokenForms.Count == 0)
         {
             if (_tokenItem is not null) _tokenItem.IsVisible = false;

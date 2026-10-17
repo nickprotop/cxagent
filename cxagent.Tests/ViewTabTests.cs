@@ -113,6 +113,32 @@ public sealed class ViewTabTests : IDisposable
         Assert.Contains("'finder' keeps running — F7 shows it", _window.StatusNote, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// THE NOTE TAKES THE READOUT'S PLACE for its few seconds, rather than joining it: beside the hints and the
+    /// readout it overran the bar at 150 columns and was cut off mid-word.
+    /// </summary>
+    [Fact]
+    public void TheNote_TakesTheReadoutsPlace_ThenGivesItBack()
+    {
+        _window.SetTokenTotal(24_000);
+        var readout = _window.StatusBar.Readout;
+        var items = _window.StatusBar.RightItems.Count;
+        Running(_front, "finder");
+        _window.OpenAgentTab(_front, "finder");
+
+        _window.CloseAgentTab(_window.ActiveAgentTab!);
+        _window.TickNoteForTest();
+
+        Assert.Equal(items, _window.StatusBar.RightItems.Count);
+        Assert.Same(readout, _window.StatusBar.Readout);
+        Assert.Contains("keeps running", _window.StatusBar.Readout!.Label, StringComparison.Ordinal);
+
+        _window.ExpireNoteForTest();
+        _window.TickNoteForTest();
+
+        Assert.Contains("spent", _window.StatusBar.Readout!.Label, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ClosingAFinishedAgentTab_SaysNothing()
     {
