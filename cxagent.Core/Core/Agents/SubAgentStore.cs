@@ -233,9 +233,21 @@ public sealed class SubAgentStore
     ///
     /// <para>MARKED ENDED FIRST, so an exit that races the sweep finds <see cref="Ended"/> already true and the
     /// delivery leaves its notice rather than waking anyone.</para>
+    ///
+    /// <para>THE SESSION AGENT'S OWN SHELLS END TOO, when the caller says which ids are its: a tab is ended as a
+    /// whole, and a shell left running would submit its exit to a conversation that is gone. The store cannot
+    /// tell on its own — it keeps children, and the session agent is not one of them.</para>
+    ///
+    /// <para>KEEPING SHELLS IS THE USER'S CHOICE TO LEAVE COMMANDS RUNNING — a dev server, a watcher — past the
+    /// tab. Every shell is then silenced instead of killed, so it runs on and reports to nobody, and the choice
+    /// is remembered so the runner's later sweep of a stopped run leaves those shells alone too. The agents
+    /// stop either way: an agent's work exists only in a conversation, and this one is ending.</para>
     /// </summary>
-    public IReadOnlyList<string> StopAll()
+    /// <param name="isSessionAgent">Which agent ids are the session's own; null leaves its shells alone.</param>
+    /// <param name="keepShells">True to leave every shell running, silenced, rather than kill it.</param>
+    public IReadOnlyList<string> StopAll(Func<string, bool>? isSessionAgent = null, bool keepShells = false)
     {
+        _keepShells = keepShells;
         _ended = true;
         var stopped = new List<string>();
         foreach (var run in _background.Values)
@@ -244,6 +256,7 @@ public sealed class SubAgentStore
             if (run.RequestStop(byUser: true)) stopped.Add(run.Start.Name);
         }
         foreach (var kept in _byName.Values) StopShellsOf(kept.Name);
+        if (isSessionAgent is not null) EndShellsWhere(isSessionAgent);
         return stopped;
     }
 
@@ -257,6 +270,9 @@ public sealed class SubAgentStore
     internal bool Ended => _ended;
 
     private volatile bool _ended;
+
+    /// <summary>Set with <see cref="Ended"/> when the user chose to leave the session's commands running.</summary>
+    private volatile bool _keepShells;
 
     /// <summary>
     /// Kills every background shell the child kept under this handle started, recording each as stopped.
@@ -281,9 +297,18 @@ public sealed class SubAgentStore
     internal void StopShellsOf(string name)
     {
         if (Find(name)?.Agent.Agent.Id is not { } agentId) return;
-        foreach (var live in _shells.Live.Where(j => j.Job?.AgentId == agentId))
+        EndShellsWhere(id => id == agentId);
+    }
+
+    /// <summary>
+    /// Silences every live shell whose owner matches, and kills it unless the session ended keeping its shells.
+    /// </summary>
+    private void EndShellsWhere(Func<string, bool> owner)
+    {
+        foreach (var live in _shells.Live.Where(j => j.Job?.AgentId is { } id && owner(id)))
         {
             _finished.HandoffFor(live.Process.Pid)?.Silence();
+            if (_keepShells) continue;
             live.Process.Kill();
             _finished.Finished(live.Process.Pid, live.Process.ExitCode, killed: true);
         }

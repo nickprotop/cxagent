@@ -21,4 +21,43 @@ public class QuitGuardTests
     [Fact]
     public void TheQuestion_SaysWhatStoppingLoses() =>
         Assert.Contains("not reported", string.Join(" ", QuitGuard.Question(2)!));
+
+    /// <summary>A TAB WITH NOTHING RUNNING CLOSES WITHOUT A QUESTION.</summary>
+    [Fact]
+    public void ClosingATab_WithNothingRunning_AsksNothing() =>
+        Assert.Null(QuitGuard.TabQuestion(new TabWork(Agents: 0, Commands: 0)));
+
+    /// <summary>AGENTS ONLY: there is nothing to keep, so keeping is not offered.</summary>
+    [Fact]
+    public void ClosingATab_WithOnlyAgents_OffersNoKeep()
+    {
+        var question = QuitGuard.TabQuestion(new TabWork(Agents: 1, Commands: 0))!;
+
+        Assert.Equal(["Cancel", "Close and stop everything"], question.Answers);
+        Assert.Contains("1 background agent is still running", string.Join(" ", question.Lines));
+        Assert.Contains("not reported", string.Join(" ", question.Lines));
+    }
+
+    /// <summary>
+    /// COMMANDS ARE ASKED ABOUT TOO, and keeping them is offered by count: a dev server or a watcher is often
+    /// meant to outlive the tab, and the user is the one who knows.
+    /// </summary>
+    [Fact]
+    public void ClosingATab_WithCommands_OffersToKeepThem_AfterCancel()
+    {
+        var question = QuitGuard.TabQuestion(new TabWork(Agents: 0, Commands: 2))!;
+
+        Assert.Equal(["Cancel", "Close and stop everything", "Close, keep 2 commands running"], question.Answers);
+        Assert.Contains("2 background commands are still running", string.Join(" ", question.Lines));
+        Assert.DoesNotContain("not reported", string.Join(" ", question.Lines));   // no agent's work to lose
+    }
+
+    [Fact]
+    public void ClosingATab_WithBoth_NamesBoth_InTheSingular()
+    {
+        var question = QuitGuard.TabQuestion(new TabWork(Agents: 1, Commands: 1))!;
+
+        Assert.Contains("1 agent and 1 command are still running", string.Join(" ", question.Lines));
+        Assert.Equal("Close, keep 1 command running", question.Answers[2]);
+    }
 }

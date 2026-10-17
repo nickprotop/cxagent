@@ -563,7 +563,7 @@ public static class AppBootstrap
         // HOW A CLOSED TAB'S SESSION IS TORN DOWN. The window decides WHICH conversation the user
         // meant; the manager owns unwiring its plugins, disposing its host and marking it finished.
         mainWindow.CloseSession = manager.Close;
-        mainWindow.ConfirmStopBackground = running => QuitGuard.ConfirmAsync(system, running);
+        mainWindow.ConfirmCloseTab = work => QuitGuard.ConfirmCloseTabAsync(system, work);
 
         // ASKED BEFORE A RESUME DISCARDS A LIVE CONVERSATION. Core decides WHETHER there is anything
         // to lose; this decides how the question looks — see ConfirmReplaceConversation.
@@ -2466,7 +2466,7 @@ public static class AppBootstrap
         // summed over every session, and the user agreed to stop all of them; a busy tab, or one not in
         // front, is not closed through the path that would stop its runs, so they are stopped here —
         // before the cancel, so a run's report finds its handoff already closed to the conversation.
-        foreach (var s in manager.Sessions) s.SubAgents.StopAll();
+        foreach (var s in manager.Sessions) s.EndBackgroundWork();
         cts.Cancel();
         system.Shutdown();
     }

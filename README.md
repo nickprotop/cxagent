@@ -154,7 +154,9 @@ later in the same turn if the parent is still working, or as a new turn if it is
 delivered exactly once: if the parent asked for it with `task_output` and `wait: true`, no message
 follows. `background: false` makes the spawn wait for its answer, for work the next step cannot start
 without. Escape never stops a background agent; `task_stop`, `/tasks stop`, closing its tab and
-quitting do, and closing or quitting asks first while one is running. An agent the user stopped reports
+quitting do, and closing or quitting asks first while one is running. A tab closes as a whole: its
+background commands — its own and its sub-agents' — end with it too, unless you choose "keep N commands
+running" when it asks, for a server or a watcher meant to outlive the tab. An agent the user stopped reports
 that it was stopped, and the model is refused if it tries to restart it — the user's own `/agents send`
 is the way back. Headless runs (`-p`) spawn in the foreground, since a run with one answer has to wait
 for the work that answer needs.

@@ -637,7 +637,9 @@ public sealed class MainWindow : IDisposable
     /// conversation, closing it and quitting are the same act, so the distinction only appears once
     /// a second session exists.</para>
     /// </summary>
-    public bool CloseActiveSession(bool confirmed = false)
+    /// <param name="confirmed">True once the user has answered the close question, so it is not asked again.</param>
+    /// <param name="keepCommands">The user's choice to leave the tab's background commands running.</param>
+    public bool CloseActiveSession(bool confirmed = false, bool keepCommands = false)
     {
         if (_sessionTabs.Count < 2) return false;
 
@@ -645,9 +647,10 @@ public sealed class MainWindow : IDisposable
         var tab = SessionTabAt(strip);
         if (tab is null) return false;
 
-        // ASKED BEFORE A TAB TAKES ITS BACKGROUND AGENTS WITH IT, and the close re-run once answered: the
-        // confirm is a dialog, and this method answers synchronously to the command that called it.
-        if (!confirmed && tab.Session is { RunningBackgroundAgents: > 0 } running && ConfirmStopBackground is { } ask)
+        // ASKED BEFORE A TAB TAKES ITS BACKGROUND WORK WITH IT — agents or commands — and the close re-run once
+        // answered: the confirm is a dialog, and this method answers synchronously to the command that called it.
+        if (!confirmed && tab.Session is { } running && ConfirmCloseTab is { } ask
+            && TabWorkFor(running, Jobs) is { } work && (work.Agents > 0 || work.Commands > 0))
         {
             _ = CloseAfterAsking(ask, running);
             return true;
@@ -661,7 +664,7 @@ public sealed class MainWindow : IDisposable
         //
         // REFUSED WHILE BUSY, and the tab stays. Closing mid-turn kills the provider call and
         // unwires plugins the turn is still calling into.
-        if (tab.Session is { } closing && CloseSession is { } close && !close(closing))
+        if (tab.Session is { } closing && CloseSession is { } close && !close(closing, keepCommands))
         {
             tab.Chat.AddMessage(ChatRole.System,
                 "this session is still working — cancel with Escape, then close it.");
@@ -695,24 +698,35 @@ public sealed class MainWindow : IDisposable
     /// from the composition root: the window's job is to know which conversation the user meant, not
     /// how sessions are torn down.</para>
     /// </summary>
-    public Func<Core.Sessions.Session, bool>? CloseSession { get; set; }
+    public Func<Core.Sessions.Session, bool, bool>? CloseSession { get; set; }
 
     /// <summary>
-    /// Asks whether to stop a tab's running background agents in order to close it; true to go ahead.
-    /// Null closes without asking — a host with no dialog to show.
+    /// Asks what to do with a tab's background work in order to close it. Null closes without asking, stopping
+    /// everything — a host with no dialog to show.
     /// </summary>
-    public Func<int, Task<bool>>? ConfirmStopBackground { get; set; }
+    public Func<TabWork, Task<TabClose>>? ConfirmCloseTab { get; set; }
 
     /// <summary>
-    /// Closes the tab once the user agrees to stop its background agents.
+    /// What closing this session's tab would end: its queued and running agents, and its running shells.
+    ///
+    /// <para>FROM THE SAME SOURCES AS THE STATUS ITEM, so the number the question names is the number F7 was
+    /// showing — the session's own count of agents, and the board's shells this session owns.</para>
+    /// </summary>
+    public static TabWork TabWorkFor(Core.Sessions.Session session, BackgroundJobBoard board) =>
+        new(session.RunningBackgroundAgents, board.For(session.Owns).Count(e => !e.Finished));
+
+    /// <summary>
+    /// Closes the tab as the user answered: stopping everything, or keeping its commands running.
     ///
     /// <para>ONLY IF IT IS STILL THE TAB IN FRONT: the answer comes later, and closing whatever tab is
     /// active by then could close a conversation nobody was asked about.</para>
     /// </summary>
-    private async Task CloseAfterAsking(Func<int, Task<bool>> ask, Core.Sessions.Session session)
+    private async Task CloseAfterAsking(Func<TabWork, Task<TabClose>> ask, Core.Sessions.Session session)
     {
-        if (!await ask(session.RunningBackgroundAgents)) return;
-        if (ReferenceEquals(SessionTabAt(Tabs.ActiveTabIndex)?.Session, session)) CloseActiveSession(confirmed: true);
+        var choice = await ask(TabWorkFor(session, Jobs));
+        if (choice == TabClose.Cancel) return;
+        if (ReferenceEquals(SessionTabAt(Tabs.ActiveTabIndex)?.Session, session))
+            CloseActiveSession(confirmed: true, keepCommands: choice == TabClose.KeepCommands);
     }
 
     /// <summary>How many always-allow rules a folder has, for restoring the count on a tab switch.</summary>

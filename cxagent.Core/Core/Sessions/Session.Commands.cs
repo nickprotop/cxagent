@@ -285,6 +285,19 @@ public sealed partial class Session
     private Jobs.TaskTools Tasks => new(new Jobs.TaskSources(DetachedProcessRegistry.Default,
         FinishedShells.Default, IsSessionAgent, SubAgents));
 
+    /// <summary>
+    /// Ends everything this session left running in the background: its sub-agents, the shells they started,
+    /// and its own agent's shells — or, keeping commands, every shell is left running and reports to nobody.
+    ///
+    /// <para>ONE CALL FOR EVERY PLACE A SESSION ENDS — a tab closed, the app quit, a busy session disposed — so
+    /// none of them can stop the agents and forget the shells. A tab is ended as a whole: whatever it started
+    /// would otherwise outlive the conversation and report its exit into one that is gone.</para>
+    /// </summary>
+    /// <param name="keepCommands">The user's choice to leave the tab's commands running (a dev server, a watcher).</param>
+    /// <returns>The handles of the background agents it stopped.</returns>
+    public IReadOnlyList<string> EndBackgroundWork(bool keepCommands = false) =>
+        SubAgents.StopAll(IsSessionAgent, keepCommands);
+
     /// <summary>How many of this session's background agents are queued or running.</summary>
     public int RunningBackgroundAgents =>
         SubAgents.Background().Count(r => r.State is Agents.BackgroundState.Queued or Agents.BackgroundState.Running);

@@ -92,7 +92,12 @@ public sealed class TasksItemCountTests : IDisposable
         paths.EnsureCreated();
         var window = new MainWindow(new ConsoleWindowSystem(new HeadlessConsoleDriver(200, 40),
                 new ConsoleWindowSystemOptions(InstallSynchronizationContext: true)),
-            ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths));
+            ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths))
+        {
+            // ITS OWN BOARD, not the process-wide one: other tests start real shells in the shared registry, and
+            // the item counts every running shell — one from a parallel test would read as "Tasks 2+1".
+            Jobs = NoShells(),
+        };
         window.Build();
         var front = Open();
         window.NoteFirstSession(front);
@@ -106,5 +111,31 @@ public sealed class TasksItemCountTests : IDisposable
         var panel = MarkupParser.Remove(window.JobsPanel.RenderedText);
         Assert.Contains("Tasks · 2 running", panel, StringComparison.Ordinal);
         Assert.DoesNotContain("Nothing running", panel, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// WHAT CLOSING A TAB WOULD END, counted from the same sources as the status item: its queued and running
+    /// agents, and its running shells. A finished shell is nothing to keep or stop.
+    /// </summary>
+    [Fact]
+    public void ATabsWork_CountsItsAgentsAndItsRunningShells()
+    {
+        var front = Open();
+        Run(front, "a", BackgroundState.Running);
+        var registry = new DetachedProcessRegistry();
+        var board = new BackgroundJobBoard(registry);
+        var spill = Path.Combine(_dir, "spill");
+        var running = ProcessRunner.DetachAsync(
+            new ProcessSpec("/bin/sh", ["-c", "sleep 30"], new RunOptions(WorkingDir: TestProcesses.WorkingDir, SpillDir: spill)),
+            new CollectingContext(), registry).GetAwaiter().GetResult();
+        registry.Describe(running, new BackgroundJob(running.Pid, front.SessionId!, "sleep 30", DateTimeOffset.UtcNow, running.OutputPath));
+        try
+        {
+            Assert.Equal(new TabWork(Agents: 1, Commands: 1), MainWindow.TabWorkFor(front, board));
+        }
+        finally
+        {
+            registry.ReapAll();
+        }
     }
 }

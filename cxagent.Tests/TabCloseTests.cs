@@ -34,7 +34,7 @@ public sealed class TabCloseTests : IDisposable
             new ConsoleWindowSystemOptions(InstallSynchronizationContext: true));
         _window = new MainWindow(system, ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths))
         {
-            CloseSession = _ => true,
+            CloseSession = (_, _) => true,
         };
         _window.Build();
         _window.NoteFirstSession(Open());
@@ -89,5 +89,20 @@ public sealed class TabCloseTests : IDisposable
         Assert.DoesNotContain("42 tool calls", shown);
         Assert.Contains("frontinst", shown);
         Assert.DoesNotContain("closedinst", shown);
+    }
+
+    /// <summary>THE USER'S CHOICE TO KEEP THE TAB'S COMMANDS REACHES THE CLOSE, which is what leaves them running.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ClosingATab_PassesTheChoiceToKeepCommands(bool keep)
+    {
+        bool? passed = null;
+        _window.CloseSession = (_, keepCommands) => { passed = keepCommands; return true; };
+        _window.AddSessionTab(Open());
+
+        Assert.True(_window.CloseActiveSession(confirmed: true, keepCommands: keep));
+
+        Assert.Equal(keep, passed);
     }
 }

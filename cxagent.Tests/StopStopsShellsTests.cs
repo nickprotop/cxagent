@@ -209,4 +209,51 @@ public sealed class StopStopsShellsTests : IDisposable
         Assert.True(late.Killed);
         Assert.Equal(BackgroundState.Stopped, store.BackgroundOf("find-thing")!.State);
     }
+
+    /// <summary>
+    /// A TAB ENDS AS A WHOLE: the session agent's own shells die with its children's. Left running, one
+    /// outlives the conversation it belongs to, and its exit submits a notice to a session that is gone.
+    /// </summary>
+    [Fact]
+    public void StopAll_KillsTheSessionAgentsOwnShells_WhenToldWhoTheSessionAgentIs()
+    {
+        var store = new SubAgentStore(_registry, _finished);
+        var (theSessions, sent) = Shell("SESSION");
+
+        store.StopAll(isSessionAgent: id => id == "SESSION");
+
+        Assert.True(theSessions.Killed);
+        Assert.True(_finished.Find(theSessions.Pid)!.Killed);
+        Assert.Equal(0, sent());
+    }
+
+    /// <summary>
+    /// KEPT, THE SHELLS RUN ON AND TELL NOBODY. The user chose to leave a tab's commands running — a dev server,
+    /// a watcher — so neither the session's nor a child's is killed; each is silenced, because the
+    /// conversation its exit would report to is closing. The agents still stop: they have nowhere to report.
+    /// </summary>
+    [Fact]
+    public void StopAll_KeepingShells_StopsTheAgents_ButLeavesEveryShellRunning_AndSilent()
+    {
+        var store = new SubAgentStore(_registry, _finished);
+        var child = Child();
+        var name = store.Keep(child, "find thing");
+        Begin(store, name);
+        var (childs, childSent) = Shell(child.Agent.Id);
+        var (theSessions, sessionSent) = Shell("SESSION");
+
+        Assert.Single(store.StopAll(isSessionAgent: id => id == "SESSION", keepShells: true));
+
+        Assert.False(childs.Finished);
+        Assert.False(theSessions.Finished);
+
+        // THE RUNNER SWEEPS A STOPPED RUN'S SHELLS AGAIN WHEN IT ENDS; a kept shell survives that too.
+        store.StopShellsOf(name);
+        Assert.False(childs.Finished);
+
+        childs.Kill();
+        theSessions.Kill();
+        Assert.Equal(0, childSent());
+        Assert.Equal(0, sessionSent());
+    }
 }

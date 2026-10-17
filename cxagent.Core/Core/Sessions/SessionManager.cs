@@ -1017,6 +1017,8 @@ public sealed class SessionManager : IDisposable
     /// <para>THE SHARED SERVICES SURVIVE: a session ending is not the process ending, and the next
     /// session wants the same rules, the same logs and the same history.</para>
     /// </summary>
+    /// <param name="session">The session to close.</param>
+    /// <param name="keepCommands">True when the user chose to leave the tab's background commands running.</param>
     /// <returns>
     /// False when the session is mid-turn and nothing was closed; true when it was.
     /// </returns>
@@ -1030,13 +1032,14 @@ public sealed class SessionManager : IDisposable
     /// ANSWERED RATHER THAN THROWN, so a front end can say "still working" and leave the tab open.
     /// Cancel first, then close, is the caller's sequence — not this method's to decide.
     /// </remarks>
-    public bool Close(Session session)
+    public bool Close(Session session, bool keepCommands = false)
     {
         if (session.IsBusy) return false;
 
-        // ITS BACKGROUND AGENTS STOP WITH IT, AND TELL NOBODY: a closed tab has no transcript and no turn
-        // to report to, and an agent left running keeps spending on a session nobody can see.
-        session.SubAgents.StopAll();
+        // ITS BACKGROUND WORK ENDS WITH IT, AND TELLS NOBODY: a closed tab has no transcript and no turn to
+        // report to, and an agent left running keeps spending on a session nobody can see. Its commands die
+        // too unless the user chose to keep them — then they run on, silenced, past the tab.
+        session.EndBackgroundWork(keepCommands);
 
         // AN ASIDE IS NOT A TURN, so IsBusy does not hold the close for it — and left running, it
         // would keep calling the model and raising permission prompts for a tab that is gone.
@@ -1123,7 +1126,7 @@ public sealed class SessionManager : IDisposable
                 // CLOSE REFUSED A BUSY SESSION, AND ITS BACKGROUND AGENTS STOP HERE INSTEAD. Close is what
                 // stops them for an idle one; skipped, a run would go on past its conversation and report
                 // into a session nobody will draw again.
-                session.SubAgents.StopAll();
+                session.EndBackgroundWork();
                 session.DisposeTurnScope();
                 session.Host?.Dispose();
             }

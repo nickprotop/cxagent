@@ -34,6 +34,25 @@ public class QuitGuardDialogTests
         Assert.False(asked.GetAwaiter().GetResult());   // Esc, like closing, keeps them running
     }
 
+    /// <summary>CLOSING A TAB OPENS ON CANCEL TOO, and Esc keeps the tab and everything it is running.</summary>
+    [Fact]
+    public void TheTabQuestion_OpensOnCancel()
+    {
+        var system = new ConsoleWindowSystem(new HeadlessConsoleDriver(100, 30));
+        CxAgentTheme.Install(system, null);
+        var asked = QuitGuard.ConfirmCloseTabAsync(system, new TabWork(Agents: 1, Commands: 2));
+        try
+        {
+            Assert.True(ConfirmDialog.IsOpen);
+            Assert.Equal("Cancel", ConfirmDialog.Highlighted);
+        }
+        finally
+        {
+            ConfirmDialog.CloseIfOpen();
+        }
+        Assert.Equal(TabClose.Cancel, asked.GetAwaiter().GetResult());
+    }
+
     /// <summary>
     /// THE CHOSEN ANSWER IS THE MOST VIVID THING IN THE LIST, in the theme the user runs as well as in
     /// cxagent's own. A theme's selection bar is often a dark shade under rows drawn in its bright accent —

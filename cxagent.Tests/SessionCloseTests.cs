@@ -1,3 +1,5 @@
+using CxAgent.Core.Execution;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Sessions;
@@ -109,5 +111,53 @@ public class SessionCloseTests : IDisposable
 
         Assert.True(manager.Close(session));
         Assert.DoesNotContain(session, manager.Sessions);
+    }
+
+    /// <summary>
+    /// A shell owned by this session's own agent, tracked where a session's shells are — the process-wide
+    /// registry — so closing the session is what has to find it.
+    /// </summary>
+    private DetachedProcess SessionShell(Session session)
+    {
+        var process = ProcessRunner.DetachAsync(
+            new ProcessSpec("/bin/sh", ["-c", "sleep 30"], new RunOptions(WorkingDir: TestProcesses.WorkingDir, SpillDir: _dir)),
+            new CollectingContext(), DetachedProcessRegistry.Default).GetAwaiter().GetResult();
+        var job = new BackgroundJob(process.Pid, session.SessionId!, "sleep 30", DateTimeOffset.UtcNow, process.OutputPath);
+        DetachedProcessRegistry.Default.Describe(process, job);
+        FinishedShells.Default.Track(job, _ => true);
+        return process;
+    }
+
+    /// <summary>
+    /// A TAB CLOSES AS A WHOLE: the session agent's own background commands end with it. Left running, one
+    /// would submit its exit to a conversation that no longer exists.
+    /// </summary>
+    [Fact]
+    public void ClosingKillsTheSessionAgentsOwnShells()
+    {
+        var (manager, session) = Wired();
+        using var _ = manager;
+        var shell = SessionShell(session);
+
+        Assert.True(manager.Close(session));
+
+        Assert.True(shell.Killed);
+    }
+
+    /// <summary>
+    /// UNLESS THE USER CHOSE TO KEEP THEM — a dev server or a watcher meant to outlive the tab. The close still
+    /// happens; the command runs on.
+    /// </summary>
+    [Fact]
+    public void ClosingKeepingCommands_LeavesTheSessionsShellsRunning()
+    {
+        var (manager, session) = Wired();
+        using var _ = manager;
+        var shell = SessionShell(session);
+
+        Assert.True(manager.Close(session, keepCommands: true));
+
+        Assert.False(shell.Finished);
+        shell.Kill();
     }
 }

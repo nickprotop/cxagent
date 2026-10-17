@@ -758,8 +758,8 @@ three lines it printed. A finished job stays there, marked `✓` or `✗` with i
 lines, until you next send a message. `F7` again hides the column; `F3` switches back to info.
 
 While the jobs panel has the keyboard, `↑` `↓` choose a job and `Enter` opens it in a tab — so does a
-click. The status bar shows `F7:Jobs`, with a count while any run, and other session tabs' running jobs
-as `+N` (`Jobs 2+1`).
+click. The status bar shows `F7:Tasks`, with a count of running background commands and agents while any
+run, and other session tabs' as `+N` (`Tasks 2+1`).
 
 **The tab follows the output** as it is written, stops following when you scroll up, and starts again
 at the bottom. **Kill** stops the job; **Copy to transcript** queues its last 8,192 characters to go
