@@ -265,4 +265,34 @@ public class JobsPanelTests
         Assert.Contains("View output", text, StringComparison.Ordinal);
         Assert.Contains("View transcript", text, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// WHAT IS PAINTED, NOT ONLY WHAT THE MODEL HOLDS: a second running card that arrives after the first must be
+    /// drawn too. Measured live, the Running list stayed one card tall and scrolled to its selection, so the shell a
+    /// sub-agent started had a row in the panel's model and no line on screen.
+    /// </summary>
+    [Fact]
+    public void ASecondRunningCard_ThatArrivesLater_IsPainted()
+    {
+        var system = new SharpConsoleUI.ConsoleWindowSystem(new SharpConsoleUI.Drivers.HeadlessConsoleDriver(60, 40));
+        CxAgentTheme.Install(system, null);
+        var panel = new JobsPanel();
+        var window = new SharpConsoleUI.Window(system) { Left = 0, Top = 0, Width = 44, Height = 40 };
+        window.AddControl(panel.Control);
+        system.AddWindow(window);
+        var agent = Agent("worker", AgentRowState.Running, description: "Summarise prices.py");
+        panel.Refresh(new JobsPanel.JobsShown([agent], 1), SessionPanel.MaxWidth);
+        window.RenderAndGetVisibleContent();
+        window.RenderAndGetVisibleContent();
+
+        var shell = Row("sleep 120", BackgroundJobState.Running, pid: 7);
+        panel.Refresh(new JobsPanel.JobsShown(JobsPanel.Order([shell, agent]), 2), SessionPanel.MaxWidth);
+        window.RenderAndGetVisibleContent();
+
+        var painted = System.Text.RegularExpressions.Regex.Replace(
+            string.Join("\n", window.RenderAndGetVisibleContent()), "\u001b\\[[0-9;]*m", "");
+        var shown = string.Join(" | ", painted.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0));
+        Assert.True(painted.Contains("sleep 120", StringComparison.Ordinal), shown);
+        Assert.Contains("Summarise prices.py", painted, StringComparison.Ordinal);
+    }
 }

@@ -225,4 +225,39 @@ public sealed class TasksItemCountTests : IDisposable
         Assert.Equal(tabs - 1, window.Tabs.TabCount);
         Assert.DoesNotContain("finder", MarkupParser.Remove(window.JobsPanel.RenderedText), StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// A SUB-AGENT'S SHELL GETS ITS OWN CARD beside the agent's: the heading counted both, and the panel showed only
+    /// the agent.
+    /// </summary>
+    [Fact]
+    public void ASubAgentsRunningShell_HasACardBesideTheAgent()
+    {
+        var paths = new AppPaths(_dir);
+        paths.EnsureCreated();
+        var registry = new DetachedProcessRegistry();
+        var window = new MainWindow(new ConsoleWindowSystem(new HeadlessConsoleDriver(200, 40),
+                new ConsoleWindowSystemOptions(InstallSynchronizationContext: true)),
+            ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths))
+        { Jobs = new BackgroundJobBoard(registry), Shells = new FinishedShells() };
+        window.Build();
+        var front = Open();
+        window.NoteFirstSession(front);
+        Run(front, "worker", BackgroundState.Running);
+        var childId = front.SubAgents.Find("worker")!.Agent.Agent.Id;
+        var shell = ProcessRunner.DetachAsync(
+            new ProcessSpec("/bin/sh", ["-c", "sleep 30"], new RunOptions(WorkingDir: TestProcesses.WorkingDir,
+                SpillDir: Path.Combine(_dir, "spill"))), new CollectingContext(), registry).GetAwaiter().GetResult();
+        registry.Describe(shell, new BackgroundJob(shell.Pid, childId, "sleep 30", DateTimeOffset.UtcNow, shell.OutputPath));
+        try
+        {
+            window.ToggleJobsPanel();
+
+            var panel = MarkupParser.Remove(window.JobsPanel.RenderedText);
+            Assert.Contains("Tasks · 2 running", panel, StringComparison.Ordinal);
+            Assert.Contains("▭ sleep 30", panel, StringComparison.Ordinal);
+            Assert.Contains("◇ worker", panel, StringComparison.Ordinal);
+        }
+        finally { registry.ReapAll(); }
+    }
 }

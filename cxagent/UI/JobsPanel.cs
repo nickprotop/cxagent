@@ -1,6 +1,7 @@
 using CxAgent.Core.Helpers;
 using CxAgent.Core.Jobs;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Extensions;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
 using Ctl = SharpConsoleUI.Builders.Controls;
@@ -230,12 +231,13 @@ public sealed class JobsPanel
         _empty.Visible = nothing;
         SetIfChanged(_empty, empty);
 
-        // THE KEYS, WHILE THEY WORK. A hint with nothing selected names keys that would act on nothing.
+        // THE KEYS, WHILE THEY WORK. A hint with nothing selected names keys that would act on nothing. Only the keys a
+        // card does not show: each card already says how it is viewed, and the column has room for little else.
         var hint = RowsHaveFocus && Active()?.Selected is { } chosen ? Muted(Cut(chosen switch
         {
-            AgentRow { View: { Foreground: true, Running: true } } => "Enter view · x — not here: the parent is waiting on it",
-            { Running: true } => "Enter view · x stop · f finished",
-            _ => "Enter view · x forget · f finished",
+            AgentRow { View: { Foreground: true, Running: true } } => "x — the parent waits on it",
+            { Running: true } => "x stop · f finished",
+            _ => "x forget · f finished",
         }, width - 4)) : "";
         _hint.Visible = hint.Length > 0;
         SetIfChanged(_hint, [hint]);
@@ -271,31 +273,63 @@ public sealed class JobsPanel
         {
             _owner = owner;
             _title = title;
-            List = new ListControl { HoverHighlightsItems = true, BackgroundColor = ColorScheme.PanelSurface };
             var builder = Ctl.CollapsiblePanel(title).WithMargin(1, 1, 1, 0).WithIcons("▾", "▸");
             Panel = (expanded ? builder.Expanded() : builder.Collapsed()).Build();
+            List = NewList();
             Panel.AddControl(List);
 
+            // A HEADER CLICK TOGGLES THE SECTION ITSELF; the header's count and the hint follow it.
+            Panel.ExpandedChanged += (_, _) => _owner.Redraw();
+        }
+
+        public ListControl List { get; private set; }
+
+        /// <summary>A list wired to this section: Enter or a double-click opens a card, a click on ⏹ stops it.</summary>
+        private ListControl NewList()
+        {
+            var list = new ListControl { HoverHighlightsItems = true, BackgroundColor = ColorScheme.PanelSurface };
+
             // ENTER OR A DOUBLE-CLICK OPENS THE CARD — the list's own activation.
-            List.ItemActivated += (_, item) =>
+            list.ItemActivated += (_, item) =>
             {
                 if (item.Tag is PanelRow row) _owner.RowChosen?.Invoke(new RowChoice(row, RowAction.Open));
             };
 
             // ⏹ IS THE RUNNING CARD'S RIGHT EDGE: a click there stops it, as x does. The click has already selected
             // the card, so the selection says which.
-            List.MouseClick += (_, args) =>
+            list.MouseClick += (_, args) =>
             {
                 if (Selected is { Running: true } row && row is not AgentRow { View.Foreground: true }
-                    && args.Position.X >= List.ActualWidth - List.Margin.Right - 2)
+                    && args.Position.X >= list.ActualWidth - list.Margin.Right - 2)
                     _owner.RowChosen?.Invoke(new RowChoice(row, RowAction.StopOrForget));
             };
-
-            // A HEADER CLICK TOGGLES THE SECTION ITSELF; the header's count and the hint follow it.
-            Panel.ExpandedChanged += (_, _) => _owner.Redraw();
+            return list;
         }
 
-        public ListControl List { get; }
+        /// <summary>
+        /// Replaces the list with a fresh one holding these cards — when the number of cards changes.
+        ///
+        /// <para>A LIST THAT HAS BEEN PAINTED REMEMBERS HOW MANY ITEMS FITTED, and both its scroll and its measured
+        /// height read that count before the one this panel sets. A card arriving above the selected one then
+        /// scrolled the list by one and measured it from there — one card tall, for good — so the second running
+        /// task had no line on screen. A list never painted has no such count.</para>
+        ///
+        /// <para>THE KEYBOARD GOES WITH IT when the old list had it, or a card arriving would take focus away from
+        /// a user mid-way through the list.</para>
+        /// </summary>
+        private void Replace(List<ListItem> cards, int selected)
+        {
+            var old = List;
+            var hadFocus = old.HasFocus;
+            var window = old.GetParentWindow();
+            List = NewList();
+            List.MaxVisibleItems = Math.Max(1, cards.Count);
+            List.Items = cards;
+            List.SelectedIndex = selected;
+            Panel.RemoveControl(old);
+            Panel.AddControl(List);
+            if (hadFocus) window?.FocusManager.SetFocus(List, FocusReason.Programmatic);
+        }
 
         public CollapsiblePanel Panel { get; }
 
@@ -329,9 +363,8 @@ public sealed class JobsPanel
             }
             else
             {
-                List.Items = cards;
                 var at = keep is null ? 0 : Math.Max(0, rows.ToList().FindIndex(r => r.Key == keep));
-                List.SelectedIndex = rows.Count == 0 ? -1 : Math.Min(at, rows.Count - 1);
+                Replace(cards, rows.Count == 0 ? -1 : Math.Min(at, rows.Count - 1));
             }
             Rows = rows;
 
@@ -363,11 +396,13 @@ public sealed class JobsPanel
     {
         var view = job.View;
         var running = view.State == BackgroundJobState.Running;
+        // THE TIME BEFORE THE AGENT'S NAME: a name is long and is what the column cuts, and how long a command has
+        // run is what a glance at its card is for.
         var facts = new List<string> { "Shell" };
-        if (job.Agent is { } agent) facts.Add(agent);
         if (view.State == BackgroundJobState.Killed) facts.Add("killed");
         else if (view.State == BackgroundJobState.Exited) facts.Add($"exit {view.ExitCode}");
         facts.Add(DisplayNumber.Took(view.Elapsed));
+        if (job.Agent is { } agent) facts.Add(agent);
 
         var mark = Mark(running, view.State == BackgroundJobState.Exited && view.ExitCode == 0, "▭");
         return new ListItem($"{mark} {TitleLine(OutputTail.OneLine(view.Job.Command), stop: running, usable)}\n"
