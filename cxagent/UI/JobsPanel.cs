@@ -104,6 +104,9 @@ public sealed class JobsPanel
     private int _count;
     private int _width = SessionPanel.MaxWidth;
 
+    /// <summary>Test seam: the Running section's list, which a click test sends its mouse events to.</summary>
+    public ListControl RunningListForTest => _running.List;
+
     /// <summary>A card was chosen — by a click, Enter, its ⏹ or ✕, or <c>x</c>.</summary>
     public event Action<RowChoice>? RowChosen;
 
@@ -320,6 +323,27 @@ public sealed class JobsPanel
 
         private int _remembered;
 
+        /// <summary>
+        /// Whether a click at this list-relative point is on the selected card's control.
+        ///
+        /// <para>WHERE THE GLYPH IS DRAWN, NOT THE LIST'S EDGE. The cards stop short of the list's right edge — the
+        /// panel keeps columns for its scrollbar — so an edge test never met the glyph. And on the title line only:
+        /// the same column one line down is the card's facts.</para>
+        ///
+        /// <para>THE CARD'S TOP COUNTED FROM THE FIRST ITEM: a section's list is sized to all its cards and never
+        /// scrolls inside itself — the column does that.</para>
+        /// </summary>
+        private static bool OnControl(ListControl list, System.Drawing.Point at)
+        {
+            var index = list.SelectedIndex;
+            if (index < 0 || index >= list.Items.Count) return false;
+            var top = list.Items.Take(index).Sum(i => i.Text.Split('\n').Length);
+            if (at.Y - list.Margin.Top != top) return false;
+            var title = MarkupParser.Remove(list.Items[index].Text.Split('\n')[0]);
+            var glyph = title.IndexOfAny(['⏹', '✕']);
+            return glyph >= 0 && Math.Abs(at.X - list.Margin.Left - glyph) <= 1;
+        }
+
         /// <summary>Selects the card with this key and takes the keyboard; false when this section does not hold it.</summary>
         public bool Take(string key)
         {
@@ -364,12 +388,12 @@ public sealed class JobsPanel
                 if (item.Tag is PanelRow row) _owner.RowChosen?.Invoke(new RowChoice(row, RowAction.Open));
             };
 
-            // A CARD'S RIGHT EDGE IS ITS ONE CONTROL — ⏹ on a running card, ✕ on a finished one — and a click there
-            // does what x does. The click has already selected the card, so the selection says which.
+            // A CARD'S ONE CONTROL — ⏹ on a running card, ✕ on a finished one — and a click on it does what x does.
+            // The click has already selected the card, so the selection says which.
             list.MouseClick += (_, args) =>
             {
                 if (Selected is { } row && row is not AgentRow { View: { Foreground: true, Running: true } }
-                    && args.Position.X >= list.ActualWidth - list.Margin.Right - 2)
+                    && OnControl(list, args.Position))
                     _owner.RowChosen?.Invoke(new RowChoice(row, RowAction.StopOrForget));
             };
             return list;

@@ -283,6 +283,45 @@ public class JobsPanelTests
     }
 
     /// <summary>
+    /// A CLICK ON ⏹ WHERE IT IS DRAWN STOPS THE CARD. The cards stop short of the list's right edge — the panel keeps
+    /// columns for its scrollbar — so a hit-test at the list's edge never met the glyph, and a real click did nothing.
+    /// A click in the same column one line down, on the card's facts, is not the control.
+    /// </summary>
+    [Fact]
+    public void AClickOnTheDrawnStop_StopsTheCard_AndOnlyOnItsLine()
+    {
+        var system = new SharpConsoleUI.ConsoleWindowSystem(new SharpConsoleUI.Drivers.HeadlessConsoleDriver(60, 40));
+        CxAgentTheme.Install(system, null);
+        var panel = new JobsPanel();
+        var window = new SharpConsoleUI.Window(system) { Left = 0, Top = 0, Width = SessionPanel.MaxWidth + 2, Height = 40 };
+        window.AddControl(panel.Control);
+        system.AddWindow(window);
+        var agent = Agent("worker", AgentRowState.Running, description: "Summarise prices.py");
+        panel.Refresh(new JobsPanel.JobsShown([agent], 1), SessionPanel.MaxWidth);
+        var painted = window.RenderAndGetVisibleContent()
+            .Select(l => System.Text.RegularExpressions.Regex.Replace(l, "\u001b\\[[0-9;]*m", "")).ToList();
+        var row = painted.FindIndex(l => l.Contains('⏹'));
+        var col = painted[row].IndexOf('⏹');
+        var list = panel.RunningListForTest;
+        var chosen = new List<JobsPanel.RowChoice>();
+        panel.RowChosen += chosen.Add;
+
+        Click(list, col - list.ActualX, row + 1 - list.ActualY);
+        Assert.Empty(chosen);
+        Click(list, col - list.ActualX, row - list.ActualY);
+
+        Assert.Equal([new JobsPanel.RowChoice(agent, JobsPanel.RowAction.StopOrForget)], chosen);
+    }
+
+    private static void Click(SharpConsoleUI.Controls.ListControl list, int x, int y)
+    {
+        var at = new System.Drawing.Point(x, y);
+        list.ProcessMouseEvent(new SharpConsoleUI.Events.MouseEventArgs(
+            [SharpConsoleUI.Drivers.MouseFlags.Button1Clicked], at, at, at));
+        Thread.Sleep(600);   // past the list's double-click window, so the next click is a click of its own
+    }
+
+    /// <summary>
     /// x THEN x AGAIN ACTS ON ONE CARD (decision 13). Stopping the last running card moves it to Finished; the
     /// keyboard goes with it, so the second x deletes that card — not whichever finished card was selected before,
     /// with no highlight to say so.
