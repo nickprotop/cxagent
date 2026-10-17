@@ -650,7 +650,7 @@ public static class AppBootstrap
                 manager.Commands.Register(declared, (session, _) =>
                 {
                     if (session.Initialise() is not Session.SubmitOutcome.Started init) return true;
-                    WhenTurnEnds(init.Turn);
+                    WhenTurnEnds(session, init.Turn);
                     mainWindow.RetireComposerHint();
                     return true;
                 });
@@ -1586,22 +1586,19 @@ public static class AppBootstrap
             // THE PROCESS TOKEN, not a per-turn one. AgentHost links its own scope off whatever it
             // is handed, so Escape can cancel one turn while this still ends everything on Ctrl+Q or
             // /exit, without this layer owning a lifecycle that belongs to the turn.
-            WhenTurnEnds(started.Turn);
+            WhenTurnEnds(target, started.Turn);
         }
 
-        // WHAT THIS FRONT END DOES WHEN A TURN ENDS — not how it runs, which is the session's now.
-        // typed after the LAST tool barrier, which no barrier will reach.
-        async void WhenTurnEnds(Task turn)
-        {
-            try
+        // WHAT THIS FRONT END DOES WHEN A TURN ENDS — not how it runs, which is the session's now. A FAULT IS
+        // SHOWN, NOT THROWN: this is an async void, where an exception reaches no caller and takes the app with
+        // it, and a turn faults on purpose when an event subscriber fails after the steer was still read. The
+        // line goes to the session that ran the turn, which need not be the tab in front any more.
+        async void WhenTurnEnds(Session ran, Task turn) =>
+            await TurnEnds.ObserveAsync(turn, ex =>
             {
-                await turn;
-            }
-            finally
-            {
-            }
-
-        }
+                ran.NotifyError($"the turn failed: {ex.Message} — the app log has the details.");
+                _ = logs.AppendAsync("app", "turn-fault", "log", ex + Environment.NewLine);
+            });
 
         // Global shortcuts. FUNCTION KEYS for the pane/goal actions, deliberately — a terminal sends
         // Ctrl+<letter> as a single ASCII control byte, so several Ctrl combos are physically

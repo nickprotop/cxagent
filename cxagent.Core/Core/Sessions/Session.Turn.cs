@@ -64,6 +64,12 @@ public sealed partial class Session
     /// <summary>Draws one System line in this session's transcript.</summary>
     public void Notify(string line) => Say(new Message(line, Severity.Info));
 
+    /// <summary>
+    /// Draws one System line in this session's transcript, marked as an error — for a failure the front end
+    /// caught on the session's behalf, such as a turn that faulted after it ended.
+    /// </summary>
+    public void NotifyError(string line) => Say(new Message(line, Severity.Error));
+
     /// <summary>Whether a turn loop owns this conversation.</summary>
     public bool TurnOwned => Volatile.Read(ref _turnOwned) == 1;
 
