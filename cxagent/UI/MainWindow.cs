@@ -2939,7 +2939,31 @@ public sealed class MainWindow : IDisposable
             slot.Tab.Tick(now);
             if (IndexOf(slot.Page) is { } index) SetTabTitleText(index, slot.Tab.Title());
         }
+
+        // THE CTRL+B HINT IN EACH WAITING SESSION'S COMPOSER LINE, in place of its mode line while the wait lasts —
+        // each tab's own, so a session waiting in the background is told in its own tab. Set only on a change.
+        foreach (var tab in _sessionTabs)
+        {
+            if (tab is not { Session: { } session, ModeLine: { } line }) continue;
+            var hint = WaitingHint(session.WaitingOnForeground, now - (session.WaitingOnForegroundSince() ?? now));
+            var text = hint is null
+                ? ModeLineText(_mode, _resolution, session)
+                : $"[{ColorScheme.MutedMarkup}]{SharpConsoleUI.Parsing.MarkupParser.Escape(hint)}[/]";
+            if (line.Text != text) line.SetContent([text]);
+        }
     }
+
+    /// <summary>
+    /// The composer line while a turn waits on foreground work (Ctrl+B spec decision 8): after a few seconds, so a quick
+    /// call never flashes it.
+    /// </summary>
+    internal static string? WaitingHint(int count, TimeSpan waited) =>
+        count == 0 || waited < TimeSpan.FromSeconds(3) ? null
+        : $"waiting on {count} task{(count == 1 ? "" : "s")} · Ctrl+B moves {(count == 1 ? "it" : "them")} "
+          + "to the background (twice in tmux)";
+
+    /// <summary>Test seam: <see cref="WaitingHint"/>.</summary>
+    public static string? WaitingHintForTest(int count, TimeSpan waited) => WaitingHint(count, waited);
 
     /// <summary>
     /// Opens a job's tab, or switches to it when it is already open, and puts the keyboard in it.

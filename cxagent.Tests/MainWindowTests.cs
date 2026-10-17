@@ -869,6 +869,14 @@ public class MainWindowTests
         Assert.Equal(settled, mw.StatusBar.Readout!.Label);
     }
 
+    [Theory]
+    [InlineData(1, 2, null)]
+    [InlineData(1, 4, "waiting on 1 task · Ctrl+B moves it to the background (twice in tmux)")]
+    [InlineData(3, 9, "waiting on 3 tasks · Ctrl+B moves them to the background (twice in tmux)")]
+    [InlineData(0, 9, null)]
+    public void TheWaitingHint_AppearsAfterAFewSeconds(int count, int seconds, string? expected) =>
+        Assert.Equal(expected, MainWindow.WaitingHintForTest(count, TimeSpan.FromSeconds(seconds)));
+
     [Fact]
     public void SessionPanel_ShowsTheAgentIdForLogCorrelation()
     {
