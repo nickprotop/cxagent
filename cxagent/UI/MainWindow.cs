@@ -1031,11 +1031,13 @@ public sealed class MainWindow : IDisposable
     /// — a star row for the transcript over a Cells(ComposerRows) row for the composer — so the
     /// index is the same either way; what differs is WHICH grid, and using the field for all of them
     /// resized the first tab for a prompt raised in the second.
+    ///
+    /// <para>BY WHETHER THE TAB HAS A GRID OF ITS OWN, NOT BY BEING FIRST. Only the window's original tab lacks one;
+    /// once it is closed, another tab is first — and "first uses the field" grew the closed tab's grid, clipping the
+    /// prompt in the tab that asked to its question, with no buttons to answer it.</para>
     /// </remarks>
     private GridControl PromptRowOwner(int stripIndex) =>
-        SessionTabAt(stripIndex) is { } tab && !ReferenceEquals(tab, _sessionTabs[0])
-            ? tab.Content
-            : _chatTab;
+        SessionTabAt(stripIndex)?.Content ?? _chatTab;
 
     /// <summary>
     /// The row that says an answer is waiting in the chat tab, shown on every other tab.

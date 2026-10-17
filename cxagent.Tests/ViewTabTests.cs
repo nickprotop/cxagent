@@ -173,6 +173,26 @@ public sealed class ViewTabTests : IDisposable
         Assert.Null(_window.StatusNote);
     }
 
+    /// <summary>
+    /// A PROMPT IN THE TAB LEFT FIRST AFTER THE FIRST WAS CLOSED GROWS ITS OWN ROW. The first tab's grid is a window
+    /// field; the rule "the first tab uses the field" grew the closed tab's grid instead, and the prompt in the tab
+    /// now first was clipped to its question — no buttons, and no status bar under it.
+    /// </summary>
+    [Fact]
+    public void APromptAfterTheFirstTabClosed_GrowsItsOwnRow()
+    {
+        var second = Open();
+        _window.AddSessionTab(second);
+        _window.Tabs.ActiveTabIndex = 0;
+        Assert.True(_window.CloseActiveSession(confirmed: true));
+        var left = Assert.Single(_window.SessionTabs);
+        _window.NotePromptTabBySessionId(second.SessionId);
+
+        _window.ShowPermissionPrompt(SharpConsoleUI.Builders.Controls.Markup("Run shell command?").Build());
+
+        Assert.Equal(SharpConsoleUI.Layout.GridUnitType.Auto, left.Content.RowDefinitions[1].Type);
+    }
+
     /// <summary>Decision 31: a view tab opens right after its session's tab and that session's other view tabs.</summary>
     [Fact]
     public void AnAgentTab_OpensBesideItsSessionsTab()
