@@ -35,7 +35,7 @@ public sealed record SessionHeader(
     int OutputTokens,
     int State,
     DateTimeOffset UpdatedAt,
-    EditMode? Edits = null,
+    EditMode? EditMode = null,
     string? Thinking = null)
 {
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
@@ -54,12 +54,33 @@ public sealed record SessionHeader(
         if (text is null) return null;
         try
         {
-            return JsonSerializer.Deserialize<SessionHeader>(text, Json);
+            var header = JsonSerializer.Deserialize<SessionHeader>(text, Json);
+            return header is { EditMode: null } && SavedUnderTheOldName(text) is { } mode
+                ? header with { EditMode = mode }
+                : header;
         }
         catch (JsonException)
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The mode a header written before the rename stored as <c>"Edits"</c>, or null.
+    ///
+    /// <para>READ RATHER THAN DROPPED, because the mode is what a resumed session starts in: a session
+    /// saved in always-ask must not come back in another mode because its key was renamed. The key read
+    /// like a count of edits, which nothing keeps — a model changes files through tools, the shell and
+    /// plugins — so it is written as <c>"EditMode"</c> now, and this is how the old files still say theirs.</para>
+    /// </summary>
+    private static Sessions.EditMode? SavedUnderTheOldName(string text)
+    {
+        using var doc = JsonDocument.Parse(text);
+        return doc.RootElement.TryGetProperty("Edits", out var old)
+               && old.TryGetInt32(out var value)
+               && Enum.IsDefined(typeof(Sessions.EditMode), value)
+            ? (Sessions.EditMode)value
+            : null;
     }
 
     /// <summary>Writes the header, creating the agent's directory if this is its first write.</summary>

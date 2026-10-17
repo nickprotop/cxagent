@@ -80,7 +80,7 @@ public sealed class FolderSessionStore(AppPaths paths)
         if (context is null) return null;
 
         return new SessionSnapshot(header.AgentId, context, header.InputTokens,
-            header.OutputTokens, header.UpdatedAt, header.Edits, header.WorkingDir, header.Thinking);
+            header.OutputTokens, header.UpdatedAt, header.EditMode, header.WorkingDir, header.Thinking);
     }
 
     private static IReadOnlyList<ChatMessage>? ReadContext(SessionFolder folder)
