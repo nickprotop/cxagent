@@ -430,6 +430,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         var slot = _factory.ConcurrencySlot;
         var announced = false;
 
+        // HANDED TO A BACKGROUND RUN, by a move: from then on the run owns the claim, the slot and the child's token,
+        // and none of them is released here.
+        var adopted = false;
+
         // THE ENVELOPE, HOISTED SO THE RELEASE CAN READ ITS STATE. The release is what announces the
         // stop, and the listener that writes this run's account runs inside it — so the outcome word
         // has to be in hand before the finally, not after the call returns. Null on every path that
@@ -463,6 +467,22 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                         ? (ForegroundRelease?)null
                         : await foreground.Released;
 
+                    // MOVED: THE CHILD GOES ON, THE CALL IS ANSWERED NOW. The background run takes the claim, the slot
+                    // and the send; its own stop reaches the child through the foreground token.
+                    if (released == ForegroundRelease.Move && _factory.Delivery is { } reports && parentAgentId is not null)
+                    {
+                        var run = _store!.BeginBackground(new BackgroundStart(Name: keptAs!, ParentAgentId: parentAgentId,
+                                Brief: prompt, Description: Read(call, "description"), IsResume: false),
+                            new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(reports, parentAgentId, keptAs!)));
+                        run.Token.Register(foreground!.Cancel);
+                        adopted = true;
+                        _ = BackgroundRunner.Adopt(new BackgroundWork(_store, _store.Find(keptAs!)!, run, prompt, slot, reports,
+                                result => SubAgentEnvelope.Render(child.Agent.Id, keptAs,
+                                    result with { Text = WithPlanOutcome(result.Text, planPath) }, SubAgentEnvelope.WorkOf(child))),
+                            send).ContinueWith(_ => foreground.Dispose(), TaskScheduler.Default);
+                        return SubAgentEnvelope.Moved(child.Agent.Id, keptAs!, ChildCanWrite(turnTools, type));
+                    }
+
                     if (released == ForegroundRelease.Stop)
                     {
                         try { await send; }
@@ -484,13 +504,13 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                     if (foreground is not null)
                     {
                         _store!.EndForeground(keptAs!);
-                        foreground.Dispose();
+                        if (!adopted) foreground.Dispose();
                     }
                 }
             }
             finally
             {
-                slot?.Release();
+                if (!adopted) slot?.Release();
             }
         }
         finally
@@ -503,7 +523,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             // THE STATE READ BACK OUT OF THE ENVELOPE rather than passed from `result`: the envelope is
             // the one artefact that always carries it, so the word recorded is the word the parent's
             // model reads — two copies could disagree, and both would be plausible strings.
-            if (keptAs is not null)
+            if (keptAs is not null && !adopted)
             {
                 if (announced) _store!.EndSend(keptAs, SubAgentEnvelope.StateOf(envelope));
                 else _store!.Release(keptAs);

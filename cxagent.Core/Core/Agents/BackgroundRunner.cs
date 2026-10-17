@@ -23,7 +23,16 @@ internal sealed record BackgroundWork(SubAgentStore Store, StoredAgent Kept, Bac
 /// </summary>
 internal static class BackgroundRunner
 {
-    public static Task Start(BackgroundWork work) => Task.Run(() => RunAsync(work));
+    public static Task Start(BackgroundWork work) => Task.Run(() => RunAsync(work, inFlight: null));
+
+    /// <summary>
+    /// Takes over a foreground child already at work — the user moved it (Ctrl+B spec). Its slot is held and its start
+    /// announced, by whoever started it; from here it ends, records and reports exactly as a background run does.
+    /// </summary>
+    /// <param name="work">The run it becomes, with the slot it already holds.</param>
+    /// <param name="inFlight">The child's send, already running on its foreground token.</param>
+    internal static Task Adopt(BackgroundWork work, Task<SendResult> inFlight) =>
+        Task.Run(() => RunAsync(work, inFlight));
 
     /// <summary>
     /// What a run's handoff does with a result its waiters abandoned — left for the parent, not sent as a
@@ -33,7 +42,7 @@ internal static class BackgroundRunner
         text => DeliveryOutcomes.Delivered(delivery.Leave(parentAgentId,
             new AgentNotice(Shown: $"background agent '{name}' — its result is waiting for the next turn", ForModel: text)));
 
-    private static async Task RunAsync(BackgroundWork work)
+    private static async Task RunAsync(BackgroundWork work, Task<SendResult>? inFlight)
     {
         var (store, kept, run) = (work.Store, work.Kept, work.Run);
         var announced = false;
@@ -49,20 +58,27 @@ internal static class BackgroundRunner
             {
                 // THE CAP, WAITED ON THE RUN'S TOKEN: a stop while queued ends the wait, and the slot it
                 // never took is left alone — the release below is inside the wait's success.
-                if (work.Slot is not null) await work.Slot.WaitAsync(run.Token);
+                // AN ADOPTED SEND ALREADY HOLDS ITS SLOT AND ANNOUNCED ITS START: waiting again would take a second
+                // slot, and announcing again would open a second stretch for one run.
+                if (inFlight is null && work.Slot is not null) await work.Slot.WaitAsync(run.Token);
                 try
                 {
                     announced = true;
                     run.MarkRunning();
-                    store.AnnounceBegin(kept.Name);
+                    if (inFlight is null)
+                    {
+                        store.AnnounceBegin(kept.Name);
 
-                    // EVERY BACKGROUND STRETCH IS THE PARENT'S ASK: a user's send waits in the foreground instead.
-                    kept.Agent.Agent.EchoPrompt(work.Prompt, fromUser: false);
+                        // EVERY BACKGROUND STRETCH IS THE PARENT'S ASK: a user's send waits in the foreground instead.
+                        kept.Agent.Agent.EchoPrompt(work.Prompt, fromUser: false);
+                    }
 
                     // A RESUME READS ITS MAIL FIRST: a message left for a settled child predates this
                     // prompt. A SPAWN DOES NOT — anything sent while it queued was sent after its brief, and
                     // the loop's own drain puts it there.
-                    result = await kept.Agent.Agent.SendAsync(work.Prompt, run.Token, mailFirst: run.Start.IsResume);
+                    result = inFlight is not null
+                        ? await inFlight
+                        : await kept.Agent.Agent.SendAsync(work.Prompt, run.Token, mailFirst: run.Start.IsResume);
                     // A STOP THE RUN ALREADY ACCEPTED WINS, even over an answer that came back in the same
                     // instant: whoever stopped it has been told it is stopping, and a "completed" report would
                     // contradict that. For the user's stop it would also leave the user-stop mark standing,

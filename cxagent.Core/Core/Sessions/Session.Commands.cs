@@ -329,6 +329,13 @@ public sealed partial class Session
     public bool StopForeground(string name) => SubAgents.StopForeground(name);
 
     /// <summary>
+    /// Moves one foreground sub-agent the turn is waiting on to the background — the panel's b and ⇥, the agent tab's
+    /// Background. Its call is answered with a receipt; it reports later (Ctrl+B spec decision 3). False when it is
+    /// not waiting.
+    /// </summary>
+    public bool MoveToBackground(string name) => SubAgents.MoveToBackground(name);
+
+    /// <summary>
     /// Forgets a kept agent — the panel's x on a finished row. Says nothing to the parent model (decision 15) and
     /// nothing in this transcript: the row leaving the panel is what the user sees.
     /// </summary>

@@ -564,6 +564,147 @@ public class BackgroundScenarioTests : IDisposable
         Assert.Empty(s.Session.SubAgents.ForegroundNames());
     }
 
+    /// <summary>
+    /// Ctrl+B spec decision 3: A MOVED CHILD'S CALL IS ANSWERED WITH A RECEIPT, the turn carries on, and the child's
+    /// report arrives later as a background one's does.
+    /// </summary>
+    [Fact]
+    public async Task MovingAForegroundChild_AnswersWithAReceipt_AndReportsLater()
+    {
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check", type = "explore", background = false }, id: "s1")),
+            Answer("carried on"), Answer("read the report"));
+        var foreground = new HeldProvider("checked it");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 1));
+
+        Assert.True(s.Session.MoveToBackground("check-it"));
+
+        Assert.True(await Poll.Until(() => parent.Calls == 2));
+        Assert.Contains("state=\"running\"", parent.Last);
+        Assert.Contains("moved it to the background", parent.Last);
+        await Idle(s.Session);
+
+        foreground.Release();
+        Assert.True(await Poll.Until(() => parent.Calls == 3));
+        await Idle(s.Session);
+        Assert.Contains("checked it", parent.Last);
+    }
+
+    /// <summary>Ctrl+B spec decision 5: the model's foreground agent_send moves as a foreground spawn does.</summary>
+    [Fact]
+    public async Task MovingAForegroundSend_AnswersWithAReceipt()
+    {
+        var parent = new ScriptedProvider(Use(Calls.Spawn(id: "s1")), Answer("started"),
+            Use(Calls.Named(Tool.AgentSend, new { to = "find-thing", prompt = "again", background = false }, id: "s2")),
+            Answer("moved on"), Answer("read it"));
+        var hold = new TaskCompletionSource();
+        var child = new ScriptedProvider(Answer("found it")).Then(Answer("found more"), hold.Task);
+        var s = Open(parent, child);
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => child.Calls == 2));
+        Assert.Contains("find-thing", s.Session.SubAgents.ForegroundNames());
+
+        Assert.True(s.Session.MoveToBackground("find-thing"));
+
+        Assert.True(await Poll.Until(() => parent.Calls == 4));
+        Assert.Contains("moved it to the background", parent.Last);
+        hold.SetResult();
+        Assert.True(await Poll.Until(() => parent.Calls == 5));
+        await Idle(s.Session);
+        Assert.Contains("found more", parent.Last);
+    }
+
+    /// <summary>REVIEW FOCUS 2: Escape after a move ends the turn, not the moved child.</summary>
+    [Fact]
+    public async Task Escape_AfterAMove_LeavesTheMovedChildRunning()
+    {
+        var never = new TaskCompletionSource();
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check", type = "explore", background = false }, id: "s1")))
+            .Then(Answer("unreached"), never.Task);
+        var foreground = new HeldProvider("checked it");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 1));
+        s.Session.MoveToBackground("check-it");
+        Assert.True(await Poll.Until(() => parent.Calls == 2));
+        Assert.True(s.Session.CancelTurn());
+        await Idle(s.Session);
+
+        Assert.Equal(BackgroundState.Running, s.Session.SubAgents.BackgroundOf("check-it")!.State);
+        foreground.Release();
+        Assert.True(await Poll.Until(() => s.Session.SubAgents.BackgroundOf("check-it")!.Handoff.Ended));
+    }
+
+    /// <summary>REVIEW FOCUS 5: the slot and the claim stay with the child across the move, and go when it ends.</summary>
+    [Fact]
+    public async Task AMovedChild_KeepsItsSlotAndClaim_UntilItEnds()
+    {
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check", type = "explore", background = false }, id: "s1")),
+            Answer("carried on"), Answer("read it"));
+        var foreground = new HeldProvider("checked it");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground, Cap = 1 });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 1));
+        s.Session.MoveToBackground("check-it");
+        Assert.True(await Poll.Until(() => parent.Calls == 2));
+
+        Assert.True(s.Session.SubAgents.IsBusy("check-it"));
+        Assert.Equal(1, s.Session.RunningAgents);
+
+        foreground.Release();
+        Assert.True(await Poll.Until(() => !s.Session.SubAgents.IsBusy("check-it")));
+        Assert.Equal(0, s.Session.RunningAgents);
+    }
+
+    /// <summary>REVIEW FOCUS 1: a move in the instant the child answers — the call is answered exactly once.</summary>
+    [Fact]
+    public async Task AMoveRacingTheAnswer_AnswersTheCallOnce()
+    {
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check", type = "explore", background = false }, id: "s1")),
+            Answer("done"), Answer("report read"));
+        var foreground = new HeldProvider("checked it");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 1));
+        foreground.Release();
+        s.Session.MoveToBackground("check-it");
+
+        Assert.True(await Poll.Until(() => parent.Calls >= 2));
+        await Idle(s.Session);
+
+        // ONE ENVELOPE FOR THE CALL in the request after it — the receipt or the answer, never both.
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(parent.Requests[1], "<sub_agent "));
+    }
+
+    /// <summary>REVIEW FOCUS 4: a foreground child still queued behind the cap has not started, so it is not movable.</summary>
+    [Fact]
+    public async Task AQueuedForegroundChild_IsNotMovable()
+    {
+        var parent = new ScriptedProvider(Use(
+            Calls.Named(Tool.Agent, new { description = "first", prompt = "a", type = "explore", background = false }, id: "s1"),
+            Calls.Named(Tool.Agent, new { description = "second", prompt = "b", type = "explore", background = false }, id: "s2")),
+            Answer("both"));
+        var foreground = new HeldProvider("one", "two");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground, Cap = 1 });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 1));
+
+        Assert.Single(s.Session.SubAgents.ForegroundNames());
+        foreground.Release();
+        Assert.True(await Poll.Until(() => parent.Calls == 2));
+    }
+
     [Fact]
     public async Task Escape_DoesNotTouchABackgroundChild()
     {

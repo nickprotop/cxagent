@@ -171,6 +171,9 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
         var agentName = stored.Name;
         var prompt = request.Prompt;
         var announced = false;
+
+        // HANDED TO A BACKGROUND RUN, by the user's move: from then on the run owns the claim and the slot.
+        var adopted = false;
         try
         {
             // WAITED WITHOUT SAYING THE CHILD IS WORKING, because it is not: SendBegan starts the
@@ -215,10 +218,38 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                 // so Escape cancels it like any other tool call.
                 // NOTED, NOT ANNOUNCED: the release below names no outcome — its listeners settle a resume as they
                 // always have — and the store's record of how this stretch ended takes the word from here.
+                // THE MODEL'S FOREGROUND SEND IS FOREGROUND WORK TOO (Ctrl+B spec decision 5): on its own token, movable
+                // and stoppable as a foreground spawn is. The user's own send is not part of a turn, and keeps its own.
+                var foreground = request.FromUser ? null : store.BeginForeground(agentName, ct);
                 SendResult result;
                 try
                 {
-                    result = await stored.Agent.Agent.SendAsync(prompt, ct);
+                    var send = stored.Agent.Agent.SendAsync(prompt, foreground?.Token ?? ct);
+                    var released = foreground is null || await Task.WhenAny(send, foreground.Released) == send
+                        ? (ForegroundRelease?)null
+                        : await foreground.Released;
+
+                    if (released == ForegroundRelease.Move && delivery is not null && request.ParentAgentId is { } parent)
+                    {
+                        var run = store.BeginBackground(new BackgroundStart(Name: agentName, ParentAgentId: parent,
+                                Brief: prompt, Description: null, IsResume: true),
+                            new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(delivery, parent, agentName)));
+                        run.Token.Register(foreground!.Cancel);
+                        adopted = true;
+                        _ = BackgroundRunner.Adopt(new BackgroundWork(store, stored, run, prompt, slot, delivery,
+                                r => SubAgentEnvelope.Render(stored.Agent.Agent.Id, agentName, r,
+                                    SubAgentEnvelope.WorkOf(stored.Agent))), send)
+                            .ContinueWith(_ => foreground.Dispose(), TaskScheduler.Default);
+                        return SubAgentEnvelope.Moved(stored.Agent.Agent.Id, agentName, canWrite: true);
+                    }
+
+                    if (released == ForegroundRelease.Stop)
+                    {
+                        try { await send; }
+                        catch (OperationCanceledException) { }
+                        result = new SendResult(SubAgentSpawner.StoppedByUser, SendOutcome.Cancelled);
+                    }
+                    else result = await send;
                 }
                 catch (OperationCanceledException)
                 {
@@ -229,6 +260,14 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                 {
                     store.NoteOutcome(agentName, SubAgentEnvelope.WordFor(SendOutcome.Failed));
                     throw;
+                }
+                finally
+                {
+                    if (foreground is not null)
+                    {
+                        store.EndForeground(agentName);
+                        if (!adopted) foreground.Dispose();
+                    }
                 }
                 store.NoteOutcome(agentName, SubAgentEnvelope.WordFor(result.Outcome));
 
@@ -244,7 +283,7 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                 // THE CAP, AND IT BINDS A RESUME EXACTLY AS IT BINDS A SPAWN. A woken child is a
                 // child running; a cap that counted only spawns would be a cap the model can step
                 // around by reaching for the cheaper tool, which is the one it is told to prefer.
-                slot?.Release();
+                if (!adopted) slot?.Release();
             }
         }
         finally
@@ -254,8 +293,12 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
             // delivery confirmation as the only symptom; and a cancellation while queued must not
             // announce a stop it never announced a start for, or the archive gains a run of zero
             // turns that /stats averages in.
-            if (announced) store.EndSend(agentName);
-            else store.Release(agentName);
+            // AN ADOPTED SEND'S CLAIM IS ITS BACKGROUND RUN'S, released when that run ends.
+            if (!adopted)
+            {
+                if (announced) store.EndSend(agentName);
+                else store.Release(agentName);
+            }
         }
     }
 

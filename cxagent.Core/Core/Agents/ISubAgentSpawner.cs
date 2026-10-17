@@ -218,6 +218,14 @@ public static class SubAgentEnvelope
     /// other did not, and a background spawn returns at once, so nothing holds the parent off the files the
     /// child is working on.</para>
     /// </summary>
+    /// <summary>
+    /// The receipt for a foreground child the user moved to the background: the background receipt, prefaced by who
+    /// moved it — so the model does not wonder why a call it made in the foreground answered like a background one.
+    /// </summary>
+    public static string Moved(string childId, string name, bool canWrite) =>
+        Receipt(childId, name, canWrite).Replace("\nRunning in the background.",
+            "\nThe user moved it to the background. Running in the background.", StringComparison.Ordinal);
+
     public static string Receipt(string childId, string name, bool canWrite) =>
         $"<sub_agent id=\"{childId}\" name=\"{name}\" state=\"{Running}\">\n"
         + "Running in the background. Its report will come to you as a message when it finishes — in this "
