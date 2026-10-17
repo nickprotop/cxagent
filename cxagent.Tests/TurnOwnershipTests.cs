@@ -172,6 +172,40 @@ public class TurnOwnershipTests : IDisposable
     }
 
     /// <summary>
+    /// TEXT ACCEPTED IS NOT REPORTED AS A FAILURE. A sender that stored its steer and then started the lap
+    /// for it itself — the owner had let go meanwhile — gets Queued even when a Drained subscriber throws:
+    /// the text is in, and its lap runs. The subscriber's failure is said, not thrown at the sender.
+    /// </summary>
+    [Fact]
+    public async Task AThrowingDrainedSubscriber_InTheSendersRecheck_DoesNotFailTheSend()
+    {
+        var held = new HeldProvider();
+        var s = Open(held);
+        var first = Assert.IsType<Session.SubmitOutcome.Started>(s.Submit("go"));
+        Assert.True(await Poll.Until(() => held.Calls == 1));
+        s.Drained += _ => throw new InvalidOperationException("a subscriber failed");
+
+        var waiting = 0;
+        s.AfterLosingTheTurnForTest = () =>
+        {
+            Volatile.Write(ref waiting, 1);
+            first.Turn.Wait(TimeSpan.FromSeconds(5));
+        };
+        var late = Task.Run(() => s.Submit("the late one"));
+        Assert.True(await Poll.Until(() => Volatile.Read(ref waiting) == 1));
+
+        held.Release();
+        var outcome = await late;
+        s.AfterLosingTheTurnForTest = null;
+        await Idle(s);
+
+        Assert.IsType<Session.SubmitOutcome.Queued>(outcome);
+        Assert.Equal(2, held.Calls);
+        Assert.Contains("the late one", held.Text());
+        Assert.Contains(_sink!.Errors, e => e.Contains("a subscriber failed"));
+    }
+
+    /// <summary>
     /// A SUBSCRIBER THAT THROWS DOES NOT LEAVE THE TURN OWNED. Taking a steer in the tail raises Drained;
     /// a front end's handler failing there must not wedge every later message into a loop that is gone.
     /// </summary>

@@ -542,10 +542,22 @@ public sealed partial class Session
     /// nothing, and the text would wait in the mailbox or the steer queue until the user next typed. Looked
     /// at AFTER storing, so one of the two always sees it: either the tail's check comes later and finds it,
     /// or this one does. The swap inside ResumeIfPending keeps it to one loop either way.</para>
+    ///
+    /// <para>NOTHING THROWN HERE REACHES THE SENDER. Its text is already stored and, when a lap started, being
+    /// read — an exception would tell it the send failed, and a caller that believes that sends again, so
+    /// the model reads the same words twice. What can throw is a front end's Drained subscriber, and that
+    /// is said through the session's observer, as a failed turn is.</para>
     /// </summary>
     private void ResumeIfReleasedMeanwhile()
     {
-        if (!TurnOwned) ResumeIfPending(readMail: true);
+        try
+        {
+            if (!TurnOwned) ResumeIfPending(readMail: true);
+        }
+        catch (Exception ex)
+        {
+            Say(new Message(ex.Message, Severity.Error));
+        }
     }
 
     /// <summary>
