@@ -323,6 +323,12 @@ public sealed partial class Session
     }
 
     /// <summary>
+    /// Stops one foreground sub-agent the turn is waiting on — the Tasks panel's x and the agent tab's Stop. Its call is
+    /// answered "stopped by the user" and the turn carries on (Ctrl+B spec decision 11). False when it is not waiting.
+    /// </summary>
+    public bool StopForeground(string name) => SubAgents.StopForeground(name);
+
+    /// <summary>
     /// Forgets a kept agent — the panel's x on a finished row. Says nothing to the parent model (decision 15) and
     /// nothing in this transcript: the row leaving the panel is what the user sees.
     /// </summary>

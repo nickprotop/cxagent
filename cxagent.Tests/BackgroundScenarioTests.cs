@@ -501,6 +501,69 @@ public class BackgroundScenarioTests : IDisposable
     /// <para>The child runs on its own run's token, and nothing in Session.CancelTurn may reach a
     /// background run — Escape is about the turn, not the work the turn handed off.</para>
     /// </summary>
+    /// <summary>
+    /// Ctrl+B spec decision 11: STOPPING ONE FOREGROUND CHILD ANSWERS ITS CALL AND THE TURN CARRIES ON — unlike Escape,
+    /// which ends the whole turn.
+    /// </summary>
+    [Fact]
+    public async Task StoppingAForegroundChild_AnswersItsCall_AndTheTurnCarriesOn()
+    {
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check", type = "explore", background = false }, id: "s1")),
+            Answer("carried on"));
+        var foreground = new HeldProvider("never");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 1));
+
+        Assert.True(s.Session.StopForeground("check-it"));
+
+        Assert.True(await Poll.Until(() => parent.Calls == 2));
+        await Idle(s.Session);
+        Assert.Contains("state=\"cancelled\"", parent.Last);
+        Assert.Contains("stopped by the user", parent.Last);
+        Assert.False(s.Session.SubAgents.IsBusy("check-it"));
+    }
+
+    /// <summary>REVIEW FOCUS 3: the model may not resume a foreground child the user stopped.</summary>
+    [Fact]
+    public async Task AStoppedForegroundChild_IsNotResumedByTheModel()
+    {
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check", type = "explore", background = false }, id: "s1")),
+            Use(Calls.Named(Tool.AgentSend, new { to = "check-it", prompt = "go on" }, id: "s2")),
+            Answer("ok"));
+        var foreground = new HeldProvider("never");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 1));
+        s.Session.StopForeground("check-it");
+
+        Assert.True(await Poll.Until(() => parent.Calls == 3));
+        await Idle(s.Session);
+        Assert.Contains("was stopped by the user, so it will not be resumed", parent.Last);
+    }
+
+    /// <summary>Escape still ends a turn that waits on a foreground child, and the child with it.</summary>
+    [Fact]
+    public async Task Escape_StillCancelsAForegroundChild()
+    {
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check", type = "explore", background = false }, id: "s1")));
+        var foreground = new HeldProvider("never");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 1));
+        Assert.True(s.Session.CancelTurn());
+        await Idle(s.Session);
+
+        Assert.False(s.Session.SubAgents.IsBusy("check-it"));
+        Assert.Empty(s.Session.SubAgents.ForegroundNames());
+    }
+
     [Fact]
     public async Task Escape_DoesNotTouchABackgroundChild()
     {

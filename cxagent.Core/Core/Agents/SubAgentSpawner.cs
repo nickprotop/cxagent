@@ -337,6 +337,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             }
             """;
 
+    /// <summary>A foreground child's call when the user stopped it alone — the turn goes on; the work does not.</summary>
+    internal const string StoppedByUser =
+        "stopped by the user before it finished. Do not redo its work, and do not start it again: the user ended it.";
+
     public async Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
         CancellationToken ct, string? parentAgentId = null, Jobs.ToolSelection? turnTools = null)
     {
@@ -447,13 +451,42 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
 
                 // MAIL AFTER THE BRIEF, as a background spawn reads it: anything sent while this child
                 // queued was sent after its brief, and is a correction to the work the brief sets.
-                var result = await child.Agent.SendAsync(prompt, ct, mailFirst: false);
+                // ITS OWN TOKEN, LINKED TO THE TURN'S (Ctrl+B spec): Escape still ends it, but a stop can end it alone
+                // and a move can unlink it. A child nothing kept cannot be reached by either, so it keeps the turn's.
+                var foreground = keptAs is null ? null : _store!.BeginForeground(keptAs, ct);
+                try
+                {
+                    var send = child.Agent.SendAsync(prompt, foreground?.Token ?? ct, mailFirst: false);
 
-                // THE NAME IT WAS KEPT UNDER at spawn — a lookup, not a second Keep, which would
-                // re-register the same child and mint a second handle for it. It goes into the envelope
-                // so the model can reach the child without a listing call.
-                return envelope = SubAgentEnvelope.Render(child.Agent.Id, keptAs,
-                    result with { Text = WithPlanOutcome(result.Text, planPath) }, SubAgentEnvelope.WorkOf(child));
+                    // THE ANSWER, OR WHATEVER LET IT GO FIRST: a stop answers the call now, and the turn goes on.
+                    var released = foreground is null || await Task.WhenAny(send, foreground.Released) == send
+                        ? (ForegroundRelease?)null
+                        : await foreground.Released;
+
+                    if (released == ForegroundRelease.Stop)
+                    {
+                        try { await send; }
+                        catch (OperationCanceledException) { }
+                        return envelope = SubAgentEnvelope.Render(child.Agent.Id, keptAs,
+                            new SendResult(StoppedByUser, SendOutcome.Cancelled), SubAgentEnvelope.WorkOf(child));
+                    }
+
+                    var result = await send;
+
+                    // THE NAME IT WAS KEPT UNDER at spawn — a lookup, not a second Keep, which would
+                    // re-register the same child and mint a second handle for it. It goes into the envelope
+                    // so the model can reach the child without a listing call.
+                    return envelope = SubAgentEnvelope.Render(child.Agent.Id, keptAs,
+                        result with { Text = WithPlanOutcome(result.Text, planPath) }, SubAgentEnvelope.WorkOf(child));
+                }
+                finally
+                {
+                    if (foreground is not null)
+                    {
+                        _store!.EndForeground(keptAs!);
+                        foreground.Dispose();
+                    }
+                }
             }
             finally
             {
