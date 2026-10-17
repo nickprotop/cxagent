@@ -674,6 +674,13 @@ public sealed class MainWindow : IDisposable
         _sessionStripIndex.Remove(strip);
         CloseTab(strip);
         RelabelSessionTabs();
+
+        // THE KEYBOARD GOES TO THE TAB NOW IN FRONT, unconditionally, as it does for a tab just opened. It
+        // sat in the closed tab's composer, which is no longer in the tree, so every key typed next was
+        // lost until F4; the strip's own change handler cannot move it, because it runs inside CloseTab
+        // before the session mapping has shifted. The user closed a tab by command, not by browsing the
+        // strip, so there is no strip focus to protect.
+        FocusComposer();
         return true;
     }
 
