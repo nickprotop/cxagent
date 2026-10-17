@@ -130,7 +130,7 @@ config kills it at the deadline instead. Sixteen background commands may run at 
 `background: true` is refused rather than queued — the refusal names `task_list` and `task_stop`, since
 ending one is what frees a slot.
 
-**`F7` shows this session's background commands in the right-hand column, and `Enter` on one follows its output in a tab.** **`/tasks` lists every background command and sub-agent, `/tasks stop` stops one, and `/tasks output` shows how far it has got** — the handle or pid
+**`F7` shows this session's background commands and sub-agents in the right-hand column — running first, then a Finished section; `Enter` on one opens it in a tab, and `x` stops a running one or deletes a finished one.** **`/tasks` lists every background command and sub-agent, `/tasks stop` stops one, and `/tasks output` shows how far it has got** — the handle or pid
 completes in the palette, so nothing has to be retyped from a row you just read. The model has the
 same reach through `task_list`, `task_stop` and `task_output`, with one restriction a user does not
 have: the session agent may stop anything, but a sub-agent may stop only its own commands, and the
@@ -153,12 +153,14 @@ the agent; the parent carries on, and the agent's report reaches it as a message
 later in the same turn if the parent is still working, or as a new turn if it is not. A result is
 delivered exactly once: if the parent asked for it with `task_output` and `wait: true`, no message
 follows. `background: false` makes the spawn wait for its answer, for work the next step cannot start
-without. Escape never stops a background agent; `task_stop`, `/tasks stop`, closing its tab and
-quitting do, and closing or quitting asks first while one is running. A tab closes as a whole: its
+without. Escape never stops a background agent; `task_stop`, `/tasks stop`, `x` on its card in `F7`,
+closing its session's tab and quitting do — closing the agent's own tab does not, and closing or quitting asks first while one is running. A tab closes as a whole: its
 background commands — its own and its sub-agents' — end with it too, unless you choose "keep N commands
 running" when it asks, for a server or a watcher meant to outlive the tab. An agent the user stopped reports
-that it was stopped, and the model is refused if it tries to restart it — the user's own `/agents send`
-is the way back. Headless runs (`-p`) spawn in the foreground, since a run with one answer has to wait
+that it was stopped, and the model is refused if it tries to restart it — the user's own `/agents send`,
+or a line typed in the agent's tab, is the way back. Once it has finished, `x` on its card deletes it:
+gone from the panel, `/tasks`, `/agents open` and the model's reach, after any report it still owed the
+model has been handed over. Headless runs (`-p`) spawn in the foreground, since a run with one answer has to wait
 for the work that answer needs.
 
 **A sub-agent is kept, not thrown away.** When one finishes, its context — everything it read, ran
@@ -477,7 +479,7 @@ one run before it was written down — and the full reference for options, outpu
 | `F3` | Session panel (show / hide / automatic) |
 | `F4` | Put the cursor back in the composer |
 | `F6` | Focus the tab strip — then `←` `→` to change session, `F6` back to the composer |
-| `F7` | Jobs panel — background jobs in the right-hand column; `↑` `↓` and `Enter` open one. `F7` again hides it |
+| `F7` | Tasks panel — background commands and sub-agents in the right-hand column; `↑` `↓` choose, `Enter` opens, `x` stops a running one and deletes a finished one. `F7` again hides it |
 | `F8` | Configuration — providers, MCP servers, agent types |
 | `F10` | Next thinking level this model offers — see `/think`. (gnome-terminal opens its own menu on F10 unless that is turned off in its preferences) |
 | `F9` | Theme |

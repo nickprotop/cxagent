@@ -41,7 +41,8 @@ but not completed.
 | `/agents <name>` | The full briefing that type is given |
 | `/agents edit` | Add agent types, or set where the built-ins run |
 | `/agents send <name> <prompt>` | Ask one for more — it still has its own context |
-| `/tasks` | Background sub-agents and commands — running, and what finished |
+| `/agents open <name>` | Its tab — the live transcript, and a composer to ask it more |
+| `/tasks` | Background sub-agents and commands — running first, then what finished |
 | `/tasks stop <handle\|pid>` | Stop one |
 | `/tasks output <handle\|pid>` | How far it has got, or what it left |
 | `/init` | Write the project instruction file this agent reads each session |
@@ -448,6 +449,7 @@ What this session can delegate to, and what each type is told.
 /agents                      every type: where it runs, its turn cap, one line on when to choose it
 /agents planner              that type's briefing in full
 /agents send <name> <ask>    ask one it already spawned for more
+/agents open <name>          its tab: the live transcript, and a composer
 ```
 
 **TYPES AND INSTANCES ARE DIFFERENT LISTS.** `/agents` is the catalog — what *could* be spawned,
@@ -499,6 +501,33 @@ queue behind.
 **YOUR SEND RESUMES AN AGENT YOU STOPPED.** The model's `agent_send` to an agent you stopped is
 refused — it must not quietly restart work you ended — so your own `/agents send` is the way back,
 and after it the model may work with that agent again.
+
+**YOUR SEND CAN BE STOPPED.** It runs until the agent answers you, and `/tasks stop`, `x` on its card or
+its tab's **Stop** ends it. That is not a stop of the agent: the model never asked for this work, so
+nothing is refused it afterwards.
+
+**`open` SHOWS ONE AT WORK.** The agent's tab is its transcript drawn as the session's is — its turns,
+tool rows, thinking and markdown — with everything it did before you opened it replayed, then followed
+live. What you sent it shows as your turn; what the parent model sent it shows as a note "from the
+parent agent". Its composer sends what `send` sends, without retyping the handle: to the mailbox while
+it works, a resume once it has finished or was stopped. The answer appears in the tab; the session you
+started it from gets one line saying you asked, and its model is told nothing. **Stop** ends a
+background run or your own send. A sub-agent the parent is waiting on has a read-only tab — no composer
+and no Stop — because the parent's turn is waiting for its answer.
+
+**A view, not an owner.** The tab's title leads with the agent's state — `●` running, `○` queued, `✓`
+done, `✗` failed or stopped — and its first line says the agent keeps running when you close it.
+Closing it stops nothing, and the status bar says where the agent went ("keeps running — F7 shows
+it"). It opens beside its session's tab, and closing the session's tab closes its agents' tabs too,
+since that ends the agents. A command's output tab from `F7` behaves the same way. When the agent asks
+permission while its tab is in front, the prompt is in the tab; otherwise it is in the session's tab —
+and it stays where it was raised. Either way it is answered once.
+
+**A deleted agent is gone.** `x` on a finished agent's card in `F7` removes it from this session — the
+panel, `/tasks`, `/agents open`, the palette — and closes its tab; its context is freed. A report the
+model had not yet received is handed to the model first; if it still cannot be, the agent stays and
+says so. The model is not told, and if it reaches for the agent it is told you dismissed it. Its handle
+is not used again in the session.
 
 ## `/init`
 
@@ -732,17 +761,18 @@ that: work running unattended — commands backgrounded by `run_shell`, and sub-
 background.
 
 ```
-/tasks                          # every background agent and command, running and recently finished
+/tasks                          # every background agent and command — running first, then finished
 /tasks stop <handle|pid>        # stop one
 /tasks output <handle|pid>      # how far it has got, or what it left
 ```
 
-A sub-agent's row shows its handle, type and state — queued, running, finished, stopped, busy or idle,
+Running agents are listed first, finished ones below. A sub-agent's row shows its handle, type and state — queued, running, finished, stopped, busy or idle,
 and "report not delivered" when its report could not reach the model. A command's row shows the pid,
 who started it, how long it has been running, the command line and where its output is going. **It is
 every agent's work, not only yours** — the registry backing it is process-wide, and a command is
 stoppable by pid regardless of who is told about it, so hiding another agent's row would draw a
-boundary that is not really there. Commands that have ended stay listed with their exit code.
+boundary that is not really there. Commands that have ended stay listed with their exit code — the
+latest 50.
 
 **`stop` on an agent is your stop.** The agent reports to the model that you stopped it, without
 starting a turn, and the model is refused if it tries to restart it. **`output` reads without taking**:
@@ -752,19 +782,28 @@ looking at a finished agent's report here does not stop the model being sent it.
 same mechanism `/agents send` uses — so nobody has to retype a handle or a pid they just read off a
 `/tasks` row.
 
-**You do not have to ask.** `F7` turns the right-hand column into the jobs panel, as `F3` is the info
-panel: each of this session's background commands with its state, how long it has run, and the last
-three lines it printed. A finished job stays there, marked `✓` or `✗` with its exit code and its last
-lines, until you next send a message. `F7` again hides the column; `F3` switches back to info.
+**You do not have to ask.** `F7` turns the right-hand column into the Tasks panel, as `F3` is the info
+panel: a card for each of this session's background commands (`▭`) and sub-agents (`◇`, foreground ones
+included), under a **Running** heading, then a **Finished** one where a card is marked `✓` for success
+and `✗` for anything else. A card is three lines — the command or what the agent was asked to do; `Shell`
+or `Agent` with how long it has run, or how it ended; and what opening it shows, its output or its
+transcript.
 
-While the jobs panel has the keyboard, `↑` `↓` choose a job and `Enter` opens it in a tab — so does a
-click. The status bar shows `F7:Tasks`, with a count of running background commands and agents while any
+Every card has one control at its right edge: `⏹` while it runs, `✕` once it has ended. A click on it,
+or `x`, stops a running task — a command is killed at once, with no confirmation, as its tab's Kill
+does — and deletes a finished one: a command's record leaves `/tasks` and `task_list`; for an agent, see
+[`/agents`](#agents). Nothing leaves on its own, except that past 64 finished commands the oldest go. A
+sub-agent the parent is waiting on has no control, and `x` does nothing on it; the hint under its card
+says so. `F7` again hides the column; `F3` switches back to info.
+
+While the panel has the keyboard, `↑` `↓` choose a card and `Enter` opens it in a tab — so does a
+double-click. The status bar shows `F7:Tasks`, with a count of running background commands and agents while any
 run, and other session tabs' as `+N` (`Tasks 2+1`).
 
 **The tab follows the output** as it is written, stops following when you scroll up, and starts again
 at the bottom. **Kill** stops the job; **Copy to transcript** queues its last 8,192 characters to go
 with your next message, without starting a turn — and if you send while a turn is running, the model
-gets the copy but your message shows only what you typed. Closing the tab leaves the job running.
+gets the copy but your message shows only what you typed. Closing the tab leaves the job running, as an agent's tab does.
 
 When a background command or agent finishes while the session is idle, its notice starts a turn; a
 finished agent's report is shown as one line, not drawn in full. The notice is a System note, not
