@@ -103,6 +103,27 @@ public class ModelFacingTextTests
     }
 
     /// <summary>
+    /// WAITING ON A JUST-SPAWNED AGENT IS NAMED AS THE SAME BLOCK, in the three places the ask rule is read
+    /// and in task_output's own description. Measured live: told only "never pass false", the model spawned
+    /// with background: true and called task_output wait: true at once, and the user's turn blocked all the
+    /// same.
+    /// </summary>
+    [Fact]
+    public void TheModelIsTold_WaitingOnAJustSpawnedAgentBlocksTheUserAsFalseDoes()
+    {
+        const string rule = "do not follow the spawn with task_output wait: true";
+        Assert.Contains(rule, Prompt(canSpawn: true, canBackground: true));
+        var spawner = Spawner(true).Definition;
+        Assert.Contains(rule, spawner.Description);
+        var flag = spawner.InputSchema.GetProperty("properties").GetProperty("background").GetProperty("description").GetString();
+        Assert.Contains(rule, flag);
+        Assert.StartsWith("Omit it", flag, StringComparison.Ordinal);
+
+        var output = TaskTools.Definitions.Single(d => d.Name == "task_output").Description;
+        Assert.Contains("blocks the user's turn exactly as background: false does", output);
+    }
+
+    /// <summary>
     /// THE WAITING EXAMPLE WAITS BECAUSE NOTHING CAN START WITHOUT THE ANSWER, not because it is a search: an
     /// example that reads "finding means foreground" pulls an explore request into a blocked turn.
     /// </summary>

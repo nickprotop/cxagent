@@ -449,11 +449,15 @@ public sealed class TaskTools(TaskSources sources)
                 }
                 """).RootElement),
 
+        // THE JUST-SPAWNED CASE IS NAMED, because "only when your next step cannot go on" is a judgement a
+        // model makes about the task, and it judges an explore it was asked to background to be such a
+        // step — spawning and then waiting at once, which blocks the user's turn as background: false does.
         new ToolDefinition(Tool.TaskOutput,
             "How far a background task has got, or its result once it has finished. With wait: true it "
             + "blocks until the task ends or the timeout passes — only when your next step cannot go on "
-            + "without the result; a message from the user ends the wait. A result you read here is not "
-            + "sent to you again.",
+            + "without the result; a message from the user ends the wait. Waiting on an agent you have just "
+            + "spawned blocks the user's turn exactly as background: false does, so never do it when the user "
+            + "asked for a background agent. A result you read here is not sent to you again.",
             JsonDocument.Parse(
                 """
                 {

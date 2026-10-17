@@ -169,11 +169,18 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// with the user's next message left waiting behind it. The user's words are the one input that judgement
     /// must not override.</para>
     ///
+    /// <para>THE WAIT IS NAMED TOO, because it is the same block by another route: a model told only "never
+    /// pass false" spawns with true and then calls task_output wait: true at once, and the user's turn
+    /// waits exactly as it would have. Saying what to do instead — end the turn or carry on — matters as
+    /// much as the ban: a model that knows only what not to do reaches for the wait the receipt offers.</para>
+    ///
     /// <para>ONE CONSTANT for the three places, so they cannot come to say different things.</para>
     /// </summary>
     internal const string AskedForBackground =
-        "When the user asks for a background agent, or to keep working or talking while it runs, use the "
-        + "default and never pass background: false.";
+        "When the user asks for a background agent, or to keep working or talking while it runs, omit "
+        + "background (never pass background: false), and do not follow the spawn with task_output wait: "
+        + "true — that blocks the user's turn exactly as false does. End your turn or carry on with other "
+        + "work; its report comes to you as a message.";
 
     /// <summary>How a spawn waits, for a spawner that runs every spawn in the foreground.</summary>
     private const string WaitingInTheForeground =
@@ -284,13 +291,17 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// <summary>
     /// The `background` argument, offered only where it can do something — see
     /// <see cref="CanBackground"/>. A flag the spawn ignores is a promise the schema cannot keep.
+    ///
+    /// <para>IT OPENS WITH "OMIT IT", because the default is the right answer nearly always, and a flag
+    /// whose description opens on what the value means invites the model to choose one — and choosing is
+    /// where it picks false.</para>
     /// </summary>
     private const string BackgroundProperty =
         $$"""
         ,
                         "background": {
                           "type": "boolean",
-                          "description": "Default true: the agent runs while you carry on, and its report comes to you when it is done. {{AskedForBackground}} Otherwise, pass false only when this turn can do nothing else until its answer arrives."
+                          "description": "Omit it: by default the agent runs while you carry on, and its report comes to you when it is done. {{AskedForBackground}} Otherwise, pass false only when this turn can do nothing else until its answer arrives."
                         }
         """;
 
