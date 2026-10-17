@@ -43,6 +43,7 @@ public sealed class TasksItemCountTests : IDisposable
     /// <summary>A background run on this session, in the given state.</summary>
     private static void Run(Session session, string name, BackgroundState state)
     {
+        session.SubAgents.Keep(AgentTabTests.Child(AgentTabTests.Says()), name);
         var run = session.SubAgents.BeginBackground(new BackgroundStart(name, "parent", "do it", name, IsResume: false),
             new ResultHandoff(_ => true));
         if (state != BackgroundState.Queued) run.MarkRunning();
@@ -110,6 +111,8 @@ public sealed class TasksItemCountTests : IDisposable
         Assert.Equal("Tasks 2", MainWindow.JobsItemLabelFor(front, [front], window.Jobs));
         var panel = MarkupParser.Remove(window.JobsPanel.RenderedText);
         Assert.Contains("Tasks · 2 running", panel, StringComparison.Ordinal);
+        Assert.Contains("◇ a", panel, StringComparison.Ordinal);
+        Assert.Contains("queued", panel, StringComparison.Ordinal);
         Assert.DoesNotContain("Nothing running", panel, StringComparison.Ordinal);
     }
 
@@ -160,5 +163,66 @@ public sealed class TasksItemCountTests : IDisposable
         front.SubAgents.BeginUserSend("mine");
 
         Assert.Equal(new TabWork(Agents: 1, Commands: 0), MainWindow.TabWorkFor(front, NoShells()));
+    }
+
+    [Fact]
+    public void X_OnAFinishedShell_ForgetsIt()
+    {
+        var paths = new AppPaths(_dir);
+        paths.EnsureCreated();
+        var registry = new DetachedProcessRegistry();
+        var window = new MainWindow(new ConsoleWindowSystem(new HeadlessConsoleDriver(200, 40),
+                new ConsoleWindowSystemOptions(InstallSynchronizationContext: true)),
+            ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths))
+        { Jobs = new BackgroundJobBoard(registry), Shells = new FinishedShells() };
+        window.Build();
+        var front = Open();
+        window.NoteFirstSession(front);
+        var failing = ProcessRunner.DetachAsync(
+            new ProcessSpec("/bin/sh", ["-c", "exit 3"], new RunOptions(WorkingDir: TestProcesses.WorkingDir,
+                SpillDir: Path.Combine(_dir, "spill"))), new CollectingContext(), registry).GetAwaiter().GetResult();
+        registry.Describe(failing, new BackgroundJob(failing.Pid, front.SessionId!, "exit 3", DateTimeOffset.UtcNow,
+            failing.OutputPath));
+        try
+        {
+            Assert.True(Poll.Until(() => window.Jobs.For(front.Owns).All(e => e.Finished)).GetAwaiter().GetResult());
+            window.ToggleJobsPanel();
+            window.JobsPanel.ToggleFinished();
+
+            Assert.True(window.JobsPanel.ActOnSelected());
+
+            Assert.Empty(window.Jobs.For(front.Owns));
+        }
+        finally { registry.ReapAll(); }
+    }
+
+    /// <summary>Decision 13: x on a finished agent forgets it everywhere — and its open tab closes.</summary>
+    [Fact]
+    public void X_OnAFinishedAgent_ForgetsIt_AndClosesItsTab()
+    {
+        var paths = new AppPaths(_dir);
+        paths.EnsureCreated();
+        var window = new MainWindow(new ConsoleWindowSystem(new HeadlessConsoleDriver(200, 40),
+                new ConsoleWindowSystemOptions(InstallSynchronizationContext: true)),
+            ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths))
+        { Jobs = NoShells(), Shells = new FinishedShells() };
+        window.Build();
+        var front = Open();
+        window.NoteFirstSession(front);
+        front.SubAgents.Keep(AgentTabTests.Child(AgentTabTests.Says()), "finder");
+        front.SubAgents.TryClaim("finder");
+        front.SubAgents.AnnounceBegin("finder");
+        front.SubAgents.EndSend("finder", "completed");
+        window.OpenAgentTab(front, "finder");
+        var tabs = window.Tabs.TabCount;
+        window.Tabs.ActiveTabIndex = 0;
+        window.ToggleJobsPanel();
+        window.JobsPanel.ToggleFinished();
+
+        Assert.True(window.JobsPanel.ActOnSelected());
+
+        Assert.Null(front.SubAgents.Find("finder"));
+        Assert.Equal(tabs - 1, window.Tabs.TabCount);
+        Assert.DoesNotContain("finder", MarkupParser.Remove(window.JobsPanel.RenderedText), StringComparison.Ordinal);
     }
 }

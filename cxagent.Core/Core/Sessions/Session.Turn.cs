@@ -70,6 +70,12 @@ public sealed partial class Session
     /// </summary>
     public void NotifyError(string line) => Say(new Message(line, Severity.Error));
 
+    /// <summary>
+    /// Draws one System line in this session's transcript, marked as a warning — for a front end telling the user
+    /// why something they asked for did not happen yet, such as an x refused while a report is still owed.
+    /// </summary>
+    public void NotifyWarning(string line) => Say(new Message(line, Severity.Warning));
+
     /// <summary>Whether a turn loop owns this conversation.</summary>
     public bool TurnOwned => Volatile.Read(ref _turnOwned) == 1;
 

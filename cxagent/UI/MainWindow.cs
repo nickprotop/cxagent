@@ -1732,14 +1732,9 @@ public sealed class MainWindow : IDisposable
         // in this file does, instead of being fixed once and left behind by a later switch.
         StartPanelClock();
 
-        // A JOB ROW IN THE JOBS PANEL OPENS ITS TAB, and closing a job tab only closes the view. Wired
-        // once here: the panel and the strip are the window's, however many sessions come and go.
-        JobsPanel.JobChosen += pid =>
-        {
-            if (JobsSession is { } session
-                && Jobs.For(session.Owns).FirstOrDefault(e => e.Job.Pid == pid) is { } entry)
-                OpenJobTab(entry, session);
-        };
+        // A CARD OPENS ITS TAB, AND ⏹ OR x STOPS OR FORGETS IT — by kind; closing a tab only closes the view.
+        // Wired once here: the panel and the strip are the window's, however many sessions come and go.
+        JobsPanel.RowChosen += OnRowChosen;
         Tabs.TabCloseRequested += OnJobTabCloseRequested;
         Tabs.TabCloseRequested += OnAgentTabCloseRequested;
 
@@ -2659,15 +2654,72 @@ public sealed class MainWindow : IDisposable
         ?? ActiveAgentTab?.Session
         ?? ActiveSession;
 
-    /// <summary>The jobs panel, from the board, for the session whose jobs are in front.</summary>
+    /// <summary>
+    /// Where ended commands' records are forgotten from: the process-wide record, unless a test hands in its own.
+    /// </summary>
+    public Core.Execution.FinishedShells Shells { get; set; } = Core.Execution.FinishedShells.Default;
+
+    /// <summary>
+    /// A card was chosen: open its tab, stop it, or — once it has ended — forget it everywhere (decision 13).
+    ///
+    /// <para>NOTHING IS SAID IN THE TRANSCRIPT FOR A FORGET (decision 15 for the model, 25 for the user): the card
+    /// leaving the panel is what the user sees. A forget refused for an owed report says so, because the card
+    /// staying is otherwise inexplicable.</para>
+    /// </summary>
+    private void OnRowChosen(JobsPanel.RowChoice choice)
+    {
+        if (JobsSession is not { } session) return;
+        switch (choice.Row)
+        {
+            case JobsPanel.JobRow row when Jobs.For(session.Owns).FirstOrDefault(e => e.Job.Pid == row.View.Job.Pid) is { } entry:
+                if (choice.Action == JobsPanel.RowAction.Open) OpenJobTab(entry, session);
+                // OFF THE UI THREAD, as the job tab's Kill: it waits for the process and reports inline. NO
+                // CONFIRMATION, as the Kill button and /tasks stop have none.
+                else if (!entry.Finished) _ = Task.Run(entry.Process.Kill);
+                // THE RECORD FIRST: it is what /tasks and task_list read, and it refuses while its exit report is
+                // still owed — the board's card stays with it.
+                else if (Shells.Forget(entry.Job.Pid)) Jobs.Dismiss(entry);
+                else session.NotifyWarning($"pid {entry.Job.Pid}'s exit report could not reach its agent yet — x again once it has.");
+                break;
+            case JobsPanel.AgentRow { View: var view }:
+                if (choice.Action == JobsPanel.RowAction.Open) OpenAgentTab(session, view.Kept.Name);
+                // THROUGH /tasks stop, so the transcript records the stop as the command would.
+                else if (view.Running) _ = Task.Run(() => session.StopTask($"stop {view.Kept.Name}"));
+                else Forget(session, view);
+                break;
+        }
+        RefreshJobsPanel();
+    }
+
+    /// <summary>Forgets an ended agent, and closes its tab — there is nothing left for it to show.</summary>
+    private void Forget(Session session, AgentRowView view)
+    {
+        switch (session.ForgetAgent(view.Kept.Name))
+        {
+            case ForgetOutcome.Forgotten:
+                if (_agentTabs.TryGetValue(view.AgentId, out var open)) CloseAgentTab(open.Tab);
+                break;
+            case ForgetOutcome.ReportOwed:
+                session.NotifyWarning($"'{view.Kept.Name}''s report could not reach the parent yet — x again once it has.");
+                break;
+        }
+    }
+
+    /// <summary>The panel, from the board and the store, for the session whose tasks are in front.</summary>
     private void RefreshJobsPanel()
     {
-        IReadOnlyList<JobsPanel.JobRow> rows = JobsSession is not { } session ? [] :
-            [.. Jobs.For(session.Owns).Select(e => new JobsPanel.JobRow(
-                e.View(),
-                OutputTail.LastLines(e.Job.OutputPath, JobsPanel.TailLines),
-                AgentName(session, e.Job.AgentId)))];
-        JobsPanel.Refresh(new JobsPanel.JobsShown(rows, RunningTasksOf(JobsSession, Jobs)), _panelWidth);
+        if (JobsSession is not { } session)
+        {
+            JobsPanel.Refresh(new JobsPanel.JobsShown([], 0), _panelWidth);
+            return;
+        }
+
+        var shells = Jobs.For(session.Owns).Select(e => (JobsPanel.PanelRow)new JobsPanel.JobRow(
+            e.View(), OutputTail.LastLines(e.Job.OutputPath, JobsPanel.TailLines), AgentName(session, e.Job.AgentId)));
+        var agents = AgentRows.For(session.SubAgents, DateTimeOffset.UtcNow)
+            .Select(a => (JobsPanel.PanelRow)new JobsPanel.AgentRow(a));
+        JobsPanel.Refresh(new JobsPanel.JobsShown(JobsPanel.Order(shells.Concat(agents)), RunningTasksOf(session, Jobs)),
+            _panelWidth);
     }
 
     /// <summary>Null for the session's own agent; the sub-agent's name otherwise.</summary>
@@ -2987,7 +3039,7 @@ public sealed class MainWindow : IDisposable
     }
 
     /// <summary>Whether the jobs panel's rows have the keyboard — for the window's ↑ ↓ forwarding.</summary>
-    public bool JobsRowsHaveFocus => JobsPanel.Control.Visible && JobsPanel.Rows.HasFocus;
+    public bool JobsRowsHaveFocus => JobsPanel.Control.Visible && JobsPanel.RowsHaveFocus;
 
     /// <summary>
     /// Raises the permission prompt onto its own surface.

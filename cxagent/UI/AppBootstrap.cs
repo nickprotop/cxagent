@@ -1363,10 +1363,10 @@ public static class AppBootstrap
                 return;
             }
 
-            // ↑ ↓ AND ENTER ON THE JOBS PANEL'S ROWS, only while they have the keyboard — the composer's
+            // ↑ ↓, ENTER, x AND f ON THE TASKS PANEL'S CARDS, only while they have the keyboard — the composer's
             // own ↑ ↓ (history, the command list) never reach here, because the composer has the
-            // keyboard then. The panel keeps its own selection: see JobsPanel._selected for why the
-            // markup control's focused link cannot be it.
+            // keyboard then. Forwarded rather than left to the focused list, so the panel decides which of its
+            // two lists the key is for.
             if (mainWindow is { JobsRowsHaveFocus: true } jobsWindow)
             {
                 var handled = e.KeyInfo.Key switch
@@ -1374,6 +1374,8 @@ public static class AppBootstrap
                     ConsoleKey.UpArrow => jobsWindow.JobsPanel.MoveSelection(down: false),
                     ConsoleKey.DownArrow => jobsWindow.JobsPanel.MoveSelection(down: true),
                     ConsoleKey.Enter => jobsWindow.JobsPanel.ChooseSelected(),
+                    ConsoleKey.X when e.KeyInfo.Modifiers == 0 => jobsWindow.JobsPanel.ActOnSelected(),
+                    ConsoleKey.F when e.KeyInfo.Modifiers == 0 => jobsWindow.JobsPanel.ToggleFinished(),
                     _ => false,
                 };
                 if (handled)
