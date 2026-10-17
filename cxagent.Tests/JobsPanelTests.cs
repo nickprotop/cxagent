@@ -322,6 +322,25 @@ public class JobsPanelTests
     }
 
     /// <summary>
+    /// WIDTHS IN COLUMNS, NOT CHARACTERS. A wide (CJK or emoji) title counted one column a character pushed the card's
+    /// control out of line with every other card's, or wrapped the title line.
+    /// </summary>
+    [Theory]
+    [InlineData("整理价格文件并总结结果给我看一下")]
+    [InlineData("📦📦📦📦📦📦📦📦📦📦📦📦📦📦📦📦📦📦")]
+    public void AWideTitle_KeepsTheControlInItsColumn(string title)
+    {
+        var text = Render(Agent("plain", AgentRowState.Running, description: "a plain title"),
+            Agent("wide", AgentRowState.Running, description: title));
+        var lines = text.Split('\n');
+        var plain = Assert.Single(lines, l => l.Contains("a plain title", StringComparison.Ordinal)).TrimEnd();
+        var wide = Assert.Single(lines, l => l.EndsWith("⏹", StringComparison.Ordinal) && !l.Contains("plain")).TrimEnd();
+
+        Assert.Equal(SharpConsoleUI.Helpers.UnicodeWidth.GetStringWidth(plain),
+            SharpConsoleUI.Helpers.UnicodeWidth.GetStringWidth(wide));
+    }
+
+    /// <summary>
     /// ↓ PAST THE LAST RUNNING CARD GOES ON INTO FINISHED, and ↑ comes back: the column reads as one list, and the
     /// keys stopped dead at a section's end with more cards visible below.
     /// </summary>

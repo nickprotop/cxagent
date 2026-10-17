@@ -354,7 +354,7 @@ public sealed class JobsPanel
             if (at.Y - list.Margin.Top != top) return false;
             var title = MarkupParser.Remove(list.Items[index].Text.Split('\n')[0]);
             var glyph = title.IndexOfAny(['⏹', '✕']);
-            return glyph >= 0 && Math.Abs(at.X - list.Margin.Left - glyph) <= 1;
+            return glyph >= 0 && Math.Abs(at.X - list.Margin.Left - Columns(title[..glyph])) <= 1;
         }
 
         /// <summary>Selects the card with this key and takes the keyboard; false when this section does not hold it.</summary>
@@ -562,7 +562,7 @@ public sealed class JobsPanel
         if (control is null) return Value(Cut(title, usable));
         var room = Math.Max(1, usable - 2);
         var text = Cut(title, room);
-        return $"{Value(text)}{new string(' ', room - text.Length)} {Muted(control)}";
+        return $"{Value(text)}{new string(' ', Math.Max(0, room - Columns(text)))} {Muted(control)}";
     }
 
     /// <summary>
@@ -573,8 +573,29 @@ public sealed class JobsPanel
     private static string DetailLines(IReadOnlyList<string> facts, string view, int usable) =>
         $"  {Muted(Cut(string.Join(" · ", facts), usable))}\n  {Value(view)}";
 
-    private static string Cut(string text, int width) =>
-        text.Length <= width ? text : text[..Math.Max(0, width - 1)] + "…";
+    /// <summary>
+    /// The text cut to fit this many columns, with "…" when it does not.
+    ///
+    /// <para>IN COLUMNS, NOT CHARACTERS: a CJK character or an emoji takes two, and counting it as one pushed the card's
+    /// control out of line with every other card's, or wrapped the title line.</para>
+    /// </summary>
+    private static string Cut(string text, int width)
+    {
+        if (Columns(text) <= width) return text;
+        var used = 0;
+        var kept = new System.Text.StringBuilder();
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var w = SharpConsoleUI.Helpers.UnicodeWidth.GetRuneWidth(rune);
+            if (used + w > width - 1) break;
+            kept.Append(rune.ToString());
+            used += w;
+        }
+        return kept + "…";
+    }
+
+    /// <summary>How many terminal columns the text takes.</summary>
+    private static int Columns(string text) => SharpConsoleUI.Helpers.UnicodeWidth.GetStringWidth(text);
 
     private static string Value(string text) => MarkupParser.Escape(text);
 
