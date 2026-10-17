@@ -506,9 +506,15 @@ public sealed partial class Session
     /// <summary>Says what changed in this session's working folder, per <c>git diff</c>.</summary>
     public CommandStatus ShowDiff(string arguments)
     {
-        Say(Commands.DiffCommand.Render(arguments, WorkingDirectory));
+        // ON THE POOL, NOT THE THREAD THAT TYPED IT: git can take seconds on a large tree — up to its timeout twice —
+        // and the command is typed on the UI thread. The diff is said when it is ready, as /agents send's answer is.
+        var run = DiffRunnerForTest;
+        _ = Task.Run(() => Say(Commands.DiffCommand.Render(arguments, WorkingDirectory, run)));
         return CommandStatus.Reported;
     }
+
+    /// <summary>Test seam: runs git for /diff in place of the real process; null runs git.</summary>
+    internal Commands.DiffCommand.Runner? DiffRunnerForTest { get; set; }
 
     /// <summary>
     /// Empties this session's conversation.

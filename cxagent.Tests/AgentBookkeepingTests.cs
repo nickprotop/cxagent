@@ -186,4 +186,27 @@ public sealed class AgentBookkeepingTests : IDisposable
 
         Assert.True(token.IsCancellationRequested);
     }
+
+    /// <summary>
+    /// /diff DOES NOT HOLD THE THREAD THAT TYPED IT. Git can take seconds on a large tree, and the command is typed on
+    /// the UI thread; the diff arrives when it is ready.
+    /// </summary>
+    [Fact]
+    public async Task SlashDiff_ReturnsBeforeGitDoes()
+    {
+        var s = Open();
+        using var git = new ManualResetEventSlim();
+        s.DiffRunnerForTest = (_, args) =>
+        {
+            git.Wait(TimeSpan.FromSeconds(10));
+            return new(0, args[0] == "rev-parse" ? "true\n" : "diff --git a/x b/x\n+one\n", "");
+        };
+
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        s.ShowDiff("");
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(2), $"ShowDiff held the caller for {timer.Elapsed}");
+
+        git.Set();
+        Assert.True(await Poll.Until(() => _sink!.Notices.Any(n => n.Contains("+one", StringComparison.Ordinal))));
+    }
 }
