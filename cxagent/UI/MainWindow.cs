@@ -675,11 +675,15 @@ public sealed class MainWindow : IDisposable
         CloseTab(strip);
         RelabelSessionTabs();
 
+        // THE TAB NOW IN FRONT IS SHOWN AGAIN, once the mapping is whole. The strip's change handler ran
+        // inside CloseTab, before the session mapping shifted, and found no session at the new index — so
+        // the side panel kept painting the closed conversation's turns, tool calls and spend.
+        ShowActiveSession();
+
         // THE KEYBOARD GOES TO THE TAB NOW IN FRONT, unconditionally, as it does for a tab just opened. It
         // sat in the closed tab's composer, which is no longer in the tree, so every key typed next was
-        // lost until F4; the strip's own change handler cannot move it, because it runs inside CloseTab
-        // before the session mapping has shifted. The user closed a tab by command, not by browsing the
-        // strip, so there is no strip focus to protect.
+        // lost until F4. ShowActiveSession declines while the strip has focus, which protects browsing;
+        // the user closed a tab by command, not by browsing the strip.
         FocusComposer();
         return true;
     }

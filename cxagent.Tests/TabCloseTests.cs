@@ -13,7 +13,8 @@ namespace CxAgent.Tests;
 /// What the window shows once a session tab closes: the tab that becomes active, in full.
 ///
 /// <para>THE CLOSED TAB'S COMPOSER HELD THE KEYBOARD, so with nothing moving it the next keys went
-/// nowhere until F4.</para>
+/// nowhere until F4; and the side panel kept painting the closed conversation's turns, tool calls and
+/// spend beside the one now in front.</para>
 /// </summary>
 public sealed class TabCloseTests : IDisposable
 {
@@ -59,5 +60,34 @@ public sealed class TabCloseTests : IDisposable
 
         Assert.Same(first, _window.ActiveTab);
         Assert.Same(first.Input, _window.Window!.FocusManager.FocusedControl);
+    }
+
+    [Fact]
+    public void ClosingATab_ShowsTheRemainingTabsNumbersInTheSidePanel()
+    {
+        var first = _window.SessionTabs[0];
+        first.Tally.Turns = 3;
+        first.Tally.ToolCalls = 11;
+        first.Spend = new MainWindow.SpendReading { ByInstance = new Dictionary<string, int> { ["frontinst:m"] = 1_200 } };
+        var closing = Open();
+        var second = _window.AddSessionTab(closing);
+        second.Tally.Turns = 7;
+        second.Tally.ToolCalls = 42;
+        _window.SetSpend(closing, new MainWindow.SpendReading
+        {
+            ByInstance = new Dictionary<string, int> { ["closedinst:m"] = 9_000 },
+            SubAgentTokens = 4_000,
+        });
+        Assert.Contains("7 turns", _window.SessionPanel.RenderedText);
+        Assert.Contains("closedinst", _window.SessionPanel.RenderedText);
+
+        _window.CloseActiveSession(confirmed: true);
+
+        var shown = _window.SessionPanel.RenderedText;
+        Assert.Contains("3 turns", shown);
+        Assert.Contains("11 tool calls", shown);
+        Assert.DoesNotContain("42 tool calls", shown);
+        Assert.Contains("frontinst", shown);
+        Assert.DoesNotContain("closedinst", shown);
     }
 }
