@@ -337,7 +337,8 @@ public class LocalModelEval
     /// <summary>
     /// The user's own words, asking for a background agent. Measured live: the model passed background: false
     /// explicitly, so the parent's turn blocked and the user's next message waited behind it. Passes when the
-    /// first spawn leaves the flag at its default, or sets it true.
+    /// first spawn leaves the flag at its default, or sets it true — and is not followed straight away by a
+    /// task_output wait on it, which blocks the turn exactly as background: false does.
     /// </summary>
     [EvalTheory, MemberData(nameof(Runs))]
     public async Task S11_AskedForABackgroundAgent(int run)
@@ -347,14 +348,20 @@ public class LocalModelEval
         await Idle(r.Session);
         var calls = CallsOf(r);
         var first = calls.FirstOrDefault(c => c.StartsWith("agent ", StringComparison.Ordinal));
-        var pass = first is not null && !first.Replace(" ", "", StringComparison.Ordinal)
-            .Contains("\"background\":false", StringComparison.Ordinal);
+        static string Bare(string call) => call.Replace(" ", "", StringComparison.Ordinal);
+        var next = first is null ? null : calls.SkipWhile(c => !ReferenceEquals(c, first)).Skip(1).FirstOrDefault();
+        var waitedAtOnce = next is not null && next.StartsWith("task_output", StringComparison.Ordinal)
+            && (Bare(next).Contains("\"wait\":true", StringComparison.Ordinal)
+                || Bare(next).Contains("\"wait\":\"true\"", StringComparison.OrdinalIgnoreCase));
+        var pass = first is not null && !waitedAtOnce
+            && !Bare(first).Contains("\"background\":false", StringComparison.Ordinal);
         // THE FLAG IS NAMED IN THE RECORD, because Record cuts each call at 220 characters and a spawn's prompt
         // pushes the flag past the cut — the one fact this scenario scores would otherwise be unreadable.
         var flag = first is null ? "no spawn"
             : System.Text.RegularExpressions.Regex.Match(first, "\"background\"\\s*:\\s*(true|false)") is { Success: true } m
                 ? "background: " + m.Groups[1].Value
                 : "background omitted";
+        if (waitedAtOnce) flag += ", then waited on it at once";
         Record("S11 asked for a background agent", run, pass, [$"[first spawn: {flag}]", .. calls], Final(r));
     }
 }
