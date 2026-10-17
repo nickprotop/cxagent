@@ -385,11 +385,14 @@ internal sealed class AbiHostProcess : IAsyncDisposable
             // THE WRITE ITSELF IS SERIALISED, matching the host process's own discipline on its
             // reply writes for the same reason: two requests racing to write could interleave their
             // bytes mid-line and hand the host a line neither JSON.
-            await _writeLock.WaitAsync(ct);
+            // NO CONTEXT CAPTURED, here or below: AbiPlugin.Gate blocks on this from whatever thread asks, and a
+            // continuation posted back to a UI thread that is blocked waiting for it never runs — nor can the gate's
+            // own timeout, which fires through the same await.
+            await _writeLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                await _process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(request));
-                await _process.StandardInput.FlushAsync(ct);
+                await _process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(request)).ConfigureAwait(false);
+                await _process.StandardInput.FlushAsync(ct).ConfigureAwait(false);
             }
             finally
             {
@@ -434,7 +437,7 @@ internal sealed class AbiHostProcess : IAsyncDisposable
         // branch is exactly what makes that safe once nobody is awaiting it any more, matching
         // PluginRegistry.UnwireAsync's own "the await here is abandoned, not cancelled" language for
         // a managed plugin's hung Stop.
-        return await tcs.Task;
+        return await tcs.Task.ConfigureAwait(false);
     }
 
     /// <summary>Best-effort stderr capture for an error message — never throws, because a process

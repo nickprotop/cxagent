@@ -95,6 +95,37 @@ public class AbiPluginHostTests
         Assert.True(stopReply.Ok);
     }
 
+    /// <summary>Runs posted work only when its own thread is free — the UI thread's, which is blocked.</summary>
+    private sealed class BusyThreadContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) { }
+    }
+
+    /// <summary>
+    /// A GATE ASKED FROM THE UI THREAD RETURNS. AbiPlugin.Gate blocks on the host's reply; a Send that resumed on the
+    /// caller's context would wait for the very thread it blocked, and its own timeout could not fire either.
+    /// </summary>
+    [Fact]
+    public async Task AGateAskedFromTheUiThread_DoesNotDeadlock()
+    {
+        if (!RequireFixture("fixture-wellformed", out var lib)) return;
+        var (host, _) = await AbiHostProcess.Launch(HostDllPath, lib);
+        await using var disposeHost = host;
+        await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
+        var args = JsonSerializer.SerializeToElement(new { value = "hi" });
+
+        HostReply? reply = null;
+        var ui = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new BusyThreadContext());
+            reply = host.Gate("echo", args, TimeSpan.FromSeconds(2), CancellationToken.None).GetAwaiter().GetResult();
+        }) { IsBackground = true };
+        ui.Start();
+
+        Assert.True(ui.Join(TimeSpan.FromSeconds(10)), "the gate never returned");
+        Assert.NotNull(reply);
+    }
+
     // ---- A plugin that exports a command ------------------------------------------------------
 
     [Fact]
