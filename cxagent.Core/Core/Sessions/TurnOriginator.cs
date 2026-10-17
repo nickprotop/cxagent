@@ -23,3 +23,11 @@ public sealed record TurnOriginator(string? PluginName)
     public bool IsFrom(string pluginName) =>
         PluginName is { } mine && string.Equals(mine, pluginName, StringComparison.Ordinal);
 }
+
+/// <summary>
+/// Text that waited for a turn's tail, and whose it was.
+///
+/// <para>TOGETHER because the tail starts a turn from it, and a turn needs both: the text to send and
+/// the originator an unwire reads to decide whether that turn may be cancelled.</para>
+/// </summary>
+internal sealed record WaitingText(string Text, TurnOriginator Origin);

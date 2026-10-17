@@ -486,7 +486,7 @@ public sealed partial class Session
                 // REFUSED RATHER THAN GROWN. The mailbox is bounded (AgentMailbox.MaxDepth), and a
                 // full one means the agent has not read the earlier messages — Queued would tell the
                 // caller this landed when it did not.
-                if (!Host.TryDeliver(text))
+                if (!Host.TryDeliver(text, origin ?? TurnOriginator.User))
                     return new SubmitOutcome.Refused("the agent has messages it has not read yet.");
 
                 // THE ECHO IS THE NOTE, DRAWN AS IT ARRIVES. An idle wake draws a System source's echo
@@ -500,7 +500,7 @@ public sealed partial class Session
 
             // Steer raises Pending, so a watcher draws its own queued block. Nothing is said here:
             // the block IS the report, and a line saying "queued" beside it would say it twice.
-            Steer(text);
+            SteerAs(text, origin ?? TurnOriginator.User);
             ResumeIfReleasedMeanwhile();
 
             // A QUEUED MESSAGE IS NOT A SECOND REQUEST. It joins the running turn — taken at its
@@ -682,10 +682,11 @@ public sealed partial class Session
             // owned with no loop running — every later message steered into nothing. Only the takes are
             // covered: once StartOwnedTurn runs, ownership is that loop's to release, not this method's.
             Agents.SteerDelivery? steer;
-            string? mail = null;
+            TurnOriginator steerOrigin;
+            WaitingText? mail = null;
             try
             {
-                steer = TakeSteer();
+                steer = TakeSteerWithOrigin(out steerOrigin);
                 if (steer is null && readMail) mail = Host?.TakeMail();
             }
             catch
@@ -694,9 +695,12 @@ public sealed partial class Session
                 throw;
             }
 
+            // THE ORIGINATOR OF WHAT WOKE IT, not User by default. This lap is a turn of its own, and an
+            // unwire decides whether it may cancel a turn by its originator: a plugin's goal or mail
+            // started here under User would make that plugin unrevocable for as long as the lap runs.
             if (steer is not null)
             {
-                StartOwnedTurn(new TurnRequest(steer.ForModel, steer.Shown, _turnTools, TurnOriginator.User,
+                StartOwnedTurn(new TurnRequest(steer.ForModel, steer.Shown, _turnTools, steerOrigin,
                     SubmitSource.User));
                 return true;
             }
@@ -706,7 +710,7 @@ public sealed partial class Session
                 // QUIET: mail is never drawn when a running turn reads it at a lap's top, and this lap is that
                 // same delivery arriving a moment late — drawing the joined text would put the reports
                 // themselves in the transcript.
-                StartOwnedTurn(new TurnRequest(mail, null, _turnTools, TurnOriginator.User, SubmitSource.System)
+                StartOwnedTurn(new TurnRequest(mail.Text, null, _turnTools, mail.Origin, SubmitSource.System)
                     { Quiet = true });
                 return true;
             }

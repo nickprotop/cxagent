@@ -696,14 +696,21 @@ public sealed class AgentHost : IDisposable
     /// <param name="text">What the agent should read on its next lap.</param>
     public bool TryDeliver(string text) => _agent.Mailbox.TryEnqueue(text, out _);
 
+    /// <summary><see cref="TryDeliver(string)"/> on someone's behalf, so a lap the mail starts is theirs.</summary>
+    internal bool TryDeliver(string text, Sessions.TurnOriginator origin) =>
+        _agent.Mailbox.TryEnqueue(text, origin, out _);
+
     /// <summary>Leaves text the agent reads before its next answer, without asking for a turn.</summary>
     public bool TryLeave(string text) => _agent.Mailbox.TryEnqueue(text, out _, wakes: false);
 
     /// <summary>Whether something waiting asks to be acted on — what a turn's tail checks.</summary>
     internal bool HasWakingMail => _agent.Mailbox.HasWaking;
 
-    /// <summary>Everything waiting, oldest first, as one prompt; null when nothing is.</summary>
-    internal string? TakeMail() => _agent.Mailbox.Drain() is { Count: > 0 } all ? string.Join("\n\n", all) : null;
+    /// <summary>Everything waiting, oldest first, as one prompt, and whose it was; null when nothing is.</summary>
+    internal Sessions.WaitingText? TakeMail() =>
+        _agent.Mailbox.DrainWithOrigin(out var origin) is { Count: > 0 } all
+            ? new Sessions.WaitingText(string.Join("\n\n", all), origin)
+            : null;
 
 
     /// <summary>

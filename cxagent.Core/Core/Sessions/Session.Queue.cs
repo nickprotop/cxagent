@@ -33,6 +33,14 @@ public sealed partial class Session
     private readonly object _pendingGate = new();
 
     /// <summary>
+    /// Whose <see cref="_pending"/> is: one plugin's when only that plugin queued it, and the user's
+    /// otherwise. Read only when the tail starts a turn from the queue — see ResumeIfPending.
+    ///
+    /// <para>UNDER THE SAME GATE AS THE TEXT, so the two never disagree about what is waiting.</para>
+    /// </summary>
+    private TurnOriginator _pendingOrigin = TurnOriginator.User;
+
+    /// <summary>
     /// What is waiting changed: the whole queue, and the line just added.
     ///
     /// <para>BOTH, BECAUSE ONLY THIS MOMENT HAS BOTH. The append happens under the lock; afterwards a
@@ -80,12 +88,21 @@ public sealed partial class Session
     /// the running turn and defeat <see cref="UnwirePluginAsync"/>'s sever check. The two queues
     /// share a trigger — a turn ending — and nothing else; keep them separate.</para>
     /// </summary>
-    public void Steer(string text)
+    public void Steer(string text) => SteerAs(text, TurnOriginator.User);
+
+    /// <summary>
+    /// <see cref="Steer"/> on someone's behalf.
+    ///
+    /// <para>MIXED TEXT IS THE USER'S. A plugin's name on a turn is a licence for unwire to cancel it,
+    /// so a queue holding anyone else's words beside the plugin's must not carry the name.</para>
+    /// </summary>
+    private void SteerAs(string text, TurnOriginator origin)
     {
         string whole;
         CancellationTokenSource? spoke;
         lock (_pendingGate)
         {
+            _pendingOrigin = string.IsNullOrEmpty(_pending) || _pendingOrigin == origin ? origin : TurnOriginator.User;
             whole = _pending = string.IsNullOrEmpty(_pending) ? text : _pending + "\n" + text;
             spoke = _userSpoke;
             _userSpoke = null;
@@ -128,7 +145,7 @@ public sealed partial class Session
     public void CancelPending(string? by = null)
     {
         string? taken;
-        lock (_pendingGate) { taken = _pending; _pending = null; }
+        lock (_pendingGate) { taken = _pending; _pending = null; _pendingOrigin = TurnOriginator.User; }
 
         if (taken is { Length: > 0 }) Cancelled?.Invoke(taken, by);
     }
@@ -204,9 +221,12 @@ public sealed partial class Session
     /// part of the queued block drawn as the user's and of what Escape returns to their composer; kept
     /// apart until now, only the model ever sees the two together.</para>
     /// </summary>
-    public Agents.SteerDelivery? TakeSteer()
+    public Agents.SteerDelivery? TakeSteer() => TakeSteerWithOrigin(out _);
+
+    /// <summary><see cref="TakeSteer"/>, also answering whose the steer was — see <see cref="SteerAs"/>.</summary>
+    private Agents.SteerDelivery? TakeSteerWithOrigin(out TurnOriginator origin)
     {
-        if (TakePendingSteer() is not { Length: > 0 } shown) return null;
+        if (TakePendingSteerWithOrigin(out origin) is not { Length: > 0 } shown) return null;
 
         return TakeInjected() is { Length: > 0 } injected
             ? new Agents.SteerDelivery(shown, injected + "\n\n" + shown)
@@ -259,10 +279,16 @@ public sealed partial class Session
     /// promoted/pending split a single boolean everywhere else: the transcript block is removed, not
     /// shrunk, and Escape returns everything still here because everything here is un-delivered.</para>
     /// </summary>
-    public string? TakePendingSteer()
+    public string? TakePendingSteer() => TakePendingSteerWithOrigin(out _);
+
+    private string? TakePendingSteerWithOrigin(out TurnOriginator origin)
     {
         string? taken;
-        lock (_pendingGate) { taken = _pending; _pending = null; }
+        lock (_pendingGate)
+        {
+            (taken, origin) = (_pending, _pendingOrigin);
+            (_pending, _pendingOrigin) = (null, TurnOriginator.User);
+        }
 
         // OUTSIDE THE LOCK — see Steer. This one is raised from the agent's own flow while Steer
         // comes from the render loop, which is the two-thread pair the lock exists for and the pair

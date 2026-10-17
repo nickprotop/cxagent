@@ -86,4 +86,112 @@ public class TurnOriginatorTests
         Assert.True(seen?.IsFrom("experiment"));
         Assert.Null(session.CurrentOriginator);
     }
+
+    /// <summary>
+    /// A PLUGIN'S MAIL THAT WAKES THE SESSION IN A TURN'S TAIL starts a lap that is the plugin's. The
+    /// tail is the window after the loop's last look and before the turn is released: what arrives there
+    /// starts a lap of its own, and that lap is what an unwire has to be able to sever.
+    /// </summary>
+    [Fact]
+    public async Task A_plugins_mail_in_the_tail_starts_a_lap_that_is_the_plugins()
+    {
+        var provider = new RecordingProvider();
+        var session = Wired(provider, out var manager);
+        using var _ = manager;
+        var seen = new List<TurnOriginator?>();
+        provider.OnCall = () => { lock (seen) seen.Add(session.CurrentOriginator); };
+        var once = 0;
+        session.BeforeTurnReleasedForTest = () =>
+        {
+            if (Interlocked.Exchange(ref once, 1) == 0)
+                session.Submit("the plugin's report", origin: TurnOriginator.Plugin("events"),
+                    source: Session.SubmitSource.System);
+        };
+
+        await Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("go")).Turn;
+        Assert.True(await Poll.Until(() => { lock (seen) return seen.Count == 2; }));
+        Assert.True(await Poll.Until(() => !session.TurnOwned));
+
+        Assert.Equal(TurnOriginator.User, seen[0]);
+        Assert.True(seen[1]?.IsFrom("events"), $"the mail lap ran as {seen[1]}");
+    }
+
+    /// <summary>
+    /// A PLUGIN'S GOAL STEERED IN THE TAIL starts a lap that is the plugin's too: the session looked idle,
+    /// so the plugin submitted rather than queueing, and found the turn still owned.
+    /// </summary>
+    [Fact]
+    public async Task A_plugins_goal_steered_in_the_tail_starts_a_lap_that_is_the_plugins()
+    {
+        var provider = new RecordingProvider();
+        var session = Wired(provider, out var manager);
+        using var _ = manager;
+        var seen = new List<TurnOriginator?>();
+        provider.OnCall = () => { lock (seen) seen.Add(session.CurrentOriginator); };
+        var once = 0;
+        session.BeforeTurnReleasedForTest = () =>
+        {
+            if (Interlocked.Exchange(ref once, 1) == 0)
+                session.Submit("the plugin's goal", origin: TurnOriginator.Plugin("events"));
+        };
+
+        await Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("go")).Turn;
+        Assert.True(await Poll.Until(() => { lock (seen) return seen.Count == 2; }));
+        Assert.True(await Poll.Until(() => !session.TurnOwned));
+
+        Assert.Equal(TurnOriginator.User, seen[0]);
+        Assert.True(seen[1]?.IsFrom("events"), $"the steered lap ran as {seen[1]}");
+    }
+
+    /// <summary>
+    /// WHAT THE USER TYPED IN THE TAIL STAYS THE USER'S, even beside a plugin's goal: a lap carrying both
+    /// is one an unwire must not destroy, so mixed text runs as the user's.
+    /// </summary>
+    [Fact]
+    public async Task A_users_steer_beside_a_plugins_goal_in_the_tail_runs_as_the_users()
+    {
+        var provider = new RecordingProvider();
+        var session = Wired(provider, out var manager);
+        using var _ = manager;
+        var seen = new List<TurnOriginator?>();
+        provider.OnCall = () => { lock (seen) seen.Add(session.CurrentOriginator); };
+        var once = 0;
+        session.BeforeTurnReleasedForTest = () =>
+        {
+            if (Interlocked.Exchange(ref once, 1) != 0) return;
+            session.Submit("the plugin's goal", origin: TurnOriginator.Plugin("events"));
+            session.Submit("and what I typed");
+        };
+
+        await Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("go")).Turn;
+        Assert.True(await Poll.Until(() => { lock (seen) return seen.Count == 2; }));
+        Assert.True(await Poll.Until(() => !session.TurnOwned));
+
+        Assert.Equal(TurnOriginator.User, seen[1]);
+    }
+
+    /// <summary>MAIL FROM A PLUGIN AND FROM ANYONE ELSE, read by one lap, makes that lap nobody's in particular.</summary>
+    [Fact]
+    public async Task A_plugins_mail_beside_anyone_elses_in_the_tail_runs_as_the_users()
+    {
+        var provider = new RecordingProvider();
+        var session = Wired(provider, out var manager);
+        using var _ = manager;
+        var seen = new List<TurnOriginator?>();
+        provider.OnCall = () => { lock (seen) seen.Add(session.CurrentOriginator); };
+        var once = 0;
+        session.BeforeTurnReleasedForTest = () =>
+        {
+            if (Interlocked.Exchange(ref once, 1) != 0) return;
+            session.Submit("the plugin's report", origin: TurnOriginator.Plugin("events"),
+                source: Session.SubmitSource.System);
+            session.Submit("a job finished", source: Session.SubmitSource.System);
+        };
+
+        await Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("go")).Turn;
+        Assert.True(await Poll.Until(() => { lock (seen) return seen.Count == 2; }));
+        Assert.True(await Poll.Until(() => !session.TurnOwned));
+
+        Assert.Equal(TurnOriginator.User, seen[1]);
+    }
 }
