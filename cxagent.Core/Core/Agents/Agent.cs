@@ -886,6 +886,26 @@ public sealed class Agent
 
     private int _waitingOnPermission;
 
+    /// <summary>
+    /// Shows a child what it has just been asked, in its own transcript.
+    ///
+    /// <para>A CHILD'S PROMPTS REACH NO OBSERVER OTHERWISE. A session puts its user's turn on screen itself
+    /// (Session.Turn), so the loop never echoes a prompt — and a child's tab, replayed from its observer, would show
+    /// answers to questions nobody could see.</para>
+    ///
+    /// <para>THE USER'S WORDS ARE THE USER'S TURN; THE PARENT'S ARE A NOTE. A brief or an agent_send is written by
+    /// the parent model, and a transcript must not attribute to the user words they never typed — the rule a
+    /// session's system wake already follows.</para>
+    ///
+    /// <para>NOTHING FOR THE SESSION'S OWN AGENT, whose prompts the session has already shown.</para>
+    /// </summary>
+    internal void EchoPrompt(string text, bool fromUser)
+    {
+        if (!_isSubAgent) return;
+        if (fromUser) _sink.UserTurnAdded(NextTurnId(), text);
+        else _sink.Said(new Message($"from the parent agent:\n\n{text}", Severity.Info));
+    }
+
     // Interlocked, because a child's tally is read by the PARENT'S tick timer on another thread
     // while the child's own turn loop writes it.
     private void RecordOwnSpend(LlmUsage usage)

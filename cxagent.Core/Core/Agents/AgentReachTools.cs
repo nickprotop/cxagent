@@ -112,7 +112,7 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
 
         // TAKEN ONLY ONCE THE ANSWER IS IN: a foreground send leaves the earlier run in place, and one that
         // throws — Escape on the asking turn — must not have taken a report it can no longer return.
-        var answer = await Foreground(stored, name, request.Prompt, ct);
+        var answer = await Foreground(stored, request, ct);
         return Earlier(request, name) + answer;
     }
 
@@ -141,9 +141,10 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
     }
 
     /// <summary>Resumes a claimed child and waits for its answer.</summary>
-    private async Task<string> Foreground(StoredAgent stored, string agentName, string prompt,
-        CancellationToken ct)
+    private async Task<string> Foreground(StoredAgent stored, SendRequest request, CancellationToken ct)
     {
+        var agentName = stored.Name;
+        var prompt = request.Prompt;
         var announced = false;
         try
         {
@@ -182,6 +183,7 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                 foreach (var waiting in stored.Agent.Agent.Mailbox.Drain())
                     stored.Agent.Agent.Context.Messages.Add(
                         new ChatMessage { Role = "user", Content = waiting });
+                stored.Agent.Agent.EchoPrompt(prompt, request.FromUser);
 
                 // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child
                 // died with the turn that called `agent`; a wake is governed by the turn that ASKED,
@@ -220,6 +222,10 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
     {
         if (!stored.Agent.Agent.Mailbox.TryEnqueue(request.Prompt, out var full))
             return $"error: could not reach '{agentName}' — {full}";
+
+        // SHOWN WHEN DELIVERED, the moment the sender pressed Enter — the mailbox keeps only the text, so whose it
+        // was is known here and nowhere later.
+        stored.Agent.Agent.EchoPrompt(request.Prompt, request.FromUser);
 
         // NAMES WHERE THE ANSWER IS NOT. Without that clause the obvious next move is to call this again
         // expecting a reply, which is the loop this exists to prevent.

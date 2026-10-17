@@ -56,6 +56,9 @@ internal static class BackgroundRunner
                     run.MarkRunning();
                     store.AnnounceBegin(kept.Name);
 
+                    // EVERY BACKGROUND STRETCH IS THE PARENT'S ASK: a user's send waits in the foreground instead.
+                    kept.Agent.Agent.EchoPrompt(work.Prompt, fromUser: false);
+
                     // A RESUME READS ITS MAIL FIRST: a message left for a settled child predates this
                     // prompt. A SPAWN DOES NOT — anything sent while it queued was sent after its brief, and
                     // the loop's own drain puts it there.

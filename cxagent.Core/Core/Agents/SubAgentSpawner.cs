@@ -442,6 +442,9 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                     _store!.AnnounceBegin(keptAs);
                 }
 
+                // THE BRIEF IS THE PARENT'S, shown as its note in the child's own transcript.
+                child.Agent.EchoPrompt(prompt, fromUser: false);
+
                 // MAIL AFTER THE BRIEF, as a background spawn reads it: anything sent while this child
                 // queued was sent after its brief, and is a correction to the work the brief sets.
                 var result = await child.Agent.SendAsync(prompt, ct, mailFirst: false);
