@@ -14,7 +14,8 @@ public class UiThreadSourceTests
     private static string Repo()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "CLAUDE.md"))) dir = dir.Parent;
+        // THE SOLUTION FILE, NOT CLAUDE.md: CLAUDE.md is git-ignored, so a CI checkout has no such file to find.
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "cxagent.slnx"))) dir = dir.Parent;
         return dir?.FullName ?? throw new DirectoryNotFoundException("repo root not found");
     }
 
