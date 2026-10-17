@@ -1024,6 +1024,60 @@ public class InlineJobSinkTests
     }
 
     /// <summary>
+    /// A STOPPED RUN'S ROW SETTLES STOPPED, not "✔ done". The receipt left the row Succeeded, and settling
+    /// back to that put a check mark and "done" over work the user had stopped — beside a notice saying
+    /// "stopped". The release's outcome word is what says the run was cancelled.
+    /// </summary>
+    [Fact]
+    public void AReopenedRowWhoseRunWasStopped_SettlesCancelled_NotDone()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        var job = new Job
+        {
+            Id = "j1", AgentId = "g1", JobType = "llm_agent",
+            DisplayName = "Run test checkout", State = JobState.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow, StartedAt = DateTimeOffset.UtcNow,
+            Result = new JobResult { Success = true, Duration = TimeSpan.FromMilliseconds(20) },   // the receipt
+        };
+        sink.ToolsChangedNow(new[] { job });
+        sink.WorkerBodyForTest(job);
+
+        sink.WorkerResumed(child.Agent.Id);
+        sink.WorkerSettled(child.Agent.Id, "cancelled");
+
+        Assert.Equal(JobState.Cancelled, job.State);
+        var header = sink.RunningHeaderForTest(job);
+        Assert.DoesNotContain("✔", header);
+        Assert.DoesNotContain("done", header);
+        Assert.Contains("cancelled", header);
+    }
+
+    /// <summary>A RUN THAT ENDED ANY OTHER WAY SETTLES AS ITS SPAWN DID — the outcome word changes only a stop.</summary>
+    [Fact]
+    public void AReopenedRowWhoseRunCompleted_SettlesAsItsSpawnDid()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        var job = new Job
+        {
+            Id = "j1", AgentId = "g1", JobType = "llm_agent",
+            DisplayName = "Run test checkout", State = JobState.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow, StartedAt = DateTimeOffset.UtcNow,
+            Result = new JobResult { Success = true, Duration = TimeSpan.FromMilliseconds(20) },
+        };
+        sink.ToolsChangedNow(new[] { job });
+        sink.WorkerBodyForTest(job);
+
+        sink.WorkerResumed(child.Agent.Id);
+        sink.WorkerSettled(child.Agent.Id, "completed");
+
+        Assert.Equal(JobState.Succeeded, job.State);
+    }
+
+    /// <summary>
     /// A SETTLED RESUME LEAVES NOTHING IN FLIGHT FOR THE ROUND ROW EITHER.
     ///
     /// <para>USER-REPORTED, AND THE HALF THE ROW'S OWN STATE DOES NOT EXPLAIN: after a resumed

@@ -1995,13 +1995,19 @@ public sealed class InlineJobSink : IToolObserver
     /// capped or stuck when it was spawned is still that, and overwriting the outcome would launder
     /// a bad run into a good one.</para>
     /// </summary>
-    public void WorkerSettled(string agentId)
+    /// <param name="agentId">The child whose claim was released.</param>
+    /// <param name="outcome">The release's outcome word, null for a send — see <c>SubAgentStore.SendEnded</c>.</param>
+    public void WorkerSettled(string agentId, string? outcome = null)
     {
         if (!_spawnRowOf.TryGetValue(agentId, out var jobId)) return;
         if (!_reopenedFrom.TryRemove(jobId, out var was)) return;
         if (!_known.TryGetValue(jobId, out var job)) return;
 
-        job.State = was;
+        // EXCEPT A STOP, WHICH SETTLES CANCELLED. A background spawn's row is left Succeeded by its
+        // receipt, so restoring that over a stopped run put "✔ done" beside the notice saying it stopped.
+        // The release's outcome word is the only place the stop is announced to the row; the state it
+        // settles into is the one SettledUnstarted gives a run stopped while queued.
+        job.State = outcome == "cancelled" ? JobState.Cancelled : was;
         job.CompletedAt = DateTimeOffset.UtcNow;
         if (_reopenedAt.TryRemove(jobId, out var since) && job.Result is { } result)
             job.Result = result with { Duration = job.CompletedAt.Value - since };
