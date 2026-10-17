@@ -459,7 +459,7 @@ public sealed class JobsPanel
         /// <summary>⇥ — shown on a foreground agent's card, before ⏹, to move it to the background.</summary>
         public ButtonControl Move { get; }
 
-        /// <summary>⏹ or ✕ — hidden on a foreground agent, which the parent's turn is waiting on.</summary>
+        /// <summary>⏹ while it runs — a foreground agent's included — or ✕ once it has ended.</summary>
         public ButtonControl Button { get; }
 
         public bool HasFocus => Anchor.HasFocus || Button.HasFocus || Move.HasFocus;
@@ -540,7 +540,7 @@ public sealed class JobsPanel
     /// <summary>What a card says, independent of how it is drawn — compared to tell whether a tick changed it.</summary>
     /// <param name="Mark">The kind while it runs, ✓ or ✗ once it has ended, as markup.</param>
     /// <param name="Title">The command, or what the agent was asked to do.</param>
-    /// <param name="Control">⏹ or ✕, or null for a foreground agent.</param>
+    /// <param name="Control">⏹ while it runs, ✕ once it has ended.</param>
     /// <param name="Facts">Its kind, how it stands, how long.</param>
     /// <param name="View">What opening it shows.</param>
     /// <param name="Movable">A foreground agent's card: ⇥ before ⏹, to move it to the background (Ctrl+B spec 6′).</param>
