@@ -336,6 +336,21 @@ public sealed partial class Session
     public bool MoveToBackground(string name) => SubAgents.MoveToBackground(name);
 
     /// <summary>
+    /// Ctrl+B in a session tab: moves everything this session's turn is waiting on — every foreground sub-agent and its
+    /// own foreground shells — to the background. Answers how many moved (spec decision 5).
+    /// </summary>
+    public int MoveAllToBackground() =>
+        SubAgents.ForegroundNames().Count(SubAgents.MoveToBackground) + ForegroundShells.DetachWhere(IsSessionAgent);
+
+    /// <summary>How many things the turn is waiting on in the foreground — the composer's hint names the count.</summary>
+    public int WaitingOnForeground =>
+        SubAgents.ForegroundNames().Count + (ForegroundShells.WaitingSince(IsSessionAgent) is null ? 0 : 1);
+
+    /// <summary>Since when the turn has waited on foreground work; null when it is not.</summary>
+    public DateTimeOffset? WaitingOnForegroundSince() =>
+        new[] { SubAgents.ForegroundSince(), ForegroundShells.WaitingSince(IsSessionAgent) }.Min();
+
+    /// <summary>
     /// Forgets a kept agent — the panel's x on a finished row. Says nothing to the parent model (decision 15) and
     /// nothing in this transcript: the row leaving the panel is what the user sees.
     /// </summary>

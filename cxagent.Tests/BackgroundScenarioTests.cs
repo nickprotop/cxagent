@@ -705,6 +705,35 @@ public class BackgroundScenarioTests : IDisposable
         Assert.True(await Poll.Until(() => parent.Calls == 2));
     }
 
+    /// <summary>Ctrl+B spec decision 5: everything the turn waits on moves at once.</summary>
+    [Fact]
+    public async Task MoveAll_MovesEveryForegroundChild()
+    {
+        var parent = new ScriptedProvider(Use(
+            Calls.Named(Tool.Agent, new { description = "first", prompt = "a", type = "explore", background = false }, id: "s1"),
+            Calls.Named(Tool.Agent, new { description = "second", prompt = "b", type = "explore", background = false }, id: "s2")),
+            Answer("both moved"));
+        var foreground = new HeldProvider("one", "two");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 2));
+
+        Assert.Equal(2, s.Session.MoveAllToBackground());
+
+        Assert.True(await Poll.Until(() => parent.Calls == 2));
+        Assert.Equal(0, s.Session.WaitingOnForeground);
+    }
+
+    /// <summary>REVIEW FOCUS 4: with nothing waiting, nothing moves.</summary>
+    [Fact]
+    public void MoveAll_WithNothingWaiting_MovesNothing()
+    {
+        var s = Open(new ScriptedProvider(Answer("hi")), new HeldProvider("x"));
+        Assert.Equal(0, s.Session.MoveAllToBackground());
+        Assert.Null(s.Session.WaitingOnForegroundSince());
+    }
+
     [Fact]
     public async Task Escape_DoesNotTouchABackgroundChild()
     {
