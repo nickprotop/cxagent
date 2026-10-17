@@ -248,7 +248,13 @@ public sealed class TasksItemCountTests : IDisposable
             ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths))
         { Jobs = new BackgroundJobBoard(registry), Shells = new FinishedShells() };
         (string Name, int Commands)? asked = null;
-        window.AskDelete = (name, commands) => { asked = (name, commands); return Task.FromResult(answer); };
+        // THE DIALOG TAKES THE KEYBOARD while it is up, as the real one does; the cards must get it back after.
+        window.AskDelete = (name, commands) =>
+        {
+            asked = (name, commands);
+            window.FocusComposer();
+            return Task.FromResult(answer);
+        };
         window.Build();
         var front = Open();
         window.NoteFirstSession(front);
@@ -275,6 +281,7 @@ public sealed class TasksItemCountTests : IDisposable
             Assert.Equal(answer == AgentDelete.StopCommands, shell.Killed);
             Assert.Equal(answer != AgentDelete.StopCommands,
                 window.Jobs.For(front.Owns).Any(e => e.Job.Pid == shell.Pid && !e.Finished));
+            Assert.True(window.JobsRowsHaveFocus, "the keyboard did not come back to the cards");
         }
         finally { shell.Kill(); }
     }

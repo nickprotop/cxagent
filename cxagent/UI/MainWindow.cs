@@ -2779,9 +2779,16 @@ public sealed class MainWindow : IDisposable
         int commands)
     {
         var answer = await ask(view.Kept.Name, commands);
-        if (answer == AgentDelete.Cancel) return;
-        Delete(session, view, keepShells: answer == AgentDelete.KeepCommands);
+        if (answer != AgentDelete.Cancel) Delete(session, view, keepShells: answer == AgentDelete.KeepCommands);
         RefreshJobsPanel();
+
+        // THE KEYBOARD BACK ON THE CARDS, where x was pressed. The dialog took it, and handed it back to nothing the
+        // panel recognises — the next x went to the composer.
+        if (JobsPanel.Control.Visible)
+        {
+            Window?.FocusManager.SetFocus(JobsPanel.Rows, SharpConsoleUI.Controls.FocusReason.Keyboard);
+            JobsPanel.Redraw();
+        }
     }
 
     private void Delete(Session session, AgentRowView view, bool keepShells)
