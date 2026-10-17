@@ -209,8 +209,16 @@ public sealed class JobsPanel
         _count = shown.Running;
         _width = width;
         var usable = Math.Max(1, width - Chrome);
+        var held = RowsHaveFocus ? Active()?.Selected?.Key : null;
         _running.Show([.. shown.Rows.Where(r => r.Running)], usable);
         _finished.Show([.. shown.Rows.Where(r => !r.Running)], usable);
+
+        // THE KEYBOARD FOLLOWS ITS CARD ACROSS SECTIONS. A card that stopped moves from Running to Finished; left
+        // behind, the keyboard sat on an emptied list while x acted on another finished card, unhighlighted — so the
+        // x-then-x of decision 13 deleted the wrong agent.
+        if (held is not null)
+            foreach (var section in new[] { _running, _finished })
+                if (!section.List.HasFocus && section.Take(held)) break;
 
         var heading = $"[bold {ColorScheme.AccentMarkup}]{(_count > 0 ? $"Tasks · {_count} running" : "Tasks")}[/]";
         SetIfChanged(_heading, [heading]);
@@ -248,10 +256,16 @@ public sealed class JobsPanel
         RenderedText = string.Join("\n", text);
     }
 
-    /// <summary>The open section whose list acts for the keys: the one with the keyboard, else the first with cards.</summary>
+    /// <summary>
+    /// The section whose list acts for the keys: the one with the keyboard, else the first with cards.
+    ///
+    /// <para>WHILE THE CARDS HAVE THE KEYBOARD, ONLY THE FOCUSED SECTION: its selection is the one highlighted, and a
+    /// key acting on the other section's remembered card would act on one the user cannot see chosen.</para>
+    /// </summary>
     private Section? Active() =>
-        new[] { _running, _finished }.FirstOrDefault(s => s.List.HasFocus && s.Rows.Count > 0)
-        ?? new[] { _running, _finished }.FirstOrDefault(s => s.Rows.Count > 0);
+        RowsHaveFocus
+            ? new[] { _running, _finished }.FirstOrDefault(s => s.List.HasFocus && s.Rows.Count > 0)
+            : new[] { _running, _finished }.FirstOrDefault(s => s.Rows.Count > 0);
 
     // ONLY WHEN IT CHANGED. The clocks change every second while a task runs, but an idle panel re-set on every tick
     // would invalidate layout for nothing.
@@ -305,6 +319,17 @@ public sealed class JobsPanel
         }
 
         private int _remembered;
+
+        /// <summary>Selects the card with this key and takes the keyboard; false when this section does not hold it.</summary>
+        public bool Take(string key)
+        {
+            var at = Rows.ToList().FindIndex(r => r.Key == key);
+            if (at < 0 || List.GetParentWindow() is not { } window) return false;
+            _remembered = at;
+            List.SelectedIndex = at;
+            window.FocusManager.SetFocus(List, FocusReason.Programmatic);
+            return true;
+        }
 
         public void ShowHint(string hint)
         {

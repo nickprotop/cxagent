@@ -283,6 +283,40 @@ public class JobsPanelTests
     }
 
     /// <summary>
+    /// x THEN x AGAIN ACTS ON ONE CARD (decision 13). Stopping the last running card moves it to Finished; the
+    /// keyboard goes with it, so the second x deletes that card — not whichever finished card was selected before,
+    /// with no highlight to say so.
+    /// </summary>
+    [Fact]
+    public void StoppingTheLastRunningCard_TakesTheKeyboardWithIt()
+    {
+        var system = new SharpConsoleUI.ConsoleWindowSystem(new SharpConsoleUI.Drivers.HeadlessConsoleDriver(60, 40));
+        CxAgentTheme.Install(system, null);
+        var panel = new JobsPanel();
+        var window = new SharpConsoleUI.Window(system) { Left = 0, Top = 0, Width = 44, Height = 40 };
+        window.AddControl(panel.Control);
+        system.AddWindow(window);
+        var old = Agent("old-done", AgentRowState.Done);
+        var worker = Agent("worker", AgentRowState.Running);
+        panel.Refresh(new JobsPanel.JobsShown(JobsPanel.Order([worker, old]), 1), SessionPanel.MaxWidth);
+        window.RenderAndGetVisibleContent();
+        Assert.True(panel.RowsHaveFocus);
+
+        var stopped = new JobsPanel.AgentRow(worker.View with
+        {
+            State = AgentRowState.Stopped, End = new AgentEnd("stopped", worker.View.Began, DateTimeOffset.UtcNow),
+        });
+        panel.Refresh(new JobsPanel.JobsShown(JobsPanel.Order([stopped, old]), 0), SessionPanel.MaxWidth);
+        window.RenderAndGetVisibleContent();
+        JobsPanel.RowChoice? chosen = null;
+        panel.RowChosen += c => chosen = c;
+
+        Assert.True(panel.RowsHaveFocus);
+        Assert.True(panel.ActOnSelected());
+        Assert.Equal("worker", Assert.IsType<JobsPanel.AgentRow>(chosen!.Row).View.Kept.Name);
+    }
+
+    /// <summary>
     /// WHAT IS PAINTED, NOT ONLY WHAT THE MODEL HOLDS: a second running card that arrives after the first must be
     /// drawn too. Measured live, the Running list stayed one card tall and scrolled to its selection, so the shell a
     /// sub-agent started had a row in the panel's model and no line on screen.
