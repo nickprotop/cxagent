@@ -100,8 +100,17 @@ public class LocalModelEval
             await Task.Delay(slow ? Timeout.Infinite : delayMs, ct);
             var all = string.Join("\n", m.Select(x => x.Content)).ToLowerInvariant();
             var lastUser = m.LastOrDefault(x => x.Role == "user")?.Content?.ToLowerInvariant() ?? "";
+            // THE CLI BRIEF IS MATCHED ON THE CHILD'S OWN PROMPT, AND BEFORE THE SHOP ANSWERS. `all` includes the
+            // system prompt, whose wording reaches the "test" branch below; an S11 child answering with checkout
+            // findings for a question about command-line arguments sends the parent off to redo the work itself,
+            // and its transcript reads as a failure the score does not record. A brief naming the shop is never
+            // the CLI's, so a shop child told about "the arguments PlaceOrder takes" keeps its own answer.
+            var aboutTheShop = new[] { "placeorder", "checkout", "batchorders", "discount" }.Any(lastUser.Contains);
+            var aboutTheCli = new[] { "argument", "command line", "command-line", "program.cs" }.Any(lastUser.Contains);
             string text =
-                lastUser.Contains("batchorders") || lastUser.Contains("error handling") ? "BatchOrders.cs has no try/catch around PlaceOrder; a failed order aborts the whole batch."
+                aboutTheCli && !aboutTheShop
+                    ? "Program.cs parses args by hand: -v/--verbose sets verbose, -o/--output takes the next argument as the output file, --help prints usage and exits 0, and anything else is echoed as an input."
+                : lastUser.Contains("batchorders") || lastUser.Contains("error handling") ? "BatchOrders.cs has no try/catch around PlaceOrder; a failed order aborts the whole batch."
                 : all.Contains("plan") && all.Contains("discount") ? "PLAN: 1. Add DiscountCode to Order. 2. Validate in CheckoutController. 3. Apply in PriceCalculator. Plan file written."
                 : all.Contains("test") ? "Tests covering checkout: CheckoutTests.cs covers CheckoutController only. Nothing covers BatchOrders."
                 : all.Contains("caller") || all.Contains("placeorder") ? "PlaceOrder is called from CheckoutController.cs:42 and BatchOrders.cs:17."
