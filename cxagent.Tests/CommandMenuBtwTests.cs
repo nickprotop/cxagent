@@ -79,3 +79,62 @@ public class CommandMenuLayoutTests : IDisposable
         menu.Sync("");
     }
 }
+
+/// <summary>
+/// ENTER RUNS A LINE THAT IS ALREADY A COMPLETE COMMAND, rather than choosing a longer row that happens to
+/// match: "/model local" with "local" and "local2" configured switched to local2.
+/// </summary>
+public class CommandMenuEnterTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    private (CommandMenu Menu, Func<bool> Submitted, Func<string?> Chosen) Menu()
+    {
+        var host = _fixture.Host;
+        var submitted = false;
+        string? chosen = null;
+        var menu = new CommandMenu(host.System, host.Main.Window!, host.Main.Input)
+        {
+            Registry = host.Session.Manager!.Commands,
+            Values = _ => [new CxAgent.Core.Commands.CommandArgument("local", "the first"), new CxAgent.Core.Commands.CommandArgument("local2", "the second")],
+            Submit = () => submitted = true,
+        };
+        menu.Chosen += (_, text) => chosen = text;
+        return (menu, () => submitted, () => chosen);
+    }
+
+    private void Press(ConsoleKey key) =>
+        Assert.IsAssignableFrom<SharpConsoleUI.Controls.IInteractiveControl>(
+                _fixture.Host.System.DesktopPortalService.TopPortal!.Content)
+            .ProcessKey(new ConsoleKeyInfo(key == ConsoleKey.Enter ? '\r' : '\0', key, false, false, false));
+
+    [Fact]
+    public void Enter_OnACompleteLine_RunsIt()
+    {
+        var (menu, submitted, chosen) = Menu();
+        menu.Sync("/model local");
+        Assert.True(menu.IsOpen);   // still offering local2
+
+        Press(ConsoleKey.Enter);
+
+        Assert.True(submitted());
+        Assert.Null(chosen());
+    }
+
+    /// <summary>A row the user moved to is still theirs to choose.</summary>
+    [Fact]
+    public void Enter_AfterMovingToARow_ChoosesIt()
+    {
+        var (menu, submitted, chosen) = Menu();
+        menu.Sync("/model local");
+        Assert.True(menu.IsOpen);
+
+        Press(ConsoleKey.DownArrow);
+        Press(ConsoleKey.UpArrow);
+        Press(ConsoleKey.Enter);
+
+        Assert.False(submitted());
+        Assert.Equal("/model local2", chosen());
+    }
+}

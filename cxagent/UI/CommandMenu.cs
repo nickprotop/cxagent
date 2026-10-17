@@ -111,6 +111,12 @@ public sealed class CommandMenu
     private const int MaxPaths = 200;
 
     private bool _suppressUntilEdit;
+
+    /// <summary>
+    /// Whether the line as typed is itself one of the rows — a complete command — and the user has not moved the
+    /// selection since. Enter then runs the line rather than choosing a longer row; see the Enter case.
+    /// </summary>
+    private bool _lineIsComplete;
     private int _rowsWhenOpened;
     private string _chosenText = string.Empty;
 
@@ -251,6 +257,7 @@ public sealed class CommandMenu
         // to a command and needs to know what may follow it, leaving `/mcp reload` and
         // `/stats clear` reachable only by having read the docs.
         List<Row> matches;
+        _lineIsComplete = false;
         if (text.Contains(' '))
         {
             var args = SessionCommands.ArgumentsFor(text, Values, Registry, _custom);
@@ -278,8 +285,10 @@ public sealed class CommandMenu
             // still matched the verb `new`, so the menu sat over a line that was already finished
             // and Enter chose that completion instead of submitting. A row completing to what the
             // user has ALREADY typed is not a suggestion.
+            var all = matches.Count;
             matches = [.. matches.Where(m =>
                 !string.Equals(m.Completion?.TrimEnd(), text.TrimEnd(), StringComparison.Ordinal))];
+            _lineIsComplete = matches.Count < all;
         }
         else
         {
@@ -431,11 +440,13 @@ public sealed class CommandMenu
         switch (key.Key)
         {
             case ConsoleKey.UpArrow:
+                _lineIsComplete = false;
                 _selected = _selected == 0 ? _shown.Count - 1 : _selected - 1;
                 Render();
                 return true;
 
             case ConsoleKey.DownArrow:
+                _lineIsComplete = false;
                 _selected = (_selected + 1) % _shown.Count;
                 Render();
                 return true;
@@ -462,7 +473,11 @@ public sealed class CommandMenu
                 // CommandMenuContent), so declining loses the key entirely — and the composer's own
                 // submit path is guarded by `Input.HasFocus`, which is false while the portal holds
                 // the keyboard. Closing first and then replaying the key is what actually reaches it.
-                if (picked.Completion is null)
+                //
+                // AND A LINE THAT IS ALREADY COMPLETE IS RUN, unless the user moved to a row. "/model local"
+                // with "local2" also configured hides the exact row and leaves "local2" selected — and
+                // Enter switched to the model the user had not typed.
+                if (picked.Completion is null || _lineIsComplete)
                 {
                     Close();
                     Submit?.Invoke();
