@@ -546,6 +546,32 @@ public class BackgroundScenarioTests : IDisposable
         Assert.Contains("was stopped by the user, so it will not be resumed", parent.Last);
     }
 
+    /// <summary>
+    /// REVIEW FOCUS 3, THE OTHER HALF: the user's own send hands a stopped foreground child back — through the session's
+    /// send, as the user makes it, not by clearing the mark by hand.
+    /// </summary>
+    [Fact]
+    public async Task TheUsersOwnSend_ResumesAStoppedForegroundChild()
+    {
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check", type = "explore", background = false }, id: "s1")),
+            Answer("ok"));
+        var foreground = new HeldProvider("never", "resumed");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 1));
+        Assert.True(s.Session.StopForeground("check-it"));
+        await Idle(s.Session);
+        Assert.True(s.Session.SubAgents.WasStoppedByUser("check-it"));
+
+        s.Session.SendToSpawnedAgent("send check-it look again");
+
+        Assert.True(await Poll.Until(() => foreground.Calls == 2));
+        Assert.False(s.Session.SubAgents.WasStoppedByUser("check-it"));
+        foreground.Release();
+    }
+
     /// <summary>Escape still ends a turn that waits on a foreground child, and the child with it.</summary>
     [Fact]
     public async Task Escape_StillCancelsAForegroundChild()
@@ -677,8 +703,21 @@ public class BackgroundScenarioTests : IDisposable
 
         s.Session.Submit("go");
         Assert.True(await Poll.Until(() => foreground.Calls == 1));
+
+        // SAMPLED THROUGH THE HAND-OVER, not just after it: the F7 count must never dip while the call is answered and
+        // the background run takes the child over.
+        var dipped = false;
+        using var sampling = new CancellationTokenSource();
+        var sampler = Task.Run(() =>
+        {
+            while (!sampling.IsCancellationRequested)
+                if (s.Session.RunningAgents != 1 || !s.Session.SubAgents.IsBusy("check-it")) dipped = true;
+        });
         s.Session.MoveToBackground("check-it");
         Assert.True(await Poll.Until(() => parent.Calls == 2));
+        sampling.Cancel();
+        await sampler;
+        Assert.False(dipped, "the running count dipped during the hand-over");
 
         Assert.True(s.Session.SubAgents.IsBusy("check-it"));
         Assert.Equal(1, s.Session.RunningAgents);
@@ -701,13 +740,18 @@ public class BackgroundScenarioTests : IDisposable
         s.Session.Submit("go");
         Assert.True(await Poll.Until(() => foreground.Calls == 1));
         foreground.Release();
-        s.Session.MoveToBackground("check-it");
+        var moved = s.Session.MoveToBackground("check-it");
 
         Assert.True(await Poll.Until(() => parent.Calls >= 2));
         await Idle(s.Session);
 
         // ONE ENVELOPE FOR THE CALL in the request after it — the receipt or the answer, never both.
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(parent.Requests[1], "<sub_agent "));
+
+        // AND THE ONE THE MOVE'S ANSWER SAYS: an accepted move is answered with the receipt, a refused one — the answer
+        // claimed it first — with the answer.
+        if (moved) Assert.Contains("The user moved it to the background", parent.Requests[1]);
+        else Assert.DoesNotContain("The user moved it to the background", parent.Requests[1]);
     }
 
     /// <summary>REVIEW FOCUS 4: a foreground child still queued behind the cap has not started, so it is not movable.</summary>
@@ -727,6 +771,35 @@ public class BackgroundScenarioTests : IDisposable
         Assert.Single(s.Session.SubAgents.ForegroundNames());
         foreground.Release();
         Assert.True(await Poll.Until(() => parent.Calls == 2));
+    }
+
+    /// <summary>
+    /// A QUEUED FOREGROUND CHILD IS STILL WAITED ON. The turn cannot go on without it, so the hint counts it after the
+    /// running one moves, and the session can say how many are queued rather than "nothing is waiting".
+    /// </summary>
+    [Fact]
+    public async Task AQueuedForegroundChild_IsStillWaitedOn_AfterAMove()
+    {
+        var parent = new ScriptedProvider(Use(
+            Calls.Named(Tool.Agent, new { description = "first", prompt = "a", type = "explore", background = false }, id: "s1"),
+            Calls.Named(Tool.Agent, new { description = "second", prompt = "b", type = "explore", background = false }, id: "s2")),
+            Answer("both"), Answer("read"), Answer("read"));
+        var foreground = new HeldProvider("one", "two");
+        var s = Open(parent, new SceneSetup { Child = new HeldProvider("x"), Explore = foreground, Cap = 1 });
+
+        s.Session.Submit("go");
+        Assert.True(await Poll.Until(() => foreground.Calls == 1 && s.Session.QueuedInForeground == 1));
+        Assert.Equal(2, s.Session.WaitingOnForeground);
+
+        Assert.Equal(1, s.Session.MoveAllToBackground());
+
+        Assert.Equal(1, s.Session.WaitingOnForeground);
+        Assert.Equal(1, s.Session.QueuedInForeground);
+        foreground.Release();
+        Assert.True(await Poll.Until(() => s.Session.QueuedInForeground == 0));
+        foreground.Release();
+        Assert.True(await Poll.Until(() => parent.Calls >= 2));
+        await Idle(s.Session);
     }
 
     /// <summary>Ctrl+B spec decision 5: everything the turn waits on moves at once.</summary>

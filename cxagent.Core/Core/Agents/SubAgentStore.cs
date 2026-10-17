@@ -402,9 +402,19 @@ public sealed class SubAgentStore
     /// <para>WHAT THE PANEL'S HEADING AND F7 SAY (spec decision 22), so the number matches the running rows. Counted
     /// from the runs as well as the claims, because a background run is claimed and counted once, not twice.</para>
     /// </summary>
-    public int Working =>
-        _background.Values.Count(r => r.State is BackgroundState.Queued or BackgroundState.Running)
-        + _busy.Keys.Count(name => !Going(name));
+    ///
+    /// <para>ONE SNAPSHOT OF THE RUNS, read once and checked against the claims: read twice, a run begun between the
+    /// reads — a move handing its child over — was missed by the first and excluded its own claim in the second, and
+    /// the count dipped to nothing for a frame.</para>
+    public int Working
+    {
+        get
+        {
+            var going = _background.Where(e => e.Value.State is BackgroundState.Queued or BackgroundState.Running)
+                .Select(e => e.Key).ToHashSet(StringComparer.Ordinal);
+            return going.Count + _busy.Keys.Count(name => !going.Contains(name));
+        }
+    }
 
     /// <summary>
     /// The user's sends that are not also a background run — work a closing tab or a quit ends that nothing is
