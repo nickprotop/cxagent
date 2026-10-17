@@ -136,4 +136,20 @@ public sealed class ForegroundRunTests
 
         run.Cancel();
     }
+
+    /// <summary>
+    /// A CHILD NOTHING CAN TAKE OVER IS NOT MOVED. Without a way to deliver its later report — headless, with no
+    /// delivery — a move accepted here would leave the call waiting with Escape no longer reaching the child.
+    /// </summary>
+    [Fact]
+    public void AnUnmovableChild_RefusesAMove_ButStops()
+    {
+        var store = Store("finder");
+        using var turn = new CancellationTokenSource();
+        var run = store.BeginForeground("finder", turn.Token, movable: false);
+
+        Assert.False(store.MoveToBackground("finder"));
+        turn.Cancel();
+        Assert.True(run.Token.IsCancellationRequested);
+    }
 }

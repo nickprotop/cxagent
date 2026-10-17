@@ -29,9 +29,12 @@ public sealed class ForegroundRun : IDisposable
     // 0 while the child is still the turn's; 1 once it answered or was released — whichever claimed it first.
     private int _settled;
 
-    internal ForegroundRun(CancellationToken turn, DateTimeOffset since)
+    private readonly bool _movable;
+
+    internal ForegroundRun(CancellationToken turn, DateTimeOffset since, bool movable = true)
     {
         Since = since;
+        _movable = movable;
         _turnLink = turn.Register(() => _own.Cancel());
     }
 
@@ -44,10 +47,10 @@ public sealed class ForegroundRun : IDisposable
     /// <summary>Completes when the child is moved or stopped; never, when it simply answers.</summary>
     public Task<ForegroundRelease> Released => _released.Task;
 
-    /// <summary>Moves it: Escape no longer reaches it. False once released either way.</summary>
+    /// <summary>Moves it: Escape no longer reaches it. False once released either way, or when it is not movable.</summary>
     internal bool TryMove()
     {
-        if (Interlocked.Exchange(ref _settled, 1) != 0) return false;
+        if (!_movable || Interlocked.Exchange(ref _settled, 1) != 0) return false;
         _released.SetResult(ForegroundRelease.Move);
         _turnLink.Dispose();
         return true;

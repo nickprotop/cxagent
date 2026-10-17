@@ -220,7 +220,8 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                 // always have — and the store's record of how this stretch ended takes the word from here.
                 // THE MODEL'S FOREGROUND SEND IS FOREGROUND WORK TOO (Ctrl+B spec decision 5): on its own token, movable
                 // and stoppable as a foreground spawn is. The user's own send is not part of a turn, and keeps its own.
-                var foreground = request.FromUser ? null : store.BeginForeground(agentName, ct);
+                var foreground = request.FromUser ? null
+                    : store.BeginForeground(agentName, ct, movable: delivery is not null && request.ParentAgentId is not null);
                 SendResult result;
                 try
                 {

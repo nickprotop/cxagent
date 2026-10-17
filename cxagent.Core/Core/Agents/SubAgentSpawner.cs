@@ -457,7 +457,8 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                 // queued was sent after its brief, and is a correction to the work the brief sets.
                 // ITS OWN TOKEN, LINKED TO THE TURN'S (Ctrl+B spec): Escape still ends it, but a stop can end it alone
                 // and a move can unlink it. A child nothing kept cannot be reached by either, so it keeps the turn's.
-                var foreground = keptAs is null ? null : _store!.BeginForeground(keptAs, ct);
+                var foreground = keptAs is null ? null
+                    : _store!.BeginForeground(keptAs, ct, movable: _factory.Delivery is not null && parentAgentId is not null);
                 try
                 {
                     var send = child.Agent.SendAsync(prompt, foreground?.Token ?? ct, mailFirst: false);

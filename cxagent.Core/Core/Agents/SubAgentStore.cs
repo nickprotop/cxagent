@@ -101,9 +101,13 @@ public sealed class SubAgentStore
     private readonly ConcurrentDictionary<string, byte> _foregroundStops = new(StringComparer.Ordinal);
 
     /// <summary>Registers a foreground child the turn is about to wait on, on its own linked token.</summary>
-    internal ForegroundRun BeginForeground(string name, CancellationToken turn)
+    /// <param name="name">The child's kept name.</param>
+    /// <param name="turn">The turn's token, which reaches the child until it is moved.</param>
+    /// <param name="movable">False when nothing could take the child over — no way to deliver its later report — so a
+    /// move is refused rather than accepted and left waiting.</param>
+    internal ForegroundRun BeginForeground(string name, CancellationToken turn, bool movable = true)
     {
-        var run = new ForegroundRun(turn, _clock.GetUtcNow());
+        var run = new ForegroundRun(turn, _clock.GetUtcNow(), movable);
         _foreground[name] = run;
         return run;
     }
