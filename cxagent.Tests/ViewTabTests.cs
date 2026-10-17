@@ -1,3 +1,4 @@
+using CxAgent.Core.Agents;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
@@ -229,6 +230,29 @@ public sealed class ViewTabTests : IDisposable
 
         Assert.True(_window.StatusBar.Readout!.IsVisible);
         Assert.Contains("keeps running", _window.StatusBar.Readout.Label, StringComparison.Ordinal);
+    }
+
+    /// <summary>Ctrl+B spec decision 8: with nothing waiting, Ctrl+B says so.</summary>
+    [Fact]
+    public void CtrlB_WithNothingWaiting_SaysSo()
+    {
+        Assert.Contains("nothing is waiting", _window.MoveToBackgroundFromKey(), StringComparison.Ordinal);
+    }
+
+    /// <summary>Ctrl+B spec decision 7: in a foreground agent's tab, Ctrl+B moves that agent only.</summary>
+    [Fact]
+    public void CtrlB_InAForegroundAgentsTab_MovesThatAgent()
+    {
+        var child = AgentTabTests.Child(AgentTabTests.Says());
+        _front.SubAgents.Keep(child, "finder");
+        _front.SubAgents.TryClaim("finder");
+        var run = _front.SubAgents.BeginForeground("finder", CancellationToken.None);
+        _window.OpenAgentTab(_front, "finder");
+
+        _window.MoveToBackgroundFromKey();
+
+        Assert.True(run.Released.IsCompletedSuccessfully);
+        Assert.Equal(ForegroundRelease.Move, run.Released.Result);
     }
 
     [Fact]

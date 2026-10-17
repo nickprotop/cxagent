@@ -3059,6 +3059,31 @@ public sealed class MainWindow : IDisposable
         _noteUntil = DateTimeOffset.UtcNow + NoteFor;
     }
 
+    /// <summary>
+    /// Ctrl+B: in a foreground agent's tab, moves that agent; anywhere else, everything the session in front is waiting
+    /// on. Answers — and shows — the note it left (spec decisions 5, 7, 8).
+    /// </summary>
+    public string MoveToBackgroundFromKey()
+    {
+        string note;
+        if (ActiveAgentTab is { } tab)
+            note = tab.Session.MoveToBackground(tab.Kept.Name)
+                ? $"'{tab.Kept.Name}' moved to the background"
+                : $"'{tab.Kept.Name}' is not waiting in the foreground";
+        else
+        {
+            var moved = ActiveSession?.MoveAllToBackground() ?? 0;
+            note = moved switch
+            {
+                0 => "nothing is waiting in the foreground",
+                1 => "moved to the background — F7 shows it",
+                _ => $"{moved} tasks moved to the background — F7 shows them",
+            };
+        }
+        ShowNote(note);
+        return note;
+    }
+
     /// <summary>Test seams: the one-second tick's note step, and the note's time running out.</summary>
     public void TickNoteForTest() => TickNote();
 

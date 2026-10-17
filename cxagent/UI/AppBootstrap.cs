@@ -1741,6 +1741,16 @@ public static class AppBootstrap
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F7, "background tasks",
             () => !PluginManagerDialog.IsOpen && mainWindow.ToggleJobsPanel());
 
+        // CTRL+B MOVES WHAT THE TURN WAITS ON TO THE BACKGROUND (Ctrl+B spec): everything, from a session tab; just that
+        // agent, from its own tab. tmux's prefix too, which is why the hint says "twice in tmux".
+        keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.B, "move what the turn waits on to the background",
+            () =>
+            {
+                if (PluginManagerDialog.IsOpen) return false;
+                mainWindow.MoveToBackgroundFromKey();
+                return true;
+            });
+
         // F8 IS CONFIGURATION: providers and MCP servers, on the tab last used. Declined while the
         // plugin manager is open — a global takes its key from every window, and that dialog's own keys
         // come first (the rule F6 and F7 follow).
