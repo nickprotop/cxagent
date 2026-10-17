@@ -25,15 +25,21 @@ namespace CxAgent.Core.Permissions;
 /// clock artefact, not a recreation — which is precisely what the existence check below
 /// establishes. Applied to a path whose folder was genuinely deleted and remade, this would be the
 /// bug the identity system was built to prevent.</para>
+///
+/// <para>THE REMEMBERED EDIT MODE MOVES BY THE RULES' TEST, NOT TRUST'S. A mode is a specific choice
+/// for one folder, as a rule is, so it crosses only from a clock artefact and only onto an identity
+/// that has none of its own; a recreation's mode is dropped and the new folder starts at the
+/// default.</para>
 /// </summary>
 public static class PermissionScopeMigration
 {
     /// <param name="Scopes">How many stale scopes were folded away.</param>
     /// <param name="Rules">How many rules were re-pointed onto the current identity.</param>
     /// <param name="Trusted">How many folders had trust carried forward.</param>
-    public readonly record struct Result(int Scopes, int Rules, int Trusted)
+    /// <param name="Modes">How many folders had a remembered edit mode carried forward.</param>
+    public readonly record struct Result(int Scopes, int Rules, int Trusted, int Modes)
     {
-        public bool ChangedAnything => Scopes > 0 || Rules > 0 || Trusted > 0;
+        public bool ChangedAnything => Scopes > 0 || Rules > 0 || Trusted > 0 || Modes > 0;
     }
 
     /// <summary>
@@ -74,6 +80,7 @@ public static class PermissionScopeMigration
         var foldedScopes = 0;
         var movedRules = 0;
         var carriedTrust = 0;
+        var carriedModes = 0;
 
         foreach (var group in byPath)
         {
@@ -108,10 +115,27 @@ public static class PermissionScopeMigration
             // across a genuine recreation is the failure FolderIdentity exists to prevent.
             var artefacts = stale.Where(s => LooksLikeAClockArtefact(s, path)).ToList();
             movedRules += store.RepointRules(artefacts, current);
+
+            // THE EDIT MODE FOLLOWS THE RULES, not trust: like a rule it is a specific choice the user made
+            // for one folder, so it crosses only from scopes that are this folder under a bad clock. A
+            // recreation's mode was chosen for something else that stood here, and the new folder starts
+            // at the default. Read before ForgetScopes below, which drops every stale scope's mode.
+            //
+            // NEVER OVER A MODE THE CURRENT IDENTITY HAS — that is the newest decision about the folder.
+            // ARTEFACTS THAT DISAGREE CARRY THE MOST RESTRICTIVE: nothing records which was chosen last,
+            // and the mode that asks more costs a prompt when wrong, where the other costs a silent write.
+            // The enum is ordered strictest first, so the smallest value is that one.
+            var modes = artefacts.Select(store.GetEditModeRaw).OfType<Sessions.EditMode>().ToList();
+            if (modes.Count > 0 && store.GetEditModeRaw(current) is null)
+            {
+                store.SetEditMode(path, modes.Min());
+                carriedModes++;
+            }
+
             foldedScopes += store.ForgetScopes(stale);
         }
 
-        return new Result(foldedScopes, movedRules, carriedTrust);
+        return new Result(foldedScopes, movedRules, carriedTrust, carriedModes);
     }
 
     /// <summary>

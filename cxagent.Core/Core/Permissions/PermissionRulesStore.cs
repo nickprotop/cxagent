@@ -311,6 +311,27 @@ public class PermissionRulesStore
         }
     }
 
+    /// <summary>Sets a remembered edit mode under a scope string EXACTLY as given. Same purpose as
+    /// <see cref="AddRaw"/>.</summary>
+    public void SetEditModeRaw(string storedScope, EditMode mode)
+    {
+        lock (_lock)
+        {
+            _editModes[storedScope] = mode;
+            _locallySetEditModeScopes.Add(storedScope);
+            Save();
+        }
+    }
+
+    /// <summary>The remembered edit mode for a scope string as stored, without normalising it; null when none.</summary>
+    public EditMode? GetEditModeRaw(string storedScope)
+    {
+        lock (_lock)
+        {
+            return _editModes.TryGetValue(storedScope, out var mode) ? mode : null;
+        }
+    }
+
     /// <summary>Trust for a scope string as stored, without normalising it.</summary>
     public TrustState GetTrustRaw(string storedScope)
     {

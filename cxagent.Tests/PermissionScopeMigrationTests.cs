@@ -122,4 +122,75 @@ public class PermissionScopeMigrationTests
         Assert.True(store.Matches(project, PermissionKind.Shell, "git status"));
         Assert.Equal(TrustState.Trusted, store.GetTrust(project));
     }
+
+    // THE EDIT MODE FOLLOWS THE RULES RULE. A clock artefact is this same folder, so the mode the user
+    // chose for it is still their choice here; dropping it started the folder over in the default.
+    [Fact]
+    public void CarriesAnArtefactScopesEditModeToTheCurrentIdentity()
+    {
+        var config = MakeTempDir();
+        var project = MakeTempDir();
+        var store = new PermissionRulesStore(new AppPaths(config));
+        var stale = StaleScopeAfterBirth(project, TimeSpan.FromDays(3));
+        store.SetEditModeRaw(stale, EditMode.AcceptEdits);
+
+        var result = PermissionScopeMigration.Run(store);
+
+        Assert.Equal(EditMode.AcceptEdits, store.GetEditMode(project));
+        Assert.Equal(1, result.Modes);
+        Assert.True(result.ChangedAnything);
+        Assert.DoesNotContain(stale, store.AllScopes());
+    }
+
+    // A RECREATION KEEPS NOTHING BUT TRUST'S ONE BIT. A suffix earlier than the folder's birth describes
+    // something else that stood at this path; its mode was chosen for that folder, not this one, and the
+    // new one starts at the default.
+    [Fact]
+    public void DropsARecreatedFoldersEditMode()
+    {
+        var config = MakeTempDir();
+        var project = MakeTempDir();
+        var store = new PermissionRulesStore(new AppPaths(config));
+        var before = StaleScopeAfterBirth(project, -TimeSpan.FromDays(30));
+        store.SetEditModeRaw(before, EditMode.Auto);
+
+        var result = PermissionScopeMigration.Run(store);
+
+        Assert.Null(store.GetEditMode(project));
+        Assert.Equal(0, result.Modes);
+        Assert.DoesNotContain(before, store.AllScopes());
+    }
+
+    // THE CURRENT IDENTITY'S OWN MODE IS NEVER OVERWRITTEN: it is the newest decision about this folder.
+    [Fact]
+    public void NeverOverwritesTheCurrentScopesEditMode()
+    {
+        var config = MakeTempDir();
+        var project = MakeTempDir();
+        var store = new PermissionRulesStore(new AppPaths(config));
+        store.SetEditMode(project, EditMode.AcceptEdits);
+        store.SetEditModeRaw(StaleScopeAfterBirth(project, TimeSpan.FromDays(3)), EditMode.AlwaysAsk);
+
+        var result = PermissionScopeMigration.Run(store);
+
+        Assert.Equal(EditMode.AcceptEdits, store.GetEditMode(project));
+        Assert.Equal(0, result.Modes);
+    }
+
+    // ARTEFACTS THAT DISAGREE CARRY THE MOST RESTRICTIVE MODE. Nothing records which was chosen last, and
+    // a mode that asks more is the side a wrong guess should land on: it costs a prompt, not a silent write.
+    [Fact]
+    public void ArtefactsThatDisagree_CarryTheMostRestrictiveMode()
+    {
+        var config = MakeTempDir();
+        var project = MakeTempDir();
+        var store = new PermissionRulesStore(new AppPaths(config));
+        store.SetEditModeRaw(project, EditMode.Auto);   // the pre-identity bare path
+        store.SetEditModeRaw(StaleScopeAfterBirth(project, TimeSpan.FromDays(3)), EditMode.AlwaysAsk);
+        store.SetEditModeRaw(StaleScopeAfterBirth(project, TimeSpan.FromDays(5)), EditMode.AcceptEdits);
+
+        PermissionScopeMigration.Run(store);
+
+        Assert.Equal(EditMode.AlwaysAsk, store.GetEditMode(project));
+    }
 }
