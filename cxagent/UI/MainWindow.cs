@@ -743,7 +743,6 @@ public sealed class MainWindow : IDisposable
     public void NoteFirstSession(Core.Sessions.Session session)
     {
         _sessionTabs[0].NoteSession(session);
-        WatchJobs(session);
 
         // AND THE PANEL FOLLOWS ITS TALLY FROM THE START. ShowActiveSession does this on every tab
         // SWITCH, and the first tab never goes through one — so the panel counted the first
@@ -767,7 +766,6 @@ public sealed class MainWindow : IDisposable
     {
         var tab = new SessionTab(session, NewTranscript(), NewPrompt(), NewJobPanel());
         tab.Compose(BuildComposerFor(tab));
-        WatchJobs(session);
 
         _sessionTabs.Add(tab);
         WireOnce(tab.Input);
@@ -2569,14 +2567,6 @@ public sealed class MainWindow : IDisposable
     private Session? JobsSession =>
         _jobTabs.Values.FirstOrDefault(s => ReferenceEquals(s.Page, Tabs.GetTab(Tabs.ActiveTabIndex)))?.Tab.Session
         ?? ActiveSession;
-
-    /// <summary>
-    /// Clears a session's finished jobs from the panel when its user speaks — see Session.UserSpoke
-    /// for why that, and not the transcript's user-turn callback. Raised on the submitting thread; the
-    /// board takes its own lock.
-    /// </summary>
-    private void WatchJobs(Session session) =>
-        session.UserSpoke += () => Jobs.ClearFinished(session.Owns);
 
     /// <summary>The jobs panel, from the board, for the session whose jobs are in front.</summary>
     private void RefreshJobsPanel()

@@ -81,4 +81,47 @@ public class FinishedShellsTests
         Assert.Null(shells.Find(7));
         Assert.Same(fresh, shells.HandoffFor(7));
     }
+
+    /// <summary>Decision 13: x on a finished shell forgets its record too, so /tasks and task_list stop listing it.</summary>
+    [Fact]
+    public void AForgottenShell_IsNoLongerFoundOrListed()
+    {
+        var shells = new FinishedShells();
+        shells.Track(Job(12), _ => true);
+        shells.Finished(12, exitCode: 0, killed: false);
+
+        Assert.True(shells.Forget(12));
+
+        Assert.Null(shells.Find(12));
+        Assert.Null(shells.HandoffFor(12));
+        Assert.Empty(shells.Recent(_ => true));
+        Assert.True(shells.Forget(99));   // never tracked: nothing to forget, nothing owed
+    }
+
+    [Fact]
+    public void ARunningShell_IsNotForgotten()
+    {
+        var shells = new FinishedShells();
+        shells.Track(Job(13), _ => true);
+
+        Assert.False(shells.Forget(13));
+        Assert.NotNull(shells.HandoffFor(13));
+    }
+
+    /// <summary>Q10, for a shell: an exit report the agent is still owed is handed over first, and keeps the record if refused.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AnOwedExitReport_IsHandedOverBeforeTheShellIsForgotten(bool parentTakesIt)
+    {
+        var shells = new FinishedShells();
+        var left = 0;
+        var handoff = shells.Track(Job(14), _ => { left++; return parentTakesIt; });
+        shells.Finished(14, exitCode: 2, killed: false);
+        handoff.Complete("exit 2", _ => false);
+
+        Assert.Equal(parentTakesIt, shells.Forget(14));
+        Assert.Equal(1, left);
+        Assert.Equal(parentTakesIt, shells.Find(14) is null);
+    }
 }

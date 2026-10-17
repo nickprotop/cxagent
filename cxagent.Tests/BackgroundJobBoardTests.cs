@@ -109,18 +109,29 @@ public class BackgroundJobBoardTests : IDisposable
         Assert.Equal([now.AddSeconds(-10), now.AddSeconds(-20), now.AddSeconds(-30)], order);
     }
 
-    [Fact]
-    public async Task ClearFinished_RemovesOnlyTheOwnersFinishedEntries()
+    /// <summary>Decision 4′: nothing clears on its own — a success stays as a failure does, until x.</summary>
+    [Theory]
+    [InlineData("exit 0")]
+    [InlineData("exit 3")]
+    public async Task AFinishedJob_StaysUntilDismissed(string command)
     {
-        Start("exit 0", "A");
+        Start(command, "A");
+        await Until(() => _board.For(Is("A")).All(e => e.Finished));
+        await Task.Delay(100);
+        var entry = Assert.Single(_board.For(Is("A")));
+
+        Assert.True(_board.Dismiss(entry));
+        Assert.Empty(_board.For(Is("A")));
+    }
+
+    [Fact]
+    public void ARunningJob_CannotBeDismissed()
+    {
         Start("sleep 30", "A");
-        Start("exit 0", "B");
-        await Until(() => _board.For(_ => true).Count(e => e.Finished) == 2);
+        var entry = Assert.Single(_board.For(Is("A")));
 
-        _board.ClearFinished(Is("A"));
-
-        Assert.Equal(BackgroundJobState.Running, Assert.Single(_board.For(Is("A"))).View().State);
-        Assert.Single(_board.For(Is("B")));
+        Assert.False(_board.Dismiss(entry));
+        Assert.Single(_board.For(Is("A")));
     }
 
     /// <summary>A session whose user never speaks again must not grow the board without bound.</summary>

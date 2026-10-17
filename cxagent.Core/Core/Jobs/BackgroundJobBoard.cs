@@ -84,11 +84,10 @@ public sealed class BackgroundJobEntry
 ///
 /// <para>WHY NOT <see cref="DetachedProcessRegistry.Live"/>: that is the RUNNING set, and drops a job
 /// the moment it exits — which is exactly when a panel has the most to say about it. This keeps a
-/// finished job until the session it belongs to has had a chance to see it.</para>
+/// finished job until the user dismisses it (decision 4′) — the panel's Finished section.</para>
 ///
 /// <para>ONE LOCK, SNAPSHOT READS. Described arrives on a tool's thread, Exited on the process's
-/// waiter thread, reads come from the UI thread and clears from whichever thread the user submitted
-/// on.</para>
+/// waiter thread, reads and dismissals come from the UI thread.</para>
 /// </summary>
 public sealed class BackgroundJobBoard
 {
@@ -103,9 +102,9 @@ public sealed class BackgroundJobBoard
     /// <summary>
     /// How many finished entries are kept, oldest dropped first.
     ///
-    /// <para>A session's finished jobs normally leave when its user next speaks. This is for the ones
-    /// whose user never will — a closed tab's, an idle session's — which would otherwise accumulate
-    /// for the life of the process.</para>
+    /// <para>A finished job stays until its row is dismissed. This bounds the ones nobody dismisses — a closed
+    /// tab's, an idle session's — which would otherwise accumulate for the life of the process; past it, the
+    /// oldest leave on their own.</para>
     /// </summary>
     public const int MaxFinished = 64;
 
@@ -156,9 +155,13 @@ public sealed class BackgroundJobBoard
         lock (_gate) return _entries.Count(e => !e.Finished && !owns(e.Job.AgentId));
     }
 
-    /// <summary>Removes the asking session's finished jobs — its user has spoken since.</summary>
-    public void ClearFinished(Func<string, bool> owns)
+    /// <summary>
+    /// Removes a finished job the user has read — x on its row (spec decision 13). False for a running job, which
+    /// x kills instead.
+    /// </summary>
+    public bool Dismiss(BackgroundJobEntry entry)
     {
-        lock (_gate) _entries.RemoveAll(e => e.Finished && owns(e.Job.AgentId));
+        if (!entry.Finished) return false;
+        lock (_gate) return _entries.Remove(entry);
     }
 }

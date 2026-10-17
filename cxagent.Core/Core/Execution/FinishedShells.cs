@@ -84,6 +84,33 @@ public sealed class FinishedShells
     }
 
     /// <summary>What a tracked command was started to do, running or ended; null when nothing tracks it.</summary>
+    /// <summary>
+    /// Forgets an ended command — x on its row — so /tasks and task_list stop listing it. False while it runs, and
+    /// while its exit report is still owed to the agent that started it and cannot be handed over (decision 14's
+    /// rule, for a command): that report would otherwise be lost with the record. True for a pid nothing tracks.
+    /// </summary>
+    public bool Forget(int pid)
+    {
+        ResultHandoff handoff;
+        lock (_gate)
+        {
+            // AN UNTRACKED PID HAS NOTHING TO FORGET, and nothing owed: true, so a caller forgetting a row everywhere
+            // is not stopped by a record that was never made.
+            if (!_byPid.TryGetValue(pid, out var entry)) return true;
+            if (entry.Finished is null) return false;
+            handoff = entry.Handoff;
+        }
+
+        // OUTSIDE THE LOCK: handing the report over calls into the parent's delivery.
+        if (!handoff.HandOverUndelivered()) return false;
+
+        lock (_gate)
+        {
+            if (_byPid.Remove(pid)) _ended.Remove(pid);
+        }
+        return true;
+    }
+
     public BackgroundJob? JobFor(int pid)
     {
         lock (_gate) return _byPid.GetValueOrDefault(pid)?.Job;

@@ -13,8 +13,8 @@ namespace CxAgent.UI;
 /// <para>A TAB, NOT A WINDOW, for the reason a shell tab is one: switching away is not closing it, so
 /// the transcript can be read and the job come back to.</para>
 ///
-/// <para>IT HOLDS ITS ENTRY, not a pid to look up. The board clears a finished job once its session's
-/// user speaks again, and a tab being read must not empty itself because someone typed.</para>
+/// <para>IT HOLDS ITS ENTRY, not a pid to look up. The board drops a finished job when its row is
+/// dismissed, and a tab being read must not empty itself because a row left the panel.</para>
 /// </summary>
 internal sealed class JobTab
 {
