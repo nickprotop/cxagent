@@ -678,8 +678,14 @@ public sealed class MainWindow : IDisposable
         CloseTab(strip);
         RelabelSessionTabs();
 
-        // ITS AGENT TABS GO WITH IT: closing the session ended their agents (core decision 32).
-        if (tab.Session is { } closed) CloseAgentTabsOf(closed);
+        // ITS VIEW TABS GO WITH IT (decision 31): closing the session ended its agents (core decision 32), and a
+        // command's output tab left open would be a view of a conversation that no longer exists — in front, it
+        // would point the Tasks panel at the closed session.
+        if (tab.Session is { } closed)
+        {
+            CloseAgentTabsOf(closed);
+            CloseJobTabsOf(closed);
+        }
 
         // THE TAB NOW IN FRONT IS SHOWN AGAIN, once the mapping is whole. The strip's change handler ran
         // inside CloseTab, before the session mapping shifted, and found no session at the new index — so
@@ -2694,6 +2700,16 @@ public sealed class MainWindow : IDisposable
     {
         foreach (var slot in _agentTabs.Values.Where(s => ReferenceEquals(s.Tab.Session, session)).ToList())
             CloseAgentTab(slot.Tab);
+    }
+
+    /// <summary>A closed session's command output tabs — see where it is called.</summary>
+    private void CloseJobTabsOf(Session session)
+    {
+        foreach (var (entry, slot) in _jobTabs.Where(kv => ReferenceEquals(kv.Value.Tab.Session, session)).ToList())
+        {
+            _jobTabs.Remove(entry);
+            if (IndexOf(slot.Page) is { } index) CloseTab(index);
+        }
     }
 
     /// <summary>A job tab and the strip page it sits on.</summary>

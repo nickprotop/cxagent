@@ -18,6 +18,7 @@ public sealed class ViewTabTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "view-tab-" + Guid.NewGuid().ToString("N"));
     private readonly SessionManager _manager;
+    private readonly CxAgent.Core.Execution.DetachedProcessRegistry _registry = new();
     private readonly MainWindow _window;
     private readonly Session _front;
 
@@ -32,7 +33,7 @@ public sealed class ViewTabTests : IDisposable
             ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"), new LogFileManager(paths))
         {
             CloseSession = (_, _) => true,
-            Jobs = new BackgroundJobBoard(new CxAgent.Core.Execution.DetachedProcessRegistry()),
+            Jobs = new BackgroundJobBoard(_registry),
         };
         _window.Build();
         _front = Open();
@@ -41,6 +42,7 @@ public sealed class ViewTabTests : IDisposable
 
     public void Dispose()
     {
+        _registry.ReapAll();
         _manager.Dispose();
         try { Directory.Delete(_dir, recursive: true); } catch (Exception) { }
     }
@@ -227,6 +229,32 @@ public sealed class ViewTabTests : IDisposable
         _window.ShowPermissionPrompt(SharpConsoleUI.Builders.Controls.Markup("Run shell command?").Build());
 
         Assert.Equal(SharpConsoleUI.Layout.GridUnitType.Auto, left.Content.RowDefinitions[1].Type);
+    }
+
+    /// <summary>
+    /// Decision 31: A COMMAND'S OUTPUT TAB CLOSES WITH ITS SESSION, as an agent's does. Left open, it was a view of a
+    /// conversation that no longer exists, and with it in front the Tasks panel acted on the closed session.
+    /// </summary>
+    [Fact]
+    public void AJobTab_ClosesWithItsSession()
+    {
+        var second = Open();
+        _window.AddSessionTab(second);
+        var shell = CxAgent.Core.Execution.ProcessRunner.DetachAsync(
+            new CxAgent.Core.Execution.ProcessSpec("/bin/sh", ["-c", "sleep 30"],
+                new CxAgent.Core.Execution.RunOptions(WorkingDir: TestProcesses.WorkingDir, SpillDir: _dir)),
+            new CollectingContext(), _registry).GetAwaiter().GetResult();
+        _registry.Describe(shell, new CxAgent.Core.Execution.BackgroundJob(shell.Pid, _front.SessionId!, "sleep 30", DateTimeOffset.UtcNow,
+            shell.OutputPath));
+        _window.Tabs.ActiveTabIndex = 0;
+        _window.ToggleJobsPanel();
+        _window.JobsPanel.Follow($"job:{shell.Pid}");
+        var withJobTab = _window.Tabs.TabCount;
+
+        _window.Tabs.ActiveTabIndex = 0;
+        Assert.True(_window.CloseActiveSession(confirmed: true, keepCommands: true));
+
+        Assert.Equal(withJobTab - 2, _window.Tabs.TabCount);
     }
 
     /// <summary>Decision 31: a view tab opens right after its session's tab and that session's other view tabs.</summary>
