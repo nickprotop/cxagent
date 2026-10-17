@@ -87,6 +87,19 @@ public sealed class ViewTabTests : IDisposable
         Assert.Contains("keeps running when you close this tab", _window.ActiveAgentTab!.HeaderText, StringComparison.Ordinal);
     }
 
+    /// <summary>Decision 33′: a finished agent's tab names x by what the panel's ✕ calls it — delete.</summary>
+    [Fact]
+    public void AFinishedAgentTabsHeader_SaysXDeletesIt()
+    {
+        _front.SubAgents.Keep(AgentTabTests.Child(AgentTabTests.Says()), "finder");
+        _front.SubAgents.TryClaim("finder");
+        _front.SubAgents.AnnounceBegin("finder");
+        _front.SubAgents.EndSend("finder", "completed");
+        _window.OpenAgentTab(_front, "finder");
+
+        Assert.Contains("x in Tasks (F7) deletes it", _window.ActiveAgentTab!.HeaderText, StringComparison.Ordinal);
+    }
+
     /// <summary>Decision 30: closing a running view tab asks nothing, stops nothing, and says where the task went.</summary>
     [Fact]
     public void ClosingARunningAgentTab_LeavesItRunning_AndSaysWhereToFindIt()

@@ -240,7 +240,7 @@ public sealed class AgentTab : IDisposable
         else if (_now is { Running: true, Foreground: false })
             lines.Add(Muted("keeps running when you close this tab · Stop, or x in Tasks (F7), stops it"));
         else if (_now is { Running: false })
-            lines.Add(Muted("closing this tab keeps it · x in Tasks (F7) forgets it"));
+            lines.Add(Muted("closing this tab keeps it · x in Tasks (F7) deletes it"));
         lines.Add("");
         return lines;
     }
