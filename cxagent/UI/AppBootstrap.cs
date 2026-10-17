@@ -1387,6 +1387,13 @@ public static class AppBootstrap
                 return;
             }
 
+            // A COPY SAYS SO. The framework copies the selection right after this preview, if it is left
+            // unhandled — so the key is only looked at, never claimed, and the copy itself stays the
+            // framework's. Nothing below handles Ctrl+C, which is what makes the toast true.
+            if (CopyToast.For(e.KeyInfo, CopyToast.ShortcutOf(window.SelectionManager.ActiveSelection),
+                    SharpConsoleUI.Helpers.ClipboardHelper.Backend) is { } copied)
+                system.ToastService.Show(copied.Text, copied.Severity);
+
             // ↑ ↓, ENTER AND x ON THE TASKS PANEL'S CARDS, only while they have the keyboard — the composer's
             // own ↑ ↓ (history, the command list) never reach here, because the composer has the
             // keyboard then. Forwarded rather than left to the focused list, so the panel decides which of its
