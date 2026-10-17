@@ -206,7 +206,8 @@ public sealed class ProviderRegistry
     /// have been down, and null already means "unknown" everywhere downstream.</para>
     ///
     /// <para>SYNCHRONOUS, matching the two call sites in ConfigResolver that already block on this
-    /// probe during startup. It is bounded at three seconds and every failure returns null.</para>
+    /// probe during startup. It is bounded at three seconds and every failure returns null, and it runs
+    /// on the thread pool so a caller on the UI thread waits rather than deadlocks.</para>
     /// </summary>
     public int? WindowFor(string instanceName)
     {
@@ -215,8 +216,10 @@ public sealed class ProviderRegistry
             if (_windows.TryGetValue(instanceName, out var known) && known is not null) return known;
             if (!_endpoints.TryGetValue(instanceName, out var target)) return null;
 
-            var probed = ContextWindowProbe
-                .TryGetAsync(target)
+            // ON THE THREAD POOL, NOT HERE. This is reached from the UI thread (/model), whose synchronization
+            // context the probe's awaits would post their continuations to — the very thread blocked below, so the
+            // app froze for good. Run where no context is captured, the wait is only the probe's own bound.
+            var probed = Task.Run(() => ContextWindowProbe.TryGetAsync(target))
                 .GetAwaiter().GetResult();
 
             // ONLY A REAL ANSWER IS REMEMBERED. Caching a null would turn one unreachable endpoint

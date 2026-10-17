@@ -241,6 +241,44 @@ public class LazyWindowProbeTests
         public void Dispose() { try { _listener.Stop(); } catch (Exception) { } }
     }
 
+    /// <summary>
+    /// A context that runs what is posted to it only when its own thread is free — the UI thread's, which is where
+    /// /model is typed. A continuation posted while that thread blocks never runs.
+    /// </summary>
+    private sealed class BusyThreadContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) { }
+    }
+
+    /// <summary>
+    /// /model FROM THE UI THREAD, to a model whose window is asked of its endpoint. The ask is synchronous there, and
+    /// it once waited on its own HTTP continuations, which were queued for the very thread it was blocking — the
+    /// app froze and SharpConsoleUI offered Ctrl+Q.
+    /// </summary>
+    [Fact]
+    public void AskingTheWindow_FromTheUiThread_DoesNotDeadlock()
+    {
+        using var endpoint = new FakeEndpoint();
+        var settings = new ProviderSettings(
+            new Dictionary<string, ProviderInstanceConfig>
+            {
+                ["served"] = new("openai-compatible", "served", null, $"{endpoint.Origin}/v1", null, null, null, false),
+            },
+            "served", [], new Dictionary<string, RoutingTarget>(), null);
+        var registry = ProviderRegistry.Build(settings);
+
+        int? window = null;
+        var ui = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new BusyThreadContext());
+            window = registry.Use("served")!.ContextWindow;
+        }) { IsBackground = true };
+        ui.Start();
+
+        Assert.True(ui.Join(TimeSpan.FromSeconds(10)), "the switch never returned");
+        Assert.Equal(212_992, window);
+    }
+
     [Fact]
     public void AnUndeclaredWindow_IsAskedOfTheEndpoint_AndRememberedAfterwards()
     {
