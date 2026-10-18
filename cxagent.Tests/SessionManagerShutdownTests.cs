@@ -70,10 +70,13 @@ public class SessionManagerShutdownTests : IDisposable
         using var child = Process.Start(new ProcessStartInfo("sleep", "60") { UseShellExecute = false })!;
         new ChildProcessStore(_dir).Add(new ChildProcessRecord(child.Id, child.StartTime.ToUniversalTime(), "hung"));
 
+        // THE APP'S OWN WINDOW, TWO SECONDS. A short one measured the thread pool, not the behaviour:
+        // on a slow runner the well-behaved plugin's teardown had not even been scheduled within
+        // 300ms. The hung Stop still cannot hold the quit past the window, which the bound shows.
         var clock = Stopwatch.StartNew();
-        manager.Shutdown(TimeSpan.FromMilliseconds(300));
+        manager.Shutdown(TimeSpan.FromSeconds(2));
 
-        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), $"shutdown took {clock.Elapsed}");
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(8), $"shutdown took {clock.Elapsed}");
         Assert.True(fine.StopCalled);
         Assert.True(hung.StopCalled);
         Assert.True(child.WaitForExit(TimeSpan.FromSeconds(5)), "a hung plugin's child outlived the quit");
