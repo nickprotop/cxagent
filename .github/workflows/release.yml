@@ -507,14 +507,11 @@ jobs:
       # same number comes out each time and --skip-duplicate below skips it.
       - name: Pack
         run: |
-          # VALIDATED AGAINST THE PUBLISHED CONTRACT. A change that compiles can still break every
-          # plugin already built — a new positional parameter on PluginGate loads fine and throws
-          # MissingMethodException on first use — so pack compares the public API with the baseline
-          # on nuget.org and fails on a break. Raise the baseline when a new contract is published.
+          # VALIDATED AGAINST THE PUBLISHED CONTRACT, the baseline its csproj names (ContractBaseline):
+          # a change that compiles can still break every plugin already built, and pack fails on one.
           dotnet pack cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj \
             --configuration Release \
             -p:ContinuousIntegrationBuild=true \
-            -p:EnablePackageValidation=true -p:PackageValidationBaselineVersion=3.0.0 \
             --output ./nupkg
 
           dotnet pack cxagent.Core/cxagent.Core.csproj \

@@ -122,7 +122,7 @@ public sealed class GatedAgentTool : IAgentTool
             // REPORTED AT DECISION TIME — see PermissionGatedExecutor's sibling comment. A JobResult
             // exists only at completion, so the badge could not appear until then; the gate knows
             // now, while the row is still running, and a denied call never runs to produce one.
-            context.DecidedBy = decidedBy;
+            context.SetDecidedBy(decidedBy);
 
             if (!outcome.Allowed)
                 return new JobResult
@@ -178,7 +178,7 @@ public sealed class GatedAgentTool : IAgentTool
             decidedBy = outcome.DeniedBy ?? decidedBy;
 
             // As gate 1 above: announced now, so the row carries it while the tool works.
-            context.DecidedBy = decidedBy;
+            context.SetDecidedBy(decidedBy);
 
             if (!outcome.Allowed)
             {

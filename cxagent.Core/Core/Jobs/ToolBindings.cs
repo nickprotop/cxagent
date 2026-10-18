@@ -442,7 +442,7 @@ public static class ToolBindings
         //
         // NULL DOES NOT RAISE the context's report — see JobContext.DecidedBy. If it did, this
         // reset would clear a badge the gate had just earned rather than merely arming the slot.
-        ctx.DecidedBy = null;
+        ctx.SetDecidedBy(null);
 
         // Three DIFFERENT conditions, three different messages. The text goes back to the model as a
         // tool result and is the only thing it can act on: "no such tool" should make it pick a real

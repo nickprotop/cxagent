@@ -104,7 +104,7 @@ public sealed class PermissionGatedExecutor : IJobExecutor
             // puts the word on a row that is still spinning, and is the only way an auto-DENIED
             // call gets badged at all: it returns immediately below without ever executing.
             // Null-guarded by the setter, so an ordinary silent allow reports nothing.
-            context.DecidedBy = decidedBy;
+            context.SetDecidedBy(decidedBy);
 
             if (!outcome.Allowed)
             {

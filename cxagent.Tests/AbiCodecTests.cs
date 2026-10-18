@@ -230,7 +230,9 @@ public class AbiCodecTests
         var result = AbiCodec.ToInvokeResult(envelope.Value);
         Assert.True(result.IsSuccess);
         Assert.True(result.Value.Success);
-        Assert.Equal(TimeSpan.FromMilliseconds(42), result.Value.Duration);
+        // THE PLUGIN'S OWN durationMs IS NOT TAKEN: how long a call took is the host's to measure,
+        // as it does for the row — see AbiCodec.ToJobResult.
+        Assert.Equal(TimeSpan.Zero, result.Value.Duration);
         Assert.True(result.Value.Output.ContainsKey("locations"));
     }
 

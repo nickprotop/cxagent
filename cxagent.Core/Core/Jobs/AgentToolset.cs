@@ -117,7 +117,7 @@ internal sealed class AgentToolset
         // RESET UP FRONT: a name that doesn't match falls through without touching
         // context.DecidedBy at all, and a prior call's leftover value must not survive to be read
         // as this one's verdict.
-        context.DecidedBy = null;
+        context.SetDecidedBy(null);
         if (!_byName.TryGetValue(call.Name, out var tool)) return null;
 
         var result = await tool.ExecuteAsync(JobParametersFrom(call), context, ct);

@@ -16,9 +16,13 @@ public static class PluginContract
     /// down to <see cref="Oldest"/>.
     ///
     /// <para>2 added the per-call gate — <c>"gated": "dynamic"</c> and the callback behind it. 3 added
-    /// <see cref="IPluginClient"/> — a plugin that declares it can start a turn in its own session.</para>
+    /// <see cref="IPluginClient"/> — a plugin that declares it can start a turn in its own session.
+    /// 4 took the host's own machinery out of what a plugin is handed: <see cref="Jobs.IJobContext"/>
+    /// keeps progress, streaming, logging, where and for whom; a result's verdict fields are the
+    /// host's to set; ToolDefinition and ResourceSnapshot moved to Core. Nothing a plugin uses went,
+    /// so 2 and 3 still load.</para>
     /// </summary>
-    public const int Version = 3;
+    public const int Version = 4;
 
     /// <summary>
     /// The oldest contract this host still loads.

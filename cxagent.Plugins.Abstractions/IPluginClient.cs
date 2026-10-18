@@ -44,8 +44,12 @@ public interface IPluginClient
     ///
     /// <para>A SUBMIT MID-TURN IS QUEUED, not refused and not interleaved, and runs when the session
     /// next goes idle. A queue that is full refuses, saying so.</para>
+    ///
+    /// <para>A GOAL IS A PROMPT, NEVER A COMMAND. Text beginning with '/' reaches the model as text;
+    /// nothing from the session's command table runs, so a plugin can start work but cannot change
+    /// the folder's trust, the mode or model, or what is loaded.</para>
     /// </summary>
-    /// <param name="goal">What to ask the agent to do, as a user would type it.</param>
+    /// <param name="goal">What to ask the agent to do, in words the model reads.</param>
     /// <param name="wantResult">Whether to wait for the turn and return its answer.</param>
     /// <param name="ct">Abandons the wait. Does not cancel the turn — someone else's session is running it.</param>
     /// <exception cref="ObjectDisposedException">The plugin has been unwired from this session.</exception>

@@ -40,7 +40,7 @@ everywhere cxagent does:
        frozen identity your reference names, and the plugin binds to the host's copy. A copy shipped
        beside the plugin is never the one used — it only adds a file to the load set the user is asked
        to approve. In-repo, a ProjectReference with Private="false" does the same. -->
-  <PackageReference Include="CxAgent.Plugins.Abstractions" Version="3.0.0" ExcludeAssets="runtime" />
+  <PackageReference Include="CxAgent.Plugins.Abstractions" Version="4.0.0" ExcludeAssets="runtime" />
 </ItemGroup>
 
 <ItemGroup>
@@ -53,8 +53,15 @@ everywhere cxagent does:
 does not compile against an agent runtime, its database and its HTTP stack to implement seven
 interfaces. Referencing `CxAgent.Core` also works and always did; it just brings all of that with it.
 
-**Its package version IS the contract number.** `3.0.0` is `"pluginContract": 3` — the same fact your
-sidecar declares, so there is one number to keep straight rather than two. This is the `Version` a
+**A call is handed what a tool uses, and nothing of the host's.** `IJobContext` gives you
+`WorkingDirectory`, `Requester`, `ReportProgress`, `ReportTextDelta` for streaming output, and `Log` —
+six members, so a test fake is six lines. In `JobResult` you set `Success`, `ExitCode`,
+`ErrorMessage` and `Output`; `PermissionDenied`, `DecidedBy`, `LogFile` and `Duration` you can read
+but not set, because they are the host's to stamp: whether the gate denied a call, who approved it,
+and how long it took are not a tool's to report about itself.
+
+**Its package version IS the contract number.** `4.0.0` is contract 4 — the same number a
+sidecar can declare, so there is one number to keep straight rather than two. This is the `Version` a
 NuGet consumer sees, not the assembly's own `AssemblyVersion`, which is frozen at `1.0.0.0` and never
 moves: that is the identity .NET resolves your reference against, and bumping it at a contract change
 would refuse your plugin at assembly load, before `PluginContract.Version` — the check that can say
@@ -330,6 +337,12 @@ unfalsifiable.
 ```json
 { "pluginContract": 3, "name": "my-plugin", ... }
 ```
+
+**Declare the oldest contract whose features you use**, not the package you built against. A host
+loads every contract from its floor to its own, so the lower number reaches more hosts: a plugin
+using the per-call gate declares 2, one using the client declares 3. Contract 4 took things away
+from what a plugin is handed and added nothing to declare, so a plugin built against 4.0.0 runs on a
+contract-3 host too, and can say so.
 
 **Required, and checked against a range.** It says which shape you were built against — the
 manifest fields, the gating vocabulary, the lifecycle. A contract above what this host understands

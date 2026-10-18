@@ -1,10 +1,9 @@
 using System.Text.Json;
-using CxAgent.Core.Llm;
 
 namespace CxAgent.Core.Plugins;
 
 /// <summary>
-/// One tool a plugin contributes, in the sidecar's own shape rather than <see cref="ToolDefinition"/>
+/// One tool a plugin contributes, in the sidecar's own shape rather than <c>ToolDefinition</c>
 /// — <see cref="PluginToolManifest.Gated"/> is manifest-only policy that a running plugin's dispatch needs and the
 /// model's tool list does not.
 /// </summary>
@@ -48,8 +47,9 @@ public sealed record PluginGate(string Display, bool AlwaysAskable = true)
     ///
     /// <para>AN INIT-ONLY PROPERTY RATHER THAN A THIRD POSITIONAL PARAMETER, because this record is
     /// PUBLISHED. A new positional parameter changes the constructor and the generated Deconstruct,
-    /// so a plugin compiled against the old shape fails at LOAD with MissingMethodException — no
-    /// build error, no warning, just a plugin that stops working after a host upgrade.</para>
+    /// so a plugin compiled against the old shape still LOADS — the contract check passes — and then
+    /// throws MissingMethodException the first time it builds a PluginGate: no build error, no
+    /// warning, just a tool that fails on its first call after a host upgrade.</para>
     ///
     /// <para>WHAT IT BUYS: PermissionRequest.What is `Subject ?? Display`, and ActionClassifier
     /// reads What. Without a subject a plugin's annotation is judged on the sentence wrapped around
@@ -61,7 +61,7 @@ public sealed record PluginGate(string Display, bool AlwaysAskable = true)
 /// <param name="Name">The tool's name, as offered to the model.</param>
 /// <param name="Description">What the model is told the tool does.</param>
 /// <param name="InputSchema">
-/// The tool's JSON Schema, passed through unchanged — <see cref="ToolDefinition"/> already carries a
+/// The tool's JSON Schema, passed through unchanged — <c>ToolDefinition</c> already carries a
 /// <see cref="JsonElement"/> for this, so nothing here re-encodes it.
 /// </param>
 /// <param name="Gated">

@@ -9,7 +9,7 @@ namespace CxAgent.Core.Execution;
 /// (P2) and exposes the dependency results the executor collected. Progress/log events
 /// for the UI (P5) are a later concern — Log currently persists best-effort.
 /// </summary>
-internal sealed class JobContext : IJobContext
+internal sealed class JobContext : IJobHostContext
 {
     private readonly string _agentId;
     private readonly string _jobId;

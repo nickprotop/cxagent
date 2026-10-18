@@ -32,7 +32,7 @@ exempt from "everything is JSON," for the same reason ConsoleEx's spec states: *
 check has to precede parsing**, so it cannot itself depend on a JSON shape the host might not
 understand yet. Its signature can never change.
 
-The current constant is `3`. **A range, not exact equality** — see `cxagent_plugin.h`'s own
+The current constant is `4`. **A range, not exact equality** — see `cxagent_plugin.h`'s own
 comment. The host refuses a version above what it understands (it may require something never
 seen) and a version below its floor (support for it was dropped); a version within the range may
 omit a capability a newer contract added — `cxagent_plugin_poll` among them — without failing the

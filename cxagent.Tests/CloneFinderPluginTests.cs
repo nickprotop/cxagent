@@ -38,19 +38,11 @@ public class CloneFinderPluginTests
     private sealed class StubJobContext : IJobContext
     {
         public void ReportProgress(double percent, string? message = null) { }
-        public void WorkStarting() { }
-        public void ReportPermissionWait(bool waiting) { }
-        public void ReportReviewing(bool reviewing) { }
         public string? Requester => null;
         public string? WorkingDirectory => null;
-        public string? DecidedBy { get; set; }
         public void Log(string line) { }
         public void Log(JobLogLevel level, string line) { }
-        public void ReportResources(ResourceSnapshot snapshot) { }
-        public void ReportToolCall(string toolName, string summary) { }
         public void ReportTextDelta(string delta) { }
-        public IReadOnlyDictionary<string, JobResult> CompletedJobOutputs { get; } = new Dictionary<string, JobResult>();
-        public IReadOnlyDictionary<string, string> CompletedJobNames { get; } = new Dictionary<string, string>();
     }
 
     private static async Task<IPlugin> LoadPluginAsync()

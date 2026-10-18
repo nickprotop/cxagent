@@ -4,10 +4,11 @@ using CxAgent.Core.Jobs;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// Shared fake IJobContext for job executor tests. Extracted here so there is exactly ONE copy — no
-/// duplication between test files (same reason TestProviders.cs exists).
+/// Shared fake of the HOST's context for job executor tests — what an executor is handed inside
+/// Core, reports included. Extracted here so there is exactly ONE copy — no duplication between test
+/// files (same reason TestProviders.cs exists). A plugin's own tests fake the slimmer IJobContext.
 /// </summary>
-public sealed class TestJobContext : IJobContext
+public sealed class TestJobContext : IJobHostContext
 {
     public TestJobContext(IReadOnlyDictionary<string, JobResult>? completedOutputs = null,
         IReadOnlyDictionary<string, string>? displayNames = null)

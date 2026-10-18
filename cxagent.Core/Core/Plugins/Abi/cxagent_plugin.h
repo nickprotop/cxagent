@@ -43,7 +43,7 @@ extern "C" {
 #endif
 
 /*
- * HANDSHAKE. Returns the plugin contract this library was built against — currently 3.
+ * HANDSHAKE. Returns the plugin contract this library was built against — currently 4.
  *
  * THE SAME NUMBER A MANAGED PLUGIN'S SIDECAR CALLS "pluginContract". One contract covers both
  * loaders; the C entry point keeps its historical name because its signature can never change.

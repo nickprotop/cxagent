@@ -7,7 +7,7 @@ using Xunit;
 namespace CxAgent.Tests;
 
 // A minimal IJobContext that just collects logged lines, for exec tests.
-internal sealed class CollectingContext : IJobContext
+internal sealed class CollectingContext : IJobHostContext
 {
     public ConcurrentQueue<string> Lines { get; } = new();
     public ConcurrentQueue<ResourceSnapshot> Resources { get; } = new();

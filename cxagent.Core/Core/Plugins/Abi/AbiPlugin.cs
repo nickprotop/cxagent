@@ -181,22 +181,8 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
                 ErrorMessage = $"plugin '{_manifest.Name}' replied ok:true to invoke with no result — invoke always returns a JobResult.",
             };
 
-        var r = reply.Result;
-        var output = r.Output.ValueKind == JsonValueKind.Object
-            ? r.Output.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value)
-            : new Dictionary<string, object?>();
-
-        return new JobResult
-        {
-            Success = r.Success,
-            ExitCode = r.ExitCode,
-            ErrorMessage = r.ErrorMessage,
-            PermissionDenied = r.PermissionDenied,
-            DecidedBy = r.DecidedBy,
-            Output = output,
-            LogFile = r.LogFile,
-            Duration = TimeSpan.FromMilliseconds(r.DurationMs),
-        };
+        // WHAT THE PLUGIN KNOWS, AND NOT ITS CLAIMED VERDICT — see AbiCodec.ToJobResult.
+        return AbiCodec.ToJobResult(reply.Result);
     }
 
     /// <summary>

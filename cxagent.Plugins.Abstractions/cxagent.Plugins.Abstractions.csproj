@@ -32,10 +32,20 @@
          of that number which is never published. A tag does not set PackageVersion, so the
          contract keeps its own number and Core's dependency names it.
 
-         RAISED BY HAND, never by a release. 3.0.0 is pushed once and every later release skips it
-         as a duplicate, so a compatible change to this assembly ships only when this number moves
-         — 3.1.0 for an addition, the next major with PluginContract.Version. -->
-    <PackageVersion>3.0.0</PackageVersion>
+         RAISED BY HAND, never by a release. Each version is pushed once and every later release
+         skips it as a duplicate, so a compatible change to this assembly ships only when this number
+         moves — a minor for an addition, the next major with PluginContract.Version. -->
+    <PackageVersion>4.0.0</PackageVersion>
+
+    <!-- THE PUBLISHED CONTRACT THIS ONE MUST STAY COMPATIBLE WITH. Package validation compares this
+         build's public API with that version on nuget.org and fails the pack on a break — a change
+         that compiles can still break every plugin already built (a new positional parameter on
+         PluginGate loads fine and throws MissingMethodException on first use). EMPTY FOR A NEW
+         MAJOR, which breaks on purpose and has nothing published to compare with yet; set it to the
+         major's first version once that is on nuget.org, and raise it with each later one. -->
+    <ContractBaseline></ContractBaseline>
+    <EnablePackageValidation Condition="'$(ContractBaseline)' != ''">true</EnablePackageValidation>
+    <PackageValidationBaselineVersion Condition="'$(ContractBaseline)' != ''">$(ContractBaseline)</PackageValidationBaselineVersion>
 
     <!-- FROZEN, AND NEVER BUMPED — not even at a contract change. This is the identity .NET
          resolves by exact match, so moving it would refuse an old plugin at LOAD, before
@@ -47,5 +57,13 @@
     <Description>The contract a cxagent plugin implements: IPlugin, its manifest, and the job types a tool exchanges.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- THE HOST STAMPS WHAT A PLUGIN MUST NOT: JobResult's PermissionDenied, DecidedBy, LogFile and
+         Duration are internal init, and these are the first-party assemblies that set them. -->
+    <InternalsVisibleTo Include="CxAgent.Core" />
+    <InternalsVisibleTo Include="cxagent" />
+    <InternalsVisibleTo Include="cxagent.Tests" />
+  </ItemGroup>
 
 </Project>

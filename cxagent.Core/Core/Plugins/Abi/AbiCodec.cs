@@ -316,6 +316,29 @@ public static class AbiCodec
     }
 
     /// <summary>
+    /// A native plugin's result envelope as a <see cref="JobResult"/> — what the plugin knows, and
+    /// nothing it does not.
+    ///
+    /// <para>THE ENVELOPE'S VERDICT FIELDS ARE DROPPED. It carries permissionDenied, decidedBy,
+    /// logFile and durationMs for the wire's sake, and copied as given they let a library badge its
+    /// own call "auto-approved" or point the row at a log it invented — the host's to stamp, as
+    /// <see cref="JobResult"/> says. The fields stay in the envelope so a plugin built against an
+    /// earlier contract still parses.</para>
+    ///
+    /// <para>ONE MAPPING FOR BOTH SIDES of the host process: it reads the library's output here, and
+    /// the app reads the host's reply through <see cref="AbiPlugin"/>.</para>
+    /// </summary>
+    public static JobResult ToJobResult(AbiJobResult r) => new()
+    {
+        Success = r.Success,
+        ExitCode = r.ExitCode,
+        ErrorMessage = r.ErrorMessage,
+        Output = r.Output.ValueKind == JsonValueKind.Object
+            ? r.Output.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value)
+            : new Dictionary<string, object?>(),
+    };
+
+    /// <summary>
     /// Confirms an envelope parsed from an <c>invoke</c> reply actually carries the
     /// <see cref="Models.JobResult"/> that call promises, and translates it — see Abi/README.md,
     /// "Every failure mode": "ok:true from invoke (missing result) — fails: invoke promises a
@@ -330,22 +353,7 @@ public static class AbiCodec
             return AbiParseResult<JobResult>.Failure(
                 "plugin's invoke reply was ok:true but carried no 'result' — invoke always returns a JobResult.");
 
-        var r = envelope.Result;
-        var output = r.Output.ValueKind == JsonValueKind.Object
-            ? r.Output.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value)
-            : new Dictionary<string, object?>();
-
-        return AbiParseResult<JobResult>.Success(new JobResult
-        {
-            Success = r.Success,
-            ExitCode = r.ExitCode,
-            ErrorMessage = r.ErrorMessage,
-            PermissionDenied = r.PermissionDenied,
-            DecidedBy = r.DecidedBy,
-            Output = output,
-            LogFile = r.LogFile,
-            Duration = TimeSpan.FromMilliseconds(r.DurationMs),
-        });
+        return AbiParseResult<JobResult>.Success(ToJobResult(envelope.Result));
     }
 
     /// <summary>
