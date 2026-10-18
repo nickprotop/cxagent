@@ -76,6 +76,12 @@ public sealed class Agent
     private ChatMessageId NextTurnId() =>
         MintTurnId?.Invoke() ?? new ChatMessageId(Interlocked.Increment(ref _nextTurnId));
     private readonly LogFileManager? _logs;
+
+    /// <summary>
+    /// This agent's <c>history.jsonl</c>, beside its logs: every message its context gains, kept when compaction
+    /// drops it — what an export reads. Null for an agent with nowhere to log.
+    /// </summary>
+    public HistoryRecorder? History { get; }
     private readonly int _maxTurns;
     private readonly string? _workingDir;
     private string? _instanceName;
@@ -1184,6 +1190,7 @@ public sealed class Agent
         _sink = sink;
         _jobs = jobs;
         _logs = logs;
+        History = logs is null ? null : new HistoryRecorder(Path.Combine(logs.DirFor(Id), "history.jsonl"));
         // ZERO MEANS NO CAP, the same meaning AgentHost.CeilingFor gives a configured 0. Taken
         // literally 0 is a ceiling of zero turns: the agent stops before its first call — and NOT
         // harmlessly, because the cap path makes a real
@@ -1313,7 +1320,7 @@ public sealed class Agent
     /// </remarks>
     public Task<SendResult> SendAsync(string prompt, CancellationToken ct,
         Jobs.ToolSelection? turnTools = null, string? shown = null) =>
-        SendCoreAsync(prompt, ct, turnTools, shown, mailFirst: true);
+        RecordedAfter(SendCoreAsync(prompt, ct, turnTools, shown, mailFirst: true));
 
     /// <summary>
     /// <see cref="SendAsync(string, CancellationToken, Jobs.ToolSelection?, string?)"/>, choosing where
@@ -1330,7 +1337,18 @@ public sealed class Agent
     /// the first request.</para>
     /// </param>
     internal Task<SendResult> SendAsync(string prompt, CancellationToken ct, bool mailFirst) =>
-        SendCoreAsync(prompt, ct, turnTools: null, shown: null, mailFirst);
+        RecordedAfter(SendCoreAsync(prompt, ct, turnTools: null, shown: null, mailFirst));
+
+    /// <summary>
+    /// The run, then whatever it added since its last request into the history — however it ended. A cancelled
+    /// or failed run returns from many places, and what it appended on the way out (the backfilled results of
+    /// calls it never ran) belongs in the record too.
+    /// </summary>
+    private async Task<SendResult> RecordedAfter(Task<SendResult> run)
+    {
+        try { return await run; }
+        finally { History?.Record(_context.Messages); }
+    }
 
     private async Task<SendResult> SendCoreAsync(string prompt, CancellationToken ct,
         Jobs.ToolSelection? turnTools, string? shown, bool mailFirst)
@@ -1369,8 +1387,7 @@ public sealed class Agent
         //
         // UNLESS THE CALLER SAYS OTHERWISE — see mailFirst on the internal SendAsync.
         if (mailFirst)
-            foreach (var waiting in Mailbox.Drain())
-                messages.Add(new ChatMessage { Role = "user", Content = waiting, Timestamp = DateTimeOffset.UtcNow });
+            ReceiveMail(messages);
 
         messages.Add(new ChatMessage
         {
@@ -1601,9 +1618,7 @@ public sealed class Agent
             // point is that it is the newest thing the model sees.
             //
             // AND AFTER THE CANCELLATION CHECK, so a turn already cancelled delivers nothing.
-            if (Mailbox.Drain() is { Count: > 0 } arrived)
-                foreach (var arrival in arrived)
-                    messages.Add(new ChatMessage { Role = "user", Content = arrival });
+            ReceiveMail(messages);
 
             // AT THE CAP, ASK FOR A HANDOFF rather than discarding the run. Hitting the cap used to
             // print one line and throw away everything the model had learned — the user was left
@@ -1643,6 +1658,7 @@ public sealed class Agent
             // that then fails, which is the one you most want to look at afterwards. The token count
             // carried is the PREVIOUS turn's measurement, since this turn's has not happened yet.
             LogContext(Id, _turn, messages, _context.Used);
+            History?.Record(messages);
 
             // THE SIZE THE PROVIDER IS ABOUT TO SEE. Captured here rather than after the response,
             // because by then this turn's reply and tool results have been appended and the figure no
@@ -1665,6 +1681,10 @@ public sealed class Agent
             try
             {
                 response = await StreamTurnAsync(messages, tools, ct, turnId);
+
+                // THE REASONING, FOR THE HISTORY: a model that thinks in its text sends no blocks to keep it on the
+                // reply, so the record takes it here, for the reply this response becomes.
+                History?.NoteThinking(response.Thinking);
             }
             catch (LlmProviderException ex) when (
                 !overflowRecovered &&
@@ -1764,13 +1784,8 @@ public sealed class Agent
                 && toolUseMismatches < MaxToolUseMismatches)
             {
                 toolUseMismatches++;
-                messages.Add(new ChatMessage
-                {
-                    Role = "user",
-                    Content = "Your last response was cut off before its tool call arrived. Re-issue "
-                            + "the call you intended, or say what you want to do next.",
-                    Timestamp = DateTimeOffset.UtcNow,
-                });
+                messages.Add(Nudge("Your last response was cut off before its tool call arrived. Re-issue "
+                            + "the call you intended, or say what you want to do next."));
                 continue;
             }
 
@@ -1790,14 +1805,9 @@ public sealed class Agent
                         Timestamp = DateTimeOffset.UtcNow,
                         ThinkingBlocks = BlocksOf(response),
                     });
-                messages.Add(new ChatMessage
-                {
-                    Role = "user",
-                    Content = "Your reply was cut off at the output limit. Continue exactly where you "
+                messages.Add(Nudge("Your reply was cut off at the output limit. Continue exactly where you "
                             + "stopped, without repeating anything. If you were writing a tool call, "
-                            + "issue it again.",
-                    Timestamp = DateTimeOffset.UtcNow,
-                });
+                            + "issue it again."));
                 continue;
             }
 
@@ -1849,6 +1859,9 @@ public sealed class Agent
                     // until this line existed.
                     PlaceTaskList();
                 }
+
+                // THE ANSWER JOINS THE RECORD NOW: no request follows it to record it on the way out.
+                History?.Record(messages);
 
                 // AND THE ANSWER WITH IT, so a side question asked after the turn sees what the agent
                 // concluded, not only what it was asked.
@@ -1909,6 +1922,11 @@ public sealed class Agent
                 // the provider requires it, and the model continues from it rather than afresh.
                 ThinkingBlocks = BlocksOf(response),
             });
+
+            // RECORDED BEFORE THE CALLS RUN: this message carries no timestamp of its own, so the history stamps
+            // it when written — and written at the next request, after a sub-agent had done all its work, an
+            // export's timeline would put that work before the call that started it.
+            History?.Record(messages);
 
             // TASK 11: SPECULATE THE MOMENT THE CALLS ARE PARSED, not when the walk below reaches
             // each one. response.ToolCalls is complete right here — every call this turn's model
@@ -1994,15 +2012,10 @@ public sealed class Agent
                     // measured: the nudge landed after the first of two results and every later
                     // request was refused. Added after the barrier, with the steer.
                     if (times == StuckRepeats)
-                        nudges.Add(new ChatMessage
-                        {
-                            Role = "user",
-                            Content = $"You have called {call.Name} with the same arguments {times} times "
+                        nudges.Add(Nudge($"You have called {call.Name} with the same arguments {times} times "
                                     + "and received the same result each time. Repeating it will not "
                                     + "produce anything new. Use what you already have, or try a "
-                                    + "genuinely different approach.",
-                            Timestamp = DateTimeOffset.UtcNow,
-                        });
+                                    + "genuinely different approach."));
 
                     // AND THE NUDGE IS NOT A FAILSAFE. It is a request, and a model in a loop is
                     // precisely one that is not responding to requests — measured in Plan 1, a provider
@@ -2110,13 +2123,8 @@ public sealed class Agent
                 // finished — so the model believes it asked for something that never ran. Said
                 // after the barrier, like the nudges, so it cannot split this turn's results.
                 if (response.StopReason == "max_tokens")
-                    nudges.Add(new ChatMessage
-                    {
-                        Role = "user",
-                        Content = "Your last reply hit the output limit. Any tool call it was still "
-                                + "writing was cut off and not run; issue it again if you still need it.",
-                        Timestamp = DateTimeOffset.UtcNow,
-                    });
+                    nudges.Add(Nudge("Your last reply hit the output limit. Any tool call it was still "
+                                + "writing was cut off and not run; issue it again if you still need it."));
 
                 // Every result is recorded, so the stuck nudges can join the conversation now.
                 messages.AddRange(nudges);
@@ -2270,6 +2278,31 @@ public sealed class Agent
         finally
         {
             _sink.AssistantTurnEnded(turnId);
+        }
+    }
+
+    /// <summary>
+    /// A message cxagent sends the model on its own — a reply cut off, a call repeated to no effect — labelled so in the
+    /// history: it is a user-role message nobody typed, and an export must not show it as the user's.
+    /// </summary>
+    private ChatMessage Nudge(string content)
+    {
+        var message = new ChatMessage { Role = "user", Content = content, Timestamp = DateTimeOffset.UtcNow };
+        History?.Label(message, Incoming.Nudge);
+        return message;
+    }
+
+    /// <summary>
+    /// Moves what waited in the mailbox into the context, each as a user message, labelled in the history with
+    /// who sent it.
+    /// </summary>
+    internal void ReceiveMail(List<ChatMessage> messages)
+    {
+        foreach (var (text, from) in Mailbox.DrainEntries())
+        {
+            var message = new ChatMessage { Role = "user", Content = text, Timestamp = DateTimeOffset.UtcNow };
+            if (from is { } sender) History?.Label(message, sender);
+            messages.Add(message);
         }
     }
 
@@ -3691,7 +3724,7 @@ public sealed class Agent
     public static string DescribeCallForTest(ToolCall call, string? workingDir) =>
         DescribeCall(call, workingDir);
 
-    private static string DescribeCall(ToolCall call, string? workingDir)
+    public static string DescribeCall(ToolCall call, string? workingDir)
     {
         // A SPAWN IS NAMED BY ITS TYPE AND ITS DESCRIPTION, not by raw JSON. The generic branch below
         // truncates the serialised arguments at 60 characters, and a spawn's JSON opens with

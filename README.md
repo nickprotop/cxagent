@@ -202,6 +202,11 @@ starts from what the main agent knows answers in its own block, under this sessi
 can only read. Enter keeps the side thread going; `Esc` stops an answer, then leaves. See
 [COMMANDS.md](COMMANDS.md#btw).
 
+**Any conversation exports as markdown.** `F12` or `/export` writes this one — readable for a person, or full
+for another agent to continue from — to a file or the clipboard, as a timeline with each sub-agent's work where it
+happened. `/sessions export` does the same for an earlier session from any folder, without resuming it. See
+[COMMANDS.md](COMMANDS.md#export).
+
 **You see what the model thinks, and choose how hard.** Each step's thinking is its own block, open
 while it streams and folded to `◆ Thought for 9s · 412 words` once the answer starts — from a local
 llama.cpp model or from Claude. `Ctrl+O` opens or folds the latest; any other opens with a click. `/think` and `F10` set the level the
@@ -486,6 +491,7 @@ one run before it was written down — and the full reference for options, outpu
 | `Ctrl+B` | Move what the turn is waiting on to the background — every foreground sub-agent and command (twice in tmux) |
 | `F7` | Tasks panel — background commands and sub-agents in the right-hand column; `↑` `↓` choose, `Enter` opens, `x` stops a running one and deletes a finished one. `F7` again hides it |
 | `F8` | Configuration — providers, MCP servers, agent types |
+| `F12` | Export this conversation as markdown — readable or full, to a file or the clipboard; in an agent's tab, that agent. See [`/export`](COMMANDS.md#export) |
 | `F10` | Next thinking level this model offers — see `/think`. (gnome-terminal opens its own menu on F10 unless that is turned off in its preferences) |
 | `F9` | Theme |
 | `Ctrl+O` | Open or fold the latest thinking block |

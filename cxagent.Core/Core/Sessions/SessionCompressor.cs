@@ -514,7 +514,7 @@ public static class SessionCompressor
     }
 
     /// <summary>The marker that makes a summary recognisable as one on the next compaction.</summary>
-    private const string SummaryMarker = "[earlier conversation, summarised: ";
+    internal const string SummaryMarker = "[earlier conversation, summarised: ";
 
     /// <summary>
     /// The summary a previous compaction left in the head, or null on the first pass.

@@ -89,7 +89,12 @@ public sealed class AgentTab : IDisposable
         bar.AddItem(_stop);
 
         // THE SESSION'S COMPOSER, BUILT BY THE SAME CODE, with this agent's line in the mode line's place.
-        Composer = MainWindow.BuildComposer(_input, _hint).Composer;
+        var composer = MainWindow.BuildComposer(_input, _hint);
+        Composer = composer.Composer;
+
+        // THE SAME RULE AS A SESSION'S, with the same key on it: F12 here exports this agent alone.
+        ComposerRule = composer.Rule;
+        MainWindow.TitleComposerRule(ComposerRule, inAside: false);
 
         // ON ENTER, NOT ON EVERY KEYSTROKE — the question prompt's lesson.
         _input.Entered += (_, text) => _ = Submit(text);
@@ -129,6 +134,9 @@ public sealed class AgentTab : IDisposable
 
     /// <summary>The composer row — what a permission prompt takes the place of.</summary>
     internal GridControl Composer { get; }
+
+    /// <summary>The rule above the composer, titled with the export key.</summary>
+    public RuleControl ComposerRule { get; }
 
     public ChatTranscriptControl Chat => _views.Chat;
 
@@ -258,7 +266,11 @@ public sealed class AgentTab : IDisposable
     }
 
     /// <summary>Re-applies the thinking blocks' colour after a theme change — see MainWindow's theme loop.</summary>
-    public void Recolour() => (_views.Transcript as ChatTranscriptSink)?.Recolour();
+    public void Recolour()
+    {
+        (_views.Transcript as ChatTranscriptSink)?.Recolour();
+        MainWindow.TitleComposerRule(ComposerRule, inAside: false);
+    }
 
     public void Dispose() => _attached.Dispose();
 

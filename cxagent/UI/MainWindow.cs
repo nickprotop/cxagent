@@ -522,6 +522,7 @@ public sealed class MainWindow : IDisposable
 
         tab.ModeLine = modeLine;
         tab.ComposerRule = parts.Rule;
+        TitleComposerRule(parts.Rule, tab.InAside);
         tab.PromptBox = parts.PromptBox;
         tab.Composer = parts.Composer;
         tab.Grip = parts.Grip;
@@ -3743,7 +3744,7 @@ public sealed class MainWindow : IDisposable
 
         // AND EVERY TAB'S BTW TITLE, coloured into its markup the same way.
         foreach (var tab in _sessionTabs)
-            if (tab.ComposerRule is { } rule) rule.Title = ComposerRuleTitle(tab.InAside);
+            if (tab.ComposerRule is { } rule) TitleComposerRule(rule, tab.InAside);
 
         // EVERY SESSION TAB, NOT THE ONE ON SCREEN. Each tab has its own transcript with its own
         // role styles, so restyling only the active one leaves the others drawing new messages in the
@@ -4140,16 +4141,32 @@ public sealed class MainWindow : IDisposable
         // ON THE RULE ABOVE THE COMPOSER, the line that already marks where typing starts. The grip's
         // colour says something changed; the rule's title says what, and how to undo it — without
         // pushing the mode line's model and level off the edge of a narrow terminal.
-        if (tab.ComposerRule is { } rule) rule.Title = ComposerRuleTitle(inAside);
+        if (tab.ComposerRule is { } rule) TitleComposerRule(rule, inAside);
     }
 
-    private static string? ComposerRuleTitle(bool inAside) =>
-        inAside ? $"[{ColorScheme.AsideMarkup}]{AsideHint}[/]" : null;
+    /// <summary>The key that exports the conversation, as the rule above a composer shows it.</summary>
+    public const string ExportHint = "F12 export";
+
+    /// <summary>
+    /// The rule above a composer: the keys about THIS conversation, where the hints row holds the app's.
+    ///
+    /// <para>ONE TITLE AT A TIME. In btw mode the way out is the thing to know, at the left where the eye starts;
+    /// otherwise "F12 export" sits at the right, dimmed, there when wanted and out of the way when not. Theme-coloured
+    /// through the markup, and set again on a theme change for that reason.</para>
+    /// </summary>
+    internal static void TitleComposerRule(RuleControl rule, bool inAside)
+    {
+        rule.Title = inAside ? $"[{ColorScheme.AsideMarkup}]{AsideHint}[/]" : $"[{ColorScheme.MutedMarkup}]{ExportHint}[/]";
+        rule.TitleAlignment = inAside ? TextJustification.Left : TextJustification.Right;
+    }
 
     public string GripTextForTest() => ActiveSessionTab.Grip?.Text ?? "";
 
     /// <summary>The active tab's composer rule title, for a test; null when it has none.</summary>
     public string? ComposerRuleTitleForTest() => ActiveSessionTab.ComposerRule?.Title;
+
+    /// <summary>The active tab's composer rule title alignment, for a test.</summary>
+    public SharpConsoleUI.Layout.TextJustification? ComposerRuleAlignmentForTest() => ActiveSessionTab.ComposerRule?.TitleAlignment;
 
     /// <summary>The active tab's mode line, for a test.</summary>
     public string ModeLineForTest() => ActiveSessionTab.ModeLine?.Text ?? "";

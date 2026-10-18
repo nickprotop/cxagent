@@ -85,6 +85,17 @@ public sealed class AgentTabTests : IDisposable
         Assert.True(roles.IndexOf(ChatRole.User) >= 0 && roles.IndexOf(ChatRole.User) < roles.LastIndexOf(ChatRole.Assistant));
     }
 
+    /// <summary>F12 EXPORTS THE AGENT IN FRONT, and its tab's rule says so as a session's does.</summary>
+    [Fact]
+    public void TheTabsComposerRule_CarriesTheExportKey()
+    {
+        _front.SubAgents.Keep(Child(Says("found it")), "finder");
+        using var tab = new AgentTab(_front, _front.SubAgents.Find("finder")!, Inline(new ChatTranscriptControl()));
+
+        Assert.Contains(MainWindow.ExportHint, tab.ComposerRule.Title);
+        Assert.Equal(SharpConsoleUI.Layout.TextJustification.Right, tab.ComposerRule.TitleAlignment);
+    }
+
     [Fact]
     public async Task TheTab_FollowsWhatTheChildDoesAfterItOpened()
     {

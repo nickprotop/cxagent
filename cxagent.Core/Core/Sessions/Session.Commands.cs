@@ -84,6 +84,36 @@ public sealed partial class Session
     }
 
     /// <summary>
+    /// The agent id of a session named the way /sessions names one: a number is a row of this folder's listing; any
+    /// other word is an id, looked for in every folder — so a session `/sessions all` shows is found by the id it
+    /// shows. Null, with the reason said, when nothing or more than one matches.
+    /// </summary>
+    public string? ExportFolderOf(string what)
+    {
+        if (Services?.Resume is not { } store)
+        {
+            Say(new Message("No session history is available here.", Severity.Warning));
+            return null;
+        }
+        if (string.IsNullOrWhiteSpace(what))
+        {
+            Say(new Message("Which one? `/sessions export <number>` or `<id>`.", Severity.Warning));
+            return null;
+        }
+
+        var rows = int.TryParse(what.Trim(), out _) ? store.List(WorkingDirectory, false) : store.List(null, true);
+        var result = Commands.SessionsCommand.Resolve(what.Trim(), rows);
+        if (result.ResumeUid is null) Say(result.Reply);
+        return result.ResumeUid;
+    }
+
+    /// <summary>
+    /// Writes the conversation's saved state now — what an export of the live session reads its title and spend from.
+    /// Does nothing before the conversation has a message of the user's.
+    /// </summary>
+    public void SaveNow() => Host?.SaveSettings();
+
+    /// <summary>
     /// Says what this process has spent, over the window <paramref name="arguments"/> asks for.
     ///
     /// <para>THE STORE IS THE MANAGER'S, so it is passed rather than held: usage outlives any one
@@ -581,6 +611,7 @@ public sealed partial class Session
         // Taken now, named after the announcement below — for the reason given there.
         var dropped = TakeHeld();
 
+        Host.NoteCleared();
         Host.Context.Clear();
 
         // A FRESH CONVERSATION REBUILDS THE CACHE ANYWAY: a config change waiting for that, now.

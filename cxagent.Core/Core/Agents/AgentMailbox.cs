@@ -35,7 +35,9 @@ public sealed class AgentMailbox
     /// its own, and its originator is what decides whether an unwire may cancel it. Recorded anywhere
     /// else it goes stale: the running turn drains this box at every lap top without telling anyone.</para>
     /// </summary>
-    private readonly record struct Entry(string Text, bool Wakes, Sessions.TurnOriginator? Origin);
+    /// <para>WHO SENT IT, FOR THE RECORD: an export labels each message the agent received, and a drain loses
+    /// the sender unless it travels with the text — see <see cref="Incoming"/>.</para>
+    private readonly record struct Entry(string Text, bool Wakes, Sessions.TurnOriginator? Origin, Incoming? From);
 
     // A PLAIN object, matching PluginSubmitQueue and the rest of Core, which does not use
     // System.Threading.Lock anywhere.
@@ -48,12 +50,14 @@ public sealed class AgentMailbox
     /// Whether this asks for a turn: false leaves a note that is read before the next answer but
     /// neither extends a running turn nor starts one — see <see cref="HasWaking"/>.
     /// </param>
-    public bool TryEnqueue(string message, out string? refusal, bool wakes = true) =>
-        TryEnqueue(new Entry(message, wakes, null), out refusal);
+    /// <param name="from">Who sent it, for the agent's history; null when nobody said.</param>
+    public bool TryEnqueue(string message, out string? refusal, bool wakes = true, Incoming? from = null) =>
+        TryEnqueue(new Entry(message, wakes, null, from), out refusal);
 
     /// <summary>Takes a waking message on someone's behalf — see <see cref="DrainedOrigin"/>.</summary>
+    /// <remarks>ONLY THE APPLICATION DELIVERS THIS WAY — a session's System submit — so it is recorded as a delivery.</remarks>
     internal bool TryEnqueue(string message, Sessions.TurnOriginator origin, out string? refusal) =>
-        TryEnqueue(new Entry(message, true, origin), out refusal);
+        TryEnqueue(new Entry(message, true, origin, Incoming.Delivery), out refusal);
 
     private bool TryEnqueue(Entry entry, out string? refusal)
     {
@@ -94,6 +98,21 @@ public sealed class AgentMailbox
             origin = DrainedOrigin(_pending);
             if (_pending.Count == 0) return [];
             var all = _pending.Select(e => e.Text).ToArray();
+            _pending.Clear();
+            return all;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="Drain"/>, keeping who sent each message — for a drain that writes them into the context, where
+    /// the agent's history records the sender.
+    /// </summary>
+    public IReadOnlyList<(string Text, Incoming? From)> DrainEntries()
+    {
+        lock (_lock)
+        {
+            if (_pending.Count == 0) return [];
+            var all = _pending.Select(e => (e.Text, e.From)).ToArray();
             _pending.Clear();
             return all;
         }

@@ -599,7 +599,19 @@ public sealed class AgentHost : IDisposable
         _resumed = resume is not null;
         // LAST: BuildAgent reads Ledger and Context, so both must already be assigned.
         _agent = BuildAgent();
+
+        // A RESUME OR A MODEL SWITCH IS A NEW AGENT CARRYING AN OLD CONVERSATION. Its history starts by naming
+        // the agent whose history holds the rest, and writes none of the carried messages again.
+        // EVEN WITH NOTHING CARRIED — a /clear before the switch — the history before it is still this session's.
+        if (resume is not null)
+            _agent.History?.ContinuesFrom(resume.AgentId, Context.Messages);
     }
+
+    /// <summary>Marks a /clear in the agent's history, before the context it clears is gone.</summary>
+    internal void NoteCleared() => _agent.History?.NoteCleared();
+
+    /// <summary>Labels the next prompt this host's agent is sent — see <see cref="Incoming"/>.</summary>
+    internal void NoteIncoming(Incoming from) => _agent.History?.NoteIncoming(from);
 
     /// <summary>
     /// Runs one turn on this host's agent. A DELEGATION — everything around it is the session's.
@@ -965,6 +977,10 @@ public sealed class AgentHost : IDisposable
                         _agent.Id, DateTimeOffset.UtcNow, b, a, "manual", _runtime.WorkingDir));
                 }),
             ct);
+
+        // RECORDED NOW, not at the next request: a model switch or a resume before one would carry the summary into a
+        // new agent as already written, and this compaction would leave no mark in the history.
+        _agent.History?.Record(Context.Messages);
 
         // THE FORK FOLLOWS THE COMPACTION — see RepublishContext.
         RepublishContext();

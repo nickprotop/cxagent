@@ -49,6 +49,9 @@ public class LogFileManager
     /// exists before writing, rather than recreating it.</summary>
     public string LogsDir => _paths.LogsDir;
 
+    /// <summary>The directory an agent's logs go to — its ancestry, then its own id.</summary>
+    public string DirFor(string agentId) => Path.Combine(_paths.LogsDir, Path.Combine([.. _ancestry, agentId]));
+
     public string PathFor(string agentId, string jobId, string stream)
     {
         if (Array.IndexOf(Streams, stream) < 0)

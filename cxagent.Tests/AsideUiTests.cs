@@ -57,21 +57,26 @@ public class AsideComposerTests : IDisposable
     }
 
     /// <summary>
-    /// The hint is the title of the rule above the composer, and only in btw mode — on the line that
-    /// already marks where the composer starts, not crowding the mode line after the model.
+    /// The rule above the composer carries the keys about the conversation: "F12 export" at its right, and in btw mode
+    /// the way out at its left — one title at a time, on the line that already marks where the composer starts, not
+    /// crowding the mode line after the model.
     /// </summary>
     [Fact]
-    public void BtwMode_TitlesTheRuleAboveTheComposer_AndLeavingClearsIt()
+    public void TheRuleAboveTheComposer_SaysF12Export_AndBtwModeTakesItOver()
     {
         var main = _fixture.Host.Main;
         var session = main.ActiveSession!;
-        Assert.Null(main.ComposerRuleTitleForTest());
+        Assert.Contains("F12 export", main.ComposerRuleTitleForTest());
+        Assert.Equal(SharpConsoleUI.Layout.TextJustification.Right, main.ComposerRuleAlignmentForTest());
 
         main.SetAside(session, true);
         Assert.Contains(MainWindow.AsideHint, main.ComposerRuleTitleForTest());
+        Assert.DoesNotContain("F12", main.ComposerRuleTitleForTest());
+        Assert.Equal(SharpConsoleUI.Layout.TextJustification.Left, main.ComposerRuleAlignmentForTest());
         Assert.DoesNotContain(MainWindow.AsideHint, main.ModeLineForTest());
 
         main.SetAside(session, false);
-        Assert.Null(main.ComposerRuleTitleForTest());
+        Assert.Contains("F12 export", main.ComposerRuleTitleForTest());
+        Assert.Equal(SharpConsoleUI.Layout.TextJustification.Right, main.ComposerRuleAlignmentForTest());
     }
 }

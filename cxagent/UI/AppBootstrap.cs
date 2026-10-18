@@ -741,6 +741,25 @@ public static class AppBootstrap
 
         // THE VERB IS THE FRONT END'S, because a browser is not a word Core has. A headless embedder
         // does not register it and /plugin still lists, loads and unwires.
+        // EXPORT IS THE FRONT END'S: a dialog, a file picker and the clipboard are not words Core has.
+        var exportFlow = new ExportFlow(system, paths, configFile);
+        manager.Commands.Register(new SessionCommand("/export", "export this conversation as markdown (F12)",
+            [
+                new CommandArgument("last [N]", "only the last turn, or the last N"),
+                new CommandArgument("full", "everything the model saw, for another agent"),
+            ]),
+            (s, arguments) => { _ = exportFlow.ForSessionAsync(s, ExportCommand.Parse(arguments)); return true; });
+        manager.Commands.RegisterVerb("/sessions",
+            new CommandArgument("export <number|id>", "export an earlier session as markdown, without resuming it",
+                Completes: false, Values: ValueSources.Sessions),
+            (s, arguments) =>
+            {
+                // THE WORD AFTER THE VERB names the session — a row number here, or an id from any folder's listing.
+                if (s.ExportFolderOf(arguments.Trim()["export".Length..].Trim()) is { } agentId)
+                    _ = exportFlow.ForPastAsync(s, agentId);
+                return true;
+            });
+
         manager.Commands.Register(new SessionCommand("/providers", "add, edit or remove providers (F8)"),
             (_, _) => { ConfigDialog.Show(configHost, ConfigTab.Providers); return true; });
         manager.Commands.RegisterVerb("/mcp",
@@ -1785,6 +1804,18 @@ public static class AppBootstrap
                 return true;
             });
 
+        // F12 EXPORTS WHAT IS IN FRONT: an agent tab's agent, or the session. Listed in /help and on the rule above the
+        // composer, not in the hints row — that row is for keys about the app, this one is about the conversation.
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F12, "export this conversation as markdown",
+            () =>
+            {
+                if (PluginManagerDialog.IsOpen || ConfigDialog.IsOpen || ExportDialog.IsOpen || QuitDialog.IsOpen) return false;
+                _ = mainWindow.ActiveAgentTab is { } agent
+                    ? exportFlow.ForAgentAsync(agent)
+                    : exportFlow.ForSessionAsync(mainWindow.ActiveTab.Session ?? session, Core.Commands.ExportPrefill.None);
+                return true;
+            });
+
         // THE THINKING JUST FOLDED, back open — or folded again. Only the latest: any other block is a
         // click away, or Tab to it and Enter, and opening every block at once buries the answers
         // between them. Ctrl+O because Ctrl+T is the library's window-cycle key.
@@ -1983,6 +2014,7 @@ public static class AppBootstrap
                 // cancel a running turn, which is not remotely what the user asked for.
                 if (PluginManagerDialog.CloseIfOpen()) return true;
                 if (ConfirmDialog.CloseIfOpen()) return true;
+                if (ExportDialog.CloseIfOpen()) return true;
                 if (QuitDialog.CloseIfOpen()) return true;
                 if (ApplyToTabsDialog.CloseIfOpen()) return true;
                 if (ModelPickerOverlay.CloseIfOpen()) return true;

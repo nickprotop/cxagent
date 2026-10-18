@@ -208,10 +208,9 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                 // loop is running to drain it; a child that finished without draining is IDLE, and
                 // idle is this path, which empties it before appending. The state that would lose a
                 // message is the state that delivers it.
-                foreach (var waiting in stored.Agent.Agent.Mailbox.Drain())
-                    stored.Agent.Agent.Context.Messages.Add(
-                        new ChatMessage { Role = "user", Content = waiting });
+                stored.Agent.Agent.ReceiveMail(stored.Agent.Agent.Context.Messages);
                 stored.Agent.Agent.EchoPrompt(prompt, request.FromUser);
+                stored.Agent.Agent.History?.NoteIncoming(request.FromUser ? Incoming.You : Incoming.Parent);
 
                 // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child
                 // died with the turn that called `agent`; a wake is governed by the turn that ASKED,
@@ -314,7 +313,8 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
     /// </summary>
     private static string Deliver(StoredAgent stored, string agentName, SendRequest request)
     {
-        if (!stored.Agent.Agent.Mailbox.TryEnqueue(request.Prompt, out var full))
+        if (!stored.Agent.Agent.Mailbox.TryEnqueue(request.Prompt, out var full,
+                from: request.FromUser ? Incoming.You : Incoming.Parent))
             return $"error: could not reach '{agentName}' — {full}";
 
         // SHOWN WHEN DELIVERED, the moment the sender pressed Enter — the mailbox keeps only the text, so whose it

@@ -79,7 +79,7 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
         // its children started, and an exit racing that kill would otherwise resume a finished child into a
         // conversation nobody can see, and submit its answer to a session whose host is going away.
         if (store.Ended || store.WasStoppedByUser(kept.Name))
-            return kept.Agent.Agent.Mailbox.TryEnqueue(text, out _, wakes: false)
+            return kept.Agent.Agent.Mailbox.TryEnqueue(text, out _, wakes: false, from: Agents.Incoming.Delivery)
                 ? Agents.DeliveryOutcome.Queued
                 : Agents.DeliveryOutcome.Refused;
 
@@ -92,7 +92,7 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
         if (!store.TryClaim(kept.Name))
             // ALREADY RUNNING, SO THE MAILBOX IS ENOUGH: its loop drains that at the top of every
             // lap, which is the next place it will look.
-            return kept.Agent.Agent.Mailbox.TryEnqueue(text, out _)
+            return kept.Agent.Agent.Mailbox.TryEnqueue(text, out _, from: Agents.Incoming.Delivery)
                 ? Agents.DeliveryOutcome.Injected
                 : Agents.DeliveryOutcome.Refused;
 
@@ -101,7 +101,7 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
         // final report and moved on, so a message left waiting is a result that exists nowhere and is
         // read by nobody. The text a background command produced is exactly that, which is why
         // waking is worth the turn it costs.
-        if (!kept.Agent.Agent.Mailbox.TryEnqueue(text, out _))
+        if (!kept.Agent.Agent.Mailbox.TryEnqueue(text, out _, from: Agents.Incoming.Delivery))
         {
             store.Release(kept.Name);
             return Agents.DeliveryOutcome.Refused;
@@ -167,7 +167,7 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
         }
 
         if (store.FindByAgentId(agentId) is not { } kept) return Agents.DeliveryOutcome.Unknown;
-        return kept.Agent.Agent.Mailbox.TryEnqueue(notice.ForModel, out _, wakes: false)
+        return kept.Agent.Agent.Mailbox.TryEnqueue(notice.ForModel, out _, wakes: false, from: Agents.Incoming.Delivery)
             ? Agents.DeliveryOutcome.Queued
             : Agents.DeliveryOutcome.Refused;
     }
@@ -219,6 +219,7 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
                 // CancellationToken.None, BECAUSE NO TURN OWNS THIS. Every other resume runs under
                 // the token of the turn that asked, so Escape cancels it; nothing asked for this one,
                 // and there is no token in scope that cancelling would be about.
+                kept.Agent.Agent.History?.NoteIncoming(Agents.Incoming.Delivery);
                 result = await kept.Agent.Agent.SendAsync(string.Join("\n\n", waiting),
                     CancellationToken.None);
             }

@@ -458,6 +458,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
 
                 // THE BRIEF IS THE PARENT'S, shown as its note in the child's own transcript.
                 child.Agent.EchoPrompt(prompt, fromUser: false);
+                child.Agent.History?.NoteIncoming(Incoming.Brief);
 
                 // MAIL AFTER THE BRIEF, as a background spawn reads it: anything sent while this child
                 // queued was sent after its brief, and is a correction to the work the brief sets.

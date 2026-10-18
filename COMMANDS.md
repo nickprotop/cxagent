@@ -53,6 +53,9 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/sessions new [folder]` | Open another conversation in its own tab |
 | `/sessions resume <n\|id>` | Restore one, by its number in the list or its id |
 | `/sessions all` | Every folder, not just this one |
+| `/sessions export <n\|id>` | Export an earlier session as markdown, without resuming it — an id works for any folder's |
+| `/export` | Export this conversation as markdown — a dialog; `F12` opens the same |
+| `/export last [N]` · `/export full` | Open it set to the last turn (or last N), or to everything the model saw |
 | `/open` | Pick a file to open in a tab |
 | `/open <path>` | Open that file in a tab — relative to this folder, or absolute |
 | `/shell` | Open a terminal you can type in — Linux and Windows |
@@ -674,6 +677,46 @@ Thirty days rather than the week this started with. Seven was right when these r
 invisible crash buffer, where nothing was lost by dropping one because nobody could name it. They
 are now a listing you read and an id you resume by, which makes the question *how far back would
 someone look* rather than *how long until a crash is stale*.
+
+---
+
+## `/export`
+
+Writes a conversation as markdown, to a file or the clipboard. `F12` opens the same dialog; in an agent's tab it
+exports that agent alone. `/sessions export <number|id>` exports an earlier session — from any folder, by the id
+`/sessions all` shows — without resuming it.
+
+```
+╔═ Export session ════════════════════════════════════════════╗
+║ Fix the login redirect · 18 Oct 10:42 · ~/src/shop           ║
+║ Scope   (•) Whole session  ( ) Last turn  ( ) Last [3] turns ║
+║ Detail  (•) Readable — for a person  ( ) Full — for an agent ║
+║   ▸ Advanced                                                 ║
+║ To      (•) File  ( ) Clipboard                              ║
+║         [ ~/src/shop/2026-10-18-fix-the-login-redirect.md ]  ║
+║ ≈ 14 KB · 42 messages · 3 sub-agents     [ Export ] [Cancel] ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+**Two presets, for two readers.** *Readable* is for a person — your messages, the answers, each tool call as one
+line, edits as diffs, a header with the folder, model and spend. *Full* is for another agent to carry on from — it
+adds every tool result, the model's thinking, compaction summaries, the system prompt and the injected task list.
+**Advanced** has each part as its own box; ticking one by hand makes the preset *Custom*. The dialog remembers what
+you chose last.
+
+**The file is a timeline.** Everything sits where it happened. A sub-agent's work is split into the stretches it
+worked in — the brief under the call that spawned it, a later `agent_send` under that send, a follow-up you typed
+in its tab at the time you typed it — each a folded `<details>` block. A background agent's report appears when
+it reached the conversation, often a turn later than the spawn.
+
+**Nothing is lost to compaction.** Every agent appends what its context gains to `history.jsonl` in its session
+folder, and compaction never touches it, so a whole-session export of a long, compacted, resumed session is
+complete; the point where the context was compacted is marked. A session from before cxagent 0.9.30 has no such
+record: it exports from what was shown, and says that tool calls and sub-agents were not recorded.
+
+**The size is shown before anything is written,** and a copy over 1 MB warns that the clipboard is a poor place
+for it. A file that already exists is replaced only after you confirm. A full export includes what the tools
+read — check it before sharing.
 
 ---
 

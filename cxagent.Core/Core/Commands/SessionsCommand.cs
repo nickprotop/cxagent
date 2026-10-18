@@ -47,7 +47,7 @@ public static class SessionsCommand
         var words = argument.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         if (words.Length >= 1 && words[0].Equals("resume", StringComparison.OrdinalIgnoreCase))
-            return Resume(words.Length > 1 ? words[1] : null, sessions);
+            return Resolve(words.Length > 1 ? words[1] : null, sessions);
 
         return new(null, Render(sessions, retention, all));
     }
@@ -60,7 +60,8 @@ public static class SessionsCommand
     /// prompt. A uid is the session itself: stable, quotable, and the only form that works from the
     /// command line. Offering both is not redundancy.</para>
     /// </summary>
-    private static SessionsCommandResult Resume(string? what, IReadOnlyList<SessionInfo> sessions)
+    /// <remarks>PUBLIC FOR /sessions export, which names a session the same two ways and must read them alike.</remarks>
+    public static SessionsCommandResult Resolve(string? what, IReadOnlyList<SessionInfo> sessions)
     {
         if (string.IsNullOrWhiteSpace(what))
             return new(null, new("Which one? `/sessions resume <number>` or `<id>`.", Severity.Warning));

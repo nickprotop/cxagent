@@ -688,6 +688,12 @@ public sealed partial class Session
         // nearest honest account of that.
         var end = TurnEnd.Failed;
         System.Runtime.ExceptionServices.ExceptionDispatchInfo? drainedFault = null;
+
+        // WHO ASKED, FOR THE HISTORY: the user's own message, or something the application or a plugin
+        // delivered — an export labels them differently, and nothing on the message says which.
+        Host?.NoteIncoming(request.Source is SubmitSource.System || request.Origin?.PluginName is not null
+            ? Agents.Incoming.Delivery
+            : Agents.Incoming.You);
         try
         {
             end = await RunTurnLoopAsync(request, result, outcome);

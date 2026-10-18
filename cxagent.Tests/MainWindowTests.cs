@@ -279,6 +279,20 @@ public class MainWindowTests
         Assert.True(mw.Input.HasFocus);
     }
 
+    /// <summary>
+    /// F12 IS NOT A HINTS-ROW KEY: that row holds the app's keys, and export is about the conversation — its hint is on
+    /// the rule above the composer.
+    /// </summary>
+    [Fact]
+    public void TheHintsRow_DoesNotOfferF12()
+    {
+        var mw = BuiltMainWindow();
+
+        Assert.DoesNotContain(mw.StatusBar.LeftItems.Concat(mw.StatusBar.RightItems).Select(i => i.Label ?? ""),
+            l => l.Contains("F12"));
+        Assert.Contains(MainWindow.ExportHint, mw.ComposerRuleTitleForTest());
+    }
+
     // --- Task 3: prompt control / composer swap --------------------------------------------------
 
     private static PermissionRequest ShellRequest(string command) =>

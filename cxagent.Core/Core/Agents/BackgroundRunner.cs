@@ -71,6 +71,7 @@ internal static class BackgroundRunner
 
                         // EVERY BACKGROUND STRETCH IS THE PARENT'S ASK: a user's send waits in the foreground instead.
                         kept.Agent.Agent.EchoPrompt(work.Prompt, fromUser: false);
+                        kept.Agent.Agent.History?.NoteIncoming(run.Start.IsResume ? Incoming.Parent : Incoming.Brief);
                     }
 
                     // A RESUME READS ITS MAIL FIRST: a message left for a settled child predates this
