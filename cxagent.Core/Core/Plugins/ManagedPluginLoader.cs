@@ -93,11 +93,16 @@ public static class ManagedPluginLoader
         var refusal = PluginContract.Refusal(sidecar, sidecarPath) ?? PluginContractUse.Refusal(sidecar);
         if (refusal is not null) return new ManagedPluginLoadResult.Failed(refusal);
 
-        // THE WRONG LOADER FOR WHAT THE SIDECAR SAYS: routing follows the declared kind, so reaching
-        // here with "native" means the file and its sidecar disagree, and neither can be trusted.
+        // THE WRONG LOADER FOR WHAT THE SIDECAR SAYS, OR A KIND THE FILE CONTRADICTS. Routing follows
+        // the declared kind, so "managed" on a native library arrives here, and this is the last
+        // place that can name the mismatch: past it, Assembly.LoadFrom fails with a bad-image error
+        // that mentions neither the kind nor the sidecar.
         if (sidecar.Kind == PluginKind.Native)
             return new ManagedPluginLoadResult.Failed(
                 $"'{sidecar.Name}' says \"kind\": \"native\", but '{assemblyPath}' is being loaded as .NET.");
+        if (sidecar.Kind == PluginKind.Managed && !PluginResolver.IsDotNetAssembly(assemblyPath))
+            return new ManagedPluginLoadResult.Failed(
+                $"'{sidecar.Name}' says \"kind\": \"managed\", but '{assemblyPath}' is not a .NET assembly.");
 
         Assembly assembly;
         try

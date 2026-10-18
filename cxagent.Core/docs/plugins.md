@@ -155,8 +155,9 @@ Windows, where a .NET assembly and a native library are both `.dll`: **a native 
 must say `"kind": "native"`**, or it is loaded as an assembly and refused as a bad image.
 
 A kind needs contract 4 — a sidecar declaring a lower one with a kind is refused, because an older
-host would ignore the field and guess. **Say the kind your file is:** cxagent believes the sidecar
-over the file, so a wrong kind sends it to the loader that cannot read it, and the load fails there.
+host would ignore the field and guess. **Say the kind your file is:** cxagent routes by the sidecar,
+then checks the file, and refuses a kind the file contradicts — `"native"` on a .NET assembly,
+`"managed"` on anything that is not one — naming both, before anything is loaded.
 
 ## Adding to the model's instructions
 

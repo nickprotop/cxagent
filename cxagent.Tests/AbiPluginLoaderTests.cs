@@ -393,6 +393,30 @@ public class AbiPluginLoaderTests
         TempDirectory.Delete(dir);
     }
 
+    /// <summary>
+    /// Routing believes the sidecar, so "native" beside a .NET assembly is sent HERE. Without a check
+    /// the plugin host is spawned and fails on the file with a loader error that names neither the
+    /// kind nor the mismatch.
+    /// </summary>
+    [Fact]
+    public async Task NativeKindOnADotNetAssembly_IsRefused_NamingBoth_BeforeAHostStarts()
+    {
+        var dir = Directory.CreateTempSubdirectory("kind-native-managed-").FullName;
+        var copy = Path.Combine(dir, "p.dll");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "cxagent.Tests.PluginFixture.dll"), copy);
+        File.WriteAllText(Path.Combine(dir, "p.plugin.json"),
+            """{"pluginContract":4,"name":"p","version":"1.0.0","spawns":false,"tools":[],"kind":"native"}""");
+        var context = Context();
+
+        var result = await AbiPluginLoader.Load(HostDllPath, copy, context, CancellationToken.None);
+
+        var failed = Assert.IsType<AbiPluginLoadResult.Failed>(result);
+        Assert.Contains("\"kind\": \"native\"", failed.Reason);
+        Assert.Contains(".NET assembly", failed.Reason);
+        Assert.Empty(context.RegisteredPids);
+        TempDirectory.Delete(dir);
+    }
+
     private static IJobContext FakeJobContext() => new TestJobContext();
 
     // ---- Task 10b: an ABI plugin can submit --------------------------------------------------------

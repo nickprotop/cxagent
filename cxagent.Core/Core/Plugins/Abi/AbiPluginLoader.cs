@@ -111,10 +111,15 @@ public static class AbiPluginLoader
         var refusal = PluginContract.Refusal(sidecar, sidecarPath) ?? PluginContractUse.Refusal(sidecar);
         if (refusal is not null) return new AbiPluginLoadResult.Failed(refusal);
 
-        // THE WRONG LOADER FOR WHAT THE SIDECAR SAYS — refused before a host process is spent on it.
+        // THE WRONG LOADER FOR WHAT THE SIDECAR SAYS, OR A KIND THE FILE CONTRADICTS — refused before a
+        // host process is spent on it. Routing follows the declared kind, so "native" on a .NET
+        // assembly arrives here; the plugin host would fail on it with a loader error naming neither.
         if (sidecar.Kind == PluginKind.Managed)
             return new AbiPluginLoadResult.Failed(
                 $"'{sidecar.Name}' says \"kind\": \"managed\", but '{libraryPath}' is being loaded as a native library.");
+        if (sidecar.Kind == PluginKind.Native && PluginResolver.IsDotNetAssembly(libraryPath))
+            return new AbiPluginLoadResult.Failed(
+                $"'{sidecar.Name}' says \"kind\": \"native\", but '{libraryPath}' is a .NET assembly.");
 
         (AbiHostProcess host, AbiHostProcess.StartResult handshake) launch;
         try

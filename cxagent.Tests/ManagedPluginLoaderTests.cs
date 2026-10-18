@@ -61,6 +61,28 @@ public class ManagedPluginLoaderTests
         TempDirectory.Delete(dir);
     }
 
+    /// <summary>
+    /// Routing believes the sidecar, so "managed" beside a native library is sent HERE — and this
+    /// loader is the last place that can say the two disagree before the runtime's own bad-image
+    /// error, which names neither.
+    /// </summary>
+    [Fact]
+    public async Task ManagedKindOnANativeLibrary_IsRefused_NamingBoth()
+    {
+        if (NativeFixtures.Path("fixture-wellformed") is not { } lib) return;
+        var dir = Directory.CreateTempSubdirectory("kind-managed-native-").FullName;
+        File.Copy(lib, Path.Combine(dir, "p.dll"));
+        File.WriteAllText(Path.Combine(dir, "p.plugin.json"),
+            """{"pluginContract":4,"name":"p","version":"1.0.0","spawns":false,"tools":[],"kind":"managed"}""");
+
+        var result = await ManagedPluginLoader.Load(Path.Combine(dir, "p.dll"), Context(), CancellationToken.None);
+
+        var failed = Assert.IsType<ManagedPluginLoadResult.Failed>(result);
+        Assert.Contains("\"kind\": \"managed\"", failed.Reason);
+        Assert.Contains("not a .NET assembly", failed.Reason);
+        TempDirectory.Delete(dir);
+    }
+
     // ---- The clean case ----------------------------------------------------------------------
 
     [Fact]

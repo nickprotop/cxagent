@@ -184,6 +184,31 @@ public static class PluginResolver
         || file.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Whether <paramref name="file"/> is a .NET assembly — a PE image carrying CLI metadata — read
+    /// from its header, not its name. A Windows native DLL is a PE image too but has no metadata, and
+    /// an ELF or Mach-O library is not PE at all; both answer false, as does a file that cannot be
+    /// read.
+    ///
+    /// <para>THE LOADERS ASK THIS because routing believes the sidecar's <c>"kind"</c>: a kind the file
+    /// contradicts sends it to the loader that cannot read it, and only that loader can then say
+    /// the two disagree, naming both, before the runtime or the plugin host fails on the file with
+    /// an error that names neither.</para>
+    /// </summary>
+    public static bool IsDotNetAssembly(string file)
+    {
+        try
+        {
+            using var stream = File.OpenRead(file);
+            using var pe = new System.Reflection.PortableExecutable.PEReader(stream);
+            return pe.HasMetadata;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or BadImageFormatException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Whether the plugin at <paramref name="pluginPath"/> loads through the native host — the one
     /// routing decision both load paths make.
     ///
