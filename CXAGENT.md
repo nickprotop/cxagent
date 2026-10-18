@@ -23,7 +23,7 @@ reasoning, yours should too.
 
 ## Tests
 
-`dotnet test` runs the whole suite in about 3 seconds. Use a 20 second timeout, never minutes: a run
+`dotnet test` runs the whole suite in about 25 seconds. Use a 60 second timeout, never more: a run
 that exceeds it is a hang to diagnose, not a slow test to wait out.
 
 Never run `pkill` here. It matches the harness shell wrapper and kills the session; kill the specific
