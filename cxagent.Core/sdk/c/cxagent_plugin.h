@@ -266,14 +266,16 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_command(const char* name, const
  * and never by a host from before it existed — the same optional rule as poll and command, so the
  * contract number does not change.
  *
- * The table and every string it hands out are HOST-OWNED and stay valid until the library is
- * unloaded; keep the pointer. `size` comes first, and later hosts only ever APPEND fields: check
+ * The table is HOST-OWNED and stays valid until the library is unloaded; keep the pointer. `size`
+ * comes first, and later hosts only ever APPEND fields: check
  * `size` before reading a field beyond the ones listed here.
  *
- * WHICH CALL A REPORT IS FOR. Calls run concurrently, so each report names one. A NULL `call_id`
+ * WHICH CALL A REPORT IS FOR. Calls may run concurrently, so each report names one. A NULL `call_id`
  * means THE CALL RUNNING ON THIS THREAD — the host sets that before each invoke — so a report made
  * from inside cxagent_plugin_invoke needs no id at all. To report from a thread of the plugin's
- * own, read `current_call()` inside invoke, copy the string, and pass the copy. A report naming a
+ * own, read `current_call()` inside invoke, copy the string, and pass the copy: the string it
+ * returns is host-owned and FREED WHEN THAT INVOKE RETURNS, so a kept pointer reads freed memory.
+ * Outside an invoke it returns NULL. A report naming a
  * call that has already finished is dropped. `log` with no call (NULL, outside any invoke) goes to
  * the plugin's own log rather than to a call.
  *
