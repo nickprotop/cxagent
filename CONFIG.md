@@ -126,8 +126,8 @@ shown to this model, which answers allow, deny or ask.
 
 **What `auto` means changed, and it is a widening.** It used to mean "a model reviews what would
 otherwise be silent". It now means **a model decides what would otherwise prompt** — including shell
-commands the static safety check refused. That check refuses on shape rather than danger (a pipe, a
-redirect), so its most frequent verdict was a prompt nobody learned anything from; the classifier is
+commands the static safety check refused. That check refuses on shape rather than danger (a redirect, a
+chain), so its most frequent verdict was a prompt nobody learned anything from; the classifier is
 asked the narrower question of whether the command is nonetheless ordinary development work.
 
 **Shell approval is bounded structurally, not by the prompt.** A verdict on a shell command is

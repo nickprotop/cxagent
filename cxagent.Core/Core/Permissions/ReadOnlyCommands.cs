@@ -49,12 +49,11 @@ public static class ReadOnlyCommands
     /// substitutes or redirects disqualifies the whole command — including backticks and `$(`, which
     /// run a program whose name we never see.</para>
     ///
-    /// <para>A PIPE IS NOT ALLOWED EITHER, even though `grep | wc` is harmless: the right-hand side
-    /// is another command, and checking it properly means parsing a shell. `|` is common enough in
-    /// exploration that allowing it would help — and it is precisely the case where being wrong is
-    /// silent, so it stays out until there is a real parser.</para>
+    /// <para>A PIPE IS NOT ON THIS LIST because it is checked rather than refused: see
+    /// <see cref="IsPipeOfReads"/>. Everything here still disqualifies the whole line, and `||` and `|&amp;`
+    /// with it — the first leaves an empty stage, the second is caught by its `&amp;`.</para>
     /// </summary>
-    private static readonly char[] Dangerous = ['&', ';', '|', '>', '<', '`', '\n', '\r'];
+    private static readonly char[] Dangerous = ['&', ';', '>', '<', '`', '\n', '\r'];
 
     /// <summary>
     /// True when this command reads and nothing more.
@@ -109,6 +108,8 @@ public static class ReadOnlyCommands
 
         if (text.IndexOfAny(Dangerous) >= 0) return false;
 
+        if (text.Contains('|', StringComparison.Ordinal)) return IsPipeOfReads(text);
+
         // $( ) — command substitution runs a program whose name never appears in this string.
         if (text.Contains("$(", StringComparison.Ordinal)) return false;
 
@@ -123,6 +124,31 @@ public static class ReadOnlyCommands
         if (first.Contains('/', StringComparison.Ordinal)) return false;
 
         return SafeVerbs.Contains(first);
+    }
+
+    /// <summary>
+    /// Whether a pipeline is only reads: every stage, on its own, a command this class would pass.
+    /// </summary>
+    /// <remarks>
+    /// <para>A PIPE OF READS IS A READ. `grep -n foo src | head` was the idiom most often asked about, and nothing
+    /// in it writes: the pipe carries one program's output into another's input, and if neither program writes,
+    /// the line does not. Each stage goes through the same check a whole command does, so `| tee out` or `| sh`
+    /// refuses the line as surely as `tee out` alone.</para>
+    ///
+    /// <para>A QUOTE ANYWHERE REFUSES IT. A `|` inside quotes is an argument, not a pipe, and telling the two apart
+    /// is the shell parsing this class does not do — so a line it cannot split with confidence is one it does not
+    /// vouch for. The cost is a prompt for `grep 'a|b' x | wc`; the other mistake runs a command nobody saw.</para>
+    ///
+    /// <para>NO STAGE MAY CHANGE DIRECTORY. A leading `cd` is reported to the caller to confine; one inside a stage
+    /// would not be, and a stage's working directory is not one this class can hand back.</para>
+    ///
+    /// <para>WHAT THE STAGES READ IS STILL CONFINED: the caller's boundary check takes the paths from the whole line
+    /// (see <see cref="CommandSubjects"/>), so a read outside the folder after the pipe asks as one before it does.</para>
+    /// </remarks>
+    private static bool IsPipeOfReads(string text)
+    {
+        if (text.IndexOfAny(['"', '\'']) >= 0) return false;
+        return text.Split('|').All(stage => IsReadOnly(stage, out var changesTo) && changesTo is null);
     }
 
     // PathArguments LIVED HERE AND IS NOW CommandSubjects.Of(...).Paths. It answered "which tokens

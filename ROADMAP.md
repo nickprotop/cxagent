@@ -25,9 +25,3 @@ What is next. See [README](README.md) for what cxagent does and
   [`plugins.json`](plugins/plugins.json) here.
 - **A web front end** — the reason the extraction was worth doing.
 - **Skill scripts** — a skill that runs, not just one that is read.
-
-## Known
-
-- **A piped shell command still asks.** When the model runs `grep -n foo src | head`, it is asked about
-  even in a trusted folder, where the same `grep` alone runs unasked. Piping input into `cxagent -p` is
-  unaffected — that is headless input, not a command.

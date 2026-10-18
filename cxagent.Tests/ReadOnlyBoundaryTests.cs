@@ -61,6 +61,47 @@ public class ReadOnlyBoundaryTests : IDisposable
         Assert.False(Silent("cat /etc/passwd"));
     }
 
+    /// <summary>
+    /// A PIPE OF READS RUNS UNASKED, where every stage is a read on its own: `grep … | head` is the idiom for
+    /// looking at part of a result, and asking for it taught the user to click through prompts.
+    /// </summary>
+    [Fact]
+    public void APipeOfInTreeReads_IsSilent()
+    {
+        var notes = Path.Combine(_dir, "notes.txt");
+        Assert.True(Silent($"grep -n tree {notes} | head -5"));
+        Assert.True(Silent("ls | wc -l"));
+        Assert.True(Silent($"cat {notes} | grep tree | wc -l"));
+
+        // A STAGE OFF THE LIST STILL ASKS: `sort -o` and `uniq in out` write, which is why neither is on it.
+        Assert.False(Silent($"cat {notes} | sort | uniq -c"));
+        Assert.True(Silent($"cd {_dir} && ls | wc -l"));
+    }
+
+    /// <summary>
+    /// EVERY STAGE IS CONFINED, NOT ONLY THE FIRST: a read outside the folder hidden after the pipe is the same
+    /// disclosure as one before it.
+    /// </summary>
+    [Theory]
+    [InlineData("cat /etc/passwd | head")]
+    [InlineData("ls | grep root /etc/passwd")]
+    [InlineData("cd /etc && cat passwd | wc -l")]
+    public void APipeReadingOutsideTheFolder_Asks(string command) => Assert.False(Silent(command));
+
+    /// <summary>
+    /// A PIPE INTO SOMETHING THAT WRITES, or anything that is not a plain pipe, still asks: `tee` writes, `||` and
+    /// `|&` chain or redirect, and a `|` inside quotes cannot be told from a real one without a shell parser.
+    /// </summary>
+    [Theory]
+    [InlineData("cat notes.txt | tee out.txt")]
+    [InlineData("ls || cat notes.txt")]
+    [InlineData("ls |& cat")]
+    [InlineData("grep 'a|b' notes.txt | wc -l")]
+    [InlineData("ls | sh")]
+    [InlineData("ls |")]
+    [InlineData("| wc -l")]
+    public void APipeThatIsNotJustReads_Asks(string command) => Assert.False(Silent(command));
+
     // IN-TREE READS STILL PASS, so the guard cannot swallow the feature it protects — this is the
     // whole point of the read-only free pass and it must keep working.
     [Fact]

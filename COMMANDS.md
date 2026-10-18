@@ -207,14 +207,16 @@ command and `.git/config` can name a program to execute, and "accept edits" shou
 "accept a hook". Reading those files is unaffected.
 
 **Shell is unaffected by `always-ask` and `accept-edits`.** Under both, read-only commands stay
-silent on a trusted folder and everything else asks. A command's safety lives in its arguments —
+silent on a trusted folder and everything else asks. A pipe of reads is a read — `grep -n foo src | head`
+runs unasked when every stage is a read-only program and every path it names is inside the folder;
+`| tee`, `| sh`, `||` and a `|` inside quotes still ask. A command's safety lives in its arguments —
 `mkdir` is fine, `mkdir /etc/x` is not — and the static check does not parse arguments well enough to
 bound that, so it does not pretend to.
 
 **Under `auto`, shell is different, and this is a behaviour change worth reading.** A command the
 static check refuses no longer necessarily prompts: it is shown to the [classifier](CONFIG.md#classifier--the-reviewer-for-mode-edits-auto),
 and an *allow* runs it silently. This exists because the static check refuses on *shape*, not on
-danger — `dotnet build 2>&1 | tail` is refused for containing a pipe, and most real commands carry a
+danger — `dotnet build 2>&1 | tail` is refused for its redirect, and most real commands carry a
 metacharacter that refuses them the same way, so the mode's most common prompt was one nobody learned
 anything from.
 

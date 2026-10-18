@@ -38,13 +38,21 @@ public class ReadOnlyCommandsTests
         Assert.False(ReadOnlyCommands.IsReadOnly(command));
 
     /// <summary>
-    /// Even a harmless pipe. `grep x | wc -l` is fine, and checking the right-hand side properly
-    /// means parsing a shell — so it prompts until there is a parser, because being wrong here is
-    /// silent.
+    /// A PIPE OF READS IS A READ: each stage is checked as a command of its own, so `grep | wc` passes and a stage
+    /// that writes, chains or substitutes refuses the whole line.
     /// </summary>
-    [Fact]
-    public void APipe_IsNotAllowed_EvenWhenBothSidesLookSafe() =>
-        Assert.False(ReadOnlyCommands.IsReadOnly("grep foo . | wc -l"));
+    [Theory]
+    [InlineData("grep foo . | wc -l", true)]
+    [InlineData("ls -la | head -20 | tail -5", true)]
+    [InlineData("cat file | tee out", false)]
+    [InlineData("ls | sh", false)]
+    [InlineData("ls | $(cat x)", false)]
+    [InlineData("ls || cat file", false)]
+    [InlineData("grep 'a|b' file | wc -l", false)]
+    [InlineData("ls |", false)]
+    [InlineData("ls | cd /etc", false)]
+    public void APipe_IsReadOnly_WhenEveryStageIs(string command, bool readOnly) =>
+        Assert.Equal(readOnly, ReadOnlyCommands.IsReadOnly(command));
 
     /// <summary>
     /// COMMANDS THAT LOOK READ-ONLY AND ARE NOT. Each of these has a flag that writes, which is why
@@ -144,7 +152,7 @@ public class ReadOnlyCommandsTests
     [Theory]
     [InlineData("cd /repo && ls && rm -rf x")]
     [InlineData("cd /a && cd /b && cat x")]
-    [InlineData("cd /repo && ls | head")]
+    [InlineData("cd /repo && ls | rm -rf x")]
     public void ALongerChainIsStillRefused(string command) =>
         Assert.False(ReadOnlyCommands.IsReadOnly(command));
 
