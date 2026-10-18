@@ -41,9 +41,13 @@
          build's public API with that version on nuget.org and fails the pack on a break — a change
          that compiles can still break every plugin already built (a new positional parameter on
          PluginGate loads fine and throws MissingMethodException on first use). EMPTY FOR A NEW
-         MAJOR, which breaks on purpose and has nothing published to compare with yet; set it to the
-         major's first version once that is on nuget.org, and raise it with each later one. -->
-    <ContractBaseline></ContractBaseline>
+         MAJOR, which breaks on purpose and has nothing published to compare with yet.
+
+         THE VALUE LIVES IN plugins/contract-baseline, passed in by publish.sh and the release, NOT
+         HERE: a change to this folder rebuilds and re-versions every plugin, and setting a baseline
+         after a publish changes nothing a plugin binds to. Set it to the major's first version once
+         that is on nuget.org, and raise it with each later one. -->
+    <ContractBaseline Condition="'$(ContractBaseline)' == ''"></ContractBaseline>
     <EnablePackageValidation Condition="'$(ContractBaseline)' != ''">true</EnablePackageValidation>
     <PackageValidationBaselineVersion Condition="'$(ContractBaseline)' != ''">$(ContractBaseline)</PackageValidationBaselineVersion>
 

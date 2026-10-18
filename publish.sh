@@ -148,12 +148,13 @@ grep -E "Passed!|Failed!" /tmp/cxagent-release-test.log || true
 
 # THE PLUGIN CONTRACT STILL BINDS EVERY PLUGIN ALREADY BUILT, checked here as release.yml's pack
 # checks it — before the tag, because a break found in CI is found after the binaries shipped.
-# Package validation compares the contract's public API with the published baseline its csproj
-# names (ContractBaseline) — empty for a new major, which breaks on purpose.
+# Package validation compares the contract's public API with the published baseline named in
+# plugins/contract-baseline — empty for a new major, which breaks on purpose.
 echo ""
 echo "Checking the plugin contract against the published one..."
 CONTRACT_OUT=$(mktemp -d)
 if ! dotnet pack cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj --configuration Release \
+        -p:ContractBaseline="$(tr -d '[:space:]' < plugins/contract-baseline)" \
         --output "$CONTRACT_OUT" > /tmp/cxagent-release-contract.log 2>&1; then
     echo "Error: the plugin contract breaks plugins built against the published one. Not tagging."
     grep -E "error" /tmp/cxagent-release-contract.log | head -20

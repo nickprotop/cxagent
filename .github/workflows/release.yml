@@ -507,11 +507,12 @@ jobs:
       # same number comes out each time and --skip-duplicate below skips it.
       - name: Pack
         run: |
-          # VALIDATED AGAINST THE PUBLISHED CONTRACT, the baseline its csproj names (ContractBaseline):
-          # a change that compiles can still break every plugin already built, and pack fails on one.
+          # VALIDATED AGAINST THE PUBLISHED CONTRACT named in plugins/contract-baseline — see the
+          # contract's csproj: a change that compiles can still break every plugin already built.
           dotnet pack cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj \
             --configuration Release \
             -p:ContinuousIntegrationBuild=true \
+            -p:ContractBaseline="$(tr -d '[:space:]' < plugins/contract-baseline)" \
             --output ./nupkg
 
           dotnet pack cxagent.Core/cxagent.Core.csproj \
