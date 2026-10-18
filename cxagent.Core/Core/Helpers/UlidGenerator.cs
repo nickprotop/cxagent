@@ -19,7 +19,7 @@ namespace CxAgent.Core.Helpers;
 /// <para>Ids in either layout are interchangeable: same length, same alphabet, and lookups that
 /// abbreviate accept either end.</para>
 /// </summary>
-public static class UlidGenerator
+internal static class UlidGenerator
 {
     private const string Alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"; // Crockford base32
     public static string NewId()

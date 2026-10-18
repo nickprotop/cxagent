@@ -7,7 +7,7 @@ namespace CxAgent.Core.Llm.Providers;
 /// wire at /v1): localhost baseUrl default, keyless. Named so it appears as a first-class "local"
 /// entry without the user hand-configuring baseUrl. This reuses the real driver — it is not a facade.
 /// </summary>
-public sealed class OllamaProvider : OpenAiCompatibleProvider
+internal sealed class OllamaProvider : OpenAiCompatibleProvider
 {
     private readonly HttpClient _client;
     private readonly string _tagsUrl;

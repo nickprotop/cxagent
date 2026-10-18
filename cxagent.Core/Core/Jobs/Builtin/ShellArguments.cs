@@ -16,7 +16,7 @@ namespace CxAgent.Core.Jobs.Builtin;
 /// simply escapes the check. Route every reader through here rather than calling
 /// <see cref="JobParameters.Get{T}(string, T)"/> at each site.</para>
 /// </summary>
-public static class ShellArguments
+internal static class ShellArguments
 {
     /// <summary>The argument's name, so no caller has to spell it.</summary>
     public const string Background = "background";

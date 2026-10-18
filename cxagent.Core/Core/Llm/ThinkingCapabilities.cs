@@ -6,7 +6,7 @@ namespace CxAgent.Core.Llm;
 /// Asking a model what thinking it accepts. Every answer comes from the endpoint; nothing here
 /// lists model names, because a list in code is wrong on the day a model ships.
 /// </summary>
-public static class ThinkingCapabilities
+internal static class ThinkingCapabilities
 {
     /// <summary>Bounded like the window probe: an absent endpoint costs at most this, once.</summary>
     internal static readonly TimeSpan Timeout = TimeSpan.FromSeconds(3);
@@ -131,7 +131,7 @@ public static class ThinkingCapabilities
 /// costs nothing to repeat and is asked again every time.</para>
 /// </summary>
 /// <param name="clock">The time; the system clock unless a test sets one.</param>
-public sealed class CapabilityCache(TimeProvider? clock = null)
+internal sealed class CapabilityCache(TimeProvider? clock = null)
 {
     /// <summary>How long a timed-out probe is left before it is asked again.</summary>
     public static readonly TimeSpan AfterATimeout = TimeSpan.FromSeconds(60);

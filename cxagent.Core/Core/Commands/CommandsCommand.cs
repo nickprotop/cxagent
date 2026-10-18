@@ -7,7 +7,7 @@ namespace CxAgent.Core.Commands;
 /// <param name="IsBuiltIn">Whether the registry already has this <c>/name</c> — a built-in or a
 /// plugin's command, which wins over any file.</param>
 /// <param name="FolderTrusted">Whether shell lines and file includes can run without asking.</param>
-public sealed record CommandsView(InvocableCatalogResult Catalog, Func<string, bool> IsBuiltIn, bool FolderTrusted);
+internal sealed record CommandsView(InvocableCatalogResult Catalog, Func<string, bool> IsBuiltIn, bool FolderTrusted);
 
 /// <summary>
 /// <c>/commands</c>: what can be typed, and every file that did not make it, with why.
@@ -16,7 +16,7 @@ public sealed record CommandsView(InvocableCatalogResult Catalog, Func<string, b
 /// nearer one, to a built-in, or to broken frontmatter is otherwise a file that silently does
 /// nothing — saved, typed, and answered with "Unknown command" by an app that knew why.</para>
 /// </summary>
-public static class CommandsCommand
+internal static class CommandsCommand
 {
     public static string Render(CommandsView view, string? argument)
     {

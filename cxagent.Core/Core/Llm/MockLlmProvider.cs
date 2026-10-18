@@ -7,7 +7,7 @@ namespace CxAgent.Core.Llm;
 /// Queue-driven mock provider — the backbone of the dev/test loop. Enqueue the
 /// responses a test expects; ChatAsync dequeues them in order.
 /// </summary>
-public class MockLlmProvider : ILlmProvider
+internal class MockLlmProvider : ILlmProvider
 {
     private readonly Queue<LlmResponse> _responses = new();
 

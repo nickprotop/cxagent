@@ -12,7 +12,7 @@ namespace CxAgent.Core.Commands;
 /// time: the agent explores the project and writes what it found. It shows as an ordinary turn, with
 /// its tool calls visible and its file write gated like any other.</para>
 /// </summary>
-public static class InitCommand
+internal static class InitCommand
 {
     /// <summary>
     /// The file <c>/init</c> should write, and why that one.

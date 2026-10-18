@@ -10,7 +10,7 @@ namespace CxAgent.Core.Mcp.Auth;
 /// <param name="CodeVerifier">The PKCE secret, kept back until the token request.</param>
 /// <param name="State">The value the redirect must echo, or the result is not ours.</param>
 /// <param name="RedirectUri">Where the browser comes back to.</param>
-public sealed record AuthorizationRequest(
+internal sealed record AuthorizationRequest(
     string AuthorizationUrl, string CodeVerifier, string State, string RedirectUri);
 
 /// <summary>What a successful exchange yields.</summary>
@@ -46,7 +46,7 @@ public sealed record OAuthTokens(
 /// query strings land in server logs, proxy logs and browser history.</item>
 /// </list>
 /// </summary>
-public static class OAuthFlow
+internal static class OAuthFlow
 {
     /// <summary>
     /// Builds the URL to open, and the secrets to check the answer against.

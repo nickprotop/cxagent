@@ -7,13 +7,13 @@ using CxAgent.Core.Permissions;
 namespace CxAgent.Core.Skills;
 
 /// <summary>Which entry, with what the user typed after its name.</summary>
-public sealed record ExpansionRequest(Invocable Entry, string Arguments);
+internal sealed record ExpansionRequest(Invocable Entry, string Arguments);
 
 /// <summary>What expansion needs from the session it runs in.</summary>
 /// <param name="WorkingDirectory">Where shell lines run and <c>@</c> paths resolve.</param>
 /// <param name="Allow">Asks the session's permission gate; true when the action may go ahead.</param>
 /// <param name="Say">The session's own notices, under the user's row.</param>
-public sealed record ExpansionPorts(string WorkingDirectory,
+internal sealed record ExpansionPorts(string WorkingDirectory,
     Func<PermissionRequest, CancellationToken, Task<bool>> Allow, Action<Message> Say)
 {
     /// <summary>Runs one shell line; <see cref="ShellLine.RunAsync"/> when null. A seam for tests.</summary>
@@ -31,7 +31,7 @@ public sealed record ExpansionPorts(string WorkingDirectory,
 /// A command file is text from wherever the user cloned it; its shell lines get the same prompt, the
 /// same rules and the same headless refusal as <c>run_shell</c>.</para>
 /// </summary>
-public static class CommandExpander
+internal static class CommandExpander
 {
     public static readonly TimeSpan ShellTimeout = TimeSpan.FromSeconds(60);
 

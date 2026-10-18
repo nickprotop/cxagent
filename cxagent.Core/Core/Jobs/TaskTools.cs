@@ -17,7 +17,7 @@ namespace CxAgent.Core.Jobs;
 /// somebody else's and hide it once it ends.</para>
 /// </param>
 /// <param name="Agents">Kept sub-agents, or null for an agent that cannot spawn.</param>
-public sealed record TaskSources(DetachedProcessRegistry Live, FinishedShells Finished,
+internal sealed record TaskSources(DetachedProcessRegistry Live, FinishedShells Finished,
     Func<string, bool> IsSessionAgent, Agents.SubAgentStore? Agents)
 {
     /// <summary>For a caller that knows one session agent id and no other — a child, a test.</summary>
@@ -46,7 +46,7 @@ public sealed record TaskSources(DetachedProcessRegistry Live, FinishedShells Fi
 /// sibling and nothing it could do with one; listing them would also hand it the means to read a
 /// sibling's report, which is the parent's to receive.</para>
 /// </summary>
-public sealed class TaskTools(TaskSources sources)
+internal sealed class TaskTools(TaskSources sources)
 {
     public const int DefaultWaitSeconds = 120;
     public const int MaxWaitSeconds = 600;

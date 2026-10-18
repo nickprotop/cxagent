@@ -69,7 +69,7 @@ public abstract record PluginLoadResult
     /// A tool name in this manifest is already taken — by a built-in, an injected tool, or another
     /// plugin. Nothing from this plugin was registered.
     /// </summary>
-    public sealed record NameCollision(string ToolName) : PluginLoadResult;
+    internal sealed record NameCollision(string ToolName) : PluginLoadResult;
 
     /// <summary>
     /// A command name in this manifest is already taken — by a built-in (<c>/model</c>) or another
@@ -77,10 +77,10 @@ public abstract record PluginLoadResult
     /// any registration runs, so a plugin whose SECOND command collides never leaves its first (or
     /// its tools) registered behind it — see <see cref="PluginRegistry.Load"/>.
     /// </summary>
-    public sealed record CommandNameCollision(string CommandName) : PluginLoadResult;
+    internal sealed record CommandNameCollision(string CommandName) : PluginLoadResult;
 
     /// <summary>A plugin with this manifest name is already loaded in this session.</summary>
-    public sealed record PluginNameTaken : PluginLoadResult;
+    internal sealed record PluginNameTaken : PluginLoadResult;
 }
 
 /// <summary>One plugin's system-prompt text and the tools it governs — see

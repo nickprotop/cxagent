@@ -10,7 +10,7 @@ namespace CxAgent.Core.Llm.Providers;
 /// single-call assumption for a long time precisely because nothing tested it in isolation: the bug
 /// only appears on a turn carrying two calls, which no integration test drove.
 /// </remarks>
-public static class OpenAiWire
+internal static class OpenAiWire
 {
     /// <summary>Builds the Chat Completions request body.</summary>
     /// <param name="model">The model id.</param>
@@ -173,7 +173,7 @@ public static class OpenAiWire
     /// Usage: feed every chunk to <see cref="Accept"/>; when it returns a non-null ToolCall the call is
     /// complete and its arguments are parsed once, from the joined buffer.
     /// </summary>
-    public sealed class StreamingToolCallAccumulator
+    internal sealed class StreamingToolCallAccumulator
     {
         /// <summary>
         /// One partial call per stream INDEX. The wire numbers each entry of `tool_calls`, and that
@@ -267,7 +267,7 @@ public static class OpenAiWire
 
     /// <summary>One streamed delta: answer text, thinking, the finish reason, and the cloned delta the
     /// tool-call accumulator reads after the document is disposed.</summary>
-    public readonly record struct OpenAiStreamDelta(string? Text, string? Thinking, string? Finish, JsonElement Delta);
+    internal readonly record struct OpenAiStreamDelta(string? Text, string? Thinking, string? Finish, JsonElement Delta);
 
     /// <summary>
     /// Reasoning, from either field servers use for it. <c>reasoning_content</c> is llama.cpp's,

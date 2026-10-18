@@ -25,7 +25,7 @@ public sealed record HistoryLine(
     [property: JsonPropertyName("prev")] string? Previous = null)
 {
     /// <summary>What a line records.</summary>
-    public static class Kinds
+    internal static class Kinds
     {
         /// <summary>A message that joined the context.</summary>
         public const string Message = "message";

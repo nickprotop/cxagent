@@ -12,7 +12,7 @@ namespace CxAgent.Core.Llm.Providers;
 /// Together, vLLM, llama.cpp, LM Studio and any other OpenAI-compatible endpoint. Normalizes
 /// StopReason/Usage at this boundary; the core never sees a raw vendor value.
 /// </summary>
-public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCatalogDetail, IThinkingProvider
+internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCatalogDetail, IThinkingProvider
 {
     private readonly HttpClient _client;
     private readonly string _model;

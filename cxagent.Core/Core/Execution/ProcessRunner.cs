@@ -18,7 +18,7 @@ namespace CxAgent.Core.Execution;
 /// <param name="FileName">The executable to run.</param>
 /// <param name="Arguments">Its arguments, already split — passed through ArgumentList, so no quoting.</param>
 /// <param name="Options">How to run it, or null for every default — see <see cref="RunOptions"/>.</param>
-public record ProcessSpec(
+internal record ProcessSpec(
     string FileName,
     IReadOnlyList<string> Arguments,
     RunOptions? Options = null)
@@ -72,7 +72,7 @@ public record ProcessSpec(
 /// Cancelled when the user moves the call to the background (Ctrl+B): the deadline's hand-over, now, whatever
 /// <paramref name="DetachOnTimeout"/> says. Distinct from the call's own token, which still kills.
 /// </param>
-public record RunOptions(
+internal record RunOptions(
     string? WorkingDir = null,
     IReadOnlyDictionary<string, string>? Env = null,
     int? TimeoutSeconds = null,
@@ -95,7 +95,7 @@ public record RunOptions(
 /// </summary>
 /// <param name="Path">Where the whole stream was written.</param>
 /// <param name="TotalBytes">The full text's size, before it was cut down to the inline tail.</param>
-public sealed record Spill(string Path, long TotalBytes);
+internal sealed record Spill(string Path, long TotalBytes);
 
 /// <param name="Stdout">
 /// The LAST <see cref="ProcessRunner.MaxCapturedChars"/> characters of what the command printed.
@@ -110,7 +110,7 @@ public sealed record Spill(string Path, long TotalBytes);
 /// reference either.</param>
 /// <param name="ExitCode">The process's exit code.</param>
 /// <param name="TimedOut">Whether it was killed for exceeding its deadline rather than exiting.</param>
-public record ProcessResult(int ExitCode, bool TimedOut, string Stdout = "", string Stderr = "")
+internal record ProcessResult(int ExitCode, bool TimedOut, string Stdout = "", string Stderr = "")
 {
     /// <summary>
     /// Set when the user moved the command to the background (Ctrl+B) — handed over as at its deadline, but the call
@@ -155,7 +155,7 @@ public record ProcessResult(int ExitCode, bool TimedOut, string Stdout = "", str
 /// ASYNCHRONOUSLY (event-based) so a full pipe buffer never deadlocks the child. A per-run
 /// timeout or the external cancellation token kills the whole process tree.
 /// </summary>
-public static class ProcessRunner
+internal static class ProcessRunner
 {
     /// <summary>
     /// How much of each stream travels inline before the rest goes to a file.

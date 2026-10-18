@@ -18,7 +18,7 @@ namespace CxAgent.Core.Sessions;
 /// <para>WHAT IS NEW HERE IS THE SUB-AGENT HALF. Nothing could address a child by the id its tool
 /// calls carry, which is why a plugin tool called by a child woke the parent instead.</para>
 /// </summary>
-public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore store)
+internal sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore store)
     : Agents.IAgentDelivery
 {
     /// <summary>

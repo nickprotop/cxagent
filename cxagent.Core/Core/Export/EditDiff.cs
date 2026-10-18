@@ -12,7 +12,7 @@ namespace CxAgent.Core.Export;
 /// change as it was made. <c>replace_in_file</c> names the exact text it replaced, so its lines are the removal;
 /// <c>write_file</c> is all addition.</para>
 /// </summary>
-public static class EditDiff
+internal static class EditDiff
 {
     /// <summary>How much of a written file is shown; a reader wants its shape, not its whole body.</summary>
     public const int MaxWrittenLines = 60;

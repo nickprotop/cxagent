@@ -7,7 +7,7 @@ namespace CxAgent.Core.Llm;
 /// otherwise guess at, and a wrong guess is expensive: a platform guess puts <c>find -printf</c> on a
 /// mac, a repo guess spends a turn running <c>git status</c> to find out.
 /// </summary>
-public readonly record struct SystemPromptContext(
+internal readonly record struct SystemPromptContext(
     string WorkingDirectory,
     bool IsGitRepo,
     string Platform,
@@ -153,7 +153,7 @@ public readonly record struct SystemPromptContext(
 /// a second variant is a new branch rather than a refactor, but shipping variants for models nobody
 /// has driven would be guessing at quirks instead of observing them.</para>
 /// </summary>
-public static class SystemPrompt
+internal static class SystemPrompt
 {
     public static string Build(SystemPromptContext ctx)
     {

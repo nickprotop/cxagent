@@ -10,7 +10,7 @@ namespace CxAgent.Core.Commands;
 /// <para>READS <see cref="DetachedProcessRegistry.Default"/>, THE SAME INSTANCE <see cref="TaskTools"/>
 /// reads for <c>task_list</c>, so a pid the user just read off <c>/tasks</c> is the pid this stops.</para>
 /// </summary>
-public sealed class JobsCommand(DetachedProcessRegistry registry)
+internal sealed class JobsCommand(DetachedProcessRegistry registry)
 {
     /// <summary>
     /// Stops one background command, if the session may.

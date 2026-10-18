@@ -9,7 +9,7 @@ public readonly record struct RetryPolicy(int MaxAttempts, TimeSpan BaseDelay)
     public static RetryPolicy NoDelay => new(4, TimeSpan.Zero);
 }
 
-public static class LlmHttpRetry
+internal static class LlmHttpRetry
 {
     /// <summary>
     /// Sends a request (rebuilt each attempt from requestFactory, since HttpRequestMessage is single-use),

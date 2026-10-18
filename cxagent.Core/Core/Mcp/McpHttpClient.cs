@@ -36,7 +36,7 @@ namespace CxAgent.Core.Mcp;
 /// API key, which is most of them — the OAuth flow is only reachable by servers that actually
 /// answer 401.</para>
 /// </summary>
-public sealed class McpHttpClient : IMcpConnection
+internal sealed class McpHttpClient : IMcpConnection
 {
     private readonly string _name;
     private readonly string _url;

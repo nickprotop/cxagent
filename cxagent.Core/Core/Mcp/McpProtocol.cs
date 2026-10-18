@@ -14,7 +14,7 @@ namespace CxAgent.Core.Mcp;
 /// fall-forward. That is a second protocol era and a plan of its own; what this file makes us is a
 /// well-behaved legacy client, which is what essentially every deployed server speaks today.</para>
 /// </summary>
-public static class McpProtocol
+internal static class McpProtocol
 {
     /// <summary>
     /// Every revision we can speak, newest first.

@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 namespace CxAgent.Core.Config;
 
 /// <summary>A name that is missing, or already taken. Its message is shown to the user as it is.</summary>
-public sealed class ConfigEditException(string message) : Exception(message);
+internal sealed class ConfigEditException(string message) : Exception(message);
 
 /// <summary>
 /// Changes to provider instances, made on the config DOCUMENT.

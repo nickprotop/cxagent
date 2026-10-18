@@ -101,7 +101,7 @@ public interface IAgentDelivery
 }
 
 /// <summary>What a <see cref="DeliveryOutcome"/> means to a caller that only needs to know whether it landed.</summary>
-public static class DeliveryOutcomes
+internal static class DeliveryOutcomes
 {
     /// <summary>
     /// Whether the agent has it now, or will before its next answer.

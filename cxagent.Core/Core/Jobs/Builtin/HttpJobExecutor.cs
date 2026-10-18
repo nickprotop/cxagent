@@ -3,7 +3,7 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Jobs.Builtin;
 
 /// <summary>Makes an HTTP request with optional retry-until-expected-status.</summary>
-public class HttpJobExecutor : IJobExecutor
+internal class HttpJobExecutor : IJobExecutor
 {
     private static readonly HttpClient Shared = new();
     private readonly HttpClient _client;

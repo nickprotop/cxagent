@@ -13,7 +13,7 @@ namespace CxAgent.Core.Execution;
 /// rather than (cores * 100)%. The first poll has no prior sample to diff against and is
 /// skipped for CPU purposes (reported as 0%).
 /// </summary>
-public sealed class ProcessResourceMonitor : IDisposable
+internal sealed class ProcessResourceMonitor : IDisposable
 {
     private readonly Process _process;
     private readonly int _maxHistory;

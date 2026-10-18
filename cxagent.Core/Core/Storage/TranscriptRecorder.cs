@@ -30,7 +30,7 @@ namespace CxAgent.Core.Storage;
 /// caller-assigned <c>seq</c> is for. Numbering them again here would be a second counter to keep in
 /// step with the first.</para>
 /// </summary>
-public sealed class TranscriptRecorder : ISessionObserver
+internal sealed class TranscriptRecorder : ISessionObserver
 {
     /// <summary>
     /// The store, opened on the first row rather than at construction.

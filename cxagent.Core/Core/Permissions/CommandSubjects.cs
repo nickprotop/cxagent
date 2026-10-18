@@ -40,7 +40,7 @@ namespace CxAgent.Core.Permissions;
 /// 95.6% of real commands never reach this code at all: they carry a metacharacter (usually
 /// <c>2&gt;&amp;1</c>) and <see cref="ReadOnlyCommands.IsReadOnly(string)"/> refuses them outright.</para>
 /// </summary>
-public sealed record CommandSubjects
+internal sealed record CommandSubjects
 {
     /// <summary>The paths this command names that exist on disk — what a boundary check must
     /// confine. This replaced <c>ReadOnlyCommands.PathArguments</c>, and finds the ones its token

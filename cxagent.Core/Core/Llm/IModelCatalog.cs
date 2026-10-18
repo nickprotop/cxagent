@@ -40,7 +40,7 @@ public interface IModelCatalogDetail
 }
 
 /// <summary>Reading a <c>/models</c> answer into <see cref="ModelInfo"/> rows.</summary>
-public static class ModelCatalogParse
+internal static class ModelCatalogParse
 {
     /// <summary>
     /// The <c>data</c> array of an OpenAI-shaped or Anthropic <c>/models</c> answer. Reads the window

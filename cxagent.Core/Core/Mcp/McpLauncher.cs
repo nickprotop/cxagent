@@ -9,7 +9,7 @@ namespace CxAgent.Core.Mcp;
 /// dies during its handshake costs its own tools and nothing else — the same contract
 /// <see cref="McpClient"/> holds on the wire, applied to the fleet.</para>
 /// </summary>
-public static class McpLauncher
+internal static class McpLauncher
 {
     /// <summary>What came up, and what to tell the user about what did not.</summary>
     public sealed record Result(

@@ -18,7 +18,7 @@ namespace CxAgent.Core.Agents;
 /// "no sub-agents of sub-agents" structural rather than a rule — it is not a tool the child is asked
 /// not to use, it is one it was never given.</para>
 /// </summary>
-public sealed class AskUserTool(Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>> ask)
+internal sealed class AskUserTool(Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>> ask)
 {
     public string ToolName => "ask_user";
 

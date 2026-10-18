@@ -20,7 +20,7 @@ namespace CxAgent.Core.Sessions;
 /// <para>A PURE FUNCTION, so what it says under each condition is testable without a session, a
 /// provider or a window.</para>
 /// </summary>
-public static class ModelSwitchNotice
+internal static class ModelSwitchNotice
 {
     /// <summary>The message describing a switch that has just happened.</summary>
     /// <param name="previousWindow">The window of the model being LEFT — used to warn when the new

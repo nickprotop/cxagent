@@ -7,7 +7,7 @@ namespace CxAgent.Core.Skills;
 /// <param name="ExitCode">The shell's exit code; -1 when it was killed at the timeout.</param>
 /// <param name="TimedOut">Whether it was still running at the timeout.</param>
 /// <param name="Output">Stdout then stderr, capped at <see cref="ShellLine.MaxOutputChars"/>.</param>
-public sealed record ShellLineResult(int ExitCode, bool TimedOut, string Output);
+internal sealed record ShellLineResult(int ExitCode, bool TimedOut, string Output);
 
 /// <summary>
 /// Runs a command file's <c>!`…`</c> line before the prompt is sent.
@@ -20,7 +20,7 @@ public sealed record ShellLineResult(int ExitCode, bool TimedOut, string Output)
 /// registry. A line feeding a prompt wants the opposite on each: the head of the output up to a cap,
 /// no job, and a timeout that kills.</para>
 /// </summary>
-public static class ShellLine
+internal static class ShellLine
 {
     public const int MaxOutputChars = 20 * 1024;
 

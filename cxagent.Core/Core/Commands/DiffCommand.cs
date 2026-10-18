@@ -20,7 +20,7 @@ namespace CxAgent.Core.Commands;
 /// transcript rather than into the conversation. It answers "what have I changed" for the whole
 /// working tree, which is the question a person asks before they trust a session's work.</para>
 /// </summary>
-public static class DiffCommand
+internal static class DiffCommand
 {
     /// <summary>
     /// How many lines of diff reach the transcript.
@@ -41,7 +41,7 @@ public static class DiffCommand
     /// <param name="ExitCode">Git's exit code, or -1 when git could not be run at all.</param>
     /// <param name="Output">Standard output.</param>
     /// <param name="Error">Standard error, or the reason git never started.</param>
-    public readonly record struct GitResult(int ExitCode, string Output, string Error);
+    internal readonly record struct GitResult(int ExitCode, string Output, string Error);
 
     /// <summary>
     /// Renders <c>/diff</c>, <c>/diff --staged</c> or <c>/diff &lt;path&gt;</c>.

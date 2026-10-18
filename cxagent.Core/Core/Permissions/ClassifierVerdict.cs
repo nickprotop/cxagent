@@ -34,7 +34,7 @@ public enum ClassifierVerdict
 /// </param>
 public sealed record ClassifierDecision(ClassifierVerdict Verdict, string? Reason, bool Flagged = false);
 
-public static class VerdictParser
+internal static class VerdictParser
 {
     /// <summary>
     /// Reads a verdict from a completion. Anything not recognised is <see cref="ClassifierVerdict.Ask"/>.

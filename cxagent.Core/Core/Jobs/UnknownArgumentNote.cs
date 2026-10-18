@@ -17,7 +17,7 @@ namespace CxAgent.Core.Jobs;
 /// <para>The suggestion is offered only when it is nearly certain (see <see cref="Suggest"/>). A
 /// wrong guess is worse than none, because the caller will follow it.</para>
 /// </summary>
-public static class UnknownArgumentNote
+internal static class UnknownArgumentNote
 {
     /// <summary>
     /// The note for <paramref name="sent"/> against <paramref name="accepted"/>, or "" when every

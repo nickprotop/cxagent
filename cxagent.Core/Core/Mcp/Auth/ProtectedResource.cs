@@ -6,12 +6,12 @@ namespace CxAgent.Core.Mcp.Auth;
 /// <summary>What an MCP server's 401 says about how to authorize against it (RFC 9728).</summary>
 /// <param name="Resource">The canonical URI of the server itself — the RFC 8707 <c>resource</c>.</param>
 /// <param name="AuthorizationServers">Who can issue tokens for it, in the order the document listed.</param>
-public sealed record ProtectedResourceMetadata(
+internal sealed record ProtectedResourceMetadata(
     string Resource,
     IReadOnlyList<string> AuthorizationServers);
 
 /// <summary>Where to send a user, and where to redeem the code they come back with (RFC 8414).</summary>
-public sealed record AuthorizationServerMetadata(
+internal sealed record AuthorizationServerMetadata(
     string Issuer,
     string AuthorizationEndpoint,
     string TokenEndpoint,
@@ -40,7 +40,7 @@ public sealed record AuthorizationServerMetadata(
 /// <para>NOTHING HERE THROWS. Discovery failing means "this server cannot be authorized against",
 /// which the caller reports as a status — not an exception that ends a turn.</para>
 /// </summary>
-public static class ProtectedResource
+internal static class ProtectedResource
 {
     /// <summary>
     /// The metadata URL from a <c>WWW-Authenticate: Bearer resource_metadata="…"</c> header, or null.

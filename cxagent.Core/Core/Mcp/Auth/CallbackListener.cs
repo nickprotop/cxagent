@@ -17,7 +17,7 @@ namespace CxAgent.Core.Mcp.Auth;
 /// after a login: an abandoned listener is an open port on the user's machine for the life of the
 /// session.</para>
 /// </summary>
-public sealed class CallbackListener : IDisposable
+internal sealed class CallbackListener : IDisposable
 {
     private HttpListener _listener = new();
 

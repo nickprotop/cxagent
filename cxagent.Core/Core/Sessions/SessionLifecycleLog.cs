@@ -21,7 +21,7 @@ namespace CxAgent.Core.Sessions;
 /// and by folder long before it is read end to end, and append-only because the interesting case is
 /// what happened before something went wrong.</para>
 /// </summary>
-public static class SessionLifecycleLog
+internal static class SessionLifecycleLog
 {
     /// <summary>The agent this is filed under. Not a real agent — the log belongs to the process.</summary>
     private const string Agent = "app";

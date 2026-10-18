@@ -20,7 +20,7 @@ public enum ForegroundRelease
 /// call answers. The answer counts, because a stop accepted after it would kill the shells of a child that finished
 /// and mark it stopped while the parent reads its answer.</para>
 /// </summary>
-public sealed class ForegroundRun : IDisposable
+internal sealed class ForegroundRun : IDisposable
 {
     private readonly CancellationTokenSource _own = new();
     private readonly CancellationTokenRegistration _turnLink;

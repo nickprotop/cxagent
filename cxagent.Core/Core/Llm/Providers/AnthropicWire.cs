@@ -180,7 +180,7 @@ internal static class AnthropicWire
     /// <param name="Thinking">A thinking delta, or "" for a block with no readable text.</param>
     /// <param name="Redacted">True when the thinking block was safety-redacted.</param>
     /// <param name="Block">A thinking block this event closed, whole, to send back with the turn.</param>
-    public readonly record struct AnthropicStreamItem(string? Text, ToolCall? Call, string? Thinking = null,
+    internal readonly record struct AnthropicStreamItem(string? Text, ToolCall? Call, string? Thinking = null,
         bool Redacted = false, ThinkingBlock? Block = null);
 
     /// <summary>
@@ -195,7 +195,7 @@ internal static class AnthropicWire
     /// <para>END IS <c>message_stop</c>, not <c>message_delta</c>: the delta carries the stop reason
     /// and the output token count, and is followed by the stop.</para>
     /// </summary>
-    public sealed class StreamAccumulator
+    internal sealed class StreamAccumulator
     {
         private readonly Dictionary<int, (string Name, string? Id, System.Text.StringBuilder Json)> _open = new();
 

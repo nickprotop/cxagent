@@ -16,7 +16,7 @@ namespace CxAgent.Core.Agents;
 /// model reads back. A prompt here would train the user to approve things reflexively, which is the
 /// one habit a permission system cannot survive.</para>
 /// </summary>
-public sealed class TodoTool(TodoList list)
+internal sealed class TodoTool(TodoList list)
 {
     public string ToolName => "todowrite";
 

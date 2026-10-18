@@ -14,7 +14,7 @@ public sealed record TypedArguments(string All, IReadOnlyList<string> Words)
 /// <summary>A piece of a command body, found in the FILE's text before any argument is filled in.</summary>
 public abstract record Segment
 {
-    public sealed record Literal(string Text) : Segment;
+    internal sealed record Literal(string Text) : Segment;
 
     /// <summary>A <c>!`command`</c> line, run before the prompt is sent.</summary>
     public sealed record Shell(string Command) : Segment;

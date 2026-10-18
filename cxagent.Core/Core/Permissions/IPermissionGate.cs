@@ -29,7 +29,7 @@ public sealed record PermissionOutcome(bool Allowed, string? DeniedBy = null, st
 }
 
 /// <summary>The text a MODEL reads when an action was refused.</summary>
-public static class DenialMessage
+internal static class DenialMessage
 {
     public static string For(PermissionOutcome outcome, string display) =>
         outcome.DeniedBy == "auto"
@@ -55,7 +55,7 @@ public interface IPermissionGate
 /// <summary>The two fixed, greppable gate implementations that need no UI: a headless default
 /// that can never say yes, and an explicit test opt-out that always does. The real interactive
 /// gate (prompting the user, consulting PermissionPolicy/PermissionRulesStore) is Task 4's.</summary>
-public static class PermissionGate
+internal static class PermissionGate
 {
     private sealed class FixedGate : IPermissionGate
     {

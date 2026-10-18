@@ -26,7 +26,7 @@ public readonly record struct CompletionValue(string Name, string Summary);
 /// (<c>/mode edits</c>, <c>/mcp</c>) simply never get it. Asking the owner keeps each set beside the
 /// state it is derived from.</para>
 /// </summary>
-public static class CompletionSets
+internal static class CompletionSets
 {
     /// <summary>Configured provider instances, for <c>/model</c>. Answered by the session, which
     /// knows which one it is currently using.</summary>

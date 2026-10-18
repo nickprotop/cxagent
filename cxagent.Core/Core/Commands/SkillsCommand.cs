@@ -21,7 +21,7 @@ namespace CxAgent.Core.Commands;
 /// next one. A command that looked like the way to apply changes would teach a ritual nobody
 /// needs.</para>
 /// </summary>
-public sealed class SkillsCommand(Func<InvocableCatalogResult> catalog, bool skillToolOffered = true)
+internal sealed class SkillsCommand(Func<InvocableCatalogResult> catalog, bool skillToolOffered = true)
 {
     public string Render()
     {

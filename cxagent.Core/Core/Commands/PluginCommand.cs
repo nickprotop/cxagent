@@ -36,7 +36,7 @@ public abstract record PluginRequest
     public sealed record Disable(string Name) : PluginRequest;
 
     /// <summary>A subcommand this command does not recognise.</summary>
-    public sealed record Unrecognised(string Word) : PluginRequest;
+    internal sealed record Unrecognised(string Word) : PluginRequest;
 }
 
 /// <summary>One configured plugin's state, for the listing — see <see cref="PluginCommand.Render"/>.</summary>

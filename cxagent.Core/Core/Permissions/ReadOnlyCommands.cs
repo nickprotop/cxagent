@@ -20,7 +20,7 @@ namespace CxAgent.Core.Permissions;
 /// programs that cannot write, and its text contains nothing that could turn it into something
 /// else. Everything not proven safe prompts, which is the direction to fail in.</para>
 /// </summary>
-public static class ReadOnlyCommands
+internal static class ReadOnlyCommands
 {
     /// <summary>
     /// Programs that read and print, and cannot modify anything.

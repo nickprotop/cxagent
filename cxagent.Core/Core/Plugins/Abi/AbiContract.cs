@@ -55,7 +55,7 @@ public sealed record AbiCommandArgument(
 /// no child-process registration inbound field — see the README for where each of those instead
 /// lives (host-owned stderr, host-side abandonment, an outbound message).
 /// </summary>
-public sealed record AbiPluginContext(
+internal sealed record AbiPluginContext(
     [property: JsonPropertyName("workingDirectory")] string WorkingDirectory,
     [property: JsonPropertyName("settings")] JsonElement Settings,
     // THE HOST'S OWN CONTRACT, so a native plugin can refuse a host too old to refuse it first —
@@ -67,7 +67,7 @@ public sealed record AbiPluginContext(
 /// The JSON <c>cxagent_plugin_invoke</c> receives — see Abi/README.md, "call". <see cref="Arguments"/>
 /// is always a JSON object, never null and never omitted; an argument-less tool receives <c>{}</c>.
 /// </summary>
-public sealed record AbiInvokeCall(
+internal sealed record AbiInvokeCall(
     [property: JsonPropertyName("toolName")] string ToolName,
     [property: JsonPropertyName("arguments")] JsonElement Arguments);
 

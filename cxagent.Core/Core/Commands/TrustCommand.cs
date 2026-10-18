@@ -6,7 +6,7 @@ namespace CxAgent.Core.Commands;
 /// <param name="NewState">The classification to store, or null when nothing changes.</param>
 /// <param name="Reply">The message for the transcript. Never empty — a command that appears to do
 /// nothing is indistinguishable from one that silently failed.</param>
-public readonly record struct TrustCommandResult(TrustState? NewState, Message Reply);
+internal readonly record struct TrustCommandResult(TrustState? NewState, Message Reply);
 
 /// <summary>
 /// What <c>/trust</c> needs to report the folder's classification and to change it.
@@ -14,7 +14,7 @@ public readonly record struct TrustCommandResult(TrustState? NewState, Message R
 /// <param name="Argument">Everything after the command word — empty for a bare <c>/trust</c>.</param>
 /// <param name="Current">The classification right now, for reporting and for detecting a no-op.</param>
 /// <param name="Root">The working directory, named in every reply so "this folder" is concrete.</param>
-public readonly record struct TrustQuery(string Argument, TrustState Current, string Root);
+internal readonly record struct TrustQuery(string Argument, TrustState Current, string Root);
 
 /// <summary>
 /// The decision behind <c>/trust</c> — the in-app way to see and change a folder's classification.
@@ -34,7 +34,7 @@ public readonly record struct TrustQuery(string Argument, TrustState Current, st
 /// argument, the current state and the root, so it is testable with no store, no window and no
 /// session. Persisting is the session's, which is also where a failed write is reported.</para>
 /// </summary>
-public static class TrustCommand
+internal static class TrustCommand
 {
     /// <summary>Decides what <c>/trust</c>, <c>/trust yes</c> or <c>/trust no</c> should do.</summary>
     public static TrustCommandResult Decide(TrustQuery query)

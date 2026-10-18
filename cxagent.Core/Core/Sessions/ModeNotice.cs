@@ -14,7 +14,7 @@ namespace CxAgent.Core.Sessions;
 /// changes nothing observable, and a readout that says "writes are now silent" there is wrong
 /// exactly when it matters most.</para>
 /// </summary>
-public static class ModeNotice
+internal static class ModeNotice
 {
     public static string EditsChanged(EditMode mode, bool folderTrusted, string root) =>
         $"edits: {EditModes.Name(mode)} — {Effect(mode, folderTrusted, root)}.";

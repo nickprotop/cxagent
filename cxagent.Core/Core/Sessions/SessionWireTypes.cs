@@ -28,7 +28,7 @@ namespace CxAgent.Core.Sessions;
 /// <param name="AgentId">Which agent ran it — replaced by a re-wire, so not a session key.</param>
 /// <param name="JobType">The tool behind it.</param>
 /// <param name="DisplayName">What a row calls it.</param>
-public sealed record JobIdentity(string Id, string AgentId, string JobType, string DisplayName);
+internal sealed record JobIdentity(string Id, string AgentId, string JobType, string DisplayName);
 
 /// <summary>What the job did, once it had done it.</summary>
 /// <param name="State">Its state at the moment of capture, as text — the live enum is not the DTO's to carry.</param>
@@ -44,7 +44,7 @@ public sealed record JobIdentity(string Id, string AgentId, string JobType, stri
 /// happening. There is no reason a remote client needs it less than a local one.</para>
 /// </param>
 /// <param name="RetryCount">How many times this job has been retried.</param>
-public sealed record JobOutcome(
+internal sealed record JobOutcome(
     string State, string? Parameters, string? Output, string? Error, string? DecidedBy,
     bool Reviewing = false, int RetryCount = 0);
 
@@ -52,7 +52,7 @@ public sealed record JobOutcome(
 /// <param name="Fraction">How far along, 0 to 1, when the job reports it.</param>
 /// <param name="Message">The short progress line a row shows.</param>
 /// <param name="Body">The longer progress text, where a job reports one beside its short message.</param>
-public sealed record JobProgress(double? Fraction, string? Message, string? Body = null);
+internal sealed record JobProgress(double? Fraction, string? Message, string? Body = null);
 
 /// <summary>
 /// When it happened.
@@ -63,7 +63,7 @@ public sealed record JobProgress(double? Fraction, string? Message, string? Body
 /// <param name="CreatedAt">When the job was created.</param>
 /// <param name="StartedAt">When it began running.</param>
 /// <param name="CompletedAt">When it finished, or null while it runs.</param>
-public sealed record JobTiming(
+internal sealed record JobTiming(
     DateTimeOffset? CreatedAt, DateTimeOffset? StartedAt, DateTimeOffset? CompletedAt);
 
 /// <summary>Which job, what came of it, how far along, and when — see each part's own doc.</summary>
@@ -71,7 +71,7 @@ public sealed record JobTiming(
 /// <param name="Outcome">What it did.</param>
 /// <param name="Progress">How far along.</param>
 /// <param name="Timing">When.</param>
-public sealed record JobSnapshot(
+internal sealed record JobSnapshot(
     JobIdentity Identity, JobOutcome Outcome, JobProgress Progress, JobTiming Timing)
 {
     /// <summary>How much of a result or a parameter set is kept.</summary>
@@ -131,7 +131,7 @@ public sealed record JobSnapshot(
 /// something else resolved the same prompt is recognisably late rather than applied to whatever is
 /// current. A single outstanding prompt did not need one; concurrent prompts do.</para>
 /// </summary>
-public sealed record PermissionRequestDto(
+internal sealed record PermissionRequestDto(
     long Id,
     string Kind,
     string Display,

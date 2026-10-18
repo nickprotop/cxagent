@@ -19,7 +19,7 @@ namespace CxAgent.Core.Sessions;
 /// <c>/compress</c> was asked outright and must not re-derive a threshold whose whole point it
 /// bypasses. This type answers only "run one, and show it".</para>
 /// </summary>
-public static class CompressionRun
+internal static class CompressionRun
 {
     /// <summary>
     /// One compression, as one value.
@@ -39,7 +39,7 @@ public static class CompressionRun
     /// Whether <c>skill</c> is available. False drops the "call skill again" remedy from the
     /// compaction notice — naming a withheld tool sends the model to spend a turn discovering it.
     /// </param>
-    public readonly record struct CompressionWork(
+    internal readonly record struct CompressionWork(
         AgentContext Context, ILlmProvider Provider, bool SkillToolOffered = true);
 
     /// <summary>
@@ -62,7 +62,7 @@ public static class CompressionRun
     /// context readout can stop presenting its last measurement as current AND say what changed.
     /// Optional: callers with no UI to notify pass null.
     /// </param>
-    public readonly record struct CompressionReport(
+    internal readonly record struct CompressionReport(
         IToolObserver Jobs, string AgentId, string Title,
         Action<LlmUsage>? Meter = null, Action<int, int>? Compressed = null);
 

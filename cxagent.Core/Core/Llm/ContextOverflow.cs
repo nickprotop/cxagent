@@ -18,7 +18,7 @@ namespace CxAgent.Core.Llm;
 /// Three signals, matching theirs: a known message, HTTP 413, or an error code of
 /// <c>context_length_exceeded</c> in the body.</para>
 /// </summary>
-public static class ContextOverflow
+internal static class ContextOverflow
 {
     /// <summary>
     /// Vendor wordings for "your input was too long". From opencode's list, plus llama.cpp's own

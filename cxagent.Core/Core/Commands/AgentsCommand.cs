@@ -26,7 +26,7 @@ namespace CxAgent.Core.Commands;
 /// in their file gets a warning at startup, once, and then never again — this is where they look when
 /// they wonder why their edit did nothing.</para>
 /// </summary>
-public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffered = true)
+internal sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffered = true)
 {
     /// <summary>The listing, or one type's briefing, as text. Renders rather than printing: it took
     /// a transcript writer, which made a listing that is pure text depend on a front end having

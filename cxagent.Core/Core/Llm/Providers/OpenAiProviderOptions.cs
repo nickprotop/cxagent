@@ -13,7 +13,7 @@ namespace CxAgent.Core.Llm.Providers;
 /// parameter — the rule's first real test, and grandfathering an exception into it would have made
 /// the very method the rule was written about worse.</para>
 /// </summary>
-public sealed record OpenAiProviderOptions
+internal sealed record OpenAiProviderOptions
 {
     /// <summary>Config's name for this instance — what spend is attributed to.</summary>
     public required string ProviderId { get; init; }

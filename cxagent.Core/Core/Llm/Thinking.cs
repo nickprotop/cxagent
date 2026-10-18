@@ -104,7 +104,7 @@ public enum ReasoningDialect
 }
 
 /// <summary>The dialect an endpoint speaks, from its host.</summary>
-public static class ReasoningDialects
+internal static class ReasoningDialects
 {
     /// <summary>
     /// OpenRouter and OpenAI by their hosts; anything else is treated as llama.cpp, whose probe

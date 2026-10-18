@@ -21,7 +21,7 @@ namespace CxAgent.Core.Permissions;
 /// report the epoch are indistinguishable by this signal and fall back to path alone, which is
 /// exactly today's behaviour and no worse.</para>
 /// </summary>
-public static class FolderIdentity
+internal static class FolderIdentity
 {
     /// <summary>
     /// The scope string a rule is stored and matched under.

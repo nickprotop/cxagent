@@ -25,7 +25,7 @@ namespace CxAgent.Core.Jobs.Builtin;
 /// nowhere to land — nothing here emits markup for anything to render. The version comes from
 /// SharpConsoleUI rather than being pinned here, so it moves forward with the UI package.</para>
 /// </summary>
-public static class HtmlToText
+internal static class HtmlToText
 {
     /// <summary>
     /// Elements removed with their subtree, because none of it is ever content.

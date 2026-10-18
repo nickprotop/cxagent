@@ -35,13 +35,24 @@ Targets `net8.0`, `net9.0` and `net10.0`.
 
 | | |
 |---|---|
-| **[api.md](docs/api.md)** | every public type, configuration, and tool selection |
+| **[api.md](docs/api.md)** | the supported API: the types an app uses, configuration, and tool selection |
 | **[tools.md](docs/tools.md)** | injecting tools of your own |
 | **[plugins.md](docs/plugins.md)** | tools loaded from a DLL at run time |
 | **[examples/ToolAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ToolAgent)** | a runnable console app with an injected tool |
 | **[examples/SpectreAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent)** | the same, with a rendered UI |
 | **[examples/ReadOnlyAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ReadOnlyAgent)** | taking tools away — a selection you can watch hold |
 | **[examples/CalculatorPlugin](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorPlugin)** | a plugin end to end, gating something absurd so the prompt is visible |
+
+### What a version promises
+
+**What [api.md](docs/api.md), [tools.md](docs/tools.md) and [plugins.md](docs/plugins.md) document is
+the API**, and from 1.0 it follows semantic versioning: a change that breaks it waits for the next
+major version. Some other types are public because the cxagent app is built on this library and
+needs them; they are not documented here, and a minor release may change them. If you find yourself
+depending on one, open an issue — that is how something becomes part of the documented API.
+
+The plugin contract is versioned separately, by its own package,
+[CxAgent.Plugins.Abstractions](docs/plugins.md), whose major version is the contract number.
 
 Below: the mental model, then the four calls an app makes.
 

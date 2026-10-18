@@ -4,7 +4,7 @@ using CxAgent.Core.Sessions;
 namespace CxAgent.Core.Storage;
 
 /// <summary>How a session ended, or that it has not. Mirrors the column the row store used.</summary>
-public static class SessionEndState
+internal static class SessionEndState
 {
     /// <summary>Still going, or died without saying so — which is what makes it resumable.</summary>
     public const int Running = 0;

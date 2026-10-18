@@ -16,7 +16,7 @@ namespace CxAgent.Core.Jobs;
 /// answers "no such tool" rather than returning null, so it TERMINATES the <c>??</c> chain in
 /// Agent.RunAsync: anything placed after it is unreachable code that looks correct.</para>
 /// </summary>
-public sealed class AgentToolset
+internal sealed class AgentToolset
 {
     private readonly IReadOnlyDictionary<string, IAgentTool> _byName;
 

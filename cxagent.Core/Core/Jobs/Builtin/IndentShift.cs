@@ -29,7 +29,7 @@ namespace CxAgent.Core.Jobs.Builtin;
 /// sent it — visibly wrong beats silently wrong, and the result is echoed back so the model can see
 /// it.</para>
 /// </summary>
-public static class IndentShift
+internal static class IndentShift
 {
     /// <summary>
     /// The replacement, shifted onto <paramref name="matched"/>'s indentation.

@@ -15,7 +15,7 @@ namespace CxAgent.Core.Llm;
 /// <param name="BaseUrl">The configured base URL, or null for the kind's default.</param>
 /// <param name="Model">The model id to ask about.</param>
 /// <param name="ApiKey">The instance's key, or null.</param>
-public readonly record struct ProbeTarget(string? Kind, string? BaseUrl, string? Model, string? ApiKey);
+internal readonly record struct ProbeTarget(string? Kind, string? BaseUrl, string? Model, string? ApiKey);
 
 /// <summary>
 /// Asks an OpenAI-compatible endpoint how large the served context window actually is.
@@ -36,7 +36,7 @@ public readonly record struct ProbeTarget(string? Kind, string? BaseUrl, string?
 /// API returns nothing of the kind. Every failure — no server, a hosted endpoint, an unparseable
 /// shape — returns null and lets the caller fall back to config. Startup must not depend on it.</para>
 /// </summary>
-public static class ContextWindowProbe
+internal static class ContextWindowProbe
 {
     /// <summary>Bounded so a slow or absent endpoint delays startup by at most this.</summary>
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(3);

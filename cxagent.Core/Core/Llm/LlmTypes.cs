@@ -111,7 +111,7 @@ public record LlmStreamChunk(string? TextDelta, ToolCall? ToolCallDelta, bool Is
     bool ThinkingRedacted = false, ThinkingBlock? ThinkingBlock = null);
 
 /// <summary>A terminal LLM provider failure (auth, bad request, model-not-found, or retries exhausted).</summary>
-public sealed class LlmProviderException : Exception
+internal sealed class LlmProviderException : Exception
 {
     public string InstanceName { get; }
     public int? HttpStatus { get; }

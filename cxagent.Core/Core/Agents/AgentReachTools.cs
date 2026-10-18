@@ -13,7 +13,7 @@ namespace CxAgent.Core.Agents;
 /// <param name="ParentAgentId">Who a background resume reports to; null when nobody can be told.</param>
 /// <param name="FromUser">Typed by the user rather than called by the model — the one sender a user's
 /// stop does not refuse.</param>
-public sealed record SendRequest(string To, string Prompt, bool Background, string? ParentAgentId,
+internal sealed record SendRequest(string To, string Prompt, bool Background, string? ParentAgentId,
     bool FromUser);
 
 /// <summary>
@@ -30,7 +30,7 @@ public sealed record SendRequest(string To, string Prompt, bool Background, stri
 /// waking a sibling is recursion by another name, and none of the reasoning that forbids spawning
 /// would have been consulted.</para>
 /// </summary>
-public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = null,
+internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = null,
     IAgentDelivery? delivery = null)
 {
     /// <summary>The store behind these tools.</summary>

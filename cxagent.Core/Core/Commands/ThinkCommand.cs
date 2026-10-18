@@ -8,7 +8,7 @@ namespace CxAgent.Core.Commands;
 /// <param name="Clear">Return to the model's own default.</param>
 /// <param name="Reply">What to say — the list, or why nothing changed. Empty when the session will
 /// say what changed itself.</param>
-public readonly record struct ThinkCommandResult(string? SetTo, bool Save, bool Clear, Message Reply);
+internal readonly record struct ThinkCommandResult(string? SetTo, bool Save, bool Clear, Message Reply);
 
 /// <summary>
 /// <c>/think</c>: how hard this session's model thinks.
@@ -17,7 +17,7 @@ public readonly record struct ThinkCommandResult(string? SetTo, bool Save, bool 
 /// <c>/model</c> and config make. A level tried for one conversation should not silently become
 /// how every later one runs.</para>
 /// </summary>
-public static class ThinkCommand
+internal static class ThinkCommand
 {
     public const string Default = ThinkingLevels.Default;
     private const string SaveFlag = "--save";

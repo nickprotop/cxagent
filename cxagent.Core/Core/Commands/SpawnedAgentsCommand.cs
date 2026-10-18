@@ -15,7 +15,7 @@ namespace CxAgent.Core.Commands;
 /// and send to one directly does not depend on the model reading the situation correctly, which is
 /// the same reason /triggers-cancel exists beside trigger_cancel.</para>
 /// </summary>
-public sealed class SpawnedAgentsCommand(SubAgentStore store)
+internal sealed class SpawnedAgentsCommand(SubAgentStore store)
 {
     /// <summary>What a send could not do, or null when it is about to be attempted.</summary>
     /// <remarks>

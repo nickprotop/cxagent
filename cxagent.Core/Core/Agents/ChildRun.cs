@@ -27,7 +27,7 @@ namespace CxAgent.Core.Agents;
 /// <para>Not the child's agent id, which the registry already keys on: the row was created by the
 /// parent's turn and belongs to it, and a child's agent id addresses nothing the parent draws.</para>
 /// </param>
-public sealed class ChildRun(SubAgent child, string jobId)
+internal sealed class ChildRun(SubAgent child, string jobId)
 {
     private Timer? _tick;
 

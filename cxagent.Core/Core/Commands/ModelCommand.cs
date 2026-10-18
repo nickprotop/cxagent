@@ -6,7 +6,7 @@ namespace CxAgent.Core.Commands;
 /// <summary>What <c>/model</c> decided, and the line to show for it.</summary>
 /// <param name="SwitchTo">The instance to switch to, or null when nothing is switching.</param>
 /// <param name="Reply">The message for the transcript. Never empty.</param>
-public readonly record struct ModelCommandResult(string? SwitchTo, Message Reply);
+internal readonly record struct ModelCommandResult(string? SwitchTo, Message Reply);
 
 /// <summary>
 /// <c>/model</c> — which configured instance this session talks to.
@@ -24,7 +24,7 @@ public readonly record struct ModelCommandResult(string? SwitchTo, Message Reply
 /// <para>NOT PERSISTED, matching <c>/mode</c>. A model chosen for one conversation should not
 /// silently become the default at next launch; config is Settings' job.</para>
 /// </summary>
-public static class ModelCommand
+internal static class ModelCommand
 {
     /// <summary>
     /// Decides what <c>/model</c> or <c>/model &lt;name&gt;</c> should do.

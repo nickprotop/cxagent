@@ -232,7 +232,7 @@ internal sealed class AbiHostProcess : IAsyncDisposable
 
     /// <summary>What the host wrote before its first request line — success with a manifest, or a
     /// named startup failure. See <see cref="HostReady"/>/<see cref="HostStartupFailure"/>.</summary>
-    public sealed record StartResult(bool Ready, PluginManifest? Manifest, string? Error);
+    internal sealed record StartResult(bool Ready, PluginManifest? Manifest, string? Error);
 
     /// <summary>
     /// Why a plugin host of <paramref name="hostVersion"/> cannot serve an app of

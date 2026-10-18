@@ -22,7 +22,7 @@ namespace CxAgent.Core.Permissions;
 /// tool nobody has classified, because it grants only that program with no arguments generalised.
 /// </para>
 /// </summary>
-public static class CommandArity
+internal static class CommandArity
 {
     /// <summary>
     /// Programs whose first word alone names them. Everything not listed here also lands on 1 — this

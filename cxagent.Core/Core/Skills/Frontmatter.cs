@@ -5,7 +5,7 @@ namespace CxAgent.Core.Skills;
 /// <param name="Fields">Keys as written, matched case-insensitively.</param>
 /// <param name="Body">Everything after the block, trimmed; the whole text when there was no block.</param>
 /// <param name="Error">Why the block could not be read, or null.</param>
-public sealed record FrontmatterResult(bool Present, IReadOnlyDictionary<string, string> Fields,
+internal sealed record FrontmatterResult(bool Present, IReadOnlyDictionary<string, string> Fields,
     string Body, string? Error);
 
 /// <summary>
@@ -18,7 +18,7 @@ public sealed record FrontmatterResult(bool Present, IReadOnlyDictionary<string,
 /// <para>SPLIT ON THE FIRST COLON ONLY. Descriptions are prose and contain colons, and splitting on
 /// every colon truncates exactly the field the model and the palette show.</para>
 /// </summary>
-public static class Frontmatter
+internal static class Frontmatter
 {
     public static FrontmatterResult Parse(string text)
     {

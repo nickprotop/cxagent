@@ -7,7 +7,7 @@ namespace CxAgent.Core.Commands;
 /// <param name="NewMode">The mode to switch to, or null when nothing changes.</param>
 /// <param name="Reply">The message for the transcript. Never empty — a command that appears to do
 /// nothing is indistinguishable from one that silently failed.</param>
-public readonly record struct ModeCommandResult(WorkingMode? NewMode, Message Reply);
+internal readonly record struct ModeCommandResult(WorkingMode? NewMode, Message Reply);
 
 /// <summary>
 /// What <c>/mode</c> needs to answer "what mode am I in", and to change it.
@@ -30,7 +30,7 @@ public readonly record struct ModeCommandResult(WorkingMode? NewMode, Message Re
 /// Whether a classifier instance is configured. FALSE HIDES AUTO ENTIRELY — unlisted, unparseable —
 /// because a mode that claims background review while nothing reviews is worse than not having it.
 /// </param>
-public readonly record struct ModeQuery(string Argument, WorkingMode Current,
+internal readonly record struct ModeQuery(string Argument, WorkingMode Current,
     bool FolderTrusted, string Root, bool ClassifierConfigured = false);
 
 /// <summary>
@@ -40,7 +40,7 @@ public readonly record struct ModeQuery(string Argument, WorkingMode Current,
 /// the decision is worth testing and needs no window, no provider and no running agent. Everything
 /// here is a pure function of (argument, current mode, is a turn running).</para>
 /// </summary>
-public static class ModeCommand
+internal static class ModeCommand
 {
     /// <summary>
     /// Decides what <c>/mode</c>, <c>/mode agent fan-out</c> or <c>/mode edits always-ask</c> should

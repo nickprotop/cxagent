@@ -52,7 +52,7 @@ public static class PluginResolver
 
         /// <summary>Neither a configured name nor an existing path — reported, not a silent
         /// no-op and not an unhandled exception surfacing as a crash.</summary>
-        public sealed record NotFound(string Reason) : ResolveResult;
+        internal sealed record NotFound(string Reason) : ResolveResult;
     }
 
     /// <summary>

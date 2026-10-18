@@ -14,7 +14,7 @@ namespace CxAgent.Core.Jobs.Builtin;
 /// this by re-examining the text around the offset and getting it wrong — the matcher already knows,
 /// so it says.</para>
 /// </param>
-public readonly record struct PatternMatch(int Start, int Length, bool WholeLines);
+internal readonly record struct PatternMatch(int Start, int Length, bool WholeLines);
 
 /// <summary>
 /// Finds a replace pattern in a file's text.
@@ -29,7 +29,7 @@ public readonly record struct PatternMatch(int Start, int Length, bool WholeLine
 /// Matchers of increasing tolerance may all feed the same verbatim splice. Tolerance in the matcher
 /// costs nothing; tolerance in the writer is how a tool silently reshapes code.</para>
 /// </summary>
-public static class PatternMatcher
+internal static class PatternMatcher
 {
     /// <summary>
     /// Every place <paramref name="pattern"/> occurs, in the order they appear.

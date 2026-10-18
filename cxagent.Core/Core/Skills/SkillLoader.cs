@@ -21,7 +21,7 @@ namespace CxAgent.Core.Skills;
 /// wrong twice — it misses the truncation fallback, and it over-clears, because compaction removes
 /// only the older half while a recently-loaded body survives and must still count as loaded.</para>
 /// </summary>
-public sealed class SkillLoader
+internal sealed class SkillLoader
 {
     /// <summary>
     /// Marks a message as a skill body, and says WHICH skill.

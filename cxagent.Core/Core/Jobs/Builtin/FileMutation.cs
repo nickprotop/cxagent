@@ -10,7 +10,7 @@ namespace CxAgent.Core.Jobs.Builtin;
 public sealed record FileSnapshot(string Text, bool Existed, bool HadBom, bool UsesCrlf);
 
 /// <summary>Raised when a file changed between the read a caller worked from and its write.</summary>
-public sealed class StaleContentException(string path) : Exception(
+internal sealed class StaleContentException(string path) : Exception(
     $"{path} changed on disk since it was read, so this edit was computed from content that no "
     + "longer exists. Nothing was written. Read the file again and redo the edit against what it "
     + "says now.")
