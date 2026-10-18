@@ -44,7 +44,9 @@ public class BackgroundCrashSurvivalTests : IDisposable
     {
         var paths = new AppPaths(_dir);
         paths.EnsureCreated();
-        var children = new ChildProcessStore(_dir);
+        // THE RUN THAT CRASHES: its records name an owner that is gone by the time the next launch,
+        // a second store over the same file, reaps.
+        var children = new ChildProcessStore(_dir, ChildProcessOwnerTests.Crashed);
 
         var executor = new ShellJobExecutor(new ShellBackgrounding(_registry, Children: children));
 

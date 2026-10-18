@@ -52,6 +52,31 @@ public sealed record ChildProcessRecord(int Pid, DateTime StartTimeUtc, string P
     /// identifier; <c>&lt;background&gt;</c> is not one.</para>
     /// </summary>
     public const string BackgroundCommand = "<background>";
+
+    /// <summary>
+    /// The cxagent process that recorded this one — with <see cref="OwnerStartTimeUtc"/>, the same
+    /// pid-plus-start-time identity <see cref="StartTimeUtc"/> gives the child, so a crashed run's
+    /// pid reused by a later process does not pass for that run still being alive.
+    ///
+    /// <para>WHAT LETS STARTUP TELL AN ORPHAN FROM A NEIGHBOUR'S CHILD. Every cxagent on one config
+    /// directory writes this file, and a record whose owner is still running belongs to a window in
+    /// use, not to a crash. Null on a record written before owners were recorded, which is reaped as
+    /// every record then was. Init-only rather than positional so the record's constructor stays
+    /// what it was.</para>
+    /// </summary>
+    public int? OwnerPid { get; init; }
+
+    /// <summary>The owner's own start time, read from the OS. See <see cref="OwnerPid"/>.</summary>
+    public DateTime? OwnerStartTimeUtc { get; init; }
+}
+
+/// <summary>A process as the OS knows it: a pid, and the start time that keeps a reused pid from
+/// passing for it.</summary>
+internal sealed record ProcessIdentity(int Pid, DateTime StartTimeUtc)
+{
+    public static ProcessIdentity Current { get; } = Of(Process.GetCurrentProcess());
+
+    public static ProcessIdentity Of(Process process) => new(process.Id, process.StartTime.ToUniversalTime());
 }
 
 /// <summary>
@@ -85,10 +110,18 @@ public sealed class ChildProcessStore
     /// <param name="configDir">Directly, for a caller that already has the string rather than the
     /// whole <see cref="AppPaths"/> — <see cref="Sessions.SharedServices.GlobalInstructionsDir"/> is
     /// already this same directory passed the same way.</param>
-    public ChildProcessStore(string configDir)
+    public ChildProcessStore(string configDir) : this(configDir, ProcessIdentity.Current) { }
+
+    /// <param name="configDir">Where <c>plugin-children.json</c> lives.</param>
+    /// <param name="owner">Who this store records children FOR — the running process, except in a
+    /// test standing in for another window or for a run that has since crashed.</param>
+    internal ChildProcessStore(string configDir, ProcessIdentity owner)
     {
         _path = Path.Combine(configDir, "plugin-children.json");
+        _owner = owner;
     }
+
+    private readonly ProcessIdentity _owner;
 
     /// <summary>Where this store persists, for tests that want to inspect the file directly.</summary>
     public string FilePath => _path;
@@ -134,6 +167,11 @@ public sealed class ChildProcessStore
     /// see that method's own doc for why the obligation is Core's.</summary>
     public void Add(ChildProcessRecord record)
     {
+        // STAMPED HERE, not by each caller: every path that records a child comes through this
+        // method, and one that forgot the owner would write a record the next window kills.
+        if (record.OwnerPid is null)
+            record = record with { OwnerPid = _owner.Pid, OwnerStartTimeUtc = _owner.StartTimeUtc };
+
         lock (_lock)
         {
             var records = Load(_path);
@@ -157,7 +195,13 @@ public sealed class ChildProcessStore
     }
 
     /// <summary>
-    /// Kills every recorded process that is STILL the one that was recorded, and clears the file.
+    /// Kills every recorded process whose owner is gone and that is STILL the one that was recorded,
+    /// and drops those records.
+    ///
+    /// <para>A RECORD WHOSE OWNER IS RUNNING IS LEFT ALONE, process and record both — see
+    /// <see cref="ChildProcessRecord.OwnerPid"/>. Startup is when a second window or a headless run
+    /// begins, and its neighbours' language servers and background commands are in use, not
+    /// orphaned. The owner is matched the way the child is, on pid and start time.</para>
     ///
     /// <para>RUNS AT STARTUP, WHERE <c>SessionManager.Create</c> AND <c>SessionManager.Over</c> ARE
     /// — a pid record written where the next run can find it, and reaped at startup. Not in a UI
@@ -176,14 +220,35 @@ public sealed class ChildProcessStore
     /// killing a process that raced its own exit is not a reason to abandon the rest of the list.</param>
     public void ReapOrphans(Action<string> log)
     {
-        List<ChildProcessRecord> records;
-        lock (_lock) records = Load(_path);
+        List<ChildProcessRecord> orphans;
+        lock (_lock) orphans = Load(_path).Where(r => !OwnerIsRunning(r)).ToList();
 
-        if (records.Count == 0) return;
+        if (orphans.Count == 0) return;
 
-        foreach (var record in records) Kill(record, log);
+        foreach (var record in orphans) Kill(record, log);
 
-        lock (_lock) Save([]);
+        // RE-READ, AND DROP ONLY WHAT WAS REAPED: a neighbour's records stay, including any it added
+        // while the kills above ran.
+        lock (_lock) Save(Load(_path).Where(r => !orphans.Contains(r)).ToList());
+    }
+
+    private static bool OwnerIsRunning(ChildProcessRecord record) =>
+        record is { OwnerPid: { } pid, OwnerStartTimeUtc: { } started } && IsRunning(pid, started);
+
+    /// <summary>Whether <paramref name="pid"/> is still the process that started at
+    /// <paramref name="startedUtc"/> — the same match <see cref="Kill"/> makes before killing.</summary>
+    private static bool IsRunning(int pid, DateTime startedUtc)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return Truncate(process.StartTime.ToUniversalTime()) == Truncate(startedUtc);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+                                      or System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>

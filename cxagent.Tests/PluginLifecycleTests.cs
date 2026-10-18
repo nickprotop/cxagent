@@ -63,11 +63,12 @@ public class PluginLifecycleTests : IDisposable
     {
         using var sleeper = StartSleeper();
 
-        var store = new ChildProcessStore(_dir);
+        var store = new ChildProcessStore(_dir, ChildProcessOwnerTests.Crashed);
         store.Add(new ChildProcessRecord(sleeper.Id, sleeper.StartTime.ToUniversalTime(), "lsp-rust"));
 
         // A SECOND STORE INSTANCE, reading the same file — this is the "next run" in the scenario:
-        // nothing in memory survives a crash, only what was written to disk.
+        // nothing in memory survives a crash, only what was written to disk. The first was the
+        // crashed run's, so its records name an owner that is no longer running.
         var nextRun = new ChildProcessStore(_dir);
         var log = new List<string>();
         nextRun.ReapOrphans(log.Add);
@@ -88,7 +89,7 @@ public class PluginLifecycleTests : IDisposable
         var exited = StartSleeper(seconds: 0.1);
         exited.WaitForExit();
 
-        var store = new ChildProcessStore(_dir);
+        var store = new ChildProcessStore(_dir, ChildProcessOwnerTests.Crashed);
         store.Add(new ChildProcessRecord(exited.Id, exited.StartTime.ToUniversalTime(), "lsp-rust"));
 
         var log = new List<string>();
@@ -107,7 +108,7 @@ public class PluginLifecycleTests : IDisposable
     {
         using var alive = StartSleeper();
 
-        var store = new ChildProcessStore(_dir);
+        var store = new ChildProcessStore(_dir, ChildProcessOwnerTests.Crashed);
         // A start time that is NOT this process's real one — simulating the OS having reused this
         // pid for a different process since the record was written.
         store.Add(new ChildProcessRecord(alive.Id, alive.StartTime.ToUniversalTime().AddHours(-1), "lsp-rust"));
