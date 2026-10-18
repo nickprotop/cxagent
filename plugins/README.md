@@ -100,7 +100,7 @@ only what cxagent itself releases and supports.
 ## Adding one to this catalog
 
 Maintainer work, and its own page: **[releasing a plugin →](RELEASING.md)** — the directory, the
-catalog entry, the release build, the installer, and what deliberately does not happen.
+catalog entry, the release and site builds, and what deliberately does not happen.
 
 *Writing one? That is [`cxagent.Core/Core/Plugins`](../cxagent.Core/docs/plugins.md) — the
 contract, the sidecar format, permission, settings, and two worked examples.*

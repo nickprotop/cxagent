@@ -4,21 +4,14 @@ name: Pages
 # download the current release's asset rather than trusting anything cached -- so a typo fix and a
 # release publish identical catalogs. See the design doc, "Two triggers, one path".
 #
-# CALLED BY THE RELEASE, NOT TRIGGERED BY IT. A `release: published` trigger cannot fire here: the
-# release is created by release.yml using the default GITHUB_TOKEN, and GitHub suppresses the events
-# a workflow raises with that token so a workflow cannot trigger itself in a loop. The suppression
-# is silent -- the release succeeds, no Pages run appears, and the site keeps serving the previous
-# catalog until someone notices. release.yml calls this workflow directly instead.
+# DISPATCHED BY THE RELEASE, NOT TRIGGERED OR CALLED BY IT. A `release: published` trigger cannot
+# fire here: the release is created by release.yml using the default GITHUB_TOKEN, and GitHub
+# suppresses the events a workflow raises with that token so a workflow cannot trigger itself in a
+# loop — silently: the release succeeds, no Pages run appears, and the site keeps serving the
+# previous catalog. Nor can release.yml call this as a reusable workflow: a called workflow runs on
+# the caller's ref, the tag, and a tag-ref deployment is never served (see the deploy step below).
+# So release.yml dispatches this workflow on master, naming the tag it just published.
 on:
-  workflow_call:
-    inputs:
-      release_tag:
-        description: >-
-          The release whose assets this catalog describes. Passed by release.yml, which knows the tag
-          it just published — asking for "latest" from inside a release would be asking a question
-          whose answer is still changing.
-        required: false
-        type: string
   push:
     branches: [master]
     paths:
@@ -266,10 +259,9 @@ jobs:
       # github-pages environment policy is not the cause — it allows `v*`, which is why these deploys
       # succeed instead of being refused.
       #
-      # SO A RELEASE CANNOT PUBLISH ITS OWN CATALOG. release.yml calls this workflow, and a called
-      # workflow runs on the CALLER's ref — the tag — so its deploy is one of the silent ones. What
-      # actually publishes is the master-push run, and the `ahead` guard above is what stops that run
-      # doing it too early. A release therefore needs one master-ref Pages run after the tag exists:
-      # any later push to a watched path does it, or dispatch this workflow with --ref master.
+      # SO A RELEASE PUBLISHES ITS CATALOG FROM MASTER. A run on the tag's ref would deploy one of
+      # the silent ones, which is why release.yml dispatches this workflow with --ref master and the
+      # tag as release_tag rather than calling it. A master-push run that lands before the release
+      # exists is held back by the `ahead` guard above.
       - id: deployment
         uses: actions/deploy-pages@v4

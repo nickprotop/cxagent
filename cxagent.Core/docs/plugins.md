@@ -36,10 +36,10 @@ everywhere cxagent does:
 
 ```xml
 <ItemGroup>
-  <!-- EXCLUDEASSETS RUNTIME: the host process already has this assembly loaded and the plugin binds to
-       the host's copy. Ship your own beside the plugin and Assembly.LoadFrom gives it a DIFFERENT
-       type identity — so the host's `is IPlugin` check fails on a class that plainly implements it,
-       and the cast throws at load. In-repo, a ProjectReference with Private="false" does the same. -->
+  <!-- EXCLUDEASSETS RUNTIME: the host process already has this assembly loaded, under the same
+       frozen identity your reference names, and the plugin binds to the host's copy. A copy shipped
+       beside the plugin is never the one used — it only adds a file to the load set the user is asked
+       to approve. In-repo, a ProjectReference with Private="false" does the same. -->
   <PackageReference Include="CxAgent.Plugins.Abstractions" Version="3.0.0" ExcludeAssets="runtime" />
 </ItemGroup>
 
@@ -49,7 +49,7 @@ everywhere cxagent does:
 ```
 
 **The contract, not the runtime.** That package carries `IPlugin`, `IPluginContext`,
-`PluginManifest`, `IAgentTool` and the job types a tool exchanges — and nothing else, so your project
+`PluginManifest` and the job types a tool exchanges — and nothing else, so your project
 does not compile against an agent runtime, its database and its HTTP stack to implement seven
 interfaces. Referencing `CxAgent.Core` also works and always did; it just brings all of that with it.
 

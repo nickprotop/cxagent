@@ -114,8 +114,8 @@ jobs:
       # Putting it in the RID matrix would upload six identical copies under six names.
       #
       # NOT PART OF THE BINARY. A plugin the user has not asked for should not arrive inside the
-      # thing they installed; this ships beside it, and install.sh places it where discovery looks.
-      # cxagent then announces it as present-but-unconfigured rather than loading it.
+      # thing they installed; this ships beside it as a release asset, and the plugin manager (F2,
+      # /plugin get) installs it from the catalog when the user asks for it.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -391,20 +391,13 @@ jobs:
 
             ## Plugins
 
-            `csharp-lsp.zip` — C# go-to-definition, find-references and diagnostics, from a
-            language server. The install script places it for you; it is **not enabled** until you
-            say so, and cxagent tells you it is there. Needs a C# language server:
-            `dotnet tool install -g csharp-ls`.
-
-            `calculator.zip` — exact arithmetic as one tool: a whole expression in, the exact
-            result out. Needs nothing, and is likewise **not enabled** until you say so.
+            The plugin zips in this release are installed from inside cxagent: `F2` (or
+            `/plugin browse`) lists the catalog and installs one, and `/plugin get <name>` does the
+            same from the composer. Each is checked against the catalog's hash before it is
+            unpacked, and none is enabled until you say so.
 
             To install one by hand, unzip it into its own folder under
-            `~/.config/cxagent/plugins/` — csharp-lsp ships three files, the calculator four.
-
-            **An installed csharp-lsp asks its load prompt once more after this update**: its
-            README now travels in the zip, so it joins the plugin's load set and the hash the
-            prompt shows covers it. That is the gate noticing a real change, not a fault.
+            `~/.config/cxagent/plugins/`.
 
             **Native (`.so`/`.dylib`) plugins** need `cxagent-plugin-host-<platform>.zip` —
             `install.sh`/`install.ps1` fetch and place it for you, beside the `cxagent` binary. It is

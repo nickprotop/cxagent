@@ -27,20 +27,23 @@ value as well as its name, so the marketplace can say which tools ask before act
 
 `source` says where the plugin comes from, how to download it, and how to check what arrived.
 
-A plugin released here uses `kind: "release"`. It has no fixed URL on purpose — it tracks whichever
-cxagent release is being installed — so it carries `urlTemplate` (fill in `{repo}`, `{asset}` and the
-tag) plus `latest`, GitHub's always-current alias for a client with no tag in hand. Integrity comes
-from the release's own `SHA256SUMS`.
+A plugin released here uses `kind: "release"` and carries `latest`, GitHub's always-current alias,
+which resolves to the newest release carrying the asset. Commit its `sha256` as `null`: the site
+build stamps the hash of the zip the release actually carries into the published catalog, and
+refuses to publish without it. The installer checks every download against that hash.
 
-One hosted elsewhere uses `kind: "url"`: a URL fetched as written, and its own `sha256`, because
-nothing in this project can vouch for a file it does not build.
+One hosted elsewhere uses `kind: "url"`: a URL fetched as written, and its own committed `sha256`,
+because nothing in this project can vouch for a file it does not build. The site build never
+overwrites it.
 
 **A native plugin is per-platform, and the catalog has to say which.** A managed plugin is portable
 MSIL — one build runs everywhere cxagent does, so it says `platforms: ["any"]` and has one `source`.
 An ABI plugin is a native library: a `.so` does not load on Windows, and a publisher may ship
 `linux-x64` and nothing else. Those entries name the RIDs they actually have and key their downloads
-by the same names under `sources`, so a picker can say "not available for your platform" instead of
-downloading a library that cannot load. The second worked entry below shows the shape. Its `publisher`, `license` and
+by the same names under `sources`, each with its own `sha256` and, where the name differs per
+platform, its own `file`. The installer takes this machine's build, and says "not available for
+this machine" when there is none rather than downloading a library that cannot load. The second
+worked entry below shows the shape. Its `publisher`, `license` and
 `repository` stop being a formality too — nobody needs telling who wrote a plugin that ships in the
 same zip as cxagent, and everybody needs telling for one that does not.
 
@@ -138,6 +141,11 @@ assembly is loaded, so a zip missing it produces a plugin that cannot load and c
 The README is optional at the source but ships whenever present, so the plugin manager can render a
 plugin's own documentation from disk.
 
+**And the site build**, in `.github/workflows/pages.yml`, names each first-party plugin twice: once
+to download its zip from the release, once to stamp its hash into the published catalog. Skip it and
+the catalog build stops with "would publish with a null sha256" — loud, but a plugin added to
+`release.yml` alone does not reach the catalog.
+
 **4. Nothing in the installer.** `install.sh` installs cxagent and no plugin at all. A plugin
 reaches a machine through the manager, which reads the catalog, verifies the checksum and unpacks —
 so a catalog entry is the whole of "shipping" it, and one route means one set of behaviours to get
@@ -147,6 +155,6 @@ right rather than two that can disagree.
 plugin would be enabling code the user was never asked about; cxagent reports it as
 present-but-unconfigured and they decide.
 
-> The plugin's name appears in the workflow and the installer by hand, in about six places. That is
+> The plugin's name appears in `release.yml` and `pages.yml` by hand, in about six places. That is
 > fine for a catalog this size and is the first thing worth generating from `plugins.json` if it
 > grows.

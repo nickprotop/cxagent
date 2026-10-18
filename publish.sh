@@ -84,10 +84,14 @@ done)
 declare -A PLUGIN_VERSION
 CHANGED_PLUGINS=""
 
+# CHANGED MEANS WHAT release.yml REBUILDS FOR: the plugin's own folder OR the contract assembly it
+# binds to (its PLUGIN_INPUTS). Checking the folder alone let a contract change ship every plugin
+# rebuilt under its old version — one version naming two different zips, which the catalog then
+# offered as an update that reinstalled the same number.
 for P in $PLUGINS; do
     PLUGIN_VERSION[$P]=$(python3 -c "import json;print(json.load(open('plugins/$P/$P.plugin.json'))['version'])")
     if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "v0.0.0" ] \
-       || ! git diff --quiet "$LATEST_TAG" HEAD -- "plugins/$P"; then
+       || ! git diff --quiet "$LATEST_TAG" HEAD -- "plugins/$P" cxagent.Plugins.Abstractions/; then
         CHANGED_PLUGINS="$CHANGED_PLUGINS $P"
     fi
 done
