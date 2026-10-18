@@ -582,8 +582,12 @@ public sealed class SessionPanel
     /// <summary>The branch and the working tree's state, from git in the current directory; null outside a repo.</summary>
     private static GitInfo? ReadGit() => GitBranch() is { Length: > 0 } branch ? new GitInfo(branch, GitStatus()) : null;
 
-    /// <summary>Test seam: the working-tree summary for a folder.</summary>
-    public static string? GitStatusForTest(string dir) => GitStatus(dir);
+    /// <summary>Test seam: the working-tree summary for a folder, with git given <paramref name="limit"/>
+    /// to answer. A TEST CHOOSES ITS OWN LIMIT: the panel's half second is a judgement about a panel, and
+    /// a slow CI runner's first status over thousands of new files can take longer than that while the
+    /// thing under test — the output read before the wait — is fine.</summary>
+    public static string? GitStatusForTest(string dir, TimeSpan limit, string program = "git") =>
+        GitStatus(dir, limit, program);
     private DateTimeOffset _gitTakenAt = DateTimeOffset.MinValue;
 
     /// <summary>
@@ -631,6 +635,11 @@ public sealed class SessionPanel
     /// <summary>
     /// The working tree's shape — "3 modified · 1 untracked" — or null when it is clean.
     ///
+    /// <para>NULL MEANS CLEAN AND NOTHING ELSE. Git that did not answer within the limit says "too
+    /// slow to count", and git that failed inside a repository says "status unknown": both used to
+    /// come back null and be drawn as a clean tree, on exactly the large or slow repositories where
+    /// uncommitted work is easiest to lose track of.</para>
+    ///
     /// <para>COUNTS, NOT NAMES. A panel this narrow cannot list files, and the question it answers is
     /// "do I have uncommitted work?", which a count answers and a truncated filename does not.</para>
     ///
@@ -638,11 +647,11 @@ public sealed class SessionPanel
     /// is explicitly not. Same bounded, never-throwing shape as <see cref="GitBranch"/>: git may be
     /// absent, the tree may be huge, and neither is worth a frozen panel.</para>
     /// </summary>
-    private static string? GitStatus(string? dir = null)
+    private static string? GitStatus(string? dir = null, TimeSpan? limit = null, string program = "git")
     {
         try
         {
-            using var p = Process.Start(new ProcessStartInfo("git", "status --porcelain")
+            using var p = Process.Start(new ProcessStartInfo(program, "status --porcelain")
             {
                 WorkingDirectory = dir ?? "",
                 RedirectStandardOutput = true,
@@ -654,8 +663,8 @@ public sealed class SessionPanel
             // READ BEFORE WAITING. Past a pipe's worth of status — about 1,500 files — git blocks until someone
             // drains it, so waiting first timed out and the tree showed clean.
             var output = p.StandardOutput.ReadToEndAsync();
-            if (!p.WaitForExit(500)) { try { p.Kill(true); } catch (Exception) { } return null; }
-            if (p.ExitCode != 0) return null;
+            if (!p.WaitForExit(limit ?? TimeSpan.FromMilliseconds(500))) { try { p.Kill(true); } catch (Exception) { } return "too slow to count"; }
+            if (p.ExitCode != 0) return "status unknown";
 
             int changed = 0, untracked = 0;
             foreach (var line in output.GetAwaiter().GetResult().Split('\n'))

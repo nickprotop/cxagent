@@ -670,6 +670,33 @@ public class SessionPanelTests
     }
 
     /// <summary>
+    /// A STATUS GIT DID NOT FINISH IS NOT "CLEAN". Too slow, the reading used to come back empty and
+    /// the panel drew it as a clean tree — on exactly the large or slow repositories where uncommitted
+    /// work is easiest to lose track of.
+    /// </summary>
+    [Fact]
+    public void AStatusGitDidNotFinishInTime_SaysSo_RatherThanClean()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "git-slow-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            using (var init = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("git", "init -q")
+                   { WorkingDirectory = dir, UseShellExecute = false }))
+                init!.WaitForExit();
+            // A "git" THAT NEVER ANSWERS IN TIME, so the timeout is certain rather than a race against
+            // how fast real git is on this machine.
+            var slowGit = Path.Combine(dir, "slow-git.sh");
+            File.WriteAllText(slowGit, "#!/bin/sh\nsleep 5\n");
+            File.SetUnixFileMode(slowGit, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+            Assert.Equal("too slow to count",
+                SessionPanel.GitStatusForTest(dir, TimeSpan.FromMilliseconds(200), program: slowGit));
+        }
+        finally { try { Directory.Delete(dir, recursive: true); } catch (Exception) { } }
+    }
+
+    /// <summary>
     /// A WORKING TREE WITH MORE THAN A PIPE'S WORTH OF STATUS IS STILL COUNTED. Waiting for git to exit before reading
     /// its output left git blocked on a full pipe: past about 1,500 files the read timed out and the tree showed clean.
     /// </summary>
@@ -685,7 +712,7 @@ public class SessionPanelTests
                 init!.WaitForExit();
             for (var i = 0; i < 2000; i++) File.WriteAllText(Path.Combine(dir, $"file-with-a-longish-name-{i:0000}.txt"), "x");
 
-            Assert.Equal("2000 untracked", SessionPanel.GitStatusForTest(dir));
+            Assert.Equal("2000 untracked", SessionPanel.GitStatusForTest(dir, TimeSpan.FromSeconds(30)));
         }
         finally { try { Directory.Delete(dir, recursive: true); } catch (Exception) { } }
     }
