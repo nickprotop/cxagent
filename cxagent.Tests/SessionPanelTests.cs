@@ -677,6 +677,9 @@ public class SessionPanelTests
     [Fact]
     public void AStatusGitDidNotFinishInTime_SaysSo_RatherThanClean()
     {
+        // A SHELL SCRIPT STANDS IN FOR GIT, which needs a Unix shell and an execute bit.
+        if (OperatingSystem.IsWindows()) return;
+
         var dir = Path.Combine(Path.GetTempPath(), "git-slow-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
