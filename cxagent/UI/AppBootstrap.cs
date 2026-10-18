@@ -134,7 +134,19 @@ public static class AppBootstrap
         // specific instruction: someone who typed a path on the command line means that path.
         // Null falls through to AppPaths' own resolution, so the default is untouched.
         var paths = new AppPaths(options.ConfigDir);
-        paths.EnsureCreated();
+
+        // A FOLDER THAT CANNOT BE MADE IS THE USER'S PATH, NOT A CRASH: a file where the folder should
+        // be, a parent that is not writable. Said in one line naming it, with a failing exit code, the
+        // way an unknown provider is — before anything has taken over the terminal.
+        try
+        {
+            paths.EnsureCreated();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"cxagent: cannot use '{paths.ConfigDir}' as the config folder: {ex.Message}");
+            return 1;
+        }
 
         // A HEADLESS RUN NEVER BUILDS A WINDOW. It branches here, after the questions that need no
         // config (--help, --version) and before anything takes over the terminal.
