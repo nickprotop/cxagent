@@ -30,18 +30,7 @@ public class PluginCommandRegistrationTests : IDisposable
     /// teardown — "Directory not empty", for a defect that does not exist. Retried, then ignored, as
     /// AgentDeliveryTests.Dispose does: this is a temp folder the OS reaps anyway.</para>
     /// </summary>
-    public void Dispose()
-    {
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            try
-            {
-                if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
-                return;
-            }
-            catch (IOException) { Thread.Sleep(50); }
-        }
-    }
+    public void Dispose() => TempDirectory.Delete(_dir);
 
     private static JsonElement EmptySchema() => JsonSerializer.SerializeToElement(new { type = "object" });
 

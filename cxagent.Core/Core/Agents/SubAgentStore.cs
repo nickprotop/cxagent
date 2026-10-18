@@ -492,23 +492,40 @@ public sealed class SubAgentStore
     /// </param>
     public void EndSend(string name, string? outcome = null)
     {
-        // ONLY WHEN A CLAIM WAS ACTUALLY RELEASED. EndSend runs in two finallys (the spawner's and
-        // agent_send's), so an unconditional announcement would say "stopped" twice for one stop.
-        if (!_busy.TryRemove(name, out _)) return;
+        // ONLY WHILE A CLAIM IS HELD, AND ONCE PER CLAIM. EndSend runs in two finallys (the spawner's
+        // and agent_send's), so an unconditional announcement would say "stopped" twice for one stop;
+        // the latch keeps two ends of one claim from both getting past here.
+        if (!_busy.ContainsKey(name) || !_ending.TryAdd(name, 0)) return;
 
-        // THE RECORD TAKES A NOTED WORD WHEN THE RELEASE NAMES NONE. A foreground resume announces no outcome —
-        // listeners settle and archive it as they always have — but its row still has to say how it ended.
-        var recorded = outcome ?? (_noted.TryRemove(name, out var noted) ? noted : null);
-        _noted.TryRemove(name, out _);
-        var began = _since.TryRemove(name, out var since) ? since : _clock.GetUtcNow();
-        _ends[name] = new AgentEnd(recorded, began, _clock.GetUtcNow());
+        try
+        {
+            // THE RECORD TAKES A NOTED WORD WHEN THE RELEASE NAMES NONE. A foreground resume announces no outcome —
+            // listeners settle and archive it as they always have — but its row still has to say how it ended.
+            var recorded = outcome ?? (_noted.TryRemove(name, out var noted) ? noted : null);
+            _noted.TryRemove(name, out _);
+            var began = _since.TryRemove(name, out var since) ? since : _clock.GetUtcNow();
+            _ends[name] = new AgentEnd(recorded, began, _clock.GetUtcNow());
 
-        // ANNOUNCED, BECAUSE NOTHING ELSE MARKS THE END OF A SEND. agent_send never becomes a job,
-        // so no tool report fires when it returns; and a child raises nothing when it goes idle,
-        // because a turn ending and a goal ending look identical from outside. A front end that
-        // started showing the child working has no other moment to stop.
-        if (Find(name) is { } ended) SendEnded?.Invoke(ended.Agent.Agent.Id, outcome);
+            // ANNOUNCED, BECAUSE NOTHING ELSE MARKS THE END OF A SEND. agent_send never becomes a job,
+            // so no tool report fires when it returns; and a child raises nothing when it goes idle,
+            // because a turn ending and a goal ending look identical from outside. A front end that
+            // started showing the child working has no other moment to stop.
+            //
+            // ANNOUNCED BEFORE THE CLAIM IS RELEASED, NOT AFTER. A forget waiting for this agent
+            // claims it the moment the claim is free and removes it; announcing after the release
+            // found it already gone, so the end was never said — the stretch went unarchived and
+            // its row never settled. Held, the forget is refused as Working until the end is said.
+            if (Find(name) is { } ended) SendEnded?.Invoke(ended.Agent.Agent.Id, outcome);
+        }
+        finally
+        {
+            _busy.TryRemove(name, out _);
+            _ending.TryRemove(name, out _);
+        }
     }
+
+    /// <summary>The claims an <see cref="EndSend"/> is announcing the end of — see its latch.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _ending = new();
 
     /// <summary>
     /// The latest background run per handle.

@@ -778,8 +778,11 @@ public class AgentChallengeTests
             await agent.SendAsync("say goodbye", CancellationToken.None);
 
             var agentDir = Path.GetDirectoryName(logs.PathFor(agent.Id, "x", "log"))!;
-            // Fire-and-forget writes: poll for the second prompt's context log rather than racing it.
-            for (var i = 0; i < 50 && Directory.GetFiles(agentDir, "context-*.log").Length < 2; i++)
+            // FIRE-AND-FORGET WRITES: poll for the second prompt's context log rather than racing it —
+            // and for its HEADER, not merely the file. The file is created before its text lands, so
+            // waiting only for it to exist read it empty on a slow machine.
+            var secondLog = Path.Combine(agentDir, "context-001.log");
+            for (var i = 0; i < 250 && !(File.Exists(secondLog) && File.ReadAllText(secondLog).Contains("=== turn 001", StringComparison.Ordinal)); i++)
                 await Task.Delay(20);
 
             // ONE directory for the whole session — not one per prompt.

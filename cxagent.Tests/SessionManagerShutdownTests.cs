@@ -117,7 +117,10 @@ public class SessionManagerShutdownTests : IDisposable
         session.Submit("think forever");
         Assert.True(session.IsBusy);
 
-        manager.Shutdown(TimeSpan.FromMilliseconds(500));
+        // TEN SECONDS, WHICH COSTS NOTHING: Shutdown returns as soon as the teardowns finish, and this
+        // plugin stops at once. Half a second failed under a loaded suite, where the detached teardown
+        // had not been scheduled yet — the window measured the thread pool, not the behaviour.
+        manager.Shutdown(TimeSpan.FromSeconds(10));
 
         Assert.True(plugin.StopCalled, "a busy session's plugin was never stopped at quit");
     }

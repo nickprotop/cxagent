@@ -213,6 +213,45 @@ public sealed class AgentForgetTests : IDisposable
     /// forgotten, the send is answered "dismissed"; resumed, the forget is refused as working. In sequence, the send's
     /// stretch ends before the forget.
     /// </summary>
+    /// <summary>A clock that runs something the next time it is read — a seam for putting another
+    /// thread's work at an exact point inside the store.</summary>
+    private sealed class InterruptingClock : TimeProvider
+    {
+        public Action? OnNextRead { get; set; }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            var interrupt = OnNextRead;
+            OnNextRead = null;
+            interrupt?.Invoke();
+            return base.GetUtcNow();
+        }
+    }
+
+    /// <summary>
+    /// A SEND'S END IS ANNOUNCED EVEN WHEN A FORGET IS WAITING FOR IT. The forget claims the agent the
+    /// moment its claim is free; announced after that release, the end found the agent already gone
+    /// and was never said — so the stretch was never archived and its row never settled. The forget
+    /// here runs at the release itself, deterministically, where the race above has to be lucky.
+    /// </summary>
+    [Fact]
+    public void ASendsEnd_IsAnnounced_BeforeAWaitingForgetCanClaimTheAgent()
+    {
+        var clock = new InterruptingClock();
+        var store = new SubAgentStore(DetachedProcessRegistry.Default, FinishedShells.Default, clock);
+        store.Keep(Child("ok"), "finder");
+        var order = new List<string>();
+        store.SendEnded += (_, _) => order.Add("send ended");
+        store.Forgotten += _ => order.Add("forgotten");
+
+        store.TryClaim("finder");
+        store.AnnounceBegin("finder");
+        clock.OnNextRead = () => store.Forget("finder");
+        store.EndSend("finder");
+
+        Assert.Equal("send ended", order.FirstOrDefault());
+    }
+
     [Fact]
     public async Task AForget_AndASend_NeverBothWin()
     {

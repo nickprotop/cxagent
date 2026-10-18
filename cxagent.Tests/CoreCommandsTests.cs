@@ -21,7 +21,8 @@ public class CoreCommandsTests : IDisposable
         Path.Combine(Path.GetTempPath(), "corecmd-" + Guid.NewGuid().ToString("N"));
 
     public CoreCommandsTests() => Directory.CreateDirectory(_dir);
-    public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
+    // THE COMMANDS START SESSION WORK THAT WRITES AFTER THE TEST ENDS — see TempDirectory.Delete.
+    public void Dispose() => TempDirectory.Delete(_dir);
 
     private (SessionManager Manager, Session Session, BufferedChatSink Said) Wired()
     {

@@ -160,10 +160,12 @@ public class PluginLifecycleTests : IDisposable
         var plugin = new HangingPlugin();
         registry.Load(plugin, Manifest("lsp-hangs", "lsp_rename"), isNameTaken: _ => false);
 
-        // WaitAsync THROWS TimeoutException if unwire itself does not finish promptly — the outer
-        // bound exists only to fail this test fast if the abandon logic regresses into a real wait.
+        // WaitAsync THROWS TimeoutException if unwire itself does not finish — the outer bound exists
+        // only to fail this test if the abandon logic regresses into a real wait, which waits forever.
+        // THIRTY SECONDS, NOT FIVE: a full suite under load starves the thread pool, and five seconds
+        // failed a release on a run that was merely slow while the abandon worked.
         var unwired = await registry.UnwireAsync("lsp-hangs", CancellationToken.None)
-            .WaitAsync(stopTimeout + TimeSpan.FromSeconds(5));
+            .WaitAsync(stopTimeout + TimeSpan.FromSeconds(30));
 
         // UNWIRE STILL COMPLETES — the whole point: a hung Stop is abandoned, not waited out.
         Assert.True(unwired);

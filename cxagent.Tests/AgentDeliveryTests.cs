@@ -31,32 +31,12 @@ public class AgentDeliveryTests : IDisposable
 
     public AgentDeliveryTests() => Directory.CreateDirectory(_dir);
 
-    /// <summary>
-    /// Removes the temp root, tolerating a write that is still landing in it.
-    ///
-    /// <para>A WAKE STARTS A TURN NOBODY WAITS FOR, which is the behaviour under test: delivery to an
-    /// idle session agent submits without awaiting, so that turn is still writing its log when
-    /// teardown arrives and a write landing between the recursive delete's scan and its rmdir makes
-    /// the directory non-empty again.</para>
-    ///
-    /// <para>RETRIED, THEN IGNORED, because this is cleanup of a temp folder the OS will reap anyway.
-    /// A test that FAILS on its own teardown reports a defect that does not exist.</para>
-    /// </summary>
+    /// <summary>A WAKE STARTS A TURN NOBODY WAITS FOR, which is the behaviour under test, so that turn
+    /// is still writing its log at teardown — see <see cref="TempDirectory.Delete"/>.</summary>
     public void Dispose()
     {
         _manager?.Dispose();
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            try
-            {
-                if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
-                return;
-            }
-            catch (IOException)
-            {
-                Thread.Sleep(50);
-            }
-        }
+        TempDirectory.Delete(_dir);
     }
 
     /// <summary>

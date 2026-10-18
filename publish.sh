@@ -129,9 +129,15 @@ fi
 # allows unlisting and never reuse. Failing here costs a minute; failing there costs the number.
 echo ""
 echo "Running tests..."
-if ! dotnet test --configuration Release --verbosity quiet > /tmp/cxagent-release-test.log 2>&1; then
-    echo "Error: tests failed. Not tagging."
-    tail -20 /tmp/cxagent-release-test.log
+#
+# WHY A TEST FAILED IS KEPT, AND SHOWN. Quiet verbosity drops xunit's "Error Message" and stack for
+# a failure, and the last twenty lines of the log are the summary, not the failure — so a flaky
+# test that stopped a release left nothing to diagnose, and the rerun that passed erased it. Each
+# failed test is printed with its message, and the whole log stays at the path below.
+if ! dotnet test --configuration Release > /tmp/cxagent-release-test.log 2>&1; then
+    echo "Error: tests failed. Not tagging. Full log: /tmp/cxagent-release-test.log"
+    grep -E -A12 "^  Failed " /tmp/cxagent-release-test.log | head -80
+    grep -E "Passed!|Failed!" /tmp/cxagent-release-test.log
     exit 1
 fi
 grep -E "Passed!|Failed!" /tmp/cxagent-release-test.log || true
