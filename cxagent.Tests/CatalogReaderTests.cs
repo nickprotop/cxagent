@@ -182,7 +182,66 @@ public class CatalogReaderTests : IDisposable
         var reader = new CatalogReader(new HttpClient(new Canned(HttpStatusCode.OK, abi)), CachePath);
         var entry = Assert.Single((await reader.ReadAsync(CancellationToken.None)).Plugins);
 
-        Assert.Equal("https://example/p-linux.zip", entry.Sources["linux-x64"]);
+        Assert.Equal(new CatalogDownload("https://example/p-linux.zip", new string('a', 64)), entry.Sources["linux-x64"]);
+    }
+
+    /// <summary>
+    /// A `url` SOURCE IS A DOWNLOAD TOO — the shape RELEASING.md gives a plugin hosted outside this
+    /// project. It names its file with `url` rather than `latest`, and reading only `latest` left it
+    /// with no download at all, so it could be listed and never installed.
+    /// </summary>
+    [Fact]
+    public async Task AUrlSource_IsReadAsTheDownload()
+    {
+        var hosted = Published.Replace(
+            "\"source\": { \"kind\": \"release\", \"sha256\": \"abc123\", \"latest\": \"https://example/csharp-lsp.zip\" }",
+            "\"source\": { \"kind\": \"url\", \"url\": \"https://elsewhere.example/p.zip\", \"sha256\": \"def456\" }");
+        Assert.NotEqual(Published, hosted);
+
+        var reader = new CatalogReader(new HttpClient(new Canned(HttpStatusCode.OK, hosted)), CachePath);
+        var entry = Assert.Single((await reader.ReadAsync(CancellationToken.None)).Plugins);
+
+        Assert.Equal("https://elsewhere.example/p.zip", entry.DownloadUrl);
+        Assert.Equal("def456", entry.Sha256);
+    }
+
+    /// <summary>AND PER PLATFORM: each build names its own file and carries its own hash, which is
+    /// what the installer checks that build against.</summary>
+    [Fact]
+    public async Task PerPlatformUrlSources_CarryTheirOwnHash()
+    {
+        var abi = Published.Replace(
+            "\"source\": {",
+            "\"sources\": { \"linux-x64\": { \"kind\": \"url\", \"url\": \"https://elsewhere.example/p-linux.zip\", "
+          + "\"sha256\": \"" + new string('b', 64) + "\" } }, \"unusedSource\": {");
+
+        var reader = new CatalogReader(new HttpClient(new Canned(HttpStatusCode.OK, abi)), CachePath);
+        var entry = Assert.Single((await reader.ReadAsync(CancellationToken.None)).Plugins);
+
+        Assert.Equal(new CatalogDownload("https://elsewhere.example/p-linux.zip", new string('b', 64)), entry.Sources["linux-x64"]);
+    }
+
+    /// <summary>
+    /// A NATIVE ENTRY NAMES ITS FILE PER PLATFORM — a .so on Linux, a .dylib on macOS — as the
+    /// RELEASING.md example does, with no top-level "file". The entry's file is then this machine's,
+    /// so installing, configuring and loading it all name the library that actually arrived.
+    /// </summary>
+    [Fact]
+    public async Task ANativeEntrysFile_IsThisMachinesOwn()
+    {
+        var here = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+        var abi = Published
+            .Replace("\"file\": \"csharp-lsp.dll\",", "")
+            .Replace("\"source\": {",
+                "\"sources\": { \"" + here + "\": { \"kind\": \"url\", \"url\": \"https://e/p.zip\", \"sha256\": \""
+              + new string('b', 64) + "\", \"file\": \"libhere.so\" }, \"plan9-x64\": { \"kind\": \"url\", "
+              + "\"url\": \"https://e/q.zip\", \"sha256\": \"" + new string('c', 64) + "\", \"file\": \"libthere.so\" } }, \"unusedSource\": {");
+        Assert.DoesNotContain("csharp-lsp.dll", abi);
+
+        var reader = new CatalogReader(new HttpClient(new Canned(HttpStatusCode.OK, abi)), CachePath);
+        var entry = Assert.Single((await reader.ReadAsync(CancellationToken.None)).Plugins);
+
+        Assert.Equal("libhere.so", entry.File);
     }
 
     /// <summary>A single-source entry has no per-RID map, and that is not an error — most plugins are

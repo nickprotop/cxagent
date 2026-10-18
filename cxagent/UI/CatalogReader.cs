@@ -122,13 +122,17 @@ public sealed class CatalogReader
                         if (field.Value.ValueKind == JsonValueKind.String)
                             settings[field.Name] = field.Value.GetString() ?? "";
 
-                var sources = new Dictionary<string, string>(StringComparer.Ordinal);
+                // EACH PLATFORM'S BUILD WITH ITS OWN HASH — a different file per platform — and read
+                // from whichever field names it: see DownloadOf.
+                var sources = new Dictionary<string, CatalogDownload>(StringComparer.Ordinal);
+                string? thisMachinesFile = null;
                 if (p.TryGetProperty("sources", out var many) && many.ValueKind == JsonValueKind.Object)
                     foreach (var rid in many.EnumerateObject())
-                        if (rid.Value.ValueKind == JsonValueKind.Object
-                            && rid.Value.TryGetProperty("latest", out var url)
-                            && url.ValueKind == JsonValueKind.String)
-                            sources[rid.Name] = url.GetString() ?? "";
+                        if (rid.Value.ValueKind == JsonValueKind.Object && DownloadOf(rid.Value) is { } url)
+                        {
+                            sources[rid.Name] = new CatalogDownload(url, Str(rid.Value, "sha256"));
+                            if (rid.Name == ThisMachine) thisMachinesFile = Str(rid.Value, "file");
+                        }
 
                 var requiresDefault = p.TryGetProperty("requires", out var req)
                                       && req.ValueKind == JsonValueKind.Object
@@ -144,13 +148,16 @@ public sealed class CatalogReader
                     Str(p, "license") ?? "",
                     Str(p, "repository") ?? "",
                     Str(p, "category") ?? "",
-                    Str(p, "file") ?? "",
+                    // A NATIVE ENTRY MAY NAME ITS FILE PER PLATFORM — a .so here, a .dylib there — with
+                    // none at the top. This machine's is then the entry's file, so installing,
+                    // configuring and loading it name the library that actually arrives.
+                    Str(p, "file") ?? thisMachinesFile ?? "",
                     Str(p, "kind") ?? "",
                     compat.ValueKind == JsonValueKind.Object
                         && compat.TryGetProperty("pluginContract", out var pc)
                         && pc.TryGetInt32(out var pcv) ? pcv : 0,
                     tools,
-                    Str(source, "latest"),
+                    DownloadOf(source),
                     Str(source, "sha256"),
                     Str(requires, "description"),
                     Str(requires, "install"))
@@ -165,6 +172,17 @@ public sealed class CatalogReader
         }
         catch (JsonException) { return null; }
     }
+
+    /// <summary>The machine this catalog is being read on, which is the one it installs to.</summary>
+    private static string ThisMachine => System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+
+    /// <summary>
+    /// Where a source's file is: <c>latest</c> for a first-party <c>release</c> source, <c>url</c> for
+    /// one hosted elsewhere — the two shapes RELEASING.md documents. Reading only <c>latest</c> left a
+    /// hosted plugin listed with no download, so it could never be installed.
+    /// </summary>
+    private static string? DownloadOf(JsonElement source) =>
+        source.ValueKind == JsonValueKind.Object ? Str(source, "latest") ?? Str(source, "url") : null;
 
     private static string? Str(JsonElement element, string name) =>
         element.ValueKind == JsonValueKind.Object

@@ -1556,7 +1556,8 @@ public static class PluginManagerDialog
         // put to the user.
         var outcome = await gate.RequestAsync(
             new PermissionRequest(PermissionKind.Http,
-                $"download '{entry.Name}' {entry.Version} from {entry.DownloadUrl}",
+                $"download '{entry.Name}' {entry.Version} from "
+                + $"{entry.DownloadFor(System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier)?.Url}",
                 AlwaysRule: null)
             { Policy = _session.Policy },
             CancellationToken.None);

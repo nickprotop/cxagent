@@ -36,13 +36,17 @@ public sealed class PluginInstaller(HttpClient? client = null)
     public async Task<InstallResult> InstallAsync(
         CatalogEntry entry, string pluginsFolder, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(entry.DownloadUrl))
-            return new InstallResult.Refused($"'{entry.Name}' has no download in the catalog.");
+        // THIS MACHINE'S FILE: the single download, or for a native plugin the build for this platform
+        // — each checked against its own hash below.
+        if (entry.DownloadFor(System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier) is not { } download)
+            return new InstallResult.Refused(entry.Sources.Count > 0
+                ? $"'{entry.Name}' is not available for this machine."
+                : $"'{entry.Name}' has no download in the catalog.");
 
         // NO HASH, NO INSTALL. The catalog carries one for everything the release pipeline builds,
         // so its absence means either a hand-written entry or a stale catalog — and installing on
         // trust is the one thing the published hash exists to avoid.
-        if (string.IsNullOrWhiteSpace(entry.Sha256))
+        if (string.IsNullOrWhiteSpace(download.Sha256))
             return new InstallResult.Refused(
                 $"the catalog carries no checksum for '{entry.Name}', so what arrives cannot be verified.");
 
@@ -58,7 +62,7 @@ public sealed class PluginInstaller(HttpClient? client = null)
         byte[] payload;
         try
         {
-            payload = await _client.GetByteArrayAsync(entry.DownloadUrl, ct).ConfigureAwait(false);
+            payload = await _client.GetByteArrayAsync(download.Url, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
         {
@@ -66,8 +70,8 @@ public sealed class PluginInstaller(HttpClient? client = null)
         }
 
         var actual = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-        if (!string.Equals(actual, entry.Sha256, StringComparison.OrdinalIgnoreCase))
-            return new InstallResult.HashMismatch(entry.Sha256, actual);
+        if (!string.Equals(actual, download.Sha256, StringComparison.OrdinalIgnoreCase))
+            return new InstallResult.HashMismatch(download.Sha256, actual);
 
         // EXTRACTED TO A TEMPORARY DIRECTORY FIRST, then moved. A half-extracted plugin directory
         // is a load set whose hash means nothing, and an archive that fails partway through would

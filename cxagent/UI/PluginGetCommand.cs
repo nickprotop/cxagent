@@ -111,7 +111,8 @@ public sealed class PluginGetCommand(
         // refused before the user ever sees it.
         var outcome = await gate.RequestAsync(
             new PermissionRequest(PermissionKind.Http,
-                $"download '{entry.Name}' {entry.Version} from {entry.DownloadUrl}",
+                $"download '{entry.Name}' {entry.Version} from "
+                + $"{entry.DownloadFor(System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier)?.Url}",
                 AlwaysRule: null)
             { Policy = session.Policy },
             CancellationToken.None);

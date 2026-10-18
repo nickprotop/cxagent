@@ -48,15 +48,26 @@ public sealed record CatalogEntry(
     public string? RequiresDefault { get; init; }
 
     /// <summary>
-    /// Download URL per runtime identifier, for a plugin shipping one artifact per platform. Empty
-    /// for a managed plugin, which has a single <see cref="DownloadUrl"/> and runs anywhere.
+    /// The download per runtime identifier, for a plugin shipping one artifact per platform — each
+    /// with its own hash, since each build is a different file. Empty for a managed plugin, which has
+    /// a single <see cref="DownloadUrl"/> and runs anywhere.
     ///
     /// <para>AN EMPTY MAP IS NOT "NO DOWNLOAD" — check <see cref="DownloadUrl"/> too. A map that is
     /// populated but lacks the running RID IS "not available for this machine", which a caller must
-    /// say rather than offering an install that cannot work.</para>
+    /// say rather than offering an install that cannot work. <see cref="DownloadFor"/> asks both.</para>
     /// </summary>
-    public IReadOnlyDictionary<string, string> Sources { get; init; } =
-        new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, CatalogDownload> Sources { get; init; } =
+        new Dictionary<string, CatalogDownload>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The file to install on <paramref name="runtimeIdentifier"/>, and the hash it must match: that
+    /// platform's build when the entry ships one per platform, its single download otherwise. Null
+    /// when there is none for this machine.
+    /// </summary>
+    public CatalogDownload? DownloadFor(string runtimeIdentifier) =>
+        Sources.Count > 0
+            ? Sources.GetValueOrDefault(runtimeIdentifier)
+            : string.IsNullOrWhiteSpace(DownloadUrl) ? null : new CatalogDownload(DownloadUrl, Sha256);
 }
 
 /// <summary>
@@ -72,3 +83,8 @@ public sealed record Catalog(
     IReadOnlyList<CatalogEntry> Plugins,
     DateTimeOffset? CachedAt = null,
     string? Error = null);
+
+/// <summary>One file a catalog entry can be installed from, and the hash it must match.</summary>
+/// <param name="Url">Where the zip is.</param>
+/// <param name="Sha256">Its SHA-256, or null when the catalog carries none — which the installer refuses.</param>
+public sealed record CatalogDownload(string Url, string? Sha256);

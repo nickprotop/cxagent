@@ -51,6 +51,57 @@ public class PluginInstallerTests : IDisposable
         "code-intelligence", "demo.dll", "managed", 2, [],
         "https://example/demo.zip", sha, null, null);
 
+    /// <summary>Serves the zip at one URL only, so a test knows which file was fetched.</summary>
+    private sealed class ServesAt(string url, byte[] body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r, CancellationToken ct)
+            => Task.FromResult(r.RequestUri?.ToString() == url
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(body) }
+                : new HttpResponseMessage(HttpStatusCode.NotFound));
+    }
+
+    private static string ThisMachine => System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+
+    /// <summary>
+    /// A NATIVE PLUGIN INSTALLS THIS MACHINE'S BUILD, checked against that build's own hash. Its entry
+    /// has no single download — one per platform instead — and the installer never looked there, so
+    /// no native plugin could be installed from the catalog at all.
+    /// </summary>
+    [Fact]
+    public async Task ANativePlugin_InstallsThisMachinesBuild()
+    {
+        var (zip, sha) = MakeZip();
+        var installer = new PluginInstaller(new HttpClient(new ServesAt("https://example/demo-here.zip", zip)));
+        var entry = Entry("unused") with
+        {
+            DownloadUrl = null,
+            Sha256 = null,
+            Sources = new Dictionary<string, CatalogDownload>
+            {
+                [ThisMachine] = new("https://example/demo-here.zip", sha),
+                ["plan9-x64"] = new("https://example/demo-elsewhere.zip", new string('c', 64)),
+            },
+        };
+
+        var result = await installer.InstallAsync(entry, _dir, CancellationToken.None);
+
+        Assert.IsType<InstallResult.Installed>(result);
+    }
+
+    [Fact]
+    public async Task ANativePlugin_WithNoBuildForThisMachine_IsRefused()
+    {
+        var installer = new PluginInstaller(new HttpClient(new Serves([])));
+        var entry = Entry("unused") with
+        {
+            DownloadUrl = null,
+            Sources = new Dictionary<string, CatalogDownload> { ["plan9-x64"] = new("https://example/p.zip", new string('c', 64)) },
+        };
+
+        var refused = Assert.IsType<InstallResult.Refused>(await installer.InstallAsync(entry, _dir, CancellationToken.None));
+        Assert.Contains("not available for this machine", refused.Reason);
+    }
+
     /// <summary>
     /// A DIRECTORY OF ITS OWN. The load-set design turns on this: a plugin's hash covers its folder,
     /// so sharing one means neither plugin is separately identifiable.

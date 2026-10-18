@@ -160,7 +160,7 @@ public class PluginManagerRowsTests
     {
         var rows = PluginManagerRows.Build(Inputs(
             configured: new Dictionary<string, PluginConfig> { ["p"] = new("p.so") },
-            catalog: [Entry("p", "0.3.0") with { Sources = new Dictionary<string, string> { ["plan9-x64"] = "https://x/p.zip" } }],
+            catalog: [Entry("p", "0.3.0") with { Sources = new Dictionary<string, CatalogDownload> { ["plan9-x64"] = new("https://x/p.zip", new string('a', 64)) } }],
             versions: new Dictionary<string, string> { ["p"] = "0.2.1" }));
 
         var row = Row(rows, "p");
@@ -187,7 +187,7 @@ public class PluginManagerRowsTests
         Assert.Contains("needs a newer cxagent",
             PluginManagerRows.WhyItCannotRunHere(Entry("p", contract: PluginContract.Version + 1)));
         Assert.Equal("not available for this machine", PluginManagerRows.WhyItCannotRunHere(
-            Entry("p") with { Sources = new Dictionary<string, string> { ["plan9-x64"] = "https://x/p.zip" } }));
+            Entry("p") with { Sources = new Dictionary<string, CatalogDownload> { ["plan9-x64"] = new("https://x/p.zip", new string('a', 64)) } }));
     }
 
     /// <summary>A disabled plugin with an update stays disabled in the words, and moves to
