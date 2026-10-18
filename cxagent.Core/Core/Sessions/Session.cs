@@ -1025,9 +1025,9 @@ public sealed partial class Session
                 // WHOSE PLUGIN THIS IS, so unwiring it here reaps only what THIS session spawned.
                 SessionId: Id, Client: client));
 
-        // ROUTED ON THE FILE EXTENSION, THE ONE SHARED DECISION — see PluginResolver.IsNativeLibrary's
-        // own doc for why that check lives there and not duplicated here.
-        if (CxAgent.Core.Plugins.PluginResolver.IsNativeLibrary(assemblyPath))
+        // ROUTED BY THE SIDECAR'S KIND, OR THE FILE EXTENSION — THE ONE SHARED DECISION, see
+        // PluginResolver.IsNative's own doc for why it lives there and is not duplicated here.
+        if (CxAgent.Core.Plugins.PluginResolver.IsNative(assemblyPath))
         {
             var hostDllPath = CxAgent.Core.Plugins.PluginResolver.PluginHostDllPath();
             // ON THE POOL: launching the host, its handshake, and disposing it when that fails — a wait of up to two

@@ -174,16 +174,40 @@ public static class PluginResolver
     /// a second, driftable copy of the check <c>FindLoadSetDirectory</c>'s own doc already warns
     /// about for this file.
     ///
-    /// <para><c>.dll</c> ALWAYS MEANS MANAGED. A native Windows plugin would also carry a <c>.dll</c>
-    /// extension and nothing in this codebase can tell the two apart by name alone — the sidecar
-    /// carries no <c>kind</c> field, and every ABI fixture built so far is <c>.so</c>. Extension-only
-    /// routing is exact for Linux and macOS and silently wrong only for a case that does not exist
-    /// yet; a manifest-declared kind would remove the ambiguity but is a contract change, not a
-    /// routing fix.</para>
+    /// <para>WITHOUT A DECLARED KIND, <c>.dll</c> MEANS MANAGED. A native Windows plugin is a
+    /// <c>.dll</c> too, and nothing can tell the two apart by name alone, so a native plugin on Windows
+    /// declares <c>"kind": "native"</c> in its sidecar — see <see cref="IsNative"/>, which is what the
+    /// loaders route on. This is the extension half of that decision.</para>
     /// </summary>
     public static bool IsNativeLibrary(string file) =>
         file.EndsWith(".so", StringComparison.OrdinalIgnoreCase)
         || file.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether the plugin at <paramref name="pluginPath"/> loads through the native host — the one
+    /// routing decision both load paths make.
+    ///
+    /// <para>ITS SIDECAR DECIDES WHEN IT NAMES A KIND, which is the only way a native library on
+    /// Windows — a .dll — can say what it is. Otherwise the extension decides
+    /// (<see cref="IsNativeLibrary"/>), as it always has. A sidecar that will not parse falls back to
+    /// the extension: the loader it reaches reports the sidecar's own problem, which is more use than
+    /// a routing guess.</para>
+    /// </summary>
+    public static bool IsNative(string pluginPath)
+    {
+        var sidecar = Path.ChangeExtension(pluginPath, null) + ".plugin.json";
+        try
+        {
+            if (File.Exists(sidecar) && PluginManifest.Parse(File.ReadAllText(sidecar)).Manifest?.Kind is { } kind)
+                return kind == PluginKind.Native;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // UNREADABLE NOW IS THE LOADER'S TO REPORT, a moment later and in its own words.
+        }
+
+        return IsNativeLibrary(pluginPath);
+    }
 
     /// <summary>
     /// Where <c>cxagent-plugin-host.dll</c> lives for THIS running process — the resolution

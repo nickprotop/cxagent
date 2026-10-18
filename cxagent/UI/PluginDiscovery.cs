@@ -344,11 +344,12 @@ public static class PluginDiscovery
                 // WHOSE PLUGIN THIS IS, so an unwire here reaps only what THIS session spawned.
                 SessionId: session.Id, Client: client));
 
-            // ROUTED ON THE FILE EXTENSION, THE ONE SHARED DECISION — see PluginResolver.IsNativeLibrary's
-            // own doc. This is the startup path's copy of the same routing Session.RunLoadRequest does
-            // for /plugin load; both call the same PluginResolver method rather than each growing its
-            // own test, for the reason FindLoadSetDirectory's own doc already gives for this file.
-            if (PluginResolver.IsNativeLibrary(assemblyPath))
+            // ROUTED BY THE SIDECAR'S KIND, OR THE FILE EXTENSION — THE ONE SHARED DECISION, see
+            // PluginResolver.IsNative's own doc. This is the startup path's copy of the same routing
+            // Session.RunLoadRequest does for /plugin load; both call the same PluginResolver method
+            // rather than each growing its own test, for the reason FindLoadSetDirectory's own doc
+            // already gives for this file.
+            if (PluginResolver.IsNative(assemblyPath))
             {
                 var hostDllPath = PluginResolver.PluginHostDllPath();
                 var abiResult = await AbiPluginLoader.Load(hostDllPath, assemblyPath, context, ct);
