@@ -37,8 +37,10 @@ public class AbiCodecTests
         Assert.True(result.IsSuccess);
     }
 
+    /// <summary>ABOVE THE CEILING IS REFUSED: a higher contract may need something this build has
+    /// never heard of, and the refusal names both numbers.</summary>
     [Fact]
-    public void AFutureVersionIsRefusedByExactEquality_NotAFloor()
+    public void AFutureVersionIsRefused_AboveTheCeiling()
     {
         var result = AbiCodec.CheckVersion(PluginContract.Version + 1);
 
@@ -47,14 +49,20 @@ public class AbiCodecTests
         Assert.Contains(PluginContract.Version.ToString(), result.Error);
     }
 
+    /// <summary>BELOW THE FLOOR IS REFUSED TOO: PluginContract.Oldest is where this host stopped
+    /// carrying what an older shape needed — see that constant for why the floor is 2.</summary>
     [Fact]
-    public void AnOlderVersionIsAlsoRefused_NotOnlyNewerOnes()
+    public void AnOlderVersionIsRefused_BelowTheFloor()
     {
-        // Exact equality cuts both ways: a v0 plugin is refused exactly as a v2 one is, because a
-        // v1 host has no basis to assume a lower version is a strict subset of what it understands.
-        var result = AbiCodec.CheckVersion(0);
+        var result = AbiCodec.CheckVersion(PluginContract.Oldest - 1);
         Assert.False(result.IsSuccess);
     }
+
+    /// <summary>AND INSIDE THE RANGE IS ACCEPTED — the floor itself, not only the current contract,
+    /// so a host that gained a capability keeps loading the plugins that never asked for it.</summary>
+    [Fact]
+    public void TheOldestVersionStillLoaded_PassesTheHandshake() =>
+        Assert.True(AbiCodec.CheckVersion(PluginContract.Oldest).IsSuccess);
 
     // ---- manifest: parse, version check, round trip to PluginManifest ----
 

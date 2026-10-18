@@ -235,6 +235,25 @@ internal sealed class AbiHostProcess : IAsyncDisposable
     public sealed record StartResult(bool Ready, PluginManifest? Manifest, string? Error);
 
     /// <summary>
+    /// Why a plugin host of <paramref name="hostVersion"/> cannot serve an app of
+    /// <paramref name="appVersion"/>, or null when it is the same build.
+    ///
+    /// <para>THE SAME BUILD, NOT A COMPATIBLE RANGE. The host and the app ship from one tag — beside
+    /// each other in a release, inside the package for a dotnet tool, in the output of a dev build —
+    /// and the protocol between them is internal, with no number of its own. The only way they
+    /// differ is a stale host: install.sh fetches it separately and keeps the old one when that
+    /// download fails. Said with both numbers and the fix, rather than an older protocol failing
+    /// later in some way nothing explains.</para>
+    /// </summary>
+    public static string? HostVersionRefusal(string? hostVersion, string appVersion) =>
+        hostVersion == appVersion ? null
+        : hostVersion is null
+            ? $"the plugin host is older than this cxagent ({appVersion}) — reinstall cxagent so its "
+              + "plugin host matches."
+            : $"the plugin host is {hostVersion} but this cxagent is {appVersion} — reinstall cxagent "
+              + "so its plugin host matches.";
+
+    /// <summary>
     /// Launches the host executable at <paramref name="hostDllPath"/> against
     /// <paramref name="libraryPath"/> and reads its one startup line.
     ///
@@ -311,6 +330,10 @@ internal sealed class AbiHostProcess : IAsyncDisposable
             var error = doc.RootElement.TryGetProperty("error", out var errEl) ? errEl.GetString() : null;
             return (host, new StartResult(false, null, error ?? "host reported a startup failure with no reason given."));
         }
+
+        // THE SAME BUILD AS THIS APP — see HostVersionRefusal.
+        if (HostVersionRefusal(ready.HostVersion, PluginContract.HostVersionOf(typeof(AbiHostProcess).Assembly)) is { } stale)
+            return (host, new StartResult(false, null, stale));
 
         // ONLY NOW, after the one startup line is off the stream — starting the loop any earlier
         // would race Launch's own ReadLineAsync above for the same bytes (StreamReader forbids two

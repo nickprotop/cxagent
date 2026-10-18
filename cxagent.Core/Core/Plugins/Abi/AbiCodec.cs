@@ -85,10 +85,8 @@ public static class AbiCodec
 
     /// <summary>
     /// Parses <c>cxagent_plugin_describe</c>'s JSON into an <see cref="AbiManifest"/>, checking the
-    /// in-body <c>abiVersion</c> against <see cref="PluginContract.Version"/> as well as the
-    /// handshake function — see Abi/README.md, "describe": the two are deliberately redundant so a
-    /// mismatch between them is caught as a manifest error rather than silently trusting whichever
-    /// the host happened to read first.
+    /// in-body contract against the same range the handshake is — see Abi/README.md, "describe".
+    /// The two are deliberately redundant, and <see cref="CheckAgreement"/> is what compares them.
     /// </summary>
     public static AbiParseResult<AbiManifest> ParseManifest(string json)
     {
@@ -120,11 +118,26 @@ public static class AbiCodec
     }
 
     /// <summary>
+    /// Refuses a plugin whose handshake and describe body name different contracts.
+    ///
+    /// <para>BOTH IN RANGE IS NOT ENOUGH. Each is checked against the range on its own, so a library
+    /// answering 3 from <c>cxagent_plugin_abi_version</c> and 2 in its describe JSON passed both
+    /// checks — and the host then trusted whichever it read, for a plugin that does not agree with
+    /// itself about which contract it speaks. That is a broken build, and is refused as one.</para>
+    /// </summary>
+    public static AbiParseResult<int> CheckAgreement(int handshakeVersion, AbiManifest described) =>
+        handshakeVersion == described.AbiVersion
+            ? AbiParseResult<int>.Success(handshakeVersion)
+            : AbiParseResult<int>.Failure(
+                $"plugin reports contract {handshakeVersion} from cxagent_plugin_abi_version but "
+                + $"{described.AbiVersion} in its describe JSON — refusing a plugin whose two answers "
+                + "disagree.");
+
+    /// <summary>
     /// Translates a validated <see cref="AbiManifest"/> into the SAME <see cref="PluginManifest"/>
     /// <see cref="ManagedPluginLoader"/> produces — see this class's own doc for why one shape must
-    /// serve both loaders. <see cref="AbiManifest.AbiVersion"/> is deliberately dropped here: it is
-    /// wire-format bookkeeping already spent by <see cref="ParseManifest"/>, and <see cref="PluginManifest"/>
-    /// has no field for it because a managed plugin has no ABI version to report.
+    /// serve both loaders. <see cref="AbiManifest.AbiVersion"/> is carried as the manifest's
+    /// <c>Contract</c>, which the sidecar is compared against downstream.
     /// </summary>
     public static PluginManifest ToPluginManifest(AbiManifest abi) => new(
         abi.Name, abi.Version, abi.Instructions, abi.Spawns,

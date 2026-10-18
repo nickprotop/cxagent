@@ -138,9 +138,14 @@ public sealed record AbiSubmit(
 /// Abi/README.md, "describe": "a real plugin's manifest looks identical regardless of which loader
 /// carries it."
 /// </summary>
+/// <param name="Ready">Always true on this record.</param>
+/// <param name="Manifest">What the plugin described.</param>
+/// <param name="HostVersion">This host process's own build, which the app compares with its own —
+/// see <c>AbiHostProcess.HostVersionRefusal</c>. Null from a host that predates the check.</param>
 public sealed record HostReady(
     [property: JsonPropertyName("ready")] bool Ready,
-    [property: JsonPropertyName("manifest")] PluginManifest? Manifest);
+    [property: JsonPropertyName("manifest")] PluginManifest? Manifest,
+    [property: JsonPropertyName("hostVersion")] string? HostVersion = null);
 
 /// <summary>
 /// Written INSTEAD OF <see cref="HostReady"/> when the library could not be loaded, the ABI version

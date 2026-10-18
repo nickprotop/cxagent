@@ -18,7 +18,7 @@ public sealed class ClaimsClientPlugin : IPlugin
             [new PluginToolManifest("cc_tool", "a fixture tool",
                 JsonSerializer.SerializeToElement(new { type = "object" }))])
         {
-            Contract = 2,
+            Contract = 3,
             Client = true,
         });
 

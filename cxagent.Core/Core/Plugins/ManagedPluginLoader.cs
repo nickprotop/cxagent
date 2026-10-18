@@ -90,7 +90,7 @@ public static class ManagedPluginLoader
         // point where refusing actually prevents something: Assembly.LoadFrom is irreversible (the
         // default context is resident for the process's life) and a constructor is arbitrary code.
         // A check placed after either of those discards a result rather than stopping anything.
-        var refusal = PluginContract.Refusal(sidecar, sidecarPath);
+        var refusal = PluginContract.Refusal(sidecar, sidecarPath) ?? PluginContractUse.Refusal(sidecar);
         if (refusal is not null) return new ManagedPluginLoadResult.Failed(refusal);
 
         Assembly assembly;

@@ -149,9 +149,12 @@ public class ProcessRunnerTests
         var registry = new DetachedProcessRegistry();
         try
         {
+            // A COMMAND THAT WOULD RUN FOR TWO MINUTES, so "killed" and "ended on its own" stay far
+            // apart: the bound below only has to tell those two apart, and a loaded machine once
+            // took 12.8s to report a kill a ten-second bound against a 30s sleep could not absorb.
             var start = DateTimeOffset.UtcNow;
             var result = await ProcessRunner.RunAsync(
-                new ProcessSpec("/bin/sh", new[] { "-c", "echo mypid $$; sleep 30" },
+                new ProcessSpec("/bin/sh", new[] { "-c", "echo mypid $$; sleep 120" },
                     new RunOptions(WorkingDir: TestProcesses.WorkingDir, TimeoutSeconds: 1, DetachOnTimeout: false)),
                 ctx, CancellationToken.None, registry);
             var elapsed = DateTimeOffset.UtcNow - start;
@@ -159,7 +162,7 @@ public class ProcessRunnerTests
             Assert.True(result.TimedOut);
             Assert.Null(result.Detached);
             Assert.Empty(registry.Live);
-            Assert.True(elapsed < TimeSpan.FromSeconds(10), $"a kill must be prompt, took {elapsed.TotalSeconds}s");
+            Assert.True(elapsed < TimeSpan.FromSeconds(60), $"a kill must not wait for the command, took {elapsed.TotalSeconds}s");
 
             // THE SHELL'S OWN PID, PRINTED BY THE COMMAND, so this asserts against the OS rather than
             // against a field the runner filled in. `entireProcessTree` is what the kill promises and

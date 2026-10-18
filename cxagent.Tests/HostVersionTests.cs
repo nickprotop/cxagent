@@ -23,12 +23,18 @@ public class HostVersionTests
     /// <summary>
     /// The host's own assembly carries the release the build stamped, which is the number a plugin
     /// is told and a log should show.
+    ///
+    /// <para>COMPARED WITH THE STAMP ITSELF, read another way — the informational version the same
+    /// build writes — not with "anything but 1.0.0". That held only because tests run unstamped, at
+    /// 0.0.0, and would have failed the release that is 1.0.0 while proving nothing before it.</para>
     /// </summary>
     [Fact]
-    public void TheHostAssemblyReportsSomethingOtherThanTheFrozenIdentity()
+    public void TheHostAssemblyReportsTheReleaseItWasStampedWith()
     {
-        var host = PluginContract.HostVersionOf(typeof(PluginResolver).Assembly);
+        var core = typeof(PluginResolver).Assembly;
+        var stamped = core.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .Cast<System.Reflection.AssemblyInformationalVersionAttribute>().Single().InformationalVersion;
 
-        Assert.NotEqual("1.0.0", host);
+        Assert.Equal(stamped.Split('+', '-')[0], PluginContract.HostVersionOf(core));
     }
 }

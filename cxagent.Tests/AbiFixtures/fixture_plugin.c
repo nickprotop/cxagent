@@ -10,6 +10,8 @@
  * FIXTURE_CRASH: cxagent_plugin_invoke dereferences a null pointer — a REAL segfault, to prove the
  * host survives a native crash rather than merely a well-behaved error path.
  * FIXTURE_BADVERSION: cxagent_plugin_abi_version reports a version this host does not understand.
+ * FIXTURE_DISAGREES: cxagent_plugin_abi_version reports 3 while describe's body says 2 — both in
+ * range, so only a check that compares the two catches a plugin contradicting itself.
  * FIXTURE_NOINVOKE: omits cxagent_plugin_invoke entirely — a library missing a required export.
  * FIXTURE_SUBMITS: exports cxagent_plugin_poll, which returns one submit
  * ({"goal":"run the tests","wantResult":false}) on its FIRST call and NULL on every call after —
@@ -43,6 +45,10 @@ static char* dup_str(const char* s) {
 int32_t cxagent_plugin_abi_version(void) {
 #ifdef FIXTURE_BADVERSION
     return 99;
+#elif defined(FIXTURE_DISAGREES) || defined(FIXTURE_SUBMITS)
+    /* SUBMITS DECLARES THE CLIENT, which arrived in contract 3 — so it speaks 3, in its handshake
+     * and its describe body alike. DISAGREES says 3 here and 2 in its body, on purpose. */
+    return 3;
 #else
     return 2;
 #endif
@@ -50,7 +56,11 @@ int32_t cxagent_plugin_abi_version(void) {
 
 const char* cxagent_plugin_describe(void) {
     return dup_str(
+#ifdef FIXTURE_SUBMITS
+        "{\"pluginContract\":3,\"name\":\"fixture\",\"version\":\"1.0.0\",\"instructions\":null,"
+#else
         "{\"pluginContract\":2,\"name\":\"fixture\",\"version\":\"1.0.0\",\"instructions\":null,"
+#endif
         "\"spawns\":false,"
 #ifdef FIXTURE_SUBMITS
         /* client:true — MUST MATCH THE SIDECAR (fixture-submits.plugin.json), which is what

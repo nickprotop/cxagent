@@ -22,7 +22,7 @@ public sealed class DeclaresClientPlugin : IPlugin, IPluginClientConsumer
             [new PluginToolManifest("dc_tool", "a fixture tool",
                 JsonSerializer.SerializeToElement(new { type = "object" }))])
         {
-            Contract = 2,
+            Contract = 3,
             Client = true,
         });
 

@@ -108,7 +108,7 @@ public static class AbiPluginLoader
         // THE SAME REFUSAL THE MANAGED LOADER MAKES, from the same file and before anything runs —
         // here that means before a host process is spawned and the library is mapped, which the
         // handshake would otherwise have to pay for to learn what this JSON already says.
-        var refusal = PluginContract.Refusal(sidecar, sidecarPath);
+        var refusal = PluginContract.Refusal(sidecar, sidecarPath) ?? PluginContractUse.Refusal(sidecar);
         if (refusal is not null) return new AbiPluginLoadResult.Failed(refusal);
 
         (AbiHostProcess host, AbiHostProcess.StartResult handshake) launch;

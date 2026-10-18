@@ -340,6 +340,25 @@ public class AbiPluginHostTests
         Assert.Contains($"{PluginContract.Version} at most", handshake.Error);
     }
 
+    /// <summary>
+    /// A PLUGIN THAT CONTRADICTS ITSELF IS REFUSED. The handshake and describe's body both carry the
+    /// contract, deliberately, so a library whose two answers disagree is caught rather than trusted
+    /// on whichever was read first — here both are in range, so only comparing them catches it.
+    /// </summary>
+    [Fact]
+    public async Task AHandshakeThatDisagreesWithDescribe_IsRefused()
+    {
+        if (!RequireFixture("fixture-disagrees", out var lib)) return;
+
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
+        await using var disposeHost = host;
+
+        Assert.False(handshake.Ready);
+        Assert.Contains("3", handshake.Error);
+        Assert.Contains("2", handshake.Error);
+        Assert.Contains("disagree", handshake.Error);
+    }
+
     // ---- Replies correlated by id, not by arrival order ------------------------------------------
 
     [Fact]
@@ -461,5 +480,39 @@ public class AbiPluginHostTests
 
         var result = await inFlight.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.False(result.Ok);
+    }
+}
+
+/// <summary>
+/// The plugin host process is the same build as the app that launches it, or it is refused.
+///
+/// <para>THEY SHIP TOGETHER, AND CAN STILL DRIFT. install.sh fetches the host as a separate asset
+/// and, when that download fails, leaves whatever host was there before — so an app updated past
+/// its host would talk an older protocol to it, with nothing to say so.</para>
+/// </summary>
+public class AbiHostVersionTests
+{
+    [Fact]
+    public void TheSameBuild_IsAccepted() => Assert.Null(AbiHostProcess.HostVersionRefusal("0.9.40", "0.9.40"));
+
+    [Fact]
+    public void ADifferentBuild_IsRefused_NamingBoth()
+    {
+        var refusal = AbiHostProcess.HostVersionRefusal("0.9.31", "0.9.40");
+
+        Assert.NotNull(refusal);
+        Assert.Contains("0.9.31", refusal);
+        Assert.Contains("0.9.40", refusal);
+    }
+
+    /// <summary>A host from before this check sends no version at all — it is older than this app by
+    /// definition, and is refused as such.</summary>
+    [Fact]
+    public void AHostThatSaysNothing_IsRefused_AsOlder()
+    {
+        var refusal = AbiHostProcess.HostVersionRefusal(null, "0.9.40");
+
+        Assert.NotNull(refusal);
+        Assert.Contains("older", refusal);
     }
 }

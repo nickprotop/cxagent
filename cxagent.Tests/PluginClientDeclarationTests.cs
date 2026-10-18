@@ -71,6 +71,26 @@ public class PluginClientDeclarationTests : IDisposable
         Assert.True(session.Plugins.HasClientForTest("declares-client"));
     }
 
+    /// <summary>
+    /// THE CLIENT ARRIVED IN CONTRACT 3, so a sidecar naming contract 2 cannot honestly declare it:
+    /// it says it was built against a contract that has no client. Refused before anything runs, as
+    /// any other sidecar a build cannot vouch for is.
+    /// </summary>
+    [Fact]
+    public async Task A_plugin_declaring_the_client_at_contract_2_is_refused()
+    {
+        DropFixture(_dir, "cxagent.Tests.PluginFixture.DeclaresClient", "declares-client.dll");
+        var sidecar = Path.Combine(_dir, ".cxagent", "plugins", "declares-client.plugin.json");
+        File.WriteAllText(sidecar, System.Text.RegularExpressions.Regex.Replace(
+            File.ReadAllText(sidecar), "\"pluginContract\": *[0-9]+", "\"pluginContract\": 2"));
+        var session = Wired(out var manager);
+        using var _ = manager;
+
+        await session.RunPluginCommand("load declares-client.dll", CancellationToken.None);
+
+        Assert.Empty(session.Plugins.LoadedPluginNames);
+    }
+
     [Fact]
     public async Task A_plugin_that_does_not_declare_the_client_gets_none()
     {

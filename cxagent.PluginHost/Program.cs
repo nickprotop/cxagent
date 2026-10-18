@@ -91,8 +91,18 @@ if (!manifestResult.IsSuccess)
     return 1;
 }
 
+// THE HANDSHAKE AND THE BODY MUST AGREE — each passed the range alone; see AbiCodec.CheckAgreement.
+var agreement = AbiCodec.CheckAgreement(reportedVersion, manifestResult.Value);
+if (!agreement.IsSuccess)
+{
+    await WriteLine(new HostStartupFailure(false, agreement.Error!));
+    return 1;
+}
+
 var manifest = AbiCodec.ToPluginManifest(manifestResult.Value);
-await WriteLine(new HostReady(true, manifest));
+
+// THIS HOST'S OWN BUILD, which the app compares with its own — a stale host is refused by name.
+await WriteLine(new HostReady(true, manifest, PluginContract.HostVersionOf(typeof(HostReady).Assembly)));
 
 // THE POLL LOOP, STARTED ONLY WHEN THE LIBRARY EXPORTS cxagent_plugin_poll — a library built
 // before contract 3 (NativePlugin.HasPoll false) is never asked, matching cxagent_plugin.h's own

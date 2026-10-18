@@ -34,6 +34,7 @@ build fixture-wellformed
 build fixture-malformed -DFIXTURE_MALFORMED
 build fixture-crash -DFIXTURE_CRASH
 build fixture-badversion -DFIXTURE_BADVERSION
+build fixture-disagrees -DFIXTURE_DISAGREES
 build fixture-noinvoke -DFIXTURE_NOINVOKE
 build fixture-submits -DFIXTURE_SUBMITS
 build fixture-commands -DFIXTURE_COMMANDS

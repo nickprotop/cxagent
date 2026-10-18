@@ -1,5 +1,5 @@
 {
-  "pluginContract": 2,
+  "pluginContract": 3,
   "client": true,
   "name": "fixture",
   "version": "1.0.0",
