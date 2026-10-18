@@ -21,15 +21,22 @@ that writes elsewhere, and every shell command, still stops.
 
 ## Sub-agents
 
-![Sub-agents](02-sub-agents.png)
+![The conversation with background agents: a finished agent's report as a table, a worker still running, and the tasks panel listing it above three finished ones](37-background-agents.png)
 
-A worker exploring in its own context, with its own turn count and occupancy — the parent stays at
-what it was. Note the panel splitting `workers` from `this agent`: children share the parent's
-ledger, so without that split a session that spent 86% of its tokens in sub-agents looks identical
-to one that spawned nothing.
+This repository, asked to send explore agents to find how its own agent tabs work. A sub-agent runs in
+the background by default: the spawn answers at once, the conversation carries on, and each report
+arrives as a message when it is done — here the one above, a table of `file:line` for every part of
+the tab. `F7` turns the right-hand column into the tasks panel: what is running first, with its clock
+and a `⏹`, then a Finished section.
 
-The prompt below it says **which child asked**. This one wanted to read outside the working folder,
-so it stopped — and it was a detour, so it got denied.
+![An agent's own tab while it runs: Stop in its toolbar, its brief and clock, each step's thinking folded between its tool calls, and a composer that sends it a message](36-agent-tab.png)
+
+`View transcript ›` on a card opens that agent in a tab of its own. It is the agent's whole
+conversation, live: the brief it was given, each step's thinking folded between its tool calls, and
+its answer as it is written. `Stop` ends it; a foreground one also gets `Background`, which hands it
+off so the parent's turn goes on — the same as `Ctrl+B`. The composer under it talks to the agent, not
+the session: "Enter tells it — it reads this on its next turn". Closing the tab leaves the agent
+running.
 
 ---
 
@@ -453,6 +460,19 @@ first — now, after compressing, at the tab's next clear or compaction, or only
 With no `config.json`, cxagent opens the dialog on a card per kind of endpoint, the first one focused.
 A card fills in what it knows — llama.cpp's port, OpenRouter's address and attribution header — and the
 model is picked from what the endpoint serves. The first save wires the session; type a goal and it runs.
+
+---
+
+## Exporting a conversation
+
+![The export dialog over the sub-agents session: Full chosen, the clipboard as the destination, Advanced open with every part ticked, and 519 KB across 56 messages and 4 sub-agents](38-export.png)
+
+`F12` — or `/export` — writes the conversation as markdown. *Readable* is for a person: what was said
+and done, each tool call a line, edits as diffs. *Full* is for another agent to carry on from: every
+tool result, the thinking, the system prompt. The four sub-agents counted at the bottom go into the
+file where they worked, each stretch under the call that started it, so it reads as a timeline. The
+size is known before anything is written, and `/sessions export` does the same for any earlier
+session without resuming it.
 
 ---
 
