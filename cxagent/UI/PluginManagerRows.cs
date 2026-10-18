@@ -30,6 +30,8 @@ public enum PluginRowSection
 /// <param name="Folder">Which plugins folder holds it: "global", "project", "path", or null when it
 /// is not installed. A path label is needed because pluginPaths can point anywhere, and "uninstall"
 /// is ambiguous the moment two copies exist.</param>
+/// <param name="CannotUpdate">Why the newer catalog version cannot run here, on an Updates row whose
+/// update cannot be taken — the dialog offers no Update button then. Null otherwise.</param>
 public sealed record PluginRow(
     string Name,
     PluginRowSection Section,
@@ -37,7 +39,8 @@ public sealed record PluginRow(
     string? Detail = null,
     CatalogEntry? Catalog = null,
     PluginConfig? Configured = null,
-    string? Folder = null);
+    string? Folder = null,
+    string? CannotUpdate = null);
 
 /// <summary>
 /// Everything the rail is computed from. A record rather than seven parameters — AV1561, and these
@@ -157,16 +160,8 @@ public static class PluginManagerRows
 
             // NOT INSTALLED, SO IT NEEDS NOTHING FROM THE USER — an unusable catalog entry stays
             // listed with its reason rather than hidden, or a reader wonders where it went.
-            //
-            // NO SOURCE FOR THIS MACHINE IS A REASON TOO. An ABI plugin ships one artifact per
-            // runtime identifier (CatalogEntry.Sources), and an entry whose map has none for the
-            // running RID must SAY so — offering an install button that cannot work is worse than
-            // saying the plugin is not available here.
-            var why = Mismatch(entry.PluginContract)
-                   ?? (entry.Sources.Count > 0 && !entry.Sources.ContainsKey(RuntimeIdentifier)
-                       ? "not available for this machine" : "");
-
-            rows.Add(new PluginRow(entry.Name, PluginRowSection.Available, why, Catalog: entry));
+            rows.Add(new PluginRow(entry.Name, PluginRowSection.Available, WhyItCannotRunHere(entry) ?? "",
+                Catalog: entry));
         }
 
         return [.. rows.OrderBy(r => r.Section).ThenBy(r => r.Name, StringComparer.Ordinal)];
@@ -196,6 +191,21 @@ public static class PluginManagerRows
     /// </summary>
     private static string RuntimeIdentifier =>
         System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+
+    /// <summary>
+    /// Why this catalog version cannot run in this cxagent, or null when it can — the one answer an
+    /// Available row, an Updates row and <c>/plugin get</c> all give, so none of them offers a
+    /// download the others would refuse.
+    ///
+    /// <para>THE CONTRACT, then the machine. A contract outside what this build loads is the
+    /// <see cref="Mismatch"/> sentence. And NO SOURCE FOR THIS MACHINE is a reason too: an ABI plugin
+    /// ships one artifact per runtime identifier (<see cref="CatalogEntry.Sources"/>), and offering a
+    /// download that cannot load is worse than saying the plugin is not available here.</para>
+    /// </summary>
+    public static string? WhyItCannotRunHere(CatalogEntry entry) =>
+        Mismatch(entry.PluginContract)
+        ?? (entry.Sources.Count > 0 && !entry.Sources.ContainsKey(RuntimeIdentifier)
+            ? "not available for this machine" : null);
 
     /// <summary>Which folder holds it, in one word, or null when it is not installed.</summary>
     private static string? Folder(string name, PluginManagerInputs inputs) =>
@@ -232,12 +242,20 @@ public static class PluginManagerRows
         // ORDINAL, AND BOTH NUMBERS. A sidecar version is whatever an author wrote, so semver
         // parsing would have to decide what to do with one that is not — and a locally built plugin
         // ahead of the catalog would be offered an "update" that is a downgrade.
+        //
+        // AN UPDATE THAT CANNOT RUN HERE IS STILL LISTED, with its reason and no way to take it.
+        // Taking it would delete the working copy and install one the loader refuses, and the
+        // catalog carries only its newest build, so there would be no way back. Listing it tells
+        // the user a newer version exists and what would unlock it.
         if (entry is not null
             && inputs.InstalledVersions.TryGetValue(name, out var have)
             && !string.Equals(have, entry.Version, StringComparison.Ordinal))
+        {
+            var cannot = WhyItCannotRunHere(entry);
             return new PluginRow(name, PluginRowSection.Updates,
-                $"{state} · {have} → {entry.Version}",
-                Catalog: entry, Configured: config, Folder: Folder(name, inputs));
+                $"{state} · {have} → {entry.Version}" + (cannot is null ? "" : $" · {cannot}"),
+                Catalog: entry, Configured: config, Folder: Folder(name, inputs), CannotUpdate: cannot);
+        }
 
         return new PluginRow(name, PluginRowSection.Installed, state,
                              Catalog: entry, Configured: config, Folder: Folder(name, inputs));

@@ -1213,7 +1213,9 @@ public static class PluginManagerDialog
             // with no button that could.
             case PluginRowSection.Updates:
             case PluginRowSection.Installed:
-                if (row.Section == PluginRowSection.Updates && !HasNote(row))
+                // NO UPDATE BUTTON FOR AN UPDATE THAT CANNOT RUN HERE: its reason is on the row, and
+                // taking it would replace a working copy with one the loader refuses.
+                if (row.Section == PluginRowSection.Updates && row.CannotUpdate is null && !HasNote(row))
                     yield return Controls.Button(" Update ")
                         .OnClick((_, _) => FireAndForget.Run(UpdateFlowAsync(row), $"update {row.Name}",
                             text => Toast(text, NotificationSeverity.Danger), _ws!)).Build();

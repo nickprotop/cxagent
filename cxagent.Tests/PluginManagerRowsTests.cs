@@ -135,6 +135,61 @@ public class PluginManagerRowsTests
         Assert.Contains("0.3.0", row.State);
     }
 
+    /// <summary>
+    /// AN UPDATE THIS BUILD CANNOT LOAD STAYS IN UPDATES, BUT CANNOT BE TAKEN. Taking it would delete
+    /// the working copy and install one the loader refuses, and the catalog offers no older build to
+    /// go back to — so the row says why instead, the way an Available row does.
+    /// </summary>
+    [Fact]
+    public void AnUpdateNeedingANewerCxagent_IsListed_WithItsReason_AndCannotBeTaken()
+    {
+        var rows = PluginManagerRows.Build(Inputs(
+            configured: new Dictionary<string, PluginConfig> { ["p"] = new("p.dll") },
+            catalog: [Entry("p", "0.3.0", contract: PluginContract.Version + 1)],
+            versions: new Dictionary<string, string> { ["p"] = "0.2.1" }));
+
+        var row = Row(rows, "p");
+        Assert.Equal(PluginRowSection.Updates, row.Section);
+        Assert.Contains("0.2.1 → 0.3.0", row.State);
+        Assert.Contains("needs a newer cxagent", row.State);
+        Assert.NotNull(row.CannotUpdate);
+    }
+
+    [Fact]
+    public void AnUpdateWithNoBuildForThisMachine_CannotBeTaken()
+    {
+        var rows = PluginManagerRows.Build(Inputs(
+            configured: new Dictionary<string, PluginConfig> { ["p"] = new("p.so") },
+            catalog: [Entry("p", "0.3.0") with { Sources = new Dictionary<string, string> { ["plan9-x64"] = "https://x/p.zip" } }],
+            versions: new Dictionary<string, string> { ["p"] = "0.2.1" }));
+
+        var row = Row(rows, "p");
+        Assert.Contains("not available for this machine", row.State);
+        Assert.NotNull(row.CannotUpdate);
+    }
+
+    [Fact]
+    public void AnUpdateThisBuildCanLoad_CanBeTaken()
+    {
+        var rows = PluginManagerRows.Build(Inputs(
+            configured: new Dictionary<string, PluginConfig> { ["p"] = new("p.dll") },
+            catalog: [Entry("p", "0.3.0")],
+            versions: new Dictionary<string, string> { ["p"] = "0.2.1" }));
+
+        Assert.Null(Row(rows, "p").CannotUpdate);
+    }
+
+    /// <summary>ONE ANSWER for the rows and /plugin get: why this catalog version cannot run here.</summary>
+    [Fact]
+    public void WhyItCannotRunHere_NamesTheContractOrTheMachine()
+    {
+        Assert.Null(PluginManagerRows.WhyItCannotRunHere(Entry("p")));
+        Assert.Contains("needs a newer cxagent",
+            PluginManagerRows.WhyItCannotRunHere(Entry("p", contract: PluginContract.Version + 1)));
+        Assert.Equal("not available for this machine", PluginManagerRows.WhyItCannotRunHere(
+            Entry("p") with { Sources = new Dictionary<string, string> { ["plan9-x64"] = "https://x/p.zip" } }));
+    }
+
     /// <summary>A disabled plugin with an update stays disabled in the words, and moves to
     /// UPDATES — the section is about the update; the state still shows.</summary>
     [Fact]

@@ -91,6 +91,15 @@ public sealed class PluginGetCommand(
             return;
         }
 
+        // THE MANAGER'S OWN RULE, before anything is downloaded: a version this cxagent cannot load, or
+        // one with no build for this machine, is refused here in the words its row uses. Installing it
+        // anyway would replace an installed copy with one the loader refuses.
+        if (PluginManagerRows.WhyItCannotRunHere(entry) is { } why)
+        {
+            Say($"'{entry.Name}' {entry.Version} cannot be installed here: {why}.", Severity.Warning);
+            return;
+        }
+
         if (session.Services?.Gate is not { } gate)
         {
             Say("no permission gate is wired, so nothing can be downloaded.", Severity.Warning);
