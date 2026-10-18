@@ -44,6 +44,22 @@ internal sealed class AbiHostProcess : IAsyncDisposable
     /// </summary>
     public event Action<AbiSubmit>? PluginSubmitted;
 
+    /// <summary>
+    /// The host process went away without being told to — crashed native code, an OOM kill, a
+    /// user's kill -9 — with why, in words. Raised once, from the read loop, when the reply stream
+    /// ends; NOT raised after <see cref="Stop"/> or <see cref="DisposeAsync"/>, where the process
+    /// ending is the point.
+    ///
+    /// <para>WHAT MAKES A DEATH VISIBLE. Calls already fail cleanly once the host is gone, but each
+    /// failure alone looks like a broken tool, and the plugin stays listed as active. The registry
+    /// listens to this to say it once and withdraw the plugin's tools.</para>
+    /// </summary>
+    public event Action<string>? Died;
+
+    // SET BEFORE THIS SIDE ENDS THE PROCESS, read by the read loop when the stream closes: an exit
+    // asked for is not a death.
+    private volatile bool _ending;
+
     // ONE READER FOR THE LIFETIME OF THE PROCESS, not one per call — two concurrent Sends used to
     // race their own ReadLineAsync against the same StandardOutput, which StreamReader forbids
     // ("stream is currently in use") and which would let one call's line satisfy the other's read
@@ -96,16 +112,19 @@ internal sealed class AbiHostProcess : IAsyncDisposable
                 }
                 catch (Exception ex) when (ex is IOException or ObjectDisposedException)
                 {
-                    FailAllOutstanding($"lost connection to plugin host process while reading a reply: {ex.Message}");
+                    var reason = $"lost connection to plugin host process while reading a reply: {ex.Message}";
+                    FailAllOutstanding(reason);
+                    if (!_ending) Died?.Invoke(reason);
                     return;
                 }
 
                 if (line is null)
                 {
                     var stderr = await TryReadStderr(_process);
-                    FailAllOutstanding(
-                        $"plugin host process exited without a reply (exit code {SafeExitCode(_process)})"
-                        + (string.IsNullOrEmpty(stderr) ? "." : $" — stderr: {stderr}"));
+                    var reason = $"plugin host process exited without a reply (exit code {SafeExitCode(_process)})"
+                        + (string.IsNullOrEmpty(stderr) ? "." : $" — stderr: {stderr}");
+                    FailAllOutstanding(reason);
+                    if (!_ending) Died?.Invoke(reason);
                     return;
                 }
 
@@ -326,8 +345,11 @@ internal sealed class AbiHostProcess : IAsyncDisposable
             .ContinueWith(t => { timed.Dispose(); return t.Result; }, TaskScheduler.Default);
     }
 
-    public Task<HostReply> Stop(CancellationToken ct) =>
-        Send(HostProtocol.RequestKind.Stop, null, null, ct);
+    public Task<HostReply> Stop(CancellationToken ct)
+    {
+        _ending = true;
+        return Send(HostProtocol.RequestKind.Stop, null, null, ct);
+    }
 
     /// <summary>Sends a <c>command</c> request for <paramref name="name"/> and awaits its reply — see
     /// <see cref="HostRequest"/>'s own doc for why <paramref name="arguments"/> travels as a JSON
@@ -466,6 +488,7 @@ internal sealed class AbiHostProcess : IAsyncDisposable
     /// <see cref="Stop"/> first; this does not send it.</summary>
     public async ValueTask DisposeAsync()
     {
+        _ending = true;
         try
         {
             if (!_process.HasExited)

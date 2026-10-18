@@ -190,6 +190,62 @@ public class PluginLifecycleTests : IDisposable
         Assert.True(plugin.Stopped);
         Assert.DoesNotContain(messages, m => m.Contains("did not return"));
     }
+
+    /// <summary>A plugin whose Stop throws before it returns a Task at all — the case a hang's
+    /// timeout never sees, because there is nothing to wait on.</summary>
+    private sealed class ThrowingStopPlugin : IPlugin
+    {
+        public Task<PluginManifest> Load(IPluginContext context, CancellationToken ct) =>
+            throw new NotSupportedException("the registry is handed an already-loaded plugin in these tests");
+
+        public Task Start(CancellationToken ct) => Task.CompletedTask;
+
+        public Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
+            CancellationToken ct) => Task.FromResult(new JobResult { Success = true });
+
+        public Task Stop(CancellationToken ct) => throw new InvalidOperationException("backend already gone");
+    }
+
+    /// <summary>
+    /// A STOP THAT THROWS IS A STOP THAT FAILED, NOT AN UNWIRE THAT FAILED. The plugin is still
+    /// deregistered, the failure is said naming it, and what it spawned is reaped — the reap exists
+    /// for exactly the plugin whose own Stop did not clean up.
+    /// </summary>
+    [Fact]
+    public async Task AStopThatThrows_IsReported_AndItsChildrenAreStillReaped()
+    {
+        var registry = new PluginRegistry(TimeSpan.FromSeconds(5));
+        var messages = new List<string>();
+        var store = new ChildProcessStore(_dir);
+        registry.AttachChildProcessStore(store, messages.Add);
+        registry.Load(new ThrowingStopPlugin(), Manifest("lsp-throws", "lsp_x"), isNameTaken: _ => false);
+
+        using var child = StartSleeper();
+        store.Add(new ChildProcessRecord(child.Id, child.StartTime.ToUniversalTime(), "lsp-throws"));
+
+        Assert.True(await registry.UnwireAsync("lsp-throws", CancellationToken.None));
+
+        Assert.True(child.WaitForExit(TimeSpan.FromSeconds(5)), "a plugin whose Stop threw kept its child");
+        Assert.Contains(messages, m => m.Contains("lsp-throws") && m.Contains("backend already gone"));
+        Assert.Empty(registry.CurrentTools());
+    }
+
+    /// <summary>ONE PLUGIN'S STOP THROWING DOES NOT LEAVE THE REST RUNNING: session close stops every
+    /// plugin it loaded.</summary>
+    [Fact]
+    public async Task UnwireAll_StopsTheOthers_WhenOneStopThrows()
+    {
+        var registry = new PluginRegistry(TimeSpan.FromSeconds(5));
+        registry.AttachChildProcessStore(new ChildProcessStore(_dir), _ => { });
+        var after = new PluginRegistryTestsFriend.PromptPlugin();
+        registry.Load(new ThrowingStopPlugin(), Manifest("a-throws", "a_x"), isNameTaken: _ => false);
+        registry.Load(after, Manifest("b-fine", "b_x"), isNameTaken: _ => false);
+
+        await registry.UnwireAllAsync(CancellationToken.None);
+
+        Assert.True(after.Stopped);
+        Assert.Empty(registry.CurrentTools());
+    }
 }
 
 /// <summary>A minimal well-behaved <see cref="IPlugin"/>, kept out of the test class body only so

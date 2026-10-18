@@ -341,6 +341,78 @@ public class PluginRegistryTests : IDisposable
         Assert.True(plugin.Stopped);
     }
 
+    /// <summary>A plugin whose calls ignore their token and never return.</summary>
+    private sealed class DeafPlugin : IPlugin
+    {
+        public Task<PluginManifest> Load(IPluginContext context, CancellationToken ct) =>
+            throw new NotSupportedException("the registry is handed an already-loaded plugin in these tests");
+
+        public Task Start(CancellationToken ct) => Task.CompletedTask;
+
+        public Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
+            CancellationToken ct) => new TaskCompletionSource<JobResult>().Task;
+
+        public Task Stop(CancellationToken ct) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// A CANCELLED TURN IS NOT HELD BY A PLUGIN THAT IGNORES ITS TOKEN. Esc says "Stopped." and the
+    /// session must be free again — able to take the next message, or an unwire of the plugin that
+    /// hung. So the wait ends when the turn is cancelled, whatever the plugin does with the token.
+    /// </summary>
+    [Fact]
+    public async Task ACancelledCall_Returns_EvenWhenThePluginIgnoresItsToken()
+    {
+        var registry = new PluginRegistry();
+        registry.Load(new DeafPlugin(), Manifest("deaf", "deaf_wait"), isNameTaken: _ => false);
+        using var cts = new CancellationTokenSource();
+
+        var call = registry.CurrentTools().Single().ExecuteAsync(new JobParameters(), new TestJobContext(), cts.Token);
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => call.WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
+    /// <summary>AND THE ABANDONED CALL IS STILL COUNTED: it is running in the plugin until it ends, so
+    /// an unwire's drain waits for it — within its limit — rather than stopping the plugin under it.</summary>
+    [Fact]
+    public async Task AnAbandonedCall_IsStillInFlight_ForTheDrain()
+    {
+        var registry = new PluginRegistry(TimeSpan.FromMilliseconds(200));
+        var said = new List<string>();
+        registry.AttachChildProcessStore(new ChildProcessStore(Directory.CreateTempSubdirectory("abandoned-").FullName), said.Add);
+        registry.Load(new DeafPlugin(), Manifest("deaf", "deaf_wait"), isNameTaken: _ => false);
+        using var cts = new CancellationTokenSource();
+        var call = registry.CurrentTools().Single().ExecuteAsync(new JobParameters(), new TestJobContext(), cts.Token);
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => call.WaitAsync(TimeSpan.FromSeconds(2)));
+
+        Assert.True(await registry.UnwireAsync("deaf", CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)));
+
+        Assert.Contains(said, m => m.Contains("deaf") && m.Contains("1 call"));
+    }
+
+    /// <summary>
+    /// THE DRAIN HAS A LIMIT. A call that never returns would otherwise hold /plugin unwire and
+    /// session close forever, and the reap that kills what the plugin spawned would never run. Past
+    /// the limit the unwire goes on, says how many calls it left running, and stops the plugin.
+    /// </summary>
+    [Fact]
+    public async Task ACallThatNeverReturns_DoesNotHoldTheUnwireForever()
+    {
+        var registry = new PluginRegistry(TimeSpan.FromMilliseconds(200));
+        var said = new List<string>();
+        registry.AttachChildProcessStore(new ChildProcessStore(Directory.CreateTempSubdirectory("drain-").FullName), said.Add);
+        var plugin = new FakePlugin();
+        registry.Load(plugin, Manifest("lsp-rust", "lsp_rename"), isNameTaken: _ => false);
+        _ = registry.HoldCallOpenForTest("lsp-rust", new TaskCompletionSource().Task);
+
+        Assert.True(await registry.UnwireAsync("lsp-rust", CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)));
+
+        Assert.True(plugin.Stopped);
+        Assert.Contains(said, m => m.Contains("lsp-rust") && m.Contains("1 call"));
+    }
+
     [Fact]
     public async Task UnwireRunsStopWhenNothingIsInFlight()
     {

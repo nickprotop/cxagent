@@ -583,7 +583,13 @@ public sealed partial class Session
         string loadSetDirectory, CancellationToken ct = default, IDisposable? context = null,
         Plugins.SessionPluginClient? client = null, bool announce = true)
     {
-        if (RefusedWhileBusy()) return CommandStatus.Refused;
+        // EVERY REFUSAL BELOW RETIRES THE PLUGIN: its Load has already run, so nothing else would
+        // stop it, end its Lifetime or sever its client — see PluginRegistry.DiscardAsync.
+        if (RefusedWhileBusy())
+        {
+            await Plugins.DiscardAsync(plugin, manifest, context, client, ct);
+            return CommandStatus.Refused;
+        }
 
         if (Services?.Gate is { } gate)
         {
@@ -657,6 +663,7 @@ public sealed partial class Session
             {
                 Say(new Message($"plugin '{manifest.Name}' was not loaded — the user declined it.",
                     Severity.Warning));
+                await Plugins.DiscardAsync(plugin, manifest, context, client, ct);
                 return CommandStatus.Reported;
             }
         }
@@ -687,6 +694,7 @@ public sealed partial class Session
             Say(new Message(
                 $"plugin '{manifest.Name}' was not loaded — its tool '{collision.ToolName}' is "
                 + "already offered by this session.", Severity.Warning));
+            await Plugins.DiscardAsync(plugin, manifest, context, client, ct);
             return CommandStatus.Reported;
         }
 
@@ -695,6 +703,7 @@ public sealed partial class Session
             Say(new Message(
                 $"plugin '{manifest.Name}' was not loaded — its command '/{commandCollision.CommandName}' "
                 + "is already offered by this session.", Severity.Warning));
+            await Plugins.DiscardAsync(plugin, manifest, context, client, ct);
             return CommandStatus.Reported;
         }
 

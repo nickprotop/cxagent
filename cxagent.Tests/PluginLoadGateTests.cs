@@ -55,7 +55,20 @@ public class PluginLoadGateTests : IDisposable
             CancellationToken ct) =>
             Task.FromResult(new JobResult { Success = true, Output = { ["tool"] = toolName } });
 
-        public Task Stop(CancellationToken ct) => Task.CompletedTask;
+        public bool Stopped { get; private set; }
+
+        public Task Stop(CancellationToken ct)
+        {
+            Stopped = true;
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Stands in for the plugin's context, whose disposal is what cancels its Lifetime.</summary>
+    private sealed class TrackedContext : IDisposable
+    {
+        public bool Disposed { get; private set; }
+        public void Dispose() => Disposed = true;
     }
 
     // ---- Lifecycle: Load is not enough, Start has to run ----------------------------------------
@@ -373,6 +386,49 @@ public class PluginLoadGateTests : IDisposable
 
         Assert.Equal(CommandStatus.Reported, status);
         Assert.Empty(session.Plugins.CurrentTools());
+    }
+
+    /// <summary>
+    /// A DECLINED PLUGIN HAS ALREADY RUN ITS LOAD — the loader reads the manifest from it before the
+    /// prompt can say anything — so it is retired like an unwired one: stopped, its context disposed
+    /// so its Lifetime ends, and its client severed, or it could go on submitting into a session the
+    /// user just refused it.
+    /// </summary>
+    [Fact]
+    public async Task ADeclinedLoad_IsStopped_AndCutOff()
+    {
+        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        var session = SessionWithGate(new ScriptedGate(PermissionOutcome.ByUser), out var manager);
+        using var _ = manager;
+        var plugin = new FakePlugin();
+        var context = new TrackedContext();
+        var client = new SessionPluginClient(session, "lsp-rust", session.Plugins.SubmitQueue);
+
+        await session.LoadPlugin(plugin, Manifest("lsp-rust", "lsp_rename"), _dir, context: context, client: client);
+
+        Assert.True(plugin.Stopped);
+        Assert.True(context.Disposed);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => client.Submit("still here?"));
+    }
+
+    /// <summary>A load refused for a name collision is retired the same way: approved, but never
+    /// registered, so nothing else would ever stop it.</summary>
+    [Fact]
+    public async Task ACollidingLoad_IsStopped_AndCutOff()
+    {
+        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        var session = SessionWithGate(new ScriptedGate(PermissionOutcome.Allow), out var manager);
+        using var _ = manager;
+        var plugin = new FakePlugin();
+        var context = new TrackedContext();
+        var client = new SessionPluginClient(session, "shadow", session.Plugins.SubmitQueue);
+
+        await session.LoadPlugin(plugin, Manifest("shadow", "read_file"), _dir, context: context, client: client);
+
+        Assert.Empty(session.Plugins.CurrentTools());
+        Assert.True(plugin.Stopped);
+        Assert.True(context.Disposed);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => client.Submit("still here?"));
     }
 
     /// <summary>The prompt names origin and declared capability: "lsp-rust wants to run a process

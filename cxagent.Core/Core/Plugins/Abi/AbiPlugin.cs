@@ -40,7 +40,12 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
         // request loop is up, independent of whether cxagent has called Start yet) must already
         // have a listener, or it is dropped on the floor exactly like an unmatched reply.
         _host.PluginSubmitted += OnPluginSubmitted;
+        _host.Died += reason => HostDied?.Invoke(reason);
     }
+
+    /// <summary>This plugin's host process died unasked — see <see cref="AbiHostProcess.Died"/>.
+    /// A managed plugin has no equivalent: it runs in this process, so its death is this one's.</summary>
+    public event Action<string>? HostDied;
 
     /// <summary>
     /// ALWAYS THE MANIFEST THE HANDSHAKE ALREADY VALIDATED — <see cref="AbiPluginLoader.Load"/> ran

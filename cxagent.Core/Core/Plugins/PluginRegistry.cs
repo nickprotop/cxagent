@@ -259,6 +259,11 @@ public sealed class PluginRegistry
             _plugins.Add(loaded);
             _everLoaded.Add(manifest.Name);
 
+            // A NATIVE PLUGIN'S HOST CAN DIE UNDER IT — see AbiHostProcess.Died. Said once and
+            // unwired, rather than left listed with every call failing.
+            if (plugin is Abi.AbiPlugin abi)
+                abi.HostDied += reason => _ = WithdrawDeadAsync(loaded, reason);
+
             // REGISTERED AFTER THE PLUGIN IS ADDED TO _plugins, not before: UnwireAsync's own
             // deregistration (step 1) removes commands by name from `commands` and the plugin from
             // `_plugins` together, and doing this add last here mirrors that — nothing outside this
@@ -523,39 +528,124 @@ public sealed class PluginRegistry
         // STEP 2: DRAIN. Polls rather than a signal, because InFlight is decremented from whatever
         // thread a call happens to finish on — a bounded poll is simpler than wiring a
         // TaskCompletionSource per plugin for an operation that runs once per unwire.
+        //
+        // BOUNDED BY THE SAME LIMIT AS STOP. A call that never returns would otherwise hold
+        // /plugin unwire and session close forever, and the reap below, which is what kills a
+        // plugin's processes, would never run. Past the limit the unwire goes on and says how many
+        // calls it left: those fail when the plugin stops, which is the honest end for a call
+        // nobody can wait out.
+        var drainUntil = DateTime.UtcNow + _stopTimeout;
         while (Volatile.Read(ref plugin.InFlight) > 0)
         {
             ct.ThrowIfCancellationRequested();
+            if (DateTime.UtcNow >= drainUntil)
+            {
+                var running = Volatile.Read(ref plugin.InFlight);
+                _log($"plugin '{pluginName}': {running} call(s) still running after {_stopTimeout} — "
+                    + "stopping it anyway.");
+                break;
+            }
             await Task.Delay(10, ct);
         }
 
+        await RetireAsync(plugin, reap: true, ct);
+        return true;
+    }
+
+    /// <summary>
+    /// Unwires a plugin whose host process died, saying so once — the same honest outcome as a plugin
+    /// that failed to start: its tools are withdrawn rather than answering every call with a failure
+    /// nobody can trace.
+    ///
+    /// <para>THIS INSTANCE, NOT THIS NAME. A death reported late, after the plugin was already unwired
+    /// and loaded again, must not take the new instance down with it, so it acts only while this one
+    /// is still registered. Never throws: nothing awaits it.</para>
+    /// </summary>
+    private async Task WithdrawDeadAsync(LoadedPlugin plugin, string reason)
+    {
+        lock (_gate) if (!_plugins.Contains(plugin)) return;
+
+        _log($"plugin '{plugin.Manifest.Name}' stopped working — {reason} Its tools were withdrawn.");
+        try
+        {
+            await UnwireAsync(plugin.Manifest.Name, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _log($"plugin '{plugin.Manifest.Name}': could not be unwired after its host died: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Retires a plugin that was loaded but never registered — declined at its prompt, refused for a
+    /// name collision, or turned away while the session was busy.
+    ///
+    /// <para>ITS LOAD HAS ALREADY RUN: the loader reads the manifest from the plugin itself, before
+    /// any prompt can describe it, and an ABI plugin's host process is running by then. Nothing else
+    /// holds it, so without this it is never stopped, its Lifetime never ends, and its client can
+    /// still submit into a session that refused it. So it gets the end of an unwire: severed,
+    /// disposed, stopped within the same timeout.</para>
+    ///
+    /// <para>REAPED ONLY WHEN NO REGISTERED PLUGIN SHARES ITS NAME. Child records are keyed by plugin
+    /// name, so a second copy of a loaded plugin, refused for colliding with it, would otherwise reap
+    /// the loaded copy's processes. Its own Stop has run either way.</para>
+    /// </summary>
+    public Task DiscardAsync(IPlugin instance, PluginManifest manifest, IDisposable? context,
+        SessionPluginClient? client, CancellationToken ct)
+    {
+        bool shared;
+        lock (_gate) shared = _plugins.Any(p => p.Manifest.Name == manifest.Name);
+        return RetireAsync(new LoadedPlugin(instance, manifest, context, client), reap: !shared, ct);
+    }
+
+    /// <summary>Steps 3 to 5 of <see cref="UnwireAsync"/> — sever, stop, reap — for a plugin no
+    /// longer registered, whichever way it left. See that method's doc for the order.</summary>
+    private async Task RetireAsync(LoadedPlugin plugin, bool reap, CancellationToken ct)
+    {
+        var pluginName = plugin.Manifest.Name;
+
         // STEP 3: SEVER. The client goes dead before Stop, and the context is disposed here — see
-        // this method's own doc for why both happen at this point rather than after Stop returns.
+        // UnwireAsync's own doc for why both happen at this point rather than after Stop returns.
         var dropped = plugin.Client?.Sever() ?? 0;
         if (dropped > 0)
             _log($"plugin '{pluginName}': dropped {dropped} queued goal(s) at unwire.");
         plugin.Context?.Dispose();
 
-        // STEP 4: STOP, bounded by _stopTimeout — see this method's own doc for the managed/ABI
+        // STEP 4: STOP, bounded by _stopTimeout — see UnwireAsync's own doc for the managed/ABI
         // asymmetry. Task.WhenAny rather than a CancellationTokenSource on `ct` above: cancelling the
         // token passed to Stop would ask a MANAGED plugin's own code to observe cancellation it may
         // never check, which is indistinguishable from the hang this timeout exists to survive. The
         // await here is abandoned, not cancelled — the Task keeps running until the plugin's own
         // Lifetime token (already cancelled by the dispose above) eventually stops it, if the plugin
         // reads it at all.
-        var stop = plugin.Instance.Stop(ct);
+        //
+        // A STOP THAT THROWS IS A STOP THAT FAILED, NOT AN UNWIRE THAT FAILED — whether it throws
+        // before returning its Task or faults the Task later. Either way it is said, naming the
+        // plugin, and the reap below still runs: that is the plugin whose own Stop did not clean
+        // up. Letting it escape would skip the reap and, through UnwireAllAsync, every plugin after
+        // this one.
+        Task stop;
+        try
+        {
+            stop = plugin.Instance.Stop(ct);
+        }
+        catch (Exception ex)
+        {
+            stop = Task.FromException(ex);
+        }
+
         var finished = await Task.WhenAny(stop, Task.Delay(_stopTimeout, ct));
         if (finished != stop)
             _log($"plugin '{pluginName}': Stop did not return within {_stopTimeout} — "
                 + "abandoning it and closing the session around it. Any process this plugin spawned "
                 + "is left to the pid record to reap.");
+        else if (stop.Exception?.GetBaseException() is { } failed)
+            _log($"plugin '{pluginName}': Stop failed: {failed.Message}");
 
         // STEP 5: REAP. Kills any process this plugin registered whose recorded start time still
         // matches — see ChildProcessStore.ReapPlugin. A plugin that Stopped cleanly already exited
         // its own children, so this ordinarily finds nothing; it exists for the plugin that did not.
-        _childProcesses?.ReapPlugin(pluginName, _log, _sessionId);
-
-        return true;
+        if (reap) _childProcesses?.ReapPlugin(pluginName, _log, _sessionId);
     }
 
     /// <summary>
@@ -665,17 +755,45 @@ public sealed class PluginRegistry
                 AlwaysRule: alwaysAskable ? $"plugin {plugin.Manifest.Name} tool {tool.Name}" : null,
                 Subject: subject);
 
+        /// <summary>
+        /// Calls into the plugin — and stops WAITING when <paramref name="ct"/> is cancelled, whether
+        /// or not the plugin's own code ever reads the token.
+        ///
+        /// <para>A CANCELLED TURN MUST NOT BE HELD BY PLUGIN CODE. Esc cancels the turn and says
+        /// "Stopped."; a plugin that ignores its token would otherwise keep that turn busy until its
+        /// call returned, which for a hung one is never — and a busy session refuses the very
+        /// /plugin unwire that would deal with it. So the wait is abandoned on cancel, as a
+        /// built-in tool's would end, and the turn ends.</para>
+        ///
+        /// <para>COUNTED UNTIL IT REALLY ENDS. The abandoned call is still running inside the
+        /// plugin, so InFlight is released by the call's own completion, not by this method
+        /// returning — an unwire's drain then waits for it, within its limit, rather than stopping
+        /// the plugin underneath code that is still executing.</para>
+        /// </summary>
         public async Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)
         {
             Interlocked.Increment(ref plugin.InFlight);
+            Task<JobResult> invoked;
             try
             {
-                return await plugin.Instance.Invoke(tool.Name, call, context, ct);
+                invoked = plugin.Instance.Invoke(tool.Name, call, context, ct);
             }
-            finally
+            catch
             {
                 Interlocked.Decrement(ref plugin.InFlight);
+                throw;
             }
+
+            // READING Exception observes it: a call abandoned below that later faults is nobody's
+            // to report, and must not surface as an unobserved task exception.
+            _ = invoked.ContinueWith(t =>
+                {
+                    _ = t.Exception;
+                    Interlocked.Decrement(ref plugin.InFlight);
+                },
+                CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
+            return await invoked.WaitAsync(ct);
         }
     }
 }

@@ -317,6 +317,61 @@ public class AbiPluginLoaderTests
         await plugin.Stop(CancellationToken.None);
     }
 
+    /// <summary>
+    /// A HOST THAT DIES IS SAID, AND ITS TOOLS ARE WITHDRAWN. Every later call would fail with
+    /// "reader loop no longer running" while /plugin still listed the plugin as active — so the
+    /// death is reported once, naming the plugin, and the plugin is unwired, the same honest outcome
+    /// as a plugin that failed to start.
+    /// </summary>
+    [Fact]
+    public async Task AHostThatDies_IsReported_AndItsToolsAreWithdrawn()
+    {
+        if (!RequireFixture("fixture-wellformed", out var lib)) return;
+
+        var context = Context();
+        var loaded = Assert.IsType<AbiPluginLoadResult.Loaded>(
+            await AbiPluginLoader.Load(HostDllPath, lib, context, CancellationToken.None));
+        var registry = new PluginRegistry(TimeSpan.FromSeconds(5));
+        var said = new List<string>();
+        var store = Directory.CreateTempSubdirectory("abi-died-").FullName;
+        registry.AttachChildProcessStore(new ChildProcessStore(store), m => { lock (said) said.Add(m); });
+        registry.Load(loaded.Instance, loaded.Manifest, isNameTaken: _ => false);
+        await loaded.Instance.Start(CancellationToken.None);
+        Assert.NotEmpty(registry.CurrentTools());
+
+        var host = Process.GetProcessById(context.RegisteredPids.Single());
+        host.Kill(entireProcessTree: true);
+        host.WaitForExit(5000);
+
+        for (var i = 0; i < 100 && registry.CurrentTools().Count > 0; i++) await Task.Delay(20);
+        Assert.Empty(registry.CurrentTools());
+        lock (said) Assert.Contains(said, m => m.Contains(loaded.Manifest.Name) && m.Contains("withdrawn"));
+        Directory.Delete(store, recursive: true);
+    }
+
+    /// <summary>AN UNWIRE IS NOT A DEATH: the host exits because it was told to, and nothing is said
+    /// about it crashing.</summary>
+    [Fact]
+    public async Task AnOrdinaryUnwire_IsNotReportedAsADeath()
+    {
+        if (!RequireFixture("fixture-wellformed", out var lib)) return;
+
+        var loaded = Assert.IsType<AbiPluginLoadResult.Loaded>(
+            await AbiPluginLoader.Load(HostDllPath, lib, Context(), CancellationToken.None));
+        var registry = new PluginRegistry(TimeSpan.FromSeconds(5));
+        var said = new List<string>();
+        var store = Directory.CreateTempSubdirectory("abi-unwired-").FullName;
+        registry.AttachChildProcessStore(new ChildProcessStore(store), m => { lock (said) said.Add(m); });
+        registry.Load(loaded.Instance, loaded.Manifest, isNameTaken: _ => false);
+        await loaded.Instance.Start(CancellationToken.None);
+
+        Assert.True(await registry.UnwireAsync(loaded.Manifest.Name, CancellationToken.None));
+        await Task.Delay(300);
+
+        lock (said) Assert.DoesNotContain(said, m => m.Contains("withdrawn"));
+        Directory.Delete(store, recursive: true);
+    }
+
     private static IJobContext FakeJobContext() => new TestJobContext();
 
     // ---- Task 10b: an ABI plugin can submit --------------------------------------------------------
