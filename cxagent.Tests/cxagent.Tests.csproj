@@ -112,15 +112,23 @@
     <ProjectReference Include="../cxagent.PluginHost/cxagent.PluginHost.csproj" />
   </ItemGroup>
 
-  <!-- NATIVE ABI FIXTURES, BUILT BY A SHELL SCRIPT BECAUSE MSBUILD HAS NO C COMPILER TASK.
+  <!-- NATIVE ABI FIXTURES, BUILT BY CMAKE OR A SHELL SCRIPT BECAUSE MSBUILD HAS NO C COMPILER TASK.
        AfterTargets="Build" (not BeforeBuild) so the fixtures land in $(OutDir) after MSBuild has
        created it — building them earlier would have nowhere guaranteed to copy them onto, and
        CopyToOutputDirectory cannot ferry a file this project's own compile step didn't produce.
-       Condition guards non-Linux and CI images with no C toolchain: AbiFixtures/build.sh already
-       skips cleanly and exits 0 when no compiler is found, so this target degrades to a no-op
-       rather than failing dotnet build entirely for a fixture only Linux-hosted ABI tests need. -->
-  <Target Name="BuildAbiFixtures" AfterTargets="Build" Condition="'$(OS)' != 'Windows_NT'">
-    <Exec Command="bash &quot;$(MSBuildProjectDirectory)/AbiFixtures/build.sh&quot; &quot;$(OutDir)&quot;" />
+
+       CMAKE WHEREVER IT IS INSTALLED, WINDOWS INCLUDED — the same AbiFixtures/CMakeLists.txt CI
+       uses on every platform — then build.sh on Linux and macOS without it, then nothing: with no
+       C toolchain at all the native tests skip rather than failing dotnet build for fixtures only
+       they need. -->
+  <Target Name="BuildAbiFixtures" AfterTargets="Build">
+    <Exec Command="cmake --version" ContinueOnError="true" StandardOutputImportance="low" StandardErrorImportance="low" IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="CmakeExitCode" />
+    </Exec>
+    <Exec Condition="'$(CmakeExitCode)' == '0'"
+          Command="cmake -S &quot;$(MSBuildProjectDirectory)/AbiFixtures&quot; -B &quot;$(BaseIntermediateOutputPath)abi-fixtures&quot; -DFIXTURE_OUT=&quot;$(MSBuildProjectDirectory)/$(OutDir).&quot; &amp;&amp; cmake --build &quot;$(BaseIntermediateOutputPath)abi-fixtures&quot; --config Release" />
+    <Exec Condition="'$(CmakeExitCode)' != '0' And '$(OS)' != 'Windows_NT'"
+          Command="bash &quot;$(MSBuildProjectDirectory)/AbiFixtures/build.sh&quot; &quot;$(OutDir)&quot;" />
   </Target>
 
   <ItemGroup>

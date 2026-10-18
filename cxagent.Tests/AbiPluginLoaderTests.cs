@@ -24,7 +24,7 @@ public class AbiPluginLoaderTests
 
     private static string? Fixture(string name)
     {
-        var path = Path.Combine(OutputDir, name + ".so");
+        var path = Path.Combine(OutputDir, name + NativeFixtures.Suffix);
         return File.Exists(path) ? path : null;
     }
 
@@ -184,7 +184,7 @@ public class AbiPluginLoaderTests
     {
         if (!RequireFixture("fixture-wellformed", out var lib)) return;
 
-        var copy = Path.Combine(OutputDir, $"fixture-wellformed-contract-{Guid.NewGuid():N}.so");
+        var copy = Path.Combine(OutputDir, $"fixture-wellformed-contract-{Guid.NewGuid():N}{NativeFixtures.Suffix}");
         File.Copy(lib, copy);
         var sidecarPath = Path.ChangeExtension(copy, null) + ".plugin.json";
         await File.WriteAllTextAsync(sidecarPath, manifest);
@@ -212,7 +212,7 @@ public class AbiPluginLoaderTests
         // A SIDECAR THAT DISAGREES WITH THE REAL fixture-wellformed.so DESCRIBE — written beside a
         // COPY of the library so the real sidecar (needed by the other tests sharing this output
         // directory) is never disturbed.
-        var copy = Path.Combine(OutputDir, $"fixture-wellformed-mismatch-{Guid.NewGuid():N}.so");
+        var copy = Path.Combine(OutputDir, $"fixture-wellformed-mismatch-{Guid.NewGuid():N}{NativeFixtures.Suffix}");
         File.Copy(lib, copy);
         var sidecarPath = Path.ChangeExtension(copy, null) + ".plugin.json";
         await File.WriteAllTextAsync(sidecarPath,
@@ -239,7 +239,7 @@ public class AbiPluginLoaderTests
     {
         if (!RequireFixture("fixture-wellformed", out var lib)) return;
 
-        var copy = Path.Combine(OutputDir, $"fixture-wellformed-nosidecar-{Guid.NewGuid():N}.so");
+        var copy = Path.Combine(OutputDir, $"fixture-wellformed-nosidecar-{Guid.NewGuid():N}{NativeFixtures.Suffix}");
         File.Copy(lib, copy);
         try
         {
@@ -259,7 +259,7 @@ public class AbiPluginLoaderTests
     [Fact]
     public async Task ANonexistentLibraryFails()
     {
-        var missing = Path.Combine(OutputDir, "does-not-exist.so");
+        var missing = Path.Combine(OutputDir, "does-not-exist" + NativeFixtures.Suffix);
         var result = await AbiPluginLoader.Load(HostDllPath, missing, Context(), CancellationToken.None);
 
         var failed = Assert.IsType<AbiPluginLoadResult.Failed>(result);

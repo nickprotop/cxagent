@@ -25,7 +25,7 @@ public class AbiPluginHostTests
 
     private static string? Fixture(string name)
     {
-        var path = Path.Combine(OutputDir, name + ".so");
+        var path = Path.Combine(OutputDir, name + NativeFixtures.Suffix);
         return File.Exists(path) ? path : null;
     }
 
@@ -296,7 +296,7 @@ public class AbiPluginHostTests
     [Fact]
     public async Task ALibraryThatDoesNotExistFailsCleanlyAtStartup()
     {
-        var missingPath = Path.Combine(OutputDir, "does-not-exist.so");
+        var missingPath = Path.Combine(OutputDir, "does-not-exist" + NativeFixtures.Suffix);
         var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, missingPath);
         await using var disposeHost = host;
 

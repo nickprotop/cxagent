@@ -22,7 +22,7 @@ public class NativePluginExportTests
 
     private static bool RequireFixture(string name, out string path)
     {
-        var found = Path.Combine(OutputDir, name + ".so");
+        var found = Path.Combine(OutputDir, name + NativeFixtures.Suffix);
         path = found;
         return File.Exists(found);
     }
