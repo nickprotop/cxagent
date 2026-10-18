@@ -41,6 +41,10 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
         // have a listener, or it is dropped on the floor exactly like an unmatched reply.
         _host.PluginSubmitted += OnPluginSubmitted;
         _host.Died += reason => HostDied?.Invoke(reason);
+
+        // THE PLUGIN'S OWN LOG — what it says outside any call — goes where a managed plugin's goes:
+        // the logger Load is handed. Null until Load, and a line before then has nowhere to go.
+        _host.PluginLogged += (_, line) => _logger?.Log(line);
     }
 
     /// <summary>This plugin's host process died unasked — see <see cref="AbiHostProcess.Died"/>.
@@ -170,7 +174,9 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
         using var doc = JsonDocument.Parse(argumentsJson);
         var arguments = doc.RootElement.GetProperty("arguments").Clone();
 
-        var reply = await _host.Invoke(toolName, arguments, ct).ConfigureAwait(false);
+        // THIS CALL'S CONTEXT TRAVELS WITH IT, so what the library reports while working — progress,
+        // log lines, streamed text — reaches the row this call is drawn in.
+        var reply = await _host.Invoke(toolName, arguments, ct, context).ConfigureAwait(false);
         if (!reply.Ok)
             return new JobResult { Success = false, ErrorMessage = reply.Error ?? $"plugin '{_manifest.Name}' call to '{toolName}' failed." };
 

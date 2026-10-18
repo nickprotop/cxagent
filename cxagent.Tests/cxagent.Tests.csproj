@@ -157,6 +157,8 @@
           TargetPath="fixture-wellformed.plugin.json" />
     <None Include="AbiPluginFixtures/fixture-submits.plugin.json" CopyToOutputDirectory="PreserveNewest"
           TargetPath="fixture-submits.plugin.json" />
+    <None Include="AbiPluginFixtures/fixture-reports.plugin.json" CopyToOutputDirectory="PreserveNewest"
+          TargetPath="fixture-reports.plugin.json" />
   </ItemGroup>
 
 </Project>

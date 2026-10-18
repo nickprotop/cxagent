@@ -45,6 +45,7 @@ public sealed class NativePlugin : IDisposable
     private delegate void FreeFn(IntPtr ptr);
     private delegate IntPtr PollFn();
     private delegate IntPtr CommandFn(IntPtr name, IntPtr argumentsJson);
+    private delegate void AttachFn(IntPtr host);
 
     private readonly IntPtr _handle;
     private readonly AbiVersionFn _abiVersion;
@@ -61,6 +62,8 @@ public sealed class NativePlugin : IDisposable
     // export whose absence Load tolerates, for the same reason poll's does: a plugin built before
     // contract 3 added commands must still load. See HasCommand.
     private readonly CommandFn? _command;
+    // NULL FOR A LIBRARY THAT DOES NOT REPORT WHILE IT WORKS — the third optional export, see HasAttach.
+    private readonly AttachFn? _attach;
 
     /// <summary>
     /// Every <c>cxagent_plugin_*</c> symbol a library must export, resolved together.
@@ -72,7 +75,8 @@ public sealed class NativePlugin : IDisposable
     /// </summary>
     private sealed record Exports(
         AbiVersionFn AbiVersion, DescribeFn Describe, StartFn Start,
-        InvokeFn Invoke, GateFn Gate, StopFn Stop, FreeFn Free, PollFn? Poll, CommandFn? Command);
+        InvokeFn Invoke, GateFn Gate, StopFn Stop, FreeFn Free, PollFn? Poll, CommandFn? Command,
+        AttachFn? Attach);
 
     private NativePlugin(IntPtr handle, Exports exports)
     {
@@ -86,6 +90,7 @@ public sealed class NativePlugin : IDisposable
         _free = exports.Free;
         _poll = exports.Poll;
         _command = exports.Command;
+        _attach = exports.Attach;
     }
 
     /// <summary>
@@ -126,9 +131,10 @@ public sealed class NativePlugin : IDisposable
             var free = ResolveExport<FreeFn>(handle, "cxagent_plugin_free");
             var poll = ResolveOptionalExport<PollFn>(handle, "cxagent_plugin_poll");
             var command = ResolveOptionalExport<CommandFn>(handle, "cxagent_plugin_command");
+            var attach = ResolveOptionalExport<AttachFn>(handle, "cxagent_plugin_attach");
 
             return new NativePluginLoadResult.Loaded(
-                new NativePlugin(handle, new Exports(abiVersion, describe, start, invoke, gate, stop, free, poll, command)));
+                new NativePlugin(handle, new Exports(abiVersion, describe, start, invoke, gate, stop, free, poll, command, attach)));
         }
         catch (MissingExportException ex)
         {
@@ -174,6 +180,19 @@ public sealed class NativePlugin : IDisposable
     /// built before commands existed, or one that declares none of its own, which is not a refused
     /// load (see <see cref="Load"/>), just a plugin this host never asks to run one.</summary>
     public bool HasCommand => _command is not null;
+
+    /// <summary>Whether this library exported <c>cxagent_plugin_attach</c> — false for one that only
+    /// returns results, which is not a refused load, just a plugin this host never hands the table.</summary>
+    public bool HasAttach => _attach is not null;
+
+    /// <summary>Hands the library the host's callback table — once, before start. See HostCallbacks.</summary>
+    public void Attach(IntPtr hostTable)
+    {
+        if (_attach is null)
+            throw new InvalidOperationException(
+                "this library never exported cxagent_plugin_attach — check HasAttach before calling Attach.");
+        _attach(hostTable);
+    }
 
     /// <summary>The ABI version this library reports — checked by the caller against
     /// <see cref="CxAgent.Core.Plugins.PluginContract.Version"/> with a range, not exact equality

@@ -39,3 +39,4 @@ build fixture-disagrees -DFIXTURE_DISAGREES
 build fixture-noinvoke -DFIXTURE_NOINVOKE
 build fixture-submits -DFIXTURE_SUBMITS
 build fixture-commands -DFIXTURE_COMMANDS
+build fixture-reports -DFIXTURE_REPORTS -pthread

@@ -131,6 +131,27 @@ public sealed record AbiSubmit(
     [property: JsonPropertyName("wantResult")] bool WantResult = false);
 
 /// <summary>
+/// One report a native plugin made while working — progress, a log line, or streamed text — written by
+/// the plugin host as it happens, keyed by the request it belongs to.
+///
+/// <para>ITS OWN SHAPE, told apart by <see cref="Event"/>, because it shares the stream with replies:
+/// a reply has "ok", an event has "event", and the reader checks for the second before treating a
+/// line as the first. <see cref="Id"/> 0 is no call — the plugin's own log for a log line; nothing for
+/// the others.</para>
+/// </summary>
+/// <param name="Event">"progress", "log" or "stream".</param>
+/// <param name="Id">The request this report is for, or 0.</param>
+/// <param name="Percent">For progress.</param>
+/// <param name="Level">For a log line, JobLogLevel's numbering.</param>
+/// <param name="Text">The message, the line, or the streamed text.</param>
+public sealed record HostEvent(
+    [property: JsonPropertyName("event")] string Event,
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("percent")] double? Percent = null,
+    [property: JsonPropertyName("level")] int? Level = null,
+    [property: JsonPropertyName("text")] string? Text = null);
+
+/// <summary>
 /// The one line the host process writes before reading any request — the library loaded, the ABI
 /// version handshake passed, and <c>cxagent_plugin_describe</c> returned a manifest that parsed.
 /// <see cref="Manifest"/> is the SAME <see cref="PluginManifest"/> a managed plugin's <c>Load</c>

@@ -30,6 +30,18 @@ internal sealed class AbiHostProcess : IAsyncDisposable
     // call.
     private readonly ConcurrentDictionary<long, TaskCompletionSource<HostReply>> _outstanding = new();
 
+    // THE CALL CONTEXT OF EACH INVOKE IN FLIGHT, by request id — where a native plugin's reports for
+    // that call go. Removed when the reply arrives, so a report naming a finished call finds nothing
+    // and is dropped rather than reaching whichever call happens to be running.
+    private readonly ConcurrentDictionary<long, Jobs.IJobContext> _contexts = new();
+
+    /// <summary>
+    /// A log line the plugin wrote outside any call — at start, or from a thread of its own with no
+    /// call id. The plugin's own log, which <see cref="AbiPlugin"/> forwards to the plugin logger it
+    /// was given at Load.
+    /// </summary>
+    public event Action<Jobs.JobLogLevel, string>? PluginLogged;
+
     /// <summary>
     /// Fired for a line this instance never asked for — a plugin-originated <see cref="AbiSubmit"/>,
     /// see <see cref="HostProtocol"/>'s own doc. <see cref="AbiPlugin"/> is the only subscriber in
@@ -133,12 +145,14 @@ internal sealed class AbiHostProcess : IAsyncDisposable
                 // HostRequest), so this line is read as JSON once, generically, before committing to
                 // either JsonSerializer.Deserialize<HostReply> below or the AbiSubmit branch.
                 long id;
+                bool isEvent;
                 try
                 {
                     using var peek = JsonDocument.Parse(line);
                     if (!peek.RootElement.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.Number)
                         continue; // NO ID AT ALL — same as an unparseable line, below: nothing to attribute this to.
                     id = idEl.GetInt64();
+                    isEvent = peek.RootElement.TryGetProperty("event", out _);
                 }
                 catch (JsonException)
                 {
@@ -146,6 +160,14 @@ internal sealed class AbiHostProcess : IAsyncDisposable
                     // was for, so it can only report and move on, never fail a specific call over it
                     // (the call it was meant for still gets its own answer, or its own eventual
                     // stream-end failure, from a later line).
+                    continue;
+                }
+
+                // A REPORT, NOT A REPLY: it carries a request's id but answers nothing, so it is routed
+                // to that call and the line is done — it must never complete the call's waiter.
+                if (isEvent)
+                {
+                    RouteReport(line);
                     continue;
                 }
 
@@ -348,8 +370,25 @@ internal sealed class AbiHostProcess : IAsyncDisposable
             JsonSerializer.SerializeToElement(new { workingDirectory, settings }), ct);
 
     /// <summary>Sends an <c>invoke</c> request for <paramref name="toolName"/> and awaits its reply.</summary>
-    public Task<HostReply> Invoke(string toolName, JsonElement arguments, CancellationToken ct) =>
-        Send(HostProtocol.RequestKind.Invoke, toolName, arguments, ct);
+    /// <param name="toolName">The tool to call.</param>
+    /// <param name="arguments">Its arguments.</param>
+    /// <param name="ct">Abandons the wait.</param>
+    /// <param name="context">Where this call's progress, log lines and streamed text go, while it is
+    /// in flight. Null for a caller with nowhere to show them; the plugin's reports are then dropped.</param>
+    public async Task<HostReply> Invoke(string toolName, JsonElement arguments, CancellationToken ct,
+        Jobs.IJobContext? context = null)
+    {
+        var id = Interlocked.Increment(ref _nextId);
+        if (context is not null) _contexts[id] = context;
+        try
+        {
+            return await SendAs(id, HostProtocol.RequestKind.Invoke, toolName, arguments, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _contexts.TryRemove(id, out _);
+        }
+    }
 
     /// <summary>Sends a <c>stop</c> request and awaits its reply.</summary>
     /// <summary>
@@ -402,10 +441,15 @@ internal sealed class AbiHostProcess : IAsyncDisposable
     /// when that happens, so this method only needs to await the same <see cref="TaskCompletionSource{TResult}"/>
     /// the loop completes either way; it does not read stdout itself any more.</para>
     /// </summary>
-    private async Task<HostReply> Send(HostProtocol.RequestKind kind, string? toolName,
+    private Task<HostReply> Send(HostProtocol.RequestKind kind, string? toolName,
+        JsonElement? arguments, CancellationToken ct) =>
+        SendAs(Interlocked.Increment(ref _nextId), kind, toolName, arguments, ct);
+
+    // THE ID IS THE CALLER'S when it needs it before the request leaves — an invoke registers its call
+    // context under it first, so a report arriving with the very first byte of the call is routed.
+    private async Task<HostReply> SendAs(long id, HostProtocol.RequestKind kind, string? toolName,
         JsonElement? arguments, CancellationToken ct)
     {
-        var id = Interlocked.Increment(ref _nextId);
         var request = new HostRequest(id, kind, toolName, arguments);
         var tcs = new TaskCompletionSource<HostReply>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -496,6 +540,44 @@ internal sealed class AbiHostProcess : IAsyncDisposable
         catch (Exception)
         {
             return "";
+        }
+    }
+
+    /// <summary>
+    /// Delivers one report a native plugin made — progress, a log line, streamed text — to the call it
+    /// names, or a call-less log line to <see cref="PluginLogged"/>. Anything it cannot place is
+    /// dropped. NEVER THROWS: this runs on the only reader this process has, and a report a context
+    /// could not take must not end the loop every other call is waiting on.
+    /// </summary>
+    private void RouteReport(string line)
+    {
+        try
+        {
+            if (JsonSerializer.Deserialize<HostEvent>(line) is not { } report) return;
+            var level = (Jobs.JobLogLevel)Math.Clamp(report.Level ?? 2, 0, 4);
+            if (report.Id == 0)
+            {
+                if (report.Event == "log" && report.Text is { } text) PluginLogged?.Invoke(level, text);
+                return;
+            }
+
+            if (!_contexts.TryGetValue(report.Id, out var call)) return;
+            switch (report.Event)
+            {
+                case "progress":
+                    call.ReportProgress(report.Percent ?? 0, report.Text);
+                    break;
+                case "log" when report.Text is { } logLine:
+                    call.Log(level, logLine);
+                    break;
+                case "stream" when report.Text is { } chunk:
+                    call.ReportTextDelta(chunk);
+                    break;
+            }
+        }
+        catch (Exception)
+        {
+            // A MALFORMED REPORT, OR A CONTEXT THAT THREW, costs that one report and nothing else.
         }
     }
 

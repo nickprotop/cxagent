@@ -12,6 +12,10 @@
  * FIXTURE_BADVERSION: cxagent_plugin_abi_version reports a version this host does not understand.
  * FIXTURE_DISAGREES: cxagent_plugin_abi_version reports 3 while describe's body says 2 — both in
  * range, so only a check that compares the two catches a plugin contradicting itself.
+ * FIXTURE_REPORTS: exports cxagent_plugin_attach and reports through the host's table — start logs
+ * with no call; "echo" reports progress, a log line and two streamed chunks from inside the call;
+ * "echo_dynamic" copies current_call() and reports once more from its own thread, 200ms after the
+ * call returned, which the host must drop rather than route anywhere.
  * FIXTURE_NOINVOKE: omits cxagent_plugin_invoke entirely — a library missing a required export.
  * FIXTURE_SUBMITS: exports cxagent_plugin_poll, which returns one submit
  * ({"goal":"run the tests","wantResult":false}) on its FIRST call and NULL on every call after —
@@ -31,6 +35,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+
+#ifdef FIXTURE_REPORTS
+#  ifdef _WIN32
+#    include <windows.h>
+#  else
+#    include <pthread.h>
+#    include <unistd.h>
+#  endif
+#endif
 
 /* THE ABI'S OWN DECLARATIONS, so every definition below is checked against them and marked for
  * export — without CXAGENT_PLUGIN_EXPORT an MSVC or -fvisibility=hidden build exports nothing. */
@@ -96,8 +109,39 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_gate(const char* tool_name, con
     return NULL;
 }
 
+#ifdef FIXTURE_REPORTS
+/* THE HOST'S TABLE, kept for the library's life as cxagent_plugin.h says it may be. */
+static const cxagent_host* g_host = NULL;
+static char g_late_call[64];
+
+CXAGENT_PLUGIN_EXPORT void cxagent_plugin_attach(const cxagent_host* host) {
+    g_host = host;
+}
+
+/* A REPORT FROM THE PLUGIN'S OWN THREAD, AFTER ITS CALL RETURNED: the host must drop it. */
+#  ifdef _WIN32
+static DWORD WINAPI report_late(LPVOID unused) {
+    (void)unused;
+    Sleep(200);
+    g_host->progress(g_late_call, 99, "late");
+    return 0;
+}
+#  else
+static void* report_late(void* unused) {
+    (void)unused;
+    usleep(200 * 1000);
+    g_host->progress(g_late_call, 99, "late");
+    return NULL;
+}
+#  endif
+#endif
+
 CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_start(const char* context_json) {
     (void)context_json;
+#ifdef FIXTURE_REPORTS
+    /* NOT INSIDE A CALL, so this goes to the plugin's own log. */
+    if (g_host != NULL) g_host->log(NULL, 2, "started");
+#endif
     return dup_str("{\"ok\":true}");
 }
 
@@ -113,6 +157,27 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_invoke(const char* tool_name, c
     return (const char*)(intptr_t)(*p);
 #elif defined(FIXTURE_MALFORMED)
     return dup_str("{ this is not json");
+#elif defined(FIXTURE_REPORTS)
+    if (g_host != NULL && tool_name != NULL && strcmp(tool_name, "echo") == 0) {
+        /* NULL call ids: this thread's call, so a report from inside invoke needs no id. */
+        g_host->progress(NULL, 50, "half");
+        g_host->log(NULL, 2, "working");
+        g_host->stream(NULL, "one ");
+        g_host->stream(NULL, "two");
+    } else if (g_host != NULL && tool_name != NULL && strcmp(tool_name, "echo_dynamic") == 0) {
+        const char* id = g_host->current_call();
+        strncpy(g_late_call, id != NULL ? id : "", sizeof g_late_call - 1);
+#  ifdef _WIN32
+        CloseHandle(CreateThread(NULL, 0, report_late, NULL, 0, NULL));
+#  else
+        pthread_t t;
+        pthread_create(&t, NULL, report_late, NULL);
+        pthread_detach(t);
+#  endif
+    }
+    return dup_str("{\"ok\":true,\"result\":{\"success\":true,\"exitCode\":0,\"errorMessage\":null,"
+        "\"permissionDenied\":false,\"decidedBy\":null,\"output\":{\"echoed\":true},"
+        "\"logFile\":null,\"durationMs\":1}}");
 #else
     return dup_str("{\"ok\":true,\"result\":{\"success\":true,\"exitCode\":0,\"errorMessage\":null,"
         "\"permissionDenied\":false,\"decidedBy\":null,\"output\":{\"echoed\":true},"

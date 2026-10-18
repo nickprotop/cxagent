@@ -104,6 +104,13 @@ var manifest = AbiCodec.ToPluginManifest(manifestResult.Value);
 // THIS HOST'S OWN BUILD, which the app compares with its own — a stale host is refused by name.
 await WriteLine(new HostReady(true, manifest, PluginContract.HostVersionOf(typeof(HostReady).Assembly)));
 
+// THE CALLBACK TABLE, BEFORE ANY REQUEST IS READ — so before start, as cxagent_plugin.h promises — and
+// only to a library that exports attach. Each report is written as an event line on the same
+// serialized stdout as the replies; WRITTEN SYNCHRONOUSLY, because the callback returns into native
+// code that may free the strings it passed as soon as it does.
+if (plugin.HasAttach)
+    plugin.Attach(HostCallbacks.Create(report => WriteLine(report).GetAwaiter().GetResult()));
+
 // THE POLL LOOP, STARTED ONLY WHEN THE LIBRARY EXPORTS cxagent_plugin_poll — a library built
 // before contract 3 (NativePlugin.HasPoll false) is never asked, matching cxagent_plugin.h's own
 // "resolved by name at load time; its absence is not a load failure." Cancelled from the request
@@ -384,7 +391,11 @@ static HostReply RunInvokeCall(HostRequest request, NativePlugin plugin)
     var toolName = doc.RootElement.GetProperty("toolName").GetString()!;
     var arguments = doc.RootElement.GetProperty("arguments").GetRawText();
 
-    var envelopeResult = AbiCodec.ParseEnvelope(plugin.Invoke(toolName, arguments));
+    // THIS THREAD IS THIS REQUEST'S, for the duration of the library's invoke: a report it makes with
+    // no call id is routed here, and current_call() answers with this request's id.
+    AbiParseResult<AbiResultEnvelope> envelopeResult;
+    using (HostCallbacks.Running(request.Id))
+        envelopeResult = AbiCodec.ParseEnvelope(plugin.Invoke(toolName, arguments));
     if (!envelopeResult.IsSuccess)
         return new HostReply(request.Id, false, null, envelopeResult.Error);
 

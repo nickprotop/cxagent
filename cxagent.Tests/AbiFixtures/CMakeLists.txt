@@ -4,15 +4,18 @@
 cmake_minimum_required(VERSION 3.20)
 project(cxagent_abi_fixtures C)
 
+# THE REPORTING FIXTURE STARTS A THREAD OF ITS OWN, as a real plugin reporting late would.
+find_package(Threads REQUIRED)
+
 set(FIXTURE_OUT "${CMAKE_BINARY_DIR}" CACHE PATH "Where the fixture libraries go")
 
 # NAME AND THE -D FLAG THAT SELECTS ITS MISBEHAVIOUR, pairwise; NONE for the well-formed one.
 set(FIXTURE_NAMES
     fixture-wellformed fixture-malformed fixture-crash fixture-badversion fixture-disagrees
-    fixture-noinvoke fixture-submits fixture-commands)
+    fixture-noinvoke fixture-submits fixture-commands fixture-reports)
 set(FIXTURE_FLAGS
     NONE FIXTURE_MALFORMED FIXTURE_CRASH FIXTURE_BADVERSION FIXTURE_DISAGREES
-    FIXTURE_NOINVOKE FIXTURE_SUBMITS FIXTURE_COMMANDS)
+    FIXTURE_NOINVOKE FIXTURE_SUBMITS FIXTURE_COMMANDS FIXTURE_REPORTS)
 
 foreach(name flag IN ZIP_LISTS FIXTURE_NAMES FIXTURE_FLAGS)
     add_library(${name} SHARED fixture_plugin.c)
@@ -20,6 +23,7 @@ foreach(name flag IN ZIP_LISTS FIXTURE_NAMES FIXTURE_FLAGS)
     if(NOT flag STREQUAL "NONE")
         target_compile_definitions(${name} PRIVATE ${flag})
     endif()
+    target_link_libraries(${name} PRIVATE Threads::Threads)
     # HIDDEN BY DEFAULT, so CXAGENT_PLUGIN_EXPORT is what decides the export table on Linux and macOS
     # just as it does under MSVC: an export missing the macro fails these tests everywhere. NO "lib"
     # PREFIX and every configuration into one folder, so the tests find fixture-wellformed.so /
