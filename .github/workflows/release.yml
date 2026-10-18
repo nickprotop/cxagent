@@ -502,12 +502,23 @@ jobs:
       - name: Test
         run: dotnet test cxagent.Tests/cxagent.Tests.csproj --configuration Release
 
-      # TWO PACKAGES, ONE JOB. CxAgent.Core is the library; cxagent is the same app the binaries
+      # THREE PACKAGES, ONE JOB. CxAgent.Core is the library; cxagent is the same app the binaries
       # above carry, packaged as `dotnet tool install -g cxagent` for developers who already have
       # the SDK. They share this job because they share a version, a tag and one trusted-publishing
       # identity — a second job would be a second place for those to drift apart.
+      #
+      # CxAgent.Plugins.Abstractions IS THE ONE THAT DOES NOT TAKE THE TAG. It is the plugin
+      # contract, numbered by contract rather than by release (its csproj sets PackageVersion, which
+      # -p:Version does not reach). Core depends on it, so without it on nuget.org neither Core
+      # nor a plugin built against the contract restores. Packed every release, pushed once: the
+      # same number comes out each time and --skip-duplicate below skips it.
       - name: Pack
         run: |
+          dotnet pack cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj \
+            --configuration Release \
+            -p:ContinuousIntegrationBuild=true \
+            --output ./nupkg
+
           dotnet pack cxagent.Core/cxagent.Core.csproj \
             --configuration Release \
             -p:Version=${{ steps.version.outputs.VERSION }} \
@@ -535,8 +546,9 @@ jobs:
       # ONE-TIME SETUP ON NUGET.ORG, and this job fails until it is done:
       #   1. nuget.org → account → Trusted Publishing → add a policy for
       #      owner `nickprotop`, repository `nickprotop/cxagent`, workflow `release.yml`.
-      #      A GLOB IN THE PACKAGE PATTERN (`cxagent*`) covers both packages this job pushes —
-      #      CxAgent.Core and cxagent, the dotnet tool — so one policy is enough. Without a glob a
+      #      A GLOB IN THE PACKAGE PATTERN (`cxagent*`) covers all three packages this job pushes —
+      #      CxAgent.Core, CxAgent.Plugins.Abstractions and cxagent, the dotnet tool — so one policy
+      #      is enough. Without a glob a
       #      policy is per-package, and a missing one fails that package's push alone, after the
       #      other has landed; --skip-duplicate makes the re-run safe either way.
       #   2. `gh variable set NUGET_USER --repo nickprotop/cxagent --body "<nuget.org user>"`
@@ -552,7 +564,7 @@ jobs:
         with:
           user: ${{ vars.NUGET_USER }}
 
-      # THE GLOB COVERS BOTH PACKAGES. --skip-duplicate makes a re-run after a partial failure safe:
+      # THE GLOB COVERS ALL THREE PACKAGES. --skip-duplicate makes a re-run after a partial failure safe:
       # whichever package already landed is skipped rather than failing the job.
       - name: Push
         run: |

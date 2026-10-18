@@ -25,8 +25,17 @@
          "pluginContract": 3, so the two compatibility signals are one signal said twice.
          KEEP THIS MAJOR IN STEP WITH PluginContract.Version: a placeholder that disagrees with the
          constant makes a liar of the sentence above, and it is the sentence a plugin author trusts.
-         The release workflow passes -p:Version from the tag; this is the local placeholder. -->
-    <Version>3.0.0</Version>
+
+         PackageVersion, NOT Version. The release packs with -p:Version from the app's tag, and a
+         global property reaches every project in the build, this one included: as <Version> this
+         would be packed as the app's number, and CxAgent.Core would depend on a contract package
+         of that number which is never published. A tag does not set PackageVersion, so the
+         contract keeps its own number and Core's dependency names it.
+
+         RAISED BY HAND, never by a release. 3.0.0 is pushed once and every later release skips it
+         as a duplicate, so a compatible change to this assembly ships only when this number moves
+         — 3.1.0 for an addition, the next major with PluginContract.Version. -->
+    <PackageVersion>3.0.0</PackageVersion>
 
     <!-- FROZEN, AND NEVER BUMPED — not even at a contract change. This is the identity .NET
          resolves by exact match, so moving it would refuse an old plugin at LOAD, before
