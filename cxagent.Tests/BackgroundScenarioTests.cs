@@ -118,6 +118,16 @@ public class BackgroundScenarioTests : IDisposable
 
     private Scene Open(ScriptedProvider parent, ILlmProvider child) => Open(parent, new SceneSetup { Child = child });
 
+    /// <summary>
+    /// A hold for a background child's answer, set by the test once the turn that spawned it has ended.
+    ///
+    /// <para>A REPORT THAT LANDS WHILE THE TURN IS STILL GOING IS READ BY THAT TURN — the mailbox is drained at the top of
+    /// every lap — and wakes nothing. That is right, but a row scripted around the wake then waits for a request that
+    /// never comes, with every later scripted step one place out. A child that answers at once lands there whenever
+    /// the machine is busy; held until the turn ends, its report always arrives at an idle parent and wakes it.</para>
+    /// </summary>
+    private static TaskCompletionSource AfterTheTurn() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     /// <summary>Waits until no turn is running or owned.</summary>
     private static async Task Idle(Session s) => Assert.True(await Poll.Until(() => !s.IsBusy && !s.TurnOwned),
         "the session never went idle");
@@ -627,10 +637,12 @@ public class BackgroundScenarioTests : IDisposable
             Use(Calls.Named(Tool.AgentSend, new { to = "find-thing", prompt = "again", background = false }, id: "s2")),
             Answer("moved on"), Answer("read it"));
         var hold = new TaskCompletionSource();
-        var child = new ScriptedProvider(Answer("found it")).Then(Answer("found more"), hold.Task);
+        var turnEnded = AfterTheTurn();
+        var child = new ScriptedProvider().Then(Answer("found it"), turnEnded.Task).Then(Answer("found more"), hold.Task);
         var s = Open(parent, child);
 
-        s.Session.Submit("go");
+        await Turn(s.Session, "go");
+        turnEnded.SetResult();
         Assert.True(await Poll.Until(() => child.Calls == 2));
         Assert.Contains("find-thing", s.Session.SubAgents.ForegroundNames());
 
@@ -745,13 +757,25 @@ public class BackgroundScenarioTests : IDisposable
         Assert.True(await Poll.Until(() => parent.Calls >= 2));
         await Idle(s.Session);
 
-        // ONE ENVELOPE FOR THE CALL in the request after it — the receipt or the answer, never both.
-        Assert.Single(System.Text.RegularExpressions.Regex.Matches(parent.Requests[1], "<sub_agent "));
+        // ONE ENVELOPE ANSWERS THE CALL — the receipt or the answer, never both. THE CALL'S OWN RESULT, not the whole
+        // request: a moved child that finishes before the parent asks again has its report read in that same request,
+        // beside the receipt, and that report is the move working rather than a second answer.
+        var answer = parent.ResultOf(1, "s1");
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(answer, "<sub_agent "));
 
-        // AND THE ONE THE MOVE'S ANSWER SAYS: an accepted move is answered with the receipt, a refused one — the answer
-        // claimed it first — with the answer.
-        if (moved) Assert.Contains("The user moved it to the background", parent.Requests[1]);
-        else Assert.DoesNotContain("The user moved it to the background", parent.Requests[1]);
+        // AND THE ONE THE MOVE'S ANSWER SAYS: an accepted move is answered with the receipt and reports once, later or
+        // beside it; a refused one — the answer claimed it first — is answered with the answer and never reports.
+        if (moved)
+        {
+            Assert.Contains("The user moved it to the background", answer);
+            Assert.True(await Poll.Until(() => System.Text.RegularExpressions.Regex.Matches(parent.All, "The background agent 'check-it'").Count == 1),
+                "the moved child never reported");
+        }
+        else
+        {
+            Assert.DoesNotContain("The user moved it to the background", answer);
+            Assert.DoesNotContain("The background agent 'check-it'", parent.All);
+        }
     }
 
     /// <summary>REVIEW FOCUS 4: a foreground child still queued behind the cap has not started, so it is not movable.</summary>
@@ -1052,10 +1076,11 @@ public class BackgroundScenarioTests : IDisposable
             Use(Calls.Named(Tool.AgentSend, new { to = "find-thing", prompt = "and more", background = false }, id: "a1")),
             Answer("got the second"));
         var child = new HeldProvider("first answer", "second answer");
-        child.Release();
         var s = Open(parent, child);
 
+        // RELEASED ONCE THE TURN HAS ENDED, so the report wakes the parent — see AfterTheTurn.
         await Turn(s.Session, "go");
+        child.Release();
         Assert.True(await Poll.Until(() => parent.Calls == 3));
         await Idle(s.Session);
 
@@ -1210,11 +1235,15 @@ public class BackgroundScenarioTests : IDisposable
     [Fact]
     public async Task ForegroundQueuesBehindBackground()
     {
-        var parent = new ScriptedProvider(
-            Use(Calls.Spawn(id: "s1")),
-            Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check the thing", type = "explore", background = false }, id: "s2")),
-            Answer("both in"));
-        var background = new HeldProvider("found it");
+        // THE SECOND SPAWN WAITS FOR THE FIRST TO HOLD THE SLOT. A background spawn answers with its receipt before its
+        // run has taken the slot, so without this the foreground spawn can reach the free slot first — the cap holds
+        // either way, but the order this row checks is then the other one.
+        var backgroundHasTheSlot = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var parent = new ScriptedProvider(Use(Calls.Spawn(id: "s1")))
+            .Then(Use(Calls.Named(Tool.Agent, new { description = "check it", prompt = "check the thing", type = "explore", background = false }, id: "s2")),
+                backgroundHasTheSlot.Task)
+            .Then(Answer("both in"));
+        var background = new HeldProvider("found it") { OnCall = () => backgroundHasTheSlot.TrySetResult() };
         int? backgroundAnsweredWhenForegroundAsked = null;
         var foreground = new HeldProvider("checked it") { OnCall = () => backgroundAnsweredWhenForegroundAsked ??= background.Answered };
         foreground.Release();
@@ -1381,13 +1410,15 @@ public class BackgroundScenarioTests : IDisposable
     {
         var since = DateTimeOffset.UtcNow.AddMinutes(-1);
         var parent = new ScriptedProvider(Use(Calls.Spawn(id: "s1")), Answer("started"), Answer("read it"));
-        var child = new ScriptedProvider(new LlmResponse
+        var turnEnded = AfterTheTurn();
+        var child = new ScriptedProvider().Then(new LlmResponse
         {
             Text = "found it", StopReason = "end_turn", Usage = new LlmUsage { InputTokens = 1000, OutputTokens = 500 },
-        });
+        }, turnEnded.Task);
         var s = Open(parent, child);
 
         await Turn(s.Session, "go");
+        turnEnded.SetResult();
         Assert.True(await Poll.Until(() => parent.Calls == 3));
         await Idle(s.Session);
 
@@ -1413,16 +1444,21 @@ public class BackgroundScenarioTests : IDisposable
             Use(Calls.Spawn(id: "s1")), Answer("started"), Answer("read one"),
             resume("a1"), Answer("sent"), Answer("read two"),
             resume("a2"), Answer("sent again"), Answer("read three"));
-        var child = new ScriptedProvider(Answer("one"), Answer("two"), Answer("three"));
+        TaskCompletionSource[] turnEnded = [AfterTheTurn(), AfterTheTurn(), AfterTheTurn()];
+        var child = new ScriptedProvider().Then(Answer("one"), turnEnded[0].Task).Then(Answer("two"), turnEnded[1].Task)
+            .Then(Answer("three"), turnEnded[2].Task);
         var s = Open(parent, child);
 
         await Turn(s.Session, "go");
+        turnEnded[0].SetResult();
         Assert.True(await Poll.Until(() => parent.Calls == 3));
         await Idle(s.Session);
         await Turn(s.Session, "again");
+        turnEnded[1].SetResult();
         Assert.True(await Poll.Until(() => parent.Calls == 6));
         await Idle(s.Session);
         await Turn(s.Session, "and again");
+        turnEnded[2].SetResult();
         Assert.True(await Poll.Until(() => parent.Calls == 9));
         await Idle(s.Session);
 
@@ -1531,6 +1567,7 @@ internal sealed class ScriptedProvider : ILlmProvider
     private readonly object _gate = new();
     private readonly Queue<(LlmResponse Response, Task? Hold)> _steps = new();
     private readonly List<string> _requests = [];
+    private readonly List<List<ChatMessage>> _messages = [];
     private int _inFlight, _maxInFlight;
 
     public ScriptedProvider(params LlmResponse[] script)
@@ -1554,6 +1591,13 @@ internal sealed class ScriptedProvider : ILlmProvider
 
     public string Last { get { lock (_gate) return _requests[^1]; } }
 
+    /// <summary>What request <paramref name="request"/> carried as the result of one tool call — for a row that must
+    /// tell the call's own answer from a report that arrived beside it.</summary>
+    public string ResultOf(int request, string callId)
+    {
+        lock (_gate) return Assert.Single(_messages[request], m => m.ToolCallId == callId).Content ?? "";
+    }
+
     /// <summary>Every request, joined — for "did the model ever see this".</summary>
     public string All { get { lock (_gate) return string.Join("\n", _requests); } }
 
@@ -1575,6 +1619,7 @@ internal sealed class ScriptedProvider : ILlmProvider
             lock (_gate)
             {
                 _requests.Add(string.Join("\n", messages.Select(m => m.Content)));
+                _messages.Add([.. messages]);
                 // RUN OFF THE END OF THE SCRIPT AND THE MODEL SAYS "ok": a wake the test did not
                 // script is then visible as an extra request rather than as a throw on another thread.
                 step = _steps.Count > 0 ? _steps.Dequeue() : (new LlmResponse { Text = "ok", StopReason = "end_turn" }, null);
