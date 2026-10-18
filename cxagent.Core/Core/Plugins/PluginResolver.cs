@@ -187,24 +187,45 @@ public static class PluginResolver
 
     /// <summary>
     /// Where <c>cxagent-plugin-host.dll</c> lives for THIS running process — the resolution
-    /// <see cref="Abi.AbiPluginLoader.Load"/> deliberately leaves to its caller, because
-    /// <c>AppContext.BaseDirectory</c> answers correctly only under a test runner and, for a release
-    /// built with <c>PublishSingleFile</c>, points at a temporary extraction directory that changes
-    /// between runs (the exact trap <c>cxagent/UI/Installation.ExecutableDirectory</c> already
-    /// documents and works around for the app's own version lookup). <see cref="Environment.ProcessPath"/>
-    /// is the real executable's path regardless of how it was published; the host is installed beside
-    /// it, in the fixed <c>plugin-host/</c> subfolder <c>install.sh</c> places it in — sibling to,
-    /// not inside, the user's own <c>plugins/</c> folder, because the host is infrastructure this
-    /// build ships, not something a user configured.
+    /// <see cref="Abi.AbiPluginLoader.Load"/> deliberately leaves to its caller. Always in a fixed
+    /// <c>plugin-host/</c> subfolder — sibling to, not inside, the user's own <c>plugins/</c> folder,
+    /// because the host is infrastructure this build ships, not something a user configured — but
+    /// the folder it is a subfolder OF differs by how cxagent was installed.
+    ///
+    /// <para>BESIDE THE EXECUTABLE FIRST, which is where <c>install.sh</c> places it for a release.
+    /// That release is built with <c>PublishSingleFile</c>, and <see cref="Environment.ProcessPath"/>
+    /// is the real executable's path however it was published, where <c>AppContext.BaseDirectory</c>
+    /// can name a temporary extraction directory that changes between runs (the trap
+    /// <c>cxagent/UI/Installation.ExecutableDirectory</c> documents for the app's own version
+    /// lookup).</para>
+    ///
+    /// <para>THEN BESIDE THE APP'S OWN FILES. A <c>dotnet tool</c> runs through a shim in
+    /// <c>~/.dotnet/tools</c> while the package — host included — is unpacked under
+    /// <c>.store/</c>, so the executable's folder is the one place the host is NOT. The app's
+    /// assemblies are loaded from <c>AppContext.BaseDirectory</c>, and the package puts the host
+    /// beside them, as a dev build's output does.</para>
+    ///
+    /// <para>NEITHER: the executable's folder, so the "no plugin host executable at …" refusal names
+    /// the location a user installing it by hand would put it.</para>
     /// </summary>
-    public static string PluginHostDllPath()
+    public static string PluginHostDllPath() =>
+        PluginHostDllPath(Environment.ProcessPath is { } exe ? Path.GetDirectoryName(exe) : null,
+            AppContext.BaseDirectory);
+
+    /// <summary><see cref="PluginHostDllPath()"/> over the two folders it searches, so each install
+    /// layout can be tested without being that install.</summary>
+    internal static string PluginHostDllPath(string? executableDirectory, string baseDirectory)
     {
-        var exe = Environment.ProcessPath;
-        var executableDirectory = exe is not null
-            ? Path.GetDirectoryName(exe) ?? AppContext.BaseDirectory
-            : AppContext.BaseDirectory;
-        return Path.Combine(executableDirectory, "plugin-host", "cxagent-plugin-host.dll");
+        var besideExecutable = executableDirectory is null ? null : HostIn(executableDirectory);
+        if (besideExecutable is not null && File.Exists(besideExecutable)) return besideExecutable;
+
+        var besideAppFiles = HostIn(baseDirectory);
+        if (File.Exists(besideAppFiles)) return besideAppFiles;
+
+        return besideExecutable ?? besideAppFiles;
     }
+
+    private static string HostIn(string folder) => Path.Combine(folder, "plugin-host", "cxagent-plugin-host.dll");
 
     /// <summary>What a runtime context needs to serve one plugin in one session.</summary>
     /// <param name="WorkingDirectory">Where the session works.</param>
