@@ -78,6 +78,9 @@ public abstract record PluginLoadResult
     /// its tools) registered behind it — see <see cref="PluginRegistry.Load"/>.
     /// </summary>
     public sealed record CommandNameCollision(string CommandName) : PluginLoadResult;
+
+    /// <summary>A plugin with this manifest name is already loaded in this session.</summary>
+    public sealed record PluginNameTaken : PluginLoadResult;
 }
 
 /// <summary>One plugin's system-prompt text and the tools it governs — see
@@ -214,6 +217,12 @@ public sealed class PluginRegistry
     {
         lock (_gate)
         {
+            // THE PLUGIN'S OWN NAME FIRST. Unwire, reaping and grants all find a plugin by name, so a
+            // second one called the same — a project copy beside a global one, with different tools —
+            // would make the first unwire remove either and reaping kill both plugins' processes.
+            if (_plugins.Any(p => p.Manifest.Name == manifest.Name))
+                return new PluginLoadResult.PluginNameTaken();
+
             foreach (var tool in manifest.Tools)
             {
                 if (isNameTaken(tool.Name) || _plugins.Any(p => p.Manifest.Tools.Any(t => t.Name == tool.Name)))
@@ -673,6 +682,10 @@ public sealed class PluginRegistry
     private sealed class PluginTool(LoadedPlugin plugin, PluginToolManifest tool) : IAgentTool
     {
         public ToolDefinition Definition { get; } = new(tool.Name, tool.Description, tool.InputSchema);
+
+        // NAMES THE PLUGIN, and differs from the per-call rule below ("plugin P tool X"): the same
+        // string would let "Always" at admission waive every per-call question too.
+        public string AdmissionRule => $"tool {tool.Name} from plugin {plugin.Manifest.Name}";
 
         //
         // "ALWAYS" IS OFFERED, AND THE USER OWNS THAT DECISION. Withholding it would not make a

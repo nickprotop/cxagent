@@ -633,8 +633,11 @@ public static class ProviderConfigLoader
             foreach (var tool in parsed.Manifest.Tools)
             {
                 // ROW 4-PLUGIN: a name an ENABLED built-in owns. There is no config path to disable a
-                // built-in yet, so every built-in name is always taken.
-                if (ToolBindings.IsBuiltinName(tool.Name))
+                // built-in yet, so every built-in name is always taken — the app's own tools
+                // (todowrite, ask_user, skill, agent, the task tools) as much as the tool table's,
+                // which is why this asks Tool.IsKnown and not ToolBindings: those are offered by the
+                // agent, and a plugin beside one was a second definition of the same name.
+                if (Tool.IsKnown(tool.Name))
                 {
                     errors.Add($"plugins.{pluginName}: tool '{tool.Name}' (from '{sidecarPath}') "
                              + "is already a built-in tool name.");

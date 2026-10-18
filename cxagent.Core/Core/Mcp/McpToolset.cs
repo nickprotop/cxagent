@@ -89,8 +89,11 @@ public sealed class McpToolset
         // and backfill the tool the user just removed. The set answers "which names are spoken for",
         // not "which tools does this agent have" — and every built-in name is spoken for whether or
         // not this agent was offered it.
-        var taken = new HashSet<string>(ToolBindings.NamesFor(Enum.GetValues<BuiltinTool>()),
-            StringComparer.Ordinal);
+        //
+        // EVERY NAME THIS BUILD SHIPS, NOT ONLY THE TOOL TABLE'S: Tool.KnownNames, so the agent's own
+        // tools — task_list, agent_send, ask_user and the rest — are spoken for too. A server named
+        // "task" offering "list" composes to one of them.
+        var taken = new HashSet<string>(Tool.KnownNames, StringComparer.Ordinal);
 
         foreach (var server in servers)
             foreach (var tool in server.Tools)
@@ -220,6 +223,10 @@ public sealed class McpToolset
     /// <summary>Every tool name we offer, for the "no such tool" message to list alongside the
     /// built-ins.</summary>
     public IEnumerable<string> Names() => _byName.Keys;
+
+    /// <summary>Which server offers <paramref name="name"/>, by its configured name, or null when none
+    /// does — so a clash can say whose tool it was.</summary>
+    public string? ServerOf(string name) => _byName.TryGetValue(name, out var owner) ? owner.Server.Name : null;
 
     /// <summary>
     /// <c>sanitize(server) + "_" + sanitize(tool)</c>, matching opencode.

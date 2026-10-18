@@ -207,6 +207,31 @@ public class PluginConfigTests : IDisposable
             && e.Contains("built-in"));
     }
 
+    /// <summary>
+    /// THE APP'S OWN TOOLS ARE TAKEN TOO — todowrite, ask_user, skill, agent and the task tools are
+    /// offered by the agent rather than the tool table, and a plugin declaring one loaded beside it:
+    /// the model was handed two definitions of one name and the plugin's was never reached.
+    /// </summary>
+    [Fact]
+    public void Row4Plugin_ATool_NamedAfterAnAppTool_RefusesToStart()
+    {
+        WritePluginFixture("planner.dll", "planner", "todowrite");
+        WriteConfig($$"""
+        {
+          {{ProviderBlock}},
+          {{PluginPathsBlock}}
+          "plugins": {
+            "planner": { "file": "planner.dll" }
+          }
+        }
+        """);
+
+        var ex = Assert.Throws<ProviderConfigException>(() =>
+            ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv));
+
+        Assert.Contains(ex.Errors, e => e.Contains("plugins.planner") && e.Contains("todowrite"));
+    }
+
     // ---- No false positives ------------------------------------------------------------------
 
     [Fact]

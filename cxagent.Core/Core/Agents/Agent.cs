@@ -520,6 +520,40 @@ public sealed class Agent
         return mcpResult;
     }
 
+    /// <summary>
+    /// The MCP definitions, less any whose name a plugin already offers — row 5 of the plugin
+    /// collision matrix, the half where the plugin came first.
+    ///
+    /// <para>WHOEVER ARRIVES SECOND IS LEFT OUT. A plugin loading after a server is refused at load
+    /// (Session.LoadPlugin); a server connecting after the plugin cannot be refused there, because
+    /// MCP is shared by every session and the plugin is this session's alone. So its tool is left out
+    /// here, per session and per request — unwire the plugin and the server's tool is offered again —
+    /// and dispatch skips MCP for the name. Said once per name, naming the server.</para>
+    /// </summary>
+    private IEnumerable<ToolDefinition> McpLeftOutForPlugins(IReadOnlyList<ToolDefinition> mcpTools)
+    {
+        foreach (var tool in mcpTools)
+        {
+            if (!DynamicOffers(tool.Name))
+            {
+                yield return tool;
+                continue;
+            }
+
+            if (_mcpLeftOut.Add(tool.Name))
+                _sink.Said(new Message(
+                    $"MCP server '{_mcp?.ServerOf(tool.Name)}': tool `{tool.Name}` is not offered — a plugin "
+                  + "in this session already offers that name.", Severity.Warning));
+        }
+    }
+
+    /// <summary>Whether a plugin, or another dynamic source, offers <paramref name="name"/> right now.</summary>
+    private bool DynamicOffers(string name) =>
+        _dynamicTools?.Invoke().Any(t => t.Definition.Name == name) == true;
+
+    /// <summary>The MCP tool names already reported as left out, so each is said once.</summary>
+    private readonly HashSet<string> _mcpLeftOut = new(StringComparer.Ordinal);
+
     private IReadOnlyList<BuiltinTool> AllowedBuiltins(Jobs.ToolSelection? selection)
     {
         var composed = Jobs.ToolSelection.Then(_toolSelection, selection);
@@ -1227,7 +1261,7 @@ public sealed class Agent
         // fixed, which is correct: a tool appearing between two turns of one request would be a
         // moving target for the model.
         var tools = ToolBindings.For(AllBuiltins, _executors)
-            .Concat(_mcp?.Definitions() ?? [])
+            .Concat(McpLeftOutForPlugins(_mcp?.Definitions() ?? []))
             // THE SPAWN TOOL, only when this agent CAN spawn — fan-out mode, and a spawner to do it
             // with. Two independent reasons not to offer it, and both matter: a child has no spawner
             // (the no-nesting mechanism), and a single-mode parent has one but is not using it.
@@ -3073,8 +3107,13 @@ public sealed class Agent
                 // is already baked into whether this line returned null. ReportMcpWonOverInjected
                 // checks Knows(call.Name) itself, so the ordinary case (no injected tool has this
                 // name) says nothing.
+                //
+                // NOT A NAME A PLUGIN OFFERS: that MCP tool was left out of the offer, because it
+                // arrived after the plugin's — see McpLeftOutForPlugins — and the plugin's dynamic
+                // link below is the one that answers.
                 ?? Text(ReportMcpWonOverInjected(call.Name,
-                        _mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel, _policy)))
+                        _mcp is null || DynamicOffers(call.Name) ? null
+                            : await _mcp.TryInvokeAsync(call, ct, _requesterLabel, _policy)))
                 // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. ToolBindings.InvokeAsync
                 // answers "no such tool" rather than null, so it ENDS this chain — a link placed
                 // after it never runs at all, and looks perfectly correct while never running.

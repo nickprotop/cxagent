@@ -212,6 +212,23 @@ public class McpToolsetTests
     }
 
     /// <summary>
+    /// THE APP'S OWN TOOLS ARE OURS TOO. A server named "task" offering "list" composes to
+    /// <c>task_list</c>, which the agent offers itself — and so do agent_send, ask_user and the rest
+    /// that are not in the file-and-shell table.
+    /// </summary>
+    [Theory]
+    [InlineData("task", "list", "task_list")]
+    [InlineData("agent", "send", "agent_send")]
+    [InlineData("ask", "user", "ask_user")]
+    public void Definitions_SkipAToolThatWouldShadowAnAppTool(string server, string tool, string composed)
+    {
+        var toolset = new McpToolset([new FakeServer(server, Tool(tool))]);
+
+        Assert.Empty(toolset.Definitions());
+        Assert.Contains(toolset.Warnings, w => w.Contains(composed, StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// AND TWO SERVERS COLLIDING WITH EACH OTHER. "my server" and "my_server" both sanitise to
     /// <c>my_server</c>, a collision that exists only AFTER sanitisation — so no config-level
     /// uniqueness check can see it. First one wins; the loser is named in a warning.

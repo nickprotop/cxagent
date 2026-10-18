@@ -104,6 +104,34 @@ public class GatedAgentToolTests
         Assert.Equal("auto", result.DecidedBy);
     }
 
+    /// <summary>A tool that draws for a person, so it must never reach a sub-agent.</summary>
+    private sealed class ScreenTool : IAgentTool
+    {
+        public bool OfferToSubAgents => false;
+
+        public ToolDefinition Definition { get; } = new(
+            "show", "shows", JsonSerializer.SerializeToElement(new { type = "object" }));
+
+        public PermissionRequest? Gate(JobParameters call) => null;
+
+        public Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct) =>
+            Task.FromResult(new JobResult { Success = true });
+    }
+
+    /// <summary>
+    /// WRAPPING IS INVISIBLE HERE TOO. The session wraps every embedder tool whenever a gate exists,
+    /// and the agent decides what a sub-agent is offered by reading this off the wrapper — so a
+    /// wrapper answering the interface's default "true" offered a tool that draws for the user to a
+    /// child that has no screen, which reports success while nobody sees anything.
+    /// </summary>
+    [Fact]
+    public void TheWrapper_KeepsAToolOffTheSubAgents_WhenTheToolSaysSo()
+    {
+        IAgentTool wrapped = new GatedAgentTool(new ScreenTool(), new RecordingGate(allow: true));
+
+        Assert.False(wrapped.OfferToSubAgents);
+    }
+
     [Fact]
     public async Task TheToolItselfIsAdmittedOnceBeforeTheFirstCall()
     {

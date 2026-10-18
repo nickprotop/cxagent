@@ -46,6 +46,18 @@ public interface IAgentTool
     bool OfferToSubAgents => true;
 
     /// <summary>
+    /// The standing rule an "Always" answer to the folder-level admission stores — the first of the
+    /// two gates above. One per folder per tool by default.
+    ///
+    /// <para>A TOOL WHOSE NAME IS NOT ITS OWN NAMES ITS OWNER. A plugin's tool name is unique only
+    /// among what happens to be installed, so a bare "tool lsp_rename" would be inherited by a
+    /// different plugin declaring the same name — a grant the user gave someone else. Such a tool
+    /// returns a rule that names where it came from; a built-in or an embedder's tool keeps the
+    /// default, since nothing else can take its name in this session.</para>
+    /// </summary>
+    string AdmissionRule => $"tool {Definition.Name}";
+
+    /// <summary>
     /// Whether THIS CALL needs a human. Null when it does not.
     ///
     /// <para>The returned request's <see cref="PermissionRequest.AlwaysRule"/> decides granularity:

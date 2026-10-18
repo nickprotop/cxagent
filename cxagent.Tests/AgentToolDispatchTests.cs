@@ -466,6 +466,37 @@ public class AgentToolDispatchTests : IDisposable
         Assert.Contains(sink.Notices, n => n.Contains("files_read", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// ROW 5, PLUGIN FIRST: a plugin's tool is offered, and an MCP server connects advertising the
+    /// same name. The server's tool is the one that arrived second, so it is left out — not offered,
+    /// not dispatched to — and that is said once; the plugin's tool answers.
+    /// </summary>
+    [Fact]
+    public async Task AnMcpToolArrivingAfterAPluginsTool_IsLeftOut_AndThePluginAnswers()
+    {
+        var mcp = new McpToolset([new FakeMcpServer("files", new McpToolDef(
+            "read", "reads", JsonDocument.Parse("""{"type":"object","properties":{}}""").RootElement.Clone()))],
+            new AllowGate());
+        var plugin = new Named2("files_read");
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(LlmResponse.WithToolCall("files_read", new { }));
+        provider.EnqueueResponse(LlmResponse.WithToolCall("files_read", new { }));
+        provider.EnqueueResponse(Done("finished"));
+
+        var sink = new BufferedChatSink();
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            sink, new BufferedJobPanel(), logs: null, maxTurns: 5,
+            mcp: mcp, dynamicTools: () => [plugin]);
+
+        await agent.SendAsync("go", CancellationToken.None);
+
+        Assert.Equal(2, plugin.Calls);
+        Assert.Single(sink.Notices, n => n.Contains("files_read", StringComparison.Ordinal)
+                                       && n.Contains("MCP server 'files'", StringComparison.Ordinal));
+        Assert.Single(agent.OfferedToolNames(), n => n == "files_read");
+    }
+
     /// <summary>The ordinary MCP case: no injected tool owns the name MCP answered, so nothing is
     /// said. Guards the same "fires on every call" failure as <see cref="AnOrdinaryBuiltinCallReportsNothing"/>.</summary>
     [Fact]

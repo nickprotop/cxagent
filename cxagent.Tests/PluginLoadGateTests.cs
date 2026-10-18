@@ -431,6 +431,88 @@ public class PluginLoadGateTests : IDisposable
         await Assert.ThrowsAsync<ObjectDisposedException>(() => client.Submit("still here?"));
     }
 
+    private sealed class OneToolServer(string name, string tool) : CxAgent.Core.Mcp.IMcpServer
+    {
+        public string Name { get; } = name;
+        public string? Instructions => null;
+        public string? Error => null;
+        public IReadOnlyList<CxAgent.Core.Mcp.McpToolDef> Tools { get; } =
+            [new(tool, "an mcp tool", JsonDocument.Parse("""{"type":"object","properties":{}}""").RootElement.Clone())];
+
+        public Task<string> CallToolAsync(string tool, JsonElement args, CancellationToken ct) => Task.FromResult("mcp");
+    }
+
+    /// <summary>
+    /// ROW 5, MCP FIRST: a plugin tool named like a tool a connected MCP server already offers is
+    /// refused at load, naming the server — whoever arrives second is the one turned away.
+    /// </summary>
+    [Fact]
+    public async Task APluginToolAnMcpServerAlreadyOffers_IsRefused_NamingTheServer()
+    {
+        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        var mcp = new CxAgent.Core.Mcp.McpToolset([new OneToolServer("docs", "search")]);
+        var sink = new BufferedChatSink();
+        using var manager = SessionManager.Create(new ProcessSetup
+        {
+            Paths = new AppPaths(_dir),
+            BuildGate = _ => new ScriptedGate(PermissionOutcome.Allow),
+            Mcp = mcp,
+        });
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
+            new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
+
+        await session.LoadPlugin(new FakePlugin(), Manifest("finder", "docs_search"), _dir);
+
+        Assert.Empty(session.Plugins.CurrentTools());
+        Assert.Contains("its tool 'docs_search' is already offered by MCP server 'docs'", sink.Transcript);
+    }
+
+    /// <summary>The session says why, and retires the refused copy like any other refused load.</summary>
+    [Fact]
+    public async Task ASecondPluginWithALoadedName_IsRefused_AndRetired()
+    {
+        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        var session = SessionWithGate(new ScriptedGate(PermissionOutcome.Allow), out var manager);
+        using var _ = manager;
+        await session.LoadPlugin(new FakePlugin(), Manifest("lsp", "lsp_definition"), _dir);
+        var second = new FakePlugin();
+
+        await session.LoadPlugin(second, Manifest("lsp", "lsp_hover"), _dir);
+
+        Assert.Equal(["lsp_definition"], session.Plugins.CurrentTools().Select(t => t.Definition.Name).ToArray());
+        Assert.True(second.Stopped);
+    }
+
+    /// <summary>REFUSED BEFORE THE PROMPT, not after it: asking the user to approve a load that is
+    /// then turned away for its name asks a question whose answer cannot matter.</summary>
+    [Fact]
+    public async Task ASecondPluginWithALoadedName_IsRefused_WithoutAsking()
+    {
+        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        var gate = new ScriptedGate(PermissionOutcome.Allow);
+        var session = SessionWithGate(gate, out var manager);
+        using var _ = manager;
+        await session.LoadPlugin(new FakePlugin(), Manifest("lsp", "lsp_definition"), _dir);
+
+        await session.LoadPlugin(new FakePlugin(), Manifest("lsp", "lsp_hover"), _dir);
+
+        Assert.Single(gate.Requests);
+    }
+
+    /// <summary>At load as at config: a plugin tool named after one of the app's own tools is
+    /// refused, not offered beside it.</summary>
+    [Fact]
+    public async Task APluginToolNamedAfterAnAppTool_IsRefused()
+    {
+        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        var session = SessionWithGate(new ScriptedGate(PermissionOutcome.Allow), out var manager);
+        using var _ = manager;
+
+        await session.LoadPlugin(new FakePlugin(), Manifest("asker", "ask_user"), _dir);
+
+        Assert.Empty(session.Plugins.CurrentTools());
+    }
+
     /// <summary>The prompt names origin and declared capability: "lsp-rust wants to run a process
     /// and read files in this folder." / the plugin's path.</summary>
     [Fact]

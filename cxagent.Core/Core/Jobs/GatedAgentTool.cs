@@ -44,6 +44,15 @@ public sealed class GatedAgentTool : IAgentTool
     /// depending on whether it happened to be handed the wrapper.</summary>
     public PermissionRequest? Gate(JobParameters call) => _inner.Gate(call);
 
+    /// <summary>Delegates for the same reason: a plugin tool wrapped twice must still name its
+    /// plugin rather than fall back to the bare default.</summary>
+    public string AdmissionRule => _inner.AdmissionRule;
+
+    /// <summary>Delegates too. The agent decides what a sub-agent is offered by reading this off
+    /// the wrapper, and the interface's default "true" would hand a tool that draws for the user to
+    /// a child with no screen.</summary>
+    public bool OfferToSubAgents => _inner.OfferToSubAgents;
+
     public async Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)
     {
         // GATE 1: MAY THIS TOOL RUN HERE AT ALL. A PermissionKind.Tool question, distinct from
@@ -81,9 +90,10 @@ public sealed class GatedAgentTool : IAgentTool
                 PermissionKind.Tool,
                 $"use the {_inner.Definition.Name} tool in this folder",
 
-                // GENERALISABLE BY TOOL NAME, so "always" is answered once per folder per tool and
-                // means what it says. It does not name the arguments, because it is not about them.
-                AlwaysRule: $"tool {_inner.Definition.Name}");
+                // GENERALISABLE BY TOOL, so "always" is answered once per folder per tool and means what
+                // it says. It does not name the arguments, because it is not about them — and the tool
+                // decides how it is named, so a plugin's names its plugin; see IAgentTool.AdmissionRule.
+                AlwaysRule: _inner.AdmissionRule);
 
             context.ReportPermissionWait(true);
             PermissionOutcome outcome;

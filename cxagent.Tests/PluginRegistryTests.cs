@@ -341,6 +341,57 @@ public class PluginRegistryTests : IDisposable
         Assert.True(plugin.Stopped);
     }
 
+    /// <summary>
+    /// A PLUGIN NAME IS UNIQUE IN A SESSION. Unwire, reaping and grants all go by name, so two loaded
+    /// plugins called "lsp" — a project copy and a global one, say, with different tools — meant the
+    /// first unwire removed either of them and reaping killed both plugins' processes.
+    /// </summary>
+    [Fact]
+    public void ASecondPluginWithALoadedName_IsRefused()
+    {
+        var registry = new PluginRegistry();
+        registry.Load(new FakePlugin(), Manifest("lsp", "lsp_definition"), isNameTaken: _ => false);
+
+        var second = registry.Load(new FakePlugin(), Manifest("lsp", "lsp_hover"), isNameTaken: _ => false);
+
+        Assert.IsType<PluginLoadResult.PluginNameTaken>(second);
+        Assert.Equal(["lsp_definition"], registry.CurrentTools().Select(t => t.Definition.Name).ToArray());
+    }
+
+    private sealed class AllowingGate : IPermissionGate
+    {
+        public List<PermissionRequest> Seen { get; } = [];
+
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct)
+        {
+            Seen.Add(request);
+            return Task.FromResult(PermissionOutcome.Allow);
+        }
+    }
+
+    /// <summary>
+    /// A PLUGIN TOOL'S ADMISSION NAMES THE PLUGIN. "Always" on the folder-level "use this tool" prompt
+    /// stored "tool lsp_rename", which a different plugin declaring lsp_rename inherited — a grant the
+    /// user gave someone else. And it differs from the per-call gate's own rule, or "Always" at
+    /// admission would also waive every per-call question.
+    /// </summary>
+    [Fact]
+    public async Task APluginToolsAdmission_IsScopedToThePlugin_AndDistinctFromItsPerCallGate()
+    {
+        var manifest = new PluginManifest("lsp-rust", "1.0.0", Instructions: null, Spawns: false,
+            [new PluginToolManifest("lsp_rename", "renames a symbol", EmptySchema(), Gated: PluginGating.Always)]);
+        var registry = new PluginRegistry();
+        registry.Load(new FakePlugin(), manifest, isNameTaken: _ => false);
+        var gate = new AllowingGate();
+        var tool = new GatedAgentTool(registry.CurrentTools().Single(), gate);
+
+        await tool.ExecuteAsync(new JobParameters(), new TestJobContext(), CancellationToken.None);
+
+        var admission = gate.Seen.First();
+        Assert.Equal("tool lsp_rename from plugin lsp-rust", admission.AlwaysRule);
+        Assert.All(gate.Seen.Skip(1), perCall => Assert.NotEqual(admission.AlwaysRule, perCall.AlwaysRule));
+    }
+
     /// <summary>A plugin whose calls ignore their token and never return.</summary>
     private sealed class DeafPlugin : IPlugin
     {

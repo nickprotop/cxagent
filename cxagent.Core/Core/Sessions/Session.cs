@@ -538,6 +538,17 @@ public sealed partial class Session
         return CommandStatus.Changed;
     }
 
+    /// <summary>Says a plugin of this name is already loaded, and retires the copy that was turned away.</summary>
+    private async Task<CommandStatus> RefuseLoadedNameAsync(Plugins.IPlugin plugin, Plugins.PluginManifest manifest,
+        IDisposable? context, Plugins.SessionPluginClient? client, CancellationToken ct)
+    {
+        Say(new Message(
+            $"plugin '{manifest.Name}' was not loaded — a plugin with that name is already loaded "
+            + "in this session.", Severity.Warning));
+        await Plugins.DiscardAsync(plugin, manifest, context, client, ct);
+        return CommandStatus.Reported;
+    }
+
     /// <summary>
     /// Loads a plugin into this session's registry, offering its tools from the next turn boundary
     /// on — see <see cref="Plugins.PluginRegistry.Load"/>.
@@ -590,6 +601,12 @@ public sealed partial class Session
             await Plugins.DiscardAsync(plugin, manifest, context, client, ct);
             return CommandStatus.Refused;
         }
+
+        // A NAME ALREADY LOADED IS REFUSED BEFORE THE PROMPT, which would otherwise ask the user to
+        // approve a load the registry then turns away — a question whose answer cannot matter. The
+        // registry checks it again under its lock; this is the early, honest answer.
+        if (Plugins.LoadedPluginNames.Contains(manifest.Name, StringComparer.Ordinal))
+            return await RefuseLoadedNameAsync(plugin, manifest, context, client, ct);
 
         if (Services?.Gate is { } gate)
         {
@@ -673,9 +690,13 @@ public sealed partial class Session
         // session-reachable way to ask about an injected name — see AgentHost.KnowsInjectedTool.
         // Host is null before the session's first wire, so a plugin loaded that early is judged
         // against built-ins alone; nothing has injected a tool for it to collide with yet either.
+        // AN MCP SERVER'S TOOLS ARE TAKEN TOO, when it connected first: whoever arrives second is
+        // refused, so nothing is offered twice. A server connecting AFTER the plugin is the other half,
+        // handled where the agent offers its tools — see Agent.McpLeftOutForPlugins.
+        var mcp = Services?.Mcp;
         var isNameTaken = Host is { } host
-            ? name => Jobs.ToolBindings.IsBuiltinName(name) || host.KnowsInjectedTool(name)
-            : (Func<string, bool>)Jobs.ToolBindings.IsBuiltinName;
+            ? name => Jobs.Tool.IsKnown(name) || host.KnowsInjectedTool(name) || mcp?.ServerOf(name) is not null
+            : (Func<string, bool>)(name => Jobs.Tool.IsKnown(name) || mcp?.ServerOf(name) is not null);
 
         // A COMMAND'S TABLE IS THE MANAGER'S, NOT THIS SESSION'S — see SessionManager.Commands,
         // shared by every session it opens. Manager is null only before this session's first wire
@@ -689,11 +710,15 @@ public sealed partial class Session
         var result = Plugins.Load(plugin, manifest, isNameTaken, context, client,
             isCommandNameTaken, Manager?.Commands);
 
+        if (result is Plugins.PluginLoadResult.PluginNameTaken)
+            return await RefuseLoadedNameAsync(plugin, manifest, context, client, ct);
+
         if (result is Plugins.PluginLoadResult.NameCollision collision)
         {
+            var owner = mcp?.ServerOf(collision.ToolName) is { } server ? $"MCP server '{server}'" : "this session";
             Say(new Message(
                 $"plugin '{manifest.Name}' was not loaded — its tool '{collision.ToolName}' is "
-                + "already offered by this session.", Severity.Warning));
+                + $"already offered by {owner}.", Severity.Warning));
             await Plugins.DiscardAsync(plugin, manifest, context, client, ct);
             return CommandStatus.Reported;
         }
