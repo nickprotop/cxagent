@@ -40,7 +40,7 @@ everywhere cxagent does:
        frozen identity your reference names, and the plugin binds to the host's copy. A copy shipped
        beside the plugin is never the one used — it only adds a file to the load set the user is asked
        to approve. In-repo, a ProjectReference with Private="false" does the same. -->
-  <PackageReference Include="CxAgent.Plugins.Abstractions" Version="4.0.0" ExcludeAssets="runtime" />
+  <PackageReference Include="CxAgent.Plugins.Abstractions" Version="4.1.0" ExcludeAssets="runtime" />
 </ItemGroup>
 
 <ItemGroup>
@@ -60,8 +60,10 @@ six members, so a test fake is six lines. In `JobResult` you set `Success`, `Exi
 but not set, because they are the host's to stamp: whether the gate denied a call, who approved it,
 and how long it took are not a tool's to report about itself.
 
-**Its package version IS the contract number.** `4.0.0` is contract 4 — the same number a
-sidecar can declare, so there is one number to keep straight rather than two. This is the `Version` a
+**Its package version IS the contract number.** `4.1.0` is contract 4 — the same number a
+sidecar can declare, so there is one number to keep straight rather than two. The minor counts
+additions within a contract: 4.1.0 adds `PluginManifest.FromSidecar` and the sidecar's `"kind"`, and
+takes nothing away from 4.0.0. This is the `Version` a
 NuGet consumer sees, not the assembly's own `AssemblyVersion`, which is frozen at `1.0.0.0` and never
 moves: that is the identity .NET resolves your reference against, and bumping it at a contract change
 would refuse your plugin at assembly load, before `PluginContract.Version` — the check that can say
@@ -113,18 +115,48 @@ and refuses the load if it disagrees with what `Load` returns.
 }
 ```
 
-The simplest way to keep the two in step is to parse the sidecar in `Load` and return that — one
-JSON, true by construction. Both examples do this.
+**The sidecar is the only copy.** Return it from `Load` rather than writing the manifest a second
+time in code — one JSON, true by construction:
+
+```csharp
+public Task<PluginManifest> Load(IPluginContext context, CancellationToken ct) =>
+    Task.FromResult(PluginManifest.FromSidecar(this));
+```
+
+`FromSidecar` reads `<assembly-name>.plugin.json` from beside your assembly and throws, naming the
+path, if it is missing or does not parse; the throw fails the load with that message. Both examples
+do this — the C one by returning the same JSON from `describe`.
+
+It is new in 4.1.0. A cxagent carrying 4.0.0 has no such method, and a plugin that calls it fails
+its load there with a `MissingMethodException` — the contract number cannot catch this, because both
+packages are contract 4. Parse the file yourself with `PluginManifest.Parse` if you must load on a
+cxagent from before 4.1.0.
 
 An ABI plugin carries `pluginContract` in its describe JSON as well as in its sidecar — the
 handshake export answers before any JSON is parsed, and the body lets a host check a manifest it
 already holds. Omit it and it reads as 0, and the
 load is refused for an unsupported version the file never mentions.
 
-**Read it from beside your own assembly, not `AppContext.BaseDirectory`.** That property is the
-running process's folder — where cxagent lives, not where your plugin was found. They coincide only
-when a plugin sits in the app's output directory, which is what a test does and production never
-does.
+**Reading it yourself, read it from beside your own assembly, not `AppContext.BaseDirectory`.**
+That property is the running process's folder — where cxagent lives, not where your plugin was
+found. They coincide only when a plugin sits in the app's output directory, which is what a test does
+and production never does. `FromSidecar` already looks in the right place.
+
+### `"kind"` — managed or native
+
+```json
+{ "pluginContract": 4, "kind": "native", "name": "my-plugin", ... }
+```
+
+**Optional, and it settles how cxagent loads your file:** `"managed"` is a .NET assembly loaded
+in-process, `"native"` a C-ABI library run in the plugin host. Without it, cxagent goes by the
+file — a `.so` or `.dylib` is native, and anything else is taken for managed. That guess fails on
+Windows, where a .NET assembly and a native library are both `.dll`: **a native plugin for Windows
+must say `"kind": "native"`**, or it is loaded as an assembly and refused as a bad image.
+
+A kind needs contract 4 — a sidecar declaring a lower one with a kind is refused, because an older
+host would ignore the field and guess. **Say the kind your file is:** cxagent believes the sidecar
+over the file, so a wrong kind sends it to the loader that cannot read it, and the load fails there.
 
 ## Adding to the model's instructions
 
@@ -451,6 +483,32 @@ time, while the model reported it as unavailable.
 
 Say so when you find nothing. `"No definition found at that position."` is something the model can
 act on; a blank string is something it has to guess about.
+
+## Reporting while a call runs
+
+A managed plugin reports through the call's `IJobContext`: `ReportProgress(percent, message)`,
+`Log(level, line)`, and `ReportTextDelta(text)` for output that streams. `Log` lines go to the call's
+own log file. Progress and streamed text reach the host, which does not display them yet.
+
+**A native plugin gets the same three by exporting `cxagent_plugin_attach`.** The host calls it once,
+before `start`, with a table of callbacks:
+
+```c
+static const cxagent_host *host;
+
+CXAGENT_PLUGIN_EXPORT void cxagent_plugin_attach(const cxagent_host *h) { host = h; }
+
+/* inside cxagent_plugin_invoke: */
+host->progress(NULL, 50, "half way");
+host->stream(NULL, "partial output ");
+```
+
+**Which call a report is for:** NULL means the call running on this thread, which is what a report
+made inside `invoke` wants. From a thread of your own, read `host->current_call()` inside `invoke`,
+copy it, and pass the copy; a report naming a call that has already returned is dropped. `log` with
+NULL outside any call goes to your plugin's own log, which reaches the transcript. The export is optional — a library without it
+loads and runs as before, its calls just report nothing until they return. See
+[`sdk/c/cxagent_plugin.h`](../sdk/c/cxagent_plugin.h) for the table's full rules.
 
 ## Spawning processes
 

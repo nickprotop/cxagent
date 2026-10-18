@@ -39,12 +39,12 @@ public sealed class CalculatorPlugin : IPlugin, IPluginGateSource
     /// <para>THE MANIFEST IS READ FROM THE SIDECAR RATHER THAN RESTATED HERE. <c>ManagedPluginLoader</c>
     /// reads <c>calculator.plugin.json</c> before calling this and refuses the load if the two
     /// disagree — so writing the manifest twice means writing the same JSON twice and keeping both
-    /// true forever. Parsing the file you already ship makes drift impossible instead of detectable.</para>
+    /// true forever. Returning the file you already ship makes drift impossible instead of detectable.</para>
     ///
-    /// <para>BESIDE THIS ASSEMBLY, NOT BESIDE THE HOST EXECUTABLE. <c>AppContext.BaseDirectory</c> is
-    /// the running process's own folder, which is where cxagent lives, not where your plugin was
-    /// found. They coincide only when a plugin sits in the app's output directory — which is what a
-    /// unit test does and what production never does.</para>
+    /// <para><c>PluginManifest.FromSidecar</c> reads <c>calculator.plugin.json</c> BESIDE THIS ASSEMBLY,
+    /// NOT BESIDE THE HOST EXECUTABLE — <c>AppContext.BaseDirectory</c> is where cxagent lives, not where
+    /// this plugin was found — and throws, naming the path, when the file is missing or malformed. It
+    /// is new in the 4.1.0 contract package, so this example loads only on a cxagent that carries it.</para>
     /// </summary>
     /// <summary>The contract this plugin needs, matching <c>pluginContract</c> in its sidecar.</summary>
     private const int RequiredContract = 2;
@@ -63,11 +63,7 @@ public sealed class CalculatorPlugin : IPlugin, IPluginGateSource
 
         _context = context;
 
-        var here = Path.GetDirectoryName(typeof(CalculatorPlugin).Assembly.Location)!;
-        var parsed = PluginManifest.Parse(File.ReadAllText(Path.Combine(here, "calculator.plugin.json")));
-        if (!parsed.IsSuccess || parsed.Manifest is null)
-            throw new InvalidOperationException(
-                $"calculator's own sidecar failed to parse: {string.Join("; ", parsed.Errors)}");
+        var manifest = PluginManifest.FromSidecar(this);
 
         // SETTINGS ARE THIS PLUGIN'S OWN CONFIG BLOCK, VERBATIM — whatever the user wrote under
         // `"settings"` for this plugin in config.json, handed over unread by cxagent. Reading your
@@ -84,7 +80,7 @@ public sealed class CalculatorPlugin : IPlugin, IPluginGateSource
         _context.Logger.Log(
             $"calculator ready, rooted at {_context.WorkingDirectory}, precision {_precision}");
 
-        return Task.FromResult(parsed.Manifest);
+        return Task.FromResult(manifest);
     }
 
     /// <summary>

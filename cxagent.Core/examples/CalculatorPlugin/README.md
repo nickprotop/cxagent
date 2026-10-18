@@ -71,8 +71,8 @@ about shape, not just absence.
 
 ## What each method is for
 
-`Load` returns the manifest — by parsing the sidecar rather than restating it, so there is one JSON
-to keep true instead of two that must agree.
+`Load` returns the manifest — `PluginManifest.FromSidecar(this)`, the sidecar rather than a restatement
+of it, so there is one JSON to keep true instead of two that must agree.
 
 `Start` is where a real plugin spawns its backend. A calculator has none, so it is one line; the
 shape still matters, because a plugin that starts something lazily on first call is a tool that

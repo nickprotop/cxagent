@@ -15,6 +15,12 @@ vocabulary they exchange, and the reasoning behind it.
 | `cxagent_plugin_stop` | `IPlugin.Stop` | — | `AbiResultEnvelope` (void) |
 | `cxagent_plugin_poll` (optional) | `IPluginClient.Submit`, originated by the plugin rather than called into it | — | a submit request, or NULL |
 | `cxagent_plugin_command` (optional) | `IPluginCommandHandler.RunCommand` | a command name and its typed argument string | `CommandResult`, or NULL |
+| `cxagent_plugin_attach` (optional) | the call's `IJobContext` reporting members | a `cxagent_host` callback table, not JSON | — |
+
+**Every export carries `CXAGENT_PLUGIN_EXPORT`**, which the header defines as `__declspec(dllexport)`
+on Windows and default visibility elsewhere. Without it a Windows DLL exports nothing, and a library
+built with hidden visibility exports nothing either; the host then finds no
+`cxagent_plugin_abi_version` and refuses the file.
 
 `IPlugin.Load` is split across two ABI calls deliberately: `describe` returns the manifest with no
 context (matching `plugin_describe` in ConsoleEx's spec, called before the plugin has seen
@@ -230,6 +236,38 @@ crosses this boundary as a string a native author writes by hand rather than a n
 **MAY return NULL**, the same explicit exception to "a plugin must never return NULL" that `gate`
 and `poll` carry: NULL means "ran, and said nothing," exactly `{"message":null,"status":"reported"}`
 without allocating a string to say so.
+
+## `attach` — reporting while a call runs
+
+`cxagent_plugin_attach` is how a native plugin reaches what a managed one has on its call's
+`IJobContext` — `ReportProgress`, `Log` and `ReportTextDelta`. The plugin host calls it once, after
+the handshake and `describe` and before `start`, with a `cxagent_host` table of callbacks; the
+header lists the fields and the rules for each.
+
+**Optional, and the contract number does not change** — the same rule as `poll` and `command`. A
+library without it loads exactly as it did, and its calls report nothing until they return.
+
+**Each report names a call, because calls may run concurrently.** Before calling in, the plugin host
+records on the calling thread which request it is serving, so a NULL `call_id` — "the call on this
+thread" — is right for any report made inside `cxagent_plugin_invoke`. `current_call()` returns that same id as a string, for a plugin that hands
+work to a thread of its own: it copies the id inside invoke and passes the copy later. A report for
+a call that has already returned is dropped, so a late report cannot land on whatever call happens
+to be running next.
+
+**Between the two processes**, each report becomes one line on the plugin host's stdout, beside the
+replies:
+
+```json
+{"event":"progress","id":7,"percent":50,"text":"half"}
+{"event":"log","id":7,"level":2,"text":"working"}
+{"event":"stream","id":7,"text":"partial output "}
+{"event":"log","id":0,"level":2,"text":"started"}
+```
+
+`id` is the request id of the invoke the report belongs to, and `"event"` is what tells the line from
+a reply, which has `"ok"` instead. Id 0 is no call: a `log` there is the plugin's own, and reaches
+the logger the plugin was loaded with; any other event with id 0 is dropped. The reader never fails
+on a report — one it cannot parse or place costs that report and nothing else.
 
 ## The result envelope
 
