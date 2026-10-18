@@ -4,7 +4,7 @@ One file, seven exported functions, no JSON library. (An eighth, `cxagent_plugin
 as of contract 3 — a plugin that only answers calls, like this one, has no reason to export it.)
 
 ```bash
-cc -shared -fPIC -o calculator.so calculator_abi.c
+cc -shared -fPIC -I../../sdk/c -o calculator.so calculator_abi.c
 ```
 
 Copy `calculator.so` and `calculator.plugin.json` into a `calculator/` directory inside your
@@ -62,5 +62,5 @@ never mentions. Worth knowing before you spend an evening on it.
 ## See also
 
 - [`../CalculatorPlugin`](../CalculatorPlugin) — the same calculator, managed
-- [`cxagent_plugin.h`](../../Core/Plugins/Abi/cxagent_plugin.h) — the seven functions and their ownership rules
+- [`cxagent_plugin.h`](../../sdk/c/cxagent_plugin.h) — the seven functions and their ownership rules
 - [`Abi/README.md`](../../Core/Plugins/Abi/README.md) — the JSON envelopes

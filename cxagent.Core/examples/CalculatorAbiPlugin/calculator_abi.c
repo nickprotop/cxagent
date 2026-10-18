@@ -24,6 +24,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* THE ABI'S OWN DECLARATIONS, so every definition below is checked against them and marked for
+ * export — without CXAGENT_PLUGIN_EXPORT an MSVC or -fvisibility=hidden build exports nothing. */
+#include "cxagent_plugin.h"
+
 /* ---- ownership -------------------------------------------------------------------------------
  *
  * EVERY STRING RETURNED FROM HERE IS HEAP-ALLOCATED, WITHOUT EXCEPTION, because the host frees
@@ -47,7 +51,7 @@ static const char* heap(const char* text)
  * The one function that does NOT allocate: the host reads this before anything else and refuses a
  * version it does not know, so a mismatch is a clean message rather than a misparsed struct.
  */
-int32_t cxagent_plugin_abi_version(void) { return 2; }
+CXAGENT_PLUGIN_EXPORT int32_t cxagent_plugin_abi_version(void) { return 2; }
 
 /* ---- describe --------------------------------------------------------------------------------
  *
@@ -121,7 +125,7 @@ static const char MANIFEST[] =
 
 static const char OOM[] = "{\"ok\":false,\"error\":\"calculator: out of memory.\"}";
 
-const char* cxagent_plugin_describe(void)
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_describe(void)
 {
     const char* p = heap(MANIFEST);
     return p != NULL ? p : OOM;
@@ -139,7 +143,7 @@ const char* cxagent_plugin_describe(void)
 /* settings.precision, read at start and used by every later invoke. */
 static int g_precision = 2;
 
-const char* cxagent_plugin_start(const char* context_json)
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_start(const char* context_json)
 {
     /* SETTINGS ARE THIS PLUGIN'S OWN CONFIG BLOCK, VERBATIM — whatever the user wrote under
        "settings" for this plugin, nested inside the context object alongside the working directory.
@@ -183,7 +187,7 @@ const char* cxagent_plugin_start(const char* context_json)
     return p != NULL ? p : OOM;
 }
 
-const char* cxagent_plugin_stop(void)
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_stop(void)
 {
     const char* p = heap("{\"ok\":true}");
     return p != NULL ? p : OOM;
@@ -216,7 +220,7 @@ static double number_after(const char* json, const char* key)
    NEVER RETURN NULL TO SIGNAL AN ERROR — the host reads NULL as "this call is fine". A gate that
    cannot decide should return malformed output or simply take too long, both of which the host
    reads as "ask". */
-const char* cxagent_plugin_gate(const char* tool_name, const char* call_json)
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_gate(const char* tool_name, const char* call_json)
 {
     if (tool_name == NULL || strcmp(tool_name, "calc_divide") != 0) return NULL;
 
@@ -226,7 +230,7 @@ const char* cxagent_plugin_gate(const char* tool_name, const char* call_json)
     return NULL;
 }
 
-const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json)
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json)
 {
     double a = number_after(call_json, "\"a\"");
     double b = number_after(call_json, "\"b\"");
@@ -275,7 +279,7 @@ const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json)
  * undefined behaviour, and the only reason a pointer to it can reach here is that the contract
  * above forbids returning NULL. A plugin with no static fallback does not need this line.
  */
-void cxagent_plugin_free(const char* ptr)
+CXAGENT_PLUGIN_EXPORT void cxagent_plugin_free(const char* ptr)
 {
     if (ptr == NULL || ptr == OOM) return;
     free((void*)ptr);

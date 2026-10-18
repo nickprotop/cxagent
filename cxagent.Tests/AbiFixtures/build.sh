@@ -15,6 +15,7 @@ set -euo pipefail
 
 OUT_DIR="$1"
 SRC="$(dirname "$0")/fixture_plugin.c"
+HEADER_DIR="$(dirname "$0")/../../cxagent.Core/sdk/c"
 
 if ! command -v cc >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1; then
     echo "no C compiler (cc/gcc) found — skipping native ABI fixture build" >&2
@@ -27,7 +28,7 @@ mkdir -p "$OUT_DIR"
 build() {
     local name="$1"
     shift
-    "$CC" -shared -fPIC -o "$OUT_DIR/$name.so" "$@" "$SRC"
+    "$CC" -shared -fPIC -I"$HEADER_DIR" -o "$OUT_DIR/$name.so" "$@" "$SRC"
 }
 
 build fixture-wellformed

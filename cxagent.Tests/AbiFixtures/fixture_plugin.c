@@ -32,6 +32,10 @@
 #include <string.h>
 #include <stdio.h>
 
+/* THE ABI'S OWN DECLARATIONS, so every definition below is checked against them and marked for
+ * export — without CXAGENT_PLUGIN_EXPORT an MSVC or -fvisibility=hidden build exports nothing. */
+#include "cxagent_plugin.h"
+
 /* Every returned string is heap-allocated so cxagent_plugin_free's free() is never asked to
  * release memory it did not itself allocate — cxagent_plugin.h's ownership rule, honoured on the
  * plugin side of the boundary this fixture stands in for. */
@@ -42,7 +46,7 @@ static char* dup_str(const char* s) {
     return copy;
 }
 
-int32_t cxagent_plugin_abi_version(void) {
+CXAGENT_PLUGIN_EXPORT int32_t cxagent_plugin_abi_version(void) {
 #ifdef FIXTURE_BADVERSION
     return 99;
 #elif defined(FIXTURE_DISAGREES) || defined(FIXTURE_SUBMITS)
@@ -54,7 +58,7 @@ int32_t cxagent_plugin_abi_version(void) {
 #endif
 }
 
-const char* cxagent_plugin_describe(void) {
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_describe(void) {
     return dup_str(
 #ifdef FIXTURE_SUBMITS
         "{\"pluginContract\":3,\"name\":\"fixture\",\"version\":\"1.0.0\",\"instructions\":null,"
@@ -82,7 +86,7 @@ const char* cxagent_plugin_describe(void) {
  * A PANIC MUST NOT CROSS THIS BOUNDARY (see cxagent_plugin.h): a gate that cannot decide returns
  * malformed output or NULL, and the host reads that as "ask", never as "allow".
  */
-const char* cxagent_plugin_gate(const char* tool_name, const char* call_json) {
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_gate(const char* tool_name, const char* call_json) {
     if (tool_name == NULL || strcmp(tool_name, "echo_dynamic") != 0) return NULL;
 
     /* Gates on the ARGUMENTS, which is the whole point of the callback: "loud" asks, quiet does not. */
@@ -92,13 +96,13 @@ const char* cxagent_plugin_gate(const char* tool_name, const char* call_json) {
     return NULL;
 }
 
-const char* cxagent_plugin_start(const char* context_json) {
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_start(const char* context_json) {
     (void)context_json;
     return dup_str("{\"ok\":true}");
 }
 
 #ifndef FIXTURE_NOINVOKE
-const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json) {
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json) {
     (void)tool_name;
     (void)call_json;
 
@@ -117,7 +121,7 @@ const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json) 
 }
 #endif
 
-const char* cxagent_plugin_stop(void) {
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_stop(void) {
     return dup_str("{\"ok\":true}");
 }
 
@@ -126,7 +130,7 @@ const char* cxagent_plugin_stop(void) {
  * actually crossed the boundary, not just that some reply came back. Any other name is refused,
  * proving a plugin's own RunCommand (not the host's "no such export" refusal AbiPlugin.RunCommand
  * gives when this export is absent entirely) can answer "refused" on its own terms too. */
-const char* cxagent_plugin_command(const char* name, const char* arguments) {
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_command(const char* name, const char* arguments) {
     if (name != NULL && strcmp(name, "greet") == 0) {
         char buf[256];
         snprintf(buf, sizeof(buf), "{\"message\":\"hello, %s\",\"status\":\"reported\"}",
@@ -143,7 +147,7 @@ const char* cxagent_plugin_command(const char* name, const char* arguments) {
  * it has nothing further to say (cxagent_plugin.h: "NULL here means nothing to say right now"). */
 static int submitted = 0;
 
-const char* cxagent_plugin_poll(void) {
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_poll(void) {
     if (submitted) return NULL;
     submitted = 1;
     return dup_str("{\"goal\":\"run the tests\",\"wantResult\":false}");
@@ -165,7 +169,7 @@ static void record_free(void) {
 #endif
 }
 
-void cxagent_plugin_free(const char* ptr) {
+CXAGENT_PLUGIN_EXPORT void cxagent_plugin_free(const char* ptr) {
     record_free();
     free((void*)ptr);
 }

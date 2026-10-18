@@ -22,6 +22,6 @@ jobs:
       # against them compiles. A contract change that breaks the header should fail here.
       - name: Compile the ABI example
         run: |
-          gcc -shared -fPIC -Icxagent.Core/Core/Plugins/Abi \
+          gcc -shared -fPIC -Icxagent.Core/sdk/c \
             -o /tmp/calculator_abi.so \
             cxagent.Core/examples/CalculatorAbiPlugin/calculator_abi.c

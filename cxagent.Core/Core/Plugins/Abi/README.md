@@ -1,6 +1,6 @@
 # The ABI surface
 
-The `extern "C"` functions are `cxagent_plugin.h`, in this directory. This file is the JSON
+The `extern "C"` functions are [`cxagent_plugin.h`](../../../sdk/c/cxagent_plugin.h), in `cxagent.Core/sdk/c/` with the rest of what a C author gets. This file is the JSON
 vocabulary they exchange, and the reasoning behind it.
 
 ## The calls, and what crosses each one

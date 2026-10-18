@@ -98,6 +98,11 @@
     <Compile Remove="examples/**" />
     <None Remove="examples/**" />
     <EmbeddedResource Remove="examples/**" />
+    <!-- THE SDK IS SOURCE FOR PLUGIN AUTHORS, not part of Core: its C files and templates ship to
+         them, and a template's .cs must never compile into this assembly. -->
+    <Compile Remove="sdk/**" />
+    <None Remove="sdk/**" />
+    <EmbeddedResource Remove="sdk/**" />
   </ItemGroup>
 
   <ItemGroup>

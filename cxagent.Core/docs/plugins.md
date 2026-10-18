@@ -252,7 +252,7 @@ exports without calling into it, so a native plugin that declares a command in `
 `commands` array but never exports `cxagent_plugin_command` is refused **the first time that command
 is actually run**, not at load, naming the missing export. See
 [`Abi/README.md`](../Core/Plugins/Abi/README.md#command---one-command-a-person-typed) and
-[`Abi/cxagent_plugin.h`](../Core/Plugins/Abi/cxagent_plugin.h) for the wire shape, which mirrors
+[`sdk/c/cxagent_plugin.h`](../sdk/c/cxagent_plugin.h) for the wire shape, which mirrors
 `CommandResult` field for field.
 
 ## Permission
@@ -625,7 +625,7 @@ index a plugin binary sitting in `.cxagent/plugins`. The global folder avoids th
 ## See also
 
 - [`IPlugin.cs`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/IPlugin.cs) — the managed contract, documented per method
-- [`Abi/cxagent_plugin.h`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/Abi/cxagent_plugin.h) — the seven C functions, with the ownership rules
+- [`sdk/c/cxagent_plugin.h`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/sdk/c/cxagent_plugin.h) — the seven C functions, with the ownership rules
 - [`Abi/README.md`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/Abi/README.md) — the JSON envelopes crossing the ABI boundary
 
 Hosting a plugin rather than writing one:

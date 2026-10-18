@@ -5,7 +5,7 @@
  * functions — seven MANDATORY and two OPTIONAL (cxagent_plugin_poll and cxagent_plugin_command,
  * see below) — name-resolved by the host process (Task 9b), not linked. This header is the
  * authoritative declaration;
- * CxAgent.Core/Core/Plugins/Abi/*.cs mirrors it on the managed side and
+ * the .cs files in cxagent.Core/Core/Plugins/Abi/ mirror it on the managed side and
  * cxagent.Core/Core/Plugins/Abi/README.md carries the JSON schemas each call exchanges.
  *
  * EVERYTHING THAT CROSSES THIS BOUNDARY IS JSON. A tool's input schema, a call's arguments, a
@@ -38,6 +38,20 @@
 
 #include <stdint.h>
 
+/*
+ * EXPORTS. Every function below is one the host resolves by name, so each is marked for export:
+ * an MSVC build exports nothing it is not told to, and a build with hidden symbols by default
+ * (-fvisibility=hidden, which keeps a plugin's own helpers out of its export table) needs the same.
+ * Put CXAGENT_PLUGIN_EXPORT on each definition as it is on these declarations.
+ */
+#if defined(_WIN32)
+#  define CXAGENT_PLUGIN_EXPORT __declspec(dllexport)
+#elif defined(__GNUC__) || defined(__clang__)
+#  define CXAGENT_PLUGIN_EXPORT __attribute__((visibility("default")))
+#else
+#  define CXAGENT_PLUGIN_EXPORT
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -56,7 +70,7 @@ extern "C" {
  * for what "may omit" means for one specific function. Its own signature can never change — this
  * is the one function both sides must agree on before agreeing on anything else.
  */
-int32_t cxagent_plugin_abi_version(void);
+CXAGENT_PLUGIN_EXPORT int32_t cxagent_plugin_abi_version(void);
 
 /*
  * SELF-DESCRIPTION. Returns a UTF-8 JSON manifest (see README.md, "describe") — the same shape
@@ -66,7 +80,7 @@ int32_t cxagent_plugin_abi_version(void);
  * Called once, before cxagent_plugin_start. Freshly allocated; released via
  * cxagent_plugin_free. Never NULL — see "Why a plugin must never return NULL" below.
  */
-const char* cxagent_plugin_describe(void);
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_describe(void);
 
 /*
  * LIFECYCLE: START. `context_json` carries the plugin's working directory and its own settings
@@ -82,7 +96,7 @@ const char* cxagent_plugin_describe(void);
  * `context_json` is host-owned, valid only for the duration of this call. Freshly allocated
  * return value, released via cxagent_plugin_free.
  */
-const char* cxagent_plugin_start(const char* context_json);
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_start(const char* context_json);
 
 /*
  * GATE. Decides whether ONE call needs the user's permission, and what the prompt should say.
@@ -109,7 +123,7 @@ const char* cxagent_plugin_start(const char* context_json);
  * abandons a gate that takes longer than a few hundred milliseconds. Inspect the arguments; do not
  * open a connection.
  */
-const char* cxagent_plugin_gate(const char* tool_name, const char* call_json);
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_gate(const char* tool_name, const char* call_json);
 
 /*
  * INVOKE. Runs one call to one of this plugin's own tools, named by `tool_name` — always a name
@@ -136,7 +150,7 @@ const char* cxagent_plugin_gate(const char* tool_name, const char* call_json);
  * say so in its manifest (a future 'concurrency' hint — no contract has one yet, so every plugin is
  * assumed reentrant) and serialize internally if it is not.
  */
-const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json);
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json);
 
 /*
  * LIFECYCLE: STOP. Runs before the host process exits. A plugin's own children should already be
@@ -146,7 +160,7 @@ const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json);
  * Returns a UTF-8 JSON result envelope, `{"ok":true}` or `{"ok":false,"error":"..."}`. Freshly
  * allocated; released via cxagent_plugin_free.
  */
-const char* cxagent_plugin_stop(void);
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_stop(void);
 
 /*
  * OPTIONAL EXPORT: POLL. Contract 3 lets a plugin originate work in its own session
@@ -206,7 +220,7 @@ const char* cxagent_plugin_stop(void);
  * author — cxagent_plugin_poll's own C signature carries no id at all — it exists here only so the
  * shape of "fire-and-forget, no reply channel" is not mysterious.
  */
-const char* cxagent_plugin_poll(void);
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_poll(void);
 
 /*
  * OPTIONAL EXPORT: COMMAND. Runs one command a person typed, named by describe()'s own "commands"
@@ -242,7 +256,40 @@ const char* cxagent_plugin_poll(void);
  * and cxagent_plugin_poll — the same reentrancy assumption invoke's own doc states, since a person
  * may type a command while a tool call from an earlier turn is still running.
  */
-const char* cxagent_plugin_command(const char* name, const char* arguments);
+CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_command(const char* name, const char* arguments);
+
+/*
+ * OPTIONAL EXPORT: ATTACH. The host's callbacks, for a plugin that reports while it works —
+ * progress, log lines, and text streamed as it is produced — instead of only returning a result.
+ *
+ * Called ONCE, after describe and before start; never called on a library that does not export it,
+ * and never by a host from before it existed — the same optional rule as poll and command, so the
+ * contract number does not change.
+ *
+ * The table and every string it hands out are HOST-OWNED and stay valid until the library is
+ * unloaded; keep the pointer. `size` comes first, and later hosts only ever APPEND fields: check
+ * `size` before reading a field beyond the ones listed here.
+ *
+ * WHICH CALL A REPORT IS FOR. Calls run concurrently, so each report names one. A NULL `call_id`
+ * means THE CALL RUNNING ON THIS THREAD — the host sets that before each invoke — so a report made
+ * from inside cxagent_plugin_invoke needs no id at all. To report from a thread of the plugin's
+ * own, read `current_call()` inside invoke, copy the string, and pass the copy. A report naming a
+ * call that has already finished is dropped. `log` with no call (NULL, outside any invoke) goes to
+ * the plugin's own log rather than to a call.
+ *
+ * `level` uses the managed JobLogLevel numbering: 0 Trace, 1 Debug, 2 Info, 3 Warning, 4 Error.
+ * Every string argument is UTF-8 and plugin-owned; the host copies what it keeps before returning.
+ * The callbacks may be called from any thread, concurrently.
+ */
+typedef struct cxagent_host {
+    uint32_t size;
+    void (*progress)(const char *call_id, double percent, const char *message);
+    void (*log)(const char *call_id, int32_t level, const char *line);
+    void (*stream)(const char *call_id, const char *text);
+    const char *(*current_call)(void);
+} cxagent_host;
+
+CXAGENT_PLUGIN_EXPORT void cxagent_plugin_attach(const cxagent_host *host);
 
 /*
  * Releases a string previously returned by cxagent_plugin_describe / _start / _invoke / _stop /
@@ -251,7 +298,7 @@ const char* cxagent_plugin_command(const char* name, const char* arguments);
  * parse. NEVER called by the plugin on its own output; the host owns the release side of every
  * pointer this library hands back.
  */
-void cxagent_plugin_free(const char* ptr);
+CXAGENT_PLUGIN_EXPORT void cxagent_plugin_free(const char* ptr);
 
 #ifdef __cplusplus
 }
