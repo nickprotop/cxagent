@@ -102,17 +102,21 @@ public static class CompressionRun
 
         // CHARACTERS, NOT MESSAGES, for what the user is told. Compression replaces the older half
         // with ONE summary, so the COUNT barely moves and can be identical: a two-message
-        // conversation removes one and inserts one, and the status bar read "report.Compressed 2→2 msgs" —
+        // conversation removes one and inserts one, and the status bar read "Compressed 2→2 msgs" —
         // a true statement that tells the user nothing and looks like a no-op. What actually shrank
         // is the text, often by an order of magnitude, and that is the number worth showing.
         var charsBefore = work.Context.TotalChars();
 
         var result = await SessionCompressor.CompressAsync(work.Context, work.Provider, ct, report.Meter, work.SkillToolOffered);
 
-        // The summary the compressor wrote, which is now the first message. Read back rather than
-        // returned, so the compressor's contract stays "shrink this work.Context" rather than growing a
-        // reporting channel for one caller.
-        var summary = work.Context.Count > 0 ? work.Context.Messages[0].Content : "";
+        // The summary the compressor wrote, found by its marker. Read back rather than returned, so the
+        // compressor's contract stays "shrink this context" rather than growing a reporting channel for one
+        // caller. NOT THE FIRST MESSAGE: the system prompt is pinned ahead of the summary, and read as the
+        // summary it put the whole prompt in the transcript under the compaction's row.
+        var summary = work.Context.Messages
+            .FirstOrDefault(m => m.Role == "assistant"
+                && m.Content.StartsWith(SessionCompressor.SummaryMarker, StringComparison.Ordinal))
+            ?.Content[SessionCompressor.SummaryMarker.Length..].TrimEnd(']').Trim() ?? "";
 
         // TRUNCATION IS A FAILURE, and shows red. It means the summarising call did not answer and
         // the oldest half was dropped unread — recoverable, but the user should see that it happened
@@ -134,7 +138,7 @@ public static class CompressionRun
             ErrorMessage = result.Summarised
                 ? null
                 : result.Declined
-                    ? "the model returned no usable summary — nothing was report.Compressed, nothing was lost"
+                    ? "the model returned no usable summary — nothing was compressed, nothing was lost"
                     : "summarisation failed — dropped the oldest messages unread",
             Output = new Dictionary<string, object?>
             {
@@ -147,7 +151,7 @@ public static class CompressionRun
         // compression. Compression replaces the older half with ONE summary, so a two-message
         // conversation removes one and inserts one and ends at the count it started with, while its
         // content shrank from a full turn to a couple of hundred characters. Counting therefore
-        // reports "nothing happened" for a real compression, and the work.Context reading stays marked
+        // reports "nothing happened" for a real compression, and the context reading stays marked
         // fresh when it no longer describes the conversation at all.
         //
         // Summarised is the compressor's own answer to "did I do the work", which is the question.

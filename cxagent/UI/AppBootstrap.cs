@@ -1809,7 +1809,8 @@ public static class AppBootstrap
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F12, "export this conversation as markdown",
             () =>
             {
-                if (PluginManagerDialog.IsOpen || ConfigDialog.IsOpen || ExportDialog.IsOpen || QuitDialog.IsOpen) return false;
+                if (PluginManagerDialog.IsOpen || ConfigDialog.IsOpen || ConfirmDialog.IsOpen || ExportDialog.IsOpen
+                    || QuitDialog.IsOpen) return false;
                 _ = mainWindow.ActiveAgentTab is { } agent
                     ? exportFlow.ForAgentAsync(agent)
                     : exportFlow.ForSessionAsync(mainWindow.ActiveTab.Session ?? session, Core.Commands.ExportPrefill.None);

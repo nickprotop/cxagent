@@ -387,11 +387,16 @@ public static class ExportDialog
                 if (version != Volatile.Read(ref _version)) return;
                 ExportResult result;
                 try { result = _request.Render(options); }
-                catch (Exception e) { _host.Post(() => ShowError($"could not render the export: {e.Message}")); return; }
+                catch (Exception e)
+                {
+                    _host.Post(() => { if (version == _version) ShowError($"could not render the export: {e.Message}"); });
+                    return;
+                }
                 _host.Post(() =>
                 {
                     if (version != _version) return;
                     _preview = result;
+                    ShowError(null);
                     ShowSize();
                 });
             });
@@ -443,12 +448,23 @@ public static class ExportDialog
                 return;
 
             ExportButton.IsEnabled = false;
-            var decision = await Task.Run(() =>
+            var open = !toClipboard && _open.Checked;
+            ExportDecision? decision = null;
+            string? error;
+            try
             {
-                var result = _request.Render(options);
-                return new ExportDecision(result, options, toClipboard, path, !toClipboard && _open.Checked);
-            });
-            var error = await Task.Run(() => _host.Deliver(decision));
+                decision = await Task.Run(() => new ExportDecision(_request.Render(options), options, toClipboard, path, open));
+
+                // CLOSED WHILE IT RENDERED, NOTHING IS WRITTEN: Escape is the user changing their mind, and a file
+                // appearing after the dialog has gone would be one they said no to.
+                if (Answer.Task.IsCompleted) return;
+                error = await Task.Run(() => _host.Deliver(decision));
+            }
+            catch (Exception e)
+            {
+                // A FAILURE IS SAID, NOT SWALLOWED: left to escape, it disabled Export with no word of why.
+                error = e.Message;
+            }
             _host.Post(() =>
             {
                 if (error is not null)
@@ -457,7 +473,7 @@ public static class ExportDialog
                     ExportButton.IsEnabled = true;
                     return;
                 }
-                Answer.TrySetResult(decision);
+                Answer.TrySetResult(decision!);
                 Window.Close();
             });
         }

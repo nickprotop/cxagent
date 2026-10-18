@@ -162,6 +162,44 @@ public class ExportDialogTests : IDisposable
         await SizeSettles();
     }
 
+    /// <summary>A RENDER OR A DELIVERY THAT THROWS IS SAID, and Export is offered again — not left disabled in silence.</summary>
+    [Fact]
+    public async Task AFailureWhileExporting_IsShown_AndExportComesBack()
+    {
+        var (host, _) = Host(_ => throw new InvalidOperationException("clipboard gone"));
+        _ = ExportDialog.AskAsync(host, Request(_ => Sized(100)));
+        await SizeSettles();
+        ExportDialog.ChooseClipboardForTest(true);
+        await SizeSettles();
+
+        await ExportDialog.ExportForTest();
+
+        Assert.True(ExportDialog.IsOpen);
+        Assert.Contains("clipboard gone", ExportDialog.ErrorForTest);
+        Assert.True(ExportDialog.ExportEnabledForTest);
+    }
+
+    /// <summary>CLOSED WHILE IT WAS STILL RENDERING, NOTHING IS WRITTEN: Escape is the user changing their mind.</summary>
+    [Fact]
+    public async Task ClosingDuringAnExport_DeliversNothing()
+    {
+        var delivered = false;
+        var slow = new ManualResetEventSlim(true);
+        var (host, _) = Host(_ => { delivered = true; return null; });
+        _ = ExportDialog.AskAsync(host, Request(_ => { slow.Wait(TimeSpan.FromSeconds(10)); return Sized(100); }));
+        await SizeSettles();
+        ExportDialog.ChooseClipboardForTest(true);
+        await SizeSettles();
+
+        slow.Reset();
+        var exporting = ExportDialog.ExportForTest();
+        ExportDialog.CloseIfOpen();
+        slow.Set();
+        await exporting;
+
+        Assert.False(delivered);
+    }
+
     [Fact]
     public async Task Closing_AnswersNothing()
     {

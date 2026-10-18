@@ -162,7 +162,7 @@
       </div>
       <div class="exp-pane" role="tabpanel" id="pane-33-thinking" aria-labelledby="tab-33-thinking">
         <div class="exp-shot"><a href="screenshots/33-thinking.png" title="Open the full-size capture"><img src="screenshots/33-thinking.png" alt="Each step's thinking folded between its tool calls, the latest opened, and the thinking level on the mode line" loading="lazy"></a></div>
-        <div class="exp-text"><h3>What it thought, and how hard</h3><p>Each step that thought gets its own block, open while it streams and folded once the step moves on, so a run reads as thought, calls, thought, answer. <code>Ctrl+O</code> opens the latest; any other is a click away.</p><p class="exp-aside"><code>F10</code> and <code>/think</code> set the level the model offers — on or off for a llama.cpp server, low to max for Claude.</p></div>
+        <div class="exp-text"><h3>What it thought, and how hard</h3><p>Each step that thought gets its own block, folded from the start and open on a click, so a run reads as thought, calls, thought, answer. <code>Ctrl+O</code> opens the latest; any other is a click away.</p><p class="exp-aside"><code>F10</code> and <code>/think</code> set the level the model offers — on or off for a llama.cpp server, low to max for Claude.</p></div>
       </div>
       <div class="exp-pane" role="tabpanel" id="pane-34-configuration" aria-labelledby="tab-34-configuration">
         <div class="exp-shot"><a href="screenshots/34-configuration.png" title="Open the full-size capture"><img src="screenshots/34-configuration.png" alt="The configuration dialog on its Providers tab: the instances on the left with the default starred, the selected one's endpoint, model, masked key and thinking level beside it" loading="lazy"></a></div>
@@ -302,7 +302,7 @@
     <div class="u-item">
       <div class="u-num">18</div>
       <p class="u-title">Thinking you can see, and set</p>
-      <p class="u-body">Each step's thinking is its own block, folded once the step moves on — from a
+      <p class="u-body">Each step's thinking is its own block, folded until you open it — from a
       local llama.cpp model or from Claude. <code>/think</code> and <code>F10</code> choose how hard
       it thinks, from the levels the model itself says it accepts.</p>
     </div>

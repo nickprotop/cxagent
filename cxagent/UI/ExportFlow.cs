@@ -61,8 +61,10 @@ public sealed class ExportFlow(ConsoleWindowSystem system, AppPaths paths, strin
         }
 
         var parent = tab.Session.SessionId is { } parentId ? SessionHeader.Read(new SessionFolder(paths, parentId)) : null;
-        var header = new ExportHeader(kept.Agent.Agent.Id, parent?.Title, tab.Session.WorkingDirectory, null, null, 0, 0,
-            tab.Session.SpendLabel, kept.Name, kept.TypeName);
+        var spent = kept.Agent.Agent.Spend;
+        var header = new ExportHeader(kept.Agent.Agent.Id, parent?.Title, tab.Session.WorkingDirectory, null, null,
+            spent.Input, spent.Output, tab.Session.SpendLabel, kept.Name, kept.TypeName,
+            AgentRows.Describe(tab.Session.SubAgents, kept, DateTimeOffset.UtcNow) is { } row ? StateWord(row.State) : null);
         var source = new Lazy<ExportSource?>(() => ExportSource.LoadDir(dir, header));
         return AskAsync(new ExportDialogRequest(
             $"[bold]{MarkupParser.Escape(kept.Name)}[/] [{ColorScheme.MutedMarkup}]({MarkupParser.Escape(kept.TypeName)}) · "
@@ -156,6 +158,16 @@ public sealed class ExportFlow(ConsoleWindowSystem system, AppPaths paths, strin
         var name = ClipTitle(title ?? "This conversation", 70 - tail.Length);
         return $"[bold]{MarkupParser.Escape(name)}[/]" + (tail.Length > 0 ? $"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(tail)}[/]" : "");
     }
+
+    private static string StateWord(AgentRowState state) => state switch
+    {
+        AgentRowState.Queued => "queued",
+        AgentRowState.Running => "running",
+        AgentRowState.WaitingForPermission => "waiting for permission",
+        AgentRowState.Done => "done",
+        AgentRowState.Stopped => "stopped",
+        _ => "failed",
+    };
 
     private static string ClipTitle(string title, int room)
     {

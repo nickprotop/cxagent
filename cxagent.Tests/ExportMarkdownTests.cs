@@ -287,6 +287,33 @@ public class ExportMarkdownTests : IDisposable
         Assert.DoesNotContain("conversation not recorded", md);
     }
 
+    /// <summary>A CHILD IS READ ONCE PER EXPORT, not once per option the dialog's preview renders.</summary>
+    [Fact]
+    public void AChildsHistory_IsReadOnce_AcrossRenders()
+    {
+        var path = Path.Combine(_dir, "KID", "history.jsonl");
+        new HistoryRecorder(path).Record([User("brief", 1), Assistant("first version", 2)]);
+        var s = Source(E(Assistant("", 0, Call("s", "agent", new { description = "d", prompt = "p" }))),
+            E(Result("s", "<sub_agent id=\"KID\" name=\"kid\" state=\"completed\">\nr\n</sub_agent>", 3)));
+
+        Assert.Contains("first version", Render(s, Readable));
+        File.Delete(path);
+        Assert.Contains("first version", Render(s, Full));
+    }
+
+    /// <summary>AN AGENT'S OWN EXPORT SAYS HOW IT STANDS AND WHAT IT COST, as a session's header does.</summary>
+    [Fact]
+    public void AnAgentsHeader_HasItsStateAndSpend()
+    {
+        var s = new ExportSource(new ExportHeader("KID", "Parent", null, At(0), At(9), 1_500, 300, null, "kid", "explore", "done"),
+            [E(User("brief", 0), Incoming.Brief), E(Assistant("r", 1))], true, _dir);
+
+        var md = Render(s, Readable);
+
+        Assert.Contains("done", md.Split('\n')[1]);
+        Assert.Contains("1.5k in / 300 out", md);
+    }
+
     [Fact]
     public void Stats_CountWhatWasWritten()
     {

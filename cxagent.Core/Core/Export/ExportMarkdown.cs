@@ -108,6 +108,7 @@ public static partial class ExportMarkdown
             {
                 _md.Append("# ").Append(h.AgentName).Append(h.AgentType is { } t ? $" ({t})" : "").Append('\n');
                 if (h.Title is { } parent) facts.Add($"sub-agent of “{parent}”");
+                if (h.State is { } state) facts.Add(state);
             }
             else
             {

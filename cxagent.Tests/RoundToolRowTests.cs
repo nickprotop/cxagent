@@ -149,6 +149,9 @@ public class RoundToolRowTests
     [InlineData("shell", false)]
     [InlineData("llm_agent", true)]
     [InlineData("todo", true)]
+    // A COMPACTION IS NOT THE MODEL'S WORKING: /compress runs between turns, where there is no round to fold into,
+    // and folded it showed nothing at all.
+    [InlineData("compress", true)]
     public void OnlyWorkingRowsAreFolded(string jobType, bool keepsItsOwnRow)
         => Assert.Equal(keepsItsOwnRow, InlineJobSink.ShouldShowForTest(new Job
         {

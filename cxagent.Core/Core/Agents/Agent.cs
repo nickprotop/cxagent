@@ -2301,7 +2301,10 @@ public sealed class Agent
         foreach (var (text, from) in Mailbox.DrainEntries())
         {
             var message = new ChatMessage { Role = "user", Content = text, Timestamp = DateTimeOffset.UtcNow };
-            if (from is { } sender) History?.Label(message, sender);
+
+            // MAIL NOBODY SIGNED IS THE APPLICATION'S: left unlabelled it would take the label meant for the prompt
+            // that follows it, and a note would read as what the user typed.
+            History?.Label(message, from ?? Incoming.Delivery);
             messages.Add(message);
         }
     }
@@ -3719,10 +3722,6 @@ public sealed class Agent
 
         _ => "file",
     };
-
-    /// <summary>Test seam: the label is a pure projection of a call and where the session is.</summary>
-    public static string DescribeCallForTest(ToolCall call, string? workingDir) =>
-        DescribeCall(call, workingDir);
 
     public static string DescribeCall(ToolCall call, string? workingDir)
     {

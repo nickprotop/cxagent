@@ -145,6 +145,29 @@ public class HistoryRecorderTests : IDisposable
         Assert.Null(Lines().Single(l => l.Message?.Content == "third").Thinking);
     }
 
+    /// <summary>
+    /// A COMPACTION THAT COULD NOT SUMMARISE STILL SAYS SO: the fallback drops the oldest half with no summary, and the
+    /// history marks where — a dropped task list is the one removal that is not a compaction.
+    /// </summary>
+    [Fact]
+    public void ATruncationWithoutASummary_IsMarked_AndATaskListDroppedIsNot()
+    {
+        var recorder = new HistoryRecorder(PathOf);
+        var plan = new ChatMessage { Role = "user", Content = "- [ ] step", IsTaskList = true, Timestamp = T0 };
+        var context = new List<ChatMessage> { User("a", 1), Assistant("b", 2), plan };
+        recorder.Record(context);
+        context.Remove(plan);
+        recorder.Record(context);
+        Assert.DoesNotContain(Lines(), l => l.Kind == HistoryLine.Kinds.Compacted);
+
+        context.RemoveRange(0, 2);
+        context.Add(User("c", 3));
+        recorder.Record(context);
+
+        Assert.Equal([HistoryLine.Kinds.Compacted, "c"],
+            Lines().Skip(3).Select(l => l.Kind == HistoryLine.Kinds.Message ? l.Message!.Content : l.Kind));
+    }
+
     [Fact]
     public void AnIncomingLabel_GoesOnTheNextPrompt()
     {
@@ -191,6 +214,7 @@ public class HistoryWiringTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("history-wiring-").FullName;
     private SessionManager? _manager;
+    private readonly BufferedJobPanel _panel = new();
 
     public void Dispose()
     {
@@ -211,7 +235,7 @@ public class HistoryWiringTests : IDisposable
         var config = new ResolvedConfig(registry.Use("local"), new ProviderCatalog(Instances: registry, AgentTypes: types), []);
         _manager = SessionManager.Create(new ProcessSetup { Paths = new AppPaths(_dir) });
         var sink = new BufferedChatSink();
-        var session = _manager.Open(_dir, config, new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() },
+        var session = _manager.Open(_dir, config, new SessionPorts { Observer = sink, ToolObserver = _panel },
             AgentMode.FanOut);
         return (session, config, sink);
     }
@@ -295,6 +319,40 @@ public class HistoryWiringTests : IDisposable
         var users = HistoryRecorder.Read(HistoryOf(s.SessionId!)).Where(l => l.Message is { Role: "user", ToolCallId: null }).ToList();
         Assert.Equal(Incoming.You, users[0].From);
         Assert.Contains(users, l => l.From == Incoming.Nudge && l.Message!.Content.Contains("cut off"));
+    }
+
+    /// <summary>
+    /// A NOTE LEFT IN THE MAILBOX IS NOT THE USER'S PROMPT: drained ahead of the prompt with no sender of its own, it
+    /// must not take the label the prompt was given.
+    /// </summary>
+    [Fact]
+    public async Task ANoteDrainedBeforeAPrompt_DoesNotTakeThePromptsLabel()
+    {
+        var (s, _, _) = Open(new ScriptedProvider(Answer("ok")));
+        Assert.True(s.LeaveNote("a background command finished"));
+        await Turn(s, "the question");
+
+        var users = HistoryRecorder.Read(HistoryOf(s.SessionId!)).Where(l => l.Message is { Role: "user", ToolCallId: null }).ToList();
+        Assert.Equal(Incoming.Delivery, users.Single(l => l.Message!.Content.Contains("finished")).From);
+        Assert.Equal(Incoming.You, users.Single(l => l.Message!.Content == "the question").From);
+    }
+
+    /// <summary>
+    /// THE COMPACTION'S ROW SHOWS ITS SUMMARY, not the system prompt pinned ahead of it — the first message is the
+    /// system prompt, so reading "the first message" put the whole prompt in the transcript.
+    /// </summary>
+    [Fact]
+    public async Task ACompactionsRow_ShowsTheSummary()
+    {
+        var (s, _, _) = Open(new ScriptedProvider(Answer("one"), Answer("two"), Answer("they asked twice")));
+        await Turn(s, "first");
+        await Turn(s, "second");
+        await s.CompressNow(CancellationToken.None)!;
+
+        var row = _panel.Jobs.Single(j => j.JobType == "compress");
+        var body = row.Result!.Output["content"]!.ToString()!;
+        Assert.Contains("they asked twice", body);
+        Assert.DoesNotContain("You are cxagent", body);
     }
 
     /// <summary>/compress IS RECORDED AS IT HAPPENS: a model switch right after it must not lose the summary and its marker.</summary>

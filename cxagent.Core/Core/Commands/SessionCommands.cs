@@ -545,16 +545,15 @@ public static class SessionCommands
         // plain two-space indent renders flush against the command above it and the subcommand rows
         // stop reading as modifiers of anything.
         //
-        // Md.Escape, NOT Md.EscapeCell: a code span already hides a pipe from the table parser, so
-        // `/sessions resume <number|id>` stays one cell either way — and EscapeCell's backslash
-        // survives inside the span, putting a literal \| on screen.
+        // A CODE SPAN, AND NOTHING ESCAPED INSIDE IT: markdown processes no escapes in a span, so any backslash
+        // added there reaches the screen — "\[folder\]" from an escaped bracket, "\|" from an escaped pipe. The
+        // span already keeps a name's underscores and asterisks from becoming emphasis, and hides its pipe from the
+        // table parser, so `/sessions resume <number|id>` stays one cell.
         //
-        // THE NAME IS ESCAPED AND THE SUMMARY IS NOT, which is not an oversight. A name is a literal
-        // spelling whose underscores and asterisks must not become emphasis. A summary is markdown
-        // this file AUTHORS, backticks included ("a name from `providers` in config"); escaping it
-        // turns intended inline code into punctuation.
+        // THE SUMMARY IS LEFT AS IT IS: it is markdown this file AUTHORS, backticks included ("a name from
+        // `providers` in config"), and escaping it would turn intended inline code into punctuation.
         foreach (var (name, summary, isArg) in rows)
-            lines.Add($"| {(isArg ? "\u00a0\u00a0" : "")}`{Md.Escape(name)}` | {summary} |");
+            lines.Add($"| {(isArg ? "\u00a0\u00a0" : "")}{Md.CodeSpan(name)} | {summary} |");
 
         return string.Join('\n', lines);
     }

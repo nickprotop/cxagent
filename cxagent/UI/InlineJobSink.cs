@@ -1267,7 +1267,9 @@ public sealed class InlineJobSink : IToolObserver
     /// <para>llm_agent is NOT part of this at the auto-expand site above: a worker's body grows under
     /// the reader for minutes, so it must not open by itself. That site keeps its own test.</para>
     /// </summary>
-    private static bool IsTheAnswer(Job job) => job.JobType is "llm_agent" or "todo";
+    // A COMPACTION KEEPS ITS ROW TOO: it is housekeeping the user can ask for with /compress, between turns — where
+    // there is no round to fold into — and the "Context" author was written for its own line.
+    private static bool IsTheAnswer(Job job) => job.JobType is "llm_agent" or "todo" or "compress";
 
     /// <summary>
     /// Whether this row's working folds into the round's one row instead of taking a line of its own.

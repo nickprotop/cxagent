@@ -207,8 +207,8 @@ for another agent to continue from — to a file or the clipboard, as a timeline
 happened. `/sessions export` does the same for an earlier session from any folder, without resuming it. See
 [COMMANDS.md](COMMANDS.md#export).
 
-**You see what the model thinks, and choose how hard.** Each step's thinking is its own block, open
-while it streams and folded to `◆ Thought for 9s · 412 words` once the answer starts — from a local
+**You see what the model thinks, and choose how hard.** Each step's thinking is its own block, folded
+from the start — `◆ Thought for 9s · 412 words` once it is done — from a local
 llama.cpp model or from Claude. `Ctrl+O` opens or folds the latest; any other opens with a click. `/think` and `F10` set the level the
 model offers — `off`/`on` on llama.cpp, `low` to `max` on Claude, a model's own efforts on OpenRouter — for this session, kept on resume.
 See [COMMANDS.md](COMMANDS.md#think) and [CONFIG.md](CONFIG.md#providers--required).

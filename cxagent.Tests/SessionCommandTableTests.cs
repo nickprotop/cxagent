@@ -509,6 +509,19 @@ public class SessionCommandTableTests
         Assert.Contains("/mode agent <mode>", help, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A NAME IN A CODE SPAN IS SHOWN AS WRITTEN: markdown processes no escapes inside one, so an escaped bracket
+    /// reached the screen as "\[folder\]".
+    /// </summary>
+    [Fact]
+    public void HelpLines_ShowBracketsWithoutBackslashes()
+    {
+        var help = SessionCommands.HelpLines();
+
+        Assert.Contains("`/plugin load <name|path> [--once]`", help, StringComparison.Ordinal);
+        Assert.DoesNotContain("\\[", help, StringComparison.Ordinal);
+    }
+
     /// <summary>Each subcommand line carries its own summary, so the list explains rather than
     /// merely enumerates.</summary>
     [Fact]

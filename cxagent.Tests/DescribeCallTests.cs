@@ -23,31 +23,31 @@ public class DescribeCallTests
     [Fact]
     public void AReadIsNamedByItsFile()
         => Assert.Equal("read_file · UI/FileTab.cs",
-            Agent.DescribeCallForTest(Call("read_file", """{"path":"/work/UI/FileTab.cs"}"""), Root));
+            Agent.DescribeCall(Call("read_file", """{"path":"/work/UI/FileTab.cs"}"""), Root));
 
     // A FILE OUTSIDE THE WORKING DIRECTORY KEEPS ITS PATH. Relative would climb with ../.., which is
     // longer than the absolute and harder to read.
     [Fact]
     public void AFileOutsideTheRootStaysAbsolute()
         => Assert.Contains("/etc/hosts",
-            Agent.DescribeCallForTest(Call("read_file", """{"path":"/etc/hosts"}"""), Root));
+            Agent.DescribeCall(Call("read_file", """{"path":"/etc/hosts"}"""), Root));
 
     // A GREP IS NAMED BY WHAT IT LOOKED FOR, not where: the pattern is the question being asked.
     [Fact]
     public void AGrepIsNamedByItsPattern()
         => Assert.Equal("""grep · "class Agent" """.TrimEnd(),
-            Agent.DescribeCallForTest(
+            Agent.DescribeCall(
                 Call("grep", """{"pattern":"class Agent","path":"/work"}"""), Root));
 
     [Fact]
     public void AShellCallIsNamedByItsCommand()
         => Assert.Equal("run_shell · dotnet build",
-            Agent.DescribeCallForTest(Call("run_shell", """{"command":"dotnet build"}"""), Root));
+            Agent.DescribeCall(Call("run_shell", """{"command":"dotnet build"}"""), Root));
 
     [Fact]
     public void AWriteIsNamedByItsFile()
         => Assert.Equal("write_file · UI/FileTab.cs",
-            Agent.DescribeCallForTest(
+            Agent.DescribeCall(
                 Call("write_file", """{"path":"/work/UI/FileTab.cs","content":"using System;"}"""),
                 Root));
 
@@ -56,7 +56,7 @@ public class DescribeCallTests
     [Fact]
     public void ALongCommandIsClipped()
     {
-        var label = Agent.DescribeCallForTest(
+        var label = Agent.DescribeCall(
             Call("run_shell", $$"""{"command":"{{new string('x', 200)}}"}"""), Root);
 
         Assert.StartsWith("run_shell · ", label);
@@ -69,11 +69,11 @@ public class DescribeCallTests
     [Fact]
     public void AnUnknownToolFallsBackToItsArguments()
         => Assert.Contains("{",
-            Agent.DescribeCallForTest(Call("some_plugin_tool", """{"a":"b"}"""), Root));
+            Agent.DescribeCall(Call("some_plugin_tool", """{"a":"b"}"""), Root));
 
     // NO WORKING DIRECTORY, NO CRASH — a path is simply shown as it came.
     [Fact]
     public void NoRootStillNamesTheFile()
         => Assert.Contains("FileTab.cs",
-            Agent.DescribeCallForTest(Call("read_file", """{"path":"/work/UI/FileTab.cs"}"""), null));
+            Agent.DescribeCall(Call("read_file", """{"path":"/work/UI/FileTab.cs"}"""), null));
 }

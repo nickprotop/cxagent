@@ -16,6 +16,7 @@ namespace CxAgent.Core.Export;
 /// <param name="Model">The model it ran on, where the caller knows it — a past session does not record it.</param>
 /// <param name="AgentName">For a sub-agent's own export: its name.</param>
 /// <param name="AgentType">For a sub-agent's own export: its type.</param>
+/// <param name="State">For a sub-agent's own export: how it stands — running, done, stopped.</param>
 public sealed record ExportHeader(
     string AgentId,
     string? Title,
@@ -26,7 +27,8 @@ public sealed record ExportHeader(
     int OutputTokens,
     string? Model = null,
     string? AgentName = null,
-    string? AgentType = null);
+    string? AgentType = null,
+    string? State = null);
 
 /// <summary>One point on an export's timeline.</summary>
 /// <param name="At">When it happened.</param>
@@ -122,10 +124,17 @@ public sealed class ExportSource
         }, entries, true, dir);
     }
 
-    /// <summary>The sub-agent <paramref name="childAgentId"/> spawned by the agent <paramref name="at"/> came from.</summary>
+    /// <summary>
+    /// The sub-agent <paramref name="childAgentId"/> spawned by the agent <paramref name="at"/> came from.
+    ///
+    /// <para>READ ONCE PER EXPORT: the dialog renders again on every change of options, and a child's history is
+    /// re-parsed for each call that mentions it otherwise. Concurrent, because those renders run on the pool.</para>
+    /// </summary>
     public ExportSource? Child(ExportEntry at, string childAgentId) =>
-        LoadDir(Path.Combine(at.Dir, childAgentId),
-            new ExportHeader(childAgentId, Header.Title, Header.WorkingDir, null, null, 0, 0, Header.Model));
+        _children.GetOrAdd(Path.Combine(at.Dir, childAgentId), dir =>
+            LoadDir(dir, new ExportHeader(childAgentId, Header.Title, Header.WorkingDir, null, null, 0, 0, Header.Model)));
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ExportSource?> _children = new(StringComparer.Ordinal);
 
     private static List<ExportEntry> Chain(AppPaths paths, string newest, out (int, int) spent)
     {

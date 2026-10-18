@@ -60,20 +60,31 @@ public sealed class HistoryRecorder
         lock (_gate)
         {
             var present = new HashSet<ChatMessage>(context, ReferenceEqualityComparer.Instance);
-            var left = _previous.Where(m => !present.Contains(m)).Select(Key).ToList();
+            var left = _previous.Where(m => !present.Contains(m)).Select(m => (Key: Key(m), m.IsTaskList)).ToList();
 
+            var fresh = new List<ChatMessage>();
             foreach (var message in context)
             {
                 if (_written.TryGetValue(message, out _)) continue;
                 _written.Add(message, Marker);
 
-                var leftIndex = left.IndexOf(Key(message));
+                var leftIndex = left.FindIndex(l => l.Key == Key(message));
                 if (leftIndex >= 0)
                 {
                     left.RemoveAt(leftIndex);
                     continue;
                 }
+                fresh.Add(message);
+            }
 
+            // WHAT LEFT AND CAME BACK AS NOTHING WAS COMPACTED AWAY — the fallback that truncates when it cannot
+            // summarise leaves no summary to mark, so the drop itself is the mark. A task list is the exception: an
+            // emptied plan is removed and not put back, and that is no compaction.
+            if (left.Any(l => !l.IsTaskList) && !fresh.Any(IsSummary))
+                Append(new HistoryLine(0, DateTimeOffset.UtcNow, HistoryLine.Kinds.Compacted));
+
+            foreach (var message in fresh)
+            {
                 if (IsSummary(message))
                     Append(new HistoryLine(0, Now(message), HistoryLine.Kinds.Compacted));
                 Append(new HistoryLine(0, Now(message), HistoryLine.Kinds.Message, message,
