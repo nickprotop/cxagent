@@ -102,6 +102,9 @@ public sealed record PluginCommandManifest(
     public IReadOnlyList<PluginCommandArgument> Args => Arguments ?? [];
 }
 
+/// <summary>What loads a plugin: .NET in this process, or a native library through the plugin host.</summary>
+public enum PluginKind { Managed, Native }
+
 /// <summary>
 /// The sidecar shape and what <c>Describe</c> returns once a plugin is running — deliberately one
 /// type for both, because the config-time collision check that catches two plugins declaring the
@@ -145,6 +148,38 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
     /// approved a tool count is a capability the user was never asked about.</para>
     /// </summary>
     public bool Client { get; init; }
+
+    /// <summary>
+    /// The plugin's kind, when its sidecar names one — null otherwise, and the file's extension
+    /// decides (.so/.dylib native, .dll managed).
+    ///
+    /// <para>DECLARED BECAUSE THE EXTENSION CANNOT SAY IT ON WINDOWS: a native library there is a .dll
+    /// too. Using it needs contract 4 or later, so a host from before it refuses the plugin by its
+    /// contract rather than reading a native library as .NET.</para>
+    /// </summary>
+    public PluginKind? Kind { get; init; }
+
+    /// <summary>
+    /// The sidecar beside <paramref name="plugin"/>'s assembly, as a manifest — what Load returns.
+    ///
+    /// <para>ONE COPY, THE ONE THE USER APPROVED. The sidecar is read before anything runs and shown at
+    /// the load prompt, and what Load returns must match it or the load is refused; returning the file
+    /// itself means the two cannot disagree.</para>
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The sidecar is missing or does not parse; the
+    /// message names the file.</exception>
+    public static PluginManifest FromSidecar(IPlugin plugin)
+    {
+        var path = Path.ChangeExtension(plugin.GetType().Assembly.Location, null) + ".plugin.json";
+        if (!File.Exists(path))
+            throw new InvalidOperationException($"no sidecar at '{path}' for {plugin.GetType().Name}.");
+
+        var parsed = Parse(File.ReadAllText(path));
+        return parsed.IsSuccess && parsed.Manifest is { } manifest
+            ? manifest
+            : throw new InvalidOperationException(
+                $"the sidecar '{path}' did not parse: {string.Join("; ", parsed.Errors)}");
+    }
 
     /// <summary>
     /// Every hook-point key this build knows how to service. Anything else in a manifest is refused
@@ -303,10 +338,27 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
 
             bool client = root.TryGetProperty("client", out var cl) && cl.ValueKind == JsonValueKind.True;
 
+            // A KIND THAT IS NOT ONE OF THE TWO IS AN ERROR, not a fallback to the extension: a sidecar
+            // naming a kind this build does not know describes a plugin it cannot load correctly.
+            PluginKind? pluginKind = null;
+            if (root.TryGetProperty("kind", out var kd))
+            {
+                pluginKind = kd.ValueKind == JsonValueKind.String
+                    ? kd.GetString() switch
+                    {
+                        "managed" => PluginKind.Managed,
+                        "native" => PluginKind.Native,
+                        _ => null,
+                    }
+                    : null;
+                if (pluginKind is null) errors.Add($"'kind' must be \"managed\" or \"native\", not {kd.GetRawText()}.");
+            }
+
             var manifest = new PluginManifest(name ?? "", version ?? "", instructions, spawns, tools, commands)
             {
                 Contract = contract,
                 Client = client,
+                Kind = pluginKind,
             };
             return new PluginManifestParseResult(manifest, errors);
         }

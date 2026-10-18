@@ -35,7 +35,7 @@
          RAISED BY HAND, never by a release. Each version is pushed once and every later release
          skips it as a duplicate, so a compatible change to this assembly ships only when this number
          moves — a minor for an addition, the next major with PluginContract.Version. -->
-    <PackageVersion>4.0.0</PackageVersion>
+    <PackageVersion>4.1.0</PackageVersion>
 
     <!-- THE PUBLISHED CONTRACT THIS ONE MUST STAY COMPATIBLE WITH. Package validation compares this
          build's public API with that version on nuget.org and fails the pack on a break — a change
