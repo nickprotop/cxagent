@@ -309,6 +309,8 @@ public class PluginLoadGateTests : IDisposable
 
         var request = Assert.Single(gate.Requests);
         Assert.Contains("start work in this conversation on its own", request.Display, StringComparison.Ordinal);
+        // AND WHAT THAT WORK CANNOT BE: what it sends is a prompt, never a command — see Session.Route.
+        Assert.Contains("never commands", request.Display, StringComparison.Ordinal);
     }
 
     /// <summary>

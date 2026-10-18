@@ -41,10 +41,8 @@ public sealed class SessionPluginClient(Session session, string pluginName, Plug
             Session.SubmitOutcome.Started => new SubmitResult(true, null, null),
             Session.SubmitOutcome.Queued => new SubmitResult(true, null, null),
 
-            // A COMMAND IS NOT A TURN. Text beginning with '/' runs a command and starts nothing, so
-            // there is no answer to wait for even when the caller asked.
-            Session.SubmitOutcome.Handled handled
-                => new SubmitResult(true, null, $"the goal ran as a command ({handled.Status})."),
+            // NO Handled ARM: that outcome is a command having run, and a plugin's goal never runs
+            // one — Session.Route sends it to the model whatever it starts with.
 
             Session.SubmitOutcome.NoAgent
                 => new SubmitResult(false, null, "the session has no usable model configured."),

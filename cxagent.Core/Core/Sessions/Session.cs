@@ -631,9 +631,11 @@ public sealed partial class Session
             // materially more than answering a tool call, it is the reason the capability is declared
             // in the manifest rather than inferred from the binary, and a load prompt that omitted it
             // would be asking for trust it never described. Said in the user's terms — what happens to
-            // their session — not the contract's.
+            // their session — not the contract's. AND ITS LIMIT, in the same sentence: what it sends is
+            // a prompt to the model, never a command (see Route), so a user approving it is not
+            // approving a plugin that can trust the folder or load more plugins.
             if (manifest.Client)
-                contributes += " It can also start work in this conversation on its own.";
+                contributes += " It can also start work in this conversation on its own, as prompts to the model — never commands.";
 
             // COUNTED, NOT LISTED. The prompt says what a plugin ADDS, and a name a user has not seen
             // before tells them less than the count does; `/plugin` lists them once loaded. Its own

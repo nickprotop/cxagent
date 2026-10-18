@@ -364,7 +364,12 @@ public sealed partial class Session
         var (text, echo, tools, origin, source) = (request.Text, request.Echo, request.Tools,
             request.Origin, request.Source);
 
-        if (Manager is { } manager && text.TrimStart().StartsWith('/'))
+        // A PLUGIN'S GOAL IS A PROMPT, NEVER A COMMAND, '/' or not. The command table can trust the
+        // folder, switch the mode and model, and load more plugins, and a plugin declaring the client
+        // was disclosed at load as able to start work, not to change any of that. Its "/trust yes"
+        // goes to the model as text. By origin rather than in the client, because a goal that waited
+        // for a busy session is routed from here as well.
+        if (Manager is { } manager && origin?.PluginName is null && text.TrimStart().StartsWith('/'))
         {
             switch (manager.Commands.Run(this, text))
             {

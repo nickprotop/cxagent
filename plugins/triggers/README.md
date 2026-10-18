@@ -54,3 +54,7 @@ not have yet; until then, a trigger is only as reliable as the session that hold
 The client capability, declared in the sidecar: a fire submits a fresh turn into the session that
 scheduled it, which is materially more than answering a tool call and is disclosed at load like any
 other plugin capability.
+
+**A trigger's prompt is a prompt.** It reaches the model as text even when it starts with `/`, so
+`/triggers-add 09:00 /compress` asks the model about "/compress" rather than compressing: a plugin
+cannot run the session's commands.

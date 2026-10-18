@@ -12,7 +12,8 @@ namespace CxAgent.Tests;
 ///
 /// <para>WHAT THESE COVER: the four shapes a plugin sees — an idle submit that starts a turn, a
 /// fire-and-forget submit that returns without waiting, a severed client that refuses every call, and
-/// a submit made while the session is busy, which the plugin queue takes rather than refusing.</para>
+/// a submit made while the session is busy, which the plugin queue takes rather than refusing — and
+/// that a goal starting with '/' is a prompt like any other, by either path, never a command.</para>
 /// </summary>
 public class SessionPluginClientTests : IDisposable
 {
@@ -64,6 +65,9 @@ public class SessionPluginClientTests : IDisposable
 
         public void Release() => _gate.TrySetResult();
 
+        /// <summary>The last user message of every request, in order — what the model was asked.</summary>
+        public List<string> Asked { get; } = [];
+
         public string ProviderId => "rec";
         public string ModelId => "rec-model";
         public string DisplayName => "Rec";
@@ -73,6 +77,7 @@ public class SessionPluginClientTests : IDisposable
         public async Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools,
             CancellationToken ct)
         {
+            lock (Asked) Asked.Add(messages.Last(m => m.Role == "user").Content);
             if (BlockUntilReleased) await _gate.Task;
             return new LlmResponse { Text = Reply, StopReason = "end_turn" };
         }
@@ -150,5 +155,44 @@ public class SessionPluginClientTests : IDisposable
         Assert.True(result.Accepted);
         Assert.Equal("while busy", queue.DrainOne()?.Goal);
         provider.Release();
+    }
+
+    /// <summary>
+    /// A PLUGIN'S GOAL IS A PROMPT, NEVER A COMMAND. "/trust yes" typed by the user trusts the folder;
+    /// submitted by a plugin it is text for the model, so a plugin can start work but cannot change
+    /// trust, mode, model or what else is loaded.
+    /// </summary>
+    [Fact]
+    public async Task A_goal_starting_with_a_slash_reaches_the_model_as_text()
+    {
+        var provider = new RecordingProvider { Reply = "read it" };
+        var session = Wired(provider, out var manager);
+        using var _ = manager;
+        var client = new SessionPluginClient(session, "experiment", new PluginSubmitQueue());
+
+        var result = await client.Submit("/trust yes", wantResult: true);
+
+        Assert.True(result.Accepted);
+        Assert.Equal("read it", result.Text);
+        Assert.Contains("/trust yes", provider.Asked);
+    }
+
+    /// <summary>THE QUEUED PATH TOO: a goal that waited for a busy session is routed when the session
+    /// frees, and is still the plugin's, so it is still a prompt.</summary>
+    [Fact]
+    public async Task A_queued_goal_starting_with_a_slash_reaches_the_model_as_text()
+    {
+        var provider = new RecordingProvider { Reply = "ok", BlockUntilReleased = true };
+        var session = Wired(provider, out var manager);
+        using var _ = manager;
+        // THE SESSION'S OWN QUEUE, the one its turn tail drains — as Session wires a loaded plugin.
+        var client = new SessionPluginClient(session, "experiment", session.Plugins.SubmitQueue);
+
+        session.Submit("a user turn");
+        Assert.True((await client.Submit("/clear")).Accepted);
+        provider.Release();
+
+        for (var i = 0; i < 100 && !provider.Asked.Contains("/clear"); i++) await Task.Delay(20);
+        Assert.Contains("/clear", provider.Asked);
     }
 }

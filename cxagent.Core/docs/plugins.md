@@ -488,6 +488,11 @@ back — without a tool call to hang the trigger on.
 A plugin that never declares `"client"` never sees a non-null `Client` — the declaration is what
 gates whether the reference exists at all.
 
+**A goal is a prompt, never a command.** What you submit reaches the model as text, even when it
+starts with `/`: nothing from the session's command table runs, and neither does a command file or
+skill. A plugin can start work, but it cannot trust the folder, switch the mode or model, or load
+another plugin. The load prompt tells the user so.
+
 **A managed plugin also implements the marker interface, `IPluginClientConsumer`:**
 
 ```csharp
