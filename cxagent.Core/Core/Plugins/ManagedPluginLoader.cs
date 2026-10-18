@@ -93,6 +93,12 @@ public static class ManagedPluginLoader
         var refusal = PluginContract.Refusal(sidecar, sidecarPath) ?? PluginContractUse.Refusal(sidecar);
         if (refusal is not null) return new ManagedPluginLoadResult.Failed(refusal);
 
+        // THE WRONG LOADER FOR WHAT THE SIDECAR SAYS: routing follows the declared kind, so reaching
+        // here with "native" means the file and its sidecar disagree, and neither can be trusted.
+        if (sidecar.Kind == PluginKind.Native)
+            return new ManagedPluginLoadResult.Failed(
+                $"'{sidecar.Name}' says \"kind\": \"native\", but '{assemblyPath}' is being loaded as .NET.");
+
         Assembly assembly;
         try
         {

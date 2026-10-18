@@ -372,6 +372,27 @@ public class AbiPluginLoaderTests
         Directory.Delete(store, recursive: true);
     }
 
+    /// <summary>The native twin: a sidecar saying "managed" beside a native library is refused before
+    /// a host process is started.</summary>
+    [Fact]
+    public async Task AKindTheFileContradicts_IsRefused_BeforeAHostStarts()
+    {
+        if (!RequireFixture("fixture-wellformed", out var lib)) return;
+        var dir = Directory.CreateTempSubdirectory("kind-native-").FullName;
+        var copy = Path.Combine(dir, Path.GetFileName(lib));
+        File.Copy(lib, copy);
+        File.WriteAllText(Path.ChangeExtension(copy, null) + ".plugin.json",
+            """{"pluginContract":4,"name":"fixture","version":"1.0.0","spawns":false,"tools":[],"kind":"managed"}""");
+        var context = Context();
+
+        var result = await AbiPluginLoader.Load(HostDllPath, copy, context, CancellationToken.None);
+
+        var failed = Assert.IsType<AbiPluginLoadResult.Failed>(result);
+        Assert.Contains("managed", failed.Reason);
+        Assert.Empty(context.RegisteredPids);
+        TempDirectory.Delete(dir);
+    }
+
     private static IJobContext FakeJobContext() => new TestJobContext();
 
     // ---- Task 10b: an ABI plugin can submit --------------------------------------------------------

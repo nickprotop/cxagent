@@ -80,4 +80,24 @@ public class ContractFourOneTests
         var type = loaded.GetTypes().Single(t => typeof(IPlugin).IsAssignableFrom(t) && !t.IsAbstract);
         return (IPlugin)Activator.CreateInstance(type)!;
     }
+
+    /// <summary>"KIND" ARRIVED IN CONTRACT 4, so a sidecar naming 3 cannot honestly use it — and a host
+    /// from before 4 would read a native .dll as .NET. Refused before anything runs.</summary>
+    [Fact]
+    public void AKind_BelowContractFour_IsRefused()
+    {
+        var sidecar = PluginManifest.Parse(
+            """{"pluginContract":3,"name":"p","version":"1.0.0","spawns":false,"tools":[],"kind":"native"}""").Manifest!;
+
+        Assert.Contains("contract 4", PluginContractUse.Refusal(sidecar));
+    }
+
+    [Fact]
+    public void AKind_AtContractFour_IsAllowed()
+    {
+        var sidecar = PluginManifest.Parse(
+            """{"pluginContract":4,"name":"p","version":"1.0.0","spawns":false,"tools":[],"kind":"native"}""").Manifest!;
+
+        Assert.Null(PluginContractUse.Refusal(sidecar));
+    }
 }

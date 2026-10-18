@@ -42,6 +42,25 @@ public class ManagedPluginLoaderTests
 
     private static FakeContext Context() => new(OutputDir);
 
+    /// <summary>
+    /// A KIND THE FILE CONTRADICTS IS REFUSED, naming both, before the assembly is loaded: a sidecar
+    /// saying "native" beside a .NET dll describes a plugin this loader is the wrong one for.
+    /// </summary>
+    [Fact]
+    public async Task AKindTheFileContradicts_IsRefused()
+    {
+        var dir = Directory.CreateTempSubdirectory("kind-managed-").FullName;
+        File.Copy(Path.Combine(OutputDir, "cxagent.Tests.PluginFixture.dll"), Path.Combine(dir, "p.dll"));
+        File.WriteAllText(Path.Combine(dir, "p.plugin.json"),
+            """{"pluginContract":4,"name":"p","version":"1.0.0","spawns":false,"tools":[],"kind":"native"}""");
+
+        var result = await ManagedPluginLoader.Load(Path.Combine(dir, "p.dll"), Context(), CancellationToken.None);
+
+        var failed = Assert.IsType<ManagedPluginLoadResult.Failed>(result);
+        Assert.Contains("native", failed.Reason);
+        TempDirectory.Delete(dir);
+    }
+
     // ---- The clean case ----------------------------------------------------------------------
 
     [Fact]

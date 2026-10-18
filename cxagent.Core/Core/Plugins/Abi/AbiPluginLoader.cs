@@ -111,6 +111,11 @@ public static class AbiPluginLoader
         var refusal = PluginContract.Refusal(sidecar, sidecarPath) ?? PluginContractUse.Refusal(sidecar);
         if (refusal is not null) return new AbiPluginLoadResult.Failed(refusal);
 
+        // THE WRONG LOADER FOR WHAT THE SIDECAR SAYS — refused before a host process is spent on it.
+        if (sidecar.Kind == PluginKind.Managed)
+            return new AbiPluginLoadResult.Failed(
+                $"'{sidecar.Name}' says \"kind\": \"managed\", but '{libraryPath}' is being loaded as a native library.");
+
         (AbiHostProcess host, AbiHostProcess.StartResult handshake) launch;
         try
         {
