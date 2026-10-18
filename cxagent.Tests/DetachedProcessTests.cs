@@ -292,6 +292,19 @@ public class DetachedProcessTests
             + "this test no longer proves anything and needs repointing at the new exit path.");
 
         var shutdown = text[run..];
+
+        // DIRECTLY, OR THROUGH SessionManager.Shutdown — which the app quits through, and which ends
+        // with the same call. The second form is only good while Shutdown keeps that call, so it is
+        // checked too, the same way.
+        if (shutdown.Contains("manager.Shutdown(", StringComparison.Ordinal))
+        {
+            var manager = File.ReadAllText(Path.Combine(RepoRoot(), "cxagent.Core", "Core", "Sessions", "SessionManager.cs"));
+            var body = manager[manager.IndexOf("public void Shutdown(TimeSpan", StringComparison.Ordinal)..];
+            Assert.True(body.Contains("DetachedProcessRegistry.Default.ReapAll()", StringComparison.Ordinal),
+                "SessionManager.Shutdown no longer reaps DetachedProcessRegistry.Default, and the app quits through it.");
+            return;
+        }
+
         Assert.True(shutdown.Contains("DetachedProcessRegistry.Default.ReapAll()", StringComparison.Ordinal),
             $"{Path.GetFileName(bootstrap)}: nothing after system.Run() reaps "
             + "DetachedProcessRegistry.Default, so a backgrounded command outlives the app.");

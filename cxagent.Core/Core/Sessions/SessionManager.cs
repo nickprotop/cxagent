@@ -1118,7 +1118,18 @@ public sealed class SessionManager : IDisposable
     /// nothing to do. If a future shared service does hold a handle, this is where it is released
     /// and that flag is what stops <see cref="Over"/> closing somebody else's.</para>
     /// </summary>
-    public void Dispose()
+    public void Dispose() => Shutdown(TimeSpan.FromSeconds(15));
+
+    /// <summary>
+    /// Closes every session, gives their plugins' Stops <paramref name="stopWindow"/> to finish,
+    /// then kills whatever this run recorded that is still running — the process going away.
+    ///
+    /// <para>THE WINDOW IS THE CALLER'S, because the right one depends on who is waiting. An
+    /// embedder disposing a manager can afford <see cref="Dispose"/>'s fifteen seconds; a user who
+    /// pressed Ctrl+Q is watching the terminal, and the app gives a couple. A plugin that stops in
+    /// time shuts down cleanly either way, and one that does not is killed rather than waited for.</para>
+    /// </summary>
+    public void Shutdown(TimeSpan stopWindow)
     {
         // NOT REFUSED BY THE BUSY CHECK. Dispose is the process going away, so a turn still running
         // has nowhere to finish; cancel it first and then close, rather than leaking the host to
@@ -1132,8 +1143,28 @@ public sealed class SessionManager : IDisposable
                 // stops them for an idle one; skipped, a run would go on past its conversation and report
                 // into a session nobody will draw again.
                 session.EndBackgroundWork();
-                session.DisposeTurnScope();
-                session.Host?.Dispose();
+
+                // AND ITS PLUGINS ARE STOPPED, as Close would have: a turn still running when the user
+                // quits — the ordinary Ctrl+Q while a model is answering — is no reason for them never
+                // to hear they are ending. Detached and tracked like Close's, so the wait below covers
+                // it, and the host goes after the unwire for the reason Close gives.
+                var teardown = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await session.Plugins.UnwireAllAsync(CancellationToken.None);
+                    }
+                    catch (Exception)
+                    {
+                        // A PLUGIN FAILING TO STOP MUST NOT TAKE THE PROCESS DOWN. The registry logs it.
+                    }
+                    finally
+                    {
+                        session.DisposeTurnScope();
+                        session.Host?.Dispose();
+                    }
+                });
+                lock (_gate) _closing.Add(teardown);
             }
         }
 
@@ -1142,14 +1173,19 @@ public sealed class SessionManager : IDisposable
         // process outlives us if we do not give its Stop time to run, and that is precisely the
         // orphan the reaper has to kill on the next launch.
         //
-        // BOUNDED. UnwireAsync already times each Stop out; this is a second, larger bound so a
-        // teardown that hangs anyway cannot stop the app exiting — the same trade the reaper's
-        // existence assumes.
+        // BOUNDED, by the caller's window: UnwireAsync times each Stop out on its own, and this
+        // bound is what keeps a teardown that hangs anyway from holding the exit.
         Task[] pending;
         lock (_gate) pending = [.. _closing];
 
-        try { Task.WaitAll(pending, TimeSpan.FromSeconds(15)); }
+        try { Task.WaitAll(pending, stopWindow); }
         catch (Exception) { /* a teardown's own failure is logged where it happened. */ }
+
+        // AND KILL WHAT THE WINDOW DID NOT END — this run's own records only, so a neighbour
+        // window's language server is left running. Without this it outlives the app until the
+        // next launch finds its owner gone. Nothing to tell: the sessions are closed.
+        if (_configDir is { } configDir)
+            new Plugins.ChildProcessStore(configDir).ReapOwn(_ => { });
 
         // AND KILL WHAT A BACKGROUNDED COMMAND LEFT RUNNING. This is the ONLY reaping a detached
         // process gets: it has no plugin, so ChildProcessStore — which matches on a plugin name —

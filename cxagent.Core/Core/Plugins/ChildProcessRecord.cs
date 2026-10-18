@@ -232,6 +232,30 @@ public sealed class ChildProcessStore
         lock (_lock) Save(Load(_path).Where(r => !orphans.Contains(r)).ToList());
     }
 
+    /// <summary>
+    /// Kills every recorded process THIS store's owner recorded and that is still the one recorded,
+    /// and drops those records — the last thing a run does on its way out.
+    ///
+    /// <para>WHAT A PLUGIN'S STOP DID NOT END IN THE WINDOW QUIT GAVE IT. Left alone, a language
+    /// server or a native host outlives the app until the next launch's
+    /// <see cref="ReapOrphans"/> finds its owner gone, and holds whatever it had open meanwhile. A
+    /// neighbour's records are another owner's and are not touched.</para>
+    /// </summary>
+    /// <param name="log">Told which plugin's process was killed, as <see cref="ReapOrphans"/> is.</param>
+    public void ReapOwn(Action<string> log)
+    {
+        bool Mine(ChildProcessRecord r) => r.OwnerPid == _owner.Pid && r.OwnerStartTimeUtc is { } started
+            && Truncate(started) == Truncate(_owner.StartTimeUtc);
+
+        List<ChildProcessRecord> mine;
+        lock (_lock) mine = Load(_path).Where(Mine).ToList();
+        if (mine.Count == 0) return;
+
+        foreach (var record in mine) Kill(record, log);
+
+        lock (_lock) Save(Load(_path).Where(r => !mine.Contains(r)).ToList());
+    }
+
     private static bool OwnerIsRunning(ChildProcessRecord record) =>
         record is { OwnerPid: { } pid, OwnerStartTimeUtc: { } started } && IsRunning(pid, started);
 

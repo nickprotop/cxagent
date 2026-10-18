@@ -2335,26 +2335,22 @@ public static class AppBootstrap
 
         mainWindow.Dispose();   // stops the panel clock
 
-        // THROUGH THE MANAGER, which disposes the host AND releases the turn's cancellation scope —
+        // THROUGH THE MANAGER, which disposes each host AND releases its turn's cancellation scope —
         // two steps that must happen together, and a bare host Dispose() here did only one of
         // them. It is also the last thing holding a host reference in this method.
-        manager.Close(session);
+        //
+        // EVERY TAB, NOT ONLY THIS ONE, and their plugins are given a short window to Stop: a
+        // well-behaved plugin shuts its language server or host down cleanly in that time, and
+        // whatever is still running after it is killed rather than outliving the app. Two seconds,
+        // not Dispose's fifteen, because the user is watching the terminal; and it also reaps what
+        // a backgrounded command left running — see SessionManager.Shutdown.
+        manager.Shutdown(TimeSpan.FromSeconds(2));
 
         // THE SESSION OWNS THE SERVERS, so this is where they end. An orphaned child outlives the
         // app and holds whatever it had open — the only failure in this feature that survives the
         // process. Best-effort: shutdown is not a place to throw or to wait indefinitely.
         try { mcp.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5)); }
         catch (Exception) { /* best effort: shutdown is not a place to hang */ }
-
-        // AND KILL WHAT A BACKGROUNDED COMMAND LEFT RUNNING. A detached process has no plugin, so
-        // ChildProcessStore — which matches on a plugin name — never recorded it, and nothing in the
-        // OS's process table says which app started it. Reaping it here is the only chance: past this
-        // line it is reparented to init and runs to completion unowned, holding whatever it had open.
-        //
-        // NOT THROUGH manager.Dispose(), which reaps as part of a full teardown this path does not
-        // want: Close above already ended the session on purpose, and Dispose would also wait up to
-        // fifteen seconds on plugin teardowns the UI deliberately detaches so `/exit` stays instant.
-        Core.Execution.DetachedProcessRegistry.Default.ReapAll();
 
         // HOW TO COME BACK, printed AFTER the TUI has released the terminal so it stays on screen
         // rather than being painted over by the last frame.

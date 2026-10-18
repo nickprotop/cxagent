@@ -118,4 +118,29 @@ public class ChildProcessOwnerTests : IDisposable
         var file = File.ReadAllText(Path.Combine(_dir, "plugin-children.json"));
         Assert.Contains($"\"OwnerPid\": {owner.Id}", file);
     }
+
+    /// <summary>
+    /// AT QUIT, THIS RUN'S OWN CHILDREN GO WITH IT. Whatever a plugin's Stop did not end in the window
+    /// it was given is killed on the way out, rather than outliving the app until the next launch —
+    /// and a neighbour's children are left exactly where they are.
+    /// </summary>
+    [Fact]
+    public void ReapOwn_KillsThisRunsChildren_AndLeavesANeighboursAlone()
+    {
+        var me = Sleeper();
+        var neighbour = Sleeper();
+        var mine = Sleeper();
+        var theirs = Sleeper();
+        var store = new ChildProcessStore(_dir, IdentityOf(me));
+        store.Add(ChildOf(mine, "lsp"));
+        new ChildProcessStore(_dir, IdentityOf(neighbour)).Add(ChildOf(theirs, "lsp"));
+
+        store.ReapOwn(_ => { });
+
+        Assert.True(mine.WaitForExit(TimeSpan.FromSeconds(5)), "this run's child outlived the quit");
+        Assert.False(theirs.WaitForExit(TimeSpan.FromMilliseconds(300)), "a neighbour's child was killed");
+        var file = File.ReadAllText(Path.Combine(_dir, "plugin-children.json"));
+        Assert.DoesNotContain(mine.Id.ToString(), file);
+        Assert.Contains(theirs.Id.ToString(), file);
+    }
 }
