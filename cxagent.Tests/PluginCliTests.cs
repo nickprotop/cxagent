@@ -58,3 +58,129 @@ public class PluginCliCheckTests
         Assert.Equal(3, doc.RootElement.GetProperty("problems").GetArrayLength());
     }
 }
+
+/// <summary><c>cxagent plugin call</c>: one real call, its gate, its reports, its result, and the exit code a script reads.</summary>
+public class PluginCliCallTests
+{
+    private static Task<CliRun.Outcome> Run(params string[] args) => CliRun.Run(args);
+
+    [Theory]
+    [InlineData("[1,2]")]
+    [InlineData("oops")]
+    public async Task ArgumentsThatAreNotAnObject_AreAUsageError(string json)
+    {
+        var (exit, _, err) = await Run("call", Folders.WellFormed(), "wf_tool", json);
+
+        Assert.Equal(2, exit);
+        Assert.Contains("JSON object", err);
+    }
+
+    [Fact]
+    public async Task BothSettingsForms_AreAUsageError()
+    {
+        var (exit, _, _) = await Run("call", Folders.WellFormed(), "wf_tool", "--settings", "{}", "--settings-file", "s.json");
+        Assert.Equal(2, exit);
+    }
+
+    [Fact]
+    public async Task AnUnknownAnswer_IsAUsageError()
+    {
+        var (exit, _, _) = await Run("call", Folders.Harness(), "echo", "--answer", "maybe");
+        Assert.Equal(2, exit);
+    }
+
+    [Fact]
+    public async Task ASucceedingCall_ExitsZero_AndPrintsTheResult()
+    {
+        var (exit, output, _) = await Run("call", Folders.WellFormed(), "wf_tool");
+
+        Assert.Equal(0, exit);
+        Assert.Contains("\"success\": true", output);
+    }
+
+    [Fact]
+    public async Task AnUnansweredGate_StopsThere_ExitZero_SayingAUserWouldBeAsked()
+    {
+        var (exit, output, _) = await Run("call", Folders.Harness(), "echo", """{"text":"hi"}""");
+
+        Assert.Equal(0, exit);
+        Assert.Contains("asks: echo hi", output);
+        Assert.Contains("stopped: a user would be asked", output);
+        Assert.DoesNotContain("success", output);
+    }
+
+    [Fact]
+    public async Task AnAllowedCall_PrintsItsReportsInOrder_ThenTheResult()
+    {
+        var (exit, output, _) = await Run("call", Folders.Harness(), "echo", """{"text":"hi"}""", "--answer", "allow");
+
+        Assert.Equal(0, exit);
+        var progress = output.IndexOf("progress 50% half", StringComparison.Ordinal);
+        var log = output.IndexOf("log [Info] working", StringComparison.Ordinal);
+        var result = output.IndexOf("\"success\": true", StringComparison.Ordinal);
+        Assert.True(progress >= 0 && log > progress && result > log, output);
+    }
+
+    [Fact]
+    public async Task NativeReports_ArePrintedInOrder()
+    {
+        if (NativeFixtures.Path("fixture-reports") is null) return;
+
+        var (exit, output, _) = await Run("call", Folders.NativeReports(), "echo");
+
+        Assert.Equal(0, exit);
+        Assert.True(output.IndexOf("progress 50% half", StringComparison.Ordinal)
+                    < output.IndexOf("log [Info] working", StringComparison.Ordinal), output);
+        Assert.Contains("one two", output);
+    }
+
+    [Fact]
+    public async Task ASubmit_IsPrinted_AsATurnThatWouldStart()
+    {
+        var (exit, output, _) = await Run("call", Folders.Harness(), "submit");
+
+        Assert.Equal(0, exit);
+        Assert.Contains("would start a turn: tidy the folder", output);
+    }
+
+    [Fact]
+    public async Task ACallPastItsTimeout_StopsAndFails()
+    {
+        var (exit, _, err) = await Run("call", Folders.Harness(), "slow", "--timeout", "1");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("timed out after 1 s", err);
+    }
+
+    [Fact]
+    public async Task ALoadFailure_ExitsOne_NamingEachProblem()
+    {
+        var (exit, output, _) = await Run("call", Folders.Harness(), "echo", "--settings", """{"failStart":true}""");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("start: ", output);
+    }
+
+    [Fact]
+    public async Task ACommand_PrintsItsMessage()
+    {
+        var (exit, output, _) = await Run("call", Folders.Harness(), "--command", "harness-ping", "now");
+
+        Assert.Equal(0, exit);
+        Assert.Contains("pong now", output);
+    }
+
+    [Fact]
+    public async Task Json_CarriesGateReportsAndResult()
+    {
+        var (exit, output, _) = await Run("call", Folders.Harness(), "echo", """{"text":"hi"}""", "--answer", "allow", "--json");
+
+        using var doc = JsonDocument.Parse(output);
+        var root = doc.RootElement;
+        Assert.Equal(0, exit);
+        Assert.Equal("echo hi", root.GetProperty("gate").GetProperty("display").GetString());
+        Assert.Equal("allow", root.GetProperty("answer").GetString());
+        Assert.Equal(3, root.GetProperty("reports").GetArrayLength());
+        Assert.True(root.GetProperty("result").GetProperty("success").GetBoolean());
+    }
+}

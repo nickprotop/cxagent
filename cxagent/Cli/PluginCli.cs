@@ -24,7 +24,7 @@ public static class PluginCli
         return args[0] switch
         {
             "check" => await Check(args[1..], stdout, stderr, ct).ConfigureAwait(false),
-            "call" => Fail(stderr, "call is not available yet."),
+            "call" => await PluginCallCommand.RunAsync(args[1..], stdout, stderr, ct).ConfigureAwait(false),
             _ => Fail(stderr, $"unknown command '{args[0]}'."),
         };
     }
