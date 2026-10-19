@@ -3115,8 +3115,8 @@ public sealed class Agent
                 // Null when there is no user — the call then falls through to "no such tool", which
                 // is the honest answer for a tool this agent was never offered.
                 ?? Text(_askUser is null ? null : await _askUser.TryInvokeAsync(call, ct))
-                // _requesterLabel, so an MCP prompt names the child that wants it — the same value
-                // JobContext carries into the executor path a few lines below.
+                // _requesterLabel and _requesterRunsOn, so an MCP prompt names the child that wants it
+                // and where it runs — the same values JobContext carries into the executor path below.
                 //
                 // ROW 8 OF THE COLLISION MATRIX LIVES HERE, not at the injected link below: an MCP
                 // server connects after config is read and can advertise any name, so MCP resolving
@@ -3131,7 +3131,8 @@ public sealed class Agent
                 // link below is the one that answers.
                 ?? Text(ReportMcpWonOverInjected(call.Name,
                         _mcp is null || DynamicOffers(call.Name) ? null
-                            : await _mcp.TryInvokeAsync(call, ct, _requesterLabel, _policy)))
+                            : await _mcp.TryInvokeAsync(call, ct,
+                                new Permissions.RequestOrigin(_requesterLabel, _requesterRunsOn, _policy))))
                 // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. ToolBindings.InvokeAsync
                 // answers "no such tool" rather than null, so it ENDS this chain — a link placed
                 // after it never runs at all, and looks perfectly correct while never running.

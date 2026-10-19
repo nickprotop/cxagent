@@ -1697,6 +1697,55 @@ public class SubAgentSpawnerTests
         Assert.Equal("general on mock-model", shellRequest.RequesterRunsOn);    // shown beside it
     }
 
+    private sealed class OneToolServer : CxAgent.Core.Mcp.IMcpServer
+    {
+        public string Name => "files";
+        public string? Instructions => null;
+        public string? Error => null;
+        public IReadOnlyList<CxAgent.Core.Mcp.McpToolDef> Tools { get; } =
+            [new("read", "Reads.", System.Text.Json.JsonDocument.Parse("""{"type":"object","properties":{}}""").RootElement.Clone())];
+
+        public Task<string> CallToolAsync(string tool, System.Text.Json.JsonElement args, CancellationToken ct) =>
+            Task.FromResult("contents");
+    }
+
+    /// <summary>
+    /// A CHILD'S MCP REQUEST SAYS WHERE IT RUNS, as its shell request above does. MCP builds its
+    /// request outside the executor path, so it is the one prompt the JobContext does not reach.
+    /// </summary>
+    [Fact]
+    public async Task AChildsMcpRequest_SaysWhereItRuns()
+    {
+        var gate = new RecordingGate();
+        var childProvider = new MockLlmProvider();
+        childProvider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "t1", Name = "files_read",
+                Arguments = System.Text.Json.JsonDocument.Parse("{}").RootElement }],
+        });
+        childProvider.EnqueueResponse(new LlmResponse { Text = "read", StopReason = "end_turn" });
+
+        var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = childProvider,
+            Executors = JobRegistry.CreateWithBuiltins(null, gate),
+            Mcp = new CxAgent.Core.Mcp.McpToolset([new OneToolServer()], gate),
+            Ledger = new TokenLedger(),
+            MaxTurns = 50,
+            CompressAbove = 40_000,
+            ContextWindow = 200_000,
+        });
+
+        await new SubAgentSpawner(factory).TryInvokeAsync(
+            SpawnCall(description: "Read the config"), null, CancellationToken.None);
+
+        var mcpRequest = Assert.Single(gate.Seen, r => r.Kind == CxAgent.Core.Permissions.PermissionKind.Mcp);
+        Assert.Equal("Read the config", mcpRequest.Requester);
+        Assert.Equal("general on mock-model", mcpRequest.RequesterRunsOn);
+    }
+
     /// <summary>The parent's own requests stay unattributed — see PermissionPromptControlTests for
     /// why that is a decision rather than an omission.</summary>
     [Fact]

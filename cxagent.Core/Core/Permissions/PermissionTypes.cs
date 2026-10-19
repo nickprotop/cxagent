@@ -208,3 +208,11 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
 /// without ever building a prompt control.</para>
 /// </summary>
 public enum PermissionChoice { Once, Always, Deny, TrustFolder }
+
+/// <summary>
+/// Who is asking, and under which rules — what a request built outside an executor needs to carry,
+/// since it has no <c>JobContext</c> to copy them from. <see cref="Label"/> and <see cref="RunsOn"/>
+/// become <see cref="PermissionRequest.Requester"/> and <see cref="PermissionRequest.RequesterRunsOn"/>,
+/// both null for the session's own agent; <see cref="Policy"/> is the asking session's own.
+/// </summary>
+public sealed record RequestOrigin(string? Label, string? RunsOn, PermissionPolicy? Policy);

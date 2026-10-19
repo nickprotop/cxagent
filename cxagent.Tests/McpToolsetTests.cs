@@ -148,9 +148,23 @@ public class McpToolsetTests
         var toolset = new McpToolset([server], gate);
 
         await toolset.TryInvokeAsync(Call("files_read"), CancellationToken.None,
-            requester: "analyse the config");
+            new RequestOrigin("analyse the config", RunsOn: null, Policy: null));
 
         Assert.Equal("analyse the config", Assert.Single(gate.Asked).Requester);
+    }
+
+    /// <summary>A child's MCP prompt says where it runs, as its file and shell prompts do: the user
+    /// approving third-party code should see which provider's model is asking, paid or local.</summary>
+    [Fact]
+    public async Task TryInvokeAsync_SaysWhereAChildRuns()
+    {
+        var server = new FakeServer("files", Tool("read")) { Result = "file contents" };
+        var gate = new RecordingGate(allow: true);
+
+        await new McpToolset([server], gate).TryInvokeAsync(Call("files_read"), CancellationToken.None,
+            new RequestOrigin("analyse the config", "planner on deepseek:deepseek/deepseek-v3.2", Policy: null));
+
+        Assert.Equal("planner on deepseek:deepseek/deepseek-v3.2", Assert.Single(gate.Asked).RequesterRunsOn);
     }
 
     /// <summary>The session's own agent has no label, and must not acquire a misleading one — null
@@ -420,8 +434,7 @@ public class McpToolsetTests
         var result = await toolset.TryInvokeAsync(
             new ToolCall { Name = "ctx_query", Arguments = JsonDocument.Parse("{}").RootElement.Clone() },
             CancellationToken.None,
-            requester: null,
-            policy: new PermissionPolicy(dir, rules, EditMode.AcceptEdits));
+            new RequestOrigin(Label: null, RunsOn: null, new PermissionPolicy(dir, rules, EditMode.AcceptEdits)));
 
         // THE PROMPT HOOK SAID YES, so the only thing that can deny is the missing policy.
         Assert.DoesNotContain(notices, n => n.Text.Contains("carried no session policy"));

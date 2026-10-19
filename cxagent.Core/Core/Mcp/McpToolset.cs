@@ -147,29 +147,26 @@ public sealed class McpToolset
     /// for a name nobody owns. Two sources each producing their own version of that message is how a
     /// model ends up being told a tool does not exist by one and nothing by the other.</para>
     /// </summary>
-    /// <param name="requester">
-    /// WHO IS ASKING — null for the session's own agent, a short label for a sub-agent.
-    ///
-    /// <para>The attribution work reached every other request-construction site and missed this one:
-    /// <see cref="Permissions.PermissionGatedExecutor"/> copies it from its <c>JobContext</c>, and MCP
-    /// had no equivalent because it takes no context at all. With one child at a time that is merely
-    /// unhelpful. With two, a prompt saying "may I run this?" has no answer to "which of them wants
-    /// it?" — and the user is being asked to approve third-party code on their machine.</para>
-    /// </param>
     /// <param name="call">The call the model issued; null is returned when no server owns the name.</param>
     /// <param name="ct">Cancels the call.</param>
-    /// <param name="policy">
-    /// THE ASKING SESSION'S POLICY, and it must arrive PER CALL rather than being held on this
-    /// object. A toolset is manager-level — one per process, shared by every session — while a policy
-    /// is per-session, so a field here would judge one session's call by another session's rules.
+    /// <param name="origin">
+    /// WHO IS ASKING, AND UNDER WHICH POLICY. Its label and where it runs are null for the session's
+    /// own agent, and a short label (`planner on deepseek:…`) for a sub-agent.
     ///
-    /// <para>NULL IS REFUSED BY THE GATE, out loud: "this request carried no session policy". That is
-    /// what shipped — nothing passed one, so EVERY MCP call was denied. The tests missed it because
-    /// they use a gate that allows unconditionally and never reads Policy, and the one seam that
-    /// would have caught it, PermissionDecider.ForTesting, stamps the missing policy itself.</para>
+    /// <para>THE LABEL ARRIVES HERE because MCP takes no <c>JobContext</c>, which is where
+    /// <see cref="Permissions.PermissionGatedExecutor"/> copies it from. Without it, with two children
+    /// up, a prompt saying "may I run this?" has no answer to "which of them wants it?" — and the user
+    /// is being asked to approve third-party code on their machine.</para>
+    ///
+    /// <para>THE POLICY ARRIVES PER CALL rather than being held on this object. A toolset is
+    /// manager-level — one per process, shared by every session — while a policy is per-session, so a
+    /// field here would judge one session's call by another session's rules. A null policy is refused
+    /// by the gate, out loud ("this request carried no session policy"), so every MCP call of a
+    /// caller that forgets it is denied. Tests whose gate allows unconditionally never read it, and
+    /// PermissionDecider.ForTesting stamps a missing policy itself, so neither catches its absence.</para>
     /// </param>
     public async Task<string?> TryInvokeAsync(ToolCall call, CancellationToken ct,
-        string? requester = null, Permissions.PermissionPolicy? policy = null)
+        Permissions.RequestOrigin? origin = null)
     {
         if (!_byName.TryGetValue(call.Name, out var found)) return null;
 
@@ -185,8 +182,9 @@ public sealed class McpToolset
             $"{found.Server.Name} → {found.Tool} {call.Arguments}",
             $"mcp:{call.Name}")
         {
-            Requester = requester,
-            Policy = policy,
+            Requester = origin?.Label,
+            RequesterRunsOn = origin?.RunsOn,
+            Policy = origin?.Policy,
         };
 
         var outcome = await _gate.RequestAsync(request, ct);
