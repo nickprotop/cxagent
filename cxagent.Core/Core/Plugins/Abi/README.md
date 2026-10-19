@@ -123,7 +123,15 @@ So `context_json` carries exactly the two fields a plugin needs to start doing i
 verbatim — passed through unparsed, exactly as `IPluginContext.Settings` is a raw `JsonElement`
 today).
 
-## `call` — what `invoke` receives
+## `call` — what `invoke` and `gate` receive
+
+`invoke`'s `call_json` is the tool's arguments object itself:
+
+```json
+{ "file": "src/main.rs", "line": 12, "character": 4 }
+```
+
+`gate`'s `call_json` wraps the same object with the tool's name:
 
 ```json
 {
@@ -131,6 +139,9 @@ today).
   "arguments": { "file": "src/main.rs", "line": 12, "character": 4 }
 }
 ```
+
+The two differ, and plugins built against each shape exist, so neither is changed here. The C SDK
+(`sdk/c/cxp.c`) reads each export's shape explicitly.
 
 `arguments` mirrors `JobParameters.Values` — a flat-ish JSON object, the tool's own declared
 input schema. Unlike ConsoleEx's closed wire-type vocabulary (§7, `i64`/`f64`/`bool`/`string`/...),

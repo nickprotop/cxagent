@@ -1,0 +1,88 @@
+{
+  "pluginContract": 4,
+  "kind": "native",
+  "client": true,
+  "name": "cxp-fixture",
+  "version": "1.0.0",
+  "spawns": false,
+  "tools": [
+    {
+      "name": "echo",
+      "description": "echo",
+      "inputSchema": {
+        "type": "object"
+      },
+      "gated": "dynamic"
+    },
+    {
+      "name": "typed",
+      "description": "typed",
+      "inputSchema": {
+        "type": "object"
+      },
+      "gated": false
+    },
+    {
+      "name": "setting",
+      "description": "setting",
+      "inputSchema": {
+        "type": "object"
+      },
+      "gated": false
+    },
+    {
+      "name": "reports",
+      "description": "reports",
+      "inputSchema": {
+        "type": "object"
+      },
+      "gated": false
+    },
+    {
+      "name": "nothing",
+      "description": "nothing",
+      "inputSchema": {
+        "type": "object"
+      },
+      "gated": false
+    },
+    {
+      "name": "submits",
+      "description": "submits",
+      "inputSchema": {
+        "type": "object"
+      },
+      "gated": false
+    },
+    {
+      "name": "always",
+      "description": "always",
+      "inputSchema": {
+        "type": "object"
+      },
+      "gated": "dynamic"
+    },
+    {
+      "name": "late",
+      "description": "late",
+      "inputSchema": {
+        "type": "object"
+      },
+      "gated": false
+    },
+    {
+      "name": "outstanding",
+      "description": "outstanding",
+      "inputSchema": {
+        "type": "object"
+      },
+      "gated": false
+    }
+  ],
+  "commands": [
+    {
+      "name": "cxp-ping",
+      "summary": "replies pong"
+    }
+  ]
+}

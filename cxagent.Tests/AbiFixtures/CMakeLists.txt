@@ -38,3 +38,17 @@ foreach(name flag IN ZIP_LISTS FIXTURE_NAMES FIXTURE_FLAGS)
         LIBRARY_OUTPUT_DIRECTORY_RELEASE ${FIXTURE_OUT}
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${FIXTURE_OUT})
 endforeach()
+
+# THE C SDK'S FIXTURE: written with cxp, built by cxp_add_plugin as an author's plugin would be — so
+# the helper itself is under test, not only the code it compiles. Counting allocations lets a test
+# see that every string handed to the host is freed.
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cxagent.Core/sdk/c/cxp.cmake)
+cxp_add_plugin(cxp-fixture SIDECAR ${CMAKE_CURRENT_SOURCE_DIR}/cxp/cxp-fixture.plugin.json SOURCES cxp/cxp_fixture.c)
+target_compile_definitions(cxp-fixture PRIVATE CXP_COUNT_ALLOCATIONS)
+set_target_properties(cxp-fixture PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${FIXTURE_OUT}
+    RUNTIME_OUTPUT_DIRECTORY ${FIXTURE_OUT}
+    LIBRARY_OUTPUT_DIRECTORY_DEBUG ${FIXTURE_OUT}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${FIXTURE_OUT}
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE ${FIXTURE_OUT}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${FIXTURE_OUT})
