@@ -125,7 +125,10 @@
     <Exec Command="cmake --version" ContinueOnError="true" StandardOutputImportance="low" StandardErrorImportance="low" IgnoreExitCode="true">
       <Output TaskParameter="ExitCode" PropertyName="CmakeExitCode" />
     </Exec>
-    <Exec Condition="'$(CmakeExitCode)' == '0'"
+    <!-- CONTINUEONERROR: cmake can be installed with no C compiler beside it, and its configure step
+         then fails. That leaves the native tests skipping, with a warning saying why, rather than
+         failing dotnet build for fixtures only they need. -->
+    <Exec Condition="'$(CmakeExitCode)' == '0'" ContinueOnError="true"
           Command="cmake -S &quot;$(MSBuildProjectDirectory)/AbiFixtures&quot; -B &quot;$(BaseIntermediateOutputPath)abi-fixtures&quot; -DFIXTURE_OUT=&quot;$(MSBuildProjectDirectory)/$(OutDir).&quot; &amp;&amp; cmake --build &quot;$(BaseIntermediateOutputPath)abi-fixtures&quot; --config Release" />
     <Exec Condition="'$(CmakeExitCode)' != '0' And '$(OS)' != 'Windows_NT'"
           Command="bash &quot;$(MSBuildProjectDirectory)/AbiFixtures/build.sh&quot; &quot;$(OutDir)&quot;" />

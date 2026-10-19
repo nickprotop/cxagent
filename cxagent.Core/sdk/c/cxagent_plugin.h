@@ -1,9 +1,9 @@
 /*
- * cxagent ABI plugin contract — v3.
+ * cxagent ABI plugin contract — v4.
  *
- * A native plugin is a shared library (.so / .dll / .dylib) exporting nine `extern "C"`
- * functions — seven MANDATORY and two OPTIONAL (cxagent_plugin_poll and cxagent_plugin_command,
- * see below) — name-resolved by the host process (Task 9b), not linked. This header is the
+ * A native plugin is a shared library (.so / .dll / .dylib) exporting ten `extern "C"`
+ * functions — seven MANDATORY and three OPTIONAL (cxagent_plugin_poll, cxagent_plugin_command and
+ * cxagent_plugin_attach, see below) — name-resolved by the host process (Task 9b), not linked. This header is the
  * authoritative declaration;
  * the .cs files in cxagent.Core/Core/Plugins/Abi/ mirror it on the managed side and
  * cxagent.Core/Core/Plugins/Abi/README.md carries the JSON schemas each call exchanges.

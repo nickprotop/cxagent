@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
-# Compiles fixture_plugin.c into the small family of native .so files AbiPluginHostTests loads
+# Compiles fixture_plugin.c into the small family of native libraries AbiPluginHostTests loads
 # against a real cxagent-plugin-host process. Run from the MSBuild target in cxagent.Tests.csproj,
 # not by hand — $1 is the output directory (the test project's own output dir), so the fixtures
 # land next to cxagent.Tests.dll where the tests expect to find them.
 #
-# LINUX ONLY, DELIBERATELY. This host process and its native-loader path (NativeLibrary.Load, .so
-# resolution) work the same on every platform dotnet targets, but building the ONE fixture library
-# these tests load is a toolchain concern this script does not try to generalise across cc/clang/
-# MSVC and .so/.dylib/.dll in one pass. A CI or contributor running elsewhere skips these tests
-# rather than failing a build over a fixture unrelated to their platform's own correctness — see
-# AbiPluginHostTests' own Skip.
+# THE FALLBACK FOR LINUX AND MACOS WITHOUT CMAKE — AbiFixtures/CMakeLists.txt is the build
+# everywhere cmake is installed, Windows included. A machine with neither builds no fixtures, and
+# the native tests skip rather than fail.
 
 set -euo pipefail
 
@@ -23,12 +20,17 @@ if ! command -v cc >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1; then
 fi
 CC="$(command -v cc || command -v gcc)"
 
+# THE SUFFIX THE TESTS LOOK FOR (NativeFixtures.Suffix): a .so on macOS would be built and never
+# found, and every native test would skip while reporting as passed.
+SUFFIX=so
+[ "$(uname -s)" = Darwin ] && SUFFIX=dylib
+
 mkdir -p "$OUT_DIR"
 
 build() {
     local name="$1"
     shift
-    "$CC" -shared -fPIC -I"$HEADER_DIR" -o "$OUT_DIR/$name.so" "$@" "$SRC"
+    "$CC" -shared -fPIC -I"$HEADER_DIR" -o "$OUT_DIR/$name.$SUFFIX" "$@" "$SRC"
 }
 
 build fixture-wellformed
