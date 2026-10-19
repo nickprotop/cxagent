@@ -15,4 +15,17 @@
   <ItemGroup>
     <ProjectReference Include="../../cxagent.Core.csproj" />
   </ItemGroup>
+
+  <!-- THE PLUGIN HOST TRAVELS WITH THE PACKAGE, so a C# test loads a native plugin without a cxagent
+       installed. Built from the same tag as this package, it is the host AbiHostProcess's version
+       check accepts; a host from elsewhere would be refused. The reference only orders the build —
+       nothing here links against the host — and build/CxAgent.Plugins.Testing.targets copies the
+       packed files beside the consumer's test. -->
+  <ItemGroup>
+    <ProjectReference Include="../../../cxagent.PluginHost/cxagent.PluginHost.csproj"
+                      ReferenceOutputAssembly="false" />
+    <None Include="../../../cxagent.PluginHost/bin/$(Configuration)/$(TargetFramework)/*.dll;../../../cxagent.PluginHost/bin/$(Configuration)/$(TargetFramework)/*.json"
+          Pack="true" PackagePath="build/plugin-host" Visible="false" />
+    <None Include="build/CxAgent.Plugins.Testing.targets" Pack="true" PackagePath="build/;buildTransitive/" />
+  </ItemGroup>
 </Project>

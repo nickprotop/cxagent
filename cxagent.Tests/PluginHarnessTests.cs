@@ -16,6 +16,14 @@ internal static class Folders
 
     public static string WellFormed() => Of("cxagent.Tests.PluginFixture", "fixture");
 
+    public static string NativeReports()
+    {
+        var dir = Directory.CreateTempSubdirectory("harness-native-").FullName;
+        File.Copy(NativeFixtures.Path("fixture-reports")!, Path.Combine(dir, "fixture-reports" + NativeFixtures.Suffix));
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "fixture-reports.plugin.json"), Path.Combine(dir, "fixture-reports.plugin.json"));
+        return dir;
+    }
+
     public static string WellFormedWithSidecar(string json)
     {
         var dir = WellFormed();
@@ -83,5 +91,37 @@ public class PluginHarnessCheckTests
         Assert.Contains(problems, p => p.Field == "kind" && p.Message.Contains(".NET assembly"));
         Assert.Contains(problems, p => p.Field == "tools[0].name" && p.Message.Contains("built-in"));
         TempDirectory.Delete(dir);
+    }
+}
+
+/// <summary>What check finds by loading: the code's manifest against the sidecar, managed and native.</summary>
+public class PluginHarnessLoadCheckTests
+{
+    [Fact]
+    public async Task AManifestTheCodeContradicts_IsALoadProblem()
+    {
+        var dir = Folders.Of("cxagent.Tests.PluginFixture.Mismatched", "p");
+
+        var problem = Assert.Single(await PluginHarness.CheckAsync(dir));
+
+        Assert.Equal("load", problem.Field);
+        TempDirectory.Delete(dir);
+    }
+
+    [Fact]
+    public async Task ANativePlugin_IsLoadedThroughTheHost_AndPasses()
+    {
+        if (NativeFixtures.Path("fixture-reports") is null) return;
+        var dir = Folders.NativeReports();
+
+        Assert.Empty(await PluginHarness.CheckAsync(dir));
+        TempDirectory.Delete(dir);
+    }
+
+    /// <summary>A test finds a host without being told where: here, the one the reference put beside it.</summary>
+    [Fact]
+    public void AHost_IsFound_WithoutBeingTold()
+    {
+        Assert.True(File.Exists(PluginHarness.HostDllForTest(new HarnessOptions())));
     }
 }

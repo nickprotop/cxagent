@@ -1,0 +1,11 @@
+<Project>
+  <!-- Copies the plugin host this package carries beside the consuming test, where PluginHarness
+       looks first. "../build/" FROM BOTH FOLDERS: this one file is packed to build/ and
+       buildTransitive/, and the host lives under build/ only. -->
+  <Target Name="CxAgentPluginsTestingCopyHost" AfterTargets="Build">
+    <ItemGroup>
+      <CxAgentPluginHost Include="$(MSBuildThisFileDirectory)../build/plugin-host/*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(CxAgentPluginHost)" DestinationFolder="$(OutDir)plugin-host" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CxAgent.Core.Plugins;
+using CxAgent.Core.Plugins.Abi;
 
 namespace CxAgent.Plugins.Testing;
 
@@ -64,6 +65,79 @@ public static partial class PluginHarness
     // "declares \"kind\" but names plugin contract 2" or "declares \"client\" …".
     private static string FieldOf(string refusal) => refusal.Contains("declares \"kind\"") ? "kind" : "client";
 
-    private static Task LoadProblems(PluginFolder found, HarnessOptions options, List<PluginProblem> problems, CancellationToken ct) =>
-        Task.CompletedTask;
+    internal abstract record LoadOutcome
+    {
+        internal sealed record Loaded(IPlugin Instance, PluginManifest Manifest) : LoadOutcome;
+        internal sealed record Failed(string Reason) : LoadOutcome;
+    }
+
+    /// <summary>
+    /// The plugin host a native plugin is run in. THE PACKAGE'S OWN COPY FIRST — its targets put it in
+    /// <c>plugin-host/</c> beside the test, and being built with this harness it is the host
+    /// AbiHostProcess's version check accepts. Then one a project reference put beside the test, then
+    /// the cxagent executable's.
+    /// </summary>
+    internal static string HostDll(HarnessOptions options)
+    {
+        if (options.HostDllPath is { } given) return given;
+
+        var bundled = Path.Combine(AppContext.BaseDirectory, "plugin-host", "cxagent-plugin-host.dll");
+        if (File.Exists(bundled)) return bundled;
+
+        var referenced = Path.Combine(AppContext.BaseDirectory, "cxagent-plugin-host.dll");
+        return File.Exists(referenced) ? referenced : PluginResolver.PluginHostDllPath();
+    }
+
+    public static string HostDllForTest(HarnessOptions options) => HostDll(options);
+
+    internal static async Task<LoadOutcome> LoadInto(
+        PluginFolder found, HarnessContext context, HarnessOptions options, CancellationToken ct)
+    {
+        // ROUTED AS A SESSION ROUTES IT: the sidecar's kind, else the file.
+        if (PluginResolver.IsNative(found.Binary))
+        {
+            return await AbiPluginLoader.Load(HostDll(options), found.Binary, context, ct).ConfigureAwait(false) switch
+            {
+                AbiPluginLoadResult.Loaded l => new LoadOutcome.Loaded(l.Instance, l.Manifest),
+                AbiPluginLoadResult.Failed f => new LoadOutcome.Failed(f.Reason),
+                _ => throw new InvalidOperationException("unknown load result"),
+            };
+        }
+
+        return await ManagedPluginLoader.Load(found.Binary, context, ct).ConfigureAwait(false) switch
+        {
+            ManagedPluginLoadResult.Loaded l => new LoadOutcome.Loaded(l.Instance, l.Manifest),
+            ManagedPluginLoadResult.Failed f => new LoadOutcome.Failed(f.Reason),
+            _ => throw new InvalidOperationException("unknown load result"),
+        };
+    }
+
+    private static async Task LoadProblems(PluginFolder found, HarnessOptions options, List<PluginProblem> problems, CancellationToken ct)
+    {
+        using var context = NewContext(options, client: null);
+        switch (await LoadInto(found, context, options, ct).ConfigureAwait(false))
+        {
+            case LoadOutcome.Failed f:
+                problems.Add(new("load", f.Reason));
+                break;
+            case LoadOutcome.Loaded l:
+                // LOADED, NOT STARTED: check asks whether it loads; Start is call's business. Stopped
+                // anyway — a native load already holds a host process.
+                try
+                {
+                    await l.Instance.Stop(ct).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // A STOP THAT THROWS after a load that passed is not what check answers; the
+                    // context's disposal still reaps anything it left.
+                }
+
+                break;
+        }
+    }
+
+    internal static HarnessContext NewContext(HarnessOptions options, IPluginClient? client) =>
+        new(options.WorkingDirectory ?? Directory.GetCurrentDirectory(),
+            options.Settings ?? JsonSerializer.SerializeToElement(new { }), client);
 }
