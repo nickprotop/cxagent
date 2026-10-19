@@ -98,4 +98,38 @@ public class PluginNewTests
 
         Assert.Contains("<Description></Description>", File.ReadAllText(Path.Combine(dir, "weather.csproj")));
     }
+
+    /// <summary>A dashed name stays dashed everywhere a name is meant, and becomes a namespace only where one is.</summary>
+    [Fact]
+    public async Task ADashedName_KeepsItsDash_ExceptInTheNamespace()
+    {
+        var dir = Path.Combine(Folders.NewFolder("new-"), "my-tool");
+        await Run("new", "my-tool", "--lang", "csharp", "--dir", dir);
+
+        var csproj = File.ReadAllText(Path.Combine(dir, "my-tool.csproj"));
+        Assert.Contains("<AssemblyName>my-tool</AssemblyName>", csproj);
+        Assert.Contains("<RootNamespace>my_tool</RootNamespace>", csproj);
+        Assert.Contains("../my-tool.csproj", File.ReadAllText(Path.Combine(dir, "tests", "my-tool.Tests.csproj")));
+    }
+
+    /// <summary>A package the author adds must reach bin/, where the loader looks for it.</summary>
+    [Fact]
+    public async Task TheProject_CopiesItsPackagesBesideThePlugin()
+    {
+        var dir = Path.Combine(Folders.NewFolder("new-"), "weather");
+        await Run("new", "weather", "--lang", "csharp", "--dir", dir);
+
+        Assert.Contains("<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>", File.ReadAllText(Path.Combine(dir, "weather.csproj")));
+    }
+
+    /// <summary>The tests load the build they were built with: under -c Release, bin/Release, not a stale bin/Debug.</summary>
+    [Fact]
+    public async Task TheTests_LoadTheirOwnConfigurationsBuild()
+    {
+        var dir = Path.Combine(Folders.NewFolder("new-"), "weather");
+        await Run("new", "weather", "--lang", "csharp", "--dir", dir);
+
+        var tests = File.ReadAllText(Path.Combine(dir, "tests", "PluginTests.cs"));
+        Assert.DoesNotContain("\"Debug\"", tests);
+    }
 }

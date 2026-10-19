@@ -5,6 +5,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>CXP_NAME</AssemblyName>
     <RootNamespace>CXP_ROOT_NAMESPACE</RootNamespace>
+    <!-- A LIBRARY LEAVES ITS PACKAGES IN THE NUGET CACHE, and cxagent loads a plugin from its own
+         folder: without this, the first package you add builds, then fails to load. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <!-- What `cxagent plugin pack` writes into the catalog entry; pack's options and info file
          override them. Left empty on purpose: pack writes a placeholder for an empty one, and
          verify refuses it until you say what the plugin does. -->

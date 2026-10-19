@@ -35,4 +35,19 @@ public class PluginTemplateTests
 
         Assert.DoesNotContain("CXP_", filled);
     }
+
+    /// <summary>
+    /// dotnet new's sourceName gives its safe_namespace form to every token that starts the same way,
+    /// so "my-tool" became "my_tool" in content while files kept "my-tool". The name is its own symbol,
+    /// taken as typed.
+    /// </summary>
+    [Fact]
+    public void TheName_IsTakenAsTyped_NotThroughSourceName()
+    {
+        var json = File.ReadAllText(Path.Combine(TemplateDir(), ".template.config", "template.json"));
+
+        Assert.DoesNotContain("sourceName", json);
+        Assert.Contains("\"replaces\": \"CXP_NAME\"", json);
+        Assert.Contains("\"fileRename\": \"CXP_NAME\"", json);
+    }
 }

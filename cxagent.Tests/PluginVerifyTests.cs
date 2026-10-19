@@ -109,4 +109,43 @@ public class PluginVerifyTests
         Assert.Equal(0, exit);
         Assert.Contains("calculator: first-party, skipped", output);
     }
+
+    /// <summary>"file" is a name inside the zip, never a path — "../" would point verify at a file outside it.</summary>
+    [Fact]
+    public async Task AFileThatIsAPath_IsRefused()
+    {
+        // FROM verify's TEMP FOLDER, "../.." REACHES THE ROOT, so this names a real .NET assembly outside the zip.
+        var outside = "../.." + Path.Combine(AppContext.BaseDirectory, "cxagent.Tests.PluginFixture.Harness.dll");
+        var (exit, output, _) = await Run("verify", await PackedEntry(e => e["file"] = outside));
+
+        Assert.Equal(1, exit);
+        Assert.Contains("file", output);
+    }
+
+    /// <summary>The binary and its sidecar must share a stem, or the loader cannot find the sidecar.</summary>
+    [Fact]
+    public async Task ABinaryItsSidecarDoesNotMatch_IsRefused()
+    {
+        var path = await PackedEntry();
+        var zipPath = Path.Combine(Path.GetDirectoryName(path)!, "harness.zip");
+        using (var zip = System.IO.Compression.ZipFile.Open(zipPath, System.IO.Compression.ZipArchiveMode.Update))
+        {
+            var original = zip.GetEntry("cxagent.Tests.PluginFixture.Harness.dll")!;
+            using (var from = original.Open())
+            using (var to = zip.CreateEntry("renamed.dll").Open())
+                from.CopyTo(to);
+            original.Delete();
+        }
+
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(zipPath))).ToLowerInvariant();
+        var entry = JsonNode.Parse(File.ReadAllText(path))!;
+        entry["source"]!["sha256"] = hash;
+        entry["file"] = "renamed.dll";
+        File.WriteAllText(path, entry.ToJsonString());
+
+        var (exit, output, _) = await Run("verify", path);
+
+        Assert.Equal(1, exit);
+        Assert.Contains("renamed.plugin.json", output);
+    }
 }

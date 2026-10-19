@@ -43,6 +43,7 @@ cxagent plugin call bin/Debug/net10.0 weather_greet '{"name":"Ada"}'   # one rea
 dotnet test tests                                # the same, from xunit, via CxAgent.Plugins.Testing
 dotnet build -c Release
 cxagent plugin pack bin/Release/net10.0          # the zip, its sha256, the catalog entry, next steps
+# fill in what pack could not know, and point "url" at weather.zip — then:
 cxagent plugin verify weather.catalog.json       # what a user's install would get, no code run
 ```
 

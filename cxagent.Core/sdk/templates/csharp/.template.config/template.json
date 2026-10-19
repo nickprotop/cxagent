@@ -5,10 +5,10 @@
   "identity": "CxAgent.Plugins.Templates.CSharp",
   "name": "cxagent plugin",
   "shortName": "cxagent-plugin",
-  "sourceName": "CXP_NAME",
   "preferNameDirectory": true,
   "tags": { "language": "C#", "type": "project" },
   "symbols": {
+    "pluginName": { "type": "derived", "valueSource": "name", "valueTransform": "identity", "replaces": "CXP_NAME", "fileRename": "CXP_NAME" },
     "namespace": { "type": "derived", "valueSource": "name", "valueTransform": "safe_namespace", "replaces": "CXP_ROOT_NAMESPACE" },
     "abstractionsVersion": { "type": "parameter", "datatype": "string", "defaultValue": "0.0.0", "replaces": "CXP_ABSTRACTIONS_VERSION" },
     "testingVersion": { "type": "parameter", "datatype": "string", "defaultValue": "0.0.0", "replaces": "CXP_TESTING_VERSION" }

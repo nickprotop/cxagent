@@ -195,4 +195,46 @@ public class PluginPackTests
     [Fact]
     public async Task AnInfoFileThatIsNotThere_IsUsage() =>
         Assert.Equal(2, (await Run("pack", Folders.Harness(), "--info", "/no/such/info.json")).Exit);
+
+    /// <summary>Everything at the top of the checked folder ships, except build leftovers — a native library or a data file the plugin reads included.</summary>
+    [Fact]
+    public async Task TopLevelFilesThePluginNeeds_AreKept()
+    {
+        var dir = Folders.Harness();
+        File.WriteAllText(Path.Combine(dir, "libhelper.so"), "");
+        File.WriteAllText(Path.Combine(dir, "cities.txt"), "");
+        File.WriteAllText(Path.Combine(dir, "cxagent.Tests.PluginFixture.Harness.xml"), "");
+        var outDir = Folders.NewFolder("pack-out-");
+
+        await Run("pack", dir, "--out", outDir);
+
+        using var zip = System.IO.Compression.ZipFile.OpenRead(Path.Combine(outDir, "harness.zip"));
+        var names = zip.Entries.Select(e => e.FullName).ToList();
+        Assert.Contains("libhelper.so", names);
+        Assert.Contains("cities.txt", names);
+        Assert.DoesNotContain("cxagent.Tests.PluginFixture.Harness.xml", names);
+    }
+
+    /// <summary>
+    /// A native library built as libweather.so is stored under the sidecar's name, because the loader
+    /// finds the sidecar from the library's own name.
+    /// </summary>
+    [Fact]
+    public async Task ANativeLibraryNamedDifferently_IsStoredUnderTheSidecarsName()
+    {
+        if (NativeFixtures.Path("fixture-reports") is null) return;
+        var dir = Folders.NativeReports();
+        var built = Path.Combine(Folders.NewFolder("pack-lib-"), "libfixture" + NativeFixtures.Suffix);
+        File.Copy(Path.Combine(dir, "fixture-reports" + NativeFixtures.Suffix), built);
+        var outDir = Folders.NewFolder("pack-out-");
+
+        var (exit, _, _) = await Run("pack", dir, "--native", $"{built}=linux-x64", "--out", outDir);
+
+        Assert.Equal(0, exit);
+        using var zip = System.IO.Compression.ZipFile.OpenRead(Path.Combine(outDir, "fixture-linux-x64.zip"));
+        Assert.Contains("fixture-reports" + NativeFixtures.Suffix, zip.Entries.Select(e => e.FullName));
+        using var entry = JsonDocument.Parse(File.ReadAllText(Path.Combine(outDir, "fixture.catalog.json")));
+        Assert.Equal("fixture-reports" + NativeFixtures.Suffix,
+            entry.RootElement.GetProperty("sources").GetProperty("linux-x64").GetProperty("file").GetString());
+    }
 }

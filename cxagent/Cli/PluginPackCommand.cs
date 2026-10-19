@@ -72,15 +72,19 @@ internal static class PluginPackCommand
                 : [new NativeBuild(binary, System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier)];
             foreach (var build in builds)
             {
+                // STORED UNDER THE SIDECAR'S NAME: the loader finds a library's sidecar from the
+                // library's own name, so a build named libweather.so beside weather.plugin.json would
+                // install and never load.
+                var stored = Path.GetFileName(sidecarPath)[..^".plugin.json".Length] + Path.GetExtension(build.Library);
                 var zip = Path.Combine(request.OutDir, $"{sidecar.Name}-{build.Rid}.zip");
-                WriteZip(zip, [build.Library, sidecarPath, .. Readme(request.Folder)]);
-                downloads.Add(new PackedZip(build.Rid, zip, Sha256(zip), Path.GetFileName(build.Library)));
+                WriteZip(zip, [new ZipItem(build.Library, stored), new ZipItem(sidecarPath), .. Readme(request.Folder).Select(r => new ZipItem(r))]);
+                downloads.Add(new PackedZip(build.Rid, zip, Sha256(zip), stored));
             }
         }
         else
         {
             var zip = Path.Combine(request.OutDir, $"{sidecar.Name}.zip");
-            WriteZip(zip, ManagedFiles(request.Folder, sidecarPath, binary));
+            WriteZip(zip, ManagedFiles(request.Folder).Select(f => new ZipItem(f)));
             downloads.Add(new PackedZip("any", zip, Sha256(zip), Path.GetFileName(binary)));
         }
 
@@ -176,20 +180,36 @@ internal static class PluginPackCommand
     private static IEnumerable<string> Readme(string folder) =>
         File.Exists(Path.Combine(folder, "README.md")) ? [Path.Combine(folder, "README.md")] : [];
 
-    // WHAT A RELEASE ZIP HOLDS: the sidecar, the README, the binary, and the libraries it needs — not
-    // the build's .pdb, .deps.json or .xml, and not the assemblies the host itself provides.
-    private static IEnumerable<string> ManagedFiles(string folder, string sidecarPath, string binary) =>
-        new[] { sidecarPath, binary }
-            .Concat(Readme(folder))
-            .Concat(Directory.GetFiles(folder, "*.dll")
-                .Where(f => f != binary && !HostAssemblies.Contains(Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)));
+    // EVERYTHING AT THE TOP OF THE CHECKED FOLDER, LESS THE BUILD'S LEFTOVERS: check passed on this
+    // folder, so the zip leaves out only what a build adds and nothing reads at run time — a native
+    // library the plugin P/Invokes, or a data file it opens, ships with it. Not subfolders: the loader
+    // resolves from the plugin's own folder only.
+    private static IEnumerable<string> ManagedFiles(string folder) =>
+        Directory.GetFiles(folder).Where(f => !IsLeftover(f, folder));
 
-    private static void WriteZip(string zip, IEnumerable<string> files)
+    private static bool IsLeftover(string file, string folder)
+    {
+        var name = Path.GetFileName(file);
+        return HostAssemblies.Contains(name, StringComparer.OrdinalIgnoreCase)
+            || name.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".deps.json", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".runtimeconfig.json", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".catalog.json", StringComparison.OrdinalIgnoreCase)
+            // AN ASSEMBLY'S XML DOCS — foo.xml beside foo.dll — are for an IDE; any other .xml is data.
+            || (name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                && File.Exists(Path.Combine(folder, Path.ChangeExtension(name, ".dll"))));
+    }
+
+    /// <summary>One file for a zip, and the name it has inside — its own unless renamed.</summary>
+    private sealed record ZipItem(string Path, string? StoredAs = null);
+
+    private static void WriteZip(string zip, IEnumerable<ZipItem> files)
     {
         if (File.Exists(zip)) File.Delete(zip);
         using var archive = ZipFile.Open(zip, ZipArchiveMode.Create);
-        foreach (var file in files.Distinct())
-            archive.CreateEntryFromFile(file, Path.GetFileName(file), CompressionLevel.Optimal);
+        foreach (var file in files.DistinctBy(f => f.Path))
+            archive.CreateEntryFromFile(file.Path, file.StoredAs ?? System.IO.Path.GetFileName(file.Path), CompressionLevel.Optimal);
     }
 
     // LOWERCASE HEX, as PluginInstaller computes it, so the entry and the install agree byte for byte.

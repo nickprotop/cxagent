@@ -3,9 +3,11 @@ using Xunit;
 
 public class PluginTests
 {
-    // THE PLUGIN'S OWN BUILD OUTPUT — the folder a user would install.
+    // THE PLUGIN'S OWN BUILD OUTPUT — the folder a user would install — in this test's own configuration
+    // (tests/bin/<Configuration>/net10.0), so `dotnet test -c Release` tests the Release build.
     private static readonly string PluginFolder = Path.GetFullPath(Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "..", "bin", "Debug", "net10.0"));
+        AppContext.BaseDirectory, "..", "..", "..", "..", "bin",
+        new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name, "net10.0"));
 
     [Fact]
     public async Task ItLoads()

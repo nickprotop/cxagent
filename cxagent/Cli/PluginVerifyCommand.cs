@@ -103,7 +103,12 @@ internal static class PluginVerifyCommand
             else if (d.Url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
                 Add($"{at}.url", "is plain http; a download must be https:// (or, before uploading, a local file).");
             if (string.IsNullOrWhiteSpace(d.Sha256)) Add($"{at}.sha256", "is missing; install refuses a download it cannot check.");
-            if (d.File.Length == 0) Add($"{at}.file", "names no file.");
+            var fileField = d.Rid is null ? "file" : $"{at}.file";
+            if (d.File.Length == 0) Add(fileField, "names no file.");
+
+            // A NAME IN THE ZIP, NEVER A PATH: "../" would point the check — and an install, which
+            // joins it onto the plugin folder — at a file the zip does not hold.
+            else if (Path.GetFileName(d.File) != d.File) Add(fileField, $"is '{d.File}', a path; it must be a file name in the zip.");
         }
 
         var expected = native ? claims.Downloads.Select(d => d.Rid ?? "").ToList() : ["any"];
@@ -172,6 +177,14 @@ internal static class PluginVerifyCommand
         if (sidecars.Length != 1)
         {
             Add("zip", $"holds {sidecars.Length} sidecars; a plugin zip holds one.");
+            return;
+        }
+
+        // THE LOADER FINDS THE SIDECAR FROM THE BINARY'S NAME: weather.dll needs weather.plugin.json.
+        var expected = Path.ChangeExtension(download.File, null) + ".plugin.json";
+        if (Path.GetFileName(sidecars[0]) != expected)
+        {
+            Add("file", $"is {download.File}, whose sidecar would be {expected}, but the zip holds {Path.GetFileName(sidecars[0])}; the loader would not find it.");
             return;
         }
 
