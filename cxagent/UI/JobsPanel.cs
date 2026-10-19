@@ -510,7 +510,12 @@ public sealed class JobsPanel
             SetIfChanged(_facts, [bar + facts]);
             // WHERE IT RUNS, ON ITS OWN LINE: the facts line is cut at the panel's width, and a label of
             // thirty-odd characters there would push out how the agent stands and how long it has run.
-            var runsOn = _shown.RunsOn is { Length: > 0 } r ? $"  {Muted(Cut(r, _usable))}" : null;
+            // THE FOLDER SURVIVES THE CUT: a long model name gives way, never "in sub", which is what says
+            // this child works somewhere other than its parent.
+            var folder = _shown.Root is { Length: > 0 } f ? $" in {f}" : "";
+            var runsOn = _shown.RunsOn is { Length: > 0 } r
+                ? $"  {Muted(folder.Length >= _usable ? Cut(r + folder, _usable) : Cut(r, _usable - folder.Length) + folder)}"
+                : null;
             if (_runsOn.Visible != (runsOn is not null)) _runsOn.Visible = runsOn is not null;
             if (runsOn is not null) SetIfChanged(_runsOn, [bar + runsOn]);
             SetIfChanged(Anchor, [bar + link]);
@@ -559,6 +564,10 @@ public sealed class JobsPanel
     {
         /// <summary>Where an agent runs, `name:model`, shown on a line of its own; null for a shell card.</summary>
         public string? RunsOn { get; init; }
+
+        /// <summary>The folder an agent works in relative to its parent's, shown after <see cref="RunsOn"/>;
+        /// null when it works where its parent does.</summary>
+        public string? Root { get; init; }
 
         public static CardText For(PanelRow row) => row switch
         {
@@ -617,9 +626,8 @@ public sealed class JobsPanel
             CardControl(view.Running), new EquatableList(facts), "View transcript", Movable: view is { Running: true, Foreground: true })
         {
             // WHERE IT RUNS, always — a card for a paid child must not read like one for a free one.
-            RunsOn = view.Kept.Agent.ModelId is { Length: > 0 } m
-                ? CxAgent.Core.Llm.ModelNames.ShortLabel(m) + (view.Kept.Agent.Root is { } folder ? $" in {folder}" : "")
-                : null,
+            RunsOn = view.Kept.Agent.ModelId is { Length: > 0 } m ? CxAgent.Core.Llm.ModelNames.ShortLabel(m) : null,
+            Root = view.Kept.Agent.Root,
         };
     }
 

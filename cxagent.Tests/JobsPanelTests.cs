@@ -19,13 +19,14 @@ public class JobsPanelTests
             state, exit, TimeSpan.FromSeconds(74)), tail, agent);
 
     private static JobsPanel.AgentRow Agent(string handle, AgentRowState state, bool foreground = false,
-        string? description = null, string? root = null)
+        string? description = null, string? root = null, string? model = null)
     {
         var child = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
             MaxTurns = 5,
         }).Create() with { Root = root };
+        if (model is not null) child = child with { ModelId = model };
         var began = DateTimeOffset.UtcNow.AddSeconds(-74);
         var ended = state is AgentRowState.Done or AgentRowState.Stopped or AgentRowState.Failed;
         return new(new AgentRowView(new StoredAgent(handle, "explore", description, began, child), state, foreground,
@@ -474,5 +475,17 @@ public class JobsPanelTests
         var text = Render(Agent("find-loader", AgentRowState.Running, description: "Find the config loader", root: "sub"));
 
         Assert.Contains("Agent · 1m 14s\n  mock-model in sub\n  View transcript", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>A long model name is cut, never the folder: "in sub" is what says this child is somewhere else.</summary>
+    [Fact]
+    public void AnAgentCard_KeepsItsFolder_WhenTheModelIsCut()
+    {
+        var text = Render(Agent("find-loader", AgentRowState.Running, description: "Find it", root: "sub",
+            model: "local:qwen3.6-35b-a3b-ud-iq4_xs-with-a-very-long-name.gguf"));
+
+        var line = text.Split('\n').Single(l => l.Contains("local:", StringComparison.Ordinal));
+        Assert.EndsWith(" in sub", line.TrimEnd());
+        Assert.Contains("…", line, StringComparison.Ordinal);
     }
 }
