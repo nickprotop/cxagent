@@ -331,6 +331,16 @@ internal static class SystemPrompt
                         + "do yourself. If you think it is not worth an agent, say so; do not "
                         + "silently do the work instead.");
             sb.AppendLine();
+            // THE CONFIGURED ORDER IS THE POLICY. A type's first provider is the one its author chose
+            // as the default; another listed one is a choice to make for a reason the task supplies,
+            // and saying which and why lets the user see where their money or their wait went. A
+            // provider the user names settles it, as a named type does. Opens on "more than one" so a
+            // model whose types list one or none reads nothing about a choice it never has.
+            sb.AppendLine("When a type offers more than one provider, its first is its default. Name "
+                        + "another of its providers only when the task needs what that provider's "
+                        + "description offers, and say in your reply which one you chose and why. "
+                        + "When the user names a provider, that settles it.");
+            sb.AppendLine();
             // WORKED EXAMPLES (<example> blocks with a bracketed action). Two interventions had
             // already failed to move this — a sharpened tool description and the rule above — and an
             // example is the one lever neither of them had: it shows the SHAPE of the decision at

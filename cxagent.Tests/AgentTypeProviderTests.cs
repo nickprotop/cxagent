@@ -95,4 +95,19 @@ public class AgentTypeProviderTests
     [Fact]
     public void ALabel_IsNameColonModel() =>
         Assert.Equal("deepseek:deepseek/deepseek-v3.2", Listing("deepseek").Offers[0].Label);
+
+    [Fact]
+    public void TheTypesNote_SaysWhereTypesRun_AndWhichAreDisabled()
+    {
+        var catalog = new AgentTypeCatalog(new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal)
+        {
+            ["scout"] = new("Search.", "local") { Providers = ["local", "deepseek"] },
+            ["broken"] = new("Break.") { Disabled = "provider 'typo' is not a configured provider" },
+        }, Registry());
+
+        var note = CxAgent.Core.Sessions.Session.DescribeTypes(catalog);
+
+        Assert.Contains("scout (runs on local:qwen-coder, deepseek:deepseek/deepseek-v3.2 (cheap, paid))", note, StringComparison.Ordinal);
+        Assert.Contains("broken (disabled: provider 'typo' is not a configured provider)", note, StringComparison.Ordinal);
+    }
 }

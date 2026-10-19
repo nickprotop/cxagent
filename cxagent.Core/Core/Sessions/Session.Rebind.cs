@@ -84,21 +84,28 @@ public sealed partial class Session
             policy.Classifier = Permissions.PermissionDecider.ClassifierFor(
                 fresh.ClassifierInstance, fresh.Providers, fresh.ClassifierTimeoutSeconds);
         var types = new Agents.AgentTypeCatalog(fresh.AgentTypes, fresh.Providers);
-        var said = Describe(_agentTypes);
+        var said = DescribeTypes(_agentTypes);
         _spawner?.Refresh(fresh.MaxConcurrentAgents, types);
         NoteAgentTypes(types);
 
         // THE MODEL HEARS OF A NEW OR CHANGED TYPE IN THE NEXT MESSAGE, not in the spawn tool: that tool's
         // description is part of the cached prompt, and rewriting it re-sends the whole conversation.
-        if (_spawner is not null && Describe(types) is var now && now != said)
+        if (_spawner is not null && DescribeTypes(types) is var now && now != said)
             Volatile.Write(ref _typesNote, "[Agent types available now: " + now + "]");
     }
 
     private string? _typesNote;
 
     /// <summary>The types the model can name, one per line, as the spawn tool lists them.</summary>
-    private static string Describe(Agents.AgentTypeCatalog? catalog) =>
-        catalog is null ? "" : string.Join("; ", catalog.All.Select(t => t.Description is { Length: > 0 } d ? $"{t.Name} — {d}" : t.Name));
+    /// <summary>The catalog as the types note says it: each type, what it is for, and where it may run —
+    /// with each provider's description, since the model chooses by them and the tool's own text is the
+    /// session's first, not this refresh's.</summary>
+    internal static string DescribeTypes(Agents.AgentTypeCatalog? catalog) =>
+        catalog is null ? "" : string.Join("; ", catalog.All.Select(t =>
+            (t.Description is { Length: > 0 } d ? $"{t.Name} — {d}" : t.Name)
+            + (t.Disabled is { } why ? $" (disabled: {why})"
+               : t.Offers.Count > 0 ? $" (runs on {string.Join(", ", t.Offers.Select(o => o.Description is { Length: > 0 } od ? $"{o.Label} ({od})" : o.Label))})"
+               : "")));
 
     /// <summary>The note for the next message, once.</summary>
     internal string? TakeTypesNote() => Interlocked.Exchange(ref _typesNote, null);

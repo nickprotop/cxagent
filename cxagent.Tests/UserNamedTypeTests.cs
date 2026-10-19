@@ -108,4 +108,24 @@ public class UserNamedTypeTests
             }),
             new AgentTypeCatalog(new Dictionary<string, AgentTypeConfig>(), null))
             .Definition.Description;
+
+    [Fact]
+    public void TheFanOutPrompt_SaysAProvidersDefaultIsItsFirst()
+    {
+        var prompt = PromptWithSpawn();
+
+        Assert.Contains("When a type offers more than one provider, its first is its default.", prompt, StringComparison.Ordinal);
+        Assert.Contains("When the user names a provider, that settles it.", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ThePromptSaysNothingAboutProvidersWhenTheAgentCannotSpawn()
+    {
+        var prompt = SystemPrompt.Build(new SystemPromptContext(
+            WorkingDirectory: "/tmp/x", IsGitRepo: false, Platform: "linux",
+            Today: new DateOnly(2026, 8, 19), ModelId: "m") { CanSpawn = false });
+
+        Assert.DoesNotContain("its first is its default", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("names a provider", prompt, StringComparison.Ordinal);
+    }
 }
