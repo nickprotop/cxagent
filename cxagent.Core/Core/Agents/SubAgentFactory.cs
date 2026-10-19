@@ -25,6 +25,10 @@ public sealed record SubAgent(Agent Agent, BufferedChatSink Sink, BufferedJobPan
     /// opened and closed. See <see cref="ChildFeed"/>.
     /// </summary>
     public required ChildFeed Feed { get; init; }
+
+    /// <summary>The folder it works in, relative to its parent's — null when it works where the parent
+    /// does. The form every surface shows and the envelope stores.</summary>
+    public string? Root { get; init; }
 }
 
 /// <summary>
@@ -345,6 +349,9 @@ public sealed class SubAgentFactory
     /// <summary>See <see cref="SubAgentRuntime.AllowBackground"/>.</summary>
     internal bool AllowBackground => _runtime.AllowBackground;
 
+    /// <summary>The session's policy, whose boundary a spawn's root is judged against.</summary>
+    internal Permissions.PermissionPolicy? Policy => _runtime.Policy;
+
 
     /// <summary>
     /// What one child is built from.
@@ -374,6 +381,9 @@ public sealed class SubAgentFactory
         /// <summary>The parent's per-request selection, composed onto the session's for this child. Null
         /// when the parent is not running under one.</summary>
         public Jobs.ToolSelection? TurnTools { get; init; }
+
+        /// <summary>The folder the child works in, when the spawn named one; null for the parent's own.</summary>
+        public ChildRoot? Root { get; init; }
     }
 
     /// <summary>A plain child: the general type, no briefing, nothing passed down.</summary>
@@ -436,7 +446,9 @@ public sealed class SubAgentFactory
             // A FRESH CONTEXT WITH THE WINDOW SET. Not the parent's: two agents sharing one context
             // is the failure the whole design exists to prevent.
             context: new AgentContext(window),
-            workingDir: _runtime.WorkingDir,
+            // ITS OWN FOLDER, when the spawn named one: where its tools start, and — through a policy
+            // narrowed to it — where its permission boundary is drawn.
+            workingDir: request.Root?.Absolute ?? _runtime.WorkingDir,
             instanceName: runtime.InstanceName,
             globalInstructionsDir: _runtime.GlobalInstructionsDir,
             mcp: _runtime.Mcp,
@@ -467,7 +479,7 @@ public sealed class SubAgentFactory
             // composing onto a resolved set instead would make S4 narrowing-only, silently.
             toolSelection: Jobs.ToolSelection.Then(
                 Jobs.ToolSelection.Then(_runtime.ToolSelection, turnTools), type?.Tools),
-            policy: _runtime.Policy,
+            policy: request.Root is { } root ? _runtime.Policy?.NarrowedTo(root.Absolute) : _runtime.Policy,
             // THE SAME PORT THE PARENT GETS, resolving by agent id — so a tool this child calls
             // reaches THIS child rather than the session's agent. See SubAgentRuntime.Delivery.
             delivery: _runtime.Delivery,
@@ -508,6 +520,7 @@ public sealed class SubAgentFactory
             ModelId: entry)
         {
             Feed = feed,
+            Root = request.Root?.Relative,
         };
     }
 }

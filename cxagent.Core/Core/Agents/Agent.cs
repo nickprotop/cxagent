@@ -84,6 +84,29 @@ public sealed class Agent
     public HistoryRecorder? History { get; }
     private readonly int _maxTurns;
     private readonly string? _workingDir;
+
+    /// <summary>The folder this agent works in, as it was given.</summary>
+    internal string? WorkingDir => _workingDir;
+
+    /// <summary>The policy this agent's calls are judged by — a sub-agent's may be narrower than the
+    /// session's.</summary>
+    internal Permissions.PermissionPolicy? Policy => _policy;
+
+    /// <summary>
+    /// Whether <paramref name="folder"/> is in a git repository: it, or a folder above it, holds
+    /// <c>.git</c>.
+    ///
+    /// <para>ABOVE, NOT ONLY HERE: a sub-agent working in <c>src/</c> of a repository is in that
+    /// repository, and told otherwise it would avoid git for no reason. EXISTS, NOT A DIRECTORY CHECK:
+    /// in a git worktree <c>.git</c> is a file pointing at the real one.</para>
+    /// </summary>
+    internal static bool IsInsideGitRepo(string folder)
+    {
+        for (var dir = new DirectoryInfo(folder); dir is not null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, ".git")) || File.Exists(Path.Combine(dir.FullName, ".git")))
+                return true;
+        return false;
+    }
     private string? _instanceName;
 
     /// <summary>
@@ -1458,11 +1481,8 @@ public sealed class Agent
         {
             var systemText = SystemPrompt.Build(new SystemPromptContext(
                     WorkingDirectory: cwd,
-                    // Exists, not Directory.Exists: in a git WORKTREE .git is a FILE pointing at the
-                    // real one, and treating that as "not a repo" would be wrong in exactly the
-                    // checkout style this project is developed in.
-                    IsGitRepo: Directory.Exists(Path.Combine(cwd, ".git"))
-                            || File.Exists(Path.Combine(cwd, ".git")),
+                    // ITSELF OR ABOVE, a worktree's .git file included — see IsInsideGitRepo.
+                    IsGitRepo: IsInsideGitRepo(cwd),
                     Platform: Environment.OSVersion.Platform.ToString(),
                     Today: _startedOn,
                     ModelId: _provider.ModelId)

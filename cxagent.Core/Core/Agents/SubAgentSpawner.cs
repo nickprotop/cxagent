@@ -418,6 +418,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         if (pick.Refusal is { } refusal) return "error: " + refusal;
         type = type with { Routing = pick.Routing! };
 
+        // WHERE IT WORKS, judged against this agent's own folder before anything is built.
+        var root = ChildRoot.Resolve(Read(call, "root"), _factory.Policy, _factory.WorkingDir);
+        if (root.Refusal is { } outside) return "error: " + outside;
+
         string? planPath = null;
         var child = _factory.Create(new SubAgentFactory.ChildRequest
         {
@@ -432,6 +436,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             // So the child's logs land UNDER this agent's directory rather than beside it.
             ParentAgentId = parentAgentId,
             TurnTools = turnTools,
+            Root = root.Root,
         });
         onChild?.Invoke(child);
 

@@ -2326,4 +2326,135 @@ public class SubAgentSpawnerTests
         Assert.Equal(sub, write.Policy!.Boundary);
         Assert.False(write.Policy.IsSilentlyAllowed(write));
     }
+
+    // ---- root: the folder a child works in --------------------------------------------------------
+
+    private sealed record RootedScene(SubAgentSpawner Spawner, string Root, PermissionPolicy? Policy);
+
+    private static RootedScene Rooted(bool withPolicy = true)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "cx-root-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "sub", "deep"));
+        Directory.CreateDirectory(Path.Combine(root, ".git", "hooks"));
+        File.WriteAllText(Path.Combine(root, "file.txt"), "x");
+        if (!OperatingSystem.IsWindows()) File.CreateSymbolicLink(Path.Combine(root, "out"), Path.GetTempPath());
+        var rules = new PermissionRulesStore(new CxAgent.Core.Storage.AppPaths(
+            Path.Combine(Path.GetTempPath(), "cx-root-rules-" + Guid.NewGuid().ToString("N"))));
+        var policy = withPolicy ? new PermissionPolicy(root, rules) : null;
+        var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = Answering("ok"),
+            Executors = JobRegistry.CreateWithBuiltins(),
+            Ledger = new TokenLedger(),
+            MaxTurns = 50,
+            CompressAbove = 40_000,
+            ContextWindow = 200_000,
+            WorkingDir = root,
+            Policy = policy,
+        });
+        return new RootedScene(new SubAgentSpawner(factory), root, policy);
+    }
+
+    private static ToolCall RootSpawn(string? root) => new()
+    {
+        Id = "call-r",
+        Name = "agent",
+        Arguments = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(
+            root is null ? new Dictionary<string, string> { ["description"] = "d", ["prompt"] = "p" }
+                         : new Dictionary<string, string> { ["description"] = "d", ["prompt"] = "p", ["root"] = root })).RootElement,
+    };
+
+    private sealed record SpawnOutcome(string? Answer, SubAgent? Child);
+
+    private static async Task<SpawnOutcome> SpawnWithRoot(RootedScene scene, string? root)
+    {
+        SubAgent? child = null;
+        var answer = await scene.Spawner.TryInvokeAsync(RootSpawn(root), c => child = c, CancellationToken.None);
+        return new SpawnOutcome(answer, child);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData(".", null)]
+    [InlineData("sub", "sub")]
+    [InlineData("./sub/", "sub")]
+    [InlineData("sub/deep/..", "sub")]
+    [InlineData("sub/deep", "sub/deep")]
+    public async Task ARootUnderTheParents_IsWhereTheChildWorks(string? asked, string? relative)
+    {
+        var scene = Rooted();
+        var outcome = await SpawnWithRoot(scene, asked);
+
+        Assert.NotNull(outcome.Child);
+        Assert.Equal(relative, outcome.Child!.Root);
+        var folder = relative is null ? scene.Root : Path.Combine(scene.Root, relative);
+        Assert.Equal(folder, outcome.Child.Agent.WorkingDir);
+        Assert.Equal(folder, outcome.Child.Agent.Policy!.Boundary);
+        Assert.Equal(scene.Root, outcome.Child.Agent.Policy.Root);
+    }
+
+    [Fact]
+    public async Task AnAbsoluteRootUnderTheParents_IsAccepted()
+    {
+        var scene = Rooted();
+        Assert.Equal("sub", (await SpawnWithRoot(scene, Path.Combine(scene.Root, "sub"))).Child!.Root);
+    }
+
+    [Theory]
+    [InlineData("..")]
+    [InlineData("/etc")]
+    [InlineData("~")]
+    [InlineData("out")]
+    public async Task ARootOutside_IsRefused(string asked)
+    {
+        if (asked == "out" && OperatingSystem.IsWindows()) return;
+        var scene = Rooted();
+        var outcome = await SpawnWithRoot(scene, asked);
+        Assert.Null(outcome.Child);
+        Assert.Equal($"error: root '{asked}' is outside this agent's folder ({scene.Root}).", outcome.Answer);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("file.txt")]
+    public async Task ARootThatIsNotAFolder_IsRefused(string asked)
+    {
+        var outcome = await SpawnWithRoot(Rooted(), asked);
+        Assert.Null(outcome.Child);
+        Assert.Equal($"error: root '{asked}' is not a folder.", outcome.Answer);
+    }
+
+    [Fact]
+    public async Task ARootInsideExecutableConfig_IsRefused()
+    {
+        var outcome = await SpawnWithRoot(Rooted(), ".git/hooks");
+        Assert.Null(outcome.Child);
+        Assert.Equal("error: root '.git/hooks' is inside .git, whose files can run code; choose a folder outside it.", outcome.Answer);
+    }
+
+    [Fact]
+    public async Task NoRoot_IsTodaysChild()
+    {
+        var scene = Rooted();
+        var outcome = await SpawnWithRoot(scene, null);
+        Assert.Null(outcome.Child!.Root);
+        Assert.Same(scene.Policy, outcome.Child.Agent.Policy);
+    }
+
+    [Fact]
+    public async Task WithoutAPolicy_TheRootIsStillChecked()
+    {
+        var scene = Rooted(withPolicy: false);
+        Assert.Equal("sub", (await SpawnWithRoot(scene, "sub")).Child!.Root);
+        Assert.StartsWith("error: root '..' is outside", (await SpawnWithRoot(scene, "..")).Answer);
+    }
+
+    [Fact]
+    public void AFolderInARepository_KnowsItIsInOne()
+    {
+        var scene = Rooted();
+        Assert.True(Agent.IsInsideGitRepo(Path.Combine(scene.Root, "sub", "deep")));
+        Assert.False(Agent.IsInsideGitRepo(Path.GetTempPath()));
+    }
 }

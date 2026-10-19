@@ -88,6 +88,14 @@ public class PermissionPolicy
     /// boundary, symlinks followed — or null when it cannot be resolved.</summary>
     public string? Resolve(string path) => TryResolve(path, _boundary);
 
+    /// <summary>The same resolution against any folder — for a caller with no policy to ask.</summary>
+    public static string? ResolveAgainst(string path, string folder) => TryResolve(path, folder);
+
+    /// <summary>Whether <paramref name="name"/> is a folder whose files can run code (a git hook, an
+    /// editor task) — the set a write into is never silent.</summary>
+    public static bool IsExecutableConfigFolder(string name) =>
+        ExecutableConfigDirs.Contains(name, StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Which session this policy belongs to, or null when nobody said.
     ///
