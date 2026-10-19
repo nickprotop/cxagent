@@ -1,3 +1,4 @@
+using CxAgent.Core.Config;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Llm;
 using CxAgent.UI.Config;
@@ -145,5 +146,49 @@ public class AgentDraftTests
 
         Assert.True(draft.IsDirty);
         Assert.Contains("provider", draft.ToFields().Clear);
+    }
+
+    [Fact]
+    public void TickingAnyProvider_WritesAll()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!, new AgentTypeConfig(Provider: "local") { Providers = ["local"], Written = ["local"] });
+        draft.AnyProvider = true;
+
+        Assert.True(draft.IsDirty);
+        Assert.Equal("all", draft.ToFields().Provider);
+    }
+
+    [Fact]
+    public void TickingAnyProvider_TheWayTheCheckboxDoes_KeepsAll()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!, new AgentTypeConfig(Provider: "local") { Providers = ["local"], Written = ["local"] });
+        draft.AnyProvider = true;
+        draft.Providers.Clear();                                   // what the checkbox handler does
+
+        var type = new System.Text.Json.Nodes.JsonObject { ["provider"] = "local" };
+        var root = new System.Text.Json.Nodes.JsonObject { ["agents"] = new System.Text.Json.Nodes.JsonObject { ["planner"] = type } };
+        AgentEdits.SetOverride(root, "planner", draft.ToFields());
+        Assert.Equal("all", (string?)root["agents"]!["planner"]!["provider"]);
+    }
+
+    [Fact]
+    public void AnAllType_OpensTicked_AndUntickingClearsIt()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!, new AgentTypeConfig() { AnyProvider = true, Written = ["all"] });
+        Assert.True(draft.AnyProvider);
+        Assert.Empty(draft.Providers);
+        Assert.False(draft.IsDirty);
+
+        draft.AnyProvider = false;
+        Assert.Contains("provider", draft.ToFields().Clear);
+    }
+
+    [Fact]
+    public void AMixedListsAll_IsARowYouCanRemove()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!,
+            new AgentTypeConfig() { Written = ["local", "all"], Disabled = "provider 'all' stands alone: list providers by name, or write \"all\" by itself" });
+        Assert.False(draft.AnyProvider);
+        Assert.Equal(["local", "all"], draft.Providers);
     }
 }

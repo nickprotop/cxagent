@@ -267,6 +267,24 @@ public sealed class AgentsTab
             IWindowControl? focus = null;
             if (draft.Original?.Disabled is { } why)
                 stack.AddBare(new MarkupControl([$"[{ColorScheme.CautionMarkup}]Disabled: {MarkupParser.Escape(why)}.[/]"]));
+
+            // ANY PROVIDER, OR A LIST: ticked, the rows give way to the providers it may choose from; a
+            // spawn must name one, so there is no default to mark.
+            var any = new CheckboxControl("Any provider — a spawn must name one", draft.AnyProvider);
+            any.CheckedChanged += (_, on) =>
+            {
+                draft.AnyProvider = on;
+                if (on) draft.Providers.Clear();
+                Rebuild(null, "any");
+            };
+            stack.AddBare(any);
+            if (focusOn == "any") focus = any;
+            if (draft.AnyProvider)
+            {
+                stack.AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(string.Join(", ", providers.Select(p => $"{p.Key}:{p.Value.Model}")))}[/]"]));
+                if (focus is IFocusableControl ticked) _window()?.FocusManager.SetFocus(ticked, FocusReason.Programmatic);
+                return;
+            }
             if (draft.Providers.Count == 0)
             {
                 stack.AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]runs on the session's model[/]"]));

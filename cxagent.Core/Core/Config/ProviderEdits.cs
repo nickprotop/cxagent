@@ -26,7 +26,7 @@ public static class ProviderEdits
     {
         var providers = Providers(root);
         if (providers.ContainsKey(name)) throw new ConfigEditException($"'{name}' already exists.");
-        RefuseColon(name);
+        RefuseReserved(name);
         var instance = new JsonObject();
         fields.ApplyTo(instance);
         providers[name] = instance;
@@ -42,7 +42,7 @@ public static class ProviderEdits
         var providers = Providers(root);
         var instance = Instance(root, from);
         if (providers.ContainsKey(to)) throw new ConfigEditException($"'{to}' already exists.");
-        RefuseColon(to);
+        RefuseReserved(to);
         providers.Remove(from);
         providers[to] = instance;
         Rewrite(root, from, to);
@@ -102,11 +102,13 @@ public static class ProviderEdits
                 if (type is JsonObject t) RewriteTypeProvider(t, from, to);
     }
 
-    /// <summary>A NEW NAME HOLDS NO COLON: in an agent type's provider list a colon separates a name from
+    /// <summary>A NEW NAME IS NOT "all", which a type's provider reserves for every provider. A NEW NAME HOLDS NO COLON: in an agent type's provider list a colon separates a name from
     /// its model, so a name with one reads as something else. Names already in a file keep working — the
     /// loader takes a whole name first — but none is made here.</summary>
-    private static void RefuseColon(string name)
+    private static void RefuseReserved(string name)
     {
+        if (string.Equals(name.Trim(), AgentTypeConfig.AnyProviderWord, StringComparison.OrdinalIgnoreCase))
+            throw new ConfigEditException($"'{AgentTypeConfig.AnyProviderWord}' is reserved: in an agent type's provider it means every provider.");
         if (name.Contains(':'))
             throw new ConfigEditException($"a provider name cannot contain ':' — in an agent type's provider list it separates a name from its model.");
     }
@@ -115,6 +117,9 @@ public static class ProviderEdits
     {
         static string? Moved(string written, string from, string? to)
         {
+            // THE BARE WORD NEVER MOVES: in a type's provider "all" means every provider, whatever a
+            // provider entry happens to be called. (`all:model` names the entry, and moves.)
+            if (string.Equals(written.Trim(), AgentTypeConfig.AnyProviderWord, StringComparison.OrdinalIgnoreCase)) return written;
             if (written.Trim() == from) return to;
             if (AgentTypeConfig.NameOf(written) != from) return written;
             var colon = written.IndexOf(':');

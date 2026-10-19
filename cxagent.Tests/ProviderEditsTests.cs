@@ -158,4 +158,34 @@ public class ProviderEditsTests
         });
         Assert.Contains("':'", ex.Message, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData("add", "all")]
+    [InlineData("add", " ALL ")]
+    [InlineData("rename", "all")]
+    public void ANewProviderName_CannotBeAll(string how, string name)
+    {
+        var root = System.Text.Json.Nodes.JsonNode.Parse("""{ "providers": { "local": {} } }""")!.AsObject();
+
+        var ex = Assert.Throws<ConfigEditException>(() =>
+        {
+            if (how == "add") ProviderEdits.Add(root, name, new InstanceFields());
+            else ProviderEdits.Rename(root, "local", name);
+        });
+        Assert.Contains("'all' is reserved", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("rename")]
+    [InlineData("remove")]
+    public void AProviderNamedAll_NeverMovesAnAnyType(string how)
+    {
+        var root = System.Text.Json.Nodes.JsonNode.Parse("""
+        { "providers": { "all": {}, "x": {} }, "defaultProvider": "x", "agents": { "a": { "provider": "all" } } }
+        """)!.AsObject();
+
+        if (how == "rename") ProviderEdits.Rename(root, "all", "box"); else ProviderEdits.Remove(root, "all");
+
+        Assert.Equal("all", (string?)root["agents"]!["a"]!["provider"]);
+    }
 }

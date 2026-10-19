@@ -36,6 +36,11 @@ public static class ProviderRemovalPlan
         foreach (var (type, cfg) in settings.AgentTypes.OrderBy(t => t.Key, StringComparer.Ordinal))
         {
             if (!cfg.Lists(name)) continue;
+            if (cfg.AnyProvider)
+            {
+                lines.Add($"agent type '{type}' → runs on any provider still configured");
+                continue;
+            }
             // WHAT THE TYPE RUNS ON AFTERWARDS, said before the user confirms — the next default can be
             // a paid provider, and finding that out from a bill is the worst way.
             // BY THE LIST AS WRITTEN, which a disabled type still has: removing its bad first entry can

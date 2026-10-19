@@ -127,4 +127,14 @@ public class InstanceDraftTests
     [Fact]
     public void AddingAProviderNoTypeLists_ReachesOnlyItself() =>
         Assert.False(new InstanceDraft("opus", Local) { IsNew = true }.AddChange(Settings("local")).Everyone);
+
+    [Fact]
+    public void AnAllType_MakesAnyProviderEditReachEveryone()
+    {
+        var settings = Settings("local") with
+        { AgentTypes = new Dictionary<string, AgentTypeConfig> { ["planner"] = new() { AnyProvider = true, Written = ["all"] } } };
+
+        Assert.True(new InstanceDraft("other", Local) { Model = "x" }.ChangeFor(settings).Everyone);
+        Assert.True(new InstanceDraft("new", Local) { IsNew = true }.AddChange(settings).Everyone);
+    }
 }

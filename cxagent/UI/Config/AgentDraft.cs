@@ -22,7 +22,10 @@ public sealed class AgentDraft
         Briefing = original?.Briefing;
         // AS WRITTEN, de-duplicated by the entry each names: a pin (`opus-quick:claude-opus-5-5`) is the
         // user's guard against an entry's model changing under the type, and a reorder must not drop it.
-        _originalProviders = (original?.Written ?? original?.Providers ?? (original?.Provider is { } p ? [p] : []))
+        // AN "all" TYPE HAS NO ROWS — its word is the checkbox. Only then is "all" left out: a DISABLED
+        // mixed list (`["local", "all"]`) shows it as a row, so it can be removed.
+        AnyProvider = original?.AnyProvider ?? false;
+        _originalProviders = (AnyProvider ? [] : original?.Written ?? original?.Providers ?? (original?.Provider is { } p ? [p] : []))
             .Select(w => w.Trim()).DistinctBy(AgentTypeConfig.NameOf, StringComparer.Ordinal).ToList();
         Providers = [.. _originalProviders];
         MaxTurns = original?.MaxTurns;
@@ -68,6 +71,12 @@ public sealed class AgentDraft
     /// has no entries to remove): the save then removes the key.</summary>
     public bool ClearBadProvider { get; set; }
 
+    /// <summary>`"provider": "all"`: any provider, chosen at each spawn, no default. When set, the list is
+    /// not shown and not written.</summary>
+    public bool AnyProvider { get; set; }
+
+    private bool AnyProviderChanged => AnyProvider != (Original?.AnyProvider ?? false);
+
     /// <summary>Whether <paramref name="name"/> is already listed, in any form.</summary>
     public bool ListsProvider(string name) =>
         Providers.Any(w => w == name || AgentTypeConfig.NameOf(w) == name);
@@ -91,22 +100,26 @@ public sealed class AgentDraft
         !(Tools ?? []).SequenceEqual(_originalTools ?? [], StringComparer.Ordinal);
 
     public bool IsDirty =>
-        IsNew || ProvidersChanged || ClearBadProvider || MaxTurns != Original?.MaxTurns || ToolsChanged
+        IsNew || AnyProviderChanged || (!AnyProvider && ProvidersChanged) || ClearBadProvider || MaxTurns != Original?.MaxTurns || ToolsChanged
         || (!IsBuiltin && (Blank(Description) != Blank(Original?.Description) || Blank(Briefing) != Blank(Original?.Briefing)));
 
     /// <summary>The edit: what changed set, what was emptied cleared.</summary>
     public AgentTypeFields ToFields()
     {
         var clear = new HashSet<string>();
-        if ((ProvidersChanged || ClearBadProvider) && Providers.Count == 0) clear.Add("provider");
+        // ANY PROVIDER WINS OVER THE LIST: ticking it empties the rows, which on its own would clear the
+        // key — and ApplyTo removes cleared keys AFTER setting them, so "all" would vanish.
+        if (!AnyProvider && (ProvidersChanged || ClearBadProvider || AnyProviderChanged) && Providers.Count == 0)
+            clear.Add("provider");
         if (MaxTurns is null && Original?.MaxTurns is not null) clear.Add("maxTurns");
         if (ToolsChanged && Tools is null) clear.Add("tools");
         if (!IsBuiltin && Blank(Description) is null && Original?.Description is not null) clear.Add("description");
         if (IsGeneral && Blank(Briefing) is null && Original?.Briefing is not null) clear.Add("briefing");
         return new AgentTypeFields
         {
-            Provider = ProvidersChanged && Providers.Count == 1 ? Providers[0] : null,
-            Providers = ProvidersChanged && Providers.Count > 1 ? Providers.ToList() : null,
+            Provider = AnyProvider ? (AnyProviderChanged ? AgentTypeConfig.AnyProviderWord : null)
+                : ProvidersChanged && Providers.Count == 1 ? Providers[0] : null,
+            Providers = !AnyProvider && ProvidersChanged && Providers.Count > 1 ? Providers.ToList() : null,
             MaxTurns = MaxTurns != Original?.MaxTurns ? MaxTurns : null,
             Tools = ToolsChanged ? Tools : null,
             Description = !IsBuiltin && Blank(Description) is { } d && (IsNew || d != Blank(Original?.Description)) ? d : null,
