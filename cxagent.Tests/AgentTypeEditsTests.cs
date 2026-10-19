@@ -136,4 +136,13 @@ public class AgentTypeEditsTests : IDisposable
         Assert.Contains("researcher", second);
         Assert.DoesNotContain("researcher", third);
     }
+
+    [Fact]
+    public void AProvidersList_IsWrittenAsAnArray()
+    {
+        var root = Doc();
+        AgentEdits.SetOverride(root, "planner", new AgentTypeFields { Providers = ["local", "deepseek"] });
+
+        Assert.Equal("""["local","deepseek"]""", root["agents"]!["planner"]!["provider"]!.ToJsonString());
+    }
 }

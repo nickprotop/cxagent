@@ -20,7 +20,9 @@ public sealed class AgentDraft
         Original = original;
         Description = original?.Description;
         Briefing = original?.Briefing;
-        Provider = original?.Provider;
+        _originalProviders = (original?.Written ?? (original?.Provider is { } p ? [p] : []))
+            .Select(AgentTypeConfig.NameOf).Distinct().ToList();
+        Providers = [.. _originalProviders];
         MaxTurns = original?.MaxTurns;
         var terms = ToolTerms.Read(original?.Tools?.Terms);
         Base = terms.Base;
@@ -55,8 +57,13 @@ public sealed class AgentDraft
     public string? Description { get; set; }
     public string? Briefing { get; set; }
 
-    /// <summary>The instance it runs on, or null for the session's own.</summary>
-    public string? Provider { get; set; }
+    /// <summary>The providers it may run on, as entry names in order — the first is the default. Empty is
+    /// the session's model. Seeded from the list AS WRITTEN, so a disabled type shows its bad entry and
+    /// the user can remove it.</summary>
+    public List<string> Providers { get; }
+
+    private readonly IReadOnlyList<string> _originalProviders;
+    private bool ProvidersChanged => !Providers.SequenceEqual(_originalProviders, StringComparer.Ordinal);
     public int? MaxTurns { get; set; }
     public string Base { get; set; }
     public List<string> Removed { get; }
@@ -74,21 +81,22 @@ public sealed class AgentDraft
         !(Tools ?? []).SequenceEqual(_originalTools ?? [], StringComparer.Ordinal);
 
     public bool IsDirty =>
-        IsNew || Provider != Original?.Provider || MaxTurns != Original?.MaxTurns || ToolsChanged
+        IsNew || ProvidersChanged || MaxTurns != Original?.MaxTurns || ToolsChanged
         || (!IsBuiltin && (Blank(Description) != Blank(Original?.Description) || Blank(Briefing) != Blank(Original?.Briefing)));
 
     /// <summary>The edit: what changed set, what was emptied cleared.</summary>
     public AgentTypeFields ToFields()
     {
         var clear = new HashSet<string>();
-        if (Provider is null && Original?.Provider is not null) clear.Add("provider");
+        if (ProvidersChanged && Providers.Count == 0) clear.Add("provider");
         if (MaxTurns is null && Original?.MaxTurns is not null) clear.Add("maxTurns");
         if (ToolsChanged && Tools is null) clear.Add("tools");
         if (!IsBuiltin && Blank(Description) is null && Original?.Description is not null) clear.Add("description");
         if (IsGeneral && Blank(Briefing) is null && Original?.Briefing is not null) clear.Add("briefing");
         return new AgentTypeFields
         {
-            Provider = Provider != Original?.Provider ? Provider : null,
+            Provider = ProvidersChanged && Providers.Count == 1 ? Providers[0] : null,
+            Providers = ProvidersChanged && Providers.Count > 1 ? Providers.ToList() : null,
             MaxTurns = MaxTurns != Original?.MaxTurns ? MaxTurns : null,
             Tools = ToolsChanged ? Tools : null,
             Description = !IsBuiltin && Blank(Description) is { } d && (IsNew || d != Blank(Original?.Description)) ? d : null,

@@ -12,7 +12,7 @@ public class AgentDraftTests
     public void ABuiltin_WritesOnlyProviderTurnsAndTools()
     {
         var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, null);
-        draft.Provider = "local";
+        draft.Providers.Add("local");
         draft.MaxTurns = 20;
         var fields = draft.ToFields();
         Assert.Equal("local", fields.Provider);
@@ -35,7 +35,7 @@ public class AgentDraftTests
     public void BackToTheSessionsProvider_ClearsTheKey()
     {
         var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, new AgentTypeConfig(Provider: "local"));
-        draft.Provider = null;
+        draft.Providers.Clear();
         Assert.Contains("provider", draft.ToFields().Clear);
     }
 
@@ -54,10 +54,62 @@ public class AgentDraftTests
     public void General_WritesNoEmptyBriefing()
     {
         var draft = AgentDraft.ForGeneral(null);
-        draft.Provider = "local";
+        draft.Providers.Add("local");
         var fields = draft.ToFields();
         Assert.Equal("local", fields.Provider);
         Assert.Null(fields.Briefing);
         Assert.True(draft.IsGeneral);
+    }
+
+    [Fact]
+    public void AList_IsEditedInOrder_AndWrittenAsAnArray()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!, null);
+        draft.Providers.AddRange(["local", "deepseek"]);
+
+        var fields = draft.ToFields();
+        Assert.Equal(["local", "deepseek"], fields.Providers);
+        Assert.True(draft.IsDirty);
+    }
+
+    [Fact]
+    public void AListOfOne_IsWrittenAsAString()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!, null);
+        draft.Providers.Add("local");
+
+        Assert.Equal("local", draft.ToFields().Provider);
+        Assert.Null(draft.ToFields().Providers);
+    }
+
+    [Fact]
+    public void AnUntouchedList_IsClean_AndWritesNothing()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!,
+            new AgentTypeConfig(Provider: "local") { Providers = ["local", "deepseek"], Written = ["local", "deepseek:deepseek/deepseek-v3.2"] });
+
+        Assert.Equal(["local", "deepseek"], draft.Providers);
+        Assert.False(draft.IsDirty);
+        Assert.Null(draft.ToFields().Providers);
+        Assert.Null(draft.ToFields().Provider);
+    }
+
+    [Fact]
+    public void EmptyingTheList_ClearsTheKey()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!,
+            new AgentTypeConfig(Provider: "local") { Providers = ["local", "deepseek"], Written = ["local", "deepseek"] });
+        draft.Providers.Clear();
+
+        Assert.Contains("provider", draft.ToFields().Clear);
+    }
+
+    [Fact]
+    public void ADisabledTypesList_IsShownAsWritten()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!,
+            new AgentTypeConfig() { Written = ["local", "ghost"], Disabled = "provider 'ghost' is not a configured provider" });
+
+        Assert.Equal(["local", "ghost"], draft.Providers);     // so the user can remove the bad one
     }
 }

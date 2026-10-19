@@ -225,7 +225,7 @@ public sealed class AgentsTab
             fields.Add("Briefing", "What the agent is told it is, and how to work. Required. Enter to type, Esc when done.", briefing);
         }
 
-        fields.Add("Provider", "The instance it runs on; the session's own unless set.", ProviderEditor(draft));
+        fields.Add("Provider", "Where it runs. The first is the default; a spawn may choose another listed one.", ProviderEditor(draft));
         var turns = new PromptControl { Input = draft.MaxTurns?.ToString() ?? "", InputWidth = 8 };
         turns.InputChanged += (_, t) => draft.MaxTurns = int.TryParse(t.Trim(), out var n) && n >= 0 ? n : null;
         fields.Add("Max turns", draft.IsBuiltin && draft.Shipped?.DefaultMaxTurns is { } d
@@ -236,13 +236,61 @@ public sealed class AgentsTab
         SetStatus(draft.IsNew ? $"[{ColorScheme.MutedMarkup}]Not saved yet — Save adds it to config.json.[/]" : "");
     }
 
+    /// <summary>
+    /// The type's providers, in order: one row per entry with its name:model — "default" on the first —
+    /// and ↑ ↓ Remove; then the providers not yet listed and + Add. Rebuilt in place on every change, as
+    /// the MCP secrets editor is, so the rows always show the draft. An entry config does not know is
+    /// shown as such, so a disabled type's bad entry can be seen and removed.
+    /// </summary>
     private IWindowControl ProviderEditor(AgentDraft draft)
     {
-        var names = _settings!.Providers.Keys.Order(StringComparer.Ordinal).ToList();
-        var dropdown = new DropdownControl("", ["the session's", .. names]) { HorizontalAlignment = HorizontalAlignment.Left };
-        dropdown.SelectedIndex = draft.Provider is { } p && names.IndexOf(p) is var i and >= 0 ? i + 1 : 0;
-        dropdown.SelectedValueChanged += (_, v) => draft.Provider = v is null or "the session's" ? null : v;
-        return dropdown;
+        var stack = new FieldGrid();
+        string Label(string name) => _settings!.Providers.TryGetValue(name, out var c)
+            ? MarkupParser.Escape($"{name}:{c.Model}")
+            : $"{MarkupParser.Escape(name)} [{ColorScheme.CautionMarkup}](not configured)[/]";
+
+        void Rebuild()
+        {
+            stack.Clear();
+            if (draft.Providers.Count == 0)
+                stack.AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]runs on the session's model[/]"]));
+            for (var i = 0; i < draft.Providers.Count; i++)
+            {
+                var at = i;
+                var row = new ToolbarControl { ItemSpacing = 1 };
+                row.AddItem(new MarkupControl([Label(draft.Providers[at])
+                    + (at == 0 ? $" [{ColorScheme.MutedMarkup}]default[/]" : "")]));
+                if (at > 0)
+                    row.AddItem(Controls.Button(" ↑ ").OnClick((_, _) => Swap(at, at - 1)).Build());
+                if (at < draft.Providers.Count - 1)
+                    row.AddItem(Controls.Button(" ↓ ").OnClick((_, _) => Swap(at, at + 1)).Build());
+                row.AddItem(Controls.Button(" Remove ").OnClick((_, _) => { draft.Providers.RemoveAt(at); Rebuild(); }).Build());
+                stack.AddBare(row);
+            }
+
+            var left = _settings!.Providers.Keys.Where(n => !draft.Providers.Contains(n)).Order(StringComparer.Ordinal).ToList();
+            if (left.Count > 0)
+            {
+                var add = new ToolbarControl { ItemSpacing = 1 };
+                var pick = new DropdownControl("", left) { HorizontalAlignment = HorizontalAlignment.Left };
+                pick.SelectedIndex = 0;
+                add.AddItem(pick);
+                add.AddItem(Controls.Button(" + Add ").OnClick((_, _) =>
+                {
+                    if (pick.SelectedIndex is var p and >= 0 && p < left.Count) { draft.Providers.Add(left[p]); Rebuild(); }
+                }).Build());
+                stack.AddBare(add);
+            }
+        }
+
+        void Swap(int a, int b)
+        {
+            (draft.Providers[a], draft.Providers[b]) = (draft.Providers[b], draft.Providers[a]);
+            Rebuild();
+        }
+
+        Rebuild();
+        return stack.Control;
     }
 
     /// <summary>A base — inherited or all — and the sixteen tools as boxes: unticked is taken away.</summary>

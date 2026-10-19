@@ -9,6 +9,10 @@ public sealed record AgentTypeFields
     public string? Description { get; init; }
     public string? Briefing { get; init; }
     public string? Provider { get; init; }
+
+    /// <summary>Two or more providers, written as an array; one is written as <see cref="Provider"/>, a
+    /// string, so a config edited through the UI changes no more than it must.</summary>
+    public IReadOnlyList<string>? Providers { get; init; }
     public int? MaxTurns { get; init; }
     public IReadOnlyList<string>? Tools { get; init; }
     public IReadOnlySet<string> Clear { get; init; } = new HashSet<string>();
@@ -18,6 +22,7 @@ public sealed record AgentTypeFields
         if (Description is { } d) type["description"] = d;
         if (Briefing is { } b) type["briefing"] = b;
         if (Provider is { } p) type["provider"] = p;
+        if (Providers is { } ps) type["provider"] = new JsonArray([.. ps.Select(x => (JsonNode?)x)]);
         if (MaxTurns is { } m) type["maxTurns"] = m;
         if (Tools is { } t) type["tools"] = new JsonArray([.. t.Select(x => (JsonNode?)x)]);
         foreach (var key in Clear) type.Remove(key);
