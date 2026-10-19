@@ -3339,7 +3339,9 @@ public sealed class Agent
             Success = !spawnRefused,
             ExitCode = spawnRefused ? 1 : 0,
             Duration = DateTimeOffset.UtcNow - started,
-            ErrorMessage = spawnRefused ? result : null,
+            // NO ERROR MESSAGE, even for a refused spawn: its refusal is already the content, and a
+            // failed row's body shows both — the same sentence twice.
+            ErrorMessage = null,
         };
         _jobs.ToolUpdated(job);
 

@@ -2268,6 +2268,11 @@ public class SubAgentSpawnerTests
 
         Assert.Equal(JobState.Failed, job.State);
         Assert.False(job.Result!.Success);
+        // The refusal is the row's body, said once: a failed row's body joins its error message and
+        // its content, and here both would be the same sentence.
+        var body = CxAgent.UI.InlineJobSink.BodyFor(job)!;
+        Assert.StartsWith("error: ", body, StringComparison.Ordinal);
+        Assert.Equal(1, body.Split("error: ").Length - 1);
     }
 
     /// <summary>The guard: a spawn that ran and answered still settles as done.</summary>
