@@ -2,6 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
+using CxAgent.Plugins.Testing;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -64,12 +65,18 @@ public class CxagentLspPluginTests
 
     // ---- Load: the manifest returned matches the sidecar --------------------------------------
 
+    // THROUGH THE HARNESS'S CHECK: it loads the plugin as a session does — without Start, so no
+    // language server is launched — and refuses a manifest that differs from the sidecar. An empty
+    // answer is the code returning exactly the file asserted on below.
     [Fact]
     public async Task LoadReturnsTheSidecarManifest()
     {
-        var plugin = await LoadPluginAsync(new FakeContext(".", new { server = "csharp-ls" }));
-        var manifest = await plugin.Load(new FakeContext(".", new { server = "csharp-ls" }), CancellationToken.None);
+        var dir = Folders.FirstParty("csharp-lsp");
+        var settings = new HarnessOptions { Settings = JsonSerializer.SerializeToElement(new { server = "csharp-ls" }) };
 
+        Assert.Empty(await PluginHarness.CheckAsync(dir, settings));
+
+        var manifest = PluginManifest.Parse(File.ReadAllText(Path.Combine(dir, "csharp-lsp.plugin.json"))).Manifest!;
         Assert.Equal("csharp-lsp", manifest.Name);
         Assert.True(manifest.Spawns);
         Assert.Equal(["csharp_definition", "csharp_references", "csharp_diagnostics"],

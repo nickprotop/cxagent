@@ -2,6 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
+using CxAgent.Plugins.Testing;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -17,22 +18,20 @@ namespace CxAgent.Tests;
 /// </summary>
 public class CloneFinderPluginTests
 {
-    private sealed class FakeLogger : IPluginLogger
-    {
-        public List<string> Messages { get; } = [];
-        public void Log(string message) => Messages.Add(message);
-    }
-
     private sealed class StubContext : IPluginContext
     {
         public string WorkingDirectory { get; } = ".";
         public JsonElement Settings { get; } = JsonSerializer.SerializeToElement(new { });
         public int HostContract { get; } = PluginContract.Version;
         public string HostVersion => PluginContract.HostVersionOf(GetType().Assembly);
-        public IPluginLogger Logger { get; } = new FakeLogger();
+        public IPluginLogger Logger { get; } = new NullLogger();
         public CancellationToken Lifetime { get; } = CancellationToken.None;
-        public List<int> RegisteredPids { get; } = [];
-        public void RegisterChildProcess(int processId) => RegisteredPids.Add(processId);
+        public void RegisterChildProcess(int processId) { }
+
+        private sealed class NullLogger : IPluginLogger
+        {
+            public void Log(string message) { }
+        }
     }
 
     private sealed class StubJobContext : IJobContext
@@ -45,16 +44,9 @@ public class CloneFinderPluginTests
         public void ReportTextDelta(string delta) { }
     }
 
-    private static async Task<IPlugin> LoadPluginAsync()
-    {
-        var dll = Path.Combine(AppContext.BaseDirectory, "clone-finder.dll");
-        Assert.True(File.Exists(dll),
-            $"clone-finder.dll is not beside the tests at '{dll}' — the ProjectReference that builds it is missing.");
-
-        var result = await ManagedPluginLoader.Load(dll, new StubContext(), CancellationToken.None);
-        var loaded = Assert.IsType<ManagedPluginLoadResult.Loaded>(result);
-        return loaded.Instance;
-    }
+    // AS A USER INSTALLS IT: the dll and its sidecar in a folder of their own, loaded through the
+    // plugin harness — the same loader a session uses.
+    private static string Folder() => Folders.FirstParty("clone-finder");
 
     /// <summary>A block big enough to clear BOTH default floors on its own — eight lines, and
     /// comfortably past 50 tokens — so the duplicate test exercises the defaults the model will
@@ -75,10 +67,9 @@ public class CloneFinderPluginTests
     [Fact]
     public async Task ItOffersExactlyOneTool()
     {
-        var plugin = await LoadPluginAsync();
-        var manifest = await plugin.Load(new StubContext(), CancellationToken.None);
+        await using var plugin = await PluginHarness.LoadAsync(Folder());
 
-        var tool = Assert.Single(manifest.Tools);
+        var tool = Assert.Single(plugin.Manifest.Tools);
         Assert.Equal("find_clones", tool.Name);
     }
 
@@ -88,8 +79,7 @@ public class CloneFinderPluginTests
     [Fact]
     public async Task ItReportsADuplicateAcrossTwoFiles()
     {
-        var plugin = await LoadPluginAsync();
-        await plugin.Load(new StubContext(), CancellationToken.None);
+        await using var plugin = await PluginHarness.LoadAsync(Folder());
 
         var dir = Directory.CreateTempSubdirectory("clone-finder-plugin-test").FullName;
         try
@@ -100,9 +90,7 @@ public class CloneFinderPluginTests
             File.WriteAllText(Path.Combine(dir, "a.cs"), "int alpha = 111;\n" + DuplicatedBlock);
             File.WriteAllText(Path.Combine(dir, "b.cs"), "int beta = 222;\n" + DuplicatedBlock);
 
-            var result = await plugin.Invoke("find_clones",
-                new JobParameters(new Dictionary<string, object?> { ["path"] = dir }),
-                new StubJobContext(), CancellationToken.None);
+            var result = (await plugin.CallAsync("find_clones", new { path = dir })).Result!;
 
             Assert.True(result.Success, result.ErrorMessage);
             var report = Assert.IsType<string>(result.Output["content"]);
@@ -121,23 +109,26 @@ public class CloneFinderPluginTests
     [Fact]
     public async Task AMissingPathIsAFailedCallNamingTheArgument()
     {
-        var plugin = await LoadPluginAsync();
-        await plugin.Load(new StubContext(), CancellationToken.None);
+        await using var plugin = await PluginHarness.LoadAsync(Folder());
 
-        var result = await plugin.Invoke("find_clones",
-            new JobParameters(new Dictionary<string, object?>()),
-            new StubJobContext(), CancellationToken.None);
+        var result = (await plugin.CallAsync("find_clones")).Result!;
 
         Assert.False(result.Success);
         Assert.Contains("path", result.ErrorMessage);
     }
 
-    /// <summary>An unknown tool name is refused rather than silently doing the only thing it has.</summary>
+    /// <summary>
+    /// An unknown tool name is refused rather than silently doing the only thing it has.
+    ///
+    /// <para>THROUGH THE LOADER, NOT THE HARNESS: the harness refuses a tool the manifest does not
+    /// declare before the plugin sees it, and this asks what the plugin's own code does with one.</para>
+    /// </summary>
     [Fact]
     public async Task AnUnknownToolIsRefused()
     {
-        var plugin = await LoadPluginAsync();
-        await plugin.Load(new StubContext(), CancellationToken.None);
+        var loaded = Assert.IsType<ManagedPluginLoadResult.Loaded>(
+            await ManagedPluginLoader.Load(Path.Combine(Folder(), "clone-finder.dll"), new StubContext(), CancellationToken.None));
+        var plugin = loaded.Instance;
 
         var result = await plugin.Invoke("find_something_else",
             new JobParameters(new Dictionary<string, object?> { ["path"] = "." }),

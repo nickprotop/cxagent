@@ -18,6 +18,19 @@ internal static class Folders
 
     public static string WellFormed() => Of("cxagent.Tests.PluginFixture", "fixture");
 
+    /// <summary>
+    /// A first-party plugin as a user installs it: its dll and sidecar from the test output, with the
+    /// files it depends on beside them. The test output itself holds every plugin's sidecar at once,
+    /// which is not a plugin folder.
+    /// </summary>
+    public static string FirstParty(string name, params string[] dependencies)
+    {
+        var dir = Of(name, name);
+        foreach (var file in dependencies)
+            File.Copy(Path.Combine(AppContext.BaseDirectory, file), Path.Combine(dir, file));
+        return dir;
+    }
+
     // THE ASSEMBLY'S OWN NAME FOR THE COPY: the fixture's Load uses FromSidecar, which reads
     // <assembly-name>.plugin.json — a renamed copy would have no sidecar its own code can find.
     public static string Harness() => Of("cxagent.Tests.PluginFixture.Harness", "cxagent.Tests.PluginFixture.Harness");
