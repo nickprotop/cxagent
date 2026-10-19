@@ -645,6 +645,18 @@ main > blockquote,
   color: var(--fg-dim);
 }
 
+/* ONE COLUMN ON A PHONE. The title column's 15rem floor leaves the blurb a sliver of a narrow card,
+   one letter per line, and the tracks then sum wider than the card, so its overflow:hidden clips the
+   facts line. minmax(0, 1fr) rather than 1fr: a plain fr track grows to its longest unbreakable
+   token and would push the card wide again. */
+@media (max-width: 40rem) {
+  .plugin-row > summary {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "title" "blurb" "facts";
+  }
+  .plugin-facts { overflow-wrap: anywhere; }
+}
+
 .plugin-row:hover { border-color: var(--accent-dim); }
 .plugin-row[open] { border-color: var(--accent-dim); }
 
