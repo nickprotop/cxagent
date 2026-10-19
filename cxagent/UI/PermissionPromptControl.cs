@@ -174,9 +174,13 @@ public sealed class PermissionPromptControl
         //
         // NOTHING IS ADDED for the parent — see PermissionRequest.Requester for why an unattributed
         // prompt is correct there rather than merely convenient.
+        // A CHILD'S TYPE AND PROVIDER BESIDE ITS LABEL, so a paid child asking for something is
+        // recognisable before the user answers. Shown here only; the label itself is what is stored.
         if (!string.IsNullOrWhiteSpace(_request.Requester))
             markup.AddLine($"[{ColorScheme.ThinkingMarkup}]asked for by: "
-                         + $"{SharpConsoleUI.Parsing.MarkupParser.Escape(_request.Requester!)}[/]");
+                         + SharpConsoleUI.Parsing.MarkupParser.Escape(_request.Requester!
+                             + (_request.RequesterRunsOn is { Length: > 0 } on ? $" ({CxAgent.Core.Llm.ModelNames.ShortLabel(on)})" : ""))
+                         + "[/]");
         // One AddLine per source line, same reasoning as ChoiceStepContent: a multi-line Display
         // (e.g. a shell command plus its working_dir) would otherwise paint its "\n" literally.
         foreach (var line in displayed.Replace("\r\n", "\n").Split('\n'))

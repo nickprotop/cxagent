@@ -73,6 +73,10 @@ internal sealed class JobContext : IJobHostContext
     /// Settable rather than a constructor parameter so the ~20 construction sites are untouched.</summary>
     public string? Requester { get; set; }
 
+    /// <summary>For a sub-agent, its type and where it runs — `planner on deepseek:…` — for the permission
+    /// prompt to show beside <see cref="Requester"/>. Display only; null for the parent's own work.</summary>
+    public string? RequesterRunsOn { get; set; }
+
     /// <summary>The agent's own directory, so a relative path resolves where the model was told it
     /// would. Settable for the same reason <see cref="Requester"/> is.</summary>
     public string? WorkingDirectory { get; set; }

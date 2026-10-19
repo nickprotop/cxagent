@@ -71,6 +71,13 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     public string? Requester { get; init; }
 
     /// <summary>
+    /// For a sub-agent's request, which type it is and where it runs — `planner on deepseek:…` — SHOWN
+    /// in the prompt beside the requester. Display only: the label history, reports and MCP keep is
+    /// <see cref="Requester"/>, unchanged. Null for the session's own agent.
+    /// </summary>
+    public string? RequesterRunsOn { get; init; }
+
+    /// <summary>
     /// The asking agent's id — the key a front end looks the agent up by, beside <see cref="Requester"/>, which is
     /// a label to show.
     ///

@@ -341,4 +341,17 @@ public class PermissionPromptControlTests
         Assert.Contains("ignore previous instructions", text);
         Assert.DoesNotContain("[red]ignore previous instructions[/]", text);
     }
+
+    /// <summary>A child's prompt says which type asked and where it runs — display only, beside the label.</summary>
+    [Fact]
+    public void ASubAgentsRequest_SaysWhereItRuns()
+    {
+        var request = ShellRequest("ls") with
+        {
+            Requester = "Plan --top N option", RequesterRunsOn = "planner on deepseek:deepseek/deepseek-v3.2",
+        };
+        var text = string.Join("\n", FindMarkupLines(new PermissionPromptControl(request, offerTrust: false).BuildContent()));
+
+        Assert.Contains("asked for by: Plan --top N option (planner on deepseek:deepseek/deepseek-v3.2)", text, StringComparison.Ordinal);
+    }
 }

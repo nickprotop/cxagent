@@ -1693,7 +1693,8 @@ public class SubAgentSpawnerTests
 
         var shellRequest = Assert.Single(gate.Seen,
             r => r.Kind == CxAgent.Core.Permissions.PermissionKind.Shell);
-        Assert.Equal("Analyze TextWrapping failures", shellRequest.Requester);
+        Assert.Equal("Analyze TextWrapping failures", shellRequest.Requester);   // the stored label: unchanged
+        Assert.Equal("general on mock-model", shellRequest.RequesterRunsOn);    // shown beside it
     }
 
     /// <summary>The parent's own requests stay unattributed — see PermissionPromptControlTests for

@@ -721,6 +721,7 @@ public sealed class Agent
     /// asked to analyse the test failure wants to run rm -rf" is a decision someone can make.</para>
     /// </summary>
     private readonly string? _requesterLabel;
+    private readonly string? _requesterRunsOn;
 
     /// <summary>
     /// What THIS agent was created to do, fixed at construction — null for a plain session.
@@ -1071,7 +1072,8 @@ public sealed class Agent
         Permissions.ActionClassifier? classifier = null,
         IAgentDelivery? delivery = null,
         string? sessionId = null,
-        DateOnly? startedOn = null)
+        DateOnly? startedOn = null,
+        string? runsOn = null)
     {
         // THE SESSION'S DAY, NOT THIS AGENT'S: a re-wire builds a new agent, and a session that began
         // yesterday must keep yesterday's date in its system prompt or the whole conversation is
@@ -1119,6 +1121,9 @@ public sealed class Agent
         _requesterLabel = isSubAgent
             ? (string.IsNullOrWhiteSpace(label) ? "a sub-agent" : label.Trim())
             : null;
+        // WHICH TYPE, ON WHICH PROVIDER — shown beside the label in a child's permission prompt, and
+        // nowhere else: the label is what history, reports and MCP keep, and stays as it was.
+        _requesterRunsOn = isSubAgent ? runsOn : null;
         _mcp = mcp;
         _spawner = spawner;
         _delivery = delivery;
@@ -2942,6 +2947,7 @@ public sealed class Agent
         {
             // Rides with every tool call this agent makes, so the gate can say who is asking.
             Requester = _requesterLabel,
+            RequesterRunsOn = _requesterRunsOn,
 
             // AND WHERE IT WORKS, so a relative path resolves against THIS agent's folder rather
             // than the process's. Identical today, because one process runs one session from the
