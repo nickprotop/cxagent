@@ -2956,6 +2956,10 @@ public sealed class Agent
             // directory it was launched in — and silently different the moment that stops holding.
             WorkingDirectory = TryGetWorkingDirectory(),
 
+            // AND THE POLICY IT IS JUDGED BY, which for a sub-agent in a folder of its own is narrower
+            // than the session's the executors were built with.
+            Policy = _policy,
+
             // AND HOW TO REACH BACK TO THIS AGENT, so an executor whose work outlives the call has
             // somewhere to report it. It rides with the call because an agent id alone addresses
             // nothing.

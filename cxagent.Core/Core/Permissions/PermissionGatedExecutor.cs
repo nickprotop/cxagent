@@ -80,7 +80,8 @@ public sealed class PermissionGatedExecutor : IJobExecutor
                         RequesterRunsOn = (context as Execution.JobContext)?.RequesterRunsOn,
                         // THE ID TOO, from the concrete context: IJobContext is published and carries no agent id.
                         RequesterAgentId = (context as Execution.JobContext)?.AgentId,
-                        Policy = _policy,
+                        // THE CALLER'S POLICY FIRST — see JobContext.Policy.
+                        Policy = (context as Execution.JobContext)?.Policy ?? _policy,
                         OnReviewing = context.ReportReviewing,
                     }, ct);
             }

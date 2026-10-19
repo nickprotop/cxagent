@@ -82,6 +82,15 @@ internal sealed class JobContext : IJobHostContext
     public string? WorkingDirectory { get; set; }
 
     /// <summary>
+    /// The calling agent's own permission policy, when it has one.
+    ///
+    /// <para>RIDES WITH THE CALL because the gated executors are built once per session, around the
+    /// session's policy. A sub-agent working in a folder of its own has a narrower one, and judged by the
+    /// session's it would be judged against the whole project.</para>
+    /// </summary>
+    public Permissions.PermissionPolicy? Policy { get; init; }
+
+    /// <summary>
     /// Where to tell the agent that made this call something it should read later.
     ///
     /// <para>BESIDE <see cref="Requester"/> AND <see cref="WorkingDirectory"/> BECAUSE IT IS THE SAME

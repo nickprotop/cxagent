@@ -2,6 +2,7 @@ using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Jobs;
+using CxAgent.Core.Permissions;
 using Xunit;
 
 using System.Text.RegularExpressions;
@@ -2288,5 +2289,41 @@ public class SubAgentSpawnerTests
             .TryInvokeAsync(SpawnCall(), null, CancellationToken.None);
 
         Assert.Equal("mock-model", SubAgentEnvelope.RunsOnOf(envelope));
+    }
+
+    /// <summary>
+    /// A CHILD'S CALL IS JUDGED BY ITS OWN POLICY, through the session's real gated tools. Those are built
+    /// once with the SESSION's policy, so a child narrowed to `sub` writing `../b.md` was judged against the
+    /// whole project — trusted, accept-edits, inside — and passed unasked.
+    /// </summary>
+    [Fact]
+    public async Task ARootedChildsWrite_IsJudgedByItsOwnFolder()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "cx-narrow-" + Guid.NewGuid().ToString("N"));
+        var sub = Path.Combine(root, "sub");
+        Directory.CreateDirectory(sub);
+        var rules = new PermissionRulesStore(new CxAgent.Core.Storage.AppPaths(
+            Path.Combine(Path.GetTempPath(), "cx-narrow-rules-" + Guid.NewGuid().ToString("N"))));
+        rules.SetTrust(root, CxAgent.Core.Permissions.TrustState.Trusted);
+        var session = new PermissionPolicy(root, rules, EditMode.AcceptEdits);
+        var gate = new RecordingGate();
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "w1", Name = "write_file",
+                Arguments = System.Text.Json.JsonDocument.Parse("""{"path":"../b.md","content":"x"}""").RootElement }],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+        var child = new Agent(provider, JobRegistry.CreateWithBuiltins(null, gate, session), new TokenLedger(),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5,
+            workingDir: sub, policy: session.NarrowedTo(sub));
+
+        await child.SendAsync("write it", CancellationToken.None);
+
+        var write = Assert.Single(gate.Seen, r => r.Kind == CxAgent.Core.Permissions.PermissionKind.FileWrite);
+        Assert.Equal(sub, write.Policy!.Boundary);
+        Assert.False(write.Policy.IsSilentlyAllowed(write));
     }
 }
