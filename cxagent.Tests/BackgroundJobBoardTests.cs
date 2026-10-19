@@ -139,6 +139,12 @@ public class BackgroundJobBoardTests : IDisposable
     public async Task FinishedEntries_AreCapped_OldestDroppedFirst()
     {
         var first = Start("exit 0", "A");
+
+        // ENDED BEFORE ANY OTHER STARTS: the board drops by when a job ended, not when it started, and
+        // on a loaded machine the first job's exit can be seen after two later ones' — leaving it the
+        // third oldest, kept, while the test expects it gone.
+        await Until(() => _board.For(Is("A")).All(e => e.Finished));
+
         for (var i = 0; i < BackgroundJobBoard.MaxFinished + 2; i++)
         {
             // SIXTEEN MAY RUN AT ONCE, and a seventeenth is refused rather than queued — so the
