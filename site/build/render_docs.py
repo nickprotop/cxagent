@@ -80,6 +80,99 @@ def inline(text: str) -> str:
     return out
 
 
+# A LIST ITEM: its indent, its marker (a bullet, or a number and a dot) and its text. Numbered items
+# share the parser with bullets because the sdk's tutorials number their steps, and a run-together
+# "1. Upload 2. Put 3. Submit" paragraph is the one thing a reader following steps cannot use.
+ITEM = re.compile(r"^(\s*)([-*]|\d+\.)\s+(.*)$")
+
+
+def cells(row: str) -> list:
+    """A table row's cells.
+
+    ONLY AN UNESCAPED PIPE SPLITS. `allow\\|deny` is how a flag's choices are written inside a cell;
+    splitting there would break the row into extra columns and leave a stray backslash behind.
+    """
+    row = row.strip()
+    row = row[1:] if row.startswith("|") else row
+    row = row[:-1] if row.endswith("|") and not row.endswith("\\|") else row
+    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", row)]
+
+
+def render_list(lines: list, i: int, resolve) -> tuple:
+    """One list, from the item at `lines[i]`, and the index after it.
+
+    WRAPPED AND NESTED, as GitHub renders them. The house style wraps a long bullet onto an indented
+    line, and that line is the same item; a bullet indented under an item is a list inside it; an
+    indented paragraph after a blank line is a further paragraph of the same item. Read a line at a
+    time instead, every continuation would become its own paragraph and every sub-list would be
+    flattened into the one above.
+    """
+    first = ITEM.match(lines[i])
+    indent = len(first.group(1))
+    tag = "ol" if first.group(2)[0].isdigit() else "ul"
+    items = []
+
+    def lead(line: str) -> int:
+        return len(line) - len(line.lstrip())
+
+    while i < len(lines):
+        m = ITEM.match(lines[i])
+        if not m or len(m.group(1)) != indent:
+            break
+        # THE ITEM'S PARTS, in order: its opening text, then any nested lists and further paragraphs.
+        # The opening text stays bare inside the <li>; a later paragraph gets its own <p>.
+        parts, text = [], m.group(3)
+        i += 1
+        while i < len(lines):
+            line = lines[i]
+            if not line.strip():
+                j = i
+                while j < len(lines) and not lines[j].strip():
+                    j += 1
+                if j < len(lines) and lead(lines[j]) > indent and not (
+                        ITEM.match(lines[j]) and lead(lines[j]) == indent):
+                    if text is not None:
+                        parts.append(("text", text))
+                    text, i = None, j
+                    continue
+                break
+            if lead(line) <= indent:
+                break
+            if ITEM.match(line):
+                if text is not None:
+                    parts.append(("text", text))
+                    text = None
+                block, i = render_list(lines, i, resolve)
+                parts.append(("html", block))
+                continue
+            text = line.strip() if text is None else text + " " + line.strip()
+            i += 1
+        if text is not None:
+            parts.append(("text", text))
+
+        body, opened = [], False
+        for kind, value in parts:
+            if kind == "html":
+                body.append(value)
+            elif not opened:
+                body.append(link_up(inline(value), resolve))
+            else:
+                body.append(f"<p>{link_up(inline(value), resolve)}</p>")
+            opened = True
+        items.append(f"<li>{''.join(body)}</li>")
+
+        # A BLANK LINE BETWEEN ITEMS keeps the list going when the next item is a sibling of the same
+        # kind; anything else after the blank ends it.
+        j = i
+        while j < len(lines) and not lines[j].strip():
+            j += 1
+        nxt = ITEM.match(lines[j]) if j < len(lines) else None
+        if j > i and nxt and len(nxt.group(1)) == indent and nxt.group(2)[0].isdigit() == (tag == "ol"):
+            i = j
+
+    return f"<{tag}>{''.join(items)}</{tag}>", i
+
+
 def render_body(markdown: str, resolve) -> str:
     """Block constructs. `resolve` maps a link target to a URL, or raises for a bad one."""
     lines = markdown.split("\n")
@@ -117,11 +210,11 @@ def render_body(markdown: str, resolve) -> str:
             continue
 
         if line.startswith("|") and i + 1 < len(lines) and re.match(r"^\|[\s:|-]+\|$", lines[i + 1]):
-            header = [c.strip() for c in line.strip("|").split("|")]
+            header = cells(line)
             i += 2
             rows = []
             while i < len(lines) and lines[i].startswith("|"):
-                rows.append([c.strip() for c in lines[i].strip("|").split("|")])
+                rows.append(cells(lines[i]))
                 i += 1
             head = "".join(f"<th>{link_up(inline(c), resolve)}</th>" for c in header)
             body = "".join(
@@ -130,13 +223,9 @@ def render_body(markdown: str, resolve) -> str:
             out.append(f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>")
             continue
 
-        if re.match(r"^\s*[-*]\s+", line):
-            items = []
-            while i < len(lines) and re.match(r"^\s*[-*]\s+", lines[i]):
-                items.append(re.sub(r"^\s*[-*]\s+", "", lines[i]))
-                i += 1
-            body = "".join(f"<li>{link_up(inline(t), resolve)}</li>" for t in items)
-            out.append(f"<ul>{body}</ul>")
+        if ITEM.match(line):
+            block, i = render_list(lines, i, resolve)
+            out.append(block)
             continue
 
         if line.startswith(">"):
@@ -153,7 +242,7 @@ def render_body(markdown: str, resolve) -> str:
 
         para = []
         while i < len(lines) and lines[i].strip() and not lines[i].startswith(("#", "|", ">", "```")) \
-                and not re.match(r"^\s*[-*]\s+", lines[i]):
+                and not ITEM.match(lines[i]):
             para.append(lines[i])
             i += 1
         out.append(f"<p>{link_up(inline(' '.join(para)), resolve)}</p>")

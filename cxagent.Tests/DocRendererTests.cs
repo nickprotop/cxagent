@@ -195,4 +195,82 @@ public class DocRendererTests
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
+
+    /// <summary>
+    /// Renders <paramref name="markdown"/> as COMMANDS.md in a fake tree and returns commands.html. The tree
+    /// holds every path the renderer may list — old and new — so it does not depend on which ones it does.
+    /// </summary>
+    private static string RenderCommands(string markdown)
+    {
+        var fake = Directory.CreateTempSubdirectory("doc-construct-").FullName;
+        var outDir = Directory.CreateTempSubdirectory("doc-construct-out-").FullName;
+        try
+        {
+            foreach (var rel in new[] { "CONFIG.md", "SCRIPTING.md", "docs/screenshots/README.md",
+                         "cxagent.Core/docs/plugins.md", "cxagent.Core/sdk/README.md",
+                         "cxagent.Core/sdk/docs/plugins.md", "cxagent.Core/sdk/docs/testing.md",
+                         "cxagent.Core/sdk/docs/c-sdk.md", "cxagent.Core/sdk/docs/publishing.md",
+                         "cxagent.Core/sdk/docs/cli.md", "cxagent.Core/sdk/c/ABI.md" })
+            {
+                var path = Path.Combine(fake, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, "# X\n\nNothing here.\n");
+            }
+            File.WriteAllText(Path.Combine(fake, "COMMANDS.md"), markdown);
+
+            var (exit, stderr) = Render(outDir, root: fake);
+            Assert.True(exit == 0, $"renderer failed: {stderr}");
+            return File.ReadAllText(Path.Combine(outDir, "docs", "commands.html"));
+        }
+        finally
+        {
+            Directory.Delete(fake, recursive: true);
+            Directory.Delete(outDir, recursive: true);
+        }
+    }
+
+    /// <summary>A `\|` in a table cell is a literal pipe — a flag's `allow\|deny` — not a column break.</summary>
+    [Fact]
+    public void AnEscapedPipe_StaysInItsCell()
+    {
+        var html = RenderCommands("# C\n\n| Flag | What |\n|---|---|\n| `allow\\|deny` | the answer |\n");
+        var row = html[html.IndexOf("allow", StringComparison.Ordinal)..];
+        row = row[..row.IndexOf("</tr>", StringComparison.Ordinal)];
+        Assert.Contains("allow|deny", row);
+        Assert.Equal(1, row.Split("<td").Length - 1);   // after the flag's own cell, one more
+        Assert.DoesNotContain("\\", row);
+    }
+
+    /// <summary>A bullet wrapped onto an indented line is one item, as GitHub renders it.</summary>
+    [Fact]
+    public void AWrappedBullet_IsOneItem()
+    {
+        var html = RenderCommands("# C\n\n- first line\n  continues here\n- second\n");
+        Assert.Contains("first line continues here", html);
+        Assert.Equal(2, html.Split("<li>").Length - 1);
+        Assert.DoesNotContain("<p>", html[html.IndexOf("<ul>", StringComparison.Ordinal)..]);
+    }
+
+    [Fact]
+    public void ANestedBullet_IsAListInsideTheItem()
+    {
+        var html = RenderCommands("# C\n\n- outer\n  - inner\n- next\n");
+        Assert.Matches(@"<li>outer\s*<ul>\s*<li>inner</li>\s*</ul>\s*</li>\s*<li>next</li>", html);
+    }
+
+    [Fact]
+    public void ANumberedList_IsAnOrderedList()
+    {
+        var html = RenderCommands("# C\n\nSteps:\n\n1. Upload\n2. Put\n3. Submit\n");
+        Assert.Matches(@"<ol>\s*<li>Upload</li>\s*<li>Put</li>\s*<li>Submit</li>\s*</ol>", html);
+    }
+
+    /// <summary>An indented paragraph after a blank line belongs to the item above it, and the list goes on.</summary>
+    [Fact]
+    public void AParagraphInsideAnItem_StaysInIt()
+    {
+        var html = RenderCommands("# C\n\n- **pack** reads from:\n  1. its options;\n  2. a file.\n\n  Anything unset is marked.\n- **verify** checks it.\n");
+        Assert.Matches(@"<li><strong>pack</strong> reads from:<ol>.*</ol><p>Anything unset is marked\.</p></li><li><strong>verify</strong>", html);
+        Assert.Equal(1, html.Split("<ul>").Length - 1);
+    }
 }
