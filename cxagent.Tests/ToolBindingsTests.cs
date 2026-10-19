@@ -560,4 +560,19 @@ public class ToolBindingsTests
         Assert.NotEqual(tools.Single(t => t.Name == "http_request").Description, fetch);
         Assert.Contains("http_request", fetch, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// NO TOOL PROMISES IT NEEDS NO APPROVAL. Whether a call asks depends on the folder, its trust and
+    /// the mode — glob and grep read outside the folder only after asking — so a description saying
+    /// "needs no approval" tells the model something the gate will contradict.
+    /// </summary>
+    [Fact]
+    public void NoToolDescription_PromisesItNeverAsks()
+    {
+        var tools = ToolBindings.For(Enum.GetValues<BuiltinTool>(), JobRegistry.CreateWithBuiltins());
+        foreach (var tool in tools)
+            Assert.DoesNotContain("no approval", tool.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("trusted", tools.Single(t => t.Name == "grep").Description, StringComparison.Ordinal);
+        Assert.Contains("trusted", tools.Single(t => t.Name == "glob").Description, StringComparison.Ordinal);
+    }
 }

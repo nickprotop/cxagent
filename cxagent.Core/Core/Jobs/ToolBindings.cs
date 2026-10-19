@@ -152,7 +152,8 @@ public static class ToolBindings
                        + "(e.g. \".\" or \"src\"); `pattern` is the glob matched against the file "
                        + "names beneath it (e.g. \"*.cs\", or \"**/*.cs\" to recurse), defaulting to "
                        + "\"*\". The glob goes in `pattern`, never in `path`. Use this rather than "
-                       + "run_shell with find or ls — it needs no approval.")),
+                       + "run_shell with find or ls: it skips what git ignores, and inside a trusted "
+                       + "folder it runs without asking. A folder outside it asks first.")),
         // Same inversion as glob, and for the same reason: the pattern is the request, the path is
         // an optional narrowing. grep already required BOTH, so it never produced the inverted call
         // — but requiring a directory the model has no opinion about is friction on every search.
@@ -164,7 +165,8 @@ public static class ToolBindings
             Description: "Search file CONTENTS for text or a regex, optionally restricted to files "
                        + "matching a glob. `pattern` is LITERAL text unless you set `regex: true` "
                        + "— without it, \\. or | or \\b are searched for as those exact characters. "
-                       + "Use this rather than run_shell with grep or rg — it needs no approval.")),
+                       + "Use this rather than run_shell with grep or rg: it skips what git ignores, and "
+                       + "inside a trusted folder it runs without asking. A folder outside it asks first.")),
         // NO DESCRIPTION AT ALL until now, so the model was told this tool is a "File Operation" —
         // the executor's DisplayName, which serves six actions. The one tool that can destroy work
         // silently was the one with nothing said about it.
