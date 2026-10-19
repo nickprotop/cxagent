@@ -134,41 +134,56 @@ public class PluginCatalogTests
     [Fact]
     public void EveryEntryCanProduceADownloadUrl()
     {
-        foreach (var entry in Entries())
+        foreach (var entry in Entries()) AssertDownloadable(entry);
+    }
+
+    private static void AssertDownloadable(JsonElement entry)
+    {
+        var name = entry.GetProperty("name").GetString()!;
+
+        // PER-RID "sources" IS THE NATIVE SHAPE and carries no "source" at all; each one must be
+        // fetchable and carry its own hash, for the reason a url source states its own below.
+        if (entry.TryGetProperty("sources", out var sources))
         {
-            var name = entry.GetProperty("name").GetString()!;
-            var source = entry.GetProperty("source");
-
-            switch (source.GetProperty("kind").GetString())
+            foreach (var one in sources.EnumerateObject())
             {
-                case "url":
-                    var url = source.GetProperty("url").GetString();
-                    Assert.StartsWith("https://", url);
-
-                    // A URL SOURCE CARRIES ITS OWN HASH. Nothing else can vouch for a file fetched
-                    // from somewhere this project does not control.
-                    Assert.Equal(64, source.GetProperty("sha256").GetString()!.Length);
-                    break;
-
-                case "release":
-                    // ONE URL, DELIBERATELY. There is no way to ask for a specific release's copy:
-                    // every release carries the plugin (an unchanged one re-uploaded byte for byte),
-                    // and the version tracks the plugin rather than the release, so "latest" is the
-                    // only version anyone needs to name.
-                    Assert.StartsWith("https://", source.GetProperty("latest").GetString());
-
-                    // sha256 IS NULL FOR THE BUILT-IN PLUGIN — see the catalog's own note on why
-                    // that is left open. What this pins is that a value, once someone sets one, is
-                    // actually a sha256 rather than a URL or a placeholder.
-                    var hash = source.GetProperty("sha256");
-                    if (hash.ValueKind != JsonValueKind.Null)
-                        Assert.Equal(64, hash.GetString()!.Length);
-                    break;
-
-                default:
-                    Assert.Fail($"entry '{name}' has an unknown source kind — a client cannot fetch it.");
-                    break;
+                Assert.StartsWith("https://", one.Value.GetProperty("url").GetString());
+                Assert.Equal(64, one.Value.GetProperty("sha256").GetString()!.Length);
             }
+            return;
+        }
+
+        var source = entry.GetProperty("source");
+
+        switch (source.GetProperty("kind").GetString())
+        {
+            case "url":
+                var url = source.GetProperty("url").GetString();
+                Assert.StartsWith("https://", url);
+
+                // A URL SOURCE CARRIES ITS OWN HASH. Nothing else can vouch for a file fetched
+                // from somewhere this project does not control.
+                Assert.Equal(64, source.GetProperty("sha256").GetString()!.Length);
+                break;
+
+            case "release":
+                // ONE URL, DELIBERATELY. There is no way to ask for a specific release's copy:
+                // every release carries the plugin (an unchanged one re-uploaded byte for byte),
+                // and the version tracks the plugin rather than the release, so "latest" is the
+                // only version anyone needs to name.
+                Assert.StartsWith("https://", source.GetProperty("latest").GetString());
+
+                // sha256 IS NULL FOR THE BUILT-IN PLUGIN — see the catalog's own note on why
+                // that is left open. What this pins is that a value, once someone sets one, is
+                // actually a sha256 rather than a URL or a placeholder.
+                var hash = source.GetProperty("sha256");
+                if (hash.ValueKind != JsonValueKind.Null)
+                    Assert.Equal(64, hash.GetString()!.Length);
+                break;
+
+            default:
+                Assert.Fail($"entry '{name}' has an unknown source kind — a client cannot fetch it.");
+                break;
         }
     }
 
@@ -189,48 +204,48 @@ public class PluginCatalogTests
     [Fact]
     public void DeclaredPlatformsMatchAvailableDownloads()
     {
-        var all = Entries().ToList();
+        foreach (var entry in Entries()) AssertPlatformsMatchDownloads(entry);
+    }
 
-        foreach (var entry in all)
+    private static void AssertPlatformsMatchDownloads(JsonElement entry)
+    {
+        var name = entry.GetProperty("name").GetString()!;
+        var platforms = entry.GetProperty("compatibility").GetProperty("platforms")
+            .EnumerateArray().Select(p => p.GetString()!).ToList();
+
+        Assert.NotEmpty(platforms);
+
+        if (platforms is ["any"])
         {
-            var name = entry.GetProperty("name").GetString()!;
-            var platforms = entry.GetProperty("compatibility").GetProperty("platforms")
-                .EnumerateArray().Select(p => p.GetString()!).ToList();
+            // Portable: one source, no per-platform keys.
+            Assert.True(entry.TryGetProperty("source", out _),
+                $"'{name}' claims any platform but has no single source.");
+            Assert.False(entry.TryGetProperty("sources", out _),
+                $"'{name}' claims any platform and yet lists per-platform sources — one of those is wrong.");
+            return;
+        }
 
-            Assert.NotEmpty(platforms);
+        Assert.True(entry.TryGetProperty("sources", out var sources),
+            $"'{name}' names specific platforms but has no per-platform sources.");
 
-            if (platforms is ["any"])
-            {
-                // Portable: one source, no per-platform keys.
-                Assert.True(entry.TryGetProperty("source", out _),
-                    $"'{name}' claims any platform but has no single source.");
-                Assert.False(entry.TryGetProperty("sources", out _),
-                    $"'{name}' claims any platform and yet lists per-platform sources — one of those is wrong.");
-                continue;
-            }
+        var keyed = sources.EnumerateObject().Select(p => p.Name).ToList();
 
-            Assert.True(entry.TryGetProperty("sources", out var sources),
-                $"'{name}' names specific platforms but has no per-platform sources.");
+        Assert.Equal(platforms.OrderBy(p => p, StringComparer.Ordinal),
+                     keyed.OrderBy(p => p, StringComparer.Ordinal));
 
-            var keyed = sources.EnumerateObject().Select(p => p.Name).ToList();
+        // KNOWN RIDs ONLY. An invented name matches nothing a client computes for itself, so the
+        // plugin is invisible on every machine rather than obviously wrong.
+        string[] known =
+            ["linux-x64", "linux-arm64", "osx-x64", "osx-arm64", "win-x64", "win-arm64"];
+        foreach (var rid in keyed)
+            Assert.Contains(rid, known);
 
-            Assert.Equal(platforms.OrderBy(p => p, StringComparer.Ordinal),
-                         keyed.OrderBy(p => p, StringComparer.Ordinal));
-
-            // KNOWN RIDs ONLY. An invented name matches nothing a client computes for itself, so the
-            // plugin is invisible on every machine rather than obviously wrong.
-            string[] known =
-                ["linux-x64", "linux-arm64", "osx-x64", "osx-arm64", "win-x64", "win-arm64"];
-            foreach (var rid in keyed)
-                Assert.Contains(rid, known);
-
-            // Each one must be fetchable and carry its own hash — see EveryEntryCanProduceADownloadUrl
-            // for why a url source states its own.
-            foreach (var source in sources.EnumerateObject())
-            {
-                Assert.StartsWith("https://", source.Value.GetProperty("url").GetString());
-                Assert.Equal(64, source.Value.GetProperty("sha256").GetString()!.Length);
-            }
+        // Each one must be fetchable and carry its own hash — see EveryEntryCanProduceADownloadUrl
+        // for why a url source states its own.
+        foreach (var source in sources.EnumerateObject())
+        {
+            Assert.StartsWith("https://", source.Value.GetProperty("url").GetString());
+            Assert.Equal(64, source.Value.GetProperty("sha256").GetString()!.Length);
         }
     }
 
@@ -249,7 +264,7 @@ public class PluginCatalogTests
 
         foreach (var entry in Entries())
         {
-            var source = entry.GetProperty("source");
+            if (!entry.TryGetProperty("source", out var source)) continue;   // per-RID "sources": no release asset
             if (source.GetProperty("kind").GetString() != "release") continue;
 
             // THE FILENAME OUT OF THE DOWNLOAD URL. The catalog no longer names the asset
@@ -257,6 +272,23 @@ public class PluginCatalogTests
             // a file no release builds is a download that 404s for every user.
             var asset = source.GetProperty("latest").GetString()!.Split('/').Last();
             Assert.Contains(asset, workflow);
+        }
+    }
+
+    /// <summary>
+    /// THE SHAPES A SUBMISSION ADDS, checked before one is merged. The bot appends the entry pack
+    /// wrote — a managed "url" source, or a native entry with per-RID "sources" and no "source" at
+    /// all — and the first merged one must not be what breaks this suite.
+    /// </summary>
+    [Fact]
+    public void ThirdPartyEntries_PassTheSameDownloadChecks()
+    {
+        var fixture = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(RepoRoot(), "cxagent.Tests", "fixtures", "catalogs", "third-party.json")));
+        foreach (var entry in fixture.RootElement.GetProperty("plugins").EnumerateArray())
+        {
+            AssertDownloadable(entry);
+            AssertPlatformsMatchDownloads(entry);
         }
     }
 }
