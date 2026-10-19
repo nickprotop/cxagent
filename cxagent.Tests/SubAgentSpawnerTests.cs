@@ -2206,13 +2206,13 @@ public class SubAgentSpawnerTests
         Assert.Equal("local:mock-model", child!.ModelId);
     }
 
-    private static async Task<Job> SpawnRowAsync()
+    private static async Task<Job> SpawnRowAsync(ToolCall? call = null)
     {
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse
         {
             Text = "", StopReason = "tool_use",
-            ToolCalls = [SpawnCall(description: "Explore the repository", prompt: "explore it")],
+            ToolCalls = [call ?? SpawnCall(description: "Explore the repository", prompt: "explore it")],
         });
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
         var jobs = new NullJobPanel();
@@ -2244,4 +2244,34 @@ public class SubAgentSpawnerTests
         Assert.True(d.InputSchema.GetProperty("properties").TryGetProperty("provider", out var provider));
         Assert.Contains("a type that runs on any provider has none, and needs one named", provider.GetProperty("description").GetString(), StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// A SPAWN THE SPAWNER REFUSED NEVER RAN, so its row must not read "✔ done": seen live, a planner
+    /// with no default provider showed "done · 0s" beside the retry that really ran. Refused for a
+    /// missing prompt, an unknown type, and a provider its type does not offer.
+    /// </summary>
+    [Theory]
+    [InlineData("", null, null)]
+    [InlineData("find it", "researcher", null)]
+    [InlineData("find it", null, "deepseek")]
+    public async Task ARefusedSpawn_FailsItsRow(string prompt, string? type, string? provider)
+    {
+        var args = new Dictionary<string, string> { ["description"] = "d", ["prompt"] = prompt };
+        if (type is not null) args["type"] = type;
+        if (provider is not null) args["provider"] = provider;
+        var job = await SpawnRowAsync(new ToolCall
+        {
+            Id = "call-1",
+            Name = "agent",
+            Arguments = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(args)).RootElement,
+        });
+
+        Assert.Equal(JobState.Failed, job.State);
+        Assert.False(job.Result!.Success);
+    }
+
+    /// <summary>The guard: a spawn that ran and answered still settles as done.</summary>
+    [Fact]
+    public async Task ASpawnThatRan_StillSucceeds() =>
+        Assert.Equal(JobState.Succeeded, (await SpawnRowAsync()).State);
 }

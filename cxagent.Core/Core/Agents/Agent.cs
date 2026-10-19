@@ -3051,6 +3051,10 @@ public sealed class Agent
         // defect rather than a shortcut. Text-only sources (spawn, skills, todos, ask_user, MCP)
         // carry a null Result and lose nothing: their text is the whole answer they ever had.
         ToolOutcome outcome;
+        // WHAT THE SPAWN LINK ANSWERED, kept apart from the chain's result: a spawn that ran answers
+        // with an envelope or a receipt, both carrying a state; one the spawner refused (no prompt, an
+        // unknown type, a provider its type does not offer) answers with plain text and no child.
+        string? spawned = null;
         try
         {
             // SPAWN FIRST, then MCP, then the built-ins — each returning null for a name it does not
@@ -3085,7 +3089,7 @@ public sealed class Agent
 
             if (Withheld(call.Name) is { } refusal) outcome = refusal;
             else
-            outcome = Text(CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id, _turnTools) : null)
+            outcome = Text(spawned = CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id, _turnTools) : null)
                 // REACHING A KEPT CHILD, beside the tool that made it. The token is THIS turn's, not
                 // the one that spawned the child — that one died with its turn, and a wake is
                 // governed by whoever asked for it.
@@ -3294,18 +3298,19 @@ public sealed class Agent
         // the error message, the envelope's state, the recorded length.
         var result = outcome.Text;
 
-        // A REFUSAL IS THE ONLY FAILURE THIS CAN SEE. The gate set PermissionDenied, so that is a
-        // fact rather than a reading of the answer; a call that never ran did not succeed, and the
-        // badge says auto-denied off this state.
+        // TWO FAILURES THIS CAN SEE, both calls that never ran. A permission refusal: the gate set
+        // PermissionDenied, so that is a fact rather than a reading of the answer, and the badge says
+        // auto-denied off this state. A refused spawn: no child ran, and that is read off the
+        // envelope's absence — the spawner's own protocol — not off the wording of an answer.
         //
         // EVERYTHING ELSE THAT FINISHED, SUCCEEDED. A run that threw or was cancelled never reaches
         // here — those paths rethrow above — so what is left is a child that finished and answered,
         // and what the answer MEANS is the reader's to judge. Sniffing it for failure words marked a
         // planner failed for writing "tuple deconstruction is required", and marked an explorer
         // failed for the confident negative its own briefing asks it to report.
-        job.State = outcome.Result?.PermissionDenied == true
-            ? JobState.Failed
-            : JobState.Succeeded;
+        var spawnRefused = spawned is not null && SubAgentEnvelope.StateOf(spawned) is null;
+        var failed = outcome.Result?.PermissionDenied == true || spawnRefused;
+        job.State = failed ? JobState.Failed : JobState.Succeeded;
         job.CompletedAt = DateTimeOffset.UtcNow;
 
         // FROM THE PLUGIN'S OWN RESULT, overriding only what this method genuinely owns. Building a
@@ -3318,9 +3323,8 @@ public sealed class Agent
         // its row rendered plain "done". Starting from the object ends the category rather than
         // adding a third channel for the next field.
         //
-        // THE OVERRIDES ARE THE FIELDS AGENT REALLY DOES OWN. Success/ExitCode come from
-        // LooksLikeFailure over the model-facing TEXT, which is broader than an executor's own verdict —
-        // a spawn envelope or an MCP refusal is a failure with no JobResult behind it at all. And
+        // THE OVERRIDES ARE THE FIELDS AGENT REALLY DOES OWN. Success/ExitCode say whether the call
+        // ran: false only for a refused spawn, which has no JobResult behind it at all. And
         // Duration is Agent's stopwatch, rebased by ctx.WorkStarted so it measures the WORK rather
         // than how long a user took to approve it; ShellJobExecutor's own copy would not be.
         //
@@ -3332,10 +3336,10 @@ public sealed class Agent
             Output = new Dictionary<string, object?> { ["content"] = result },
         }) with
         {
-            Success = true,
-            ExitCode = 0,
+            Success = !spawnRefused,
+            ExitCode = spawnRefused ? 1 : 0,
             Duration = DateTimeOffset.UtcNow - started,
-            ErrorMessage = null,
+            ErrorMessage = spawnRefused ? result : null,
         };
         _jobs.ToolUpdated(job);
 
@@ -3357,6 +3361,7 @@ public sealed class Agent
             // job.Result is built from a few lines above — so the word here and the row on screen
             // cannot disagree.
             Outcome: outcome.Result?.PermissionDenied == true ? "denied"
+                : spawnRefused ? "failed"
                 : "succeeded",
             DurationMs: (long)(DateTimeOffset.UtcNow - started).TotalMilliseconds,
             ResultChars: result.Length,
