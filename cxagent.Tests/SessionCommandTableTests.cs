@@ -518,7 +518,7 @@ public class SessionCommandTableTests
     {
         var help = SessionCommands.HelpLines();
 
-        Assert.Contains("`/plugin load <name|path> [--once]`", help, StringComparison.Ordinal);
+        Assert.Contains("`/plugin load <name|path> [{ settings }]`", help, StringComparison.Ordinal);
         Assert.DoesNotContain("\\[", help, StringComparison.Ordinal);
     }
 
