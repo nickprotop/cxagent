@@ -428,8 +428,8 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             // THE BRIEFING COMES FROM THE TYPE, never from the parent (D9). Config is the only
             // legitimate author of the highest-authority text in a child's prompt.
             Briefing = null,
-            CallerContext = WithPlanPath(Read(call, "context"), type, Read(call, "description"),
-                canWrite: ChildCanWrite(turnTools, type), out planPath),
+            CallerContext = WithPlanPath(Read(call, "context"), type,
+                new PlanTarget(Read(call, "description"), ChildCanWrite(turnTools, type), root.Root), out planPath),
             // The label the USER sees — status row and permission prompts. Never sent to the model.
             Label = Read(call, "description"),
             Type = type,
@@ -463,7 +463,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             _ = BackgroundRunner.Start(new BackgroundWork(_store, _store.Find(keptAs)!, run, prompt,
                 _factory.ConcurrencySlot, delivery,
                 result => SubAgentEnvelope.Render(EnvelopeChild.Of(child), keptAs,
-                    result with { Text = WithPlanOutcome(result.Text, planPath) }, SubAgentEnvelope.WorkOf(child))));
+                    result with { Text = WithPlanOutcome(result.Text, planPath, root.Root) }, SubAgentEnvelope.WorkOf(child))));
             return SubAgentEnvelope.Receipt(EnvelopeChild.Of(child), keptAs, ChildCanWrite(turnTools, type));
         }
 
@@ -540,7 +540,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                         adopted = true;
                         _ = BackgroundRunner.Adopt(new BackgroundWork(_store, _store.Find(keptAs!)!, run, prompt, slot, reports,
                                 result => SubAgentEnvelope.Render(EnvelopeChild.Of(child), keptAs,
-                                    result with { Text = WithPlanOutcome(result.Text, planPath) }, SubAgentEnvelope.WorkOf(child))),
+                                    result with { Text = WithPlanOutcome(result.Text, planPath, root.Root) }, SubAgentEnvelope.WorkOf(child))),
                             send).ContinueWith(_ => foreground.Dispose(), TaskScheduler.Default);
                         return SubAgentEnvelope.Moved(EnvelopeChild.Of(child), keptAs!, ChildCanWrite(turnTools, type));
                     }
@@ -559,7 +559,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                     // re-register the same child and mint a second handle for it. It goes into the envelope
                     // so the model can reach the child without a listing call.
                     return envelope = SubAgentEnvelope.Render(EnvelopeChild.Of(child), keptAs,
-                        result with { Text = WithPlanOutcome(result.Text, planPath) }, SubAgentEnvelope.WorkOf(child));
+                        result with { Text = WithPlanOutcome(result.Text, planPath, root.Root) }, SubAgentEnvelope.WorkOf(child));
                 }
                 finally
                 {
@@ -630,7 +630,23 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// the same file, both do, and the survivor is whichever finished last. The loser's run is
     /// spent and its plan is gone with no error anywhere.</para>
     /// </summary>
-    private string PlanPathFor(string? label)
+    /// <summary>
+    /// What a plan path is made for: the child's label (the file name), whether it can write at all, and
+    /// the folder it works in — its own when the spawn named one.
+    /// </summary>
+    private sealed record PlanTarget(string? Label, bool CanWrite, ChildRoot? Root);
+
+    /// <summary>The folder a child works in: its own root, or this agent's.</summary>
+    private string? ChildFolder(ChildRoot? root) => root?.Absolute ?? _factory.WorkingDir;
+
+    /// <summary>
+    /// A path the child was given, as THIS agent must open it. The child is told paths relative to its own
+    /// folder; a parent handed `plans/x.md` for a child working in `sub` would open the wrong file.
+    /// </summary>
+    private static string ForParent(string childPath, ChildRoot? root) =>
+        root is null ? childPath : $"{root.Relative}/{childPath}";
+
+    private string PlanPathFor(string? label, ChildRoot? root)
     {
         var slug = new string((label ?? "plan")
             .Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-')
@@ -647,17 +663,17 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         // ceiling the collision is accepted rather than the spawn refused, since a lost plan is a
         // smaller failure than a parent that cannot delegate at all.
         var candidate = $"plans/{slug}.md";
-        for (var n = 2; n <= 20 && PlanFileExists(candidate); n++)
+        for (var n = 2; n <= 20 && PlanFileExists(candidate, root); n++)
             candidate = $"plans/{slug}-{n}.md";
         return candidate;
     }
 
     /// <summary>Whether something is already at this path, resolved the same way the outcome check
     /// resolves it — a relative path means nothing without the working directory.</summary>
-    private bool PlanFileExists(string relative)
+    private bool PlanFileExists(string relative, ChildRoot? root)
     {
-        var full = _factory.WorkingDir is { Length: > 0 } root
-            ? Path.Combine(root, relative) : relative;
+        var full = ChildFolder(root) is { Length: > 0 } folder
+            ? Path.Combine(folder, relative) : relative;
         try { return File.Exists(full); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
             or ArgumentException or NotSupportedException) { return false; }
@@ -672,9 +688,9 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// planners reach for live. Searching deeper would start proposing READMEs. Nothing is read
     /// here — the parent is handed a path and decides for itself.</para>
     /// </summary>
-    private string? StrayPlan()
+    private string? StrayPlan(ChildRoot? childRoot)
     {
-        var root = _factory.WorkingDir;
+        var root = ChildFolder(childRoot);
         if (string.IsNullOrWhiteSpace(root)) return null;
 
         try
@@ -683,7 +699,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             return new DirectoryInfo(root).GetFiles("*.md", SearchOption.TopDirectoryOnly)
                 .Where(f => f.LastWriteTimeUtc >= cutoff && f.Length > 0)
                 .OrderByDescending(f => f.LastWriteTimeUtc)
-                .FirstOrDefault()?.Name;
+                .FirstOrDefault()?.Name is { } name ? ForParent(name, childRoot) : null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
             or ArgumentException or NotSupportedException) { return null; }
@@ -726,14 +742,14 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// </param>
     /// <param name="context">What the parent passed down, which this may append to.</param>
     /// <param name="type">The child's type — only a plan-writing one gets a path.</param>
-    /// <param name="label">The child's short name, used to build a readable filename.</param>
-    /// <param name="planPath">Where the plan should be written, or null when the child cannot write.</param>
-    private string? WithPlanPath(string? context, AgentType type, string? label,
-        bool canWrite, out string? planPath)
+    /// <param name="target">The child's label (the file name), whether it can write, and its folder.</param>
+    /// <param name="planPath">Where the plan should be written — relative to the CHILD's folder — or null
+    /// when the child cannot write.</param>
+    private string? WithPlanPath(string? context, AgentType type, PlanTarget target, out string? planPath)
     {
         planPath = null;
-        if (!WritesAPlan(type) || !canWrite) return context;
-        planPath = PlanPathFor(label);
+        if (!WritesAPlan(type) || !target.CanWrite) return context;
+        planPath = PlanPathFor(target.Label, target.Root);
 
         // THE PATH REPEATED, AND THE ALTERNATIVE NAMED AND REFUSED. Told once, politely, two
         // planners in one session both ignored it and wrote /tmp/<repo>/REFACTOR_PLAN.md instead —
@@ -755,31 +771,32 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// is exactly what happened, and the builder it fed then went looking for Rust sources in a C#
     /// repository.</para>
     /// </summary>
-    private string WithPlanOutcome(string text, string? planPath)
+    private string WithPlanOutcome(string text, string? planPath, ChildRoot? root)
     {
         if (planPath is null) return text;
 
-        var full = _factory.WorkingDir is { Length: > 0 } root
-            ? Path.Combine(root, planPath) : planPath;
+        var full = ChildFolder(root) is { Length: > 0 } folder
+            ? Path.Combine(folder, planPath) : planPath;
+        var shown = ForParent(planPath, root);
 
         bool written;
         try { written = File.Exists(full) && new FileInfo(full).Length > 0; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
             or ArgumentException or NotSupportedException) { written = false; }
 
-        if (written) return text + $"\n\n[cxagent] plan file: {planPath}";
+        if (written) return text + $"\n\n[cxagent] plan file: {shown}";
 
         // A PLAN AT THE WRONG PATH IS STILL A PLAN. Measured: two planners in one session each wrote
         // a real 303-line plan to REFACTOR_PLAN.md at the repository root, and the parent was told
         // "there is no plan" — true of the path it asked for, false about the work. It re-spawned
         // the planner, which made the same choice again. Naming what was found turns a wasted run
         // into a usable one, and the parent still learns the path was ignored.
-        if (StrayPlan() is { } stray)
-            return text + $"\n\n[cxagent] NO PLAN FILE at {planPath}, but the planner wrote "
+        if (StrayPlan(root) is { } stray)
+            return text + $"\n\n[cxagent] NO PLAN FILE at {shown}, but the planner wrote "
                         + $"`{stray}` instead. Read that, and point a builder at that path — the "
                         + "planner ignored the path it was given, so it is not where you asked.";
 
-        return text + $"\n\n[cxagent] NO PLAN FILE was written at {planPath}. There is no plan. Do "
+        return text + $"\n\n[cxagent] NO PLAN FILE was written at {shown}. There is no plan. Do "
                     + "not build from the text above, and do not write a plan yourself from it — send "
                     + "the planner again, telling it the previous run wrote nothing.";
     }

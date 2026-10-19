@@ -1333,6 +1333,71 @@ public class BackgroundScenarioTests : IDisposable
     }
 
     /// <summary>
+    /// A ROOTED PLANNER WRITES IN ITS OWN FOLDER, and the parent is told the path from ITS folder. The
+    /// planner is told `plans/…` relative to where it works; the parent opens `sub/plans/…`.
+    /// </summary>
+    [Fact]
+    public async Task RootedPlanner_WritesInItsFolder_AndTheParentIsToldItsPath()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "sub"));
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "find thing", prompt = "plan it", type = "planner", root = "sub" }, id: "s1")),
+            Answer("started"), Answer("read it"));
+        var child = new ScriptedProvider(
+            Use(Calls.Named(Tool.WriteFile, new { path = "plans/find-thing.md", content = "# the plan" }, id: "w1")),
+            Answer("planned"));
+        var s = Open(parent, child);
+
+        await Turn(s.Session, "go");
+        Assert.True(await Poll.Until(() => parent.Calls == 3));
+        await Idle(s.Session);
+
+        Assert.True(File.Exists(Path.Combine(_dir, "sub", "plans", "find-thing.md")));
+        Assert.Contains("[cxagent] plan file: sub/plans/find-thing.md", parent.Last);
+    }
+
+    /// <summary>A rooted planner's stray plan is looked for in ITS folder, and named from the parent's.</summary>
+    [Fact]
+    public async Task RootedPlanner_AStrayPlan_IsFoundInItsFolder()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "sub"));
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "find thing", prompt = "plan it", type = "planner", root = "sub" }, id: "s1")),
+            Answer("started"), Answer("read it"));
+        var child = new ScriptedProvider(
+            Use(Calls.Named(Tool.WriteFile, new { path = "MYPLAN.md", content = "# the plan" }, id: "w1")),
+            Answer("planned"));
+        var s = Open(parent, child);
+
+        await Turn(s.Session, "go");
+        Assert.True(await Poll.Until(() => parent.Calls == 3));
+        await Idle(s.Session);
+
+        Assert.Contains("NO PLAN FILE at sub/plans/find-thing.md, but the planner wrote `sub/MYPLAN.md`", parent.Last);
+    }
+
+    /// <summary>Collision numbering looks in the rooted planner's own plans/ folder.</summary>
+    [Fact]
+    public async Task RootedPlanner_ANameTakenInItsFolder_IsNumbered()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "sub", "plans"));
+        File.WriteAllText(Path.Combine(_dir, "sub", "plans", "find-thing.md"), "an earlier plan");
+        var parent = new ScriptedProvider(
+            Use(Calls.Named(Tool.Agent, new { description = "find thing", prompt = "plan it", type = "planner", root = "sub" }, id: "s1")),
+            Answer("started"), Answer("read it"));
+        var child = new ScriptedProvider(
+            Use(Calls.Named(Tool.WriteFile, new { path = "plans/find-thing-2.md", content = "# the plan" }, id: "w1")),
+            Answer("planned"));
+        var s = Open(parent, child);
+
+        await Turn(s.Session, "go");
+        Assert.True(await Poll.Until(() => parent.Calls == 3));
+        await Idle(s.Session);
+
+        Assert.Contains("[cxagent] plan file: sub/plans/find-thing-2.md", parent.Last);
+    }
+
+    /// <summary>
     /// S37. A BACKGROUND CHILD'S PERMISSION REQUEST NAMES IT, and a denial costs it that one call: it
     /// carries on and reports.
     ///
