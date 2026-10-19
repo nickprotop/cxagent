@@ -47,7 +47,10 @@ def extract_entry(body):
     try:
         entry = json.loads(text)
     except json.JSONDecodeError as e:
-        return None, f"the catalog entry is not JSON: {e.msg} at line {e.lineno}, column {e.colno}."
+        # "OF THE JSON": counted from its first line, not from the issue's, which holds the fences.
+        return None, f"the catalog entry is not JSON: {e.msg} at line {e.lineno} of the JSON, column {e.colno}."
+    except RecursionError:
+        return None, "the catalog entry is not JSON this bot can read: it is nested too deeply."
     if isinstance(entry, dict) and "plugins" in entry:
         return None, "this is a whole plugins.json; paste the one entry cxagent plugin pack wrote."
     if not isinstance(entry, dict):
@@ -108,6 +111,7 @@ def merged_catalog(catalog_text, entry):
 
 BOT_NAME = "github-actions[bot]"
 BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
+BOT_APP = "github-actions"
 
 
 class Runner:
@@ -122,6 +126,12 @@ class Runner:
         if check and done.returncode != 0:
             raise BotError(f"{' '.join(args[:3])} exited {done.returncode}: {done.stderr.strip()[:500]}")
         return done.returncode, done.stdout
+
+
+def quoted(text):
+    """Text the author controls, as inline code: an @mention in it pings nobody from the bot's account,
+    and markdown in it renders as nothing but itself."""
+    return "`" + str(text).replace("`", "'").replace("\n", " ") + "`"
 
 
 def verify_problems(code, stdout):
@@ -139,23 +149,47 @@ def verify_problems(code, stdout):
 
 
 def find_pr(runner, branch):
-    """The newest PR from this issue's branch, open, closed or merged; None if there never was one."""
-    _, out = runner.run(["gh", "pr", "list", "--head", branch, "--state", "all", "--json", "number,state,url"])
-    prs = json.loads(out or "[]")
-    return max(prs, key=lambda p: p["number"]) if prs else None
+    """The newest PR the bot itself opened from this issue's branch — open, closed or merged — or None.
+
+    THE BOT'S OWN, FROM THIS REPOSITORY. gh matches --head by branch name alone, so a fork can open a
+    PR from a branch named plugin-submission/<n> too; editing that one would put the bot's "verified"
+    on a diff the bot never made."""
+    _, out = runner.run(["gh", "pr", "list", "--head", branch, "--app", BOT_APP, "--state", "all",
+                         "--json", "number,state,url,isCrossRepository"])
+    mine = [p for p in json.loads(out or "[]") if not p.get("isCrossRepository")]
+    return max(mine, key=lambda p: p["number"]) if mine else None
+
+
+def title_of(entry, updating):
+    return f"{'Update' if updating else 'Add'} {entry['name']} {entry['version']} in the plugin catalog"
+
+
+def held_elsewhere(runner, entry, branch):
+    """Another open submission PR already adding or updating this name: two would both pass alone
+    against master, and the second merged by hand would list the name twice."""
+    _, out = runner.run(["gh", "pr", "list", "--state", "open", "--app", BOT_APP,
+                         "--json", "number,headRefName,title"])
+    for pr in json.loads(out or "[]"):
+        title = pr.get("title", "")
+        if pr.get("headRefName") != branch and (title.startswith(f"Add {entry['name']} ")
+                                                or title.startswith(f"Update {entry['name']} ")):
+            return pr["number"]
+    return None
 
 
 def refused_comment(name, problems, run_url):
-    lines = [f"**{name} is not ready yet.** Fix these, then edit this issue to check it again:", ""]
-    lines += [f"- {p}" for p in problems]
+    """name is the entry's, or None when there is no entry to name."""
+    who = quoted(name) if name is not None else "This submission"
+    lines = [f"**{who} is not ready yet.** Fix these, then edit this issue to check it again:", ""]
+    lines += [f"- {quoted(p)}" for p in problems]
     if run_url:
         lines += ["", f"[This check's log]({run_url})"]
     return "\n".join(lines)
 
 
 def passed_comment(entry, pr_url, run_url):
-    lines = [f"**Verified.** {entry['name']} {entry['version']}: every zip downloaded over https, its sha256 "
-             "matched, and its contents agree with the entry. No plugin code ran.", "",
+    lines = [f"**Verified.** {quoted(entry['name'])} {quoted(entry['version'])}: every zip downloaded over https, "
+             "its sha256 matched, and its contents agree with the entry. No plugin code ran.", "",
              f"The pull request adding it is {pr_url}. A maintainer reviews and merges it; editing this "
              "issue checks the entry again and updates the pull request."]
     if run_url:
@@ -163,17 +197,27 @@ def passed_comment(entry, pr_url, run_url):
     return "\n".join(lines)
 
 
+def failed_comment(run_url):
+    return ("**The check could not finish.** This is the bot's problem, not your entry's; a maintainer "
+            f"will look. [This check's log]({run_url})")
+
+
 def pr_body(entry, number, updating):
-    platforms = ", ".join(entry.get("compatibility", {}).get("platforms", []))
-    tools = ", ".join(f"{t['name']} (gated {t['gated']})" for t in entry.get("tools", []))
+    """Every value read defensively: verify passes a tool with no "gated" (it means false) and ignores
+    what it does not check, and this runs on whatever the author pasted."""
+    compatibility = entry.get("compatibility") if isinstance(entry.get("compatibility"), dict) else {}
+    platforms = ", ".join(quoted(p) for p in compatibility.get("platforms", []) if isinstance(p, str))
+    tools = entry.get("tools") if isinstance(entry.get("tools"), list) else []
+    listed = ", ".join(f"{quoted(t.get('name', ''))} (gated {json.dumps(t.get('gated', False)).strip(chr(34))})"
+                       for t in tools if isinstance(t, dict))
     return "\n".join([
-        f"{'Updates' if updating else 'Adds'} **{entry['name']}** {entry['version']} in the plugin catalog, from #{number}.",
+        f"{'Updates' if updating else 'Adds'} {quoted(entry['name'])} {quoted(entry['version'])} in the plugin catalog, from #{number}.",
         "",
-        f"- Repository: {entry.get('repository')}",
-        f"- Publisher: {entry.get('publisher')}",
-        f"- License: {entry.get('license')}",
-        f"- Kind: {entry.get('kind')}, platforms: {platforms}",
-        f"- Tools: {tools}",
+        f"- Repository: {quoted(entry.get('repository'))}",
+        f"- Publisher: {quoted(entry.get('publisher'))}",
+        f"- License: {quoted(entry.get('license'))}",
+        f"- Kind: {quoted(entry.get('kind'))}, platforms: {platforms}",
+        f"- Tools: {listed}",
         "",
         "Verified by the submission bot: each zip downloaded over https, its sha256 matched, and its sidecar "
         "and files agree with the entry. No plugin code ran. Review asks whether the entry is truthful and "
@@ -196,20 +240,34 @@ def handle(event, runner, root, cxagent="cxagent", run_url=""):
     number = issue["number"]
     branch = f"plugin-submission/{number}"
     base = event["repository"]["default_branch"]
-    pr = find_pr(runner, branch)
-    is_open = pr is not None and pr["state"] == "OPEN"
 
     if event.get("action") == "closed":
-        if is_open:
+        pr = find_pr(runner, branch)
+        if pr is not None and pr["state"] == "OPEN":
             runner.run(["gh", "pr", "close", str(pr["number"]), "--comment", f"Closed with #{number}."])
+        elif pr is None:
+            # A BRANCH WITH NO PR is what a run cancelled between push and create leaves behind.
+            runner.run(["git", "push", "origin", "--delete", branch], check=False)
         return "closed"
 
+    # A CLOSED ISSUE IS DONE — withdrawn by its author, or merged. An edit or a label on it changes
+    # nothing; reopening the issue is the way back in.
+    if issue.get("state") == "closed":
+        return "issue closed"
+
+    pr = find_pr(runner, branch)
+    is_open = pr is not None and pr["state"] == "OPEN"
     catalog_path = Path(root) / "plugins" / "plugins.json"
     catalog_text = catalog_path.read_text(encoding="utf-8")
     catalog = json.loads(catalog_text)
 
     entry, problem = extract_entry(issue.get("body"))
     problems = [problem] if problem else catalog_problems(entry, catalog)
+    if not problems:
+        holder = held_elsewhere(runner, entry, branch)
+        if holder is not None:
+            problems = [f"name: '{entry['name']}' is already submitted in #{holder}, waiting for review; "
+                        "one submission per name at a time."]
     if not problems:
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "entry.json"
@@ -223,25 +281,34 @@ def handle(event, runner, root, cxagent="cxagent", run_url=""):
         if is_open:
             runner.run(["gh", "pr", "close", str(pr["number"]), "--comment",
                         f"Closed: the entry in #{number} no longer passes; see the issue."])
-        comment(runner, number, refused_comment(entry["name"] if entry else "This submission", problems, run_url))
+        comment(runner, number, refused_comment(entry["name"] if entry else None, problems, run_url))
         return "refused"
 
     updating = any(p.get("name") == entry["name"] for p in catalog["plugins"])
-    title = f"{'Update' if updating else 'Add'} {entry['name']} {entry['version']} in the plugin catalog"
-    runner.run(["git", "checkout", "-B", branch, f"origin/{base}"])
-    catalog_path.write_text(merged_catalog(catalog_text, entry), encoding="utf-8")
-    runner.run(["git", "add", "plugins/plugins.json"])
+    title = title_of(entry, updating)
+    merged = merged_catalog(catalog_text, entry)
+    # BUILT BEFORE ANYTHING IS PUSHED, so a failure here cannot leave a branch with no PR behind it.
+    body = pr_body(entry, number, updating)
 
-    # AN EDIT TO THE NOTES ALONE CHANGES NOTHING TO COMMIT; committing anyway would fail the run.
-    changed, _ = runner.run(["git", "diff", "--cached", "--quiet"], check=False)
-    if changed != 0:
+    # REOPENED BEFORE THE BRANCH MOVES: GitHub refuses to reopen a PR whose branch was force-pushed
+    # while it was closed, and the branch has not moved since the run that closed it. One that still
+    # will not reopen (its branch deleted, say) is replaced by a new PR.
+    if pr is not None and pr["state"] == "CLOSED":
+        reopened, _ = runner.run(["gh", "pr", "reopen", str(pr["number"])], check=False)
+        pr = pr if reopened == 0 else None
+
+    # ONLY WHEN THE CATALOG CHANGES: an edit to the notes alone leaves the branch, and the PR's head
+    # with any review of it, where it is.
+    runner.run(["git", "fetch", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}"], check=False)
+    has_branch, current = runner.run(["git", "show", f"origin/{branch}:plugins/plugins.json"], check=False)
+    if has_branch != 0 or current != merged:
+        runner.run(["git", "checkout", "-B", branch, f"origin/{base}"])
+        catalog_path.write_text(merged, encoding="utf-8")
+        runner.run(["git", "add", "plugins/plugins.json"])
         runner.run(["git", "-c", f"user.name={BOT_NAME}", "-c", f"user.email={BOT_EMAIL}", "commit", "-m", title])
         runner.run(["git", "push", "--force", "origin", branch])
 
-    body = pr_body(entry, number, updating)
     if pr is not None and pr["state"] in ("OPEN", "CLOSED"):
-        if pr["state"] == "CLOSED":
-            runner.run(["gh", "pr", "reopen", str(pr["number"])])
         runner.run(["gh", "pr", "edit", str(pr["number"]), "--title", title, "--body", body])
         url = pr["url"]
     else:
@@ -253,16 +320,26 @@ def handle(event, runner, root, cxagent="cxagent", run_url=""):
     return "passed"
 
 
+def run(event, runner, root, cxagent, run_url):
+    """handle, with any failure of the bot's own said on the issue: a red run nobody watches tells the
+    author nothing, and they would wait on a check that is never coming."""
+    try:
+        print(handle(event, runner, root, cxagent, run_url))
+        return 0
+    except Exception as e:  # noqa: BLE001 — every failure, not just BotError, must reach the author
+        print(f"::error::{type(e).__name__}: {e}")
+        try:
+            comment(runner, event["issue"]["number"], failed_comment(run_url))
+        except Exception as again:  # noqa: BLE001
+            print(f"::error::could not comment either: {again}")
+        return 1
+
+
 def main():
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     run_url = f"{server}/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}"
-    try:
-        print(handle(event, Runner(os.getcwd()), os.getcwd(), os.environ.get("CXAGENT", "cxagent"), run_url))
-    except BotError as e:
-        print(f"::error::{e}")
-        return 1
-    return 0
+    return run(event, Runner(os.getcwd()), os.getcwd(), os.environ.get("CXAGENT", "cxagent"), run_url)
 
 
 if __name__ == "__main__":

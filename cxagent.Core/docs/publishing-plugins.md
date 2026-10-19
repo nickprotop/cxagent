@@ -50,10 +50,14 @@ leave it off to check an entry pointing at zips on disk before you upload.
 - on each edit of the issue, checks again: a passing edit updates the pull request, a failing one
   closes it until a later edit passes.
 
-A maintainer reviews the pull request and merges it; merging closes your issue.
+A maintainer reviews the pull request and merges it; merging closes your issue. Closing the issue
+yourself withdraws the submission and closes its pull request. Edits to a closed issue do nothing;
+reopen it to submit again.
 
 **Or as a pull request** adding your entry to `plugins/plugins.json`. CI runs
-`verify --https-only` on every third-party entry in the file.
+`verify --https-only` on every third-party entry in the file. That is all it checks: the name and
+version rules below are the reviewer's to apply on this path, and a first-time contributor's CI
+waits for a maintainer to approve it. The issue is the quicker way.
 
 ## Names and updates
 
@@ -66,6 +70,16 @@ A maintainer reviews the pull request and merges it; merging closes your issue.
 
 An update replaces your entry in place. Its version must be higher: cxagent offers an update whenever
 the version differs, so an equal or lower one would be offered as an update that changes nothing.
+
+One submission per name at a time: while one issue's pull request for a name waits for review,
+another issue submitting the same name is refused, naming that pull request.
+
+## The entry's shape
+
+`pack` writes it, and verify holds a hand-edited one to the same shape: a `source` (or, for a native
+plugin, one `sources` entry per platform) with `"kind": "url"` and a `"url"`, platforms from
+`linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64` and `win-arm64`, and every value of the
+type pack writes.
 
 ## What review checks
 

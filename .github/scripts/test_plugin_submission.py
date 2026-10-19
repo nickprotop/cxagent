@@ -87,6 +87,16 @@ class ExtractEntry(unittest.TestCase):
         self.assertIn("name", problem)
 
 
+    def test_json_nested_too_deep_is_a_problem_not_a_crash(self):
+        entry, problem = ps.extract_entry(form_body("[" * 50000))
+        self.assertIsNone(entry)
+        self.assertIn("not JSON", problem)
+
+    def test_a_json_error_says_where_in_the_json(self):
+        _, problem = ps.extract_entry(form_body(json.dumps(ENTRY) + "\nthanks!"))
+        self.assertIn("line 2 of the JSON", problem)
+
+
 class CatalogRules(unittest.TestCase):
     def test_a_new_name_passes(self):
         self.assertEqual(ps.catalog_problems(with_(name="sunrise"), CATALOG), [])
@@ -138,36 +148,51 @@ class MergedCatalog(unittest.TestCase):
 import tempfile as _tempfile
 
 OK = (0, json.dumps({"ok": True, "problems": []}))
+NO_BRANCH = (128, "")
+
+
+def prs(*rows):
+    """What `gh pr list --json` answers: rows of (number, state, cross-repository)."""
+    return 0, json.dumps([{"number": n, "state": st, "url": f"https://x/pull/{n}", "isCrossRepository": cross}
+                          for n, st, cross in rows])
 
 
 class FakeRunner:
-    """Records every command; answers by the first matching prefix of the joined arguments."""
+    """Records every command; answers by the first matching prefix of the joined arguments. Defaults
+    are a first submission: no PR yet, no branch yet, verify passing."""
 
     def __init__(self, **replies):
         self.calls = []
-        self.replies = {
-            "gh pr list": (0, "[]"),
+        self.replies = {k.replace("_", " "): v for k, v in replies.items()}
+        for prefix, reply in {
+            "gh pr list --head": (0, "[]"),
+            "gh pr list --state open": (0, "[]"),
+            "git show": NO_BRANCH,
             "cxagent plugin verify": OK,
-            "git diff --cached --quiet": (1, ""),
             "gh pr create": (0, "https://github.com/nickprotop/cxagent/pull/9\n"),
-        }
-        self.replies.update({k.replace("_", " "): v for k, v in replies.items()})
+        }.items():
+            self.replies.setdefault(prefix, reply)
 
     def run(self, args, check=True):
         self.calls.append(args)
         joined = " ".join(args)
         for prefix, reply in self.replies.items():
             if joined.startswith(prefix):
+                if check and reply[0] != 0 and not prefix.startswith(("git show", "cxagent")):
+                    raise ps.BotError(f"{prefix} failed")
                 return reply
         return 0, ""
 
     def ran(self, prefix):
         return [c for c in self.calls if " ".join(c).startswith(prefix)]
 
+    def index(self, prefix):
+        return next(i for i, c in enumerate(self.calls) if " ".join(c).startswith(prefix))
 
-def event(entry=ENTRY, action="opened", labels=("plugin-submission",), number=7):
+
+def event(entry=ENTRY, action="opened", labels=("plugin-submission",), number=7, state="open"):
     return {"action": action, "repository": {"default_branch": "master"},
-            "issue": {"number": number, "body": form_body(json.dumps(entry)),
+            "issue": {"number": number, "state": state, "body": form_body(json.dumps(entry)),
                       "labels": [{"name": n} for n in labels]}}
 
 
@@ -194,6 +219,20 @@ class Handle(unittest.TestCase):
         names = [p["name"] for p in json.loads(self.catalog.read_text())["plugins"]]
         self.assertEqual(names, ["calculator", "weather", "sunrise"])
 
+    def test_only_the_bots_own_prs_are_looked_for(self):
+        runner = FakeRunner()
+        ps.handle(event(with_(name="sunrise")), runner, self.root)
+        self.assertIn("--app", runner.ran("gh pr list --head")[0])
+
+    def test_a_pr_from_a_fork_on_the_same_branch_name_is_never_touched(self):
+        # A FORK'S BRANCH CAN SHARE THE NAME: gh matches --head by name alone, so a PR anyone opens
+        # from plugin-submission/7 in their fork must not be edited, reopened or linked as verified.
+        runner = FakeRunner(**{"gh_pr_list_--head": prs((9, "OPEN", True))})
+        self.assertEqual(ps.handle(event(with_(name="sunrise")), runner, self.root), "passed")
+        self.assertFalse(runner.ran("gh pr edit 9"))
+        self.assertFalse(runner.ran("gh pr reopen 9"))
+        self.assertTrue(runner.ran("gh pr create"))
+
     def test_verifys_problems_are_commented_one_per_line(self):
         refused = (1, json.dumps({"ok": False, "problems": [
             {"entry": "sunrise", "field": "source.sha256", "message": "is aaa, but the zip hashes to bbb."},
@@ -201,9 +240,24 @@ class Handle(unittest.TestCase):
         runner = FakeRunner(**{"cxagent_plugin_verify": refused})
         self.assertEqual(ps.handle(event(with_(name="sunrise")), runner, self.root), "refused")
         text = self.comment(runner)
-        self.assertIn("\n- source.sha256: is aaa, but the zip hashes to bbb.", text)
-        self.assertIn("\n- tools: leaves out 'x'.", text)
+        self.assertIn("\n- `source.sha256: is aaa, but the zip hashes to bbb.`", text)
+        self.assertIn("\n- `tools: leaves out 'x'.`", text)
         self.assertFalse(runner.ran("git"))
+
+    def test_text_from_the_entry_is_quoted_not_rendered(self):
+        runner = FakeRunner(**{"cxagent_plugin_verify": (1, json.dumps({"ok": False, "problems": [
+            {"entry": "x", "field": "name", "message": "says @everyone, the sidecar says `x`."}]}))})
+        ps.handle(event(with_(name="@org/team")), runner, self.root)
+        text = self.comment(runner)
+        self.assertIn("`@org/team`", text)
+        self.assertIn("- `name: says @everyone, the sidecar says 'x'.`", text)
+
+    def test_an_entry_with_no_name_is_called_this_submission(self):
+        runner = FakeRunner()
+        ev = event()
+        ev["issue"]["body"] = "please list my plugin"
+        ps.handle(ev, runner, self.root)
+        self.assertTrue(self.comment(runner).startswith("**This submission is not ready yet.**"))
 
     def test_a_catalog_problem_never_reaches_verify(self):
         runner = FakeRunner()
@@ -211,39 +265,67 @@ class Handle(unittest.TestCase):
         self.assertFalse(runner.ran("cxagent"))
         self.assertIn("this repository builds", self.comment(runner))
 
+    def test_a_name_another_open_submission_holds_is_refused(self):
+        other = (0, json.dumps([{"number": 5, "headRefName": "plugin-submission/3",
+                                 "title": "Add sunrise 1.0.0 in the plugin catalog"}]))
+        runner = FakeRunner(**{"gh_pr_list_--state_open": other})
+        self.assertEqual(ps.handle(event(with_(name="sunrise")), runner, self.root), "refused")
+        self.assertIn("#5", self.comment(runner))
+        self.assertFalse(runner.ran("cxagent"))
+
     def test_a_failing_rerun_closes_the_open_pr(self):
-        open_pr = (0, json.dumps([{"number": 9, "state": "OPEN", "url": "u"}]))
-        runner = FakeRunner(**{"gh_pr_list": open_pr})
+        runner = FakeRunner(**{"gh_pr_list_--head": prs((9, "OPEN", False))})
         ps.handle(event(with_(name="calculator"), action="edited"), runner, self.root)
         self.assertTrue(runner.ran("gh pr close 9"))
 
     def test_a_passing_rerun_updates_the_open_pr(self):
-        open_pr = (0, json.dumps([{"number": 9, "state": "OPEN", "url": "https://x/pull/9"}]))
-        runner = FakeRunner(**{"gh_pr_list": open_pr})
+        runner = FakeRunner(**{"gh_pr_list_--head": prs((9, "OPEN", False))})
         self.assertEqual(ps.handle(event(with_(name="sunrise"), action="edited"), runner, self.root), "passed")
         self.assertTrue(runner.ran("gh pr edit 9"))
         self.assertFalse(runner.ran("gh pr create"))
 
-    def test_a_closed_pr_is_reopened_by_a_passing_rerun(self):
-        closed_pr = (0, json.dumps([{"number": 9, "state": "CLOSED", "url": "https://x/pull/9"}]))
-        runner = FakeRunner(**{"gh_pr_list": closed_pr})
+    def test_a_closed_pr_is_reopened_before_the_branch_moves(self):
+        # GITHUB REFUSES TO REOPEN A PR WHOSE BRANCH WAS FORCE-PUSHED WHILE IT WAS CLOSED, so the
+        # reopen comes first, while the branch is still where the PR left it.
+        runner = FakeRunner(**{"gh_pr_list_--head": prs((9, "CLOSED", False))})
         ps.handle(event(with_(name="sunrise"), action="edited"), runner, self.root)
-        self.assertTrue(runner.ran("gh pr reopen 9"))
+        self.assertLess(runner.index("gh pr reopen 9"), runner.index("git push"))
+        self.assertTrue(runner.ran("gh pr edit 9"))
+
+    def test_a_pr_that_will_not_reopen_is_replaced_by_a_new_one(self):
+        runner = FakeRunner(**{"gh_pr_list_--head": prs((9, "CLOSED", False)), "gh_pr_reopen": (1, "")})
+        self.assertEqual(ps.handle(event(with_(name="sunrise"), action="edited"), runner, self.root), "passed")
+        self.assertFalse(runner.ran("gh pr edit 9"))
+        self.assertTrue(runner.ran("gh pr create"))
 
     def test_an_unchanged_entry_makes_no_commit(self):
-        open_pr = (0, json.dumps([{"number": 9, "state": "OPEN", "url": "https://x/pull/9"}]))
-        runner = FakeRunner(**{"gh_pr_list": open_pr, "git_diff_--cached_--quiet": (0, "")})
+        # THE BRANCH ALREADY HOLDS THIS EXACT CATALOG when only the notes changed: nothing to push,
+        # and the PR's head (and any review of it) stays where it is.
+        merged = ps.merged_catalog(self.catalog.read_text(), with_(name="sunrise"))
+        runner = FakeRunner(**{"gh_pr_list_--head": prs((9, "OPEN", False)),
+                               "git_show_origin/plugin-submission/7:plugins/plugins.json": (0, merged)})
         self.assertEqual(ps.handle(event(with_(name="sunrise"), action="edited"), runner, self.root), "passed")
         self.assertFalse(runner.ran("git commit"))
         self.assertFalse(runner.ran("git push"))
 
     def test_closing_the_issue_closes_the_pr_and_checks_nothing(self):
-        open_pr = (0, json.dumps([{"number": 9, "state": "OPEN", "url": "u"}]))
-        runner = FakeRunner(**{"gh_pr_list": open_pr})
-        self.assertEqual(ps.handle(event(action="closed"), runner, self.root), "closed")
+        runner = FakeRunner(**{"gh_pr_list_--head": prs((9, "OPEN", False))})
+        self.assertEqual(ps.handle(event(action="closed", state="closed"), runner, self.root), "closed")
         self.assertTrue(runner.ran("gh pr close 9"))
         self.assertFalse(runner.ran("cxagent"))
         self.assertFalse(runner.ran("gh issue comment"))
+
+    def test_closing_an_issue_with_no_pr_removes_a_left_over_branch(self):
+        runner = FakeRunner()
+        ps.handle(event(action="closed", state="closed"), runner, self.root)
+        self.assertTrue(runner.ran("git push origin --delete plugin-submission/7"))
+
+    def test_an_edit_to_a_closed_issue_does_nothing(self):
+        # A WITHDRAWN OR MERGED SUBMISSION STAYS DONE: reopening the issue is the way back in.
+        runner = FakeRunner(**{"gh_pr_list_--head": prs((9, "CLOSED", False))})
+        self.assertEqual(ps.handle(event(with_(name="sunrise"), action="edited", state="closed"), runner, self.root),
+                         "issue closed")
+        self.assertEqual(runner.calls, [])
 
     def test_an_issue_without_the_label_is_left_alone(self):
         runner = FakeRunner()
@@ -255,6 +337,35 @@ class Handle(unittest.TestCase):
         with self.assertRaises(ps.BotError):
             ps.handle(event(with_(name="sunrise")), runner, self.root)
         self.assertFalse(runner.ran("gh issue comment"))
+
+    def test_a_tool_without_gated_or_odd_tools_never_crash_after_the_push(self):
+        for tools in ([{"name": "t"}], {"a": 1}, [4]):
+            runner = FakeRunner()
+            self.assertEqual(ps.handle(event(with_(name="sunrise", tools=tools)), runner, self.root), "passed")
+            self.catalog.write_text(json.dumps(CATALOG, indent=2) + "\n", encoding="utf-8")
+
+    def test_the_pr_body_shows_gates_as_the_entry_writes_them(self):
+        body = ps.pr_body(with_(tools=[{"name": "a", "gated": False}, {"name": "b", "gated": "dynamic"}]), 7, False)
+        self.assertIn("`a` (gated false)", body)
+        self.assertIn("`b` (gated dynamic)", body)
+
+
+class Main(unittest.TestCase):
+    def test_a_failed_run_tells_the_author(self):
+        # A RED RUN NOBODY WATCHES says nothing to the author: the bot's own failure is commented too.
+        runner = FakeRunner(**{"cxagent_plugin_verify": (2, "usage: …")})
+        root = _tempfile.mkdtemp()
+        (Path(root) / "plugins").mkdir()
+        (Path(root) / "plugins" / "plugins.json").write_text(json.dumps(CATALOG), encoding="utf-8")
+        self.assertEqual(ps.run(event(with_(name="sunrise")), runner, root, "cxagent", "https://run"), 1)
+        text = self.comment_of(runner)
+        self.assertIn("could not finish", text)
+        self.assertIn("https://run", text)
+
+    def comment_of(self, runner):
+        calls = runner.ran("gh issue comment")
+        self.assertEqual(len(calls), 1)
+        return calls[0][calls[0].index("--body") + 1]
 
 
 WORKFLOWS = REPO / ".github" / "workflows"
@@ -278,6 +389,10 @@ class Workflows(unittest.TestCase):
             if path.name in ("plugin-submission.yml", "release.yml", "pages.yml"):
                 continue
             self.assertIsNone(re.search(r":\s*write\b", path.read_text(encoding="utf-8")), path.name)
+
+    def test_only_the_submission_label_reruns_on_labeled(self):
+        text = (WORKFLOWS / "plugin-submission.yml").read_text(encoding="utf-8")
+        self.assertIn("github.event.label.name == 'plugin-submission'", text)
 
     def test_the_form_names_the_heading_the_script_reads(self):
         form = (REPO / ".github" / "ISSUE_TEMPLATE" / "submit_a_plugin.yml").read_text(encoding="utf-8")

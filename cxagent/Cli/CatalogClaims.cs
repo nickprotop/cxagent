@@ -5,6 +5,9 @@ namespace CxAgent.Cli;
 /// <summary>A tool as the entry lists it, gated normalised to "false", "true" or "dynamic".</summary>
 internal sealed record ClaimedTool(string Name, string Gated);
 
+/// <summary>A way the entry departs from the shape every catalog entry has, found while reading it.</summary>
+internal sealed record ShapeProblem(string Field, string Message);
+
 /// <summary>One zip the entry says to download: its platform (null for a single source), where, its hash, the binary inside.</summary>
 internal sealed record ClaimedDownload(string? Rid, string Url, string? Sha256, string File);
 
@@ -21,6 +24,14 @@ internal sealed record CatalogClaims(string Name, string Version, string Kind, i
     bool FromCatalog)
 {
     private static readonly string[] TextFields = ["description", "publisher", "license", "repository"];
+
+    /// <summary>
+    /// THE CATALOG'S OWN SHAPE, as PluginCatalogTests holds every entry to it: a "url" source with a
+    /// "url" key, platforms cxagent runs on, and values of the right type. Checked here, so an entry
+    /// verify passes cannot turn master red once it is merged — a PR the submission bot opens runs no
+    /// CI of its own. Anyone can paste an entry, so a value of the wrong type is a problem, never a crash.
+    /// </summary>
+    public IReadOnlyList<ShapeProblem> Shape { get; init; } = [];
 
     /// <summary>The entries in <paramref name="json"/>: one entry object, or a <c>{"plugins": [...]}</c> catalog.</summary>
     public static IReadOnlyList<CatalogClaims>? Read(string json, out string? error)
@@ -47,30 +58,55 @@ internal sealed record CatalogClaims(string Name, string Version, string Kind, i
     {
         var compat = e.TryGetProperty("compatibility", out var c) && c.ValueKind == JsonValueKind.Object ? c : default;
         var file = Str(e, "file") ?? "";
+        var shape = new List<ShapeProblem>();
+
+        void SourceShape(JsonElement source, string at)
+        {
+            var kind = Str(source, "kind");
+            if (kind != "url")
+                shape.Add(new($"{at}.kind", $"is {(kind is null ? "missing" : $"\"{kind}\"")}; a submitted plugin's source is \"url\", fetched from where the entry says."));
+            if (Str(source, "url") is null)
+                shape.Add(new($"{at}.url", "is missing; the catalog reads a download's address from \"url\"."));
+        }
 
         var downloads = new List<ClaimedDownload>();
         if (e.TryGetProperty("sources", out var sources) && sources.ValueKind == JsonValueKind.Object)
             foreach (var rid in sources.EnumerateObject())
+            {
+                SourceShape(rid.Value, $"sources.{rid.Name}");
+                if (!PluginPackCommand.Rids.Contains(rid.Name))
+                    shape.Add(new($"sources.{rid.Name}", $"is not a platform cxagent runs on; a platform is one of {string.Join(", ", PluginPackCommand.Rids)}."));
                 downloads.Add(new ClaimedDownload(rid.Name, UrlOf(rid.Value) ?? "", Str(rid.Value, "sha256"), Str(rid.Value, "file") ?? file));
+            }
         else if (e.TryGetProperty("source", out var source) && source.ValueKind == JsonValueKind.Object)
+        {
+            SourceShape(source, "source");
             downloads.Add(new ClaimedDownload(null, UrlOf(source) ?? "", Str(source, "sha256"), file));
+        }
+
+        var platforms = compat.ValueKind == JsonValueKind.Object && compat.TryGetProperty("platforms", out var ps) && ps.ValueKind == JsonValueKind.Array
+            ? ps.EnumerateArray().ToList()
+            : [];
+        if (platforms.Any(p => p.ValueKind != JsonValueKind.String))
+            shape.Add(new("compatibility.platforms", "holds something other than platform names."));
+
+        var tools = e.TryGetProperty("tools", out var ts) && ts.ValueKind == JsonValueKind.Array ? ts.EnumerateArray().ToList() : [];
+        if (tools.Any(t => t.ValueKind != JsonValueKind.Object))
+            shape.Add(new("tools", "holds something other than tool objects."));
 
         return new CatalogClaims(
             Str(e, "name") ?? "",
             Str(e, "version") ?? "",
             Str(e, "kind") ?? "",
             compat.ValueKind == JsonValueKind.Object && compat.TryGetProperty("pluginContract", out var pc) && pc.TryGetInt32(out var n) ? n : 0,
-            compat.ValueKind == JsonValueKind.Object && compat.TryGetProperty("platforms", out var ps) && ps.ValueKind == JsonValueKind.Array
-                ? [.. ps.EnumerateArray().Select(p => p.GetString() ?? "")]
-                : [],
+            [.. platforms.Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString()!)],
             e.TryGetProperty("spawns", out var sp) && sp.ValueKind == JsonValueKind.True,
-            e.TryGetProperty("tools", out var ts) && ts.ValueKind == JsonValueKind.Array
-                ? [.. ts.EnumerateArray().Select(t => new ClaimedTool(Str(t, "name") ?? "", GatedOf(t)))]
-                : [],
+            [.. tools.Where(t => t.ValueKind == JsonValueKind.Object).Select(t => new ClaimedTool(Str(t, "name") ?? "", GatedOf(t)))],
             downloads,
             TextFields.ToDictionary(f => f, f => Str(e, f) ?? ""),
             e.TryGetProperty("directory", out _),
-            fromCatalog);
+            fromCatalog)
+        { Shape = shape };
     }
 
     // A RELEASE SOURCE NAMES ITS FILE BY "latest", as CatalogReader.DownloadOf reads it; a url source by "url".

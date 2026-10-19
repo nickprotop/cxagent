@@ -48,3 +48,6 @@ plans/
 # The reasoning behind decisions, kept where the person making the next one can read it.
 .design/
 
+
+# Python bytecode from running .github/scripts and its tests
+__pycache__/

@@ -237,4 +237,69 @@ public class PluginVerifyTests
         Assert.Equal("broken.catalog.json", problem.GetProperty("entry").GetString());
         Assert.False(string.IsNullOrEmpty(problem.GetProperty("message").GetString()));
     }
+
+    /// <summary>
+    /// THE CATALOG'S SHAPE, refused before anything is fetched: what PluginCatalogTests requires of
+    /// every entry, so an entry verify passes cannot turn master red once merged.
+    /// </summary>
+    [Theory]
+    [InlineData("no-kind", "source.kind")]
+    [InlineData("latest", "source.url")]
+    [InlineData("release-kind", "source.kind")]
+    public async Task AnEntryShapedUnlikeTheCatalog_IsRefused(string shape, string field)
+    {
+        var path = await PackedEntry(e =>
+        {
+            var source = e["source"]!.AsObject();
+            switch (shape)
+            {
+                case "no-kind": source.Remove("kind"); break;
+                case "latest": source["latest"] = source["url"]!.GetValue<string>(); source.Remove("url"); break;
+                case "release-kind": source["kind"] = "release"; break;
+            }
+        });
+
+        var (exit, output, _) = await Run("verify", path);
+
+        Assert.Equal(1, exit);
+        Assert.Contains(field, output);
+    }
+
+    [Fact]
+    public async Task APlatformCxagentDoesNotRun_IsRefused()
+    {
+        var path = await PackedEntry(e =>
+        {
+            var source = e["source"]!.AsObject();
+            e.Remove("source");
+            source["file"] = e["file"]!.GetValue<string>();
+            e["sources"] = new JsonObject { ["linux-musl-x64"] = source };
+            e["kind"] = "native";
+            e["compatibility"]!["platforms"] = new JsonArray("linux-musl-x64");
+        });
+
+        var (exit, output, _) = await Run("verify", path);
+
+        Assert.Equal(1, exit);
+        Assert.Contains("sources.linux-musl-x64", output);
+        Assert.Contains("linux-x64", output);
+    }
+
+    /// <summary>Anyone can paste an entry now: a value of the wrong type is a problem on its field, never a crash.</summary>
+    [Theory]
+    [InlineData("platforms")]
+    [InlineData("tools")]
+    public async Task AValueOfTheWrongType_IsAProblem_NotACrash(string field)
+    {
+        var path = await PackedEntry(e =>
+        {
+            if (field == "platforms") e["compatibility"]!["platforms"] = new JsonArray(4);
+            else e["tools"] = new JsonArray(4);
+        });
+
+        var (exit, output, _) = await Run("verify", path);
+
+        Assert.Equal(1, exit);
+        Assert.Contains(field, output);
+    }
 }

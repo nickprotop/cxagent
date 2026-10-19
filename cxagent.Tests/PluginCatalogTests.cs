@@ -291,4 +291,27 @@ public class PluginCatalogTests
             AssertPlatformsMatchDownloads(entry);
         }
     }
+
+    /// <summary>
+    /// ONE ENTRY PER NAME. Two submissions of one new name each pass alone against master, and the
+    /// second merged by hand would list it twice; a client installing by name would get whichever it
+    /// read first.
+    /// </summary>
+    [Fact]
+    public void EveryNameIsListedOnce() => AssertNamesUnique(Entries());
+
+    private static void AssertNamesUnique(IEnumerable<JsonElement> entries)
+    {
+        var twice = entries.GroupBy(e => e.GetProperty("name").GetString()).Where(g => g.Count() > 1).Select(g => $"'{g.Key}'").ToList();
+        Assert.True(twice.Count == 0, $"the catalog lists {string.Join(", ", twice)} more than once.");
+    }
+
+    [Fact]
+    public void ANameListedTwice_IsCaught()
+    {
+        var twice = JsonDocument.Parse("""{"plugins":[{"name":"a"},{"name":"b"},{"name":"a"}]}""");
+        var failure = Assert.ThrowsAny<Xunit.Sdk.XunitException>(
+            () => AssertNamesUnique(twice.RootElement.GetProperty("plugins").EnumerateArray()));
+        Assert.Contains("'a'", failure.Message);
+    }
 }

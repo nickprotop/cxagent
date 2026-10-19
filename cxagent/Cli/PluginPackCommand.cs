@@ -34,8 +34,9 @@ internal sealed record PackRequest(string Folder, IReadOnlyList<NativeBuild> Nat
 /// </summary>
 internal static class PluginPackCommand
 {
-    /// <summary>.NET's runtime identifiers — the vocabulary the catalog's <c>sources</c> keys use.</summary>
-    private static readonly string[] Rids = ["linux-x64", "linux-arm64", "osx-x64", "osx-arm64", "win-x64", "win-arm64"];
+    /// <summary>.NET's runtime identifiers — the vocabulary the catalog's <c>sources</c> keys use, and
+    /// the only keys verify accepts there.</summary>
+    internal static readonly string[] Rids = ["linux-x64", "linux-arm64", "osx-x64", "osx-arm64", "win-x64", "win-arm64"];
 
     // THE HOST CARRIES THESE: a plugin binds to cxagent's own copy, so one in the zip is a file the
     // user approves that is never used.

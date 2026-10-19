@@ -103,6 +103,7 @@ internal static class PluginVerifyCommand
         public void Claims()
         {
             if (claims.FirstParty) Add("directory", "marks a plugin this repository builds; a submitted entry has none.");
+            foreach (var p in claims.Shape) Add(p.Field, p.Message);
 
             foreach (var (field, value) in claims.Text)
             {
