@@ -450,6 +450,46 @@ never in the config file.
 
 ---
 
+## `plugins` and `pluginPaths` — plugins
+
+```json
+"pluginPaths": ["~/.config/cxagent/plugins"],
+"plugins": {
+  "csharp-lsp": {
+    "file": "csharp-lsp.dll",
+    "enabled": true,
+    "settings": { "server": "csharp-ls", "args": [] }
+  }
+}
+```
+
+The plugin manager (F2, `/plugin browse`) writes these for you when it installs a plugin; this is what
+it writes.
+
+| key | |
+| --- | --- |
+| `file` | the entry-point filename — a name, not a path, found in the folders below. Required. |
+| `enabled` | default true. Whether the plugin loads at startup — and only that: `/plugin load <name>` still loads a disabled one for this session. `/plugin enable` and `/plugin disable` flip it, and disabling also unloads a plugin that is running. |
+| `settings` | handed to the plugin verbatim; cxagent does not read it. The plugin's own page says what it takes. |
+
+**Where cxagent looks:** each `pluginPaths` entry in order, then `<project>/.cxagent/plugins`, then
+the `plugins` folder beside this config — so a project's copy wins over a global one. A relative
+`pluginPaths` entry resolves against **the project directory**, not the config folder; an absolute
+path or `~` means what it says. Each folder is searched itself and one level down, so
+`plugins/csharp-lsp/csharp-lsp.dll` is found the same as a loose file — and **a folder of its own is
+the layout to prefer**: a plugin's identity is a hash over everything in its folder, so two plugins
+sharing one re-ask each other's load prompt whenever either changes.
+
+**No config can pre-approve a plugin.** Loading one asks, showing a hash of everything it would load,
+and asks again when a byte of that changes; `enabled` decides when the question comes, never its
+answer.
+
+A plugins folder inside a repository is a folder your tools read too: some language servers index a
+plugin binary sitting in `.cxagent/plugins`. Prefer the global folder unless a plugin belongs to one
+project.
+
+---
+
 ## `theme` — colours
 
 ```json

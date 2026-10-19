@@ -29,53 +29,13 @@ boundary costs.
 The [other examples](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples) cover
 the rest: a second front end, injecting tools, and narrowing what an agent may do.
 
-## Quick start (C#)
+## Quick start
 
-From nothing to a plugin a user can install, with cxagent's own tools. For a step-by-step
-walk-through that builds a real weather plugin, see the [SDK tutorial](../README.md).
-
-```
-cxagent plugin new weather --lang csharp        # or: dotnet new install CxAgent.Plugins.Templates
-cd weather                                       #     dotnet new cxagent-plugin -n weather
-dotnet build
-cxagent plugin check bin/Debug/net10.0           # every load-time check, no session
-cxagent plugin call bin/Debug/net10.0 weather_greet '{"name":"Ada"}'   # one real call, gate included
-dotnet test tests                                # the same, from xunit, via CxAgent.Plugins.Testing
-dotnet build -c Release
-cxagent plugin pack bin/Release/net10.0          # the zip, its sha256, the catalog entry, next steps
-# fill in what pack could not know, and point "url" at weather.zip — then:
-cxagent plugin verify weather.catalog.json       # what a user's install would get, no code run
-```
-
-- **`new`** writes the project: a sidecar, one tool with a per-call gate, the plugin class, a README,
-  and a test project. It never writes over a folder that holds anything.
-- **`check`** and **`call`** are covered in [testing.md](testing.md).
-- **`pack`** refuses a plugin `check` refuses. The entry's description, publisher, license and
-  repository come from:
-  1. its options;
-  2. an `--info` file, JSON or YAML;
-  3. the project's `Description`, `Authors`, `PackageLicenseExpression` and `RepositoryUrl`.
-
-  Anything left unset is written as `<fill in: …>`, and `verify` refuses it until you do.
-- **`verify`** takes the entry's zips from `https://` or, before you upload, from a local path.
-
-To list it in cxagent's catalog, see [publishing.md](publishing.md). C plugins get
-the same start with the C SDK.
-
-## Quick start (C)
-
-```
-cxagent plugin new wordcount --lang c
-cd wordcount
-cmake -B build && cmake --build build
-cxagent plugin check build
-cxagent plugin call build wordcount_count '{"file":"CMakeLists.txt"}'
-ctest --test-dir build
-cxagent plugin pack build --native build/wordcount.so=linux-x64
-```
-
-The project carries the C SDK in `cxp/`. You write tools; it implements the ABI. See
-[c-sdk.md](c-sdk.md), and the [C tutorial](../README.md#tutorial-c-wordcount).
+The SDK's tutorials build a plugin end to end, from `cxagent plugin new` to a catalog entry: [a
+weather plugin in C#](../README.md#tutorial-a-weather-plugin-end-to-end) and [a word counter in
+C](../README.md#tutorial-c-wordcount). This page is the reference they lean on. Testing a plugin is in
+[testing.md](testing.md), the C SDK in [c-sdk.md](c-sdk.md), and getting a plugin into the catalog in
+[publishing.md](publishing.md).
 
 ## The project
 
@@ -708,31 +668,10 @@ Both calculator examples read `settings.precision` this way, and both fall back 
 
 ## Configuring one
 
-```json
-"pluginPaths": ["~/.config/cxagent/plugins"],
-"plugins": {
-  "calculator": {
-    "file": "calculator.dll",
-    "enabled": true,
-    "settings": { "precision": 4 }
-  }
-}
-```
-
-Searched in `pluginPaths` order, then `<project>/.cxagent/plugins`, then `<config>/plugins` — so a
-project's copy wins over a globally installed one. Each of those is searched itself and one level
-down, so `plugins/calculator/calculator.dll` is found the same as a loose `calculator.dll` sitting
-in the folder. **Ship in a directory of its own** — a plugin's identity is a hash over everything in
-its load-set folder, and .NET resolves its dependencies from that same folder, so a folder shared
-with another plugin means neither is isolated and installing either one re-asks the other's load
-prompt.
-
-`enabled: false` means no process, no tools, no prompt, nothing. It is configuration, not permission:
-loading still asks, every time. `/plugin load <name> --once` overrides `enabled: false` for one
-session and still asks.
-
-A note on where to put them: some language servers crawl the workspace for projects and will happily
-index a plugin binary sitting in `.cxagent/plugins`. The global folder avoids that.
+A user configures your plugin through `plugins.<name>` in their config: its `file`, whether it loads
+at startup, and the `settings` your plugin receives at load. The keys, the folders cxagent searches
+and the layout to ship in are in [CONFIG.md](../../../CONFIG.md#plugins-and-pluginpaths--plugins).
+**Ship in a directory of its own**: a plugin's identity is a hash over everything in its folder.
 
 ## See also
 

@@ -67,19 +67,9 @@ A relative `pluginPaths` entry resolves against **the project directory**, not t
 }
 ```
 
-| key | |
-| --- | --- |
-| `file` | the entry-point filename, found in the folders above. Required. |
-| `enabled` | default true. `false` means no process, no tools, no prompt — nothing at all. |
-| `settings` | handed to the plugin verbatim; cxagent does not read it. See the plugin's own page. |
-
-The name you key it under is yours — it is what `/plugin` lists and `/plugin unwire` takes. It need
-not match the plugin's own name, though matching is less confusing.
-
-**`enabled: false` is configuration, not permission.** It answers "should this run at all", and the
-approval prompt separately answers "do you trust this binary" — every load asks, and nothing in
-config can pre-approve one. `/plugin load <name> --once` overrides `enabled: false` for one session
-and still asks.
+What each key means, where cxagent looks, and what `enabled` does and does not decide are in
+[CONFIG.md](../CONFIG.md#plugins-and-pluginpaths--plugins). The name you key it under is yours — it
+is what `/plugin` lists and `/plugin unwire` takes.
 
 **config.json is read at startup.** Editing it does nothing until you restart. Use `/plugin load`,
 which takes settings inline, to try something without one:

@@ -262,8 +262,9 @@ public record McpServerConfig(
 /// </summary>
 /// <param name="File">The plugin's entry-point filename, resolved against <c>pluginPaths</c>.</param>
 /// <param name="Enabled">
-/// THE OVERALL GATE, not a filter. False and the plugin does not load: no process spawned, no tools
-/// registered, no load prompt, nothing to select from. Defaults to true for the same reason
+/// WHETHER IT LOADS AT STARTUP, and only that: false and startup leaves it alone — no process, no
+/// tools, no prompt — while <c>/plugin load</c> can still load it by hand, behind the same load
+/// prompt. Defaults to true for the same reason
 /// <see cref="McpConfig.Enabled"/> does: a plugin someone
 /// bothered to configure is one they want, and requiring <c>"enabled": true</c> on every entry is a
 /// footgun where the plugin silently never appears.

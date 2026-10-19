@@ -114,7 +114,7 @@ add_test(NAME search COMMAND cxagent plugin call ${CMAKE_BINARY_DIR}/plugin sear
 A plugin that passes `check` and `call` is ready to package. `cxagent plugin pack <folder>` writes
 the zips and the catalog entry, and `cxagent plugin verify <entry>` checks what a user's install
 would get; `--https-only` refuses a local file, as the submission bot does. Neither runs any plugin
-code. Both share the exit codes above. See the [quick start](plugins.md#quick-start-c), and
+code. Both share the exit codes above. See the [C tutorial](../README.md#tutorial-c-wordcount), and
 [Publishing a plugin](publishing.md) for the way to the catalog.
 
 ## CxAgent.Plugins.Testing
