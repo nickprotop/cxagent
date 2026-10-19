@@ -162,13 +162,28 @@ public class AgentDraftTests
     public void TickingAnyProvider_TheWayTheCheckboxDoes_KeepsAll()
     {
         var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!, new AgentTypeConfig(Provider: "local") { Providers = ["local"], Written = ["local"] });
-        draft.AnyProvider = true;
-        draft.Providers.Clear();                                   // what the checkbox handler does
+        draft.AnyProvider = true;                                  // what the checkbox handler does
 
         var type = new System.Text.Json.Nodes.JsonObject { ["provider"] = "local" };
         var root = new System.Text.Json.Nodes.JsonObject { ["agents"] = new System.Text.Json.Nodes.JsonObject { ["planner"] = type } };
         AgentEdits.SetOverride(root, "planner", draft.ToFields());
         Assert.Equal("all", (string?)root["agents"]!["planner"]!["provider"]);
+    }
+
+    /// <summary>Ticking keeps the list underneath, so unticking puts it back: a tick and untick by
+    /// mistake must not save a type with no provider, which would run on the session's model.</summary>
+    [Fact]
+    public void TickThenUntick_RestoresTheList_AndChangesNothing()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!,
+            new AgentTypeConfig(Provider: "local") { Providers = ["local", "deepseek"], Written = ["local", "deepseek"] });
+        draft.AnyProvider = true;
+        Assert.True(draft.IsDirty);
+
+        draft.AnyProvider = false;
+
+        Assert.Equal(["local", "deepseek"], draft.Providers);
+        Assert.False(draft.IsDirty);
     }
 
     [Fact]
