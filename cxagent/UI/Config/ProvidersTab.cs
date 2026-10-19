@@ -677,10 +677,7 @@ public sealed class ProvidersTab
             var fields = draft.ToFields();
             if (draft.IsNew)
             {
-                // NOBODY IS ON A NEW INSTANCE, so no tab moves — unless it is the first one, which the edit
-                // makes the default, and the default's limit sizes every session's sub-agent semaphore.
-                var added = new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(),
-                    settings.DefaultProvider is null, $"{draft.Name} added");
+                var added = draft.AddChange(settings);
                 var name = draft.Name;
                 await CommitAsync(root => ProviderEdits.Add(root, name, fields), added, name);
                 _addingFrom = null;
@@ -715,6 +712,10 @@ public sealed class ProvidersTab
                 if (prepared.Fresh is { } wired && _host.WireFirst is { } wireFirst)
                     wireFirst(wired);
                 Saved(prepared.Write, select, change);
+                // A SIDE EFFECT THE USER SHOULD SEE: an agent type this save disabled — a provider's new
+                // model no longer matching a type's pin, say — said with the save itself.
+                if (prepared.NewlyDisabled.Count > 0)
+                    SetStatus(string.Join("\n", prepared.NewlyDisabled.Select(w => $"[{ColorScheme.CautionMarkup}]⚠ {MarkupParser.Escape(w)}[/]")));
             }
             finally { done.TrySetResult(); }
         }, "providersTab.Commit");

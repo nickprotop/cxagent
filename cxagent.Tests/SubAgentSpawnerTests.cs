@@ -2144,8 +2144,8 @@ public class SubAgentSpawnerTests
     [Fact]
     public async Task ATypeWithAList_IgnoresTheSessionsModel()
     {
-        // /model moves the factory's default; a type with a list never depended on it. PASSES ALREADY
-        // after Task 3 (the catalog routes to the first offer) — it pins that this task keeps it so.
+        // /model moves the factory's default; a type with a list never depended on it, because the catalog
+        // routes it to its first offer.
         var factory = FactoryOver(Answering("x"));
         factory.SwapDefaultProvider(new MockLlmProvider("switched"), 100_000, "other");
         SubAgent? child = null;

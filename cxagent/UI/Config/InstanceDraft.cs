@@ -107,6 +107,16 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
     /// changed (that limit sizes each session's sub-agent semaphore), or an agent type lists it (types
     /// capture each listed provider at wire time). Otherwise only the tabs on this instance.</para>
     /// </summary>
+    /// <summary>
+    /// What adding this instance changes. NOBODY IS ON A NEW INSTANCE, so no tab moves — but EVERYONE is
+    /// touched when it is the first one (the edit makes it the default, whose limit sizes every session's
+    /// sub-agent semaphore) or when an agent type lists it (a type disabled for naming it comes back, and
+    /// types are rebuilt per session).
+    /// </summary>
+    public ConfigChange AddChange(ProviderSettings settings) =>
+        new(new HashSet<string>(), new Dictionary<string, string>(),
+            settings.DefaultProvider is null || settings.AgentTypes.Values.Any(t => t.Lists(Name)), $"{Name} added");
+
     public ConfigChange ChangeFor(ProviderSettings settings)
     {
         var everyone = settings.Classifier == Name

@@ -114,4 +114,17 @@ public class InstanceDraftTests
                 ["planner"] = new(Provider: "local") { Providers = ["local", "other"], Written = ["local", "other"] },
             },
         }).Everyone);
+
+    /// <summary>Adding a provider a disabled type lists re-enables that type in every session, so it is a
+    /// change for everyone — not only when it is the first provider.</summary>
+    [Fact]
+    public void AddingAProviderATypeLists_ReachesEveryone() =>
+        Assert.True(new InstanceDraft("opus", Local) { IsNew = true }.AddChange(Settings("local") with
+        {
+            AgentTypes = new Dictionary<string, AgentTypeConfig> { ["planner"] = new() { Written = ["opus"], Disabled = "provider 'opus' is not a configured provider" } },
+        }).Everyone);
+
+    [Fact]
+    public void AddingAProviderNoTypeLists_ReachesOnlyItself() =>
+        Assert.False(new InstanceDraft("opus", Local) { IsNew = true }.AddChange(Settings("local")).Everyone);
 }

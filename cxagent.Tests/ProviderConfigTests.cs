@@ -1031,4 +1031,18 @@ public class ProviderConfigTests : IDisposable
 
         Assert.Equal(["fast", "local"], ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).AgentTypes["general"].Providers);
     }
+
+    [Fact]
+    public void Agents_AProviderNameWithAColon_IsTakenWholeFirst()
+    {
+        WriteConfig("""
+        { "providers": { "lm:studio": { "kind": "ollama", "model": "m" } }, "defaultProvider": "lm:studio",
+          "agents": { "scout": { "briefing": "Search.", "provider": "lm:studio" } } }
+        """);
+        var t = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).AgentTypes["scout"];
+
+        Assert.Null(t.Disabled);
+        Assert.Equal(["lm:studio"], t.Providers);
+        Assert.True(t.Lists("lm:studio"));
+    }
 }

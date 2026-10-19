@@ -26,6 +26,7 @@ public static class ProviderEdits
     {
         var providers = Providers(root);
         if (providers.ContainsKey(name)) throw new ConfigEditException($"'{name}' already exists.");
+        RefuseColon(name);
         var instance = new JsonObject();
         fields.ApplyTo(instance);
         providers[name] = instance;
@@ -41,6 +42,7 @@ public static class ProviderEdits
         var providers = Providers(root);
         var instance = Instance(root, from);
         if (providers.ContainsKey(to)) throw new ConfigEditException($"'{to}' already exists.");
+        RefuseColon(to);
         providers.Remove(from);
         providers[to] = instance;
         Rewrite(root, from, to);
@@ -100,10 +102,20 @@ public static class ProviderEdits
                 if (type is JsonObject t) RewriteTypeProvider(t, from, to);
     }
 
+    /// <summary>A NEW NAME HOLDS NO COLON: in an agent type's provider list a colon separates a name from
+    /// its model, so a name with one reads as something else. Names already in a file keep working — the
+    /// loader takes a whole name first — but none is made here.</summary>
+    private static void RefuseColon(string name)
+    {
+        if (name.Contains(':'))
+            throw new ConfigEditException($"a provider name cannot contain ':' — in an agent type's provider list it separates a name from its model.");
+    }
+
     private static void RewriteTypeProvider(JsonObject type, string from, string? to)
     {
         static string? Moved(string written, string from, string? to)
         {
+            if (written.Trim() == from) return to;
             if (AgentTypeConfig.NameOf(written) != from) return written;
             var colon = written.IndexOf(':');
             return to is null ? null : colon < 0 ? to : to + written[colon..];

@@ -143,4 +143,19 @@ public class ProviderEditsTests
         Assert.Equal("""["fast"]""", root["agents"]!["a"]!["provider"]!.ToJsonString());
         Assert.False(root["agents"]!["b"]!.AsObject().ContainsKey("provider"));
     }
+
+    [Theory]
+    [InlineData("add")]
+    [InlineData("rename")]
+    public void ANewProviderName_CannotHoldAColon(string how)
+    {
+        var root = System.Text.Json.Nodes.JsonNode.Parse("""{ "providers": { "local": {} } }""")!.AsObject();
+
+        var ex = Assert.Throws<ConfigEditException>(() =>
+        {
+            if (how == "add") ProviderEdits.Add(root, "my:box", new InstanceFields());
+            else ProviderEdits.Rename(root, "local", "my:box");
+        });
+        Assert.Contains("':'", ex.Message, StringComparison.Ordinal);
+    }
 }

@@ -14,7 +14,11 @@ public sealed record ConfigApplyContext(
 /// <summary>A written file, resolved — ready to go live once the user has said how.</summary>
 /// <param name="Write">What the write did.</param>
 /// <param name="Fresh">The file resolved, or null when the write failed or it resolved to no provider.</param>
-public sealed record PreparedSave(ConfigWrite Write, ResolvedConfig? Fresh);
+public sealed record PreparedSave(ConfigWrite Write, ResolvedConfig? Fresh)
+{
+    /// <summary>Agent types this save disabled as a side effect, as their warnings — shown with the save.</summary>
+    public IReadOnlyList<string> NewlyDisabled { get; init; } = [];
+}
 
 /// <summary>
 /// A save, made live: write through the one writer, resolve the file afresh, make that the current
@@ -32,6 +36,15 @@ public static class ConfigApply
     /// Writes the edit and resolves the file. OFF THE UI THREAD: resolving may ask the default
     /// endpoint for its window, which can take seconds.
     /// </summary>
+    /// <summary>
+    /// The agent types a save disabled as a side effect — warnings the fresh config has that the last one
+    /// did not. Said in the save's status: otherwise only the model hears of it, in the types note.
+    /// </summary>
+    internal static IReadOnlyList<string> NewlyDisabledTypes(IReadOnlyList<string> before, IReadOnlyList<string> after) =>
+        [.. after.Where(w => w.StartsWith("agents.", StringComparison.Ordinal)
+                          && w.EndsWith(" is disabled.", StringComparison.Ordinal)
+                          && !before.Contains(w))];
+
     public static PreparedSave Prepare(ConfigApplyContext ctx, Action<JsonObject> edit)
     {
         var write = ConfigFile.TryApply(new ConfigTarget(PathOf(ctx.Paths), ctx.Env), edit);
@@ -42,7 +55,9 @@ public static class ConfigApply
         // RESOLVED FROM THE FILE'S DEFAULT: a run started with --model returns to the file's own
         // default for new tabs after a save, the way it would on the next start.
         var fresh = ConfigResolver.Resolve(ctx.Paths, ctx.Env, useMock: false);
-        return fresh.HasProvider ? new PreparedSave(write, fresh) : new PreparedSave(write with { Errors = fresh.Errors }, null);
+        return fresh.HasProvider
+            ? new PreparedSave(write, fresh) { NewlyDisabled = NewlyDisabledTypes(ctx.Current.Value.Notices, fresh.Notices) }
+            : new PreparedSave(write with { Errors = fresh.Errors }, null);
     }
 
     /// <summary>

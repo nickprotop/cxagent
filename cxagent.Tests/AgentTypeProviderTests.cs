@@ -110,4 +110,33 @@ public class AgentTypeProviderTests
         Assert.Contains("scout (runs on local:qwen-coder, deepseek:deepseek/deepseek-v3.2 (cheap, paid))", note, StringComparison.Ordinal);
         Assert.Contains("broken (disabled: provider 'typo' is not a configured provider)", note, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void WithNoProviderCatalog_AListedTypeRunsOnTheParents()
+    {
+        // The mock path: no providers to resolve against, so a type's list is not a reason to refuse it.
+        var t = new AgentTypeCatalog(new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal)
+        {
+            ["scout"] = new("Search.", "local") { Providers = ["local", "deepseek"] },
+        }, null).Resolve("scout")!;
+
+        Assert.Null(t.Disabled);
+        Assert.Same(TypeRouting.Inherited, t.Pick(null).Routing);
+    }
+
+    [Fact]
+    public void Pick_AProviderNameWithAColon_IsTakenWholeFirst()
+    {
+        var registry = ProviderRegistry.FromProviders(new Dictionary<string, ILlmProvider>(StringComparer.Ordinal)
+        {
+            ["lm:studio"] = new MockLlmProvider("m"), ["local"] = new MockLlmProvider("q"),
+        }, "local", null);
+        var t = new AgentTypeCatalog(new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal)
+        {
+            ["scout"] = new("Search.", "local") { Providers = ["local", "lm:studio"] },
+        }, registry).Resolve("scout")!;
+
+        Assert.Equal("lm:studio", t.Pick("lm:studio").Routing!.InstanceName);
+        Assert.Equal("lm:studio", t.Pick("lm:studio:m").Routing!.InstanceName);
+    }
 }

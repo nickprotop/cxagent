@@ -245,48 +245,80 @@ public sealed class AgentsTab
     private IWindowControl ProviderEditor(AgentDraft draft)
     {
         var stack = new FieldGrid();
-        string Label(string name) => _settings!.Providers.TryGetValue(name, out var c)
-            ? MarkupParser.Escape($"{name}:{c.Model}")
-            : $"{MarkupParser.Escape(name)} [{ColorScheme.CautionMarkup}](not configured)[/]";
+        var providers = _settings!.Providers;
 
-        void Rebuild()
+        // AN ENTRY AS IT WILL RUN, and what is wrong with it: not configured, or pinned to a model the
+        // entry no longer runs — the two ways a list disables its type.
+        string Label(string written)
+        {
+            var (name, pinned) = AgentTypeConfig.SplitEntry(written, providers.ContainsKey);
+            if (!providers.TryGetValue(name, out var c))
+                return $"{MarkupParser.Escape(written)} [{ColorScheme.CautionMarkup}](not configured)[/]";
+            if (pinned is not null && !string.Equals(pinned, c.Model, StringComparison.OrdinalIgnoreCase))
+                return $"{MarkupParser.Escape(written)} [{ColorScheme.CautionMarkup}](pinned to {MarkupParser.Escape(pinned)}; {MarkupParser.Escape(name)} runs {MarkupParser.Escape(c.Model)})[/]";
+            return MarkupParser.Escape($"{name}:{c.Model}");
+        }
+
+        // FOCUS FOLLOWS THE EDIT: Rebuild replaces every button, so the one pressed is gone — focus lands
+        // on the same button of the row that moved, or on + Add, rather than nowhere.
+        void Rebuild(int? focusRow = null, string focusOn = "")
         {
             stack.Clear();
+            IWindowControl? focus = null;
+            if (draft.Original?.Disabled is { } why)
+                stack.AddBare(new MarkupControl([$"[{ColorScheme.CautionMarkup}]Disabled: {MarkupParser.Escape(why)}.[/]"]));
             if (draft.Providers.Count == 0)
+            {
                 stack.AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]runs on the session's model[/]"]));
+                // A VALUE THAT IS NOT A NAME OR A LIST has no entries to remove, so it gets a way out.
+                if (draft.Original?.Disabled is not null && draft.Original.Written is null && !draft.ClearBadProvider)
+                    stack.AddBare(Controls.Button(" Clear the bad value ").OnClick((_, _) => { draft.ClearBadProvider = true; Rebuild(); }).Build());
+            }
             for (var i = 0; i < draft.Providers.Count; i++)
             {
                 var at = i;
                 var row = new ToolbarControl { ItemSpacing = 1 };
                 row.AddItem(new MarkupControl([Label(draft.Providers[at])
                     + (at == 0 ? $" [{ColorScheme.MutedMarkup}]default[/]" : "")]));
+                IWindowControl? up = null, down = null;
                 if (at > 0)
-                    row.AddItem(Controls.Button(" ↑ ").OnClick((_, _) => Swap(at, at - 1)).Build());
+                    row.AddItem(up = Controls.Button(" ↑ ").OnClick((_, _) => Swap(at, at - 1, "up")).Build());
                 if (at < draft.Providers.Count - 1)
-                    row.AddItem(Controls.Button(" ↓ ").OnClick((_, _) => Swap(at, at + 1)).Build());
-                row.AddItem(Controls.Button(" Remove ").OnClick((_, _) => { draft.Providers.RemoveAt(at); Rebuild(); }).Build());
+                    row.AddItem(down = Controls.Button(" ↓ ").OnClick((_, _) => Swap(at, at + 1, "down")).Build());
+                var remove = Controls.Button(" Remove ").OnClick((_, _) =>
+                {
+                    draft.Providers.RemoveAt(at);
+                    Rebuild(Math.Min(at, draft.Providers.Count - 1), "remove");
+                }).Build();
+                row.AddItem(remove);
                 stack.AddBare(row);
+                if (focusRow == at)
+                    focus = focusOn switch { "up" => up ?? down ?? remove, "down" => down ?? up ?? remove, _ => remove };
             }
 
-            var left = _settings!.Providers.Keys.Where(n => !draft.Providers.Contains(n)).Order(StringComparer.Ordinal).ToList();
+            var left = providers.Keys.Where(n => !draft.ListsProvider(n)).Order(StringComparer.Ordinal).ToList();
             if (left.Count > 0)
             {
                 var add = new ToolbarControl { ItemSpacing = 1 };
                 var pick = new DropdownControl("", left) { HorizontalAlignment = HorizontalAlignment.Left };
                 pick.SelectedIndex = 0;
                 add.AddItem(pick);
-                add.AddItem(Controls.Button(" + Add ").OnClick((_, _) =>
+                var addButton = Controls.Button(" + Add ").OnClick((_, _) =>
                 {
-                    if (pick.SelectedIndex is var p and >= 0 && p < left.Count) { draft.Providers.Add(left[p]); Rebuild(); }
-                }).Build());
+                    if (pick.SelectedIndex is var p and >= 0 && p < left.Count) { draft.Providers.Add(left[p]); Rebuild(null, "add"); }
+                }).Build();
+                add.AddItem(addButton);
                 stack.AddBare(add);
+                if (focusOn == "add" || (focusOn == "remove" && focus is null)) focus = addButton;
             }
+
+            if (focus is IFocusableControl target) _window()?.FocusManager.SetFocus(target, FocusReason.Programmatic);
         }
 
-        void Swap(int a, int b)
+        void Swap(int a, int b, string direction)
         {
             (draft.Providers[a], draft.Providers[b]) = (draft.Providers[b], draft.Providers[a]);
-            Rebuild();
+            Rebuild(b, direction);
         }
 
         Rebuild();
@@ -415,6 +447,10 @@ public sealed class AgentsTab
             Reload(select);
             _window()?.FocusManager.SetFocus(_rail, FocusReason.Programmatic);
             SetStatus($"[{ColorScheme.AffirmativeMarkup}]✔ {MarkupParser.Escape(what)}.[/] [{ColorScheme.MutedMarkup}]Running tabs have it now, in place.[/]");
+            // A SIDE EFFECT THE USER SHOULD SEE: a type this save disabled, said with the save itself.
+            if (prepared.NewlyDisabled.Count > 0)
+                SetStatus($"[{ColorScheme.AffirmativeMarkup}]✔ {MarkupParser.Escape(what)}.[/]\n" + string.Join("\n",
+                    prepared.NewlyDisabled.Select(w => $"[{ColorScheme.CautionMarkup}]⚠ {MarkupParser.Escape(w)}[/]")));
         }, "agentsTab.Saved");
     }
 }

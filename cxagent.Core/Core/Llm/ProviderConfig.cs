@@ -354,12 +354,28 @@ public record AgentTypeConfig(string? Briefing = null, string? Provider = null, 
 
     /// <summary>Whether this type names <paramref name="provider"/>, in any form it was written.</summary>
     public bool Lists(string provider) =>
-        (Written ?? (Provider is { } p ? [p] : [])).Any(w => NameOf(w) == provider);
+        (Written ?? Providers ?? (Provider is { } p ? [p] : [])).Any(w => w.Trim() == provider || NameOf(w) == provider);
 
-    /// <summary>The entry a written `name` or `name:model` names: up to the FIRST colon, trimmed — a model
-    /// id may itself hold a colon, or slashes, as OpenRouter's do.</summary>
+    /// <summary>The entry a written `name` or `name:model` names when nothing says which providers exist: up
+    /// to the FIRST colon, trimmed — a model id may itself hold a colon, or slashes, as OpenRouter's do.</summary>
     public static string NameOf(string written) =>
         (written.IndexOf(':') is var c and >= 0 ? written[..c] : written).Trim();
+
+    /// <summary>
+    /// A written entry as a provider name and an optional model, WHOLE NAME FIRST: a provider whose own
+    /// name holds a colon (`lm:studio`) is that provider, not `lm` with model `studio`. Otherwise each
+    /// colon is tried from the left until the part before it names a provider — so `lm:studio:m` is
+    /// `lm:studio` with model `m` — falling back to the first colon.
+    /// </summary>
+    public static (string Name, string? Model) SplitEntry(string written, Func<string, bool> isProvider)
+    {
+        var w = written.Trim();
+        if (isProvider(w)) return (w, null);
+        for (var i = w.IndexOf(':'); i >= 0; i = w.IndexOf(':', i + 1))
+            if (isProvider(w[..i].Trim())) return (w[..i].Trim(), w[(i + 1)..].Trim());
+        var c = w.IndexOf(':');
+        return c < 0 ? (w, null) : (w[..c].Trim(), w[(c + 1)..].Trim());
+    }
 }
 
 /// <summary>A type's provider list resolved: the entry names, or why it is unusable and what is known.</summary>
@@ -499,9 +515,7 @@ public static class ProviderConfigLoader
         foreach (var raw in written)
         {
             var w = raw.Trim();
-            var name = AgentTypeConfig.NameOf(w);
-            var colon = w.IndexOf(':');
-            var model = colon < 0 ? null : w[(colon + 1)..].Trim();
+            var (name, model) = AgentTypeConfig.SplitEntry(w, n => modelOf(n) is not null);
 
             if (modelOf(name) is not { } entryModel)
                 return new(null, $"provider '{w}' is not a configured provider", string.Join(", ", known));

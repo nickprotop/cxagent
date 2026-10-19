@@ -65,4 +65,9 @@ public class ProviderRemovalPlanTests
     public void RemovingASecondEntry_SaysTheTypeNoLongerOffersIt() =>
         Assert.Contains("agent type 'planner' → no longer offers 'deepseek'",
             PlanFor("deepseek", new AgentTypeConfig(Provider: "local") { Providers = ["local", "deepseek"], Written = ["local", "deepseek:deepseek/deepseek-v3.2"] }));
+
+    [Fact]
+    public void RemovingADisabledTypesFirstEntry_NamesTheDefaultItWillHave() =>
+        Assert.Contains("agent type 'planner' → its default becomes 'deepseek:deepseek/deepseek-v3.2'",
+            PlanFor("local", new AgentTypeConfig() { Written = ["local:old-model", "deepseek"], Disabled = "provider 'local:old-model': 'local' runs qwen-coder, not 'old-model'" }));
 }

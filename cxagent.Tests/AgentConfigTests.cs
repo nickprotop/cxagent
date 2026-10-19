@@ -260,4 +260,16 @@ public class AgentConfigTests
         if (disabled is null) Assert.Equal(["only"], t.Providers);
         else Assert.Contains(resolved.Notices, w => w.EndsWith("scout is disabled.", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void TheCodeDoor_ChecksAProvidersList_NotOnlyTheFirst()
+    {
+        var resolved = new AgentConfig
+        {
+            Models = { ["only"] = new(ProviderKind.OpenAiCompatible, "m") { BaseUrl = "http://x/v1" } },
+            Agents = { ["scout"] = new AgentTypeConfig("Search.", "only") { Providers = ["only", "ghost"] } },
+        }.Resolve();
+
+        Assert.Equal("provider 'ghost' is not a configured provider", resolved.AgentTypes["scout"].Disabled);
+    }
 }

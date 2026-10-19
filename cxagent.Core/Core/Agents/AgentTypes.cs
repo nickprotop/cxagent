@@ -119,9 +119,8 @@ public sealed record AgentType(
         if (Offers.Count == 0) return new(null, $"{Name} offers no choice of provider; omit 'provider'.");
 
         var asked = requested.Trim();
-        var name = Llm.AgentTypeConfig.NameOf(asked);
-        var colon = asked.IndexOf(':');
-        var model = colon < 0 ? null : asked[(colon + 1)..].Trim();
+        var (name, model) = Llm.AgentTypeConfig.SplitEntry(asked,
+            n => Offers.Any(o => string.Equals(o.InstanceName, n, StringComparison.OrdinalIgnoreCase)));
         bool ModelFits(TypeRouting o) => model is null || string.Equals(o.Provider?.ModelId, model, StringComparison.OrdinalIgnoreCase);
 
         var offer = Offers.FirstOrDefault(o => o.InstanceName == name && ModelFits(o))
@@ -166,7 +165,7 @@ public sealed class AgentTypeCatalog
     /// <param name="configured">Types from config, already validated. Empty is the common case.</param>
     /// <param name="providers">
     /// The instance catalog, for resolving each provider a type lists. Null when a session has none (the
-    /// mock path): a type that names a provider is then disabled, and the rest run on the parent's.
+    /// mock path): every type then runs on the parent's provider, a listed one included.
     /// </param>
     public AgentTypeCatalog(
         IReadOnlyDictionary<string, AgentTypeConfig> configured,
@@ -196,6 +195,9 @@ public sealed class AgentTypeCatalog
             var disabled = cfg.Disabled;
             IReadOnlyList<string> listed = cfg.Providers
                 ?? (cfg.Disabled is null && cfg.Provider is { } single ? new[] { single } : Array.Empty<string>());
+            // NO CATALOG AT ALL IS THE MOCK PATH: nothing to resolve against, so the list is no reason to
+            // refuse the type — it runs on the parent's, as every type does there.
+            if (providers is null) listed = Array.Empty<string>();
             foreach (var instance in listed)
             {
                 if (providers is null || !providers.TryGet(instance, out var resolved))

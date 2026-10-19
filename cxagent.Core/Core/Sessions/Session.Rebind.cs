@@ -96,7 +96,6 @@ public sealed partial class Session
 
     private string? _typesNote;
 
-    /// <summary>The types the model can name, one per line, as the spawn tool lists them.</summary>
     /// <summary>The catalog as the types note says it: each type, what it is for, and where it may run —
     /// with each provider's description, since the model chooses by them and the tool's own text is the
     /// session's first, not this refresh's.</summary>

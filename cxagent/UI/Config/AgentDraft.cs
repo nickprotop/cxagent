@@ -20,8 +20,10 @@ public sealed class AgentDraft
         Original = original;
         Description = original?.Description;
         Briefing = original?.Briefing;
-        _originalProviders = (original?.Written ?? (original?.Provider is { } p ? [p] : []))
-            .Select(AgentTypeConfig.NameOf).Distinct().ToList();
+        // AS WRITTEN, de-duplicated by the entry each names: a pin (`opus-quick:claude-opus-5-5`) is the
+        // user's guard against an entry's model changing under the type, and a reorder must not drop it.
+        _originalProviders = (original?.Written ?? original?.Providers ?? (original?.Provider is { } p ? [p] : []))
+            .Select(w => w.Trim()).DistinctBy(AgentTypeConfig.NameOf, StringComparer.Ordinal).ToList();
         Providers = [.. _originalProviders];
         MaxTurns = original?.MaxTurns;
         var terms = ToolTerms.Read(original?.Tools?.Terms);
@@ -57,10 +59,18 @@ public sealed class AgentDraft
     public string? Description { get; set; }
     public string? Briefing { get; set; }
 
-    /// <summary>The providers it may run on, as entry names in order — the first is the default. Empty is
-    /// the session's model. Seeded from the list AS WRITTEN, so a disabled type shows its bad entry and
-    /// the user can remove it.</summary>
+    /// <summary>The providers it may run on, in order — the first is the default — each as WRITTEN (`name`
+    /// or a pinned `name:model`); a new one is added bare. Empty is the session's model. A disabled type
+    /// shows its bad entry, so the user can remove it.</summary>
     public List<string> Providers { get; }
+
+    /// <summary>Set to clear a `provider` value that is not a name or a list (it disabled the type and
+    /// has no entries to remove): the save then removes the key.</summary>
+    public bool ClearBadProvider { get; set; }
+
+    /// <summary>Whether <paramref name="name"/> is already listed, in any form.</summary>
+    public bool ListsProvider(string name) =>
+        Providers.Any(w => w == name || AgentTypeConfig.NameOf(w) == name);
 
     private readonly IReadOnlyList<string> _originalProviders;
     private bool ProvidersChanged => !Providers.SequenceEqual(_originalProviders, StringComparer.Ordinal);
@@ -81,14 +91,14 @@ public sealed class AgentDraft
         !(Tools ?? []).SequenceEqual(_originalTools ?? [], StringComparer.Ordinal);
 
     public bool IsDirty =>
-        IsNew || ProvidersChanged || MaxTurns != Original?.MaxTurns || ToolsChanged
+        IsNew || ProvidersChanged || ClearBadProvider || MaxTurns != Original?.MaxTurns || ToolsChanged
         || (!IsBuiltin && (Blank(Description) != Blank(Original?.Description) || Blank(Briefing) != Blank(Original?.Briefing)));
 
     /// <summary>The edit: what changed set, what was emptied cleared.</summary>
     public AgentTypeFields ToFields()
     {
         var clear = new HashSet<string>();
-        if (ProvidersChanged && Providers.Count == 0) clear.Add("provider");
+        if ((ProvidersChanged || ClearBadProvider) && Providers.Count == 0) clear.Add("provider");
         if (MaxTurns is null && Original?.MaxTurns is not null) clear.Add("maxTurns");
         if (ToolsChanged && Tools is null) clear.Add("tools");
         if (!IsBuiltin && Blank(Description) is null && Original?.Description is not null) clear.Add("description");

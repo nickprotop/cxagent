@@ -15,8 +15,8 @@ public sealed record ProviderRemoval(bool Refused, IReadOnlyList<string> Lines);
 /// this dialog cannot make for them.</para>
 ///
 /// <para>OTHERWISE EVERY REFERENCE IS NAMED in the confirmation, with what the edit does to it — the
-/// default passes on, the reviewer is cleared, an agent type falls back to the session's provider — so
-/// nothing changes that the user was not shown.</para>
+/// default passes on, the reviewer is cleared, an agent type's default passes to its next provider or it
+/// loses one choice or it runs on the session's model — so nothing changes that the user was not shown.</para>
 /// </summary>
 public static class ProviderRemovalPlan
 {
@@ -38,8 +38,12 @@ public static class ProviderRemovalPlan
             if (!cfg.Lists(name)) continue;
             // WHAT THE TYPE RUNS ON AFTERWARDS, said before the user confirms — the next default can be
             // a paid provider, and finding that out from a bill is the worst way.
-            var rest = (cfg.Written ?? []).Select(AgentTypeConfig.NameOf).Where(n => n != name).Distinct().ToList();
-            var wasDefault = cfg.Providers is { Count: > 0 } listed ? listed[0] == name : cfg.Provider == name;
+            // BY THE LIST AS WRITTEN, which a disabled type still has: removing its bad first entry can
+            // ENABLE it, on a default the user should see first.
+            string NameIn(string w) => AgentTypeConfig.SplitEntry(w, settings.Providers.ContainsKey).Name;
+            var written = cfg.Written ?? cfg.Providers ?? (cfg.Provider is { } single ? [single] : []);
+            var rest = written.Select(NameIn).Where(n => n != name).Distinct().ToList();
+            var wasDefault = written.Count > 0 && NameIn(written[0]) == name;
             var next = rest.Count == 0 ? null
                 : settings.Providers.TryGetValue(rest[0], out var c) ? $"{rest[0]}:{c.Model}" : rest[0];
             lines.Add(next is null ? $"agent type '{type}' → runs on the session's model"

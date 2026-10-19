@@ -206,7 +206,7 @@ public sealed record AgentConfig
         var agents = new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal);
         foreach (var (name, cfg) in Agents)
         {
-            var written = cfg.Written ?? (cfg.Provider is { } single ? [single] : null);
+            var written = cfg.Written ?? cfg.Providers ?? (cfg.Provider is { } single ? [single] : null);
             if (written is null) { agents[name] = cfg; continue; }
             var list = ProviderConfigLoader.ResolveTypeProviders(written,
                 n => Models.TryGetValue(n, out var m) ? m.Model : null, Models.Keys);

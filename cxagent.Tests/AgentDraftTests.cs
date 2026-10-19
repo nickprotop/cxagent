@@ -88,7 +88,7 @@ public class AgentDraftTests
         var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!,
             new AgentTypeConfig(Provider: "local") { Providers = ["local", "deepseek"], Written = ["local", "deepseek:deepseek/deepseek-v3.2"] });
 
-        Assert.Equal(["local", "deepseek"], draft.Providers);
+        Assert.Equal(["local", "deepseek:deepseek/deepseek-v3.2"], draft.Providers);   // as written
         Assert.False(draft.IsDirty);
         Assert.Null(draft.ToFields().Providers);
         Assert.Null(draft.ToFields().Provider);
@@ -111,5 +111,39 @@ public class AgentDraftTests
             new AgentTypeConfig() { Written = ["local", "ghost"], Disabled = "provider 'ghost' is not a configured provider" });
 
         Assert.Equal(["local", "ghost"], draft.Providers);     // so the user can remove the bad one
+    }
+
+    [Fact]
+    public void AReorder_KeepsAPinnedEntryAsWritten()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!,
+            new AgentTypeConfig(Provider: "local") { Providers = ["local", "opus-quick"], Written = ["local", "opus-quick:claude-opus-5-5"] });
+        draft.Providers.Reverse();
+
+        Assert.Equal(["opus-quick:claude-opus-5-5", "local"], draft.ToFields().Providers);
+    }
+
+    [Fact]
+    public void AnEntryAlreadyListed_IsListedByName_InAnyForm()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!,
+            new AgentTypeConfig(Provider: "local") { Providers = ["local"], Written = ["local:qwen"] });
+
+        Assert.True(draft.ListsProvider("local"));
+        Assert.False(draft.ListsProvider("deepseek"));
+    }
+
+    [Fact]
+    public void ABadlyShapedProvider_CanBeCleared()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!,
+            new AgentTypeConfig() { Disabled = "provider must be a provider name or a list of them" });
+        Assert.Empty(draft.Providers);
+        Assert.False(draft.IsDirty);
+
+        draft.ClearBadProvider = true;
+
+        Assert.True(draft.IsDirty);
+        Assert.Contains("provider", draft.ToFields().Clear);
     }
 }
