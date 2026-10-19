@@ -106,6 +106,11 @@ public sealed record AgentType(
     /// <summary>Why this type cannot run, or null. Spawns of it are refused with this reason.</summary>
     public string? Disabled { get; init; }
 
+    /// <summary>`"provider": "all"` — <see cref="Offers"/> is every configured entry, and there is no
+    /// default: a spawn that names none is refused. False with no registry (the mock path), where every
+    /// type runs on the parent's.</summary>
+    public bool AnyProvider { get; init; }
+
     /// <summary>
     /// Where a spawn asking for <paramref name="requested"/> runs. Names match ignoring case — exact case
     /// first, for two entries differing only in case — and NEVER by prefix: a model guessing a prefix
@@ -115,6 +120,8 @@ public sealed record AgentType(
     public ProviderPick Pick(string? requested)
     {
         if (Disabled is { } why) return new(null, $"{Name} is disabled: {why}.");
+        if (AnyProvider && string.IsNullOrWhiteSpace(requested))
+            return new(null, $"{Name} has no default provider; name one: {string.Join(", ", Offers.Select(o => o.Label))}.");
         if (string.IsNullOrWhiteSpace(requested)) return new(Routing, null);
         if (Offers.Count == 0) return new(null, $"{Name} offers no choice of provider; omit 'provider'.");
 
@@ -193,8 +200,10 @@ public sealed class AgentTypeCatalog
             // somewhere else is the outcome a provider list exists to rule out.
             var offers = new List<TypeRouting>();
             var disabled = cfg.Disabled;
-            IReadOnlyList<string> listed = cfg.Providers
-                ?? (cfg.Disabled is null && cfg.Provider is { } single ? new[] { single } : Array.Empty<string>());
+            IReadOnlyList<string> listed = cfg.AnyProvider && providers is not null
+                // EVERY ENTRY, live: "all" follows whatever is configured now, in config's order.
+                ? [.. providers.InstanceNames]
+                : cfg.Providers ?? (cfg.Disabled is null && cfg.Provider is { } single ? new[] { single } : Array.Empty<string>());
             // NO CATALOG AT ALL IS THE MOCK PATH: nothing to resolve against, so the list is no reason to
             // refuse the type — it runs on the parent's, as every type does there.
             if (providers is null) listed = Array.Empty<string>();
@@ -210,7 +219,9 @@ public sealed class AgentTypeCatalog
                 offers.Add(new TypeRouting(resolved, window, instance) { Description = described });
             }
             if (disabled is not null) offers.Clear();
-            var routing = offers.Count > 0 ? offers[0] : TypeRouting.Inherited;
+            // NO DEFAULT FOR "all": its routing is never used — Pick refuses a spawn that names none.
+            var anyProvider = cfg.AnyProvider && providers is not null && disabled is null;
+            var routing = !anyProvider && offers.Count > 0 ? offers[0] : TypeRouting.Inherited;
 
             // A BUILT-IN NAME KEEPS ITS SHIPPED TEXT and takes only what config may decide: where it
             // runs, and what it may spend. Config parsing already blanked the briefing and warned;
@@ -222,7 +233,7 @@ public sealed class AgentTypeCatalog
                 // than inventing a line — see AgentTypeConfig.Briefing.
                 ? new AgentType(name, cfg.Briefing ?? "",
                     routing, cfg.MaxTurns, cfg.Description)
-                    { Tools = cfg.Tools, Offers = offers, Disabled = disabled }
+                    { Tools = cfg.Tools, Offers = offers, Disabled = disabled, AnyProvider = anyProvider }
                 // A BUILT-IN KEEPS ITS SHIPPED TEXT AND TAKES CONFIG'S TOOLS. Unlike briefing and
                 // description, which are shipped text the code depends on, a toolset is a property
                 // of this deployment — the user's fact, not ours.
@@ -230,7 +241,7 @@ public sealed class AgentTypeCatalog
                     routing,
                     cfg.MaxTurns ?? builtin.DefaultMaxTurns, builtin.Description,
                     builtin.WritesAPlanFile)
-                    { Tools = cfg.Tools, Offers = offers, Disabled = disabled };
+                    { Tools = cfg.Tools, Offers = offers, Disabled = disabled, AnyProvider = anyProvider };
         }
 
         All = [_types[DefaultTypeName],

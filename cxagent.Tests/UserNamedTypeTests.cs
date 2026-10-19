@@ -116,6 +116,7 @@ public class UserNamedTypeTests
 
         Assert.Contains("When a type offers more than one provider, its first is its default.", prompt, StringComparison.Ordinal);
         Assert.Contains("When the user names a provider, that settles it.", prompt, StringComparison.Ordinal);
+        Assert.Contains("A type that runs on any provider has no default: name the one whose description fits the task, and say why.", prompt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -127,5 +128,6 @@ public class UserNamedTypeTests
 
         Assert.DoesNotContain("its first is its default", prompt, StringComparison.Ordinal);
         Assert.DoesNotContain("names a provider", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("any provider", prompt, StringComparison.Ordinal);
     }
 }

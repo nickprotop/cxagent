@@ -352,9 +352,20 @@ public record AgentTypeConfig(string? Briefing = null, string? Provider = null, 
     /// </summary>
     public string? Disabled { get; init; }
 
-    /// <summary>Whether this type names <paramref name="provider"/>, in any form it was written.</summary>
+    /// <summary>The word that makes a type run on any provider: `"provider": "all"`. Reserved — a provider
+    /// entry of that name is reachable in a type's list only as `all:model`.</summary>
+    public const string AnyProviderWord = "all";
+
+    /// <summary>
+    /// `"provider": "all"` — the type may run on every configured provider, and has NO DEFAULT: a spawn
+    /// must name one. Stands alone; mixed with names it disables the type.
+    /// </summary>
+    public bool AnyProvider { get; init; }
+
+    /// <summary>Whether this type names <paramref name="provider"/>, in any form it was written — always,
+    /// for a type that runs on any provider.</summary>
     public bool Lists(string provider) =>
-        (Written ?? Providers ?? (Provider is { } p ? [p] : [])).Any(w => w.Trim() == provider || NameOf(w) == provider);
+        AnyProvider || (Written ?? Providers ?? (Provider is { } p ? [p] : [])).Any(w => w.Trim() == provider || NameOf(w) == provider);
 
     /// <summary>The entry a written `name` or `name:model` names when nothing says which providers exist: up
     /// to the FIRST colon, trimmed — a model id may itself hold a colon, or slashes, as OpenRouter's do.</summary>
@@ -379,7 +390,11 @@ public record AgentTypeConfig(string? Briefing = null, string? Provider = null, 
 }
 
 /// <summary>A type's provider list resolved: the entry names, or why it is unusable and what is known.</summary>
-public sealed record TypeProviderList(IReadOnlyList<string>? Names, string? Problem, string? Known);
+public sealed record TypeProviderList(IReadOnlyList<string>? Names, string? Problem, string? Known)
+{
+    /// <summary>The list was `"all"`: every provider, no default.</summary>
+    public bool Any { get; init; }
+}
 
 public record ProviderSettings(
     IReadOnlyDictionary<string, ProviderInstanceConfig> Providers,
@@ -511,6 +526,13 @@ public static class ProviderConfigLoader
     /// </summary>
     internal static TypeProviderList ResolveTypeProviders(IReadOnlyList<string> written, Func<string, string?> modelOf, IEnumerable<string> known)
     {
+        // "all" STANDS ALONE: with names beside it, which one would be the default — and why list any?
+        bool IsAll(string w) => string.Equals(w.Trim(), AgentTypeConfig.AnyProviderWord, StringComparison.OrdinalIgnoreCase);
+        if (written.Any(IsAll))
+            return written.Count == 1
+                ? new(null, null, null) { Any = true }
+                : new(null, "provider 'all' stands alone: list providers by name, or write \"all\" by itself", null);
+
         var names = new List<string>();
         foreach (var raw in written)
         {
@@ -1173,6 +1195,7 @@ public static class ProviderConfigLoader
                         Providers = checkedList?.Names,
                         Written = written,
                         Disabled = checkedList?.Problem,
+                        AnyProvider = checkedList?.Any ?? false,
                     };
                 }
 

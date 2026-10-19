@@ -79,6 +79,7 @@ internal sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffe
             // information. A DISABLED type says so — this is where a user looks after a config edit
             // did nothing. Labels escaped: a model id like qwen…_xs.gguf carries markdown's own marks.
             var runsOn = type.Disabled is { } why ? $"disabled: {Md.Escape(why)}"
+                : type.AnyProvider ? "any provider (no default)"
                 : type.Offers.Count > 0 ? string.Join(", ", type.Offers.Select((o, i) => i == 0 ? $"{Md.Escape(o.Label)} (default)" : Md.Escape(o.Label)))
                 : "session's model";
 
@@ -165,6 +166,7 @@ internal sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffe
         lines.Add("");
         static string One(TypeRouting o) => o.Description is { Length: > 0 } d ? $"{Md.Escape(o.Label)} ({Md.Escape(d)})" : Md.Escape(o.Label);
         lines.Add(type.Disabled is { } why ? $"Disabled: {Md.Escape(why)}."
+            : type.AnyProvider ? "Runs on any provider; a spawn must name one."
             : type.Offers.Count == 0 ? "Runs on the session's model."
             : type.Offers.Count == 1 ? $"Runs on {One(type.Offers[0])}."
             : $"Runs on {One(type.Offers[0])} by default; may run on {string.Join(", ", type.Offers.Skip(1).Select(One))}.");

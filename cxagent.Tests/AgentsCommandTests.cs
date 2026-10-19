@@ -152,4 +152,9 @@ public class AgentsCommandTests
     [Fact]
     public void TheDetail_OfADisabledType_SaysWhy() =>
         Assert.Contains("Disabled: provider 'typo' is not a configured provider.", Run(Routed(), "broken"), StringComparison.Ordinal);
+
+    [Fact]
+    public void AnAllType_SaysAnyProvider() =>
+        Assert.Contains("any provider (no default)", Run(new AgentTypeCatalog(new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal)
+            { ["scout"] = new("S.") { AnyProvider = true } }, AgentTypeProviderTests.Registry())), StringComparison.Ordinal);
 }

@@ -272,4 +272,17 @@ public class AgentConfigTests
 
         Assert.Equal("provider 'ghost' is not a configured provider", resolved.AgentTypes["scout"].Disabled);
     }
+
+    [Fact]
+    public void TheCodeDoor_TakesAll()
+    {
+        var resolved = new AgentConfig
+        {
+            Models = { ["only"] = new(ProviderKind.OpenAiCompatible, "m") { BaseUrl = "http://x/v1" } },
+            Agents = { ["scout"] = new AgentTypeConfig("Search.") { Written = ["all"] } },
+        }.Resolve();
+
+        Assert.True(resolved.AgentTypes["scout"].AnyProvider);
+        Assert.Null(resolved.AgentTypes["scout"].Disabled);
+    }
 }

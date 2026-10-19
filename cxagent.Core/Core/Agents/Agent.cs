@@ -1051,6 +1051,8 @@ public sealed class Agent
     /// IS the session.
     /// </param>
     /// <param name="startedOn">The day the session began, for the system prompt; null is today.</param>
+    /// <param name="runsOn">For a sub-agent, its type and where it runs (`planner on deepseek:…`), shown
+    /// beside its label in its permission prompts; null for a session's own agent.</param>
     public Agent(ILlmProvider provider, JobRegistry executors, TokenLedger ledger,
         ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null, string? globalInstructionsDir = null,

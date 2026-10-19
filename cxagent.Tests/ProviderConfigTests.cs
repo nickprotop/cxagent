@@ -1045,4 +1045,29 @@ public class ProviderConfigTests : IDisposable
         Assert.Equal(["lm:studio"], t.Providers);
         Assert.True(t.Lists("lm:studio"));
     }
+
+    [Theory]
+    [InlineData("\"all\"")]
+    [InlineData("[\"all\"]")]
+    [InlineData("\" ALL \"")]
+    public void Agents_All_OffersEveryProvider_WithNoDefault(string value)
+    {
+        WriteConfig($$"""{ {{TwoProviders}}, "agents": { "scout": { "briefing": "S.", "provider": {{value}} } } }""");
+        var t = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).AgentTypes["scout"];
+
+        Assert.True(t.AnyProvider);
+        Assert.Null(t.Disabled);
+        Assert.Null(t.Provider);                 // no default
+        Assert.True(t.Lists("fast"));
+    }
+
+    [Fact]
+    public void Agents_AllWithNames_DisablesTheType()
+    {
+        WriteConfig($$"""{ {{TwoProviders}}, "agents": { "scout": { "briefing": "S.", "provider": ["local", "all"] } } }""");
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Equal("provider 'all' stands alone: list providers by name, or write \"all\" by itself", s.AgentTypes["scout"].Disabled);
+        Assert.Contains(s.Warnings, w => w.EndsWith("scout is disabled.", StringComparison.Ordinal));
+    }
 }

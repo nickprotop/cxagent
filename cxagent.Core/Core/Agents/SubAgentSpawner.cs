@@ -266,15 +266,25 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             // so a user who names it gets an answer the model can relay.
             var sep = what.EndsWith('.') ? " " : ". ";
             var where = type.Disabled is { } why ? $" (disabled: {why})"
+                : type.AnyProvider ? sep + "Runs on any provider below; name one — it has no default."
                 : type.Offers.Count == 0 ? ""
                 : sep + RunsOn(type.Offers);
 
             sb.AppendLine($"- {type.Name}: {what}{where}");
         }
 
+        // EVERY PROVIDER ONCE, however many types run on any of them — each with its description, the
+        // line a choice is made by.
+        if (_types.All.FirstOrDefault(t => t.AnyProvider && t.Offers.Count > 0) is { } any)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Providers:");
+            foreach (var o in any.Offers)
+                sb.AppendLine(o.Description is { Length: > 0 } d ? $"- {o.Label} ({d})" : $"- {o.Label}");
+        }
+
         return sb.ToString();
     }
-
 
     private static string RunsOn(IReadOnlyList<TypeRouting> offers)
     {
@@ -326,7 +336,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         ,
                         "provider": {
                           "type": "string",
-                          "description": "Optional. Where the agent runs: one of its type's providers from this tool's description, as name:model. Omit for the type's default."
+                          "description": "Optional. Where the agent runs: one of its type's providers from this tool's description, as name:model. Omit for the type's default; a type that runs on any provider has none, and needs one named."
                         }
         """;
 

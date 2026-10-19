@@ -339,7 +339,8 @@ internal static class SystemPrompt
             sb.AppendLine("When a type offers more than one provider, its first is its default. Name "
                         + "another of its providers only when the task needs what that provider's "
                         + "description offers, and say in your reply which one you chose and why. "
-                        + "When the user names a provider, that settles it.");
+                        + "When the user names a provider, that settles it. A type that runs on any "
+                        + "provider has no default: name the one whose description fits the task, and say why.");
             sb.AppendLine();
             // WORKED EXAMPLES (<example> blocks with a bracketed action). Two interventions had
             // already failed to move this — a sharpened tool description and the rule above — and an

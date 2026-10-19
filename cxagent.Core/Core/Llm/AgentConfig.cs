@@ -211,7 +211,7 @@ public sealed record AgentConfig
             var list = ProviderConfigLoader.ResolveTypeProviders(written,
                 n => Models.TryGetValue(n, out var m) ? m.Model : null, Models.Keys);
             if (list.Problem is not null) warnings.Add(ProviderConfigLoader.TypeProviderWarning(name, list));
-            agents[name] = cfg with { Provider = list.Names?.FirstOrDefault(), Providers = list.Names, Written = written, Disabled = list.Problem };
+            agents[name] = cfg with { Provider = list.Names?.FirstOrDefault(), Providers = list.Names, Written = written, Disabled = list.Problem, AnyProvider = list.Any };
         }
         var chosen = Models[defaultName!];
 

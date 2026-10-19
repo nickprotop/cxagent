@@ -2181,4 +2181,18 @@ public class SubAgentSpawnerTests
     [Fact]
     public async Task AChildOnTheSessionsModel_StillNamesIt() =>
         Assert.Equal("mock-model", (await SpawnRowAsync()).RunsOn);
+
+    [Fact]
+    public void Definition_ListsEveryProviderOnce_ForAnAllType()
+    {
+        var d = new SubAgentSpawner(FactoryOver(Answering("x")), ProviderCatalog(
+            ("scout", new AgentTypeConfig("Search.", Description: "Searches.") { AnyProvider = true }),
+            ("hunt", new AgentTypeConfig("Hunt.", Description: "Hunts.") { AnyProvider = true }))).Definition;
+
+        Assert.Contains("- scout: Searches. Runs on any provider below; name one — it has no default.", d.Description, StringComparison.Ordinal);
+        Assert.Contains("Providers:\n- local:mock-model (fast local, free)\n- deepseek:deepseek/deepseek-v3.2 (strong, paid)", d.Description.Replace("\r\n", "\n"), StringComparison.Ordinal);
+        Assert.Equal(1, d.Description.Split("Providers:").Length - 1);
+        Assert.True(d.InputSchema.GetProperty("properties").TryGetProperty("provider", out var provider));
+        Assert.Contains("a type that runs on any provider has none, and needs one named", provider.GetProperty("description").GetString(), StringComparison.Ordinal);
+    }
 }

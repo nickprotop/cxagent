@@ -103,6 +103,9 @@ public sealed partial class Session
         catalog is null ? "" : string.Join("; ", catalog.All.Select(t =>
             (t.Description is { Length: > 0 } d ? $"{t.Name} — {d}" : t.Name)
             + (t.Disabled is { } why ? $" (disabled: {why})"
+               // NOT A CONSTANT for "all": the note is sent only when this text changes, so it must name
+               // the providers, or one added or re-described mid-session would never be announced.
+               : t.AnyProvider ? $" (any provider, no default: {string.Join(", ", t.Offers.Select(o => o.Description is { Length: > 0 } od ? $"{o.Label} ({od})" : o.Label))})"
                : t.Offers.Count > 0 ? $" (runs on {string.Join(", ", t.Offers.Select(o => o.Description is { Length: > 0 } od ? $"{o.Label} ({od})" : o.Label))})"
                : "")));
 

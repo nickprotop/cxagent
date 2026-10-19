@@ -139,4 +139,45 @@ public class AgentTypeProviderTests
         Assert.Equal("lm:studio", t.Pick("lm:studio").Routing!.InstanceName);
         Assert.Equal("lm:studio", t.Pick("lm:studio:m").Routing!.InstanceName);
     }
+
+    private static AgentType AnyType() => Type(new AgentTypeConfig("Search.") { AnyProvider = true });
+
+    [Fact]
+    public void All_NamingNone_IsRefused_ListingEveryProvider() =>
+        Assert.Equal("scout has no default provider; name one: local:qwen-coder, deepseek:deepseek/deepseek-v3.2, opus:claude-opus-5-5.",
+            AnyType().Pick(null).Refusal);
+
+    [Fact]
+    public void All_NamingAnyConfiguredOne_RunsThere() =>
+        Assert.Equal("opus", AnyType().Pick("opus").Routing!.InstanceName);
+
+    [Fact]
+    public void All_WithOneProvider_StillHasNoDefault()
+    {
+        var registry = ProviderRegistry.FromProviders(new Dictionary<string, ILlmProvider>(StringComparer.Ordinal) { ["local"] = new MockLlmProvider("q") }, "local", null);
+        var t = new AgentTypeCatalog(new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal)
+        { ["scout"] = new("S.") { AnyProvider = true } }, registry).Resolve("scout")!;
+
+        Assert.Contains("has no default provider", t.Pick(null).Refusal, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void All_WithNoRegistry_RunsOnTheParents()
+    {
+        var t = new AgentTypeCatalog(new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal)
+        { ["scout"] = new("S.") { AnyProvider = true } }, null).Resolve("scout")!;
+
+        Assert.False(t.AnyProvider);
+        Assert.Same(TypeRouting.Inherited, t.Pick(null).Routing);
+    }
+
+    [Fact]
+    public void TheTypesNote_ForAnAllType_ChangesWhenAProviderDoes()
+    {
+        static string Note(params string[] names) => CxAgent.Core.Sessions.Session.DescribeTypes(new AgentTypeCatalog(
+            new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal) { ["scout"] = new("S.") { AnyProvider = true } },
+            ProviderRegistry.FromProviders(names.ToDictionary(n => n, n => (ILlmProvider)new MockLlmProvider("m"), StringComparer.Ordinal), names[0], null)));
+
+        Assert.NotEqual(Note("local"), Note("local", "deepseek"));
+    }
 }
