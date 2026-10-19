@@ -721,6 +721,9 @@ pre.has-copy:hover .copy-button,
 
 @media (hover: none) {
   .copy-button { opacity: 1; }
+  /* A BAND OF ITS OWN ABOVE THE CODE, because here the button never hides: laid over the first line
+     it covers the end of a one-line command — the part a reader checks before running it. */
+  pre.has-copy { padding-top: 2.4rem; }
 }
 
 /* A quiet aside under an explorer caption: the thread between two captures of one session. */
