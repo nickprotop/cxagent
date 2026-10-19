@@ -36,6 +36,7 @@
     "local": {
       "kind": "openai-compatible",
       "model": "qwen3.6-35b-a3b-ud-iq4_xs.gguf",
+      "description": "the local llama.cpp model: free and private; edits, builds, searches",
       "baseUrl": "http://localhost:8771/v1",
       "apiKey": "sk-local",
       "contextWindow": 212992,
@@ -142,9 +143,9 @@
     "builder": {
       "maxTurns": 60
     },
-    "//planner": "Another built-in, pointed at a different endpoint. Both keys are still honoured.",
+    "//planner": "Another built-in, given where it may run: a list of providers, the first its default. Both keys are still honoured.",
     "planner": {
-      "provider": "local"
+      "provider": ["local"]
     },
     "//researcher": "A name cxagent does not ship, so it is entirely yours \u2014 briefing required.",
     "researcher": {

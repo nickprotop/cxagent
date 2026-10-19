@@ -32,11 +32,16 @@ Named instances. The name is yours; `kind` is what cxagent knows how to talk to.
     "kind": "openai-compatible",
     "model": "qwen3.6-35b-a3b-ud-iq4_xs.gguf",
     "baseUrl": "http://127.0.0.1:8771/v1",
-    "contextWindow": 212992
+    "contextWindow": 212992,
+    "description": "the local llama.cpp model: free and private; edits, builds, searches"
   }
 },
 "defaultProvider": "local"
 ```
+
+**`description` says what the entry is for**, in one line — what it is good at, and whether it is free
+or paid. The model reads it when choosing where a sub-agent runs (see [`agents`](#agents--sub-agent-types)),
+so it is worth writing for any entry an agent type lists.
 
 **`contextWindow` is worth setting even though it is optional.** Without it the app cannot tell you
 how full the context is — a percentage needs a denominator, and inventing one would put a confident
@@ -196,7 +201,7 @@ made in one session reached exactly one machine, because they were edits to a JS
 
 | Key | On a shipped type | On your own type |
 |---|---|---|
-| `provider` | An instance name from `providers`. Omit to inherit the session's. | Same. |
+| `provider` | A `providers` entry, or a list of them — `"local"`, `"local:qwen-coder"`, `["local", "deepseek"]`. The first is the default; a spawn may choose another from the list. Omit (or `null`) to run on the session's model. A name that is not configured, or a `:model` that is not the entry's, disables the type with a warning. | Same. |
 | `maxTurns` | Absent inherits the type's shipped default, then the session ceiling; `0` is unbounded. | Absent inherits the session ceiling. |
 | `briefing` | **Ignored, with a warning at startup.** | Required. |
 | `description` | **Ignored, with a warning at startup.** | Optional, and worth writing. |
@@ -205,6 +210,12 @@ made in one session reached exactly one machine, because they were edits to a JS
 `maxTurns` and `tools` with no briefing at all: `"general": { "provider": "local" }` moves every plain
 sub-agent to that instance. A `briefing` on it is optional, and becomes a standing instruction every such
 child is given.
+
+**A spawn may choose among a type's providers.** The model sees each type's providers with their
+descriptions and may pass `provider` to pick one; anything the type does not list is refused. Give each
+provider entry a `description` — what it is for, what it costs — since that line is what the choice is
+made by. In `/config`, the Agents tab edits the list (add, remove, reorder; the first is the default), and
+`/agents` shows it.
 
 Ignoring loudly is deliberate. An edit that does nothing and says nothing is the worst of the three
 options — silently winning restores the drift, silently losing leaves you debugging a change that was
