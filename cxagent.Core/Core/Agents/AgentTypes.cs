@@ -10,11 +10,11 @@ namespace CxAgent.Core.Agents;
 /// resolved value rather than re-doing config work on every spawn, and nothing downstream has to know
 /// that an instance was ever named by a string.</para>
 ///
-/// <para>AN INSTANCE, NOT A MODEL. What <c>agents.&lt;type&gt;.provider</c> names is a <c>providers</c>
-/// entry — an endpoint bound to one model with one window — never a model on its own. That is what
-/// makes routing a type meaningful: two entries can serve the SAME model with different windows, so
-/// <c>small</c> and <c>local</c> are a real choice even when the model behind them is identical, and
-/// the window travels with the instance rather than being guessed at.</para>
+/// <para>ENTRIES, NOT MODELS. What <c>agents.&lt;type&gt;.provider</c> lists are <c>providers</c>
+/// entries — each an endpoint bound to one model with one window and one thinking level — never a model
+/// on its own. That is what makes a choice between them meaningful: two entries can serve the SAME model
+/// with different windows or thinking, so <c>small</c> and <c>local</c> are a real choice even when the
+/// model behind them is identical, and the window travels with the entry rather than being guessed at.</para>
 /// </summary>
 /// <summary>
 /// WHERE a type runs — the provider it resolved to, that provider's window, and the `providers` entry
@@ -51,7 +51,17 @@ public sealed record TypeRouting(
 {
     /// <summary>A type that runs wherever its parent does, which is the common case.</summary>
     public static readonly TypeRouting Inherited = new();
+
+    /// <summary>The entry's description, shown beside it where the model chooses. Null when unset.</summary>
+    public string? Description { get; init; }
+
+    /// <summary>`name:model`, the form config and the model use — the label spend and a child's row show.
+    /// Empty for <see cref="Inherited"/>, which names no entry.</summary>
+    public string Label => InstanceName is { Length: > 0 } name && Provider is { } p ? $"{name}:{p.ModelId}" : "";
 }
+
+/// <summary>Where a spawn will run, or why it may not: exactly one of the two is set.</summary>
+public sealed record ProviderPick(TypeRouting? Routing, string? Refusal);
 
 /// <summary>One named way of doing delegated work: what it is told, when to pick it, and where it
 /// runs.</summary>
@@ -89,6 +99,38 @@ public sealed record AgentType(
     /// </summary>
     public Jobs.ToolSelection? Tools { get; init; }
 
+    /// <summary>Every entry this type may run on, in config's order — the first is <see cref="Routing"/>,
+    /// the default. Empty when config listed none: the type runs on the session's model.</summary>
+    public IReadOnlyList<TypeRouting> Offers { get; init; } = [];
+
+    /// <summary>Why this type cannot run, or null. Spawns of it are refused with this reason.</summary>
+    public string? Disabled { get; init; }
+
+    /// <summary>
+    /// Where a spawn asking for <paramref name="requested"/> runs. Names match ignoring case — exact case
+    /// first, for two entries differing only in case — and NEVER by prefix: a model guessing a prefix
+    /// that lands on another, possibly paid, entry is the costly mistake. A `:model` part splits on the
+    /// first colon and must be the entry's own model.
+    /// </summary>
+    public ProviderPick Pick(string? requested)
+    {
+        if (Disabled is { } why) return new(null, $"{Name} is disabled: {why}.");
+        if (string.IsNullOrWhiteSpace(requested)) return new(Routing, null);
+        if (Offers.Count == 0) return new(null, $"{Name} offers no choice of provider; omit 'provider'.");
+
+        var asked = requested.Trim();
+        var name = Llm.AgentTypeConfig.NameOf(asked);
+        var colon = asked.IndexOf(':');
+        var model = colon < 0 ? null : asked[(colon + 1)..].Trim();
+        bool ModelFits(TypeRouting o) => model is null || string.Equals(o.Provider?.ModelId, model, StringComparison.OrdinalIgnoreCase);
+
+        var offer = Offers.FirstOrDefault(o => o.InstanceName == name && ModelFits(o))
+                 ?? Offers.FirstOrDefault(o => string.Equals(o.InstanceName, name, StringComparison.OrdinalIgnoreCase) && ModelFits(o));
+        return offer is not null
+            ? new(offer, null)
+            : new(null, $"{Name} does not run on '{asked}'. Its providers: {string.Join(", ", Offers.Select(o => o.Label))}.");
+    }
+
     /// <summary>Where this type runs, flattened for readers that want one field. The routing record
     /// is the truth; these exist so call sites do not all have to say <c>Routing.</c>.</summary>
     public ILlmProvider? Provider => Routing.Provider;
@@ -123,8 +165,8 @@ public sealed class AgentTypeCatalog
 
     /// <param name="configured">Types from config, already validated. Empty is the common case.</param>
     /// <param name="providers">
-    /// The instance catalog, for resolving a type's provider name. Null when a session has none (the
-    /// mock path), in which case every type runs on the parent's provider.
+    /// The instance catalog, for resolving each provider a type lists. Null when a session has none (the
+    /// mock path): a type that names a provider is then disabled, and the rest run on the parent's.
     /// </param>
     public AgentTypeCatalog(
         IReadOnlyDictionary<string, AgentTypeConfig> configured,
@@ -146,20 +188,27 @@ public sealed class AgentTypeCatalog
 
         foreach (var (name, cfg) in configured)
         {
-            ILlmProvider? provider = null;
-            int? window = null;
-            string? instanceName = null;
-
-            // THE PROVIDER AND ITS WINDOW, RESOLVED TOGETHER. Config validation already rejected a
-            // name that is not configured, so a miss here means the registry and the settings
-            // disagree — degrade to the parent's rather than throwing at spawn time.
-            if (cfg.Provider is { } instance && providers is not null
-                && providers.TryGet(instance, out var resolved))
+            // EVERY LISTED ENTRY, RESOLVED WITH ITS WINDOW AND DESCRIPTION. A name the registry lacks
+            // disables the type rather than rerouting it — config parsing checked file-written names, so
+            // a miss here is a registry that disagrees with its settings, and a type silently running
+            // somewhere else is the outcome a provider list exists to rule out.
+            var offers = new List<TypeRouting>();
+            var disabled = cfg.Disabled;
+            IReadOnlyList<string> listed = cfg.Providers
+                ?? (cfg.Disabled is null && cfg.Provider is { } single ? new[] { single } : Array.Empty<string>());
+            foreach (var instance in listed)
             {
-                provider = resolved;
-                instanceName = instance;
-                providers.InstanceWindows.TryGetValue(instance, out window);
+                if (providers is null || !providers.TryGet(instance, out var resolved))
+                {
+                    disabled ??= $"provider '{instance}' is not a configured provider";
+                    continue;
+                }
+                providers.InstanceWindows.TryGetValue(instance, out var window);
+                providers.InstanceDescriptions.TryGetValue(instance, out var described);
+                offers.Add(new TypeRouting(resolved, window, instance) { Description = described });
             }
+            if (disabled is not null) offers.Clear();
+            var routing = offers.Count > 0 ? offers[0] : TypeRouting.Inherited;
 
             // A BUILT-IN NAME KEEPS ITS SHIPPED TEXT and takes only what config may decide: where it
             // runs, and what it may spend. Config parsing already blanked the briefing and warned;
@@ -170,16 +219,16 @@ public sealed class AgentTypeCatalog
                 // config that omitted it produces. The catalog says nothing was configured rather
                 // than inventing a line — see AgentTypeConfig.Briefing.
                 ? new AgentType(name, cfg.Briefing ?? "",
-                    new TypeRouting(provider, window, instanceName), cfg.MaxTurns, cfg.Description)
-                    { Tools = cfg.Tools }
+                    routing, cfg.MaxTurns, cfg.Description)
+                    { Tools = cfg.Tools, Offers = offers, Disabled = disabled }
                 // A BUILT-IN KEEPS ITS SHIPPED TEXT AND TAKES CONFIG'S TOOLS. Unlike briefing and
                 // description, which are shipped text the code depends on, a toolset is a property
                 // of this deployment — the user's fact, not ours.
                 : new AgentType(name, builtin.Briefing,
-                    new TypeRouting(provider, window, instanceName),
+                    routing,
                     cfg.MaxTurns ?? builtin.DefaultMaxTurns, builtin.Description,
                     builtin.WritesAPlanFile)
-                    { Tools = cfg.Tools };
+                    { Tools = cfg.Tools, Offers = offers, Disabled = disabled };
         }
 
         All = [_types[DefaultTypeName],
