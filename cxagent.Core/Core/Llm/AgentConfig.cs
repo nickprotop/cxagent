@@ -199,6 +199,20 @@ public sealed record AgentConfig
             StringComparer.Ordinal);
 
         var windows = Models.ToDictionary(m => m.Key, m => m.Value.ContextWindow, StringComparer.Ordinal);
+
+        // THE SAME CHECK AS THE FILE'S, so a type is disabled for the same reasons whichever door wrote
+        // it — and said so, rather than quietly rerouted or quietly broken.
+        var warnings = new List<string>();
+        var agents = new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal);
+        foreach (var (name, cfg) in Agents)
+        {
+            var written = cfg.Written ?? (cfg.Provider is { } single ? [single] : null);
+            if (written is null) { agents[name] = cfg; continue; }
+            var list = ProviderConfigLoader.ResolveTypeProviders(written,
+                n => Models.TryGetValue(n, out var m) ? m.Model : null, Models.Keys);
+            if (list.Problem is not null) warnings.Add(ProviderConfigLoader.TypeProviderWarning(name, list));
+            agents[name] = cfg with { Provider = list.Names?.FirstOrDefault(), Providers = list.Names, Written = written, Disabled = list.Problem };
+        }
         var chosen = Models[defaultName!];
 
         return new ResolvedConfig(
@@ -210,7 +224,7 @@ public sealed record AgentConfig
             new ProviderCatalog(
                 Instances: ProviderRegistry.FromProviders(instances, defaultName, windows,
                     Models.ToDictionary(m => m.Key, m => m.Value.Description, StringComparer.Ordinal)),
-                AgentTypes: new Dictionary<string, AgentTypeConfig>(Agents, StringComparer.Ordinal),
+                AgentTypes: agents,
                 McpServers: Mcp.ToDictionary(
                     s => s.Key,
                     s => new McpServerConfig(s.Value.Command, s.Value.Enabled, s.Value.TimeoutMs,
@@ -222,6 +236,7 @@ public sealed record AgentConfig
                 ClassifierInstance: Classifier)
             { PluginPaths = PluginPaths },
             [],
+            Warnings: warnings,
             Entries: new PluginEntries(Plugins));
     }
 

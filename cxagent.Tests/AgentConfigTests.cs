@@ -242,4 +242,22 @@ public class AgentConfigTests
 
         Assert.Equal("fast, free", resolved.Providers!.InstanceDescriptions["only"]);
     }
+
+    [Theory]
+    [InlineData("only:m", null)]
+    [InlineData("only:other", "provider 'only:other': 'only' runs m, not 'other'")]
+    [InlineData("ghost", "provider 'ghost' is not a configured provider")]
+    public void TheCodeDoor_ChecksATypesProviders_AsTheFileDoes(string written, string? disabled)
+    {
+        var resolved = new AgentConfig
+        {
+            Models = { ["only"] = new(ProviderKind.OpenAiCompatible, "m") { BaseUrl = "http://x/v1" } },
+            Agents = { ["scout"] = new AgentTypeConfig("Search.") { Written = [written] } },
+        }.Resolve();
+
+        var t = resolved.AgentTypes["scout"];
+        Assert.Equal(disabled, t.Disabled);
+        if (disabled is null) Assert.Equal(["only"], t.Providers);
+        else Assert.Contains(resolved.Notices, w => w.EndsWith("scout is disabled.", StringComparison.Ordinal));
+    }
 }

@@ -284,8 +284,9 @@ public sealed record PluginConfig(string File, bool Enabled = true, JsonElement?
 /// <param name="Briefing">HOW this agent works. Required — a type with nothing to say is the default
 /// child under another name, and naming it invites the model to believe it picked something.</param>
 /// <param name="Provider">
-/// An instance name from <c>providers</c>, or null for the parent's. NOT a free-text model id: the
-/// catalog already exists and a name that is not in it is caught at load rather than at spawn.
+/// The first of <see cref="Providers"/> — the default — kept for readers that want it alone. Null for
+/// the session's model. NOT a free-text model id: a name that is not in <c>providers</c> is caught at
+/// load rather than at spawn.
 /// </param>
 /// <param name="MaxTurns">
 /// Turns before this type stops and summarises what it has. Null inherits the session ceiling, so an
@@ -330,8 +331,39 @@ public record AgentTypeConfig(string? Briefing = null, string? Provider = null, 
     /// </summary>
     public Jobs.ToolSelection? Tools { get; init; }
 
+    /// <summary>
+    /// The `providers` entries this type may run on, by NAME, in config's order: the first is where a
+    /// spawn that names none runs. Null when the block listed none — the type runs on the session's
+    /// model — and when the list is unusable (<see cref="Disabled"/>).
+    /// </summary>
+    public IReadOnlyList<string>? Providers { get; init; }
 
+    /// <summary>
+    /// The list as WRITTEN — `name` or `name:model`, trimmed — kept even when it disabled the type, so
+    /// the config UI shows and edits what the file says, and a rename or removal finds every form.
+    /// </summary>
+    public IReadOnlyList<string>? Written { get; init; }
+
+    /// <summary>
+    /// Why this type cannot run, or null. STRICT AT THE AGENT, NOT THE APP: a bad list warns and
+    /// disables this one type, and cxagent starts — a type silently running somewhere the user did not
+    /// choose would be worse than one that says it is broken. Model-facing, so it never carries the
+    /// list of known providers; the startup warning does.
+    /// </summary>
+    public string? Disabled { get; init; }
+
+    /// <summary>Whether this type names <paramref name="provider"/>, in any form it was written.</summary>
+    public bool Lists(string provider) =>
+        (Written ?? (Provider is { } p ? [p] : [])).Any(w => NameOf(w) == provider);
+
+    /// <summary>The entry a written `name` or `name:model` names: up to the FIRST colon, trimmed — a model
+    /// id may itself hold a colon, or slashes, as OpenRouter's do.</summary>
+    public static string NameOf(string written) =>
+        (written.IndexOf(':') is var c and >= 0 ? written[..c] : written).Trim();
 }
+
+/// <summary>A type's provider list resolved: the entry names, or why it is unusable and what is known.</summary>
+public sealed record TypeProviderList(IReadOnlyList<string>? Names, string? Problem, string? Known);
 
 public record ProviderSettings(
     IReadOnlyDictionary<string, ProviderInstanceConfig> Providers,
@@ -455,6 +487,36 @@ public static class ProviderConfigLoader
 {
     public static readonly IReadOnlySet<string> KnownKinds =
         new HashSet<string> { "anthropic", "openai-compatible", "ollama" };
+
+    /// <summary>
+    /// ONE CHECK FOR BOTH DOORS — the file and AgentConfig — so a type is disabled for the same reasons
+    /// whichever wrote it. Each written value is `name` or `name:model`; the model part must be the
+    /// entry's own, ignoring case. Duplicates collapse to the first occurrence.
+    /// </summary>
+    internal static TypeProviderList ResolveTypeProviders(IReadOnlyList<string> written, Func<string, string?> modelOf, IEnumerable<string> known)
+    {
+        var names = new List<string>();
+        foreach (var raw in written)
+        {
+            var w = raw.Trim();
+            var name = AgentTypeConfig.NameOf(w);
+            var colon = w.IndexOf(':');
+            var model = colon < 0 ? null : w[(colon + 1)..].Trim();
+
+            if (modelOf(name) is not { } entryModel)
+                return new(null, $"provider '{w}' is not a configured provider", string.Join(", ", known));
+            if (model is not null && !string.Equals(model, entryModel, StringComparison.OrdinalIgnoreCase))
+                return new(null, $"provider '{w}': '{name}' runs {entryModel}, not '{model}'", null);
+            if (!names.Contains(name, StringComparer.Ordinal)) names.Add(name);
+        }
+        return names.Count == 0
+            ? new(null, "provider must be a provider name or a list of them", null)
+            : new(names, null, null);
+    }
+
+    /// <summary>The warning a problem becomes: the field, the reason, what is known, and the consequence.</summary>
+    internal static string TypeProviderWarning(string type, TypeProviderList list) =>
+        $"agents.{type}.{list.Problem}{(list.Known is { } k ? $" (known: {k})" : "")}; {type} is disabled.";
 
     /// <summary>
     /// The endpoint rules that depend on the provider KIND, in one place because both doors must
@@ -1040,20 +1102,29 @@ public static class ProviderConfigLoader
                         continue;
                     }
 
-                    // NAMES AN INSTANCE FROM `providers`, checked HERE rather than at spawn time. A
-                    // typo found three turns into a child's run reads as a sub-agent bug; found at
-                    // load it reads as what it is.
-                    string? typeProvider = null;
-                    if (entry.Value.TryGetProperty("provider", out var pv) && pv.ValueKind == JsonValueKind.String)
+                    // A LIST OF `providers` ENTRIES, checked HERE rather than at spawn time — a typo
+                    // found three turns into a child's run reads as a sub-agent bug; found at load it
+                    // reads as what it is. A string is a list of one; null is no list at all.
+                    IReadOnlyList<string>? written = null;
+                    TypeProviderList? checkedList = null;
+                    if (entry.Value.TryGetProperty("provider", out var pv) && pv.ValueKind != JsonValueKind.Null)
                     {
-                        var name = pv.GetString();
-                        if (string.IsNullOrWhiteSpace(name) || !providers.ContainsKey(name))
+                        var items = pv.ValueKind switch
                         {
-                            warnings.Add($"agents.{entry.Name}.provider '{name}' is not a configured "
-                                       + $"provider (known: {string.Join(", ", providers.Keys)}); "
-                                       + "using the parent's.");
+                            JsonValueKind.String => new List<JsonElement> { pv },
+                            JsonValueKind.Array => pv.EnumerateArray().ToList(),
+                            _ => [],
+                        };
+                        if (items.Count > 0 && items.All(i => i.ValueKind == JsonValueKind.String))
+                        {
+                            written = items.Select(i => i.GetString()!.Trim()).ToList();
+                            checkedList = ResolveTypeProviders(written,
+                                n => providers.TryGetValue(n, out var c) ? c.Model : null, providers.Keys);
                         }
-                        else typeProvider = name;
+                        else checkedList = new(null, "provider must be a provider name or a list of them", null);
+
+                        if (checkedList.Problem is not null)
+                            warnings.Add(TypeProviderWarning(entry.Name, checkedList));
                     }
 
                     // NULL INHERITS, 0 IS UNBOUNDED, NEGATIVE IS A TYPO. Zero carries meaning here —
@@ -1081,10 +1152,13 @@ public static class ProviderConfigLoader
                     // THIS DEPLOYMENT, which cxagent cannot know — refusing it would leave a user
                     // wanting a read-only explorer no option but to fork a shipped type, copying a
                     // briefing that then drifts.
-                    agentTypes[entry.Name] = new AgentTypeConfig(briefing?.Trim(), typeProvider,
+                    agentTypes[entry.Name] = new AgentTypeConfig(briefing?.Trim(), checkedList?.Names?.FirstOrDefault(),
                         maxTurns, description)
                     {
                         Tools = ReadToolSelection(entry.Value, $"agents.{entry.Name}", warnings),
+                        Providers = checkedList?.Names,
+                        Written = written,
+                        Disabled = checkedList?.Problem,
                     };
                 }
 

@@ -722,11 +722,12 @@ public class ProviderConfigTests : IDisposable
 
     /// <summary>
     /// A PROVIDER THAT IS NOT CONFIGURED IS CAUGHT AT LOAD. Found three turns into a child's run it
-    /// reads as a sub-agent bug; found here it reads as what it is. The type survives on the parent's
-    /// provider rather than being dropped — the briefing is still useful.
+    /// reads as a sub-agent bug; found here it reads as what it is. The type is kept but DISABLED rather
+    /// than rerouted to the parent's provider: a type silently running somewhere the user did not choose
+    /// is the outcome a provider list exists to rule out.
     /// </summary>
     [Fact]
-    public void Agents_UnknownProvider_WarnsAndFallsBackToTheParents()
+    public void Agents_UnknownProvider_WarnsAndDisablesTheType()
     {
         WriteConfig($$"""
         {
@@ -736,7 +737,8 @@ public class ProviderConfigTests : IDisposable
         """);
         var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
 
-        Assert.Null(s.AgentTypes["scout"].Provider);
+        var t = s.AgentTypes["scout"];
+        Assert.NotNull(t.Disabled);
         Assert.Contains(s.Warnings, w => w.Contains("typo", StringComparison.Ordinal));
         // The message names what IS valid, not only what was wrong.
         Assert.Contains(s.Warnings, w => w.Contains("fast", StringComparison.Ordinal));
@@ -937,5 +939,96 @@ public class ProviderConfigTests : IDisposable
 
         var ex = Assert.Throws<ProviderConfigException>(() => ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv));
         Assert.Contains("'description' must be text", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Agents_ProviderList_IsReadInOrder_AsNamesOrNameModel()
+    {
+        WriteConfig($$"""
+        { {{TwoProviders}},
+          "agents": { "scout": { "briefing": "Search.", "provider": ["fast", "local:llama3.3"] } } }
+        """);
+        var t = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).AgentTypes["scout"];
+
+        Assert.Equal(["fast", "local"], t.Providers);
+        Assert.Equal(["fast", "local:llama3.3"], t.Written);
+        Assert.Equal("fast", t.Provider);                      // the first is the default
+        Assert.Null(t.Disabled);
+        Assert.True(t.Lists("local"));
+    }
+
+    [Fact]
+    public void Agents_ASingleName_IsAListOfOne()
+    {
+        WriteConfig($$"""{ {{TwoProviders}}, "agents": { "scout": { "briefing": "Search.", "provider": "fast" } } }""");
+        var t = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).AgentTypes["scout"];
+
+        Assert.Equal(["fast"], t.Providers);
+        Assert.Null(t.Disabled);
+    }
+
+    [Fact]
+    public void Agents_NullProvider_IsAbsent()
+    {
+        WriteConfig($$"""{ {{TwoProviders}}, "agents": { "scout": { "briefing": "Search.", "provider": null } } }""");
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Null(s.AgentTypes["scout"].Providers);
+        Assert.Null(s.AgentTypes["scout"].Disabled);
+        Assert.DoesNotContain(s.Warnings, w => w.Contains("agents.scout", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("\"typo\"", "provider 'typo' is not a configured provider")]
+    [InlineData("[\"fast\", \"typo\"]", "provider 'typo' is not a configured provider")]
+    [InlineData("\"local:other-model\"", "provider 'local:other-model': 'local' runs llama3.3, not 'other-model'")]
+    [InlineData("4", "provider must be a provider name or a list of them")]
+    [InlineData("[]", "provider must be a provider name or a list of them")]
+    [InlineData("[\"fast\", 4]", "provider must be a provider name or a list of them")]
+    public void Agents_ABadProvider_DisablesTheType_WithAWarning(string value, string why)
+    {
+        WriteConfig($$"""{ {{TwoProviders}}, "agents": { "scout": { "briefing": "Search.", "provider": {{value}} } } }""");
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        var t = s.AgentTypes["scout"];                         // kept, so the tool can say it is disabled
+        Assert.Equal(why, t.Disabled);
+        Assert.DoesNotContain("known:", t.Disabled, StringComparison.Ordinal);   // model-facing
+        Assert.Contains(s.Warnings, w => w.StartsWith($"agents.scout.{why}", StringComparison.Ordinal)
+                                      && w.EndsWith("scout is disabled.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Agents_AnUnknownName_WarnsNamingWhatIsKnown()
+    {
+        WriteConfig($$"""{ {{TwoProviders}}, "agents": { "scout": { "briefing": "Search.", "provider": "typo" } } }""");
+
+        Assert.Contains(ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).Warnings,
+            w => w.Contains("(known: local, fast)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Agents_ProviderModelPart_IsTrimmedAndCaseInsensitive()
+    {
+        WriteConfig($$"""{ {{TwoProviders}}, "agents": { "scout": { "briefing": "Search.", "provider": "local : LLAMA3.3" } } }""");
+        var t = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).AgentTypes["scout"];
+
+        Assert.Null(t.Disabled);
+        Assert.Equal(["local"], t.Providers);
+    }
+
+    [Fact]
+    public void Agents_DuplicateProviders_CollapseToTheFirst()
+    {
+        WriteConfig($$"""{ {{TwoProviders}}, "agents": { "scout": { "briefing": "Search.", "provider": ["fast", "local", "fast:llama3.2-1b"] } } }""");
+
+        Assert.Equal(["fast", "local"], ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).AgentTypes["scout"].Providers);
+    }
+
+    [Fact]
+    public void Agents_GeneralTakesAList_LikeAnyType()
+    {
+        WriteConfig($$"""{ {{TwoProviders}}, "agents": { "general": { "provider": ["fast", "local"] } } }""");
+
+        Assert.Equal(["fast", "local"], ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).AgentTypes["general"].Providers);
     }
 }
