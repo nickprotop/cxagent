@@ -962,15 +962,7 @@ public sealed class MainWindow : IDisposable
     /// loaded, and ".gguf" says nothing the reader needs while costing the narrow mode line room.
     /// Only known model-file extensions — "gpt-4.1" is a name, not a file.
     /// </summary>
-    public static string ShortModelName(string id)
-    {
-        foreach (var ext in ModelFileExtensions)
-            if (id.Length > ext.Length && id.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
-                return id[..^ext.Length];
-        return id;
-    }
-
-    private static readonly string[] ModelFileExtensions = [".gguf", ".safetensors", ".bin"];
+    public static string ShortModelName(string id) => CxAgent.Core.Llm.ModelNames.Short(id);
 
     /// <summary>
     /// The folder this session works in, for the panel to show.
