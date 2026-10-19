@@ -91,26 +91,12 @@ public sealed class PluginInstaller(HttpClient? client = null)
         try
         {
             Directory.CreateDirectory(staging);
-            using (var archive = new ZipArchive(new MemoryStream(payload), ZipArchiveMode.Read))
-            {
-                var root = Path.GetFullPath(staging);
-                foreach (var item in archive.Entries)
-                {
-                    if (string.IsNullOrEmpty(item.Name)) continue;
 
-                    // AN ENTRY THAT ESCAPES IS THE WHOLE ARCHIVE REFUSED, not skipped. A zip
-                    // carrying "../x" is not a plugin with one bad file in it; it is an archive
-                    // doing something no plugin needs to do.
-                    var target = Path.GetFullPath(Path.Combine(staging, item.FullName));
-                    if (!target.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-                        return new InstallResult.Refused(
-                            $"'{entry.Name}' contains an entry that would write outside its own "
-                          + $"directory ({item.FullName}).");
-
-                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                    item.ExtractToFile(target, overwrite: true);
-                }
-            }
+            // SafeZip REFUSES THE WHOLE ARCHIVE on an entry that escapes — the same check verify makes.
+            if (SafeZip.ExtractTo(payload, staging) is { } escaping)
+                return new InstallResult.Refused(
+                    $"'{entry.Name}' contains an entry that would write outside its own "
+                  + $"directory ({escaping}).");
 
             if (Directory.Exists(destination)) Directory.Delete(destination, recursive: true);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
