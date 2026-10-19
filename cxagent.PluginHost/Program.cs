@@ -158,7 +158,11 @@ while (await stdin.ReadLineAsync() is { } line)
         continue;
     }
 
-    pending.Add(HandleRequest(plugin, request, started));
+    // TASK.RUN, NOT A DIRECT CALL: HandleRequest makes the native call synchronously, before its
+    // first await, so calling it here would hold this loop inside one invoke and serialize every
+    // call behind it. On a pool thread of its own, each call also keeps that thread for its whole
+    // native run, which is what HostCallbacks' thread-static "current call" relies on.
+    pending.Add(Task.Run(() => HandleRequest(plugin, request, started)));
     // FINISHED TASKS ARE PRUNED OPPORTUNISTICALLY rather than awaited individually — this loop's
     // job is reading the next line promptly, not bookkeeping a list that only matters at shutdown.
     pending.RemoveAll(t => t.IsCompleted);

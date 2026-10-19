@@ -134,6 +134,31 @@ static void* report_late(void* unused) {
     return NULL;
 }
 #  endif
+
+/* A RENDEZVOUS: "pair" succeeds only once a second call is inside "pair" too, and gives up after
+ * five seconds. A host that runs calls one at a time can never get two inside at once, so the
+ * first call fails — which is how the test tells concurrent invokes from serialized ones without
+ * timing anything. A counter and a poll rather than a condition variable, so one body builds with
+ * both toolchains. */
+static volatile long g_paired = 0;
+
+static int wait_for_pair(void) {
+#  ifdef _WIN32
+    InterlockedIncrement(&g_paired);
+#  else
+    __atomic_add_fetch(&g_paired, 1, __ATOMIC_SEQ_CST);
+#  endif
+    for (int waited = 0; waited < 5000; waited += 10) {
+#  ifdef _WIN32
+        if (InterlockedCompareExchange(&g_paired, 0, 0) >= 2) return 1;
+        Sleep(10);
+#  else
+        if (__atomic_load_n(&g_paired, __ATOMIC_SEQ_CST) >= 2) return 1;
+        usleep(10 * 1000);
+#  endif
+    }
+    return 0;
+}
 #endif
 
 CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_start(const char* context_json) {
@@ -158,6 +183,10 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_invoke(const char* tool_name, c
 #elif defined(FIXTURE_MALFORMED)
     return dup_str("{ this is not json");
 #elif defined(FIXTURE_REPORTS)
+    if (tool_name != NULL && strcmp(tool_name, "pair") == 0 && !wait_for_pair())
+        return dup_str("{\"ok\":true,\"result\":{\"success\":false,\"exitCode\":1,"
+            "\"errorMessage\":\"no second call arrived\",\"permissionDenied\":false,\"decidedBy\":null,"
+            "\"output\":{},\"logFile\":null,\"durationMs\":1}}");
     if (g_host != NULL && tool_name != NULL && strcmp(tool_name, "echo") == 0) {
         /* NULL call ids: this thread's call, so a report from inside invoke needs no id. */
         g_host->progress(NULL, 50, "half");

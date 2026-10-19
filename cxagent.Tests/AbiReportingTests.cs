@@ -97,6 +97,27 @@ public class AbiReportingTests
         finally { await plugin.Stop(CancellationToken.None); }
     }
 
+    /// <summary>
+    /// The ABI lets invokes run concurrently, and the plugin host must not serialize them: one slow
+    /// call would hold up every other call to the same plugin. "pair" succeeds only when a second
+    /// call is inside it at the same time, so serialized invokes fail it.
+    /// </summary>
+    [Fact]
+    public async Task TwoInvokes_RunAtTheSameTime()
+    {
+        if (NativeFixtures.Path("fixture-reports") is not { } lib) return;
+        var plugin = await StartAsync(lib);
+        try
+        {
+            var results = await Task.WhenAll(
+                plugin.Invoke("pair", NoArguments, new Recording(), CancellationToken.None),
+                plugin.Invoke("pair", NoArguments, new Recording(), CancellationToken.None));
+
+            Assert.All(results, r => Assert.True(r.Success, r.ErrorMessage));
+        }
+        finally { await plugin.Stop(CancellationToken.None); }
+    }
+
     /// <summary>Review focus 2: a report naming a call that already returned goes nowhere, and breaks nothing.</summary>
     [Fact]
     public async Task AReportAfterItsCallEnded_IsDropped()
