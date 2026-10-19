@@ -57,16 +57,13 @@ public sealed class PermissionPromptControl
 
     /// <summary>
     /// The heading must state the REAL reason we are asking, because a file request reaches this
-    /// prompt for two different reasons and telling the user the wrong one teaches them to stop
-    /// reading the text. A path is asked about either because it is outside the working folder,
-    /// or because it is INSIDE an untrusted folder (untrusted removes the implicit silent class —
-    /// Task 2.5). <paramref name="inBoundary"/> distinguishes them: it is exactly the condition
-    /// the gate already computed to decide whether to offer the Trust button, so no new plumbing.
-    ///
-    /// Found by the live drive: an in-tree `notes.txt` in an untrusted folder was announced as
-    /// "Write a file outside the working folder?", which is simply false.
+    /// prompt for different reasons and telling the user the wrong one teaches them to stop reading
+    /// the text. A path is in one of three places: outside the working folder (always asked about),
+    /// inside an untrusted folder (untrusted removes the implicit silent class), or inside a trusted
+    /// folder — asked about because the mode narrows what trust allows: always-ask asks for every
+    /// write, and accept-edits is the only mode that lets an in-folder write through silently.
     /// </summary>
-    private static string HeadingTextFor(PermissionKind kind, bool inBoundary, bool refusedByClassifier) => kind switch
+    private static string HeadingTextFor(PermissionKind kind, PathPlace place, bool refusedByClassifier) => kind switch
     {
         PermissionKind.Shell => "Run shell command?",
 
@@ -77,12 +74,10 @@ public sealed class PermissionPromptControl
         PermissionKind.FileRead when refusedByClassifier => "Read a file — auto review said ask?",
         PermissionKind.FileWrite when refusedByClassifier => "Write a file — auto review said ask?",
 
-        PermissionKind.FileRead => inBoundary
-            ? "Read a file in this (untrusted) folder?"
-            : "Read a file outside the working folder?",
-        PermissionKind.FileWrite => inBoundary
-            ? "Write a file in this (untrusted) folder?"
-            : "Write a file outside the working folder?",
+        PermissionKind.FileRead => !place.Inside ? "Read a file outside the working folder?"
+            : place.Trusted ? "Read a file in the working folder?" : "Read a file in this (untrusted) folder?",
+        PermissionKind.FileWrite => !place.Inside ? "Write a file outside the working folder?"
+            : place.Trusted ? "Write a file in the working folder?" : "Write a file in this (untrusted) folder?",
         PermissionKind.Http => "Allow an HTTP request?",
 
         // NAMES WHAT IT ACTUALLY IS. Falling through to the generic "Allow this action?" would ask
@@ -106,7 +101,7 @@ public sealed class PermissionPromptControl
     /// <summary>
     /// The full heading text for a request, INCLUDING the classifier's reason when it gave one —
     /// this is the public, request-shaped seam a test (or any other reader) uses instead of the
-    /// kind/bool triple above. The decision stays the user's; this only tells them what the model
+    /// kind/place triple above. The decision stays the user's; this only tells them what the model
     /// that flagged the request said about it.
     ///
     /// <para>NOT MARKUP-ESCAPED HERE. Callers that render this into a markup pane (BuildContent
@@ -122,7 +117,12 @@ public sealed class PermissionPromptControl
     /// </summary>
     public static string HeadingFor(PermissionRequest request, bool offerTrust = false)
     {
-        var heading = HeadingTextFor(request.Kind, offerTrust, request.RefusedByClassifier);
+        // WHERE THE PATH IS, from the request's own policy: the Trust button is offered only to an
+        // untrusted folder, so it cannot say "inside" for a trusted one — and always-ask still asks there.
+        var isFile = request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite;
+        var inside = offerTrust || (isFile && request.Policy?.IsInBoundary(request.Display) == true);
+        var trusted = request.Policy?.FolderTrusted == true;
+        var heading = HeadingTextFor(request.Kind, new PathPlace(inside, trusted), request.RefusedByClassifier);
 
         if (!request.RefusedByClassifier || request.ClassifierReason is not { Length: > 0 } reason)
             return heading;
@@ -133,6 +133,9 @@ public sealed class PermissionPromptControl
 
         return $"{heading}  — {clipped}";
     }
+
+    /// <summary>Where a requested path is: inside the working folder or not, and whether that folder is trusted.</summary>
+    private readonly record struct PathPlace(bool Inside, bool Trusted);
 
     /// <summary>
     /// Builds the panel: bolded heading, the escaped (and possibly elided) Display, then one

@@ -354,4 +354,47 @@ public class PermissionPromptControlTests
 
         Assert.Contains("asked for by: Plan --top N option (planner on deepseek:deepseek/deepseek-v3.2)", text, StringComparison.Ordinal);
     }
+
+    /// <summary>A policy over a fresh temp folder, trusted or not — the request's own policy is what
+    /// says where its path is.</summary>
+    private static (PermissionPolicy Policy, string Root) PolicyOver(bool trusted)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "cxagent-perm-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var rules = new PermissionRulesStore(new CxAgent.Core.Storage.AppPaths(
+            Path.Combine(Path.GetTempPath(), "cxagent-perm-" + Guid.NewGuid().ToString("N"))));
+        var policy = new PermissionPolicy(root, rules, EditMode.AlwaysAsk);
+        policy.SetTrust(trusted ? TrustState.Trusted : TrustState.Untrusted);
+        return (policy, root);
+    }
+
+    // offerTrust as the gate computes it: the Trust button only for an in-folder path in an untrusted
+    // folder. In a trusted folder it is false for every path, so the heading cannot take "inside" from it.
+    [Theory]
+    [InlineData(true, true, "Write a file in the working folder?")]
+    [InlineData(true, false, "Write a file outside the working folder?")]
+    [InlineData(false, true, "Write a file in this (untrusted) folder?")]
+    [InlineData(false, false, "Write a file outside the working folder?")]
+    public void TheHeading_SaysWhereAWriteIs_TrustedOrNot(bool trusted, bool inside, string heading)
+    {
+        var (policy, root) = PolicyOver(trusted);
+        var path = inside ? Path.Combine(root, "plans", "p.md") : "/elsewhere/p.md";
+        var request = FileWriteRequest(path) with { Policy = policy };
+
+        Assert.Equal(heading, PermissionPromptControl.HeadingFor(request, offerTrust: !trusted && inside));
+    }
+
+    [Theory]
+    [InlineData(true, true, "Read a file in the working folder?")]
+    [InlineData(true, false, "Read a file outside the working folder?")]
+    [InlineData(false, true, "Read a file in this (untrusted) folder?")]
+    [InlineData(false, false, "Read a file outside the working folder?")]
+    public void TheHeading_SaysWhereAReadIs_TrustedOrNot(bool trusted, bool inside, string heading)
+    {
+        var (policy, root) = PolicyOver(trusted);
+        var path = inside ? Path.Combine(root, "plans", "p.md") : "/elsewhere/p.md";
+        var request = new PermissionRequest(PermissionKind.FileRead, path, path) { Policy = policy };
+
+        Assert.Equal(heading, PermissionPromptControl.HeadingFor(request, offerTrust: !trusted && inside));
+    }
 }
