@@ -103,6 +103,9 @@
          four commands that need one. Sqlite and AngleSharp come with it rather than being named
          here, because they are the library's dependencies and not the app's. -->
     <ProjectReference Include="../cxagent.Core/cxagent.Core.csproj" />
+    <!-- THE PLUGIN HARNESS, for `cxagent plugin check|call` — the same code an author's tests run
+         through the CxAgent.Plugins.Testing package, so the command and the test cannot disagree. -->
+    <ProjectReference Include="../cxagent.Core/sdk/testing/CxAgent.Plugins.Testing.csproj" />
   </ItemGroup>
 
 </Project>

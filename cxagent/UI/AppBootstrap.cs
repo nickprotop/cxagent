@@ -92,6 +92,11 @@ public static class AppBootstrap
 
     public static int Run(string[] args)
     {
+        // THE PLUGIN AUTHOR'S COMMANDS, BEFORE ANYTHING ELSE: they use no config folder, no terminal UI
+        // and no model, and the session's own parser would refuse "plugin" as an argument without -p.
+        if (args.Length > 0 && args[0] == "plugin")
+            return Cli.PluginCli.RunAsync(args[1..], Console.Out, Console.Error).GetAwaiter().GetResult();
+
         var options = CommandLine.Parse(args);
 
         // A BAD ARGUMENT STOPS THE APP. Ignoring it would start a session that is not the one the
