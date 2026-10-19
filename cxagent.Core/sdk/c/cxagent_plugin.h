@@ -122,6 +122,9 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_start(const char* context_json)
  * MUST BE FAST. The host calls this synchronously while deciding whether to interrupt the user, and
  * abandons a gate that takes longer than a few hundred milliseconds. Inspect the arguments; do not
  * open a connection.
+ *
+ * `call_json` is the tool's arguments object — the same JSON cxagent_plugin_invoke receives for the
+ * call this gate guards, so a plugin reads its arguments one way in both.
  */
 CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_gate(const char* tool_name, const char* call_json);
 

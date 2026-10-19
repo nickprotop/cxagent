@@ -258,16 +258,12 @@ static const cxp_entry *find(int kind, const char *name) {
     return NULL;
 }
 
-/* The two shapes the host sends: invoke's call_json IS the arguments object (cxagent_plugin.h), while
-   gate's is { "toolName", "arguments" } (what the plugin host forwards). Named per export, not guessed. */
-typedef enum { ARGUMENTS_ARE_THE_JSON, ARGUMENTS_ARE_A_MEMBER } call_shape;
-
-/* A call for a tool, from call_json — the parsed JSON stays alive in *root until the call ends. */
-static cxp_call make_call(const char *tool, const char *call_json, call_shape shape, cJSON **root) {
+/* A call for a tool, from call_json — the tool's arguments object, for invoke and gate alike. The
+   parsed JSON stays alive in *root until the call ends. */
+static cxp_call make_call(const char *tool, const char *call_json, cJSON **root) {
     cxp_call call = { tool, NULL, NULL };
     *root = cJSON_Parse(call_json ? call_json : "{}");
-    cJSON *args = shape == ARGUMENTS_ARE_A_MEMBER ? cJSON_GetObjectItemCaseSensitive(*root, "arguments") : *root;
-    call.arguments = cJSON_IsObject(args) ? args : NULL;
+    call.arguments = cJSON_IsObject(*root) ? *root : NULL;
     if (g_host && g_host->current_call) call.id = copy(g_host->current_call());
     return call;
 }
@@ -306,7 +302,7 @@ CXAGENT_PLUGIN_EXPORT const char *cxagent_plugin_invoke(const char *tool_name, c
     }
 
     cJSON *root;
-    cxp_call call = make_call(tool_name, call_json, ARGUMENTS_ARE_THE_JSON, &root);
+    cxp_call call = make_call(tool_name, call_json, &root);
     cxp_result r = entry->tool(&call);
 
     // A TOOL THAT RETURNED NO RESULT is a failed call naming it — never NULL to the host, which
@@ -322,7 +318,7 @@ CXAGENT_PLUGIN_EXPORT const char *cxagent_plugin_gate(const char *tool_name, con
     if (!entry || !entry->gate) return NULL;
 
     cJSON *root;
-    cxp_call call = make_call(tool_name, call_json, ARGUMENTS_ARE_A_MEMBER, &root);
+    cxp_call call = make_call(tool_name, call_json, &root);
     cxp_gate g = entry->gate(&call);
     char *text = NULL;
     if (g.ask) {

@@ -255,9 +255,11 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
         HostReply reply;
         try
         {
+            // THE ARGUMENTS OBJECT ITSELF, as invoke sends it: a gate and the call it guards read
+            // the same JSON, so a plugin reads "file" the same way in both.
             var argumentsJson = AbiCodec.WriteInvokeCall(toolName, call);
-            using var arguments = JsonDocument.Parse(argumentsJson);
-            reply = _host.Gate(toolName, arguments.RootElement.Clone(), GateTimeout, CancellationToken.None)
+            using var written = JsonDocument.Parse(argumentsJson);
+            reply = _host.Gate(toolName, written.RootElement.GetProperty("arguments").Clone(), GateTimeout, CancellationToken.None)
                 .GetAwaiter().GetResult();
         }
         catch (Exception)
