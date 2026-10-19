@@ -28,12 +28,18 @@
        here links against the host — and build/CxAgent.Plugins.Testing.targets copies the packed files
        beside the consumer's test.
 
+       WITHOUT THE RELEASE'S PUBLISH SETTINGS: the release publishes cxagent for one RID, self-contained
+       and single-file, and passes those properties to every reference, and an Exe given SelfContained or
+       PublishSingleFile but no RID takes the build machine's own, which a restore for <rid> never
+       produced. The package needs the portable host from bin/<config>/<tfm>/ in any case.
+
        ONLY TOP-LEVEL *.dll AND *.json, NOT runtimes/: the host's native assets (e_sqlite3 and the
        rest) come with Core's dependencies, and the host never opens Sqlite. A host change that does
        would fail only in a consumer — pack runtimes/ too before making one. -->
   <ItemGroup>
     <ProjectReference Include="../../../cxagent.PluginHost/cxagent.PluginHost.csproj"
-                      ReferenceOutputAssembly="false" />
+                      ReferenceOutputAssembly="false"
+                      GlobalPropertiesToRemove="SelfContained;RuntimeIdentifier;PublishSingleFile" />
     <None Include="build/CxAgent.Plugins.Testing.targets" Pack="true" PackagePath="build/;buildTransitive/" />
   </ItemGroup>
 
