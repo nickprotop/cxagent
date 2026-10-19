@@ -348,5 +348,17 @@ public class PluginNewCTests
         Assert.True(File.Exists(Path.Combine(dir, "catalog-info.yaml")));
         Assert.Contains("--info catalog-info.yaml", File.ReadAllText(Path.Combine(dir, ".github", "workflows", "build.yml")));
     }
-}
 
+    /// <summary>
+    /// One configure line for every generator, and no notice on Windows: Visual Studio's generator
+    /// ignores CMAKE_BUILD_TYPE, which the single-config ones need, and CMake says so on every build.
+    /// </summary>
+    [Fact]
+    public async Task TheBuildWorkflow_ConfiguresWithoutAnUnusedVariableNotice()
+    {
+        var dir = await NewProject("wordcount");
+
+        Assert.Contains("cmake -B build -DCMAKE_BUILD_TYPE=Release --no-warn-unused-cli",
+            File.ReadAllText(Path.Combine(dir, ".github", "workflows", "build.yml")));
+    }
+}

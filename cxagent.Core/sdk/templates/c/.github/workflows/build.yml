@@ -32,9 +32,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      # --no-warn-unused-cli: Visual Studio's generator ignores CMAKE_BUILD_TYPE, which the
+      # single-config generators need, and would otherwise report it unused on every Windows build.
       - name: Build
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -DCMAKE_BUILD_TYPE=Release --no-warn-unused-cli
           cmake --build build --config Release
       # ONE FOLDER PER PLATFORM: the library, its sidecar and the README, wherever the generator put them
       # (Visual Studio builds into build/Release, the others into build/).
