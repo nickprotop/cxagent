@@ -6,12 +6,14 @@ Everything an author outside this repository needs to write, test and ship a cxa
 |---|---|
 | [`templates/`](templates) | The C# plugin template, used by both `cxagent plugin new` and `dotnet new cxagent-plugin` (package **CxAgent.Plugins.Templates**) |
 | [`testing/`](testing) | **CxAgent.Plugins.Testing**: check and call a plugin from xunit, NUnit or MSTest |
-| [`c/`](c) | `cxagent_plugin.h`, the C ABI. A full C SDK is coming |
+| [`c/`](c) | The C SDK, **cxp**: `cxp.h`/`cxp.c` over the C ABI (`cxagent_plugin.h`), vendored cJSON, and `cxp.cmake` |
 
 The command-line half is in cxagent itself: `cxagent plugin new | check | call | pack | verify`.
 
 The reference is [docs/plugins.md](../docs/plugins.md), with testing covered in
-[docs/plugin-testing.md](../docs/plugin-testing.md). This page is the tutorial.
+[docs/plugin-testing.md](../docs/plugin-testing.md) and C in [docs/plugin-sdk-c.md](../docs/plugin-sdk-c.md).
+This page has two tutorials: [C#](#tutorial-a-weather-plugin-end-to-end) and
+[C](#tutorial-c-wordcount).
 
 ## Tutorial: a weather plugin, end to end
 
@@ -311,12 +313,120 @@ Then follow `pack`'s next steps:
 2. Put its `https://` URL in the entry and run `verify` once more.
 3. Submit the entry, through the "Submit a plugin" issue or as a PR to `plugins/plugins.json`.
 
+## Tutorial (C): wordcount
+
+We build `wordcount`, one tool that counts the lines and words in a file. It asks before reading a
+file outside the working folder, reports progress as it reads, and streams a running count. You need
+a C compiler, CMake 3.20 or later, and cxagent.
+
+### 1. Start from the template
+
+```
+cxagent plugin new wordcount --lang c
+cd wordcount
+```
+
+```
+wordcount/
+  CMakeLists.txt          one cxp_add_plugin() call, plus a CTest that runs the plugin through cxagent
+  wordcount.plugin.json   the sidecar, with "kind": "native"
+  wordcount.c             the tool
+  README.md
+  cxp/                    the C SDK — cxp.h, cxp.c, cxp.cmake, cJSON — so the project builds anywhere
+  .github/workflows/      builds all six platforms; on a tag, packs them into a release
+```
+
+The template *is* the tutorial plugin: everything below is already in `wordcount.c`.
+
+### 2. Read the tool
+
+The whole plugin is a table and two functions:
+
+```c
+CXP_PLUGIN(
+    CXP_TOOL("wordcount_count", count, count_gate)
+)
+```
+
+- **`count_gate`** resolves the file against `cxp_working_directory()`. It returns `cxp_no_ask()` for
+  a file inside the folder, and `cxp_ask(cxp_format("read %s, outside the working folder", path))`
+  for one outside.
+- **`count`** reads the file:
+  - `cxp_progress(call, percent, …)` every tenth of the file;
+  - `cxp_stream(call, "N lines… ")` every thousand lines;
+  - finally `cxp_ok_text(cxp_format("%s: %ld lines, %ld words", …))`.
+
+  A file it cannot open is `cxp_error(…)`, and `cxp_setting_bool("countBlankLines", 0)` reads the
+  one setting.
+
+Nothing is freed by hand: `cxp_format` strings live until the call returns.
+
+### 3. Build, check, call
+
+```
+cmake -B build && cmake --build build
+cxagent plugin check build
+cxagent plugin call build wordcount_count '{"file":"big.txt"}'
+```
+
+The build folder holds `wordcount.so` (`.dylib` or `.dll` elsewhere), its sidecar and the README:
+everything a user installs.
+
+![cxagent plugin call counting a 60,000-line file, with progress and the running count](images/wordcount-call.png)
+
+A file outside the folder stops at the question a user would be asked:
+
+```
+$ cxagent plugin call build wordcount_count '{"file":"/etc/hosts"}'
+asks: read /etc/hosts, outside the working folder
+stopped: a user would be asked — pass --answer allow or --answer deny
+```
+
+### 4. Test it
+
+```
+ctest --test-dir build
+```
+
+The template's CTest runs `cxagent plugin call` on the project's own `CMakeLists.txt`, the real
+lifecycle through cxagent. A C# test can drive the same library through **CxAgent.Plugins.Testing**,
+which carries the plugin host.
+
+### 5. Use it
+
+Copy `build/wordcount.so`, `build/wordcount.plugin.json` and `README.md` into
+`~/.config/cxagent/plugins/wordcount/`. Add `"wordcount": { "file": "wordcount.so", "enabled": true }`
+under `"plugins"` in `config.json`, then ask about a file:
+
+![The model answering from wordcount_count](images/wordcount-answer.png)
+
+### 6. Pack and verify
+
+```
+cxagent plugin pack build --native build/wordcount.so=linux-x64 --info catalog-info.yaml --out dist
+cxagent plugin verify dist/wordcount.catalog.json
+```
+
+`--native <library>=<platform>` names each build. The workflow in `.github/workflows/build.yml`
+passes all six on a release. `catalog-info.yaml` holds what the entry needs and the sidecar does not:
+
+```yaml
+description: Counts the lines and words in a file.
+publisher: you
+license: MIT
+repository: https://github.com/you/wordcount
+```
+
+Then upload, point each `"url"` at its zip, `verify` again, and submit, as in step 8 of the C#
+tutorial.
+
 ## Where to go next
 
 - **The rest of the contract** is in [docs/plugins.md](../docs/plugins.md): settings, commands,
   spawning processes, starting turns from a plugin, and reporting while a call runs.
 - **Every option of `check`, `call` and the test package** is in
   [docs/plugin-testing.md](../docs/plugin-testing.md).
-- **Two complete examples** sit beside this folder, the same calculator in C# and in C:
+- **The C SDK reference** is [docs/plugin-sdk-c.md](../docs/plugin-sdk-c.md).
+- **Two complete examples** sit beside this folder, the same calculator in C# and in raw C:
   [`examples/CalculatorPlugin`](../examples/CalculatorPlugin) and
   [`examples/CalculatorAbiPlugin`](../examples/CalculatorAbiPlugin).

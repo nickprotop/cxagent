@@ -12,7 +12,7 @@ Two kinds, and the choice is made for you by your language:
 | written in | C# | C, Rust, Go, C++ — anything with a C ABI |
 | runs in | cxagent's own process | a separate host process |
 | a crash | takes cxagent with it | fails the call, session survives |
-| you implement | `IPlugin` — four methods, plus `IPluginGateSource` if you gate per call | seven `extern "C"` functions |
+| you implement | `IPlugin` — four methods, plus `IPluginGateSource` if you gate per call | tools registered with the C SDK ([plugin-sdk-c.md](plugin-sdk-c.md)), or the `extern "C"` functions directly |
 
 **Write managed if you are writing C#.** An ABI plugin in .NET needs NativeAOT, which strips the
 reflection `System.Text.Json` depends on, so every payload then needs a hand-written `JsonTypeInfo`.
@@ -61,6 +61,21 @@ cxagent plugin verify weather.catalog.json       # what a user's install would g
 
 To list it in cxagent's catalog, see [RELEASING.md](../../plugins/RELEASING.md). C plugins get
 the same start with the C SDK.
+
+## Quick start (C)
+
+```
+cxagent plugin new wordcount --lang c
+cd wordcount
+cmake -B build && cmake --build build
+cxagent plugin check build
+cxagent plugin call build wordcount_count '{"file":"CMakeLists.txt"}'
+ctest --test-dir build
+cxagent plugin pack build --native build/wordcount.so=linux-x64
+```
+
+The project carries the C SDK in `cxp/`. You write tools; it implements the ABI. See
+[plugin-sdk-c.md](plugin-sdk-c.md), and the [C tutorial](../sdk/README.md#tutorial-c-wordcount).
 
 ## The project
 
