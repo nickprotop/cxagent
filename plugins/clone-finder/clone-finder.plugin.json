@@ -1,7 +1,7 @@
 {
   "pluginContract": 2,
   "name": "clone-finder",
-  "version": "0.9.37",
+  "version": "0.9.39",
   "spawns": false,
   "instructions": "Reach for find_clones INSTEAD of reading files to hunt for duplication yourself \u2014 the whole value of the tool is the context you did not spend reading.\n\nThe report is locations, not code: open only the places that look worth extracting.\n\nA hit is a candidate, not a verdict. Duplication the detector finds is sometimes duplication worth keeping \u2014 three test fixtures that align are not always worth merging.\n\nDo not lower min_tokens to be thorough. That is how the report becomes unusable: it floods with short repeated statements \u2014 six lines of assertions clears min_lines, and the token floor is what keeps them out.",
   "tools": [
