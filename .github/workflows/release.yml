@@ -495,9 +495,10 @@ jobs:
       - name: Test
         run: dotnet test cxagent.Tests/cxagent.Tests.csproj --configuration Release
 
-      # THREE PACKAGES, ONE JOB. CxAgent.Core is the library; cxagent is the same app the binaries
+      # FOUR PACKAGES, ONE JOB. CxAgent.Core is the library; cxagent is the same app the binaries
       # above carry, packaged as `dotnet tool install -g cxagent` for developers who already have
-      # the SDK. They share this job because they share a version, a tag and one trusted-publishing
+      # the SDK; CxAgent.Plugins.Testing is the plugin harness, with this release's plugin host
+      # inside it. They share this job because they share a version, a tag and one trusted-publishing
       # identity — a second job would be a second place for those to drift apart.
       #
       # CxAgent.Plugins.Abstractions IS THE ONE THAT DOES NOT TAKE THE TAG. It is the plugin
@@ -559,8 +560,10 @@ jobs:
       #   2. `gh variable set NUGET_USER --repo nickprotop/cxagent --body "<nuget.org user>"`
       #      (done: nickprotop). gh can set the variable; it cannot create the policy in step 1,
       #      which lives on nuget.org and has no CLI.
-      # If the policy form rejects CxAgent.Core because it does not exist yet, push once by hand
-      # with a temporary API key to claim the ID, then add the policy for every release after.
+      # A PACKAGE ID NOT YET ON nuget.org — CxAgent.Core once, CxAgent.Plugins.Testing on the first
+      # release that packs it — may be refused by the policy until it exists: push that package once
+      # by hand with a temporary API key to claim the ID, then the policy covers every release after.
+      # The others still land on that run; --skip-duplicate makes the re-run safe.
       # A policy is bound to the repository and workflow file, so a fork cannot publish and a
       # renamed workflow stops working rather than silently using someone else's identity.
       - name: Authenticate to NuGet
@@ -569,7 +572,7 @@ jobs:
         with:
           user: ${{ vars.NUGET_USER }}
 
-      # THE GLOB COVERS ALL THREE PACKAGES. --skip-duplicate makes a re-run after a partial failure safe:
+      # THE GLOB COVERS ALL FOUR PACKAGES. --skip-duplicate makes a re-run after a partial failure safe:
       # whichever package already landed is skipped rather than failing the job.
       - name: Push
         run: |
