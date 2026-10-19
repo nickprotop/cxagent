@@ -252,3 +252,81 @@ public class PluginCliCallMisbehaviourTests
         Assert.Contains("\"21°C Αθήνα\"", output);
     }
 }
+
+/// <summary>The command line's own edges, and the JSON a script reads.</summary>
+public class PluginCliEdgeTests
+{
+    private static Task<CliRun.Outcome> Run(params string[] args) => CliRun.Run(args);
+
+    [Fact]
+    public async Task CallingAToolThePluginDoesNotDeclare_ExitsOne_NamingTheOnesItDoes()
+    {
+        var (exit, _, err) = await Run("call", Folders.Harness(), "nope");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("echo, submit, slow", err);
+    }
+
+    [Fact] public async Task CwdWithoutAValue_IsUsage() => Assert.Equal(2, (await Run("call", Folders.Harness(), "echo", "--cwd")).Exit);
+
+    [Fact]
+    public async Task ACwdThatDoesNotExist_IsUsage() =>
+        Assert.Equal(2, (await Run("call", Folders.Harness(), "echo", "--cwd", "/no/such/folder/anywhere")).Exit);
+
+    [Fact] public async Task CheckWithAnUnknownOption_IsUsage() => Assert.Equal(2, (await Run("check", "--foo")).Exit);
+
+    /// <summary>A folder that is not there is a typo, not a plugin at fault.</summary>
+    [Fact] public async Task CheckOnAFolderThatDoesNotExist_IsUsage() => Assert.Equal(2, (await Run("check", "/no/such/plugin")).Exit);
+
+    [Fact]
+    public async Task Usage_NamesCallsOptions()
+    {
+        var (_, _, err) = await Run();
+        Assert.Contains("--answer", err);
+        Assert.Contains("--timeout", err);
+    }
+
+    /// <summary>--json is the option a script appends last; after --command it is still the option.</summary>
+    [Fact]
+    public async Task JsonAfterACommand_IsStillTheOption()
+    {
+        var (exit, output, _) = await Run("call", Folders.Harness(), "--command", "harness-ping", "now", "--json");
+
+        using var doc = JsonDocument.Parse(output);
+        Assert.Equal(0, exit);
+        Assert.Equal("pong now", doc.RootElement.GetProperty("message").GetString());
+    }
+
+    /// <summary>A load failure under --json has check's shape: problems as field and message.</summary>
+    [Fact]
+    public async Task ALoadFailureAsJson_HasChecksShape()
+    {
+        var (exit, output, _) = await Run("call", Folders.Harness(), "echo", "--settings", """{"failStart":true}""", "--json");
+
+        using var doc = JsonDocument.Parse(output);
+        var problem = doc.RootElement.GetProperty("problems")[0];
+        Assert.Equal(1, exit);
+        Assert.Equal("start", problem.GetProperty("field").GetString());
+        Assert.Contains("start refused", problem.GetProperty("message").GetString());
+    }
+
+    /// <summary>A timeout under --json still writes one object, so a script parses stdout either way.</summary>
+    [Fact]
+    public async Task ATimeoutAsJson_IsStillJson()
+    {
+        var (exit, output, _) = await Run("call", Folders.Harness(), "slow", "--timeout", "1", "--json");
+
+        using var doc = JsonDocument.Parse(output);
+        Assert.Equal(1, exit);
+        Assert.Equal("timeout", doc.RootElement.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task TheGateAsJson_CarriesItsSubject()
+    {
+        var (_, output, _) = await Run("call", Folders.Harness(), "echo", """{"text":"hi"}""", "--json");
+
+        using var doc = JsonDocument.Parse(output);
+        Assert.Equal("hi", doc.RootElement.GetProperty("gate").GetProperty("subject").GetString());
+    }
+}

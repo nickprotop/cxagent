@@ -8,9 +8,25 @@ namespace CxAgent.Tests;
 /// <summary>Plugin folders for the harness tests, each a fresh temp folder the test may change.</summary>
 internal static class Folders
 {
+    // ONE ROOT PER TEST RUN, removed when the run ends: a plugin a test loaded keeps its dll open
+    // until then, so a test cannot always delete its own folder, and dozens were left in /tmp.
+    private static readonly string Root = CreateRoot();
+
+    private static string CreateRoot()
+    {
+        var root = Directory.CreateTempSubdirectory("harness-run-").FullName;
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            try { Directory.Delete(root, recursive: true); } catch (Exception) { }
+        };
+        return root;
+    }
+
+    public static string NewFolder(string prefix) => Directory.CreateDirectory(Path.Combine(Root, prefix + Guid.NewGuid().ToString("N"))).FullName;
+
     public static string Of(string assemblyStem, string folderName)
     {
-        var dir = Directory.CreateTempSubdirectory("harness-").FullName;
+        var dir = NewFolder("harness-");
         File.Copy(Path.Combine(AppContext.BaseDirectory, assemblyStem + ".dll"), Path.Combine(dir, folderName + ".dll"));
         File.Copy(Path.Combine(AppContext.BaseDirectory, assemblyStem + ".plugin.json"), Path.Combine(dir, folderName + ".plugin.json"));
         return dir;
@@ -37,7 +53,7 @@ internal static class Folders
 
     public static string NativeReports()
     {
-        var dir = Directory.CreateTempSubdirectory("harness-native-").FullName;
+        var dir = NewFolder("harness-native-");
         File.Copy(NativeFixtures.Path("fixture-reports")!, Path.Combine(dir, "fixture-reports" + NativeFixtures.Suffix));
         File.Copy(Path.Combine(AppContext.BaseDirectory, "fixture-reports.plugin.json"), Path.Combine(dir, "fixture-reports.plugin.json"));
         return dir;
@@ -65,7 +81,7 @@ public class PluginHarnessCheckTests
     [Fact]
     public async Task AFolderWithoutASidecar_IsOneProblem()
     {
-        var dir = Directory.CreateTempSubdirectory("harness-").FullName;
+        var dir = Folders.NewFolder("harness-");
         var problem = Assert.Single(await PluginHarness.CheckAsync(dir));
         Assert.Equal("sidecar", problem.Field);
         Assert.Contains("no *.plugin.json", problem.Message);
@@ -375,5 +391,85 @@ public class PluginHarnessMisbehaviourTests
 
         Assert.Contains(problems, p => p.Field == "client");
         Assert.Contains(problems, p => p.Field == "kind");
+    }
+}
+
+/// <summary>The smaller promises: duplicate keys, an unreadable sidecar, reaping, and what the package exposes.</summary>
+public class PluginHarnessEdgeTests
+{
+    /// <summary>Arguments are taken as a session takes them: a repeated key's last value wins.</summary>
+    [Fact]
+    public async Task ARepeatedArgument_TakesItsLastValue_AsASessionDoes()
+    {
+        await using var plugin = await PluginHarness.LoadAsync(Folders.Harness());
+
+        var call = await plugin.CallAsync("echo", """{"text":"first","text":"last"}""", answer: GateAnswer.Allow);
+
+        Assert.Equal("last", call.Result!.Output["content"]);
+    }
+
+    /// <summary>A sidecar the harness cannot read is a problem naming it, not a stack trace.</summary>
+    [Fact]
+    public async Task AnUnreadableSidecar_IsAProblem()
+    {
+        if (OperatingSystem.IsWindows() || Environment.UserName == "root") return;
+        var dir = Folders.WellFormed();
+        var sidecar = Path.Combine(dir, "fixture.plugin.json");
+        File.SetUnixFileMode(sidecar, UnixFileMode.None);
+
+        var problem = Assert.Single(await PluginHarness.CheckAsync(dir));
+
+        Assert.Equal("sidecar", problem.Field);
+        Assert.Contains("fixture.plugin.json", problem.Message);
+        File.SetUnixFileMode(sidecar, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
+
+    /// <summary>A Start that fails after spawning still has its child reaped: the caller gets no plugin to dispose.</summary>
+    [Fact]
+    public async Task AStartThatFailsAfterSpawning_HasItsChildReaped()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var work = Folders.NewFolder("harness-work-");
+        var options = new HarnessOptions
+        {
+            WorkingDirectory = work,
+            Settings = JsonSerializer.SerializeToElement(new { spawnThenFail = true }),
+        };
+
+        await Assert.ThrowsAsync<PluginLoadException>(() => PluginHarness.LoadAsync(Folders.Harness(), options));
+
+        var pid = int.Parse(File.ReadAllText(Path.Combine(work, "child.pid")));
+        Assert.True(HasExited(pid), $"child {pid} is still running");
+    }
+
+    private static bool HasExited(int pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return process.WaitForExit(2000);
+        }
+        catch (ArgumentException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>A pid is only killed while it is still the process that was registered — never one that reused the number.</summary>
+    [Fact]
+    public void AReusedPid_IsNotTheRegisteredProcess()
+    {
+        using var self = System.Diagnostics.Process.GetCurrentProcess();
+
+        Assert.True(HarnessContext.IsStill(self.Id, self.StartTime));
+        Assert.False(HarnessContext.IsStill(self.Id, self.StartTime.AddMinutes(-1)));
+    }
+
+    /// <summary>The package's public surface carries no test seams.</summary>
+    [Fact]
+    public void TheHostLookup_IsNotPublicApi()
+    {
+        Assert.Null(typeof(PluginHarness).GetMethod("HostDllForTest",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static));
     }
 }

@@ -95,7 +95,27 @@ public static class AppBootstrap
         // THE PLUGIN AUTHOR'S COMMANDS, BEFORE ANYTHING ELSE: they use no config folder, no terminal UI
         // and no model, and the session's own parser would refuse "plugin" as an argument without -p.
         if (args.Length > 0 && args[0] == "plugin")
-            return Cli.PluginCli.RunAsync(args[1..], Console.Out, Console.Error).GetAwaiter().GetResult();
+        {
+            // CTRL+C CANCELS, NOT KILLS: the command's own cleanup then stops the plugin and reaps its
+            // processes, where the default would end this process with a host still running.
+            using var interrupted = new CancellationTokenSource();
+            ConsoleCancelEventHandler onCancel = (_, e) => { e.Cancel = true; interrupted.Cancel(); };
+            Console.CancelKeyPress += onCancel;
+            try
+            {
+                return Cli.PluginCli.RunAsync(args[1..], Console.Out, Console.Error, interrupted.Token).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException) when (interrupted.IsCancellationRequested)
+            {
+                // 130, THE SHELL'S OWN CODE FOR AN INTERRUPT — reached after the plugin was stopped.
+                Console.Error.WriteLine("cxagent plugin: interrupted; the plugin was stopped.");
+                return 130;
+            }
+            finally
+            {
+                Console.CancelKeyPress -= onCancel;
+            }
+        }
 
         var options = CommandLine.Parse(args);
 

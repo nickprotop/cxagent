@@ -141,7 +141,12 @@ public sealed class HarnessPlugin : IAsyncDisposable
         };
         if (element.ValueKind != JsonValueKind.Object)
             throw new ArgumentException("arguments must be a JSON object.", nameof(args));
-        return new JobParameters(element.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.Clone()));
+
+        // ASSIGNED IN TURN, AS Agent.JobParametersFromCall DOES: a repeated key's last value wins
+        // there, so it wins here, rather than the harness refusing JSON a session accepts.
+        var values = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var property in element.EnumerateObject()) values[property.Name] = property.Value.Clone();
+        return new JobParameters(values);
     }
 
     private static JsonElement ParseJson(string text)

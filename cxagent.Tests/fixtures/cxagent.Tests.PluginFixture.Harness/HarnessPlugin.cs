@@ -28,11 +28,21 @@ public sealed class HarnessPlugin : IPlugin, IPluginGateSource, IPluginClientCon
     {
         if (Setting("failStart")) throw new InvalidOperationException("fixture: start refused");
         if (Setting("startCancels")) throw new OperationCanceledException("fixture: start cancelled itself");
+        if (Setting("spawnThenFail"))
+        {
+            // A START THAT FAILS HALF WAY, holding a process: the host must still reap it. The pid is
+            // written where the test can read it back.
+            var child = System.Diagnostics.Process.Start("sleep", "60")!;
+            _context!.RegisterChildProcess(child.Id);
+            File.WriteAllText(Path.Combine(_context.WorkingDirectory, "child.pid"), child.Id.ToString());
+            throw new InvalidOperationException("fixture: start failed after spawning");
+        }
+
         return Task.CompletedTask;
     }
 
     public PluginGate? Gate(string toolName, JobParameters call) =>
-        toolName == "echo" ? new PluginGate($"echo {call.Get<string>("text")}") : null;
+        toolName == "echo" ? new PluginGate($"echo {call.Get<string>("text")}") { Subject = call.Get<string>("text") } : null;
 
     public async Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context, CancellationToken ct)
     {

@@ -6,7 +6,8 @@ using CxAgent.Plugins.Testing;
 namespace CxAgent.Cli;
 
 /// <summary>The option values as typed, before any is checked — what <see cref="CallRequest.Parse"/> collects.</summary>
-internal sealed record RawCallOptions(string? Settings, string? SettingsFile, string? Answer, string? Timeout, string? Command);
+internal sealed record RawCallOptions(string? Settings, string? SettingsFile, string? Answer, string? Timeout,
+    string? Command, string? Cwd);
 
 /// <summary>What <c>cxagent plugin call</c> was asked to do, parsed and checked before anything loads.</summary>
 internal sealed record CallRequest(string Folder, string? Tool, string? ArgumentsJson, string? Command,
@@ -24,8 +25,14 @@ internal sealed record CallRequest(string Folder, string? Tool, string? Argument
 
         for (var i = 0; i < args.Length; i++)
         {
-            // EVERYTHING AFTER --command's NAME IS THE COMMAND'S, as a person would type it after /name.
-            if (command is not null) { commandArguments.Add(args[i]); continue; }
+            // EVERYTHING AFTER --command's NAME IS THE COMMAND'S, as a person would type it after /name —
+            // EXCEPT --json, the one option a script appends last, which stays the option wherever it is.
+            if (command is not null)
+            {
+                if (args[i] == "--json") json = true;
+                else commandArguments.Add(args[i]);
+                continue;
+            }
 
             switch (args[i])
             {
@@ -48,7 +55,7 @@ internal sealed record CallRequest(string Folder, string? Tool, string? Argument
             }
         }
 
-        error = Check(positionals, new RawCallOptions(settings, settingsFile, answer, timeout, command));
+        error = Check(positionals, new RawCallOptions(settings, settingsFile, answer, timeout, command, cwd));
         if (error is not null) return null;
 
         var options = new HarnessOptions
@@ -81,6 +88,8 @@ internal sealed record CallRequest(string Folder, string? Tool, string? Argument
         if (raw.Settings is not null && raw.SettingsFile is not null) return "give --settings or --settings-file, not both.";
         if (raw.SettingsFile is not null && !File.Exists(raw.SettingsFile)) return $"no settings file '{raw.SettingsFile}'.";
         if (raw.Answer is not null and not "allow" and not "deny") return "--answer is allow or deny.";
+        if (raw.Cwd is "") return "--cwd takes a folder.";
+        if (raw.Cwd is not null && !Directory.Exists(raw.Cwd)) return $"no folder '{raw.Cwd}' for --cwd.";
 
         // FINITE AND IN RANGE: "NaN" and "Infinity" parse as doubles, and neither is a wait.
         if (raw.Timeout is not null
@@ -146,13 +155,19 @@ internal static class PluginCallCommand
         }
         catch (PluginLoadException ex)
         {
-            if (request.Json) stdout.WriteLine(JsonSerializer.Serialize(new { error = "load", problems = ex.Problems.Select(p => p.ToString()) }, Indented));
+            // check's SHAPE, field and message, so one parser reads both commands' problems.
+            if (request.Json)
+                stdout.WriteLine(JsonSerializer.Serialize(new
+                {
+                    error = "load",
+                    problems = ex.Problems.Select(p => new { field = p.Field, message = p.Message }),
+                }, Indented));
             else foreach (var p in ex.Problems) stdout.WriteLine(p.ToString());
             return 1;
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested && !ct.IsCancellationRequested)
         {
-            return TimedOut(stderr, request);
+            return TimedOut(stdout, stderr, request);
         }
 
         // DISPOSED WHATEVER HAPPENS BELOW — a timeout included — so Stop runs and the plugin's
@@ -167,11 +182,11 @@ internal static class PluginCallCommand
 
                 // A NATIVE CALL DOES NOT THROW WHEN ITS WAIT IS CANCELLED: AbiPlugin turns it into a
                 // failed result. So an overrun is read off the timer, not only off an exception.
-                return timeout.IsCancellationRequested && !ct.IsCancellationRequested ? TimedOut(stderr, request) : exit;
+                return timeout.IsCancellationRequested && !ct.IsCancellationRequested ? TimedOut(stdout, stderr, request) : exit;
             }
             catch (OperationCanceledException) when (timeout.IsCancellationRequested && !ct.IsCancellationRequested)
             {
-                return TimedOut(stderr, request);
+                return TimedOut(stdout, stderr, request);
             }
             catch (ArgumentException ex)
             {
@@ -189,9 +204,13 @@ internal static class PluginCallCommand
         }
     }
 
-    private static int TimedOut(TextWriter stderr, CallRequest request)
+    private static int TimedOut(TextWriter stdout, TextWriter stderr, CallRequest request)
     {
-        stderr.WriteLine($"cxagent plugin: timed out after {request.Timeout.TotalSeconds.ToString(CultureInfo.InvariantCulture)} s; the plugin was stopped.");
+        var seconds = request.Timeout.TotalSeconds;
+        stderr.WriteLine($"cxagent plugin: timed out after {seconds.ToString(CultureInfo.InvariantCulture)} s; the plugin was stopped.");
+
+        // ONE OBJECT ON STDOUT UNDER --json, whatever happened, so a script parses it either way.
+        if (request.Json) stdout.WriteLine(JsonSerializer.Serialize(new { error = "timeout", seconds }, Indented));
         return 1;
     }
 
@@ -219,7 +238,7 @@ internal static class PluginCallCommand
         {
             stdout.WriteLine(JsonSerializer.Serialize(new
             {
-                gate = call.Gate is { } g ? new { display = g.Display, alwaysAskable = g.AlwaysAskable } : null,
+                gate = call.Gate is { } g ? new { display = g.Display, alwaysAskable = g.AlwaysAskable, subject = g.Subject } : null,
                 answer = call.Answer?.ToString().ToLowerInvariant(),
                 stoppedAtGate = call.StoppedAtGate,
                 reports = call.Reports.Select(Describe),

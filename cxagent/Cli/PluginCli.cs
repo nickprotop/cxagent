@@ -16,6 +16,16 @@ public static class PluginCli
     private const string Usage = """
         usage: cxagent plugin check <folder> [--json]
                cxagent plugin call <folder> <tool> ['<json>'] [options]
+               cxagent plugin call <folder> --command <name> [arguments…] [--json]
+
+        call options:
+          --answer allow|deny          how the permission question is answered
+          --settings '<json>'          the plugin's settings block (or --settings-file <file>)
+          --cwd <folder>               the folder the plugin works in
+          --timeout <seconds>          stop the call after this long (default 60)
+          --json                       one JSON object instead of live output
+
+        exit: 0 success, 1 the plugin is at fault, 2 usage
         """;
 
     // THE SAME ESCAPING AS call's OUTPUT — see PluginCallCommand.Indented: a person or a JSON parser
@@ -37,8 +47,13 @@ public static class PluginCli
     private static async Task<int> Check(string[] args, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         var json = args.Contains("--json");
+        if (args.FirstOrDefault(a => a.StartsWith("--", StringComparison.Ordinal) && a != "--json") is { } unknown)
+            return Fail(stderr, $"unknown option '{unknown}'.");
         var folders = args.Where(a => a != "--json").ToArray();
         if (folders.Length != 1) return Fail(stderr, "check takes one plugin folder.");
+
+        // A FOLDER THAT IS NOT THERE IS A TYPO, not a plugin at fault: usage, not 1.
+        if (!Directory.Exists(folders[0])) return Fail(stderr, $"no folder '{folders[0]}'.");
 
         var problems = await PluginHarness.CheckAsync(folders[0], ct: ct).ConfigureAwait(false);
         if (json)

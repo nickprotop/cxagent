@@ -12,7 +12,7 @@ internal sealed class HarnessContext(string workingDirectory, JsonElement settin
 {
     private readonly CancellationTokenSource _lifetime = new();
     private readonly List<string> _logged = [];
-    private readonly List<int> _children = [];
+    private readonly List<(int Pid, DateTime Started)> _children = [];
 
     public string WorkingDirectory { get; } = workingDirectory;
     public JsonElement Settings { get; } = settings;
@@ -24,7 +24,39 @@ internal sealed class HarnessContext(string workingDirectory, JsonElement settin
 
     public IReadOnlyList<string> Logged { get { lock (_logged) return [.. _logged]; } }
 
-    public void RegisterChildProcess(int pid) { lock (_children) _children.Add(pid); }
+    /// <summary>
+    /// Records the process with its start time, so a pid the system has since given to another
+    /// process is never killed in its place — the same guard ChildProcessStore keeps.
+    /// </summary>
+    public void RegisterChildProcess(int pid)
+    {
+        DateTime started;
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            started = process.StartTime;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return; // ALREADY GONE: nothing to reap later.
+        }
+
+        lock (_children) _children.Add((pid, started));
+    }
+
+    /// <summary>Whether <paramref name="pid"/> is still the process that started at <paramref name="startTime"/>.</summary>
+    internal static bool IsStill(int pid, DateTime startTime)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return process.StartTime == startTime;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// Ends the plugin's lifetime — BEFORE its Stop is awaited, as a session does, so a Stop that waits
@@ -44,10 +76,11 @@ internal sealed class HarnessContext(string workingDirectory, JsonElement settin
     public void Dispose()
     {
         _lifetime.Cancel();
-        int[] pids;
-        lock (_children) pids = [.. _children];
-        foreach (var pid in pids)
+        (int Pid, DateTime Started)[] children;
+        lock (_children) children = [.. _children];
+        foreach (var (pid, started) in children)
         {
+            if (!IsStill(pid, started)) continue;
             try
             {
                 using var process = System.Diagnostics.Process.GetProcessById(pid);

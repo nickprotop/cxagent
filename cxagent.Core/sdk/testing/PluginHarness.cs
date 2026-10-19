@@ -41,7 +41,7 @@ public static partial class PluginHarness
         var problems = new List<PluginProblem>();
         if (PluginFolder.Find(folder, problems) is not { } found) return problems;
 
-        var parsed = PluginManifest.Parse(File.ReadAllText(found.Sidecar));
+        if (ReadSidecar(found, problems) is not { } parsed) return problems;
         problems.AddRange(parsed.Errors.Select(e => new PluginProblem("sidecar", e)));
         if (parsed.Manifest is not { } sidecar) return problems;
 
@@ -64,7 +64,7 @@ public static partial class PluginHarness
         var problems = new List<PluginProblem>();
         if (PluginFolder.Find(folder, problems) is not { } found) throw new PluginLoadException(problems);
 
-        var parsed = PluginManifest.Parse(File.ReadAllText(found.Sidecar));
+        if (ReadSidecar(found, problems) is not { } parsed) throw new PluginLoadException(problems);
         problems.AddRange(parsed.Errors.Select(e => new PluginProblem("sidecar", e)));
         if (parsed.Manifest is { } sidecar) StaticProblems(sidecar, found, problems);
         if (problems.Count > 0 || parsed.Manifest is null) throw new PluginLoadException(problems);
@@ -158,7 +158,22 @@ public static partial class PluginHarness
         return File.Exists(referenced) ? referenced : PluginResolver.PluginHostDllPath();
     }
 
-    public static string HostDllForTest(HarnessOptions options) => HostDll(options);
+    internal static string HostDllForTest(HarnessOptions options) => HostDll(options);
+
+    // A SIDECAR THAT CANNOT BE READ — permissions, a lock — is a problem naming it, like one that
+    // will not parse, rather than an exception out of check.
+    private static PluginManifestParseResult? ReadSidecar(PluginFolder found, List<PluginProblem> problems)
+    {
+        try
+        {
+            return PluginManifest.Parse(File.ReadAllText(found.Sidecar));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            problems.Add(new("sidecar", $"{Path.GetFileName(found.Sidecar)} cannot be read: {ex.Message}"));
+            return null;
+        }
+    }
 
     internal static async Task<LoadOutcome> LoadInto(
         PluginFolder found, HarnessContext context, HarnessOptions options, CancellationToken ct)

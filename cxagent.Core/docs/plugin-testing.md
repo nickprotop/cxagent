@@ -5,8 +5,13 @@ with no session and no model.*
 
 Two ways in, one engine. `cxagent plugin check` and `cxagent plugin call` run on the same code as
 the **CxAgent.Plugins.Testing** package. Both use the loaders a session uses, and both ask the
-same permission question a session asks. A plugin that passes here loads, and asks, the way it
-will for a user.
+plugin's own permission question — `gated` in the sidecar, and your `Gate` for `"dynamic"` — through
+the code a session uses. A plugin that passes here loads, and asks, the way it will for a user.
+
+**What a session adds on top is cxagent's, not yours.** Before any plugin tool runs, a session in
+an asking mode first asks whether to use the tool at all ("use the search tool in this folder"),
+unless the user already granted it. Your plugin cannot change that question, so the harness leaves
+it out: a `"gated": false` tool asks nothing here, yet still prompts once in a fresh session.
 
 Both take a plugin **folder**: one `<name>.plugin.json` and the library of the same stem beside it
 (`.dll`, `.so` or `.dylib`), plus whatever that library needs. That is what a user installs.
@@ -71,7 +76,21 @@ and the result follows once it returns. A submit from the plugin's client prints
 | `--answer allow\|deny` | how the permission question is answered |
 | `--timeout s` | stop the call after `s` seconds; the plugin is then stopped and its processes reaped. Default 60 |
 | `--command name [args…]` | run a command the plugin declares instead of a tool; everything after the name is its argument |
-| `--json` | one JSON object — `gate`, `answer`, `stoppedAtGate`, `reports`, `submits`, `result` — and nothing printed live |
+| `--json` | one JSON object (below), and nothing printed live. Anywhere on the line — after `--command name` too |
+
+### `--json` shapes
+
+Every outcome is one object on stdout, so a script can always parse it:
+
+| outcome | object |
+|---|---|
+| `check` | `{"ok": bool, "problems": [{"field", "message"}]}` |
+| a call | `{"gate": {"display", "alwaysAskable", "subject"} \| null, "answer": "allow" \| "deny" \| null, "stoppedAtGate": bool, "reports": ["progress 50% half", "log [Info] working", "stream text"], "submits": [goal], "result": {"success", "exitCode", "errorMessage", "output"} \| null}` |
+| a command | `{"message": string \| null, "status": "reported" \| "changed" \| "refused"}` |
+| load failed | `{"error": "load", "problems": [{"field", "message"}]}` — `check`'s shape |
+| timed out | `{"error": "timeout", "seconds": n}` |
+
+A usage error (exit 2) writes only to stderr.
 
 ### Exit codes
 
@@ -81,7 +100,8 @@ Both commands share them:
   would stop there too.
 - **1**: the plugin is at fault. That means a problem `check` found, a load or Start that failed, a
   result whose `success` is false, a refused command, or a call that overran its timeout.
-- **2**: the command line is wrong.
+- **2**: the command line is wrong — a folder that does not exist included.
+- **130**: interrupted with Ctrl+C. The plugin is stopped and its processes reaped first.
 
 A C plugin's CTest can run it directly:
 
