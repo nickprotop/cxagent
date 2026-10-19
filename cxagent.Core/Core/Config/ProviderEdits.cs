@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using CxAgent.Core.Llm;
 
 namespace CxAgent.Core.Config;
 
@@ -12,10 +13,12 @@ internal sealed class ConfigEditException(string message) : Exception(message);
 /// record knows, and every key it does not — a field from a newer version, a hand-added note — is
 /// gone after the first save. Editing the JSON in place keeps them by construction.</para>
 ///
-/// <para>EVERY REFERENCE MOVES WITH THE NAME. An instance is named by <c>defaultProvider</c>,
-/// <c>classifier</c>, <c>llmAgent.routing.*.provider</c>, <c>llmAgent.allowedProviders</c> and
-/// <c>agents.*.provider</c>; the loader refuses a dangling one in all but the last, so a rename or
-/// removal that missed one would write a file startup will not load.</para>
+/// <para>EVERY REFERENCE MOVES WITH THE NAME, IN EVERY FORM. An instance is named by
+/// <c>defaultProvider</c>, <c>classifier</c>, <c>llmAgent.routing.*.provider</c>,
+/// <c>llmAgent.allowedProviders</c> and <c>agents.*.provider</c> — the last a string or a list, each
+/// <c>name</c> or <c>name:model</c>. The loader refuses a dangling one in all but the last, and a
+/// dangling one there disables the type, so a rename or removal that missed one would write a file
+/// startup will not load, or a type that quietly stops working.</para>
 /// </summary>
 public static class ProviderEdits
 {
@@ -90,11 +93,38 @@ public static class ProviderEdits
                         if (to is null) allowed.RemoveAt(i); else allowed[i] = to;
         }
 
-        // A TYPE WITHOUT A PROVIDER RUNS ON THE SESSION'S, which is what removing its binding means.
+        // A TYPE'S `provider` IS A STRING OR A LIST, each `name` or `name:model` — a reference moves in
+        // every form, or a rename leaves a type naming nothing, which disables it.
         if (root["agents"] is JsonObject agents)
             foreach (var (_, type) in agents)
-                if (type is JsonObject t && (string?)t["provider"] == from)
-                    if (to is null) t.Remove("provider"); else t["provider"] = to;
+                if (type is JsonObject t) RewriteTypeProvider(t, from, to);
+    }
+
+    private static void RewriteTypeProvider(JsonObject type, string from, string? to)
+    {
+        static string? Moved(string written, string from, string? to)
+        {
+            if (AgentTypeConfig.NameOf(written) != from) return written;
+            var colon = written.IndexOf(':');
+            return to is null ? null : colon < 0 ? to : to + written[colon..];
+        }
+
+        switch (type["provider"])
+        {
+            case JsonValue v when v.TryGetValue<string>(out var s):
+                // A TYPE WITHOUT A PROVIDER RUNS ON THE SESSION'S, which is what removing its only one means.
+                if (Moved(s, from, to) is { } next) type["provider"] = next; else type.Remove("provider");
+                break;
+            case JsonArray list:
+                for (var i = list.Count - 1; i >= 0; i--)
+                    if (list[i] is JsonValue e && e.TryGetValue<string>(out var w))
+                    {
+                        if (Moved(w, from, to) is { } moved) list[i] = moved; else list.RemoveAt(i);
+                    }
+                // AN EMPTY LIST IS A SHAPE ERROR, which would disable the type; no list is the session's.
+                if (list.Count == 0) type.Remove("provider");
+                break;
+        }
     }
 
     private static JsonObject Providers(JsonObject root)

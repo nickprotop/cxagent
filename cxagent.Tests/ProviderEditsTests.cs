@@ -115,4 +115,32 @@ public class ProviderEditsTests
         ProviderEdits.SetReviewer(root, null);
         Assert.Null(root["classifier"]);
     }
+
+    [Fact]
+    public void Rename_MovesEveryFormOfAReference()
+    {
+        var root = System.Text.Json.Nodes.JsonNode.Parse("""
+        { "providers": { "local": {}, "fast": {} },
+          "agents": { "a": { "provider": ["fast", "local:qwen"] }, "b": { "provider": "local" } } }
+        """)!.AsObject();
+
+        ProviderEdits.Rename(root, "local", "box");
+
+        Assert.Equal("""["fast","box:qwen"]""", root["agents"]!["a"]!["provider"]!.ToJsonString());
+        Assert.Equal("box", (string?)root["agents"]!["b"]!["provider"]);
+    }
+
+    [Fact]
+    public void Remove_DropsTheEntry_AndTheKeyWhenTheListEmpties()
+    {
+        var root = System.Text.Json.Nodes.JsonNode.Parse("""
+        { "providers": { "local": {}, "fast": {} }, "defaultProvider": "fast",
+          "agents": { "a": { "provider": ["local", "fast"] }, "b": { "provider": ["local:qwen"] } } }
+        """)!.AsObject();
+
+        ProviderEdits.Remove(root, "local");
+
+        Assert.Equal("""["fast"]""", root["agents"]!["a"]!["provider"]!.ToJsonString());
+        Assert.False(root["agents"]!["b"]!.AsObject().ContainsKey("provider"));
+    }
 }

@@ -34,7 +34,18 @@ public static class ProviderRemovalPlan
         }
         if (settings.Classifier == name) lines.Add("auto-mode reviewer → cleared; auto mode is not offered");
         foreach (var (type, cfg) in settings.AgentTypes.OrderBy(t => t.Key, StringComparer.Ordinal))
-            if (cfg.Provider == name) lines.Add($"agent type '{type}' → uses the session's provider");
+        {
+            if (!cfg.Lists(name)) continue;
+            // WHAT THE TYPE RUNS ON AFTERWARDS, said before the user confirms — the next default can be
+            // a paid provider, and finding that out from a bill is the worst way.
+            var rest = (cfg.Written ?? []).Select(AgentTypeConfig.NameOf).Where(n => n != name).Distinct().ToList();
+            var wasDefault = cfg.Providers is { Count: > 0 } listed ? listed[0] == name : cfg.Provider == name;
+            var next = rest.Count == 0 ? null
+                : settings.Providers.TryGetValue(rest[0], out var c) ? $"{rest[0]}:{c.Model}" : rest[0];
+            lines.Add(next is null ? $"agent type '{type}' → runs on the session's model"
+                : wasDefault ? $"agent type '{type}' → its default becomes '{next}'"
+                : $"agent type '{type}' → no longer offers '{name}'");
+        }
         if (lines.Count == 0) lines.Add("Nothing else in config.json names it.");
         return new ProviderRemoval(false, lines);
     }

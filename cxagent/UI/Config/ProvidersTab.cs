@@ -535,7 +535,7 @@ public sealed class ProvidersTab
         // session, and the default's limit sizes every sub-agent semaphore. Tabs on it move in place —
         // the same model under a new name sends the same request.
         var wide = _settings.Classifier == from || _settings.DefaultProvider == from
-            || _settings.AgentTypes.Values.Any(t => t.Provider == from);
+            || _settings.AgentTypes.Values.Any(t => t.Lists(from));
         _draft = null;
         await CommitAsync(root => ProviderEdits.Rename(root, from, to),
             new ConfigChange(new HashSet<string> { from }, new Dictionary<string, string> { [from] = to }, wide, $"{from} is now {to}"), to);

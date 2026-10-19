@@ -104,14 +104,14 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
     ///
     /// <para>EVERYONE when the change reaches every session's wiring: this instance reviews auto mode
     /// (each session builds its classifier at wire time), it is the default and its concurrency limit
-    /// changed (that limit sizes each session's sub-agent semaphore), or an agent type names it (types
-    /// capture their provider at wire time). Otherwise only the tabs on this instance.</para>
+    /// changed (that limit sizes each session's sub-agent semaphore), or an agent type lists it (types
+    /// capture each listed provider at wire time). Otherwise only the tabs on this instance.</para>
     /// </summary>
     public ConfigChange ChangeFor(ProviderSettings settings)
     {
         var everyone = settings.Classifier == Name
             || (settings.DefaultProvider == Name && MaxConcurrentAgents != Original.MaxConcurrentAgents)
-            || settings.AgentTypes.Values.Any(t => t.Provider == Name);
+            || settings.AgentTypes.Values.Any(t => t.Lists(Name));
         // THE MODEL OR THE SERVER CHANGED: a tab's cache does not survive either, so it is asked about.
         var breaks = Model.Trim() != Original.Model || UrlChanged;
         return new ConfigChange(new HashSet<string> { Name }, new Dictionary<string, string>(), everyone, Note())

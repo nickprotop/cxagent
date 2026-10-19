@@ -102,4 +102,16 @@ public class InstanceDraftTests
     private static ProviderSettings Settings(string defaultName) => new(
         new Dictionary<string, ProviderInstanceConfig> { ["local"] = Local, ["other"] = Local },
         defaultName, [], new Dictionary<string, RoutingTarget>());
+
+    /// <summary>A type's catalog holds each listed provider resolved: a second entry's new model or key must
+    /// reach every session, or a child that picks it keeps calling the old one.</summary>
+    [Fact]
+    public void EditingATypesSecondProvider_ReachesEveryone() =>
+        Assert.True(new InstanceDraft("other", Local) { Model = "x" }.ChangeFor(Settings("local") with
+        {
+            AgentTypes = new Dictionary<string, AgentTypeConfig>
+            {
+                ["planner"] = new(Provider: "local") { Providers = ["local", "other"], Written = ["local", "other"] },
+            },
+        }).Everyone);
 }
