@@ -109,6 +109,13 @@ A C plugin's CTest can run it directly:
 add_test(NAME search COMMAND cxagent plugin call ${CMAKE_BINARY_DIR}/plugin search "{\"city\":\"Athens\"}" --answer allow)
 ```
 
+## Then: `pack` and `verify`
+
+A plugin that passes `check` and `call` is ready to package. `cxagent plugin pack <folder>` writes
+the zips and the catalog entry, and `cxagent plugin verify <entry>` checks what a user's install
+would get. Neither runs any plugin code. Both share the exit codes above. See the
+[quick start](plugins.md#quick-start-c).
+
 ## CxAgent.Plugins.Testing
 
 The same, inside xunit, NUnit or MSTest:

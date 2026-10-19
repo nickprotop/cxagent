@@ -29,12 +29,40 @@ boundary costs.
 The [other examples](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples) cover
 the rest: a second front end, injecting tools, and narrowing what an agent may do.
 
-**Test it without a session.** `cxagent plugin check <folder>` runs every load-time check and
-`cxagent plugin call <folder> <tool>` runs one real call, gate included; the
-**CxAgent.Plugins.Testing** package does the same inside a C# test. See
-[plugin-testing.md](plugin-testing.md).
+## Quick start (C#)
+
+From nothing to a plugin a user can install, with cxagent's own tools:
+
+```
+cxagent plugin new weather --lang csharp        # or: dotnet new install CxAgent.Plugins.Templates
+cd weather                                       #     dotnet new cxagent-plugin -n weather
+dotnet build
+cxagent plugin check bin/Debug/net10.0           # every load-time check, no session
+cxagent plugin call bin/Debug/net10.0 weather_greet '{"name":"Ada"}'   # one real call, gate included
+dotnet test tests                                # the same, from xunit, via CxAgent.Plugins.Testing
+dotnet build -c Release
+cxagent plugin pack bin/Release/net10.0          # the zip, its sha256, the catalog entry, next steps
+cxagent plugin verify weather.catalog.json       # what a user's install would get, no code run
+```
+
+- **`new`** writes the project: a sidecar, one tool with a per-call gate, the plugin class, a README,
+  and a test project. It never writes over a folder that holds anything.
+- **`check`** and **`call`** are covered in [plugin-testing.md](plugin-testing.md).
+- **`pack`** refuses a plugin `check` refuses. The entry's description, publisher, license and
+  repository come from:
+  1. its options;
+  2. an `--info` file, JSON or YAML;
+  3. the project's `Description`, `Authors`, `PackageLicenseExpression` and `RepositoryUrl`.
+
+  Anything left unset is written as `<fill in: …>`, and `verify` refuses it until you do.
+- **`verify`** takes the entry's zips from `https://` or, before you upload, from a local path.
+
+To list it in cxagent's catalog, see [RELEASING.md](../../plugins/RELEASING.md). C plugins get
+the same start with the C SDK.
 
 ## The project
+
+`cxagent plugin new` writes all of this for you; this section says what it wrote, and why.
 
 A managed plugin is an ordinary `net10.0` library — no `RuntimeIdentifier`, so one build runs
 everywhere cxagent does:
