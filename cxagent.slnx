@@ -1,4 +1,9 @@
 <Solution>
+  <Folder Name="/cxagent.Core/" />
+  <Folder Name="/cxagent.Core/sdk/" />
+  <Folder Name="/cxagent.Core/sdk/testing/">
+    <Project Path="cxagent.Core/sdk/testing/CxAgent.Plugins.Testing.csproj" />
+  </Folder>
   <Folder Name="/plugins/">
     <Project Path="plugins/triggers/triggers.csproj" />
   </Folder>

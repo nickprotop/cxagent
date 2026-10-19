@@ -110,6 +110,10 @@
          shim will launch it — a ProjectReference here, not a copy, so the tests exercise the built
          executable rather than a description of it. -->
     <ProjectReference Include="../cxagent.PluginHost/cxagent.PluginHost.csproj" />
+
+    <!-- THE PLUGIN HARNESS — CxAgent.Plugins.Testing, what an outside author's tests reference — so
+         its checks and calls are tested against the fixtures here. -->
+    <ProjectReference Include="../cxagent.Core/sdk/testing/CxAgent.Plugins.Testing.csproj" />
   </ItemGroup>
 
   <!-- NATIVE ABI FIXTURES, BUILT BY CMAKE OR A SHELL SCRIPT BECAUSE MSBUILD HAS NO C COMPILER TASK.

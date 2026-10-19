@@ -9,3 +9,4 @@ using System.Runtime.CompilerServices;
 // see these members. That is correct: the wiring is Core's, and the tests that exercise it belong in
 // Core's test project rather than an app's.
 [assembly: InternalsVisibleTo("cxagent.Tests")]
+[assembly: InternalsVisibleTo("CxAgent.Plugins.Testing")]
