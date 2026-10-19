@@ -155,4 +155,20 @@ public class SilentRunTests
         Assert.DoesNotContain("runs_on", unknown);
         Assert.Null(SubAgentEnvelope.RunsOnOf(unknown));
     }
+
+    /// <summary>A child in a folder of its own keeps it on its envelope — what the conversation stores — and
+    /// an envelope without one is unchanged.</summary>
+    [Fact]
+    public void TheEnvelope_KeepsTheChildsFolder()
+    {
+        var rendered = SubAgentEnvelope.Render(new EnvelopeChild("c", "local:q") { Root = "sub" }, "finder",
+            new SendResult("found it", SendOutcome.Completed), work: null);
+        var receipt = SubAgentEnvelope.Receipt(new EnvelopeChild("c", "local:q") { Root = "sub" }, "finder", canWrite: false);
+
+        Assert.StartsWith("<sub_agent id=\"c\" name=\"finder\" state=\"completed\" runs_on=\"local:q\" root=\"sub\">", rendered);
+        Assert.Equal("sub", SubAgentEnvelope.RootOf(rendered));
+        Assert.Equal("sub", SubAgentEnvelope.RootOf(receipt));
+        Assert.Null(SubAgentEnvelope.RootOf(SubAgentEnvelope.Render(new EnvelopeChild("c", "local:q"), "finder",
+            new SendResult("found it", SendOutcome.Completed), work: null)));
+    }
 }

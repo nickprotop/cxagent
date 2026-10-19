@@ -115,8 +115,11 @@ public interface ISubAgentSpawner
 /// </summary>
 public sealed record EnvelopeChild(string Id, string? RunsOn)
 {
+    /// <summary>The folder it works in relative to its parent's, when it has one of its own.</summary>
+    public string? Root { get; init; }
+
     /// <summary>The child as its envelope names it.</summary>
-    public static EnvelopeChild Of(SubAgent child) => new(child.Agent.Id, child.ModelId);
+    public static EnvelopeChild Of(SubAgent child) => new(child.Agent.Id, child.ModelId) { Root = child.Root };
 }
 
 /// <summary>
@@ -198,10 +201,15 @@ public static class SubAgentEnvelope
     /// </summary>
     public static string? RunsOnOf(string? envelope) => Attribute(envelope, "runs_on=\"");
 
-    /// <summary>The attribute that says where the child ran; empty when that is not known, which leaves the
-    /// envelope exactly as it reads without one.</summary>
-    private static string RunsOnAttribute(EnvelopeChild child) =>
-        child.RunsOn is { Length: > 0 } runsOn ? $" runs_on=\"{runsOn}\"" : "";
+    /// <summary>Reads the child's own folder back out of an envelope or receipt, or null when it worked where its
+    /// parent does. ON THE ENVELOPE for the reason <see cref="RunsOnOf"/> is.</summary>
+    public static string? RootOf(string? envelope) => Attribute(envelope, "root=\"");
+
+    /// <summary>The attributes that say where the child ran and the folder it worked in; each absent when
+    /// not known, which leaves the envelope exactly as it reads without them.</summary>
+    private static string WhereAttributes(EnvelopeChild child) =>
+        (child.RunsOn is { Length: > 0 } runsOn ? $" runs_on=\"{runsOn}\"" : "")
+        + (child.Root is { Length: > 0 } root ? $" root=\"{root}\"" : "");
 
     /// <summary>
     /// The state a background spawn's receipt carries: the child has started, and its report comes later.
@@ -257,7 +265,7 @@ public static class SubAgentEnvelope
         StateOf(envelope) == Running && envelope!.Contains(MovedByTheUser, StringComparison.Ordinal);
 
     public static string Receipt(EnvelopeChild child, string name, bool canWrite) =>
-        $"<sub_agent id=\"{child.Id}\" name=\"{name}\" state=\"{Running}\"{RunsOnAttribute(child)}>\n"
+        $"<sub_agent id=\"{child.Id}\" name=\"{name}\" state=\"{Running}\"{WhereAttributes(child)}>\n"
         + "Running in the background. Its report will come to you as a message when it finishes — in this "
         + "turn if you are still working, as a new turn if you are not. Do not poll task_list for it and do "
         + "not do this work yourself; carry on with other work, or end your turn.\n"
@@ -317,7 +325,7 @@ public static class SubAgentEnvelope
         // read as a handle that happens to be blank, which is a name the model would then try to
         // send to; omitting the attribute says plainly that there is nothing to reach.
         var handle = name is null ? "" : $" name=\"{name}\"";
-        return $"<sub_agent id=\"{child.Id}\"{handle} state=\"{state}\"{RunsOnAttribute(child)}>{note}\n{text}\n</sub_agent>";
+        return $"<sub_agent id=\"{child.Id}\"{handle} state=\"{state}\"{WhereAttributes(child)}>{note}\n{text}\n</sub_agent>";
     }
 
     /// <summary>

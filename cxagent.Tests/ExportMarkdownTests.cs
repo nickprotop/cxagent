@@ -342,6 +342,18 @@ public class ExportMarkdownTests : IDisposable
 
         Assert.Contains("plan it · on deepseek:deepseek/deepseek-v3.2", md);
     }
+
+    /// <summary>An export names a child's own folder beside where it ran.</summary>
+    [Fact]
+    public void ASpawnLine_NamesTheChildsFolder()
+    {
+        var md = Render(Source(
+            E(Assistant("", 0, Call("s", "agent", new { description = "plan it", prompt = "p", type = "planner" }))),
+            E(Result("s", "<sub_agent id=\"KID\" name=\"kid\" state=\"completed\" runs_on=\"deepseek:x\" root=\"sub\">\nthe plan\n</sub_agent>", 3))),
+            Readable);
+
+        Assert.Contains("plan it · on deepseek:x in sub", md);
+    }
 }
 
 public class EditDiffTests

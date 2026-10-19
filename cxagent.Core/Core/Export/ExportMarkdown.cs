@@ -357,7 +357,7 @@ public static partial class ExportMarkdown
             // WHERE A CHILD RAN, from its stored envelope: the export is read later, when the rows that showed it
             // are gone.
             if (call.Name == Tool.Agent && SubAgentEnvelope.RunsOnOf(output) is { } runsOn)
-                label += $" · on {runsOn}";
+                label += $" · on {runsOn}" + (SubAgentEnvelope.RootOf(output) is { } folder ? $" in {folder}" : "");
 
             var outcome = output is null ? ""
                 : ExitCode().Match(output) is { Success: true } exit && exit.Groups[1].Value != "0" ? $" → exit {exit.Groups[1].Value}"
