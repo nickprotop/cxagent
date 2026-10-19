@@ -210,6 +210,35 @@
           "gated": false
         }
       ]
+    },
+    {
+      "name": "sunrise",
+      "displayName": "sunrise",
+      "version": "1.0.0",
+      "description": "A test plugin for the submission bot's live run; never merged.",
+      "publisher": "nickprotop",
+      "license": "MIT",
+      "repository": "https://github.com/nickprotop/cxagent",
+      "source": {
+        "kind": "url",
+        "url": "https://github.com/nickprotop/cxagent/releases/download/submission-test-1/sunrise.zip",
+        "sha256": "5b1fc89ba6bba3ec0c445b800b8bec2cb0309af0a080aff1511f8d397ff1eeb4"
+      },
+      "file": "sunrise.dll",
+      "kind": "managed",
+      "compatibility": {
+        "pluginContract": 4,
+        "platforms": [
+          "any"
+        ]
+      },
+      "spawns": false,
+      "tools": [
+        {
+          "name": "sunrise_greet",
+          "gated": "dynamic"
+        }
+      ]
     }
   ]
 }
