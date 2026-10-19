@@ -354,6 +354,10 @@ public static partial class ExportMarkdown
             var label = call.Name == Tool.AgentSend
                 ? $"{Arg(call, "to")} — {Clip(Arg(call, "prompt") ?? "", 60)}"
                 : Agent.DescribeCall(call, source.Header.WorkingDir);
+            // WHERE A CHILD RAN, from its stored envelope: the export is read later, when the rows that showed it
+            // are gone.
+            if (call.Name == Tool.Agent && SubAgentEnvelope.RunsOnOf(output) is { } runsOn)
+                label += $" · on {runsOn}";
 
             var outcome = output is null ? ""
                 : ExitCode().Match(output) is { Success: true } exit && exit.Groups[1].Value != "0" ? $" → exit {exit.Groups[1].Value}"

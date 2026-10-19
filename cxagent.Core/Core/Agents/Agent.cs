@@ -3219,7 +3219,7 @@ public sealed class Agent
             outcome = childId is null
                 ? $"error: {ex.Message}"
                 // NO NAME: a spawn that threw was never kept, so there is nothing to reach.
-                : SubAgentEnvelope.Render(childId, null, SendOutcome.Failed, ex.Message);
+                : SubAgentEnvelope.Render(new EnvelopeChild(childId, job.RunsOn), null, SendOutcome.Failed, ex.Message);
         }
         catch (OperationCanceledException)
         {

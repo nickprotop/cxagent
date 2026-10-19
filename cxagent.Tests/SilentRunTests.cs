@@ -110,7 +110,7 @@ public class SilentRunTests
     [Fact]
     public void TheEnvelopeExplainsASilentKeptChild()
     {
-        var rendered = SubAgentEnvelope.Render("child-1", "finder",
+        var rendered = SubAgentEnvelope.Render(new EnvelopeChild("child-1", null), "finder",
             new SendResult("", SendOutcome.Silent, "it reasoned but ended its reply without writing an answer"),
             work: "20 tool calls; latest: read a.cs, grep \"Usage\"");
 
@@ -126,11 +126,33 @@ public class SilentRunTests
     [Fact]
     public void TheEnvelopeForAnUnkeptSilentChild_AdvisesARerun()
     {
-        var rendered = SubAgentEnvelope.Render("child-1", null,
+        var rendered = SubAgentEnvelope.Render(new EnvelopeChild("child-1", null), null,
             new SendResult("", SendOutcome.Silent, "its reply was empty"), work: null);
 
         Assert.Contains("its reply was empty", rendered);
         Assert.Contains("check the tree", rendered);
         Assert.DoesNotContain("agent_send", rendered);
+    }
+
+    /// <summary>
+    /// WHERE THE CHILD RAN TRAVELS ON ITS ENVELOPE, which is what the conversation stores: a resumed agent and
+    /// an export read it back from there. Absent when not known, so an envelope without it is unchanged.
+    /// </summary>
+    [Fact]
+    public void TheEnvelope_SaysWhereTheChildRan()
+    {
+        var rendered = SubAgentEnvelope.Render(new EnvelopeChild("child-1", "local:qwen"), "finder",
+            new SendResult("found it", SendOutcome.Completed), work: null);
+        var receipt = SubAgentEnvelope.Receipt(new EnvelopeChild("child-1", "local:qwen"), "finder", canWrite: false);
+
+        Assert.StartsWith("<sub_agent id=\"child-1\" name=\"finder\" state=\"completed\" runs_on=\"local:qwen\">", rendered);
+        Assert.Equal("local:qwen", SubAgentEnvelope.RunsOnOf(rendered));
+        Assert.Equal("local:qwen", SubAgentEnvelope.RunsOnOf(receipt));
+        Assert.Equal(SubAgentEnvelope.Running, SubAgentEnvelope.StateOf(receipt));
+
+        var unknown = SubAgentEnvelope.Render(new EnvelopeChild("child-1", RunsOn: null), "finder",
+            new SendResult("found it", SendOutcome.Completed), work: null);
+        Assert.DoesNotContain("runs_on", unknown);
+        Assert.Null(SubAgentEnvelope.RunsOnOf(unknown));
     }
 }

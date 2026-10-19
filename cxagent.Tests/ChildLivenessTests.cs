@@ -220,7 +220,7 @@ public class ChildLivenessTests
         Directory.CreateDirectory(dir);
         try
         {
-            File.WriteAllText(Path.Combine(dir, "receipt.txt"), SubAgentEnvelope.Receipt("id", "x", canWrite: false));
+            File.WriteAllText(Path.Combine(dir, "receipt.txt"), SubAgentEnvelope.Receipt(new EnvelopeChild("id", null), "x", canWrite: false));
             var model = new MockLlmProvider();
             model.EnqueueResponse(new LlmResponse
             {

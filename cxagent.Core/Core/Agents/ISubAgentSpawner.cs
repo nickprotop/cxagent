@@ -110,6 +110,16 @@ public interface ISubAgentSpawner
 }
 
 /// <summary>
+/// The child an envelope is about: its agent id, and where it ran — its provider entry, <c>name:model</c>, or null
+/// when not known.
+/// </summary>
+public sealed record EnvelopeChild(string Id, string? RunsOn)
+{
+    /// <summary>The child as its envelope names it.</summary>
+    public static EnvelopeChild Of(SubAgent child) => new(child.Agent.Id, child.ModelId);
+}
+
+/// <summary>
 /// What the parent's model receives back from a spawn.
 ///
 /// <para>AN ENVELOPE FROM STEP 1, NOT A BARE STRING (D13). An id retrofitted later would have to be
@@ -130,7 +140,7 @@ public static class SubAgentEnvelope
     /// <summary>
     /// Reads the <c>state</c> back out of a rendered envelope, or null if this is not one.
     ///
-    /// <para>THE INVERSE OF <see cref="Render(string, string?, SendResult, string?)"/>, and deliberately parsed rather than threaded
+    /// <para>THE INVERSE OF <see cref="Render(EnvelopeChild, string?, SendResult, string?)"/>, and deliberately parsed rather than threaded
     /// alongside: the envelope is the one artefact that always carries the outcome, so a caller that
     /// has the string has the truth. Threading a second copy of the same fact through the spawn
     /// dispatch would create two things that can disagree — and the failure would be silent, since
@@ -180,6 +190,20 @@ public static class SubAgentEnvelope
     public static string? NameOf(string? envelope) => Attribute(envelope, "name=\"");
 
     /// <summary>
+    /// Reads where the child ran — its provider entry, <c>name:model</c> — back out of an envelope or receipt, or
+    /// null when the envelope does not say.
+    ///
+    /// <para>ON THE ENVELOPE because the envelope is what the conversation stores. The live rows know where a
+    /// child ran from the child itself; a resumed agent and an export have only the stored conversation.</para>
+    /// </summary>
+    public static string? RunsOnOf(string? envelope) => Attribute(envelope, "runs_on=\"");
+
+    /// <summary>The attribute that says where the child ran; empty when that is not known, which leaves the
+    /// envelope exactly as it reads without one.</summary>
+    private static string RunsOnAttribute(EnvelopeChild child) =>
+        child.RunsOn is { Length: > 0 } runsOn ? $" runs_on=\"{runsOn}\"" : "";
+
+    /// <summary>
     /// The state a background spawn's receipt carries: the child has started, and its report comes later.
     /// </summary>
     public const string Running = "running";
@@ -222,8 +246,8 @@ public static class SubAgentEnvelope
     /// The receipt for a foreground child the user moved to the background: the background receipt, prefaced by who
     /// moved it — so the model does not wonder why a call it made in the foreground answered like a background one.
     /// </summary>
-    public static string Moved(string childId, string name, bool canWrite) =>
-        Receipt(childId, name, canWrite).Replace("\nRunning in the background.",
+    public static string Moved(EnvelopeChild child, string name, bool canWrite) =>
+        Receipt(child, name, canWrite).Replace("\nRunning in the background.",
             $"\n{MovedByTheUser} Running in the background.", StringComparison.Ordinal);
 
     private const string MovedByTheUser = "The user moved it to the background.";
@@ -232,8 +256,8 @@ public static class SubAgentEnvelope
     public static bool WasMoved(string? envelope) =>
         StateOf(envelope) == Running && envelope!.Contains(MovedByTheUser, StringComparison.Ordinal);
 
-    public static string Receipt(string childId, string name, bool canWrite) =>
-        $"<sub_agent id=\"{childId}\" name=\"{name}\" state=\"{Running}\">\n"
+    public static string Receipt(EnvelopeChild child, string name, bool canWrite) =>
+        $"<sub_agent id=\"{child.Id}\" name=\"{name}\" state=\"{Running}\"{RunsOnAttribute(child)}>\n"
         + "Running in the background. Its report will come to you as a message when it finishes — in this "
         + "turn if you are still working, as a new turn if you are not. Do not poll task_list for it and do "
         + "not do this work yourself; carry on with other work, or end your turn.\n"
@@ -243,7 +267,7 @@ public static class SubAgentEnvelope
         + "\n</sub_agent>";
 
     /// <summary>Renders the envelope the parent's model reads as this spawn's tool result.</summary>
-    /// <param name="childId">The child's own agent id, for a reader tracing it back to its logs.</param>
+    /// <param name="child">The child's own agent id, for a reader tracing it back to its logs, and where it ran.</param>
     /// <param name="name">
     /// The handle this child is reachable by, or null when nothing kept it.
     ///
@@ -253,18 +277,18 @@ public static class SubAgentEnvelope
     /// </param>
     /// <param name="outcome">How the run ended — completed, capped, stuck, cancelled or failed.</param>
     /// <param name="text">The child's answer, or its account of why there is not one.</param>
-    public static string Render(string childId, string? name, SendOutcome outcome, string text) =>
-        Render(childId, name, new SendResult(text, outcome), work: null);
+    public static string Render(EnvelopeChild child, string? name, SendOutcome outcome, string text) =>
+        Render(child, name, new SendResult(text, outcome), work: null);
 
     /// <summary>
     /// The envelope for a finished run, with — for one that answered nothing — why, what the child did first, and how
     /// to get its answer.
     /// </summary>
-    /// <param name="childId">The child's agent id.</param>
+    /// <param name="child">The child's agent id, and where it ran.</param>
     /// <param name="name">The handle it is kept under; null when nothing kept it.</param>
     /// <param name="result">How the run ended, its text, and why an empty one was empty.</param>
     /// <param name="work">What the child did, from <see cref="WorkOf"/>; null when it is not known.</param>
-    public static string Render(string childId, string? name, SendResult result, string? work)
+    public static string Render(EnvelopeChild child, string? name, SendResult result, string? work)
     {
         var outcome = result.Outcome;
         var text = result.Text;
@@ -293,7 +317,7 @@ public static class SubAgentEnvelope
         // read as a handle that happens to be blank, which is a name the model would then try to
         // send to; omitting the attribute says plainly that there is nothing to reach.
         var handle = name is null ? "" : $" name=\"{name}\"";
-        return $"<sub_agent id=\"{childId}\"{handle} state=\"{state}\">{note}\n{text}\n</sub_agent>";
+        return $"<sub_agent id=\"{child.Id}\"{handle} state=\"{state}\"{RunsOnAttribute(child)}>{note}\n{text}\n</sub_agent>";
     }
 
     /// <summary>

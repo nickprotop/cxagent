@@ -2279,4 +2279,14 @@ public class SubAgentSpawnerTests
     [Fact]
     public async Task ASpawnThatRan_StillSucceeds() =>
         Assert.Equal(JobState.Succeeded, (await SpawnRowAsync()).State);
+
+    /// <summary>The spawn's own envelope carries where the child ran, from the same SubAgent its row reads.</summary>
+    [Fact]
+    public async Task ASpawnsEnvelope_SaysWhereTheChildRan()
+    {
+        var envelope = await new SubAgentSpawner(FactoryOver(Answering("child done")))
+            .TryInvokeAsync(SpawnCall(), null, CancellationToken.None);
+
+        Assert.Equal("mock-model", SubAgentEnvelope.RunsOnOf(envelope));
+    }
 }

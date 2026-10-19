@@ -43,7 +43,7 @@ public class ModelFacingTextTests
             Prompt(canSpawn: true, canBackground: false),
             Prompt(canSpawn: false, canBackground: false),
             Prompt(canSpawn: false, canBackground: false, isSubAgent: true),
-            SubAgentEnvelope.Receipt("id", "x", canWrite: true),
+            SubAgentEnvelope.Receipt(new EnvelopeChild("id", null), "x", canWrite: true),
         };
         foreach (var spawner in new[] { Spawner(true), Spawner(false) })
             texts.Add(spawner.Definition.Description + spawner.Definition.InputSchema.GetRawText());

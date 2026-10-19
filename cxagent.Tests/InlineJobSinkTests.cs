@@ -821,7 +821,7 @@ public class InlineJobSinkTests
     [Fact]
     public void AStoppedChildsRow_SettlesCancelled()
     {
-        var report = SubAgentEnvelope.Render("c1", "alpha",
+        var report = SubAgentEnvelope.Render(new EnvelopeChild("c1", null), "alpha",
             new SendResult("stopped by the user", SendOutcome.Cancelled), work: null);
         var job = new Job
         {
@@ -935,7 +935,7 @@ public class InlineJobSinkTests
         job.Result = new JobResult
         {
             Success = true, Duration = TimeSpan.FromMilliseconds(20),
-            Output = new Dictionary<string, object?> { ["content"] = SubAgentEnvelope.Receipt(child.Agent.Id, "find-thing", false) },
+            Output = new Dictionary<string, object?> { ["content"] = SubAgentEnvelope.Receipt(new EnvelopeChild(child.Agent.Id, null), "find-thing", false) },
         };
         return (sink, job, child, run);
     }
@@ -997,7 +997,7 @@ public class InlineJobSinkTests
         var spawned = job.StartedAt;
         job.Result = job.Result! with
         {
-            Output = new Dictionary<string, object?> { ["content"] = SubAgentEnvelope.Moved(child.Agent.Id, "find-thing", false) },
+            Output = new Dictionary<string, object?> { ["content"] = SubAgentEnvelope.Moved(new EnvelopeChild(child.Agent.Id, null), "find-thing", false) },
         };
 
         sink.ToolUpdatedNow(job);

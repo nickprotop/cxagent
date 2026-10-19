@@ -330,6 +330,18 @@ public class ExportMarkdownTests : IDisposable
         Assert.Equal("Full", new ExportOptions(ExportScope.Whole, 1, ExportOptions.Full).PresetName);
         Assert.Equal("Custom", new ExportOptions(ExportScope.Whole, 1, ExportOptions.Readable | ExportParts.Thinking).PresetName);
     }
+
+    /// <summary>An export says where each child ran, read off the envelope the conversation stored.</summary>
+    [Fact]
+    public void ASpawnLine_SaysWhereTheChildRan()
+    {
+        var md = Render(Source(
+            E(Assistant("", 0, Call("s", "agent", new { description = "plan it", prompt = "p", type = "planner" }))),
+            E(Result("s", "<sub_agent id=\"KID\" name=\"kid\" state=\"completed\" runs_on=\"deepseek:deepseek/deepseek-v3.2\">\nthe plan\n</sub_agent>", 3))),
+            Readable);
+
+        Assert.Contains("plan it · on deepseek:deepseek/deepseek-v3.2", md);
+    }
 }
 
 public class EditDiffTests
@@ -350,4 +362,5 @@ public class EditDiffTests
 
     [Fact]
     public void OtherTools_HaveNoDiff() => Assert.Null(EditDiff.For(Call("read_file", new { path = "a" })));
+
 }

@@ -118,7 +118,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
                     Description: null, IsResume: true),
                 new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(delivery, parent, name)));
             _ = BackgroundRunner.Start(new BackgroundWork(store, stored, run, request.Prompt, slot, delivery,
-                result => SubAgentEnvelope.Render(stored.Agent.Agent.Id, name, result,
+                result => SubAgentEnvelope.Render(EnvelopeChild.Of(stored.Agent), name, result,
                     SubAgentEnvelope.WorkOf(stored.Agent))));
             return earlier + $"'{name}' is working on it in the background — its answer will come to you as a "
                  + $"message.\nIf your next step cannot go on without it: task_output {{\"id\": \"{name}\", "
@@ -239,10 +239,10 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
                         run.Token.Register(foreground!.Cancel);
                         adopted = true;
                         _ = BackgroundRunner.Adopt(new BackgroundWork(store, stored, run, prompt, slot, delivery,
-                                r => SubAgentEnvelope.Render(stored.Agent.Agent.Id, agentName, r,
+                                r => SubAgentEnvelope.Render(EnvelopeChild.Of(stored.Agent), agentName, r,
                                     SubAgentEnvelope.WorkOf(stored.Agent))), send)
                             .ContinueWith(_ => foreground.Dispose(), TaskScheduler.Default);
-                        return SubAgentEnvelope.Moved(stored.Agent.Agent.Id, agentName, canWrite: true);
+                        return SubAgentEnvelope.Moved(EnvelopeChild.Of(stored.Agent), agentName, canWrite: true);
                     }
 
                     if (released == ForegroundRelease.Stop)

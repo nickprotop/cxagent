@@ -455,9 +455,9 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                 new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(delivery, parentAgentId, keptAs)));
             _ = BackgroundRunner.Start(new BackgroundWork(_store, _store.Find(keptAs)!, run, prompt,
                 _factory.ConcurrencySlot, delivery,
-                result => SubAgentEnvelope.Render(child.Agent.Id, keptAs,
+                result => SubAgentEnvelope.Render(EnvelopeChild.Of(child), keptAs,
                     result with { Text = WithPlanOutcome(result.Text, planPath) }, SubAgentEnvelope.WorkOf(child))));
-            return SubAgentEnvelope.Receipt(child.Agent.Id, keptAs, ChildCanWrite(turnTools, type));
+            return SubAgentEnvelope.Receipt(EnvelopeChild.Of(child), keptAs, ChildCanWrite(turnTools, type));
         }
 
         // CLAIMED SILENTLY FOR ITS WHOLE LIFE, ANNOUNCED ONLY WITH THE SLOT IN HAND — the order
@@ -532,17 +532,17 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                         run.Token.Register(foreground!.Cancel);
                         adopted = true;
                         _ = BackgroundRunner.Adopt(new BackgroundWork(_store, _store.Find(keptAs!)!, run, prompt, slot, reports,
-                                result => SubAgentEnvelope.Render(child.Agent.Id, keptAs,
+                                result => SubAgentEnvelope.Render(EnvelopeChild.Of(child), keptAs,
                                     result with { Text = WithPlanOutcome(result.Text, planPath) }, SubAgentEnvelope.WorkOf(child))),
                             send).ContinueWith(_ => foreground.Dispose(), TaskScheduler.Default);
-                        return SubAgentEnvelope.Moved(child.Agent.Id, keptAs!, ChildCanWrite(turnTools, type));
+                        return SubAgentEnvelope.Moved(EnvelopeChild.Of(child), keptAs!, ChildCanWrite(turnTools, type));
                     }
 
                     if (released == ForegroundRelease.Stop)
                     {
                         try { await send; }
                         catch (OperationCanceledException) { }
-                        return envelope = SubAgentEnvelope.Render(child.Agent.Id, keptAs,
+                        return envelope = SubAgentEnvelope.Render(EnvelopeChild.Of(child), keptAs,
                             new SendResult(StoppedByUser, SendOutcome.Cancelled), SubAgentEnvelope.WorkOf(child));
                     }
 
@@ -551,7 +551,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                     // THE NAME IT WAS KEPT UNDER at spawn — a lookup, not a second Keep, which would
                     // re-register the same child and mint a second handle for it. It goes into the envelope
                     // so the model can reach the child without a listing call.
-                    return envelope = SubAgentEnvelope.Render(child.Agent.Id, keptAs,
+                    return envelope = SubAgentEnvelope.Render(EnvelopeChild.Of(child), keptAs,
                         result with { Text = WithPlanOutcome(result.Text, planPath) }, SubAgentEnvelope.WorkOf(child));
                 }
                 finally

@@ -110,7 +110,7 @@ internal static class BackgroundRunner
             try { envelope = work.Render(overtaken ?? result); }
             catch (Exception ex)
             {
-                envelope = SubAgentEnvelope.Render(kept.Agent.Agent.Id, kept.Name, SendOutcome.Failed,
+                envelope = SubAgentEnvelope.Render(EnvelopeChild.Of(kept.Agent), kept.Name, SendOutcome.Failed,
                     $"the report could not be built: {ex.Message}");
             }
         }
@@ -118,7 +118,7 @@ internal static class BackgroundRunner
         {
             // WHATEVER HAPPENED ABOVE, THE RUN ENDS HERE: a run left Running holds its claim forever, and a
             // task_output wait on it burns its whole timeout for an answer that never comes.
-            envelope ??= SubAgentEnvelope.Render(kept.Agent.Agent.Id, kept.Name, SendOutcome.Failed, "the run failed");
+            envelope ??= SubAgentEnvelope.Render(EnvelopeChild.Of(kept.Agent), kept.Name, SendOutcome.Failed, "the run failed");
             // A STOP THAT OVERTOOK THE ANSWER IS ANNOUNCED AS ONE: the envelope carries the answer's own
             // "completed", but the row this word settles must read as the report and the notice do — cancelled.
             var state = overtaken is not null
