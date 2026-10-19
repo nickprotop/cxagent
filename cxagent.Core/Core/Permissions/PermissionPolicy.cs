@@ -978,13 +978,28 @@ public class PermissionPolicy
                 // of one shape in this system. Tilde is likewise already refused, by FullyExamined.
                 if (Path.IsPathRooted(text) || text.StartsWith('~')) continue;
 
-                if (!IsPathReference(text)) continue;
+                var full = Path.Combine(from, text);
 
-                if (!IsInsideBoundary(Path.Combine(from, text))) return false;
+                // A BARE WORD IS A PATH WHEN IT NAMES SOMETHING WHERE THE COMMAND RUNS. CommandSubjects
+                // decides that against the PROCESS's directory, so from a child's folder or a working_dir
+                // `cat link` was never looked at — and the link pointed out of the folder. Existence is
+                // tested here, from the folder the command runs in; a link counts even when dangling.
+                if (!IsPathReference(text) && !Names(full)) continue;
+
+                if (!IsInsideBoundary(full)) return false;
             }
         }
 
         return true;
+    }
+
+    /// <summary>Whether something — a file, a folder, or a link even if dangling — is at <paramref name="path"/>.
+    /// When that cannot be told, the answer is yes: the token is then judged as a path, which asks.</summary>
+    private static bool Names(string path)
+    {
+        try { return File.Exists(path) || Directory.Exists(path) || new FileInfo(path).LinkTarget is not null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException) { return true; }   // cannot tell: treat it as a path
     }
 
     /// <summary>

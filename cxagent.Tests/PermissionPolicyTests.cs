@@ -1188,4 +1188,25 @@ public class PermissionPolicyTests
 
         Assert.True(scene.Parent.IsSilentlyAllowed(Write(Path.Combine(scene.Root, "shared", "b.md"), scene.Parent)));
     }
+
+    /// <summary>
+    /// A BARE NAME THAT IS A LINK OUT OF THE FOLDER ASKS. Whether a bare word is a path was decided by
+    /// whether it existed in the PROCESS's directory, so from a child's folder — or a working_dir — `cat link`
+    /// was never looked at, though `cat ./link` was, and the link's target lay outside.
+    /// </summary>
+    [Fact]
+    public void ABareNameLinkingOut_Asks_FromAChildsFolderOrAWorkingDir()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var scene = NarrowableScene();
+        var outside = Path.Combine(Path.GetDirectoryName(scene.Root)!, "secret-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(outside, "x");
+        File.CreateSymbolicLink(Path.Combine(scene.Sub, "link"), outside);
+        File.WriteAllText(Path.Combine(scene.Sub, "inside.txt"), "x");
+
+        var child = scene.Parent.NarrowedTo(scene.Sub);
+        Assert.False(child.IsSilentlyAllowed(ShellRead("cat link", null, scene.Sub, child)));
+        Assert.True(child.IsSilentlyAllowed(ShellRead("cat inside.txt", null, scene.Sub, child)));
+        Assert.False(scene.Parent.IsSilentlyAllowed(ShellRead("cat link", "sub", scene.Root, scene.Parent)));
+    }
 }

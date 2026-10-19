@@ -107,6 +107,14 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
         // the agent's by coincidence.
         var workingDir = parameters.Get<string?>("working_dir", null)
                          ?? context.WorkingDirectory;
+
+        // A RELATIVE working_dir IS RELATIVE TO THE AGENT'S FOLDER — the folder the permission gate judged
+        // it against. Handed to the process as written it resolves from the PROCESS's directory instead,
+        // so a child working in a folder of its own, or a session opened with /new elsewhere, would run a
+        // command somewhere other than where it was approved.
+        if (workingDir is { Length: > 0 } && !Path.IsPathRooted(workingDir)
+            && context.WorkingDirectory is { Length: > 0 } agentFolder)
+            workingDir = Path.GetFullPath(workingDir, agentFolder);
         // A DEFAULT TIMEOUT, because `timeout_seconds` is optional and a model almost never sends
         // it. Without one, ProcessRunner builds a CancellationTokenSource that is never scheduled to
         // fire, so `run_shell {"command":"npm install"}` — or a curl to a dead host, or a grep over

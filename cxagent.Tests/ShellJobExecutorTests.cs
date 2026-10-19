@@ -672,4 +672,23 @@ public class ShellJobExecutorTests
             "repository root not found from " + AppContext.BaseDirectory);
     }
 
+    /// <summary>
+    /// A RELATIVE working_dir RUNS WHERE IT IS JUDGED: from the agent's own folder, not from wherever the
+    /// process was launched. The gate resolves it against the agent's folder; handed to the process raw,
+    /// it ran somewhere else — for a child in a folder of its own, outside the folder it was judged in.
+    /// </summary>
+    [Fact]
+    public async Task ARelativeWorkingDir_RunsFromTheAgentsFolder()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var agentFolder = Path.Combine(Path.GetTempPath(), "cx-wd-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(agentFolder, "inner"));
+
+        var result = await new ShellJobExecutor().ExecuteAsync(
+            P(("command", "pwd"), ("working_dir", "inner")),
+            new CollectingContext { WorkingDirectory = agentFolder }, CancellationToken.None);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(Path.Combine(agentFolder, "inner"), result.Output["stdout"]?.ToString()?.Trim());
+    }
 }
