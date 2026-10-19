@@ -129,4 +129,27 @@ public class AgentsCommandTests
     {
         Assert.Contains("writes a plan file", Run(Catalog()), StringComparison.Ordinal);
     }
+
+    private static AgentTypeCatalog Routed() => new(new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal)
+    {
+        ["scout"] = new("Search.", "local") { Providers = ["local", "deepseek"] },
+        ["broken"] = new("Break.") { Disabled = "provider 'typo' is not a configured provider" },
+    }, AgentTypeProviderTests.Registry());
+
+    [Fact]
+    public void TheList_MarksTheDefault_AndListsTheRest() =>
+        Assert.Contains("local:qwen-coder (default), deepseek:deepseek/deepseek-v3.2", Run(Routed()), StringComparison.Ordinal);
+
+    [Fact]
+    public void TheList_SaysADisabledTypeIsDisabled() =>
+        Assert.Contains("disabled: provider 'typo' is not a configured provider", Run(Routed()), StringComparison.Ordinal);
+
+    [Fact]
+    public void TheDetail_SaysWhereItRunsByDefault_AndWhereElse() =>
+        Assert.Contains("Runs on local:qwen-coder by default; may run on deepseek:deepseek/deepseek-v3.2 (cheap, paid).",
+            Run(Routed(), "scout"), StringComparison.Ordinal);
+
+    [Fact]
+    public void TheDetail_OfADisabledType_SaysWhy() =>
+        Assert.Contains("Disabled: provider 'typo' is not a configured provider.", Run(Routed(), "broken"), StringComparison.Ordinal);
 }

@@ -72,12 +72,14 @@ internal sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffe
 
         foreach (var type in catalog.All)
         {
-            // WHERE IT RUNS, because a type bound to another provider is the fact users most often
+            // WHERE IT MAY RUN, because a type bound to other providers is the fact users most often
             // forget they configured — and it is the one that explains a surprising bill or a
-            // surprising answer. Inherited is stated rather than blank: "the session's" is a real
-            // answer, and an empty column reads as missing information.
-            var runsOn = type.Routing.InstanceName is { Length: > 0 } instance
-                ? instance
+            // surprising answer. In config's order, the default marked. Inherited is stated rather
+            // than blank: "the session's" is a real answer, and an empty column reads as missing
+            // information. A DISABLED type says so — this is where a user looks after a config edit
+            // did nothing. Labels escaped: a model id like qwen…_xs.gguf carries markdown's own marks.
+            var runsOn = type.Disabled is { } why ? $"disabled: {Md.Escape(why)}"
+                : type.Offers.Count > 0 ? string.Join(", ", type.Offers.Select((o, i) => i == 0 ? $"{Md.Escape(o.Label)} (default)" : Md.Escape(o.Label)))
                 : "session's model";
 
             var turns = type.MaxTurns switch
@@ -161,10 +163,11 @@ internal sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffe
         }
 
         lines.Add("");
-        var runsOn = type.Routing.InstanceName is { Length: > 0 } instance
-            ? instance
-            : "the session's model";
-        lines.Add($"Runs on {runsOn}.");
+        static string One(TypeRouting o) => o.Description is { Length: > 0 } d ? $"{Md.Escape(o.Label)} ({Md.Escape(d)})" : Md.Escape(o.Label);
+        lines.Add(type.Disabled is { } why ? $"Disabled: {Md.Escape(why)}."
+            : type.Offers.Count == 0 ? "Runs on the session's model."
+            : type.Offers.Count == 1 ? $"Runs on {One(type.Offers[0])}."
+            : $"Runs on {One(type.Offers[0])} by default; may run on {string.Join(", ", type.Offers.Skip(1).Select(One))}.");
 
         if (BuiltinAgentTypes.IsBuiltin(type.Name))
             lines.Add("Built in: this text ships with cxagent. A 'briefing' or "
