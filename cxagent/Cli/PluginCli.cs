@@ -21,7 +21,7 @@ public static class PluginCli
                cxagent plugin pack <folder> [--native <lib>=<rid> …] [--out <folder>] [--description t]
                                    [--publisher t] [--license t] [--repository url]
                                    [--info file.json|file.yaml] [--json]
-               cxagent plugin verify <entry.json | plugins.json> [--json]
+               cxagent plugin verify <entry.json | plugins.json> [--https-only] [--json]
 
         call options:
           --answer allow|deny          how the permission question is answered

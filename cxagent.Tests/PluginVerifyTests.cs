@@ -198,4 +198,43 @@ public class PluginVerifyTests
 
         Assert.Contains("publisher: is missing", output);
     }
+
+    /// <summary>The bot and catalog CI fetch what a user fetches: a path on the runner proves nothing about the upload.</summary>
+    [Fact]
+    public async Task ALocalFile_IsRefused_WithHttpsOnly()
+    {
+        var (exit, output, _) = await Run("verify", "--https-only", await PackedEntry());
+
+        Assert.Equal(1, exit);
+        Assert.Contains("source.url", output);
+        Assert.Contains("https://", output);
+    }
+
+    [Fact]
+    public async Task AFileUrl_IsRefused_WithHttpsOnly()
+    {
+        var path = await PackedEntry(e => e["source"]!["url"] = new Uri(e["source"]!["url"]!.GetValue<string>()).AbsoluteUri);
+
+        var (exit, output, _) = await Run("verify", path, "--https-only");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("source.url", output);
+    }
+
+    /// <summary>--json holds on every failure, so a script reading it never meets a plain line.</summary>
+    [Fact]
+    public async Task AnUnreadableEntry_WithJson_IsJson()
+    {
+        var path = Path.Combine(Folders.NewFolder("verify-"), "broken.catalog.json");
+        File.WriteAllText(path, "{ this is not JSON");
+
+        var (exit, output, _) = await Run("verify", path, "--json");
+
+        Assert.Equal(1, exit);
+        using var doc = System.Text.Json.JsonDocument.Parse(output);
+        Assert.False(doc.RootElement.GetProperty("ok").GetBoolean());
+        var problem = doc.RootElement.GetProperty("problems")[0];
+        Assert.Equal("broken.catalog.json", problem.GetProperty("entry").GetString());
+        Assert.False(string.IsNullOrEmpty(problem.GetProperty("message").GetString()));
+    }
 }

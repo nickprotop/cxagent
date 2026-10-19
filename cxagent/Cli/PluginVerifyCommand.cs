@@ -32,14 +32,22 @@ internal static class PluginVerifyCommand
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         var json = args.Contains("--json");
-        var files = args.Where(a => a != "--json").ToArray();
+        // --https-only IS THE BOT'S AND CATALOG CI'S: there a local path would read a file on the runner,
+        // never what a user's install downloads. An author verifying before uploading leaves it off.
+        var httpsOnly = args.Contains("--https-only");
+        var files = args.Where(a => a is not ("--json" or "--https-only")).ToArray();
         if (files.Any(a => a.StartsWith("--", StringComparison.Ordinal))) return PluginCli.Fail(stderr, $"unknown option '{files.First(a => a.StartsWith("--"))}'.");
         if (files.Length != 1) return PluginCli.Fail(stderr, "verify takes one entry file or plugins.json.");
         if (!File.Exists(files[0])) return PluginCli.Fail(stderr, $"no file '{files[0]}'.");
 
         if (CatalogClaims.Read(File.ReadAllText(files[0]), out var error) is not { } entries)
         {
-            stdout.WriteLine($"{Path.GetFileName(files[0])}: {error}");
+            var file = Path.GetFileName(files[0]);
+            // THE SAME SHAPE AS EVERY OTHER FAILURE under --json, so a script never meets a plain line.
+            if (json)
+                stdout.WriteLine(JsonSerializer.Serialize(new { ok = false, problems = new[] { new { entry = file, field = "", message = error } } }, Indented));
+            else
+                stdout.WriteLine($"{file}: {error}");
             return 1;
         }
 
@@ -57,7 +65,7 @@ internal static class PluginVerifyCommand
                 continue;
             }
 
-            var check = new EntryCheck(claims);
+            var check = new EntryCheck(claims, httpsOnly);
             check.Claims();
             if (check.Problems.Count == 0)
                 foreach (var download in claims.Downloads)
@@ -85,7 +93,7 @@ internal static class PluginVerifyCommand
     }
 
     /// <summary>One entry's checks, collecting what it finds — the claims alone, then each download.</summary>
-    private sealed class EntryCheck(CatalogClaims claims)
+    private sealed class EntryCheck(CatalogClaims claims, bool httpsOnly)
     {
         public List<VerifyProblem> Problems { get; } = [];
 
@@ -111,6 +119,8 @@ internal static class PluginVerifyCommand
                     Add($"{at}.url", "is still <upload URL>; put the zip's real URL there.");
                 else if (d.Url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
                     Add($"{at}.url", "is plain http; a download must be https:// (or, before uploading, a local file).");
+                else if (httpsOnly && !d.Url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    Add($"{at}.url", "is a local file; with --https-only only an https:// download counts, as a user's install fetches.");
                 if (string.IsNullOrWhiteSpace(d.Sha256)) Add($"{at}.sha256", "is missing; install refuses a download it cannot check.");
                 var fileField = d.Rid is null ? "file" : $"{at}.file";
                 if (d.File.Length == 0) Add(fileField, "names no file.");
