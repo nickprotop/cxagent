@@ -66,7 +66,7 @@ jobs:
       # exactly what it was designed to do.
       skipped: ${{ steps.shipped.outputs.skip }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Render the three documents
         run: python3 site/build/render_docs.py --root . --out _site
@@ -236,7 +236,7 @@ jobs:
       # UPLOADED IN THE AHEAD CASE TOO, which is the whole point of carrying the catalog forward: the
       # site's documents publish and only the catalog stands still. Only `skip` — a catalogued plugin
       # with no zip anywhere — stops the upload, because then there is genuinely nothing true to send.
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         if: steps.shipped.outputs.skip != 'true'
         with:
           path: _site
@@ -264,4 +264,4 @@ jobs:
       # tag as release_tag rather than calling it. A master-push run that lands before the release
       # exists is held back by the `ahead` guard above.
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

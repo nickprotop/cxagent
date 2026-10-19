@@ -34,10 +34,10 @@ jobs:
             hostZip: cxagent-plugin-host-win-arm64.zip
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -66,7 +66,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.name }}
           path: ./publish/${{ matrix.rid }}/${{ matrix.name }}
@@ -91,7 +91,7 @@ jobs:
           (cd ./publish-host/${{ matrix.rid }} && zip -q -r "../../${{ matrix.hostZip }}" .)
 
       - name: Upload plugin host artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.hostZip }}
           path: ./${{ matrix.hostZip }}
@@ -100,12 +100,12 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: ./artifacts
 
@@ -117,7 +117,7 @@ jobs:
       # thing they installed; this ships beside it as a release asset, and the plugin manager (F2,
       # /plugin get) installs it from the catalog when the user asks for it.
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -352,7 +352,7 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release/*
           body: |
@@ -469,10 +469,10 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -609,7 +609,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.repository == 'nickprotop/cxagent' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Extract version from tag
         id: version

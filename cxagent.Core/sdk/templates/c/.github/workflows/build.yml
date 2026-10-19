@@ -5,6 +5,10 @@
 # (docs.github.com/en/actions/reference/runners/github-hosted-runners). Intel macOS is
 # macos-15-intel; plain macos-13 is gone. The Linux legs build on 22.04, so the library loads on any
 # glibc from 2.35 up rather than only on systems as new as the latest runner.
+#
+# ACTIONS AT THEIR FIRST NODE 24 MAJOR (checkout v5, setup-dotnet v5, upload-artifact v6,
+# download-artifact v7): the Node 20 majors before them warn on every run and stop working when GitHub
+# removes Node 20 from its runners.
 name: build
 
 on:
@@ -27,7 +31,7 @@ jobs:
           - { rid: win-arm64,   os: windows-11-arm,   lib: CXP_NAME.dll }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -41,7 +45,7 @@ jobs:
           lib=$(find build -name '${{ matrix.lib }}' | head -1)
           test -n "$lib"
           cp "$lib" "$(dirname "$lib")/CXP_NAME.plugin.json" README.md out/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: CXP_NAME-${{ matrix.rid }}
           path: out/
@@ -53,11 +57,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: builds
       # cxagent's own pack: one zip per platform, each sha256, and the catalog entry — refused if the
