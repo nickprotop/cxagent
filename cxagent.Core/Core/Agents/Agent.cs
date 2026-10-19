@@ -2866,6 +2866,8 @@ public sealed class Agent
         void OnChildSpawned(SubAgent child)
         {
             childId = child.Agent.Id;
+            // WHERE IT RUNS, known only now — the row's title was written before the spawner picked.
+            job.RunsOn = child.ModelId;
 
             // REACHABLE BY ID FROM HERE ON, because a child's repaint no longer closes over this
             // local: it arrives from the store's claim announcement, which knows an agent id and

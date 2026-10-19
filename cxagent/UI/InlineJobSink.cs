@@ -897,7 +897,17 @@ public sealed class InlineJobSink : IToolObserver
         // routinely contain '['. Unescaped inside a scope that is a tag the parser tries to read,
         // and the row renders as an EMPTY LINE rather than erroring: the failure is silent and the
         // information is simply gone.
-        var name = SharpConsoleUI.Parsing.MarkupParser.Escape(Title(job));
+        // WHERE A CHILD RUNS, AFTER ITS TYPE: the title is "{type} · {description}", written before the
+        // provider was picked, so the label goes after the first segment — never inside the
+        // description, which may hold " · " itself.
+        var title = Title(job);
+        if (job.RunsOn is { Length: > 0 } runsOn)
+        {
+            var at = title.IndexOf(" · ", StringComparison.Ordinal);
+            var label = CxAgent.Core.Llm.ModelNames.ShortLabel(runsOn);
+            title = at < 0 ? $"{title} · {label}" : $"{title[..at]} · {label}{title[at..]}";
+        }
+        var name = SharpConsoleUI.Parsing.MarkupParser.Escape(title);
 
         if (!IsTerminal(job.State))
         {

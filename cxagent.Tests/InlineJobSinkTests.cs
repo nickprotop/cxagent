@@ -2077,4 +2077,29 @@ public class InlineJobSinkTests
             new ConsoleWindowSystemOptions(InstallSynchronizationContext: true)),
         new ChatTranscriptControl());
 
+    [Fact]
+    public void AWorkersRow_NamesWhereItRan_AfterTheType()
+    {
+        var job = TypedJob("llm_agent", JobState.Succeeded) with { DisplayName = "planner · Plan --top N option" };
+        job.RunsOn = "deepseek:deepseek/deepseek-v3.2";
+
+        Assert.Contains("planner · deepseek:deepseek/deepseek-v3.2 · Plan --top N option", InlineJobSink.CompactHeaderForTest(job), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheLabel_GoesAfterTheType_EvenWhenTheDescriptionHasADot()
+    {
+        var job = TypedJob("llm_agent", JobState.Succeeded) with { DisplayName = "general · a · b" };
+        job.RunsOn = "local:qwen.gguf";
+
+        Assert.Contains("general · local:qwen · a · b", InlineJobSink.CompactHeaderForTest(job), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ARowWithNothingToName_IsAsBefore()
+    {
+        var job = TypedJob("llm_agent", JobState.Succeeded) with { DisplayName = "planner · x" };
+
+        Assert.Contains("planner · x", InlineJobSink.CompactHeaderForTest(job), StringComparison.Ordinal);
+    }
 }

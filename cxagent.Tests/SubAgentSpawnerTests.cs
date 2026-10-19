@@ -2155,4 +2155,29 @@ public class SubAgentSpawnerTests
 
         Assert.Equal("local:mock-model", child!.ModelId);
     }
+
+    private static async Task<Job> SpawnRowAsync()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [SpawnCall(description: "Explore the repository", prompt: "explore it")],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+        var jobs = new NullJobPanel();
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new RecordingSink(), jobs, logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(Answering("child done"))))
+        {
+            Mode = AgentMode.FanOut,
+        };
+        await parent.SendAsync("delegate", CancellationToken.None);
+        return Assert.Single(jobs.Jobs);
+    }
+
+    /// <summary>A child on the session's own model names it all the same (spec A1: always).</summary>
+    [Fact]
+    public async Task AChildOnTheSessionsModel_StillNamesIt() =>
+        Assert.Equal("mock-model", (await SpawnRowAsync()).RunsOn);
 }

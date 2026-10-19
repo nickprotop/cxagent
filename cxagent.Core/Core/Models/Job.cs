@@ -99,6 +99,13 @@ public record Job
     public string? ProgressMessage { get; set; }
 
     /// <summary>
+    /// Where a sub-agent this job spawned runs, as `name:model` — set once the spawner has picked the
+    /// provider, which is after this job's title was written from the call's arguments. Null for any
+    /// other job. Shown on the row, so a paid child is never mistaken for a free one.
+    /// </summary>
+    public string? RunsOn { get; set; }
+
+    /// <summary>
     /// What a still-running job has to show BEHIND its expand — as opposed to
     /// <see cref="ProgressMessage"/>, which is the one line on the header.
     ///
