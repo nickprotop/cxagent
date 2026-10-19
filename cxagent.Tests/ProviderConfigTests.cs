@@ -1070,4 +1070,20 @@ public class ProviderConfigTests : IDisposable
         Assert.Equal("provider 'all' stands alone: list providers by name, or write \"all\" by itself", s.AgentTypes["scout"].Disabled);
         Assert.Contains(s.Warnings, w => w.EndsWith("scout is disabled.", StringComparison.Ordinal));
     }
+
+    /// <summary>A key starting with // is a comment, as at the top level — config.sample.json writes
+    /// them inside agents and mcp — while an entry that is meant and malformed still warns.</summary>
+    [Fact]
+    public void CommentKeys_UnderAgentsAndMcp_AreSkippedSilently()
+    {
+        WriteConfig($$"""
+            { {{TwoProviders}},
+              "agents": { "//planner": "a note", "//list": ["a", "b"], "broken": "not an object" },
+              "mcp": { "//files": "a note" } }
+            """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.DoesNotContain(s.Warnings, w => w.Contains("//", StringComparison.Ordinal));
+        Assert.Contains("agents.broken is not an object; skipped.", s.Warnings);
+    }
 }

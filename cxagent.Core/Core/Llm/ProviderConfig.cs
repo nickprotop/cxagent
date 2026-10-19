@@ -1004,6 +1004,10 @@ public static class ProviderConfigLoader
             if (root.TryGetProperty("mcp", out var mcp) && mcp.ValueKind == JsonValueKind.Object)
                 foreach (var entry in mcp.EnumerateObject())
                 {
+                    // A // KEY IS A COMMENT, as at the top level: config.sample.json writes its notes
+                    // beside the entries they describe, and a warning for each would teach a reader to
+                    // skim past the warnings that matter.
+                    if (entry.Name.StartsWith("//", StringComparison.Ordinal)) continue;
                     if (entry.Value.ValueKind != JsonValueKind.Object)
                     {
                         warnings.Add($"mcp.{entry.Name} is not an object; skipped.");
@@ -1093,6 +1097,8 @@ public static class ProviderConfigLoader
             if (root.TryGetProperty("agents", out var agents) && agents.ValueKind == JsonValueKind.Object)
                 foreach (var entry in agents.EnumerateObject())
                 {
+                    // A // KEY IS A COMMENT — see the same check under mcp above.
+                    if (entry.Name.StartsWith("//", StringComparison.Ordinal)) continue;
                     if (entry.Value.ValueKind != JsonValueKind.Object)
                     {
                         warnings.Add($"agents.{entry.Name} is not an object; skipped.");
