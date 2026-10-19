@@ -34,3 +34,13 @@ jobs:
           gcc -shared -fPIC -Icxagent.Core/sdk/c \
             -o /tmp/calculator_abi.so \
             cxagent.Core/examples/CalculatorAbiPlugin/calculator_abi.c
+      # THE RELEASE'S OWN BUILD, FOR A RID THAT IS NOT THIS RUNNER'S. dotnet test builds portable, so a
+      # break that only shows when cxagent is published self-contained and single-file for another
+      # platform would otherwise surface on the tag, after the version is spent. osx-x64 because a
+      # project that falls back to the build machine's RID still passes for linux-x64.
+      - name: Publish the release build for another platform
+        run: |
+          dotnet restore cxagent/cxagent.csproj -r osx-x64
+          dotnet publish cxagent/cxagent.csproj -c Release -r osx-x64 --self-contained true \
+            -p:PublishSingleFile=true -o /tmp/publish-osx-x64
+          test -f /tmp/publish-osx-x64/cxagent
