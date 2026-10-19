@@ -31,7 +31,8 @@ the rest: a second front end, injecting tools, and narrowing what an agent may d
 
 ## Quick start (C#)
 
-From nothing to a plugin a user can install, with cxagent's own tools:
+From nothing to a plugin a user can install, with cxagent's own tools. For a step-by-step
+walk-through that builds a real weather plugin, see the [SDK tutorial](../sdk/README.md).
 
 ```
 cxagent plugin new weather --lang csharp        # or: dotnet new install CxAgent.Plugins.Templates
