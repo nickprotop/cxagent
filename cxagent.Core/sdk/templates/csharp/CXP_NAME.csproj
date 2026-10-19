@@ -5,8 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>CXP_NAME</AssemblyName>
     <RootNamespace>CXP_ROOT_NAMESPACE</RootNamespace>
-    <!-- What `cxagent plugin pack` writes into the catalog entry; pack's options override them. -->
-    <Description>CXP_NAME — describe what it does in one sentence.</Description>
+    <!-- What `cxagent plugin pack` writes into the catalog entry; pack's options and info file
+         override them. Left empty on purpose: pack writes a placeholder for an empty one, and
+         verify refuses it until you say what the plugin does. -->
+    <Description></Description>
     <Authors></Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl></RepositoryUrl>

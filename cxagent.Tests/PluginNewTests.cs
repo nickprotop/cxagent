@@ -84,4 +84,18 @@ public class PluginNewTests
         Assert.Equal(2, exit);
         Assert.Contains("not available yet", err);
     }
+
+    /// <summary>
+    /// The project leaves the catalog's description empty rather than holding sample text: pack then
+    /// writes a placeholder that verify refuses, where sample text would pass into a listing as if
+    /// someone had written it.
+    /// </summary>
+    [Fact]
+    public async Task TheDescription_IsLeftForTheAuthor()
+    {
+        var dir = Path.Combine(Folders.NewFolder("new-"), "weather");
+        await Run("new", "weather", "--lang", "csharp", "--dir", dir);
+
+        Assert.Contains("<Description></Description>", File.ReadAllText(Path.Combine(dir, "weather.csproj")));
+    }
 }
