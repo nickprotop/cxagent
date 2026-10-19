@@ -18,6 +18,8 @@ public static class PluginCli
                cxagent plugin check <folder> [--json]
                cxagent plugin call <folder> <tool> ['<json>'] [options]
                cxagent plugin call <folder> --command <name> [arguments…] [--json]
+               cxagent plugin pack <folder> [--native <lib>=<rid> …] [--out <folder>] [--description t]
+                                   [--publisher t] [--license t] [--repository url] [--json]
 
         call options:
           --answer allow|deny          how the permission question is answered
@@ -42,6 +44,7 @@ public static class PluginCli
             "check" => await Check(args[1..], stdout, stderr, ct).ConfigureAwait(false),
             "call" => await PluginCallCommand.RunAsync(args[1..], stdout, stderr, ct).ConfigureAwait(false),
             "new" => await PluginNewCommand.RunAsync(args[1..], stdout, stderr).ConfigureAwait(false),
+            "pack" => await PluginPackCommand.RunAsync(args[1..], stdout, stderr, ct).ConfigureAwait(false),
             _ => Fail(stderr, $"unknown command '{args[0]}'."),
         };
     }
