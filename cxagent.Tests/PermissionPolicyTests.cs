@@ -1096,4 +1096,96 @@ public class PermissionPolicyTests
         Assert.True(policy.IsSilentlyAllowed(ShellRead("cat inside.txt", null, root, policy)));
         Assert.False(policy.IsSilentlyAllowed(ShellRead("cat ../outside.txt", null, root, policy)));
     }
+
+    // ---- a narrowed policy: a child's folder inside the project ---------------------------------
+
+    private sealed record Narrowable(PermissionPolicy Parent, string Root, string Sub, PermissionRulesStore Rules);
+
+    private static Narrowable NarrowableScene(TrustState trust = TrustState.Trusted, EditMode mode = EditMode.AcceptEdits)
+    {
+        var root = MakeTempDir();
+        var sub = Path.Combine(root, "sub");
+        Directory.CreateDirectory(sub);
+        var rules = EmptyRules();
+        rules.SetTrust(root, trust);
+        return new Narrowable(new PermissionPolicy(root, rules, mode), root, sub, rules);
+    }
+
+    private static PermissionRequest Write(string path, PermissionPolicy policy) =>
+        PermissionPolicy.RequestsFor("file", Params(("action", "write"), ("path", path), ("content", "x")), policy.Boundary)
+            .Single() with { Policy = policy };
+
+    [Fact]
+    public void ANarrowedPolicy_KeepsTheProjectsRoot_AndNarrowsTheBoundary()
+    {
+        var scene = NarrowableScene();
+        var child = scene.Parent.NarrowedTo(scene.Sub);
+
+        Assert.Equal(scene.Root, child.Root);
+        Assert.Equal(scene.Sub, child.Boundary);
+        Assert.True(child.IsInBoundary(Path.Combine(scene.Sub, "a.md")));
+        Assert.False(child.IsInBoundary(Path.Combine(scene.Root, "b.md")));
+        Assert.True(scene.Parent.IsInBoundary(Path.Combine(scene.Root, "b.md")));
+    }
+
+    [Fact]
+    public void ARelativePath_ResolvesFromTheNarrowedFolder()
+    {
+        var scene = NarrowableScene();
+        Assert.Equal(Path.Combine(scene.Sub, "notes.md"), scene.Parent.NarrowedTo(scene.Sub).Resolve("notes.md"));
+    }
+
+    /// <summary>The child reads the parent's trust, mode and reviewer as they are NOW — a /mode switch or a
+    /// Trust grant reaches a running child, as it did when children shared the parent's policy.</summary>
+    [Fact]
+    public void TheChild_ReadsTheParentLive()
+    {
+        var scene = NarrowableScene(TrustState.Untrusted);
+        var child = scene.Parent.NarrowedTo(scene.Sub);
+        Assert.False(child.FolderTrusted);
+
+        scene.Parent.SetTrust(TrustState.Trusted);
+        Assert.True(child.FolderTrusted);
+
+        scene.Parent.Edits = EditMode.AlwaysAsk;
+        Assert.Equal(EditMode.AlwaysAsk, child.Edits);
+
+        var reviewer = new ActionClassifier(new CxAgent.Core.Llm.MockLlmProvider());
+        scene.Parent.Classifier = reviewer;
+        Assert.Same(reviewer, child.Classifier);
+    }
+
+    [Fact]
+    public void NarrowingLeavesTheParentAlone()
+    {
+        var scene = NarrowableScene(mode: EditMode.AcceptEdits);
+        scene.Parent.NarrowedTo(scene.Sub);
+        Assert.Equal(EditMode.AcceptEdits, scene.Parent.Edits);
+    }
+
+    [Fact]
+    public void ASilentWrite_IsJudgedAgainstTheNarrowedBoundary()
+    {
+        var scene = NarrowableScene();   // trusted, accept-edits
+        var child = scene.Parent.NarrowedTo(scene.Sub);
+        Assert.True(child.IsSilentlyAllowed(Write(Path.Combine(scene.Sub, "a.md"), child)));
+        Assert.False(child.IsSilentlyAllowed(Write(Path.Combine(scene.Root, "b.md"), child)));
+        Assert.False(child.IsSilentlyAllowed(Write("../b.md", child)));
+    }
+
+    /// <summary>An Always answered on a child's prompt is the PROJECT's grant (decision 6): stored under the
+    /// project's root, so the parent's identical request is then silent too.</summary>
+    [Fact]
+    public async Task AnAlwaysFromAChild_IsTheProjects()
+    {
+        var scene = NarrowableScene(mode: EditMode.AlwaysAsk);
+        var child = scene.Parent.NarrowedTo(scene.Sub);
+        var gate = PermissionDecider.WithPrompt(scene.Rules, null,
+            (_, _, _) => Task.FromResult(PermissionChoice.Always));
+        var target = Path.Combine(scene.Root, "shared", "a.md");
+
+        Assert.True((await gate.RequestAsync(Write(target, child), CancellationToken.None)).Allowed);
+
+        Assert.True(scene.Parent.IsSilentlyAllowed(Write(Path.Combine(scene.Root, "shared", "b.md"), scene.Parent)));
+    }
 }

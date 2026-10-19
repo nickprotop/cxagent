@@ -27,6 +27,25 @@ public class PermissionPolicy
     public string Root => _root;
     private readonly PermissionRulesStore _rules;
 
+    // THE BOUNDARY — where in-folder checks are drawn and relative paths resolve. The root above
+    // for every session; a sub-agent working in a folder of its own gets a narrower one here while
+    // everything that is the PROJECT's (trust, stored rules, the remembered mode) stays on _root.
+    private readonly string _boundary;
+
+    // THE POLICY THIS ONE WAS NARROWED FROM, read live for the mode and the reviewer, so a /mode
+    // switch or a re-wired classifier reaches a running child as it did when children shared the
+    // session's policy outright. Null for a session's own policy.
+    private readonly PermissionPolicy? _parent;
+
+    private EditMode _edits;
+    private ActionClassifier? _classifier;
+
+    /// <summary>
+    /// The folder in/out checks are drawn against, and relative paths resolve from: <see cref="Root"/>
+    /// for a session, a narrower folder for a sub-agent working in one of its own.
+    /// </summary>
+    public string Boundary => _boundary;
+
     // THE SAME DEFAULT AS WorkingMode.Default, and it must stay that way: AppBootstrap seeds this
     // from the resolved startup mode, so the two only ever disagree for a caller that omits the
     // argument — a test, or a construction path added later. A permissive default here would make
@@ -35,9 +54,39 @@ public class PermissionPolicy
         EditMode edits = EditMode.AlwaysAsk)
     {
         _root = workingDirRoot;
+        _boundary = workingDirRoot;
         _rules = rules;
-        Edits = edits;
+        // THE FIELD, NOT THE PROPERTY: the property forwards to a parent, and a constructor has no
+        // business reaching one.
+        _edits = edits;
     }
+
+    private PermissionPolicy(PermissionPolicy parent, string folder)
+    {
+        _root = parent._root;
+        _rules = parent._rules;
+        _boundary = folder;
+        _parent = parent;
+        SessionId = parent.SessionId;
+        LogDir = parent.LogDir;
+        TrustOverride = parent.TrustOverride;
+    }
+
+    /// <summary>
+    /// A policy for a sub-agent working in <paramref name="folder"/>, inside this one's boundary.
+    ///
+    /// <para>ONLY THE BOUNDARY NARROWS. Trust, stored rules, the edit mode, the reviewer and where a grant
+    /// is filed stay this policy's — they are the project's — so a child in a worktree under the root
+    /// starts from the project's rules rather than an empty list, and an Always answered on its prompt
+    /// is a grant for the project. What changes is the folder its files and commands are judged
+    /// against, and the folder its relative paths mean.</para>
+    /// </summary>
+    public PermissionPolicy NarrowedTo(string folder) =>
+        new(this, Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)));
+
+    /// <summary>Resolves <paramref name="path"/> as a request for it would be judged — relative to the
+    /// boundary, symlinks followed — or null when it cannot be resolved.</summary>
+    public string? Resolve(string path) => TryResolve(path, _boundary);
 
     /// <summary>
     /// Which session this policy belongs to, or null when nobody said.
@@ -88,7 +137,11 @@ public class PermissionPolicy
     /// <para>SETTABLE, NOT INIT, because a re-wire replaces the resolution while the policy outlives
     /// it: `/model` can change which instance reviews, and the policy is what the gate reads.</para>
     /// </summary>
-    public ActionClassifier? Classifier { get; set; }
+    public ActionClassifier? Classifier
+    {
+        get => _parent is null ? _classifier : _parent.Classifier;
+        set { if (_parent is null) _classifier = value; else _parent.Classifier = value; }
+    }
 
     /// <summary>
     /// When a write happens without asking.
@@ -102,7 +155,11 @@ public class PermissionPolicy
     /// retroactively. That matches <see cref="WorkingMode"/>'s immutability reasoning: a mid-turn
     /// switch must not change the answer to a question already being asked.</para>
     /// </summary>
-    public EditMode Edits { get; set; }
+    public EditMode Edits
+    {
+        get => _parent?.Edits ?? _edits;
+        set { if (_parent is null) _edits = value; else _parent.Edits = value; }
+    }
 
     /// <summary>
     /// Treat the folder as trusted for this process, whatever is stored.
@@ -259,7 +316,7 @@ public class PermissionPolicy
         //
         // THE SESSION ROOT, NOT THE JOB'S working_dir, and the tempting choice is the wrong one.
         // working_dir is where the command RUNS; the root is what EffectFor's confinement actually
-        // measures paths against (IsInsideBoundary resolves against _root). Labelling the job's
+        // measures paths against (IsInsideBoundary resolves against the boundary). Labelling the job's
         // working_dir "project root" would tell the classifier a boundary that is not the boundary
         // being enforced — and a `working_dir` outside the project would describe the command as
         // in-bounds at the exact moment the policy is refusing it as out. The two must not disagree.
@@ -525,6 +582,8 @@ public class PermissionPolicy
             if (!ShellStaysInside(request)) return false;
         }
 
+        // THE PROJECT'S RULES, even for a child narrowed to a folder of its own: a stored Always is a
+        // grant for the project, so it can permit a child's write outside the child's folder.
         return _rules.Matches(_root, request.Kind, subject);
     }
 
@@ -552,7 +611,7 @@ public class PermissionPolicy
     private string? RuleSubject(PermissionRequest request) => request.Kind switch
     {
         // Path-bearing: resolve before matching, and fail toward asking if it cannot be resolved.
-        PermissionKind.FileRead or PermissionKind.FileWrite => TryResolve(request.Display, _root),
+        PermissionKind.FileRead or PermissionKind.FileWrite => TryResolve(request.Display, _boundary),
 
         // SHELL MATCHES THE COMMAND, NOT THE RULE. A shell rule is a PATTERN — `git status *` — not
         // the whole command, so reading AlwaysRule here would compare a pattern against a stored
@@ -611,7 +670,7 @@ public class PermissionPolicy
     /// and still shown ... that phrasing is what makes the button intelligible."</summary>
     public bool IsInBoundary(string path) => IsInsideBoundary(path);
 
-    private bool IsInsideBoundary(string path) => IsInside(path, _root);
+    private bool IsInsideBoundary(string path) => IsInside(path, _boundary);
 
     /// <summary>
     /// Whether <paramref name="path"/> resolves to <paramref name="directory"/> or something beneath it.
@@ -628,7 +687,7 @@ public class PermissionPolicy
     /// </summary>
     private bool IsInside(string path, string directory)
     {
-        var resolved = TryResolve(path, _root);
+        var resolved = TryResolve(path, _boundary);
         if (resolved is null) return false;   // resolution failed: fail toward asking, never toward silence.
 
         var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
@@ -840,7 +899,7 @@ public class PermissionPolicy
     /// </summary>
     private bool ShellStaysInside(PermissionRequest request)
     {
-        var folder = request.ShellWorkingDir is { Length: > 0 } given ? TryResolve(given, _root) : _root;
+        var folder = request.ShellWorkingDir is { Length: > 0 } given ? TryResolve(given, _boundary) : _boundary;
         if (folder is null || !IsInsideBoundary(folder)) return false;   // unresolvable: fail toward asking
         return RelativeSubjectsConfined(request.What, folder);
     }
@@ -1132,10 +1191,10 @@ public class PermissionPolicy
     {
         if (request.Kind != PermissionKind.FileWrite) return false;
 
-        var resolved = TryResolve(request.Display, _root);
+        var resolved = TryResolve(request.Display, _boundary);
         if (resolved is null) return true;   // unresolvable: fail toward asking, as everywhere here
 
-        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_root));
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_boundary));
         if (!resolved.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
             return false;   // outside the boundary: such a write always asks, so it is never silent
 
@@ -1161,7 +1220,7 @@ public class PermissionPolicy
     {
         if (request.Kind != PermissionKind.FileWrite) return false;
 
-        var resolved = TryResolve(request.Display, _root);
+        var resolved = TryResolve(request.Display, _boundary);
         if (resolved is null) return true;   // unresolvable: fail toward refusing
 
         return resolved.Split(Path.DirectorySeparatorChar)
