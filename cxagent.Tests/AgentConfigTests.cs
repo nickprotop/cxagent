@@ -231,4 +231,15 @@ public class AgentConfigTests
 
     private const string AnthropicCaps = """{"id":"claude-x","capabilities":{"effort":{"supported":true,"low":{"supported":true},"medium":{"supported":true},"high":{"supported":true},"max":{"supported":true}},"thinking":{"supported":true,"types":{"adaptive":{"supported":true},"disabled":{"supported":true},"enabled":{"supported":false}}}}}""";
     private const string AnthropicOk = """{"content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}""";
+
+    [Fact]
+    public void AModelsDescription_ReachesTheRegistry()
+    {
+        var resolved = new AgentConfig
+        {
+            Models = { ["only"] = new(ProviderKind.OpenAiCompatible, "m") { BaseUrl = "http://x/v1", Description = "fast, free" } },
+        }.Resolve();
+
+        Assert.Equal("fast, free", resolved.Providers!.InstanceDescriptions["only"]);
+    }
 }

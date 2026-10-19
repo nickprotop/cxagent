@@ -62,7 +62,15 @@ public record ProviderInstanceConfig(
     bool CacheControl = false,
     ThinkingDisplay ThinkingDisplay = ThinkingDisplay.Summarized,
     string? Thinking = null,
-    bool Reasoning = false);
+    bool Reasoning = false)
+{
+    /// <summary>
+    /// What this entry is for, in one line — read by the model choosing where a sub-agent runs, beside
+    /// the entry's name:model. A NAMED MEMBER: the positional list is already past the point where a
+    /// transposition compiles cleanly.
+    /// </summary>
+    public string? Description { get; init; }
+}
 
 public record RoutingTarget(string Provider, string Model);
 
@@ -753,8 +761,19 @@ public static class ProviderConfigLoader
                         errors.Add($"provider '{name}': 'model' is required.");
                     ValidateEndpoint(name, kind, baseUrl, errors);
 
+                    // WHITESPACE IS ABSENT, as for an agent type's description: a blank line beside a
+                    // choice reads as a bug. NOT TEXT IS AN ERROR, like every other provider field here.
+                    string? description = null;
+                    if (o.TryGetProperty("description", out var pd))
+                    {
+                        if (pd.ValueKind != JsonValueKind.String)
+                            errors.Add($"provider '{name}': 'description' must be text.");
+                        else if (pd.GetString()!.Trim() is { Length: > 0 } said)
+                            description = said;
+                    }
+
                     providers[name] = new ProviderInstanceConfig(kind, model, apiKey, baseUrl, extra, contextWindow,
-                        maxConcurrentAgents, cacheControl, thinkingDisplay, thinking, reasoning);
+                        maxConcurrentAgents, cacheControl, thinkingDisplay, thinking, reasoning) { Description = description };
                 }
             else
                 errors.Add("config.json has no 'providers' object.");

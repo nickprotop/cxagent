@@ -29,6 +29,9 @@ public sealed record ModelConfig(ProviderKind Kind, string Model)
     /// one address, and required for everything else.</summary>
     public string? BaseUrl { get; init; }
 
+    /// <summary>What this model is for, in one line — shown beside it where a sub-agent's provider is chosen.</summary>
+    public string? Description { get; init; }
+
     /// <summary>The key, or null for a local server that checks none.</summary>
     public string? ApiKey { get; init; }
 
@@ -205,7 +208,8 @@ public sealed record AgentConfig
                 $"{KindName(chosen.Kind)} {chosen.Model}",
                 chosen.ContextWindow),
             new ProviderCatalog(
-                Instances: ProviderRegistry.FromProviders(instances, defaultName, windows),
+                Instances: ProviderRegistry.FromProviders(instances, defaultName, windows,
+                    Models.ToDictionary(m => m.Key, m => m.Value.Description, StringComparer.Ordinal)),
                 AgentTypes: new Dictionary<string, AgentTypeConfig>(Agents, StringComparer.Ordinal),
                 McpServers: Mcp.ToDictionary(
                     s => s.Key,

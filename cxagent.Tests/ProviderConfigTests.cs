@@ -907,4 +907,35 @@ public class ProviderConfigTests : IDisposable
         var ex = Assert.Throws<ProviderConfigException>(() => ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv));
         Assert.Contains(ex.Errors, e => e.Contains("'reasoning'"));
     }
+
+    /// <summary>A provider entry's description is what the model reads when it chooses where a child runs.</summary>
+    [Fact]
+    public void Provider_Description_IsReadAndTrimmed()
+    {
+        WriteConfig("""
+        {
+          "providers": {
+            "local": { "kind": "ollama", "model": "llama3.3", "description": "  fast local coder, free  " },
+            "fast":  { "kind": "ollama", "model": "llama3.2-1b", "description": "   " }
+          },
+          "defaultProvider": "local"
+        }
+        """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Equal("fast local coder, free", s.Providers["local"].Description);
+        Assert.Null(s.Providers["fast"].Description);          // whitespace is absent
+        Assert.Equal("fast local coder, free", ProviderRegistry.Build(s).InstanceDescriptions["local"]);
+    }
+
+    [Fact]
+    public void Provider_DescriptionThatIsNotText_IsAConfigError()
+    {
+        WriteConfig("""
+        { "providers": { "local": { "kind": "ollama", "model": "llama3.3", "description": 4 } }, "defaultProvider": "local" }
+        """);
+
+        var ex = Assert.Throws<ProviderConfigException>(() => ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv));
+        Assert.Contains("'description' must be text", ex.Message, StringComparison.Ordinal);
+    }
 }

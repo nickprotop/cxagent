@@ -23,6 +23,7 @@ public sealed class ProviderRegistry
     /// reason and no other — see <see cref="_endpoints"/> for why the answer is cached rather than
     /// asked again.</para></summary>
     private Dictionary<string, int?> _windows = new(StringComparer.Ordinal);
+    private Dictionary<string, string?> _descriptions = new(StringComparer.Ordinal);
 
     /// <summary>
     /// What the probe needs to ask an instance its window, for the instances that did not declare
@@ -72,6 +73,9 @@ public sealed class ProviderRegistry
     /// A guessed window that is too large is worse than none.</para>
     /// </summary>
     public IReadOnlyDictionary<string, int?> InstanceWindows => _windows;
+
+    /// <summary>Each instance's description, for the spawn tool's list of where a child may run.</summary>
+    public IReadOnlyDictionary<string, string?> InstanceDescriptions => _descriptions;
 
     public bool TryGet(string instanceName, out ILlmProvider provider)
         => _providers.TryGetValue(instanceName, out provider!);
@@ -131,14 +135,19 @@ public sealed class ProviderRegistry
     /// </param>
     /// <param name="providers">The configured instances, keyed by the name config gave them.</param>
     /// <param name="defaultName">Which instance a session opens on, or null when none is set.</param>
+    /// <param name="descriptions">Per-instance descriptions, optional for the same reason as windows.</param>
     public static ProviderRegistry FromProviders(
         IReadOnlyDictionary<string, ILlmProvider> providers, string? defaultName,
-        IReadOnlyDictionary<string, int?>? windows = null) =>
+        IReadOnlyDictionary<string, int?>? windows = null,
+        IReadOnlyDictionary<string, string?>? descriptions = null) =>
         new(new Dictionary<string, ILlmProvider>(providers), defaultName)
         {
             _windows = windows is null
                 ? new Dictionary<string, int?>(StringComparer.Ordinal)
                 : new Dictionary<string, int?>(windows, StringComparer.Ordinal),
+            _descriptions = descriptions is null
+                ? new Dictionary<string, string?>(StringComparer.Ordinal)
+                : new Dictionary<string, string?>(descriptions, StringComparer.Ordinal),
         };
 
     public static ProviderRegistry Build(ProviderSettings settings, HttpClient? client = null)
@@ -148,6 +157,7 @@ public sealed class ProviderRegistry
         // keep only the provider it constructed from it — so the one place that HAS the windows was
         // the one place that dropped them.
         var windows = new Dictionary<string, int?>(StringComparer.Ordinal);
+        var descriptions = new Dictionary<string, string?>(StringComparer.Ordinal);
 
         // AND WHERE TO ASK, for the ones that declared nothing. Probing all of them HERE would cost
         // three seconds per unconfigured endpoint at startup, for models the user may never select —
@@ -158,6 +168,7 @@ public sealed class ProviderRegistry
         {
             built[name] = Construct(name, cfg, client);
             windows[name] = cfg.ContextWindow;
+            descriptions[name] = cfg.Description;
             // Anthropic needs no baseUrl to be asked: its default endpoint answers.
             if (cfg.ContextWindow is null
                 && (!string.IsNullOrWhiteSpace(cfg.BaseUrl) || cfg.Kind == "anthropic"))
@@ -167,6 +178,7 @@ public sealed class ProviderRegistry
         return new ProviderRegistry(built, settings.DefaultProvider)
         {
             _windows = windows,
+            _descriptions = descriptions,
             _endpoints = endpoints,
         };
     }
