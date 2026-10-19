@@ -3,15 +3,14 @@
  *
  * A native plugin is a shared library (.so / .dll / .dylib) exporting ten `extern "C"`
  * functions — seven MANDATORY and three OPTIONAL (cxagent_plugin_poll, cxagent_plugin_command and
- * cxagent_plugin_attach, see below) — name-resolved by the host process (Task 9b), not linked. This header is the
+ * cxagent_plugin_attach, see below) — name-resolved by the host process, not linked. This header is the
  * authoritative declaration;
  * the .cs files in cxagent.Core/Core/Plugins/Abi/ mirror it on the managed side and
  * cxagent.Core/sdk/c/ABI.md carries the JSON schemas each call exchanges.
  *
  * EVERYTHING THAT CROSSES THIS BOUNDARY IS JSON. A tool's input schema, a call's arguments, a
  * job's result, an error — one encoding both directions, so the host and the plugin agree on a
- * shape without agreeing on a struct layout. See sdk/docs/plugins.md, "The boundary is JSON": a struct
- * ABI is frozen the moment it ships; JSON lets an old plugin omit a field the host now defaults,
+ * shape without agreeing on a struct layout. A struct ABI is frozen the moment it ships; JSON lets an old plugin omit a field the host now defaults,
  * and a new plugin send a field an old host ignores.
  *
  * NO EXCEPTION, NO C++ THROW, MAY CROSS THIS BOUNDARY. `extern "C"` has no unwind tables on the
@@ -73,7 +72,7 @@ extern "C" {
 CXAGENT_PLUGIN_EXPORT int32_t cxagent_plugin_abi_version(void);
 
 /*
- * SELF-DESCRIPTION. Returns a UTF-8 JSON manifest (see README.md, "describe") — the same shape
+ * SELF-DESCRIPTION. Returns a UTF-8 JSON manifest (see ABI.md, "describe") — the same shape
  * IPlugin.Load returns managed-side, so a real plugin's manifest looks identical regardless of
  * which loader carries it.
  *
@@ -84,11 +83,11 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_describe(void);
 
 /*
  * LIFECYCLE: START. `context_json` carries the plugin's working directory and its own settings
- * object (see README.md, "context") — never the transcript, the model, or the permission store;
+ * object (see ABI.md, "context") — never the transcript, the model, or the permission store;
  * sdk/docs/plugins.md, "What a plugin is handed at Load" states those are withheld on purpose and the ABI
  * surface withholds them identically.
  *
- * Returns a UTF-8 JSON result envelope (see README.md, "the result envelope"): `{"ok":true}` on
+ * Returns a UTF-8 JSON result envelope (see ABI.md, "the result envelope"): `{"ok":true}` on
  * success, `{"ok":false,"error":"..."}` on failure. A plugin that fails to start returns ok:false
  * rather than a nonzero exit or a thrown exception — the host has no way to observe either of
  * those from inside a call.
@@ -140,10 +139,10 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_gate(const char* tool_name, con
  * NO CANCELLATION TOKEN CROSSES THIS BOUNDARY. The managed contract's CancellationToken has no
  * native representation the host can honour mid-call — cxagent_plugin_invoke is synchronous C, and
  * a signal delivered while native code is running cannot safely unwind it any more than an
- * exception can. The host observes cancellation from OUTSIDE the call: see README.md,
+ * exception can. The host observes cancellation from OUTSIDE the call: see ABI.md,
  * "Cancellation" for how a cancelled turn is handled without asking this function to notice.
  *
- * Returns a UTF-8 JSON result envelope shaped like CxAgent.Core.Models.JobResult (see README.md,
+ * Returns a UTF-8 JSON result envelope shaped like CxAgent.Core.Models.JobResult (see ABI.md,
  * "the result envelope"). Freshly allocated; released via cxagent_plugin_free. Never NULL.
  *
  * MAY BE CALLED CONCURRENTLY, from multiple invocations in flight on the same library — and MAY BE
@@ -245,7 +244,7 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_poll(void);
  * host-owned, valid only for the duration of this call.
  *
  * Returns a UTF-8 JSON object: {"message": "...", "status": "reported"|"changed"|"refused"} — see
- * README.md, "command" for the field meanings, which mirror CxAgent.Core.Plugins.CommandResult
+ * ABI.md, "command" for the field meanings, which mirror CxAgent.Core.Plugins.CommandResult
  * field-for-field. `message` MAY be JSON null when the command has nothing to say. `status` MUST
  * be exactly one of the three strings above; anything else fails the call the same way malformed
  * JSON does.

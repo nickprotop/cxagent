@@ -590,7 +590,7 @@ session.Mode        // delegation and edit mode
 - **[API reference →](docs/api.md)** — every public member, with parameters and who calls it
 - **[Injecting your own tools →](docs/tools.md)** — the `IAgentTool` interface, the two gates, and
   what `Gate` should return
-- **[Writing a plugin →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/sdk/docs/plugins.md)** — tools loaded from a DLL at run time: the
+- **[Writing a plugin →](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/plugins.md)** — tools loaded from a DLL at run time: the
   lifecycle, the sidecar, permission and settings
 - **[SpectreAgent →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent)** — a second front end in about a hundred lines: a
   prompt, streamed text, one line per tool

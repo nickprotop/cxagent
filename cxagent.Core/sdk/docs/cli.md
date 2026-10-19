@@ -144,6 +144,7 @@ Every `cxagent plugin` command shares them:
 - **0**: success. For `call`, this includes stopping at an unanswered or denied gate: a session
   would stop there too.
 - **1**: the plugin is at fault. That means a problem `check` found, a load or Start that failed, a
-  result whose `success` is false, a refused command, or a call that overran its timeout.
+  result whose `success` is false, a tool or command the plugin does not declare (the message names
+  the ones it does), a refused command, a command that threw, or a call that overran its timeout.
 - **2**: the command line is wrong — a folder that does not exist included.
 - **130**: interrupted with Ctrl+C. The plugin is stopped and its processes reaped first.

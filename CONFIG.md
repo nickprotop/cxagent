@@ -453,7 +453,7 @@ never in the config file.
 ## `plugins` and `pluginPaths` — plugins
 
 ```json
-"pluginPaths": ["~/.config/cxagent/plugins"],
+"pluginPaths": ["~/src/my-plugins"],
 "plugins": {
   "csharp-lsp": {
     "file": "csharp-lsp.dll",

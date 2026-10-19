@@ -93,8 +93,8 @@ it.
 
 ### Two worked entries
 
-Neither is real. Copy the one whose shape matches what you are publishing; `pack` writes the same
-shape for you.
+Neither is real, and neither belongs in `plugins.json`, which carries only plugins that exist. Copy
+the one whose shape matches what you are publishing; `pack` writes the same shape for you.
 
 **Hosted elsewhere** — a fixed URL, and its own `sha256` because nothing here builds it:
 
@@ -200,7 +200,9 @@ which tools ask before acting.
 A plugin released here uses `"kind": "release"` and carries `latest`, GitHub's always-current alias,
 which resolves to the newest release carrying the asset. Commit its `sha256` as `null`: the site
 build stamps the hash of the zip the release actually carries into the published catalog, and
-refuses to publish without it. The installer checks every download against that hash.
+refuses to publish without it. The installer checks every download against that hash. An entry of
+`"kind": "url"` keeps its own committed `sha256` — nothing in this project can vouch for a file it does
+not build, so the site build never overwrites it.
 
 **3. The release build**, in `.github/workflows/release.yml`. A managed plugin with no
 `RuntimeIdentifier` is portable MSIL, so it needs ONE build, not a matrix entry — six RIDs would

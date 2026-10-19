@@ -922,13 +922,8 @@ public sealed partial class Session
 
     /// <summary>
     /// The <c>load</c> half of <see cref="RunPluginCommand"/> — resolving a name or path to an
-    /// assembly, honouring the disabled gate and <c>--once</c>, and handing an already-loaded plugin
-    /// to <see cref="LoadPlugin"/>.
-    ///
-    /// <para>THE DISABLED CHECK IS HERE, AHEAD OF ANYTHING TOUCHING DISK: a disabled plugin means no
-    /// process spawned, no tools registered, no load prompt, nothing to select from — loading the
-    /// assembly first and refusing afterward would already have run arbitrary code the config said
-    /// not to.</para>
+    /// assembly and handing it to <see cref="LoadPlugin"/>. A plugin config disables is loaded all the
+    /// same: <c>enabled</c> decides only what startup loads, and the load prompt is the boundary.
     /// </summary>
     private async Task<CommandStatus> RunLoadRequest(string target, string? inlineSettings,
         IReadOnlyDictionary<string, PluginConfig> configured, CancellationToken ct)

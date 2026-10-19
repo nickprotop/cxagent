@@ -677,9 +677,9 @@ and the layout to ship in are in [CONFIG.md](../../../CONFIG.md#plugins-and-plug
 
 - [`testing.md`](testing.md) — `cxagent plugin check`, `cxagent plugin call` and CxAgent.Plugins.Testing
 - [`publishing.md`](publishing.md) — from `pack` to the catalog: upload, verify, submit
-- [`IPlugin.cs`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/IPlugin.cs) — the managed contract, documented per method
-- [`sdk/c/cxagent_plugin.h`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/sdk/c/cxagent_plugin.h) — the seven C functions, with the ownership rules
-- [`sdk/c/ABI.md`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/sdk/c/ABI.md) — the JSON envelopes crossing the ABI boundary
+- [`IPlugin.cs`](https://github.com/nickprotop/cxagent/blob/master/cxagent.Plugins.Abstractions/IPlugin.cs) — the managed contract, documented per method
+- [`sdk/c/cxagent_plugin.h`](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/c/cxagent_plugin.h) — the ten C functions, seven of them mandatory, with the ownership rules
+- [`sdk/c/ABI.md`](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/c/ABI.md) — the JSON envelopes crossing the ABI boundary
 
 Hosting a plugin rather than writing one:
 

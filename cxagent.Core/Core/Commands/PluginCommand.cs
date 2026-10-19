@@ -102,10 +102,9 @@ public static class PluginCommand
 
             var headWords = head.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
-            // --once IS STILL ACCEPTED AND IGNORED. `enabled` means auto-load only, so there is no
-            // refusal left for it to override — but it was documented, and a command that suddenly
-            // rejects a flag someone has in their notes is a worse answer than one that quietly
-            // does what they wanted anyway.
+            // --once IS ACCEPTED AND IGNORED. `enabled` means auto-load only, so there is no refusal
+            // for it to override; a command that rejected a flag someone has in their notes would be
+            // a worse answer than one that quietly does what they wanted anyway.
             var rest = headWords.Skip(1)
                 .Where(w => !w.Equals(OnceFlag, StringComparison.OrdinalIgnoreCase)).ToList();
 
@@ -188,15 +187,6 @@ public static class PluginCommand
     }
 
     /// <summary>
-    /// The refusal for <c>/plugin load</c> on a name config disables: false means no process, no
-    /// tools, no prompt, nothing to select from. Names <c>--once</c>, or the exception is
-    /// undiscoverable and the feature may as well not exist.
-    /// </summary>
-    public static string DisabledRefusal(string name) =>
-        $"plugin '{name}' is disabled in config.\n"
-        + $"`/plugin load {name} --once` loads it for this session only.";
-
-    /// <summary>
     /// Every verb this command accepts, in one string.
     ///
     /// <para>HERE RATHER THAN AT THE CALL SITE, because it was hardcoded inside the session's
@@ -204,6 +194,6 @@ public static class PluginCommand
     /// one that told users what exists was the one most easily forgotten.</para>
     /// </summary>
     public const string Usage =
-        "Usage: /plugin [load <name|path> [--once] [{ settings }] | unwire <name> "
+        "Usage: /plugin [load <name|path> [{ settings }] | unwire <name> "
       + "| enable <name> | disable <name>]";
 }

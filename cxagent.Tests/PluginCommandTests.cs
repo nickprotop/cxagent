@@ -445,5 +445,9 @@ public class PluginCommandTests : IDisposable
         Assert.Contains(words, w => w.StartsWith("disable", StringComparison.Ordinal));
         Assert.Contains(words, w => w.StartsWith("load", StringComparison.Ordinal) && w.Contains("{ settings }", StringComparison.Ordinal));
         Assert.DoesNotContain(plugin.Args, a => (a.Name + a.Summary).Contains("--once", StringComparison.Ordinal));
+
+        // THE USAGE LINE TOO — it is what an unrecognised /plugin word prints.
+        Assert.DoesNotContain("--once", PluginCommand.Usage, StringComparison.Ordinal);
+        Assert.Contains("load <name|path> [{ settings }]", PluginCommand.Usage, StringComparison.Ordinal);
     }
 }
