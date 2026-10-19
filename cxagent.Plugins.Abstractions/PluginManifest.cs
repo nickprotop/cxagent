@@ -168,6 +168,12 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
     /// </summary>
     /// <exception cref="InvalidOperationException">The sidecar is missing or does not parse; the
     /// message names the file.</exception>
+    // ASSEMBLY.LOCATION IS RIGHT HERE, though the single-file analyzer flags it: this library is compiled
+    // into cxagent's single-file bundle, but the assembly read is the PLUGIN's, which the host loads from
+    // its own file on disk — that file is where the sidecar sits. A plugin is never inside the bundle,
+    // and an assembly with no file still fails below with a message, not a wrong path.
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("SingleFile", "IL3000",
+        Justification = "Reads a plugin's assembly, which is always loaded from its own file.")]
     public static PluginManifest FromSidecar(IPlugin plugin)
     {
         // AN ASSEMBLY LOADED FROM BYTES HAS NO FILE, so there is no folder to look beside; naming
