@@ -57,8 +57,8 @@ public enum PluginRowState
     /// <summary>Config permits it; nothing has loaded it yet.</summary>
     Declared,
 
-    /// <summary>Config says no. <c>/plugin load</c> on this name refuses unless <c>--once</c> is
-    /// added.</summary>
+    /// <summary>Config says not at startup. <c>/plugin load</c> still loads it by hand, behind the load
+    /// prompt.</summary>
     Disabled,
 }
 

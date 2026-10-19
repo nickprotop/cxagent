@@ -32,6 +32,7 @@ RENDERED = OrderedDict([
     # THE SDK, rendered from where it lives: everything about making a plugin is in cxagent.Core/sdk/.
     ("cxagent.Core/sdk/README.md", "sdk"),
     ("cxagent.Core/sdk/docs/plugins.md", "plugins"),
+    ("cxagent.Core/sdk/docs/cli.md", "plugin-cli"),
     ("cxagent.Core/sdk/docs/testing.md", "plugin-testing"),
     ("cxagent.Core/sdk/docs/c-sdk.md", "plugin-c-sdk"),
     ("cxagent.Core/sdk/docs/publishing.md", "plugin-publishing"),

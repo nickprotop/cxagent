@@ -57,7 +57,7 @@ public class DocRendererTests
             var (exit, stderr) = Render(dir);
             Assert.True(exit == 0, $"renderer failed: {stderr}");
 
-            foreach (var name in new[] { "commands", "config", "plugins", "sdk", "plugin-testing",
+            foreach (var name in new[] { "commands", "config", "plugins", "sdk", "plugin-cli", "plugin-testing",
                                          "plugin-c-sdk", "plugin-publishing", "plugin-abi" })
             {
                 var page = Path.Combine(dir, "docs", $"{name}.html");
@@ -74,6 +74,12 @@ public class DocRendererTests
             var sdk = File.ReadAllText(Path.Combine(dir, "docs", "sdk.html"));
             Assert.Contains("cxagent plugin new", sdk);
             Assert.Contains("assets/", sdk);
+
+            var cli = File.ReadAllText(Path.Combine(dir, "docs", "plugin-cli.html"));
+            foreach (var verb in new[] { "plugin new", "plugin check", "plugin call", "plugin pack", "plugin verify" })
+                Assert.Contains(verb, cli);
+            // /plugin IS DOCUMENTED IN COMMANDS, not only linked from its nav.
+            Assert.Contains("/plugin browse", commands);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
@@ -97,7 +103,7 @@ public class DocRendererTests
                 "# Commands\n\nSee [the config](CONFIG.md#no-such-heading).\n");
             File.WriteAllText(Path.Combine(fake, "CONFIG.md"), "# Configuration\n\nNothing here.\n");
             File.WriteAllText(Path.Combine(fake, "SCRIPTING.md"), "# Scripting\n\nNothing here.\n");
-            foreach (var rel in new[] { "sdk/README.md", "sdk/docs/plugins.md", "sdk/docs/testing.md",
+            foreach (var rel in new[] { "sdk/README.md", "sdk/docs/plugins.md", "sdk/docs/cli.md", "sdk/docs/testing.md",
                          "sdk/docs/c-sdk.md", "sdk/docs/publishing.md", "sdk/c/ABI.md" })
                 File.WriteAllText(Path.Combine(fake, "cxagent.Core", rel), "# X\n\nNothing here.\n");
             // EVERY DOCUMENT IN RENDERED MUST EXIST, or the renderer fails on the missing file

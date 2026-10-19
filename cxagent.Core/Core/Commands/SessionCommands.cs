@@ -158,12 +158,16 @@ public static class SessionCommands
         // THE REGISTRY IS THE SESSION'S, exactly as /trust's policy is — the configured set,
         // whether config permits each one, and the load gate all hang off it, so a front end
         // registering this would be reaching across for state the session already holds.
-        new("/plugin", "list configured plugins, load one, or unwire one",
+        new("/plugin", "list configured plugins, load or unwire one, or turn one on or off at startup",
         [
-            new("load <name|path> [--once]", "load a name from config, or a path config never "
-                + "declared — --once loads one config disabled, for this session only",
+            new("load <name|path> [{ settings }]", "load a name from config — disabled or not — or a path "
+                + "config never declared; a JSON settings block applies for this session",
                 Completes: false, Values: ValueSources.Plugins),
             new("unwire <name>", "stop and deregister a loaded plugin", Completes: false,
+                Values: ValueSources.Plugins),
+            new("enable <name>", "load it at startup from now on", Completes: false,
+                Values: ValueSources.Plugins),
+            new("disable <name>", "stop loading it at startup, and unload it now", Completes: false,
                 Values: ValueSources.Plugins),
         ]),
         // A SIDE QUESTION, answered by a read-only fork that never writes back. NeedsModel because the

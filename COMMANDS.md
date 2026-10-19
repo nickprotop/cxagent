@@ -404,6 +404,36 @@ and storing the token at `0600`, never in the config file.
 
 ---
 
+## `/plugin`
+
+With no argument, lists the configured plugins and each one's state: **loaded**, **declared, not
+loaded**, or **disabled**.
+
+| | |
+|---|---|
+| `/plugin browse` | opens the plugin manager (also **F2**): the catalog, what is installed, and updates. It installs into the global plugins folder or this project's |
+| `/plugin get <name>` | downloads a plugin from the catalog into the global plugins folder, checking its hash. It loads nothing and writes nothing to `config.json`: the reply names the commands that take it further |
+| `/plugin load <name\|path> [{ settings }]` | loads a configured plugin — disabled or not — or a plugin file config never declared, for this session. A JSON block after it is the plugin's settings for this load |
+| `/plugin unwire <name>` | stops a loaded plugin and removes its tools |
+| `/plugin enable <name>` | loads it at startup from now on — written to `config.json` |
+| `/plugin disable <name>` | stops loading it at startup, and unloads it now |
+
+**Every load asks first.** The prompt shows what the plugin is about to run and a hash of everything
+it would load, and nothing in `config.json` can pre-approve it; a plugin asks again when a byte of that
+changes. `enabled` decides only when the question comes. The keys are in
+[CONFIG.md](CONFIG.md#plugins-and-pluginpaths--plugins).
+
+Nothing `/plugin load` does persists, which is what makes it the way to try a plugin before
+configuring it:
+
+```
+/plugin load csharp-lsp.dll { "server": "/opt/omnisharp/OmniSharp", "args": ["-lsp"] }
+```
+
+Writing a plugin starts at [the SDK](cxagent.Core/sdk/README.md).
+
+---
+
 ## `/skills`
 
 Lists what was found, which directory it came from, and — the reason this command exists — **every

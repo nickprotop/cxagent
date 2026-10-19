@@ -432,4 +432,18 @@ public class PluginCommandTests : IDisposable
         Assert.Contains("load", PluginCommand.Usage);
         Assert.Contains("unwire", PluginCommand.Usage);
     }
+
+    /// <summary>The menu offers what /plugin does: enable and disable, and load's settings block — and
+    /// not --once, which the parser accepts and ignores.</summary>
+    [Fact]
+    public void TheMenu_OffersEveryVerb_AndNoOnce()
+    {
+        var plugin = SessionCommands.All.Single(c => c.Name == "/plugin");
+        var words = plugin.Args.Select(a => a.Name).ToList();
+
+        Assert.Contains(words, w => w.StartsWith("enable", StringComparison.Ordinal));
+        Assert.Contains(words, w => w.StartsWith("disable", StringComparison.Ordinal));
+        Assert.Contains(words, w => w.StartsWith("load", StringComparison.Ordinal) && w.Contains("{ settings }", StringComparison.Ordinal));
+        Assert.DoesNotContain(plugin.Args, a => (a.Name + a.Summary).Contains("--once", StringComparison.Ordinal));
+    }
 }
