@@ -737,6 +737,7 @@ index a plugin binary sitting in `.cxagent/plugins`. The global folder avoids th
 ## See also
 
 - [`plugin-testing.md`](plugin-testing.md) — `cxagent plugin check`, `cxagent plugin call` and CxAgent.Plugins.Testing
+- [`publishing-plugins.md`](publishing-plugins.md) — from `pack` to the catalog: upload, verify, submit
 - [`IPlugin.cs`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/IPlugin.cs) — the managed contract, documented per method
 - [`sdk/c/cxagent_plugin.h`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/sdk/c/cxagent_plugin.h) — the seven C functions, with the ownership rules
 - [`Abi/README.md`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/Abi/README.md) — the JSON envelopes crossing the ABI boundary

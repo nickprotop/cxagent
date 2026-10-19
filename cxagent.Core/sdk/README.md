@@ -311,7 +311,8 @@ cxagent plugin verify dist/weather.catalog.json
 Then follow `pack`'s next steps:
 1. Upload the zip (for example, `gh release create v1.0.0 dist/weather.zip`).
 2. Put its `https://` URL in the entry and run `verify` once more.
-3. Submit the entry, through the "Submit a plugin" issue or as a PR to `plugins/plugins.json`.
+3. Submit the entry, through the "Submit a plugin" issue or as a PR to `plugins/plugins.json` — see
+   [Publishing a plugin](../docs/publishing-plugins.md).
 
 ## Tutorial (C): wordcount
 
