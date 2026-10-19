@@ -10,10 +10,9 @@ Everything an author outside this repository needs to write, test and ship a cxa
 
 The command-line half is in cxagent itself: `cxagent plugin new | check | call | pack | verify`.
 
-The reference is [docs/plugins.md](docs/plugins.md), with testing covered in
-[docs/testing.md](docs/testing.md) and C in [docs/c-sdk.md](docs/c-sdk.md).
-This page has two tutorials: [C#](#tutorial-a-weather-plugin-end-to-end) and
-[C](#tutorial-c-wordcount).
+This page has two tutorials, [C#](#tutorial-a-weather-plugin-end-to-end) and
+[C](#tutorial-c-wordcount), and [an index](#where-to-go-next) of every other document about making a
+plugin. They all live in this folder.
 
 ## Tutorial: a weather plugin, end to end
 
@@ -287,32 +286,22 @@ dotnet build -c Release
 cxagent plugin pack bin/Release/net10.0 --out dist
 ```
 
-`pack` refuses a plugin `check` refuses. Otherwise it writes:
-- `dist/weather.zip`, holding what a release ships: the dll, the sidecar and the README;
-- its sha256;
-- `dist/weather.catalog.json`, the catalog entry;
-- the steps that are left.
+`pack` refuses a plugin `check` refuses. Otherwise it writes `dist/weather.zip` (the dll, the
+sidecar and the README), its sha256, `dist/weather.catalog.json` — the catalog entry — and the steps
+that are left. Every option is in [the command line](docs/cli.md#cxagent-plugin-pack-folder-options).
 
 ### 8. Verify, then publish
 
-Before uploading, point the entry's `"url"` at the zip on disk. A relative path resolves from the
-entry file's folder, so `"url": "weather.zip"` works here. Then:
+Before uploading, point the entry's `"url"` at the zip on disk — a relative path resolves from the
+entry file's folder, so `"url": "weather.zip"` works — and check what a user's install would get,
+without running any of your code:
 
 ```
 cxagent plugin verify dist/weather.catalog.json
 ```
 
-`verify` does what a user's install does, without running any of your code:
-- downloads the zip;
-- checks its sha256;
-- unpacks it;
-- holds the sidecar against every field the entry claims.
-
-Then follow `pack`'s next steps:
-1. Upload the zip (for example, `gh release create v1.0.0 dist/weather.zip`).
-2. Put its `https://` URL in the entry and run `verify` once more.
-3. Submit the entry, through the "Submit a plugin" issue or as a PR to `plugins/plugins.json` — see
-   [Publishing a plugin](docs/publishing.md).
+Then upload the zip, put its `https://` URL in the entry, verify again and submit it:
+[Publishing a plugin](docs/publishing.md) walks through each step.
 
 ## Tutorial (C): wordcount
 
@@ -419,16 +408,25 @@ license: MIT
 repository: https://github.com/you/wordcount
 ```
 
-Then upload, point each `"url"` at its zip, `verify` again, and submit, as in step 8 of the C#
-tutorial.
+Then upload, point each `"url"` at its zip, `verify` again, and submit: [Publishing a
+plugin](docs/publishing.md).
 
 ## Where to go next
 
-- **The rest of the contract** is in [docs/plugins.md](docs/plugins.md): settings, commands,
+Every document about making a plugin, in this folder:
+
+- **[The contract](docs/plugins.md)** — the lifecycle, the sidecar, permission, commands, settings,
   spawning processes, starting turns from a plugin, and reporting while a call runs.
-- **Every option of `check`, `call` and the test package** is in
-  [docs/testing.md](docs/testing.md).
-- **The C SDK reference** is [docs/c-sdk.md](docs/c-sdk.md).
+- **[The command line](docs/cli.md)** — `cxagent plugin new`, `check`, `call`, `pack` and `verify`:
+  every option, the `--json` shapes and the exit codes.
+- **[Testing](docs/testing.md)** — checking and calling a plugin from the command line and from
+  xunit, NUnit or MSTest with CxAgent.Plugins.Testing.
+- **[The C SDK](docs/c-sdk.md)** — the `cxp` API, memory and threads, and building for every
+  platform.
+- **[The C ABI](c/ABI.md)** — what crosses each call of `cxagent_plugin.h`, for a plugin written
+  without `cxp`.
+- **[Publishing](docs/publishing.md)** — pack, upload, verify, submit, and how a plugin built in this
+  repository is released.
 - **Two complete examples** sit beside this folder, the same calculator in C# and in raw C:
   [`examples/CalculatorPlugin`](../examples/CalculatorPlugin) and
   [`examples/CalculatorAbiPlugin`](../examples/CalculatorAbiPlugin).
