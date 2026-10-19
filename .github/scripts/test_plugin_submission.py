@@ -332,6 +332,15 @@ class Handle(unittest.TestCase):
         self.assertEqual(ps.handle(event(labels=("bug",)), runner, self.root), "not a submission")
         self.assertEqual(runner.calls, [])
 
+    def test_a_bot_error_carries_what_verify_said_on_stderr(self):
+        # A USAGE ERROR SAYS ITS REASON ON STDERR, and stdout is empty: without it the log reads
+        # "not JSON:" and nothing else.
+        runner = FakeRunner(**{"cxagent_plugin_verify": (2, "")})
+        runner.stderr = "unknown option '--https-only'."
+        with self.assertRaises(ps.BotError) as caught:
+            ps.handle(event(with_(name="sunrise")), runner, self.root)
+        self.assertIn("unknown option '--https-only'", str(caught.exception))
+
     def test_verify_output_that_is_not_json_fails_the_run(self):
         runner = FakeRunner(**{"cxagent_plugin_verify": (2, "usage: …")})
         with self.assertRaises(ps.BotError):
@@ -389,6 +398,13 @@ class Workflows(unittest.TestCase):
             if path.name in ("plugin-submission.yml", "release.yml", "pages.yml"):
                 continue
             self.assertIsNone(re.search(r":\s*write\b", path.read_text(encoding="utf-8")), path.name)
+
+    def test_the_installed_cxagent_has_https_only(self):
+        # A FLOOR, NOT A PIN: the newest release still installs, but while nuget.org has not yet
+        # listed the one that brought --https-only, the install fails saying so instead of the check.
+        for name in ("plugin-submission.yml", "catalog.yml"):
+            self.assertIn('dotnet tool install -g cxagent --version "[0.9.38,)"',
+                          (WORKFLOWS / name).read_text(encoding="utf-8"), name)
 
     def test_only_the_submission_label_reruns_on_labeled(self):
         text = (WORKFLOWS / "plugin-submission.yml").read_text(encoding="utf-8")

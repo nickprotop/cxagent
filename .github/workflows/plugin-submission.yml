@@ -41,9 +41,12 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      # A FLOOR, NOT A PIN: the newest release installs, but never one older than the release that
+      # brought verify --https-only — which nuget.org can still be listing as the newest for a while
+      # after a release, when the check would fail on an unknown option instead of saying why.
       - name: Install cxagent
         run: |
-          dotnet tool install -g cxagent
+          dotnet tool install -g cxagent --version "[0.9.38,)"
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
       - name: Check the submission
         env:

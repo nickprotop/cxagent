@@ -120,9 +120,12 @@ class Runner:
 
     def __init__(self, cwd):
         self.cwd = cwd
+        # THE LAST COMMAND'S STDERR, for a failure to quote: a usage error says its reason there.
+        self.stderr = ""
 
     def run(self, args, check=True):
         done = subprocess.run(args, cwd=self.cwd, capture_output=True, text=True)
+        self.stderr = done.stderr
         if check and done.returncode != 0:
             raise BotError(f"{' '.join(args[:3])} exited {done.returncode}: {done.stderr.strip()[:500]}")
         return done.returncode, done.stdout
@@ -134,17 +137,18 @@ def quoted(text):
     return "`" + str(text).replace("`", "'").replace("\n", " ") + "`"
 
 
-def verify_problems(code, stdout):
+def verify_problems(code, stdout, stderr=""):
     """verify's --json answer as one "<field>: <message>" line per problem. Exit 1 is the entry's
     fault; anything else, or output that is not that JSON, is the bot's."""
     if code == 0:
         return []
+    said = f" (stderr: {stderr.strip()[:500]})" if stderr.strip() else ""
     try:
         result = json.loads(stdout)
     except json.JSONDecodeError:
-        raise BotError(f"verify exited {code} with output that is not JSON: {stdout[:500]}")
+        raise BotError(f"verify exited {code} with output that is not JSON: {stdout[:500]}{said}")
     if code != 1 or not isinstance(result, dict) or not result.get("problems"):
-        raise BotError(f"verify exited {code}: {stdout[:500]}")
+        raise BotError(f"verify exited {code}: {stdout[:500]}{said}")
     return [f"{p['field']}: {p['message']}" if p.get("field") else p["message"] for p in result["problems"]]
 
 
@@ -273,7 +277,7 @@ def handle(event, runner, root, cxagent="cxagent", run_url=""):
             path = Path(folder) / "entry.json"
             path.write_text(json.dumps(entry), encoding="utf-8")
             code, out = runner.run([cxagent, "plugin", "verify", "--https-only", "--json", str(path)], check=False)
-        problems = verify_problems(code, out)
+        problems = verify_problems(code, out, getattr(runner, "stderr", ""))
 
     if problems:
         # AN OPEN PR ALWAYS MEANS THE ISSUE'S CURRENT ENTRY PASSES: one that no longer does is closed,
