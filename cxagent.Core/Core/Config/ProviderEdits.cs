@@ -102,9 +102,12 @@ public static class ProviderEdits
                 if (type is JsonObject t) RewriteTypeProvider(t, from, to);
     }
 
-    /// <summary>A NEW NAME IS NOT "all", which a type's provider reserves for every provider. A NEW NAME HOLDS NO COLON: in an agent type's provider list a colon separates a name from
-    /// its model, so a name with one reads as something else. Names already in a file keep working — the
-    /// loader takes a whole name first — but none is made here.</summary>
+    /// <summary>
+    /// A NEW NAME IS NOT "all", which a type's provider reserves for every provider. A NEW NAME HOLDS
+    /// NO COLON: in an agent type's provider list a colon separates a name from its model, so a name
+    /// with one reads as something else. Names already in a file keep working — the loader takes a
+    /// whole name first — but none is made here.
+    /// </summary>
     private static void RefuseReserved(string name)
     {
         if (string.Equals(name.Trim(), AgentTypeConfig.AnyProviderWord, StringComparison.OrdinalIgnoreCase))

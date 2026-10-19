@@ -202,7 +202,7 @@ made in one session reached exactly one machine, because they were edits to a JS
 
 | Key | On a shipped type | On your own type |
 |---|---|---|
-| `provider` | A `providers` entry, or a list of them — `"local"`, `"local:qwen-coder"`, `["local", "deepseek"]`. The first is the default; a spawn may choose another from the list. `"all"` offers every configured provider with no default, so a spawn must name one; it stands alone — mixed with names it disables the type. Omit (or `null`) to run on the session's model. A name that is not configured, or a `:model` that is not the entry's, disables the type with a warning. | Same. |
+| `provider` | A `providers` entry, or a list of them — `"local"`, `"local:qwen-coder"`, `["local", "deepseek"]`. The first is the default; a spawn may choose another from the list. `"all"` offers every configured provider with no default, so a spawn must name one; it stands alone — mixed with names it disables the type. A provider entry named `all` is reached from a type only as `all:model`, and `/config` will not create or rename one to that name. Omit (or `null`) to run on the session's model. A name that is not configured, or a `:model` that is not the entry's, disables the type with a warning. | Same. |
 | `maxTurns` | Absent inherits the type's shipped default, then the session ceiling; `0` is unbounded. | Absent inherits the session ceiling. |
 | `briefing` | **Ignored, with a warning at startup.** | Required. |
 | `description` | **Ignored, with a warning at startup.** | Optional, and worth writing. |

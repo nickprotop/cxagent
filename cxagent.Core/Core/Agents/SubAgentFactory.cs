@@ -378,9 +378,9 @@ public sealed class SubAgentFactory
             : _runtime;
 
         var provider = runtime.Provider;
-        // WHERE IT RUNS, as `name:model` — computed before the child is built, because the child's
+        // THE ENTRY IT RUNS ON, as `name:model` — computed before the child is built, because the child's
         // permission prompt names it too (see the comment at the SubAgent below for why name:model).
-        var runsOn = runtime.InstanceName is { Length: > 0 } instance
+        var entry = runtime.InstanceName is { Length: > 0 } instance
             ? $"{instance}:{provider.ModelId}"
             : provider.ModelId;
         var window = runtime.ContextWindow;
@@ -417,7 +417,7 @@ public sealed class SubAgentFactory
             briefing: string.IsNullOrWhiteSpace(type?.Briefing) ? briefing : type!.Briefing,
             callerContext: callerContext,
             label: label,
-            runsOn: $"{type?.Name ?? AgentTypeCatalog.DefaultTypeName} on {runsOn}",
+            runsOn: $"{type?.Name ?? AgentTypeCatalog.DefaultTypeName} on {entry}",
 
             // THE CHILD'S OWN SYSTEM PROMPT (D24). Without this it would be handed the session
             // prompt unchanged — told about /clear and /compress it cannot run, for a user it does
@@ -477,7 +477,7 @@ public sealed class SubAgentFactory
         // stat that groups them reads one model as two.
         return new SubAgent(agent, sink, jobs,
             TypeName: type?.Name ?? AgentTypeCatalog.DefaultTypeName,
-            ModelId: runsOn)
+            ModelId: entry)
         {
             Feed = feed,
         };

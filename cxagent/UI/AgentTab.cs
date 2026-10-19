@@ -275,9 +275,7 @@ public sealed class AgentTab : IDisposable
     public void Dispose() => _attached.Dispose();
 
     /// <summary>Test seam: the header's lines as the tab draws them.</summary>
-
     internal List<string> HeaderLinesForTest() => HeaderLines();
-
 
     private List<string> HeaderLines()
     {
