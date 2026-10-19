@@ -132,4 +132,34 @@ public class PluginNewTests
         var tests = File.ReadAllText(Path.Combine(dir, "tests", "PluginTests.cs"));
         Assert.DoesNotContain("\"Debug\"", tests);
     }
+
+    /// <summary>The license is the author's choice; the template leaves it for them, as it does the description.</summary>
+    [Fact]
+    public async Task TheLicense_IsLeftForTheAuthor()
+    {
+        var dir = Path.Combine(Folders.NewFolder("new-"), "weather");
+        await Run("new", "weather", "--lang", "csharp", "--dir", dir);
+
+        Assert.Contains("<PackageLicenseExpression></PackageLicenseExpression>", File.ReadAllText(Path.Combine(dir, "weather.csproj")));
+    }
+
+    [Fact]
+    public async Task ADirThatIsAFile_IsUsage()
+    {
+        var file = Path.Combine(Folders.NewFolder("new-"), "taken");
+        File.WriteAllText(file, "");
+
+        Assert.Equal(2, (await Run("new", "weather", "--lang", "csharp", "--dir", file)).Exit);
+    }
+
+    /// <summary>A refused name writes nothing — not even the folder.</summary>
+    [Fact]
+    public async Task ARefusedName_WritesNothing()
+    {
+        var dir = Path.Combine(Folders.NewFolder("new-"), "target");
+
+        await Run("new", "My Plugin", "--lang", "csharp", "--dir", dir);
+
+        Assert.False(Directory.Exists(dir));
+    }
 }

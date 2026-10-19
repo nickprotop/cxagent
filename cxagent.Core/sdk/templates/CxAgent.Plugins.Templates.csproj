@@ -26,9 +26,15 @@
     </MSBuild>
     <PropertyGroup>
       <TemplateJsonSource>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)csharp/.template.config/template.json'))</TemplateJsonSource>
-      <TemplateJsonStamped>$(TemplateJsonSource.Replace('"defaultValue": "0.0.0", "replaces": "CXP_ABSTRACTIONS_VERSION"', '"defaultValue": "$(AbstractionsPackageVersion)", "replaces": "CXP_ABSTRACTIONS_VERSION"').Replace('"defaultValue": "0.0.0", "replaces": "CXP_TESTING_VERSION"', '"defaultValue": "$(PackageVersion)", "replaces": "CXP_TESTING_VERSION"'))</TemplateJsonStamped>
+      <!-- BY PATTERN, WHITESPACE ASIDE: a reformatted template.json must still be stamped, or caught. -->
+      <TemplateJsonStamped>$([System.Text.RegularExpressions.Regex]::Replace($(TemplateJsonSource), '("defaultValue"\s*:\s*)"0\.0\.0"(\s*,\s*"replaces"\s*:\s*"CXP_ABSTRACTIONS_VERSION")', '${1}"$(AbstractionsPackageVersion)"${2}'))</TemplateJsonStamped>
+      <TemplateJsonStamped>$([System.Text.RegularExpressions.Regex]::Replace($(TemplateJsonStamped), '("defaultValue"\s*:\s*)"0\.0\.0"(\s*,\s*"replaces"\s*:\s*"CXP_TESTING_VERSION")', '${1}"$(PackageVersion)"${2}'))</TemplateJsonStamped>
     </PropertyGroup>
-    <Error Condition="$(TemplateJsonStamped.Contains('0.0.0'))" Text="template.json still holds 0.0.0 after stamping; its defaultValue lines no longer match the pattern here." />
+    <!-- ANY 0.0.0 DEFAULT LEFT means a version line the patterns above did not reach, and the package
+         would pin a version that does not exist. A real version merely containing "0.0.0" (a contract
+         10.0.0) is no match: the whole quoted value must be 0.0.0. -->
+    <Error Condition="$([System.Text.RegularExpressions.Regex]::IsMatch($(TemplateJsonStamped), '&quot;defaultValue&quot;\s*:\s*&quot;0\.0\.0&quot;'))"
+           Text="template.json still holds a 0.0.0 defaultValue after stamping; a version line no longer matches the pattern here." />
     <WriteLinesToFile File="$(IntermediateOutputPath)template.json" Lines="$([MSBuild]::Escape($(TemplateJsonStamped)))" Overwrite="true" WriteOnlyWhenDifferent="true" />
     <ItemGroup>
       <Content Include="csharp/**" Exclude="csharp/.template.config/template.json;csharp/**/bin/**;csharp/**/obj/**"

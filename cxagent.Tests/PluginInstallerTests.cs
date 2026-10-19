@@ -399,4 +399,28 @@ public class PluginInstallerTests : IDisposable
             return null;
         }
     }
+
+    /// <summary>
+    /// An escaping DIRECTORY entry refuses the archive too — no real plugin needs one, and a folder
+    /// written outside the plugins folder is the same escape as a file.
+    /// </summary>
+    [Fact]
+    public async Task AnEscapingDirectoryEntry_RefusesTheArchive()
+    {
+        using var buffer = new MemoryStream();
+        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            archive.CreateEntry("../evil/");
+            using (var w = new StreamWriter(archive.CreateEntry("demo.dll").Open())) w.Write("x");
+        }
+
+        var bytes = buffer.ToArray();
+        var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        var installer = new PluginInstaller(new HttpClient(new Serves(bytes)));
+
+        var result = await installer.InstallAsync(Entry(sha), _dir, CancellationToken.None);
+
+        Assert.IsType<InstallResult.Refused>(result);
+        Assert.False(Directory.Exists(Path.Combine(_dir, "..", "evil")));
+    }
 }

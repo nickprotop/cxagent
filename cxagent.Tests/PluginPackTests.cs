@@ -94,7 +94,7 @@ public class PluginPackTests
         Assert.True(File.Exists(Path.Combine(outDir, "fixture-linux-arm64.zip")));
         using var entry = JsonDocument.Parse(File.ReadAllText(Path.Combine(outDir, "fixture.catalog.json")));
         Assert.Equal(["linux-x64", "linux-arm64"], entry.RootElement.GetProperty("compatibility").GetProperty("platforms").EnumerateArray().Select(p => p.GetString()));
-        Assert.Contains("gh release create v1.0.0 fixture-*.zip", output);
+        Assert.Contains($"gh release create v1.0.0 {Path.Combine(Path.GetRelativePath(Environment.CurrentDirectory, outDir), "fixture-*.zip")}", output);
     }
 
     [Fact]
@@ -104,12 +104,13 @@ public class PluginPackTests
     [Fact]
     public async Task TheNextSteps_AreFilledInForThePlugin()
     {
-        var (exit, output, _) = await Run("pack", Folders.Harness(), "--out", Folders.NewFolder("pack-out-"));
+        var outDir = Folders.NewFolder("pack-out-");
+        var (exit, output, _) = await Run("pack", Folders.Harness(), "--out", outDir);
 
         Assert.Equal(0, exit);
-        Assert.Contains("gh release create v1.0.0 harness.zip", output);
+        Assert.Contains("gh release create v1.0.0 ", output);
         Assert.Contains("harness.catalog.json", output);
-        Assert.Contains("cxagent plugin verify harness.catalog.json", output);
+        Assert.Contains("cxagent plugin verify ", output);
         Assert.Contains("https://github.com/nickprotop/cxagent/issues/new/choose", output);
     }
 
@@ -236,5 +237,60 @@ public class PluginPackTests
         using var entry = JsonDocument.Parse(File.ReadAllText(Path.Combine(outDir, "fixture.catalog.json")));
         Assert.Equal("fixture-reports" + NativeFixtures.Suffix,
             entry.RootElement.GetProperty("sources").GetProperty("linux-x64").GetProperty("file").GetString());
+    }
+
+    [Theory]
+    [InlineData("license: ~\n")]
+    [InlineData("license: null\n")]
+    [InlineData("license:\n")]
+    public async Task AYamlNull_IsNotGiven_NotTheWordNull(string yaml)
+    {
+        var entry = await EntryAfter(Folders.Harness(), "--info", InfoFile("info.yaml", yaml));
+
+        Assert.Equal("<fill in: license>", entry.GetProperty("license").GetString());
+    }
+
+    [Fact]
+    public async Task AYamlFileWithTwoDocuments_IsUsage() =>
+        Assert.Equal(2, (await Run("pack", Folders.Harness(), "--info", InfoFile("info.yaml", "license: MIT\n---\npublisher: x\n"))).Exit);
+
+    /// <summary>--native names a native build; on a managed plugin it is a wrong folder or a wrong flag.</summary>
+    [Fact]
+    public async Task NativeOnAManagedPlugin_IsUsage()
+    {
+        var lib = Path.Combine(Folders.NewFolder("pack-lib-"), "x.so");
+        File.WriteAllText(lib, "");
+
+        Assert.Equal(2, (await Run("pack", Folders.Harness(), "--native", $"{lib}=linux-x64", "--out", Folders.NewFolder("pack-out-"))).Exit);
+    }
+
+    /// <summary>A malformed project nearer the build folder does not stop the walk up to the real one.</summary>
+    [Fact]
+    public async Task AMalformedProjectOnTheWayUp_IsPassedOver()
+    {
+        var project = Folders.NewFolder("pack-proj-");
+        File.WriteAllText(Path.Combine(project, "cxagent.Tests.PluginFixture.Harness.csproj"),
+            "<Project><PropertyGroup><Description>from the real project</Description></PropertyGroup></Project>");
+        var bin = Path.Combine(project, "bin");
+        var dir = Path.Combine(bin, "Debug", "net10.0");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(bin, "broken.csproj"), "<Project><not closed");
+        foreach (var f in Directory.GetFiles(Folders.Harness())) File.Copy(f, Path.Combine(dir, Path.GetFileName(f)));
+
+        var entry = await EntryAfter(dir);
+
+        Assert.Equal("from the real project", entry.GetProperty("description").GetString());
+    }
+
+    /// <summary>The next steps name the files where pack wrote them, so they run as printed.</summary>
+    [Fact]
+    public async Task TheNextSteps_NameTheFilesWhereTheyAre()
+    {
+        var outDir = Folders.NewFolder("pack-out-");
+
+        var (_, output, _) = await Run("pack", Folders.Harness(), "--out", outDir);
+
+        Assert.Contains($"gh release create v1.0.0 {Path.GetRelativePath(Environment.CurrentDirectory, Path.Combine(outDir, "harness.zip"))}", output);
+        Assert.Contains($"cxagent plugin verify {Path.GetRelativePath(Environment.CurrentDirectory, Path.Combine(outDir, "harness.catalog.json"))}", output);
     }
 }

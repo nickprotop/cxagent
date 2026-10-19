@@ -18,6 +18,9 @@ internal sealed record CatalogText(string? Description, string? Publisher, strin
 /// <summary>One zip pack wrote: the platform it is for ("any" for managed), its path, its hash, the binary inside.</summary>
 internal sealed record PackedZip(string Rid, string Zip, string Hash, string File);
 
+/// <summary>What pack made: the sidecar it read, whether the plugin is native, and its zips.</summary>
+internal sealed record PackedPlugin(PluginManifest Sidecar, bool Native, IReadOnlyList<PackedZip> Zips);
+
 /// <summary>What <c>cxagent plugin pack</c> was asked to do. <paramref name="Info"/> is the --info file's fields, empty without one.</summary>
 internal sealed record PackRequest(string Folder, IReadOnlyList<NativeBuild> Native, string OutDir, CatalogText Text,
     IReadOnlyDictionary<string, string> Info, bool Json);
@@ -62,14 +65,23 @@ internal static class PluginPackCommand
         var sidecar = PluginManifest.Parse(File.ReadAllText(sidecarPath)).Manifest!;
         var binary = BinaryBeside(sidecarPath);
         var native = PluginResolver.IsNative(binary);
-        Directory.CreateDirectory(request.OutDir);
 
-        var downloads = new List<PackedZip>();
+        // --native NAMES NATIVE BUILDS: on a managed plugin it is a wrong folder or a wrong flag, and
+        // ignoring it would pack something other than what was asked for.
+        if (!native && request.Native.Count > 0)
+            return PluginCli.Fail(stderr, $"{Path.GetFileName(binary)} is a .NET plugin; --native is for native libraries.");
+
+        // THIS MACHINE'S PLATFORM, WHEN NONE IS NAMED — but only one the catalog's vocabulary has: a
+        // distro or musl runtime reports a RID that --native itself would refuse.
+        var thisMachine = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+        if (native && request.Native.Count == 0 && !Rids.Contains(thisMachine))
+            return PluginCli.Fail(stderr, $"this machine reports platform '{thisMachine}', which the catalog does not name; pass --native {Path.GetFileName(binary)}=<rid>.");
+
+        Directory.CreateDirectory(request.OutDir);
+        var zips = new List<PackedZip>();
         if (native)
         {
-            var builds = request.Native.Count > 0
-                ? request.Native
-                : [new NativeBuild(binary, System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier)];
+            var builds = request.Native.Count > 0 ? request.Native : [new NativeBuild(binary, thisMachine)];
             foreach (var build in builds)
             {
                 // STORED UNDER THE SIDECAR'S NAME: the loader finds a library's sidecar from the
@@ -78,41 +90,45 @@ internal static class PluginPackCommand
                 var stored = Path.GetFileName(sidecarPath)[..^".plugin.json".Length] + Path.GetExtension(build.Library);
                 var zip = Path.Combine(request.OutDir, $"{sidecar.Name}-{build.Rid}.zip");
                 WriteZip(zip, [new ZipItem(build.Library, stored), new ZipItem(sidecarPath), .. Readme(request.Folder).Select(r => new ZipItem(r))]);
-                downloads.Add(new PackedZip(build.Rid, zip, Sha256(zip), stored));
+                zips.Add(new PackedZip(build.Rid, zip, Sha256(zip), stored));
             }
         }
         else
         {
             var zip = Path.Combine(request.OutDir, $"{sidecar.Name}.zip");
             WriteZip(zip, ManagedFiles(request.Folder).Select(f => new ZipItem(f)));
-            downloads.Add(new PackedZip("any", zip, Sha256(zip), Path.GetFileName(binary)));
+            zips.Add(new PackedZip("any", zip, Sha256(zip), Path.GetFileName(binary)));
         }
 
+        var packed = new PackedPlugin(sidecar, native, zips);
         var text = TextFor(request, binary);
-        var entry = Entry(sidecar, native, downloads, text);
         var entryPath = Path.Combine(request.OutDir, $"{sidecar.Name}.catalog.json");
-        File.WriteAllText(entryPath, entry.ToJsonString(Indented) + Environment.NewLine);
+        File.WriteAllText(entryPath, Entry(packed, text).ToJsonString(Indented) + Environment.NewLine);
 
         var unfilled = text.Where(t => t.Value.StartsWith("<fill in:", StringComparison.Ordinal)).Select(t => t.Key).ToList();
         if (request.Json)
         {
             stdout.WriteLine(JsonSerializer.Serialize(new
             {
-                zips = downloads.Select(d => new { file = d.Zip, sha256 = d.Hash, platform = d.Rid }),
+                zips = zips.Select(d => new { file = d.Zip, sha256 = d.Hash, platform = d.Rid }),
                 entry = entryPath,
                 unfilled,
             }, Indented));
             return 0;
         }
 
-        foreach (var d in downloads) stdout.WriteLine($"{d.Hash}  {Path.GetFileName(d.Zip)}");
-        stdout.WriteLine($"wrote {Path.GetFileName(entryPath)}");
+        foreach (var d in zips) stdout.WriteLine($"{d.Hash}  {Shown(d.Zip)}");
+        stdout.WriteLine($"wrote {Shown(entryPath)}");
         if (!File.Exists(Path.Combine(request.Folder, "README.md")))
             stdout.WriteLine("note: no README.md beside the plugin; the plugin manager shows the catalog description instead.");
-        if (unfilled.Count > 0) stdout.WriteLine($"still to fill in: {string.Join(", ", unfilled)} — in {Path.GetFileName(entryPath)}");
-        NextSteps(stdout, sidecar, native, Path.GetFileName(entryPath));
+        if (unfilled.Count > 0) stdout.WriteLine($"still to fill in: {string.Join(", ", unfilled)} — in {Shown(entryPath)}");
+        NextSteps(stdout, packed, entryPath);
         return 0;
     }
+
+    // A PATH AS THE PERSON TYPES IT: relative to where they are, so a printed command runs as printed
+    // whatever --out was.
+    private static string Shown(string path) => Path.GetRelativePath(Environment.CurrentDirectory, path);
 
     private static PackRequest? Parse(string[] args, out string? error)
     {
@@ -256,16 +272,16 @@ internal static class PluginPackCommand
             }
             catch (System.Xml.XmlException)
             {
-                return null;
+                // A PROJECT THAT WILL NOT PARSE IS NOT THE PLUGIN'S: keep walking up.
             }
         }
 
         return null;
     }
 
-    private static JsonObject Entry(PluginManifest sidecar, bool native, List<PackedZip> downloads,
-        IReadOnlyDictionary<string, string> text)
+    private static JsonObject Entry(PackedPlugin packed, IReadOnlyDictionary<string, string> text)
     {
+        var (sidecar, native, downloads) = (packed.Sidecar, packed.Native, packed.Zips);
         var entry = new JsonObject
         {
             ["name"] = sidecar.Name,
@@ -313,9 +329,13 @@ internal static class PluginPackCommand
         return entry;
     }
 
-    private static void NextSteps(TextWriter stdout, PluginManifest sidecar, bool native, string entryFile)
+    private static void NextSteps(TextWriter stdout, PackedPlugin packed, string entryPath)
     {
-        var zips = native ? $"{sidecar.Name}-*.zip" : $"{sidecar.Name}.zip";
+        var sidecar = packed.Sidecar;
+        var entryFile = Shown(entryPath);
+        var zips = packed.Native
+            ? Path.Combine(Path.GetDirectoryName(Shown(packed.Zips[0].Zip)) ?? "", $"{sidecar.Name}-*.zip")
+            : Shown(packed.Zips[0].Zip);
         stdout.WriteLine();
         stdout.WriteLine("  Next:");
         stdout.WriteLine("    1. Upload the zips somewhere they stay — e.g. a GitHub release in your repository:");

@@ -270,11 +270,13 @@ plugin's.
 ### 7. Pack it for others
 
 Say what it is in `weather.csproj`, or with `--description`, `--publisher`, `--license` and
-`--repository`, or in a JSON or YAML file passed as `--info`:
+`--repository`, or in a JSON or YAML file passed as `--info`. The template leaves the description
+and the license empty on purpose, because they are yours to choose:
 
 ```xml
 <Description>The current weather for any city, from Open-Meteo.</Description>
 <Authors>you</Authors>
+<PackageLicenseExpression>MIT</PackageLicenseExpression>
 <RepositoryUrl>https://github.com/you/weather</RepositoryUrl>
 ```
 

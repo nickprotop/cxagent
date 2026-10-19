@@ -72,6 +72,7 @@ internal static class PackInfoFile
         {
             var stream = new YamlStream();
             stream.Load(new StringReader(text));
+            if (stream.Documents.Count > 1) return Fail(out error, "the info file holds more than one YAML document; keep one.");
             if (stream.Documents.Count == 0 || stream.Documents[0].RootNode is not YamlMappingNode map)
                 return Fail(out error, "the info file must be a YAML mapping of key: value lines.");
 
@@ -79,8 +80,12 @@ internal static class PackInfoFile
             foreach (var (key, value) in map.Children)
             {
                 var name = (key as YamlScalarNode)?.Value ?? "";
-                if (value is not YamlScalarNode { Value: { } scalar }) return Fail(out error, $"'{name}' in the info file must be text.");
-                fields[name] = scalar;
+                if (value is not YamlScalarNode node) return Fail(out error, $"'{name}' in the info file must be text.");
+
+                // YAML'S NULL — ~, null, or nothing — UNQUOTED is "not given", not the word: "license: ~"
+                // must leave the field to the csproj or a placeholder, never ship "~" as a license.
+                if (node.Style == YamlDotNet.Core.ScalarStyle.Plain && node.Value is null or "" or "~" or "null" or "Null" or "NULL") continue;
+                fields[name] = node.Value ?? "";
             }
 
             error = null;

@@ -13,9 +13,12 @@ internal sealed record ClaimedDownload(string? Rid, string Url, string? Sha256, 
 /// the JSON itself rather than through CatalogEntry, which leaves out what an install never needs
 /// (spawns, platforms) and keeps only this machine's download.
 /// </summary>
+/// <param name="FirstParty">The entry has a <c>directory</c>: a plugin this repository builds.</param>
+/// <param name="FromCatalog">Read from a <c>{"plugins": [...]}</c> catalog rather than as a lone entry.</param>
 internal sealed record CatalogClaims(string Name, string Version, string Kind, int PluginContract,
     IReadOnlyList<string> Platforms, bool Spawns, IReadOnlyList<ClaimedTool> Tools,
-    IReadOnlyList<ClaimedDownload> Downloads, IReadOnlyDictionary<string, string> Text, bool FirstParty)
+    IReadOnlyList<ClaimedDownload> Downloads, IReadOnlyDictionary<string, string> Text, bool FirstParty,
+    bool FromCatalog)
 {
     private static readonly string[] TextFields = ["description", "publisher", "license", "repository"];
 
@@ -26,11 +29,12 @@ internal sealed record CatalogClaims(string Name, string Version, string Kind, i
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            var entries = root.TryGetProperty("plugins", out var plugins) && plugins.ValueKind == JsonValueKind.Array
+            var fromCatalog = root.TryGetProperty("plugins", out var plugins) && plugins.ValueKind == JsonValueKind.Array;
+            var entries = fromCatalog
                 ? plugins.EnumerateArray().ToList()
                 : root.ValueKind == JsonValueKind.Object ? [root] : [];
             error = entries.Count == 0 ? "no entry: expected an entry object or a {\"plugins\": [...]} catalog." : null;
-            return error is null ? entries.Select(Of).ToList() : null;
+            return error is null ? entries.Select(e => Of(e, fromCatalog)).ToList() : null;
         }
         catch (JsonException ex)
         {
@@ -39,7 +43,7 @@ internal sealed record CatalogClaims(string Name, string Version, string Kind, i
         }
     }
 
-    private static CatalogClaims Of(JsonElement e)
+    private static CatalogClaims Of(JsonElement e, bool fromCatalog)
     {
         var compat = e.TryGetProperty("compatibility", out var c) && c.ValueKind == JsonValueKind.Object ? c : default;
         var file = Str(e, "file") ?? "";
@@ -65,7 +69,8 @@ internal sealed record CatalogClaims(string Name, string Version, string Kind, i
                 : [],
             downloads,
             TextFields.ToDictionary(f => f, f => Str(e, f) ?? ""),
-            e.TryGetProperty("directory", out _));
+            e.TryGetProperty("directory", out _),
+            fromCatalog);
     }
 
     // A RELEASE SOURCE NAMES ITS FILE BY "latest", as CatalogReader.DownloadOf reads it; a url source by "url".

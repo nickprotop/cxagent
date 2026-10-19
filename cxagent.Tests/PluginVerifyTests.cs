@@ -148,4 +148,54 @@ public class PluginVerifyTests
         Assert.Equal(1, exit);
         Assert.Contains("renamed.plugin.json", output);
     }
+
+    /// <summary>A single entry carrying "directory" claims to be first-party; only the catalog's own entries are skipped.</summary>
+    [Fact]
+    public async Task ASingleEntryClaimingFirstParty_IsAProblem_NotASkip()
+    {
+        var (exit, output, _) = await Run("verify", await PackedEntry(e => e["directory"] = "harness"));
+
+        Assert.Equal(1, exit);
+        Assert.Contains("directory", output);
+    }
+
+    [Fact]
+    public async Task APlatformsListInAnotherOrder_IsTheSamePlatforms()
+    {
+        var path = await PackedEntry(e =>
+        {
+            var zip = e["source"]!["url"]!.GetValue<string>();
+            var sha = e["source"]!["sha256"]!.GetValue<string>();
+            e.Remove("source");
+            e["kind"] = "managed";
+            e["compatibility"]!["platforms"] = new JsonArray("linux-arm64", "linux-x64");
+            e["sources"] = new JsonObject
+            {
+                ["linux-x64"] = new JsonObject { ["kind"] = "url", ["url"] = zip, ["sha256"] = sha, ["file"] = "cxagent.Tests.PluginFixture.Harness.dll" },
+                ["linux-arm64"] = new JsonObject { ["kind"] = "url", ["url"] = zip, ["sha256"] = sha, ["file"] = "cxagent.Tests.PluginFixture.Harness.dll" },
+            };
+            e["kind"] = "native";
+        });
+
+        var (_, output, _) = await Run("verify", path);
+
+        Assert.DoesNotContain("compatibility.platforms", output);
+    }
+
+    [Fact]
+    public async Task AMalformedFileUrl_IsAProblem_NotACrash()
+    {
+        var (exit, output, _) = await Run("verify", await PackedEntry(e => e["source"]!["url"] = "file://[not a uri"));
+
+        Assert.Equal(1, exit);
+        Assert.Contains("url", output);
+    }
+
+    [Fact]
+    public async Task AFieldThatIsAbsent_IsMissing_NotQuotedEmpty()
+    {
+        var (_, output, _) = await Run("verify", await PackedEntry(e => e.Remove("publisher")));
+
+        Assert.Contains("publisher: is missing", output);
+    }
 }

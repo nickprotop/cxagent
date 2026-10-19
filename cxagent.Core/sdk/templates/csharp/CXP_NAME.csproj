@@ -9,11 +9,12 @@
          folder: without this, the first package you add builds, then fails to load. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <!-- What `cxagent plugin pack` writes into the catalog entry; pack's options and info file
-         override them. Left empty on purpose: pack writes a placeholder for an empty one, and
-         verify refuses it until you say what the plugin does. -->
+         override them. Description and license are left empty on purpose: pack writes a
+         placeholder for an empty one, and verify refuses it until you say what the plugin does
+         and which license you chose (an SPDX id: MIT, Apache-2.0, ...). -->
     <Description></Description>
     <Authors></Authors>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression></PackageLicenseExpression>
     <RepositoryUrl></RepositoryUrl>
   </PropertyGroup>
   <ItemGroup>

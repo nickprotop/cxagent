@@ -42,6 +42,7 @@ internal static partial class PluginNewCommand
         if (dir is "") return Task.FromResult(PluginCli.Fail(stderr, "--dir takes a folder."));
 
         var target = Path.GetFullPath(dir ?? name);
+        if (File.Exists(target)) return Task.FromResult(PluginCli.Fail(stderr, $"'{target}' is a file; --dir takes a folder."));
         if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any())
             return Task.FromResult(PluginCli.Fail(stderr, $"'{target}' is not empty; new never writes over anything."));
 
