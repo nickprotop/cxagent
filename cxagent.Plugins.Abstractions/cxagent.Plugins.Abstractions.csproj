@@ -70,4 +70,14 @@
     <InternalsVisibleTo Include="cxagent.Tests" />
   </ItemGroup>
 
+  <!-- THE PACKAGE VERSION, READABLE AT RUN TIME. AssemblyVersion is frozen at 1.0.0.0, so nothing
+       else in the binary says which contract package it is — and `cxagent plugin new` pins exactly
+       this version in the project it writes. GetPackageVersionForTemplate hands the same number to
+       the dotnet new template package when it is packed. -->
+  <ItemGroup>
+    <AssemblyMetadata Include="PackageVersion" Value="$(PackageVersion)" />
+  </ItemGroup>
+
+  <Target Name="GetPackageVersionForTemplate" Returns="$(PackageVersion)" />
+
 </Project>

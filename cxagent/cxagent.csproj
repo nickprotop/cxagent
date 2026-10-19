@@ -108,4 +108,15 @@
     <ProjectReference Include="../cxagent.Core/sdk/testing/CxAgent.Plugins.Testing.csproj" />
   </ItemGroup>
 
+  <!-- THE PLUGIN TEMPLATE, EMBEDDED for `cxagent plugin new` — the same files the dotnet new template
+       package carries, so the two ways to start a plugin write the same project. ~10 KB. -->
+  <ItemGroup>
+    <EmbeddedResource Include="../cxagent.Core/sdk/templates/csharp/**" Exclude="../cxagent.Core/sdk/templates/csharp/**/bin/**;../cxagent.Core/sdk/templates/csharp/**/obj/**"
+                      LogicalName="template/csharp/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="cxagent.Tests" />
+  </ItemGroup>
+
 </Project>

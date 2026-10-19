@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "cxagent",
+  "classifications": ["cxagent", "Plugin"],
+  "identity": "CxAgent.Plugins.Templates.CSharp",
+  "name": "cxagent plugin",
+  "shortName": "cxagent-plugin",
+  "sourceName": "CXP_NAME",
+  "preferNameDirectory": true,
+  "tags": { "language": "C#", "type": "project" },
+  "symbols": {
+    "namespace": { "type": "derived", "valueSource": "name", "valueTransform": "safe_namespace", "replaces": "CXP_ROOT_NAMESPACE" },
+    "abstractionsVersion": { "type": "parameter", "datatype": "string", "defaultValue": "0.0.0", "replaces": "CXP_ABSTRACTIONS_VERSION" },
+    "testingVersion": { "type": "parameter", "datatype": "string", "defaultValue": "0.0.0", "replaces": "CXP_TESTING_VERSION" }
+  }
+}

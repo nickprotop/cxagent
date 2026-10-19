@@ -1,0 +1,87 @@
+using CxAgent.Cli;
+using CxAgent.Core.Plugins;
+using Xunit;
+
+namespace CxAgent.Tests;
+
+/// <summary><c>cxagent plugin new</c>: a working project from the template, never over anything.</summary>
+public class PluginNewTests
+{
+    private static Task<CliRun.Outcome> Run(params string[] args) => CliRun.Run(args);
+
+    [Fact]
+    public async Task ANewPlugin_IsWritten_WithItsNameFilledIn()
+    {
+        var dir = Path.Combine(Folders.NewFolder("new-"), "weather");
+
+        var (exit, output, _) = await Run("new", "weather", "--lang", "csharp", "--dir", dir);
+
+        Assert.Equal(0, exit);
+        foreach (var file in new[] { "weather.csproj", "weather.plugin.json", "Plugin.cs", "README.md", ".gitignore",
+                                     "tests/weather.Tests.csproj", "tests/PluginTests.cs" })
+            Assert.True(File.Exists(Path.Combine(dir, file)), file);
+        Assert.False(Directory.Exists(Path.Combine(dir, ".template.config")));
+        var every = string.Concat(Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Select(File.ReadAllText));
+        Assert.DoesNotContain("CXP_", every);
+        Assert.Contains("cd ", output);
+    }
+
+    [Fact]
+    public async Task TheSidecarItWrites_Parses_AndGatesPerCall()
+    {
+        var dir = Path.Combine(Folders.NewFolder("new-"), "weather");
+        await Run("new", "weather", "--lang", "csharp", "--dir", dir);
+
+        var parsed = PluginManifest.Parse(File.ReadAllText(Path.Combine(dir, "weather.plugin.json")));
+
+        Assert.True(parsed.IsSuccess, string.Join("; ", parsed.Errors));
+        Assert.Equal(PluginGating.Dynamic, Assert.Single(parsed.Manifest!.Tools).Gated);
+    }
+
+    [Fact]
+    public async Task TheVersionsItPins_AreThisBuildsPackages()
+    {
+        var dir = Path.Combine(Folders.NewFolder("new-"), "weather");
+        await Run("new", "weather", "--lang", "csharp", "--dir", dir);
+
+        var values = PluginTemplate.ValuesForTest("weather");
+        Assert.Contains($"Version=\"{values.AbstractionsVersion}\"", File.ReadAllText(Path.Combine(dir, "weather.csproj")));
+        Assert.Contains($"Version=\"{values.TestingVersion}\"", File.ReadAllText(Path.Combine(dir, "tests", "weather.Tests.csproj")));
+        Assert.Matches(@"^\d+\.\d+\.\d+", values.AbstractionsVersion);
+    }
+
+    [Fact]
+    public async Task ANonEmptyFolder_IsRefused_AndUntouched()
+    {
+        var dir = Folders.NewFolder("new-");
+        File.WriteAllText(Path.Combine(dir, "mine.txt"), "keep me");
+
+        var (exit, _, err) = await Run("new", "weather", "--lang", "csharp", "--dir", dir);
+
+        Assert.Equal(2, exit);
+        Assert.Contains("not empty", err);
+        Assert.Equal(["mine.txt"], Directory.GetFiles(dir).Select(Path.GetFileName));
+    }
+
+    [Theory]
+    [InlineData("My Plugin")]
+    [InlineData("Weather")]
+    [InlineData("1weather")]
+    [InlineData("")]
+    public async Task AnInvalidName_IsRefused(string name)
+    {
+        var (exit, _, _) = await Run("new", name, "--lang", "csharp", "--dir", Folders.NewFolder("new-"));
+        Assert.Equal(2, exit);
+    }
+
+    [Fact] public async Task AnUnknownLanguage_IsUsage() => Assert.Equal(2, (await Run("new", "weather", "--lang", "cobol")).Exit);
+
+    /// <summary>C arrives with the C SDK; until then it is named, not silently ignored.</summary>
+    [Fact]
+    public async Task C_IsNotYetAvailable_AndSaysSo()
+    {
+        var (exit, _, err) = await Run("new", "weather", "--lang", "c", "--dir", Folders.NewFolder("new-"));
+        Assert.Equal(2, exit);
+        Assert.Contains("not available yet", err);
+    }
+}

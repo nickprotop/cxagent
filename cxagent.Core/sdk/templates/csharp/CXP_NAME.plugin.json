@@ -1,0 +1,16 @@
+{
+  "pluginContract": 4,
+  "kind": "managed",
+  "name": "CXP_NAME",
+  "version": "1.0.0",
+  "spawns": false,
+  "instructions": "CXP_NAME_greet greets someone by name.",
+  "tools": [
+    {
+      "name": "CXP_NAME_greet",
+      "description": "Greets someone by name. Asks before greeting anyone called admin.",
+      "inputSchema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] },
+      "gated": "dynamic"
+    }
+  ]
+}

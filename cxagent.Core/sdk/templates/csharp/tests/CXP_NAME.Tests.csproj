@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="CxAgent.Plugins.Testing" Version="CXP_TESTING_VERSION" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- BUILT, NOT REFERENCED: the plugin is tested as a user installs it, from its own output folder. -->
+    <ProjectReference Include="../CXP_NAME.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

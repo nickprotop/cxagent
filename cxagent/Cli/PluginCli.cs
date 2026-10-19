@@ -14,7 +14,8 @@ namespace CxAgent.Cli;
 public static class PluginCli
 {
     private const string Usage = """
-        usage: cxagent plugin check <folder> [--json]
+        usage: cxagent plugin new <name> --lang csharp [--dir <folder>]
+               cxagent plugin check <folder> [--json]
                cxagent plugin call <folder> <tool> ['<json>'] [options]
                cxagent plugin call <folder> --command <name> [arguments…] [--json]
 
@@ -40,6 +41,7 @@ public static class PluginCli
         {
             "check" => await Check(args[1..], stdout, stderr, ct).ConfigureAwait(false),
             "call" => await PluginCallCommand.RunAsync(args[1..], stdout, stderr, ct).ConfigureAwait(false),
+            "new" => await PluginNewCommand.RunAsync(args[1..], stdout, stderr).ConfigureAwait(false),
             _ => Fail(stderr, $"unknown command '{args[0]}'."),
         };
     }
