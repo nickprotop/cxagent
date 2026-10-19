@@ -12,7 +12,7 @@
     "is fetched from cxagent's own release; anything else says { \"kind\": \"url\", \"url\": \"...\" }",
     "and names where it actually lives. For a plugin hosted elsewhere the fields below stop being a",
     "formality: nobody needs telling who wrote a plugin that ships beside the binary, and everybody",
-    "needs telling for one that does not. A worked entry for each shape is in RELEASING.md.",
+    "needs telling for one that does not. A worked entry for each shape is in cxagent.Core/sdk/docs/publishing.md.",
     "",
     "WHAT THE HASH IS AND IS NOT. `sha256` is over the downloaded zip, and the installer refuses a",
     "download that does not match it, or an entry that has none. It proves the bytes arrived",

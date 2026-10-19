@@ -99,8 +99,9 @@ only what cxagent itself releases and supports.
 
 ## Adding one to this catalog
 
-Maintainer work, and its own page: **[releasing a plugin →](RELEASING.md)** — the directory, the
-catalog entry, the release and site builds, and what deliberately does not happen.
+Anyone's plugin is added through **[publishing a plugin →](../cxagent.Core/sdk/docs/publishing.md)** —
+pack, upload, verify, submit. One built in this repository has its own steps there, under
+[first-party plugins](../cxagent.Core/sdk/docs/publishing.md#first-party-plugins).
 
 *Writing one? Start at [the SDK](../cxagent.Core/sdk/README.md) — the tutorials, the contract, the
 command line, testing and publishing.*

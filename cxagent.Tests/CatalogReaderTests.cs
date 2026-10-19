@@ -186,7 +186,7 @@ public class CatalogReaderTests : IDisposable
     }
 
     /// <summary>
-    /// A `url` SOURCE IS A DOWNLOAD TOO — the shape RELEASING.md gives a plugin hosted outside this
+    /// A `url` SOURCE IS A DOWNLOAD TOO — the shape sdk/docs/publishing.md gives a plugin hosted outside this
     /// project. It names its file with `url` rather than `latest`, and reading only `latest` left it
     /// with no download at all, so it could be listed and never installed.
     /// </summary>
@@ -223,7 +223,7 @@ public class CatalogReaderTests : IDisposable
 
     /// <summary>
     /// A NATIVE ENTRY NAMES ITS FILE PER PLATFORM — a .so on Linux, a .dylib on macOS — as the
-    /// RELEASING.md example does, with no top-level "file". The entry's file is then this machine's,
+    /// sdk/docs/publishing.md example does, with no top-level "file". The entry's file is then this machine's,
     /// so installing, configuring and loading it all name the library that actually arrived.
     /// </summary>
     [Fact]

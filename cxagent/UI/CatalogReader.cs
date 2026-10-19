@@ -178,7 +178,7 @@ public sealed class CatalogReader
 
     /// <summary>
     /// Where a source's file is: <c>latest</c> for a first-party <c>release</c> source, <c>url</c> for
-    /// one hosted elsewhere — the two shapes RELEASING.md documents. Reading only <c>latest</c> left a
+    /// one hosted elsewhere — the two shapes sdk/docs/publishing.md documents. Reading only <c>latest</c> left a
     /// hosted plugin listed with no download, so it could never be installed.
     /// </summary>
     private static string? DownloadOf(JsonElement source) =>

@@ -59,7 +59,7 @@ cxagent plugin verify weather.catalog.json       # what a user's install would g
   Anything left unset is written as `<fill in: …>`, and `verify` refuses it until you do.
 - **`verify`** takes the entry's zips from `https://` or, before you upload, from a local path.
 
-To list it in cxagent's catalog, see [RELEASING.md](../../../plugins/RELEASING.md). C plugins get
+To list it in cxagent's catalog, see [publishing.md](publishing.md). C plugins get
 the same start with the C SDK.
 
 ## Quick start (C)

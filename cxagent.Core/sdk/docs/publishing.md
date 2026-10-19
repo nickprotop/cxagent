@@ -81,8 +81,147 @@ plugin, one `sources` entry per platform) with `"kind": "url"` and a `"url"`, pl
 `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64` and `win-arm64`, and every value of the
 type pack writes.
 
+**A native plugin is per-platform, and the entry has to say which.** A managed plugin is portable
+MSIL — one build runs everywhere cxagent does, so it says `platforms: ["any"]` and has one `source`.
+A native plugin is a library per platform: a `.so` does not load on Windows, and you may ship
+`linux-x64` and nothing else. Its entry names the platforms it actually has and keys its downloads by
+the same names under `sources`, each with its own `sha256` and, where the name differs per platform,
+its own `file`. The installer takes this machine's build, and says "not available for this machine"
+when there is none rather than downloading a library that cannot load. `publisher`, `license` and
+`repository` matter for any plugin cxagent does not build itself: they are how a user knows who wrote
+it.
+
+### Two worked entries
+
+Neither is real. Copy the one whose shape matches what you are publishing; `pack` writes the same
+shape for you.
+
+**Hosted elsewhere** — a fixed URL, and its own `sha256` because nothing here builds it:
+
+```json
+{
+  "name": "lsp-rust",
+  "displayName": "Rust Language Server",
+  "version": "0.3.1",
+  "description": "The same three operations for Rust, backed by rust-analyzer.",
+  "publisher": "someone-else",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/someone-else/cxagent-lsp-rust",
+  "sourceUrl": "https://github.com/someone-else/cxagent-lsp-rust",
+  "readme": "https://github.com/someone-else/cxagent-lsp-rust#readme",
+  "source": {
+    "kind": "url",
+    "url": "https://github.com/someone-else/cxagent-lsp-rust/releases/download/v0.3.1/lsp-rust.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "file": "lsp-rust.dll",
+  "kind": "managed",
+  "compatibility": {
+    "pluginContract": 4,
+    "platforms": [
+      "any"
+    ]
+  },
+  "spawns": true,
+  "tools": [
+    { "name": "rust_definition", "gated": false },
+    { "name": "rust_references", "gated": false },
+    { "name": "rust_diagnostics", "gated": false }
+  ],
+  "requires": {
+    "description": "rust-analyzer on PATH.",
+    "default": "rust-analyzer",
+    "install": "rustup component add rust-analyzer"
+  }
+}
+```
+
+**Native, and per-platform** — one `source` per RID, named by the same RIDs `platforms` lists:
+
+```json
+{
+  "name": "ripgrep-tools",
+  "displayName": "ripgrep search tools",
+  "version": "0.2.0",
+  "description": "A native plugin, shown here because an ABI plugin is per-platform and the managed example above cannot show that.",
+  "publisher": "someone-else",
+  "license": "MIT",
+  "repository": "https://github.com/someone-else/cxagent-ripgrep",
+  "kind": "abi",
+  "compatibility": {
+    "pluginContract": 4,
+    "platforms": [
+      "linux-x64",
+      "osx-arm64"
+    ]
+  },
+  "sources": {
+    "linux-x64": {
+      "kind": "url",
+      "url": "https://github.com/someone-else/cxagent-ripgrep/releases/download/v0.2.0/ripgrep-tools-linux-x64.zip",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "file": "libripgrep_tools.so"
+    },
+    "osx-arm64": {
+      "kind": "url",
+      "url": "https://github.com/someone-else/cxagent-ripgrep/releases/download/v0.2.0/ripgrep-tools-osx-arm64.zip",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "file": "libripgrep_tools.dylib"
+    }
+  },
+  "spawns": false,
+  "tools": [
+    { "name": "rg_search", "gated": false }
+  ]
+}
+```
+
 ## What review checks
 
 Whether the entry is truthful and useful: that the plugin exists, its entry matches its sidecar, and
 its description is honest. It is not a security review. cxagent asks before loading any plugin,
 showing a hash of everything it would load, and that is the boundary a user relies on.
+
+## First-party plugins
+
+*For maintainers: a plugin that lives in this repository is built and released with cxagent itself, so
+it skips the upload and the submission above, and carries the same expectations as the app.*
+
+**1. The directory.** `plugins/<name>/`, with the project, its sidecar, and a `README.md` covering
+what the plugin does, anything the user must install separately, and every setting. Follow
+[csharp-lsp](../../../plugins/csharp-lsp/README.md).
+
+**2. The catalog entry**, in [`plugins.json`](../../../plugins/plugins.json). `name`, `version`,
+`spawns`, `tools` and `pluginContract` must match the plugin's own sidecar — `PluginCatalogTests` fails
+the build if they drift, because the plugin manager shows what the catalog says without loading the
+plugin to check. `tools` carries each tool's `gated` value as well as its name, so the manager can say
+which tools ask before acting.
+
+A plugin released here uses `"kind": "release"` and carries `latest`, GitHub's always-current alias,
+which resolves to the newest release carrying the asset. Commit its `sha256` as `null`: the site
+build stamps the hash of the zip the release actually carries into the published catalog, and
+refuses to publish without it. The installer checks every download against that hash.
+
+**3. The release build**, in `.github/workflows/release.yml`. A managed plugin with no
+`RuntimeIdentifier` is portable MSIL, so it needs ONE build, not a matrix entry — six RIDs would
+upload six identical files. Build rather than publish (`Private="false"` keeps `CxAgent.Core` out of
+the output, and a publish would pull in its whole dependency tree), then zip the DLL with its
+sidecar and its `README.md`. The DLL and sidecar must ship together: the sidecar is read before the
+assembly is loaded, so a zip missing it produces a plugin that cannot load and cannot be described.
+The README ships whenever present, so the plugin manager can render a plugin's own documentation
+from disk.
+
+**4. The site build**, in `.github/workflows/pages.yml`, names each first-party plugin twice: once
+to download its zip from the release, once to stamp its hash into the published catalog. Skip it and
+the catalog build stops with "would publish with a null sha256" — loud, but a plugin added to
+`release.yml` alone does not reach the catalog.
+
+**5. Nothing in the installer, and nothing in config.** `install.sh` installs cxagent and no plugin:
+a plugin reaches a machine through the plugin manager, which reads the catalog, verifies the
+checksum and unpacks — one route, one set of behaviours to get right. And no config entry anywhere:
+an installer that enabled a plugin would be enabling code the user was never asked about. cxagent
+reports it as present-but-unconfigured, and they decide.
+
+> The plugin's name appears in `release.yml` and `pages.yml` by hand, in about six places. That is
+> fine for a catalog this size, and is the first thing worth generating from `plugins.json` if it
+> grows.
