@@ -66,9 +66,12 @@ static cxp_result count(const cxp_call *call) {
     while ((c = fgetc(in)) != EOF) {
         read++;
         if (c == '\n') {
-            if (line_has_text || count_blank) lines++;
+            // STREAMED WHEN THE COUNT MOVES, so a blank line after the thousandth does not repeat it.
+            if (line_has_text || count_blank) {
+                lines++;
+                if (lines % 1000 == 0) cxp_stream(call, cxp_format("%ld lines… ", lines));
+            }
             line_has_text = 0;
-            if (lines > 0 && lines % 1000 == 0) cxp_stream(call, cxp_format("%ld lines… ", lines));
         } else if (!isspace(c)) {
             line_has_text = 1;
         }

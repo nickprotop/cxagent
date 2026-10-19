@@ -228,9 +228,11 @@ void cxp_stream_any(const char *call_id, const char *text) {
 
 /* ---- the client: goals queued here, handed out one per poll ---- */
 
+#ifdef CXP_CLIENT
 typedef struct goal { struct goal *next; char *text; } goal;
 static cxp_lock g_goal_lock = CXP_LOCK_INIT;
 static goal *g_goals, *g_goals_tail;
+#endif
 
 int cxp_submit(const char *text) {
 #ifdef CXP_CLIENT

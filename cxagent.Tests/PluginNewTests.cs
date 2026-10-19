@@ -237,6 +237,23 @@ public class PluginNewCTests
         Assert.True(call.StoppedAtGate);
     }
 
+    /// <summary>The running count is streamed once per thousand lines — not again for each blank line that follows one.</summary>
+    [Fact]
+    public async Task TheRunningCount_IsStreamedOncePerThousand()
+    {
+        if (!OnPath("cmake")) return;
+        var dir = await NewProject("wordcount");
+        Cmake(dir, "-B", "build");
+        Cmake(dir, "--build", "build");
+        File.WriteAllText(Path.Combine(dir, "lines.txt"),
+            string.Concat(Enumerable.Repeat("word\n", 1000)) + "\n\n\n" + string.Concat(Enumerable.Repeat("word\n", 1000)));
+        await using var plugin = await PluginHarness.LoadAsync(Path.Combine(dir, "build"), new HarnessOptions { WorkingDirectory = dir });
+
+        var call = await plugin.CallAsync("wordcount_count", new { file = "lines.txt" });
+
+        Assert.Equal("1000 lines… 2000 lines… ", call.Streamed);
+    }
+
     /// <summary>A sidecar cxp.cmake cannot read fails the configure, naming it — never a library that describes nothing.</summary>
     [Fact]
     public async Task ASidecarCMakeCannotRead_FailsTheConfigure()
