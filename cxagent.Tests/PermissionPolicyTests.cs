@@ -1041,4 +1041,59 @@ public class PermissionPolicyTests
             Assert.True(requests.Count > 0, $"file action '{action}' raises no permission request, so it runs unasked.");
         }
     }
+
+    /// <summary>A trusted root holding inside.txt and sub/, with outside.txt beside it — outside the folder.</summary>
+    private static string ShellScene()
+    {
+        var root = MakeTempDir();
+        File.WriteAllText(Path.Combine(root, "inside.txt"), "x");
+        Directory.CreateDirectory(Path.Combine(root, "sub"));
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(root))!, "outside.txt"), "x");
+        return root;
+    }
+
+    private static PermissionRequest ShellRead(string command, string? workingDir, string root, PermissionPolicy policy) =>
+        PermissionPolicy.RequestsFor("shell", workingDir is null
+            ? Params(("command", command))
+            : Params(("command", command), ("working_dir", (object?)workingDir)), root).Single() with { Policy = policy };
+
+    /// <summary>
+    /// A READ THAT LEAVES THE FOLDER ASKS, however it is spelled. A relative path is resolved from where
+    /// the command runs — not from the process's own folder, where it is simply not found — and a
+    /// working_dir outside the folder is a cd target like any other.
+    /// </summary>
+    [Theory]
+    [InlineData("cat ../outside.txt", null)]
+    [InlineData("cat outside.txt", "..")]
+    [InlineData("ls", "/")]
+    public void AShellRead_LeavingTheFolder_Asks(string command, string? workingDir)
+    {
+        var root = ShellScene();
+        var policy = TrustedPolicy(root, EditMode.AcceptEdits);
+        Assert.False(policy.IsSilentlyAllowed(ShellRead(command, workingDir, root, policy)));
+    }
+
+    [Theory]
+    [InlineData("cat inside.txt", null)]
+    [InlineData("cat ./sub/../inside.txt", null)]
+    [InlineData("ls", "sub")]
+    public void AShellRead_InsideTheFolder_StaysSilent(string command, string? workingDir)
+    {
+        var root = ShellScene();
+        var policy = TrustedPolicy(root, EditMode.AcceptEdits);
+        Assert.True(policy.IsSilentlyAllowed(ShellRead(command, workingDir, root, policy)));
+    }
+
+    /// <summary>A stored `cat*` is a grant for reading this project, not a relative path out of it.</summary>
+    [Fact]
+    public void AStoredRule_CannotCarryARelativeReadOutside()
+    {
+        var root = ShellScene();
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+        rules.Add(root, PermissionKind.Shell, "cat*");
+        var policy = new PermissionPolicy(root, rules, EditMode.AcceptEdits);
+        Assert.True(policy.IsSilentlyAllowed(ShellRead("cat inside.txt", null, root, policy)));
+        Assert.False(policy.IsSilentlyAllowed(ShellRead("cat ../outside.txt", null, root, policy)));
+    }
 }

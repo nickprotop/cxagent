@@ -276,6 +276,7 @@ public class PermissionPolicy
             // different answer than the executor does about the same JSON — see ShellArguments for
             // why a disagreement is a silent bypass rather than a cosmetic split.
             Unattended = Jobs.Builtin.ShellArguments.IsBackground(parameters),
+            ShellWorkingDir = string.IsNullOrEmpty(workingDir) ? null : workingDir,
         };
     }
 
@@ -484,7 +485,8 @@ public class PermissionPolicy
             var subjects = CommandSubjects.Of(request.What);
             if (subjects.FullyExamined
                 && (subjects.ChangesTo is null || IsInsideBoundary(subjects.ChangesTo))
-                && subjects.Paths.All(IsInsideBoundary))
+                && subjects.Paths.All(IsInsideBoundary)
+                && ShellStaysInside(request))
                 return true;
         }
 
@@ -520,6 +522,7 @@ public class PermissionPolicy
         {
             var subjects = CommandSubjects.Of(request.What);
             if (!subjects.FullyExamined || !subjects.Paths.All(IsInsideBoundary)) return false;
+            if (!ShellStaysInside(request)) return false;
         }
 
         return _rules.Matches(_root, request.Kind, subject);
@@ -823,7 +826,23 @@ public class PermissionPolicy
         // against an empty list and approved. This is the SECOND vacuous pass found in this predicate
         // and it is worth naming as such, because the first one's fix did not prevent it: guarding
         // the command's STRUCTURE says nothing about the SHAPE of the paths in it.
-        return RelativeSubjectsConfined(command);
+        return ShellStaysInside(request);
+    }
+
+    /// <summary>
+    /// The folder a shell command runs in is inside the boundary, and so is every relative path in it,
+    /// resolved FROM that folder.
+    ///
+    /// <para>BOTH PASSES THAT LET A COMMAND RUN UNASKED NEED IT, as the auto-review confinement does. The
+    /// read-only pass vouched for the verb and checked absolute paths; a stored rule matched the text.
+    /// Neither looked at where a relative path lands or where the command runs, so in a trusted folder
+    /// <c>cat ../../secret</c> and <c>ls</c> with <c>working_dir: "/"</c> both read outside it unasked.</para>
+    /// </summary>
+    private bool ShellStaysInside(PermissionRequest request)
+    {
+        var folder = request.ShellWorkingDir is { Length: > 0 } given ? TryResolve(given, _root) : _root;
+        if (folder is null || !IsInsideBoundary(folder)) return false;   // unresolvable: fail toward asking
+        return RelativeSubjectsConfined(request.What, folder);
     }
 
     /// <summary>
@@ -868,7 +887,7 @@ public class PermissionPolicy
     /// without a verb's help. A token carrying a separator, or consisting of <c>..</c>, is asserting
     /// a location, and an assertion about a location is exactly what a boundary is for.</para>
     /// </summary>
-    private bool RelativeSubjectsConfined(string command)
+    private bool RelativeSubjectsConfined(string command, string from)
     {
         foreach (var segment in command.Split(SegmentSeparators, StringSplitOptions.RemoveEmptyEntries))
         {
@@ -894,7 +913,7 @@ public class PermissionPolicy
 
                 if (!IsPathReference(text)) continue;
 
-                if (!IsInsideBoundary(text)) return false;
+                if (!IsInsideBoundary(Path.Combine(from, text))) return false;
             }
         }
 

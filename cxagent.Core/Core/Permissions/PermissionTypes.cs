@@ -78,6 +78,13 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     public string? RequesterRunsOn { get; init; }
 
     /// <summary>
+    /// For a shell request, the <c>working_dir</c> the command was asked to run in, as given — null for
+    /// the agent's own folder. JUDGED, not only shown: a command reads relative to where it runs, so a
+    /// working_dir outside the folder is a <c>cd</c> there, and a relative path is resolved from it.
+    /// </summary>
+    public string? ShellWorkingDir { get; init; }
+
+    /// <summary>
     /// The asking agent's id — the key a front end looks the agent up by, beside <see cref="Requester"/>, which is
     /// a label to show.
     ///
