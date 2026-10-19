@@ -495,10 +495,11 @@ jobs:
       - name: Test
         run: dotnet test cxagent.Tests/cxagent.Tests.csproj --configuration Release
 
-      # FOUR PACKAGES, ONE JOB. CxAgent.Core is the library; cxagent is the same app the binaries
+      # FIVE PACKAGES, ONE JOB. CxAgent.Core is the library; cxagent is the same app the binaries
       # above carry, packaged as `dotnet tool install -g cxagent` for developers who already have
       # the SDK; CxAgent.Plugins.Testing is the plugin harness, with this release's plugin host
-      # inside it. They share this job because they share a version, a tag and one trusted-publishing
+      # inside it, and CxAgent.Plugins.Templates the dotnet new template. They share this job
+      # because they share a version, a tag and one trusted-publishing
       # identity — a second job would be a second place for those to drift apart.
       #
       # CxAgent.Plugins.Abstractions IS THE ONE THAT DOES NOT TAKE THE TAG. It is the plugin
@@ -537,6 +538,14 @@ jobs:
             -p:ContinuousIntegrationBuild=true \
             --output ./nupkg
 
+          # THE dotnet new TEMPLATE — the files `cxagent plugin new` embeds — pinning this release's
+          # test package and the contract package it carries.
+          dotnet pack cxagent.Core/sdk/templates/CxAgent.Plugins.Templates.csproj \
+            --configuration Release \
+            -p:Version=${{ steps.version.outputs.VERSION }} \
+            -p:ContinuousIntegrationBuild=true \
+            --output ./nupkg
+
       # WHAT IS ACTUALLY IN IT, in the log. The README and docs/ are packed by an ItemGroup that a
       # future edit could silently drop, and a package whose links all 404 looks fine from here.
       # ONE unzip PER PACKAGE. `unzip -l ./nupkg/*.nupkg` lists only the FIRST archive and says
@@ -552,16 +561,18 @@ jobs:
       # ONE-TIME SETUP ON NUGET.ORG, and this job fails until it is done:
       #   1. nuget.org → account → Trusted Publishing → add a policy for
       #      owner `nickprotop`, repository `nickprotop/cxagent`, workflow `release.yml`.
-      #      A GLOB IN THE PACKAGE PATTERN (`cxagent*`) covers all four packages this job pushes —
-      #      CxAgent.Core, CxAgent.Plugins.Abstractions, CxAgent.Plugins.Testing and cxagent, the
-      #      dotnet tool — so one policy is enough. Without a glob a
+      #      A GLOB IN THE PACKAGE PATTERN (`cxagent*`) covers all five packages this job pushes —
+      #      CxAgent.Core, CxAgent.Plugins.Abstractions, CxAgent.Plugins.Testing,
+      #      CxAgent.Plugins.Templates and cxagent, the dotnet tool — so one policy is enough.
+      #      Without a glob a
       #      policy is per-package, and a missing one fails that package's push alone, after the
       #      other has landed; --skip-duplicate makes the re-run safe either way.
       #   2. `gh variable set NUGET_USER --repo nickprotop/cxagent --body "<nuget.org user>"`
       #      (done: nickprotop). gh can set the variable; it cannot create the policy in step 1,
       #      which lives on nuget.org and has no CLI.
-      # A PACKAGE ID NOT YET ON nuget.org — CxAgent.Core once, CxAgent.Plugins.Testing on the first
-      # release that packs it — may be refused by the policy until it exists: push that package once
+      # A PACKAGE ID NOT YET ON nuget.org — CxAgent.Core once, CxAgent.Plugins.Testing and
+      # CxAgent.Plugins.Templates on the first release that packs them — may be refused by the
+      # policy until it exists: push that package once
       # by hand with a temporary API key to claim the ID, then the policy covers every release after.
       # The others still land on that run; --skip-duplicate makes the re-run safe.
       # A policy is bound to the repository and workflow file, so a fork cannot publish and a
@@ -572,7 +583,7 @@ jobs:
         with:
           user: ${{ vars.NUGET_USER }}
 
-      # THE GLOB COVERS ALL FOUR PACKAGES. --skip-duplicate makes a re-run after a partial failure safe:
+      # THE GLOB COVERS ALL FIVE PACKAGES. --skip-duplicate makes a re-run after a partial failure safe:
       # whichever package already landed is skipped rather than failing the job.
       - name: Push
         run: |

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageType>Template</PackageType>
+    <PackageId>CxAgent.Plugins.Templates</PackageId>
+    <Title>cxagent plugin templates</Title>
+    <Authors>Nikolaos Protopapas</Authors>
+    <Description>dotnet new cxagent-plugin — a cxagent plugin with its sidecar, a per-call gate and a test through CxAgent.Plugins.Testing.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <TargetFramework>net10.0</TargetFramework>
+    <IncludeContentInPack>true</IncludeContentInPack>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <ContentTargetFolders>content</ContentTargetFolders>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+  </PropertyGroup>
+
+  <!-- THE VERSIONS THE GENERATED PROJECT PINS are this release's: the contract package's own number,
+       read from its project, and this package's version for the test package — the two are released
+       together. Stamped into a copy of template.json under obj/, so the source keeps 0.0.0 and stays
+       the file the tests and `cxagent plugin new` read. -->
+  <Target Name="StampTemplateVersions" BeforeTargets="_GetPackageFiles">
+    <MSBuild Projects="../../../cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj"
+             Targets="GetPackageVersionForTemplate">
+      <Output TaskParameter="TargetOutputs" PropertyName="AbstractionsPackageVersion" />
+    </MSBuild>
+    <PropertyGroup>
+      <TemplateJsonSource>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)csharp/.template.config/template.json'))</TemplateJsonSource>
+      <TemplateJsonStamped>$(TemplateJsonSource.Replace('"defaultValue": "0.0.0", "replaces": "CXP_ABSTRACTIONS_VERSION"', '"defaultValue": "$(AbstractionsPackageVersion)", "replaces": "CXP_ABSTRACTIONS_VERSION"').Replace('"defaultValue": "0.0.0", "replaces": "CXP_TESTING_VERSION"', '"defaultValue": "$(PackageVersion)", "replaces": "CXP_TESTING_VERSION"'))</TemplateJsonStamped>
+    </PropertyGroup>
+    <Error Condition="$(TemplateJsonStamped.Contains('0.0.0'))" Text="template.json still holds 0.0.0 after stamping; its defaultValue lines no longer match the pattern here." />
+    <WriteLinesToFile File="$(IntermediateOutputPath)template.json" Lines="$([MSBuild]::Escape($(TemplateJsonStamped)))" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Content Include="csharp/**" Exclude="csharp/.template.config/template.json;csharp/**/bin/**;csharp/**/obj/**"
+               PackagePath="content/csharp/%(RecursiveDir)%(Filename)%(Extension)" />
+      <Content Include="$(IntermediateOutputPath)template.json" PackagePath="content/csharp/.template.config/template.json" />
+    </ItemGroup>
+  </Target>
+</Project>
