@@ -31,5 +31,5 @@ public async Task SearchAsksAndAnswers()
 `PluginDir` is a plugin folder: its `<name>.plugin.json` and the library beside it, as a user
 installs it.
 
-- [Testing a plugin](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/docs/plugin-testing.md): every option of the harness and the CLI
+- [Testing a plugin](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/testing.md): every option of the harness and the CLI
 - [The plugin SDK](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/README.md): tutorials, in C# and in C

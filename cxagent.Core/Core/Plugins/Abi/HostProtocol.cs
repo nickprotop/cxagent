@@ -6,7 +6,7 @@ namespace CxAgent.Core.Plugins.Abi;
 /// The wire protocol between <c>cxagent-plugin-host</c> and <see cref="AbiPlugin"/>, its managed
 /// parent — NEWLINE-FRAMED JSON on stdin/stdout, one line in, one line out, the same shape
 /// <see cref="CxAgent.Core.Mcp.McpClient"/> already uses to talk to an MCP server over a pipe. This
-/// is a SEPARATE vocabulary from the ABI JSON in <c>Abi/README.md</c> — that JSON is what the host
+/// is a SEPARATE vocabulary from the ABI JSON in <c>sdk/c/ABI.md</c> — that JSON is what the host
 /// process exchanges with the native library it loads; this one is what it exchanges with its own
 /// parent, and exists because the parent needs to say WHICH of the four ABI calls to make and
 /// attach a request id, neither of which the ABI envelope itself carries.
@@ -156,7 +156,7 @@ public sealed record HostEvent(
 /// version handshake passed, and <c>cxagent_plugin_describe</c> returned a manifest that parsed.
 /// <see cref="Manifest"/> is the SAME <see cref="PluginManifest"/> a managed plugin's <c>Load</c>
 /// returns, so <see cref="AbiPlugin"/> can hand it to <c>PluginRegistry</c> unchanged — see
-/// Abi/README.md, "describe": "a real plugin's manifest looks identical regardless of which loader
+/// sdk/c/ABI.md, "describe": "a real plugin's manifest looks identical regardless of which loader
 /// carries it."
 /// </summary>
 /// <param name="Ready">Always true on this record.</param>
@@ -171,7 +171,7 @@ public sealed record HostReady(
 /// <summary>
 /// Written INSTEAD OF <see cref="HostReady"/> when the library could not be loaded, the ABI version
 /// handshake failed, or <c>cxagent_plugin_describe</c> returned something <c>AbiCodec.ParseManifest</c>
-/// refused — every case in cxagent_plugin.h and Abi/README.md that must fail CLEANLY rather than
+/// refused — every case in cxagent_plugin.h and sdk/c/ABI.md that must fail CLEANLY rather than
 /// guess at an unfamiliar shape. The host process exits immediately after writing this line; there
 /// is nothing left for it to serve requests with.
 /// </summary>

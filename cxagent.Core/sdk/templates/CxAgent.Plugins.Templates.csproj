@@ -19,6 +19,11 @@
   <!-- EnableDefaultItems is off, so the package's README is listed by hand. -->
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="/" />
+
+    <!-- THE AUTHOR GUIDES SHIP WITH THE TEMPLATES, the package an author installs to run
+         `plugin new` — the guides are about what that command starts. -->
+    <None Include="../docs/*.md" Pack="true" PackagePath="docs/" />
+    <None Include="../c/ABI.md" Pack="true" PackagePath="docs/" />
   </ItemGroup>
 
   <!-- THE VERSIONS THE GENERATED PROJECT PINS are this release's: the contract package's own number,

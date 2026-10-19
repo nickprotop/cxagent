@@ -4,9 +4,9 @@ using System.Text.Json.Serialization;
 namespace CxAgent.Core.Plugins.Abi;
 
 /// <summary>
-/// The JSON <c>cxagent_plugin_describe</c> returns — see Abi/README.md, "describe". Field-for-field
+/// The JSON <c>cxagent_plugin_describe</c> returns — see sdk/c/ABI.md, "describe". Field-for-field
 /// <see cref="PluginManifest"/> plus the redundant <see cref="AbiVersion"/> the wire format alone
-/// needs (Abi/README.md explains why the version is checked twice).
+/// needs (sdk/c/ABI.md explains why the version is checked twice).
 /// </summary>
 public sealed record AbiManifest(
     // "pluginContract", THE SAME NAME A MANAGED SIDECAR USES. One contract covers both loaders, so
@@ -50,7 +50,7 @@ public sealed record AbiCommandArgument(
     [property: JsonPropertyName("summary")] string Summary);
 
 /// <summary>
-/// The JSON <c>cxagent_plugin_start</c> receives — see Abi/README.md, "context". Deliberately
+/// The JSON <c>cxagent_plugin_start</c> receives — see sdk/c/ABI.md, "context". Deliberately
 /// smaller than <see cref="IPluginContext"/>: no transcript, no logger channel, no lifetime token,
 /// no child-process registration inbound field — see the README for where each of those instead
 /// lives (host-owned stderr, host-side abandonment, an outbound message).
@@ -64,7 +64,7 @@ internal sealed record AbiPluginContext(
     [property: JsonPropertyName("hostContract")] int HostContract = 0);
 
 /// <summary>
-/// One call as cxagent sends it to the plugin host — see Abi/README.md, "call". The host hands
+/// One call as cxagent sends it to the plugin host — see sdk/c/ABI.md, "call". The host hands
 /// <c>cxagent_plugin_invoke</c> and <c>cxagent_plugin_gate</c> only <see cref="Arguments"/>, which is
 /// always a JSON object, never null and never omitted; an argument-less tool receives <c>{}</c>.
 /// </summary>
@@ -73,7 +73,7 @@ internal sealed record AbiInvokeCall(
     [property: JsonPropertyName("arguments")] JsonElement Arguments);
 
 /// <summary>
-/// The JSON <c>cxagent_plugin_command</c> returns — see Abi/README.md, "command". Field-for-field
+/// The JSON <c>cxagent_plugin_command</c> returns — see sdk/c/ABI.md, "command". Field-for-field
 /// <see cref="CommandResult"/>, with <see cref="Status"/> spelled as the lowercase wire form of
 /// <see cref="PluginCommandOutcome"/> rather than the enum's own name, matching how <c>gated</c>
 /// already crosses the wire as a string a native author writes by hand rather than a numeric enum
@@ -87,7 +87,7 @@ public sealed record AbiCommandResult(
 /// The JSON result of one call to a <see cref="Models.JobResult"/>-shaped operation — the payload
 /// carried inside <see cref="AbiResultEnvelope.Result"/> on a successful <c>invoke</c>. Field-for-field
 /// <see cref="Models.JobResult"/>, with <see cref="Models.JobResult.Duration"/> carried as
-/// <see cref="DurationMs"/> — see Abi/README.md, "the result envelope", for why milliseconds.
+/// <see cref="DurationMs"/> — see sdk/c/ABI.md, "the result envelope", for why milliseconds.
 /// </summary>
 public sealed record AbiJobResult(
     [property: JsonPropertyName("success")] bool Success,
@@ -100,7 +100,7 @@ public sealed record AbiJobResult(
     [property: JsonPropertyName("durationMs")] long DurationMs);
 
 /// <summary>
-/// The one envelope shape shared by <c>start</c>, <c>invoke</c>, and <c>stop</c> — see Abi/README.md,
+/// The one envelope shape shared by <c>start</c>, <c>invoke</c>, and <c>stop</c> — see sdk/c/ABI.md,
 /// "The result envelope": one shape for all three rather than three near-duplicates.
 ///
 /// <para><see cref="Ok"/> AND <see cref="Result"/>.<see cref="AbiJobResult.Success"/> ARE NOT THE

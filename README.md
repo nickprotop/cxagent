@@ -391,7 +391,7 @@ a plugin decides that per call, from the arguments, rather than being on or off 
 
 Browse plugins at [https://nickprotop.github.io/cxagent/plugins.html](https://nickprotop.github.io/cxagent/plugins.html). Writing one starts at
 [https://nickprotop.github.io/cxagent/writing-a-plugin.html](https://nickprotop.github.io/cxagent/writing-a-plugin.html); the full contract is in
-[cxagent.Core/docs/plugins.md](cxagent.Core/docs/plugins.md).
+[cxagent.Core/sdk/docs/plugins.md](cxagent.Core/sdk/docs/plugins.md).
 
 ## Configuration
 

@@ -323,7 +323,7 @@ comes up would otherwise leave tools answering "not running" with nothing explai
 An out-of-process path exists for plugins that cannot be loaded managed — C, Rust, Go — under
 `CxAgent.Core.Plugins.Abi`, with the same `IPlugin` at the end of it.
 
-**[Writing a plugin →](plugins.md)**
+**[Writing a plugin →](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/plugins.md)**
 
 ## Identity
 

@@ -4,7 +4,8 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// The three documents rendered onto the site, and the link check that makes rendering them safe.
+/// The documents rendered onto the site — the user's references and the plugin SDK — and the link check
+/// that makes rendering them safe.
 ///
 /// <para>A BROKEN LINK INSIDE YOUR OWN SITE IS INVISIBLE until someone clicks it, which is why the
 /// renderer fails the build rather than emitting a 404. These tests exercise the real repo's real
@@ -48,7 +49,7 @@ public class DocRendererTests
     }
 
     [Fact]
-    public void TheThreeDocumentsRenderWithTheirContent()
+    public void EveryRenderedDocumentRendersWithItsContent()
     {
         var dir = Directory.CreateTempSubdirectory("doc-render-").FullName;
         try
@@ -56,7 +57,8 @@ public class DocRendererTests
             var (exit, stderr) = Render(dir);
             Assert.True(exit == 0, $"renderer failed: {stderr}");
 
-            foreach (var name in new[] { "commands", "config", "plugins" })
+            foreach (var name in new[] { "commands", "config", "plugins", "sdk", "plugin-testing",
+                                         "plugin-c-sdk", "plugin-publishing", "plugin-abi" })
             {
                 var page = Path.Combine(dir, "docs", $"{name}.html");
                 Assert.True(File.Exists(page), $"no rendered page at '{page}'.");
@@ -67,6 +69,11 @@ public class DocRendererTests
             var commands = File.ReadAllText(Path.Combine(dir, "docs", "commands.html"));
             Assert.Contains("<h1", commands);
             Assert.Contains("/plugin", commands);
+
+            // THE SDK RENDERS FROM sdk/, its tutorial images copied as assets beside it.
+            var sdk = File.ReadAllText(Path.Combine(dir, "docs", "sdk.html"));
+            Assert.Contains("cxagent plugin new", sdk);
+            Assert.Contains("assets/", sdk);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
@@ -84,13 +91,15 @@ public class DocRendererTests
         try
         {
             // A minimal tree the renderer accepts, with one link pointing at nothing.
-            Directory.CreateDirectory(Path.Combine(fake, "cxagent.Core", "docs"));
+            Directory.CreateDirectory(Path.Combine(fake, "cxagent.Core", "sdk", "docs"));
+            Directory.CreateDirectory(Path.Combine(fake, "cxagent.Core", "sdk", "c"));
             File.WriteAllText(Path.Combine(fake, "COMMANDS.md"),
                 "# Commands\n\nSee [the config](CONFIG.md#no-such-heading).\n");
             File.WriteAllText(Path.Combine(fake, "CONFIG.md"), "# Configuration\n\nNothing here.\n");
             File.WriteAllText(Path.Combine(fake, "SCRIPTING.md"), "# Scripting\n\nNothing here.\n");
-            File.WriteAllText(Path.Combine(fake, "cxagent.Core", "docs", "plugins.md"),
-                "# Writing a plugin\n\nNothing here.\n");
+            foreach (var rel in new[] { "sdk/README.md", "sdk/docs/plugins.md", "sdk/docs/testing.md",
+                         "sdk/docs/c-sdk.md", "sdk/docs/publishing.md", "sdk/c/ABI.md" })
+                File.WriteAllText(Path.Combine(fake, "cxagent.Core", rel), "# X\n\nNothing here.\n");
             // EVERY DOCUMENT IN RENDERED MUST EXIST, or the renderer fails on the missing file
             // before it reaches the broken link this test is about.
             Directory.CreateDirectory(Path.Combine(fake, "docs", "screenshots"));
@@ -111,7 +120,7 @@ public class DocRendererTests
 
     /// <summary>
     /// A link into a document the site does not render leaves for GitHub rather than 404ing.
-    /// `plugins.md` links to `tools.md`, which is not in the rendered set.
+    /// `sdk/docs/plugins.md` links to `cxagent.Core/docs/tools.md`, which is not in the rendered set.
     /// </summary>
     [Fact]
     public void ALinkToAnUnrenderedDocumentLeavesForGitHub()
@@ -172,10 +181,10 @@ public class DocRendererTests
     }
 
     /// <summary>
-    /// TWO RENDERED DOCUMENTS CAN SHARE A FILENAME. `docs/screenshots/README.md` is one, and a
-    /// lookup keyed on the basename made it claim every `README.md` link in the repository —
-    /// including `cxagent.Core/docs/plugins.md`'s link to the repository's own README, which then
-    /// failed the anchor check against the wrong document entirely.
+    /// RENDERED DOCUMENTS SHARE A FILENAME. `docs/screenshots/README.md` and `cxagent.Core/sdk/README.md`
+    /// are both rendered, and a lookup keyed on the basename would make one claim every `README.md`
+    /// link in the repository — including `cxagent.Core/sdk/docs/plugins.md`'s link to the package's own
+    /// README — and fail the anchor check against the wrong document.
     /// </summary>
     [Fact]
     public void ALinkToADifferentReadmeIsNotClaimedByTheRenderedOne()
@@ -186,7 +195,7 @@ public class DocRendererTests
             var (exit, stderr) = Render(dir);
             Assert.True(exit == 0, $"renderer failed: {stderr}");
 
-            // plugins.md links to ../README.md#tools-that-arrive-at-run-time — the package README,
+            // plugins.md links to ../../README.md#tools-that-arrive-at-run-time — the package README,
             // which is not rendered, so it must leave for GitHub rather than resolve to the
             // walkthrough that happens to share its filename.
             var plugins = File.ReadAllText(Path.Combine(dir, "docs", "plugins.html"));

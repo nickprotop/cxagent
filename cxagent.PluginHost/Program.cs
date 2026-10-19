@@ -170,7 +170,7 @@ while (await stdin.ReadLineAsync() is { } line)
 
 // STDIN CLOSED — the parent exited or the pipe broke. Every in-flight request still gets a chance
 // to finish and write its reply before this process exits; a request whose plugin call never
-// returns is exactly what the parent's own cancellation-by-abandonment (Abi/README.md,
+// returns is exactly what the parent's own cancellation-by-abandonment (sdk/c/ABI.md,
 // "Cancellation") is for, not something this loop should wait on indefinitely.
 await pollLoopCts.CancelAsync();
 await Task.WhenAll(pending);

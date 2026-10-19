@@ -6,11 +6,11 @@
  * cxagent_plugin_attach, see below) — name-resolved by the host process (Task 9b), not linked. This header is the
  * authoritative declaration;
  * the .cs files in cxagent.Core/Core/Plugins/Abi/ mirror it on the managed side and
- * cxagent.Core/Core/Plugins/Abi/README.md carries the JSON schemas each call exchanges.
+ * cxagent.Core/sdk/c/ABI.md carries the JSON schemas each call exchanges.
  *
  * EVERYTHING THAT CROSSES THIS BOUNDARY IS JSON. A tool's input schema, a call's arguments, a
  * job's result, an error — one encoding both directions, so the host and the plugin agree on a
- * shape without agreeing on a struct layout. See plugins.md, "The boundary is JSON": a struct
+ * shape without agreeing on a struct layout. See sdk/docs/plugins.md, "The boundary is JSON": a struct
  * ABI is frozen the moment it ships; JSON lets an old plugin omit a field the host now defaults,
  * and a new plugin send a field an old host ignores.
  *
@@ -85,7 +85,7 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_describe(void);
 /*
  * LIFECYCLE: START. `context_json` carries the plugin's working directory and its own settings
  * object (see README.md, "context") — never the transcript, the model, or the permission store;
- * plugins.md, "What a plugin is handed at Load" states those are withheld on purpose and the ABI
+ * sdk/docs/plugins.md, "What a plugin is handed at Load" states those are withheld on purpose and the ABI
  * surface withholds them identically.
  *
  * Returns a UTF-8 JSON result envelope (see README.md, "the result envelope"): `{"ok":true}` on
@@ -157,7 +157,7 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_invoke(const char* tool_name, c
 
 /*
  * LIFECYCLE: STOP. Runs before the host process exits. A plugin's own children should already be
- * gone when this returns; the pid record (plugins.md, "Lifecycle") is the fallback for whatever
+ * gone when this returns; the pid record (sdk/docs/plugins.md, "Lifecycle") is the fallback for whatever
  * outlives it, not the primary mechanism.
  *
  * Returns a UTF-8 JSON result envelope, `{"ok":true}` or `{"ok":false,"error":"..."}`. Freshly

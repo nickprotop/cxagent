@@ -429,7 +429,7 @@ internal sealed class AbiHostProcess : IAsyncDisposable
     /// Sends one request and waits for its reply, or gives up — never hangs and never throws past
     /// this method. Three ways this can end besides an ordinary reply:
     ///
-    /// <para>1. <paramref name="ct"/> FIRES WHILE WAITING — Abi/README.md, "Cancellation": the wait
+    /// <para>1. <paramref name="ct"/> FIRES WHILE WAITING — sdk/c/ABI.md, "Cancellation": the wait
     /// is ABANDONED, not the native call cancelled. This method stops awaiting the reply and returns
     /// a failure immediately, removing its own waiter from <see cref="_outstanding"/> as it does —
     /// so whatever the host eventually writes for this id lands in <see cref="ReadLoop"/>'s "no

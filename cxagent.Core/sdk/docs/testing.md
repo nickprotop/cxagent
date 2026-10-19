@@ -115,7 +115,7 @@ A plugin that passes `check` and `call` is ready to package. `cxagent plugin pac
 the zips and the catalog entry, and `cxagent plugin verify <entry>` checks what a user's install
 would get; `--https-only` refuses a local file, as the submission bot does. Neither runs any plugin
 code. Both share the exit codes above. See the [quick start](plugins.md#quick-start-c), and
-[Publishing a plugin](publishing-plugins.md) for the way to the catalog.
+[Publishing a plugin](publishing.md) for the way to the catalog.
 
 ## CxAgent.Plugins.Testing
 

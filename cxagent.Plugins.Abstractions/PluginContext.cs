@@ -9,13 +9,13 @@ public interface IPluginLogger
 }
 
 /// <summary>
-/// Everything a plugin is handed at Load, and nothing else — see plugins.md, "What a plugin is
+/// Everything a plugin is handed at Load, and nothing else — see sdk/docs/plugins.md, "What a plugin is
 /// handed".
 ///
 /// <para>NO TRANSCRIPT, NO MODEL, NO PERMISSION STORE. A plugin sees the arguments of its own calls
 /// and nothing else: it cannot read the user's messages, the model's replies, or another tool's
 /// result, and it cannot grant itself a permission. Passive transcript reading is removed on purpose
-/// and stays removed — see plugins.md, "What a plugin is handed".</para>
+/// and stays removed — see sdk/docs/plugins.md, "What a plugin is handed".</para>
 ///
 /// <para>BUT A PLUGIN THAT DECLARES THE CLIENT CAN START A TURN, through <see cref="Client"/>. That is
 /// the one thing contract 3 adds and it is disclosed at load, because starting work in someone's

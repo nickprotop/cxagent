@@ -225,7 +225,7 @@ def pr_body(entry, number, updating):
         "",
         "Verified by the submission bot: each zip downloaded over https, its sha256 matched, and its sidecar "
         "and files agree with the entry. No plugin code ran. Review asks whether the entry is truthful and "
-        "useful; see cxagent.Core/docs/publishing-plugins.md.",
+        "useful; see cxagent.Core/sdk/docs/publishing.md.",
         "",
         f"Closes #{number}",
     ])

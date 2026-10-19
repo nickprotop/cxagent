@@ -102,7 +102,7 @@ only what cxagent itself releases and supports.
 Maintainer work, and its own page: **[releasing a plugin →](RELEASING.md)** — the directory, the
 catalog entry, the release and site builds, and what deliberately does not happen.
 
-*Writing one? That is [`cxagent.Core/Core/Plugins`](../cxagent.Core/docs/plugins.md) — the
-contract, the sidecar format, permission, settings, and two worked examples.*
+*Writing one? Start at [the SDK](../cxagent.Core/sdk/README.md) — the tutorials, the contract, the
+command line, testing and publishing.*
 
 *[`plugins.json`](plugins.json) is this page as data, for the plugin picker to read.*

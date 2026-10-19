@@ -3,7 +3,7 @@
 *Write tools in C. cxp handles the ABI, the JSON and the memory.*
 
 A native plugin is a shared library that exports the functions in
-[`cxagent_plugin.h`](../sdk/c/cxagent_plugin.h). The C SDK, **cxp**, implements every export for you
+[`cxagent_plugin.h`](../c/cxagent_plugin.h). The C SDK, **cxp**, implements every export for you
 over a table of the tools you register. You write functions that take a call and return a result.
 
 | File | |
@@ -16,7 +16,7 @@ over a table of the tools you register. You write functions that take a call and
 
 `cxagent plugin new <name> --lang c` writes a project with these files copied into `cxp/`. The
 project carries its own SDK, so it builds with nothing but a C compiler and CMake 3.20 or later.
-Walk through one in the [SDK tutorial](../sdk/README.md#tutorial-c-wordcount).
+Walk through one in the [SDK tutorial](../README.md#tutorial-c-wordcount).
 
 ## A plugin
 
@@ -149,7 +149,7 @@ cxagent plugin pack build --native build/wordcount.so=linux-x64
 ## The raw ABI
 
 Without cxp, implement the functions in `cxagent_plugin.h` yourself. The JSON each one exchanges is
-in [Abi/README.md](../Core/Plugins/Abi/README.md), and
-[`examples/CalculatorAbiPlugin`](../examples/CalculatorAbiPlugin) is a complete example with no
+in [ABI.md](../c/ABI.md), and
+[`examples/CalculatorAbiPlugin`](../../examples/CalculatorAbiPlugin) is a complete example with no
 dependencies. Mark every export `CXAGENT_PLUGIN_EXPORT`, and set `"kind": "native"` in the sidecar:
 on Windows a native plugin and a .NET one are both `.dll`.

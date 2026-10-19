@@ -6,7 +6,7 @@ site renders them rather than carrying a copy, because a copy is a second thing 
 the two would diverge on the first edit that forgot one.
 
 STANDARD LIBRARY ONLY -- no pip install in CI. This is a deliberately small renderer covering the
-constructs these three documents actually use, not a general GitHub-flavoured markdown
+constructs the rendered documents actually use, not a general GitHub-flavoured markdown
 implementation. It is not fit for arbitrary markdown, and the link check below is what stops it
 failing silently on something it does not understand.
 """
@@ -23,13 +23,19 @@ GITHUB_BLOB = "https://github.com/nickprotop/cxagent/blob/master"
 
 # WHAT RENDERS, AND WHERE IT LANDS. Anything not here links to GitHub instead: api.md and tools.md
 # are for embedders already reading source, and the maintainer documents are not written for a
-# visitor. See the design doc, "Rendering three documents".
+# visitor.
 RENDERED = OrderedDict([
     ("COMMANDS.md", "commands"),
     ("CONFIG.md", "config"),
     ("SCRIPTING.md", "scripting"),
-    ("cxagent.Core/docs/plugins.md", "plugins"),
     ("docs/screenshots/README.md", "walkthrough"),
+    # THE SDK, rendered from where it lives: everything about making a plugin is in cxagent.Core/sdk/.
+    ("cxagent.Core/sdk/README.md", "sdk"),
+    ("cxagent.Core/sdk/docs/plugins.md", "plugins"),
+    ("cxagent.Core/sdk/docs/testing.md", "plugin-testing"),
+    ("cxagent.Core/sdk/docs/c-sdk.md", "plugin-c-sdk"),
+    ("cxagent.Core/sdk/docs/publishing.md", "plugin-publishing"),
+    ("cxagent.Core/sdk/c/ABI.md", "plugin-abi"),
 ])
 
 
@@ -301,7 +307,7 @@ def main() -> int:
 
             path_part, _, anchor = target.partition("#")
             # Resolved against the LINKING document's directory, the way a reader on GitHub would
-            # follow it -- so ../README.md from cxagent.Core/docs is the repository's own README.
+            # follow it -- so ../../README.md from cxagent.Core/sdk/docs is the package's own README.
             resolved = ((args.root / Path(current).parent / path_part).resolve()
                         if path_part else (args.root / current).resolve())
 

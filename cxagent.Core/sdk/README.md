@@ -10,8 +10,8 @@ Everything an author outside this repository needs to write, test and ship a cxa
 
 The command-line half is in cxagent itself: `cxagent plugin new | check | call | pack | verify`.
 
-The reference is [docs/plugins.md](../docs/plugins.md), with testing covered in
-[docs/plugin-testing.md](../docs/plugin-testing.md) and C in [docs/plugin-sdk-c.md](../docs/plugin-sdk-c.md).
+The reference is [docs/plugins.md](docs/plugins.md), with testing covered in
+[docs/testing.md](docs/testing.md) and C in [docs/c-sdk.md](docs/c-sdk.md).
 This page has two tutorials: [C#](#tutorial-a-weather-plugin-end-to-end) and
 [C](#tutorial-c-wordcount).
 
@@ -312,7 +312,7 @@ Then follow `pack`'s next steps:
 1. Upload the zip (for example, `gh release create v1.0.0 dist/weather.zip`).
 2. Put its `https://` URL in the entry and run `verify` once more.
 3. Submit the entry, through the "Submit a plugin" issue or as a PR to `plugins/plugins.json` — see
-   [Publishing a plugin](../docs/publishing-plugins.md).
+   [Publishing a plugin](docs/publishing.md).
 
 ## Tutorial (C): wordcount
 
@@ -424,11 +424,11 @@ tutorial.
 
 ## Where to go next
 
-- **The rest of the contract** is in [docs/plugins.md](../docs/plugins.md): settings, commands,
+- **The rest of the contract** is in [docs/plugins.md](docs/plugins.md): settings, commands,
   spawning processes, starting turns from a plugin, and reporting while a call runs.
 - **Every option of `check`, `call` and the test package** is in
-  [docs/plugin-testing.md](../docs/plugin-testing.md).
-- **The C SDK reference** is [docs/plugin-sdk-c.md](../docs/plugin-sdk-c.md).
+  [docs/testing.md](docs/testing.md).
+- **The C SDK reference** is [docs/c-sdk.md](docs/c-sdk.md).
 - **Two complete examples** sit beside this folder, the same calculator in C# and in raw C:
   [`examples/CalculatorPlugin`](../examples/CalculatorPlugin) and
   [`examples/CalculatorAbiPlugin`](../examples/CalculatorAbiPlugin).

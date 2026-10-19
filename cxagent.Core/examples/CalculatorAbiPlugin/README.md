@@ -63,4 +63,4 @@ never mentions. Worth knowing before you spend an evening on it.
 
 - [`../CalculatorPlugin`](../CalculatorPlugin) — the same calculator, managed
 - [`cxagent_plugin.h`](../../sdk/c/cxagent_plugin.h) — the seven functions and their ownership rules
-- [`Abi/README.md`](../../Core/Plugins/Abi/README.md) — the JSON envelopes
+- [`sdk/c/ABI.md`](../../sdk/c/ABI.md) — the JSON envelopes

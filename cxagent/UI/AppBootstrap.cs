@@ -1291,7 +1291,7 @@ public static class AppBootstrap
         // CONFIGURED PLUGINS, AFTER THE FIRST WIRE — unlike MCP servers above, a plugin load asks
         // through Session.LoadPlugin's own load gate (Services?.Gate), and Services is only set once
         // SessionFactory.Wire has run (Session.NoteServices). Loading before the first wire would
-        // find no gate and load every plugin unasked — the "headless host" path that plugins.md's
+        // find no gate and load every plugin unasked — the "headless host" path that sdk/docs/plugins.md's
         // Permission section describes, silently applied to a session that has a gate coming.
         //
         // ON THE FIRST PUMP, NOT HERE — see LoadConfiguredPluginsAsync below and the deferral beside

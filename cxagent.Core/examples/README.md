@@ -30,7 +30,7 @@ calculator twice, so the diff between them is what the process boundary costs an
 | [**CalculatorPlugin**](CalculatorPlugin) | Managed, ~110 lines. The whole `IPlugin` contract, with a permission prompt for adding two numbers so the gate is impossible to miss. |
 | [**CalculatorAbiPlugin**](CalculatorAbiPlugin) | The same calculator in one file of C, for a plugin your language cannot write managed. No JSON library, so you see the bytes crossing the boundary. |
 
-Write managed if you are writing C#. See [the plugin guide](../docs/plugins.md).
+Write managed if you are writing C#. See [the plugin guide](../sdk/docs/plugins.md).
 
 ## Running one
 

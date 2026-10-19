@@ -59,7 +59,7 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
     /// <c>describe</c> and confirmed the sidecar match before this instance existed at all, so
     /// unlike a managed plugin (whose <see cref="IPlugin.Load"/> is the FIRST time its manifest is
     /// seen), this call's only remaining job is to remember <paramref name="context"/> for
-    /// <see cref="Start"/> — the ABI's own split (Abi/README.md, "describe" vs "start") means the
+    /// <see cref="Start"/> — the ABI's own split (sdk/c/ABI.md, "describe" vs "start") means the
     /// native plugin itself has not seen a working directory or settings yet, exactly the same
     /// deferral <see cref="Start"/>'s wire call performs one step later.
     /// </summary>
@@ -143,7 +143,7 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
     }
 
     /// <summary>
-    /// Sends <c>start</c> with the plugin's working directory and settings — see Abi/README.md,
+    /// Sends <c>start</c> with the plugin's working directory and settings — see sdk/c/ABI.md,
     /// "context": exactly <see cref="IPluginContext.WorkingDirectory"/> and
     /// <see cref="IPluginContext.Settings"/>, nothing else. THE TRANSCRIPT, THE MODEL, AND THE
     /// PERMISSION STORE NEVER CROSS — <see cref="IPluginContext"/> carries no member for any of
@@ -168,7 +168,7 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
     /// the same shape a managed plugin's own tool failure already takes — see
     /// <see cref="IPlugin.Invoke"/>'s own doc: "the call completed and the tool failed on its own
     /// terms" and "the call itself failed" both flow through this one return type on the managed
-    /// side of <see cref="PluginRegistry"/>, exactly as Abi/README.md draws the same distinction on
+    /// side of <see cref="PluginRegistry"/>, exactly as sdk/c/ABI.md draws the same distinction on
     /// the wire (<c>ok</c> vs <c>result.success</c>).
     /// </summary>
     public async Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context, CancellationToken ct)

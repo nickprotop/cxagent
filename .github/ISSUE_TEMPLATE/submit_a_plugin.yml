@@ -9,7 +9,7 @@ body:
         https URL into it and running `cxagent plugin verify --https-only` on it. A bot runs the
         same check here, comments the result, and opens the pull request adding the entry. Editing
         this issue checks it again. See
-        [Publishing a plugin](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/docs/publishing-plugins.md).
+        [Publishing a plugin](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/publishing.md).
 
 
         Review asks whether this entry is truthful and useful — that the plugin exists, its entry

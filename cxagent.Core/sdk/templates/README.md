@@ -18,4 +18,4 @@ It pins this release's contract and testing packages. `cxagent plugin new <name>
 project without installing a template, and `cxagent plugin new <name> --lang c` writes one in C.
 
 - [The plugin SDK](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/README.md): a tutorial from `new` to a packed release
-- [Writing plugins](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/docs/plugins.md): the sidecar, gates, settings and commands
+- [Writing plugins](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/plugins.md): the sidecar, gates, settings and commands

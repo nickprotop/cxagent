@@ -82,7 +82,7 @@ public class AbiCodecTests
     [Fact]
     public void ManifestWithMismatchedEmbeddedAbiVersionIsRefused()
     {
-        // The handshake function and the manifest body both carry a version — see Abi/README.md,
+        // The handshake function and the manifest body both carry a version — see sdk/c/ABI.md,
         // "describe": deliberately redundant so the two can be checked against each other, not just
         // against the host's own constant.
         var json = WellFormedManifestJson.Replace("\"pluginContract\": 2", "\"pluginContract\": 99");
@@ -209,7 +209,7 @@ public class AbiCodecTests
         Assert.Equal(3, doc.RootElement.GetProperty("arguments").GetProperty("line").GetInt32());
     }
 
-    // ---- result envelope: every row of Abi/README.md's failure-mode table ----
+    // ---- result envelope: every row of sdk/c/ABI.md's failure-mode table ----
 
     [Fact]
     public void ParsesASuccessfulInvokeEnvelopeIntoAJobResult()
@@ -240,7 +240,7 @@ public class AbiCodecTests
     public void OkFalseAndJobResultSuccessFalseAreDistinctChannels()
     {
         // ok:false means the CALL failed (an ABI-level fault); ok:true + result.success:false means
-        // the call completed and the TOOL failed on its own terms. See Abi/README.md, "The result
+        // the call completed and the TOOL failed on its own terms. See sdk/c/ABI.md, "The result
         // envelope": "ok and JobResult.Success are not the same bit."
         var callFailed = AbiCodec.ParseEnvelope("""{"ok":false,"error":"unknown tool 'x'"}""");
         Assert.True(callFailed.IsSuccess);

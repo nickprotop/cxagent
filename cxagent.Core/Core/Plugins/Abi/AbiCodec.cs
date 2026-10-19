@@ -8,7 +8,7 @@ namespace CxAgent.Core.Plugins.Abi;
 /// parse in this codec returns one of these rather than throwing: a native plugin's misbehaviour
 /// (malformed JSON, a version mismatch, a missing required field) is DATA the host reports, never
 /// an exception the host must catch at an `extern "C"` frontier that cannot safely propagate one
-/// in the first place — see Abi/README.md, "no exception may cross this boundary."
+/// in the first place — see sdk/c/ABI.md, "no exception may cross this boundary."
 /// </summary>
 public readonly struct AbiParseResult<T>
 {
@@ -48,7 +48,7 @@ public static class AbiCodec
     private static readonly JsonSerializerOptions WriteOptions = new() { PropertyNamingPolicy = null };
 
     /// <summary>
-    /// Bounds how much of a malformed payload an error message quotes — see Abi/README.md, "Every
+    /// Bounds how much of a malformed payload an error message quotes — see sdk/c/ABI.md, "Every
     /// failure mode": "fails, quoting a bounded prefix of what was returned." An unbounded quote
     /// would let a misbehaving plugin blow up a log file with the exact bytes that broke it.
     /// </summary>
@@ -85,7 +85,7 @@ public static class AbiCodec
 
     /// <summary>
     /// Parses <c>cxagent_plugin_describe</c>'s JSON into an <see cref="AbiManifest"/>, checking the
-    /// in-body contract against the same range the handshake is — see Abi/README.md, "describe".
+    /// in-body contract against the same range the handshake is — see sdk/c/ABI.md, "describe".
     /// The two are deliberately redundant, and <see cref="CheckAgreement"/> is what compares them.
     /// </summary>
     public static AbiParseResult<AbiManifest> ParseManifest(string json)
@@ -164,7 +164,7 @@ public static class AbiCodec
 
     // ---- start context (host -> plugin) ----
 
-    /// <summary>Writes the JSON <c>cxagent_plugin_start</c> receives — see Abi/README.md, "context".</summary>
+    /// <summary>Writes the JSON <c>cxagent_plugin_start</c> receives — see sdk/c/ABI.md, "context".</summary>
     public static string WriteContext(string workingDirectory, JsonElement settings) =>
         JsonSerializer.Serialize(
             new AbiPluginContext(workingDirectory, settings, PluginContract.Version), WriteOptions);
@@ -172,7 +172,7 @@ public static class AbiCodec
     // ---- invoke call (host -> plugin) ----
 
     /// <summary>
-    /// Writes the JSON <c>cxagent_plugin_invoke</c> receives — see Abi/README.md, "call".
+    /// Writes the JSON <c>cxagent_plugin_invoke</c> receives — see sdk/c/ABI.md, "call".
     /// <paramref name="arguments"/> is never written as JSON null: an argument-less tool gets
     /// <c>{}</c>, so a plugin may parse the object unconditionally.
     /// </summary>
@@ -248,7 +248,7 @@ public static class AbiCodec
 
     /// <summary>
     /// Parses the JSON <c>start</c>/<c>invoke</c>/<c>stop</c> return into an
-    /// <see cref="AbiResultEnvelope"/> — see Abi/README.md, "Every failure mode, and what the host
+    /// <see cref="AbiResultEnvelope"/> — see sdk/c/ABI.md, "Every failure mode, and what the host
     /// does" for the exhaustive table this method implements. Every row of that table returns a
     /// failure result here rather than throwing; the caller (9b's host process) decides what a
     /// failure means for the tool call in flight.
@@ -340,7 +340,7 @@ public static class AbiCodec
 
     /// <summary>
     /// Confirms an envelope parsed from an <c>invoke</c> reply actually carries the
-    /// <see cref="Models.JobResult"/> that call promises, and translates it — see Abi/README.md,
+    /// <see cref="Models.JobResult"/> that call promises, and translates it — see sdk/c/ABI.md,
     /// "Every failure mode": "ok:true from invoke (missing result) — fails: invoke promises a
     /// JobResult and did not send one."
     /// </summary>

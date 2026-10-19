@@ -12,7 +12,7 @@ Two kinds, and the choice is made for you by your language:
 | written in | C# | C, Rust, Go, C++ — anything with a C ABI |
 | runs in | cxagent's own process | a separate host process |
 | a crash | takes cxagent with it | fails the call, session survives |
-| you implement | `IPlugin` — four methods, plus `IPluginGateSource` if you gate per call | tools registered with the C SDK ([plugin-sdk-c.md](plugin-sdk-c.md)), or the `extern "C"` functions directly |
+| you implement | `IPlugin` — four methods, plus `IPluginGateSource` if you gate per call | tools registered with the C SDK ([c-sdk.md](c-sdk.md)), or the `extern "C"` functions directly |
 
 **Write managed if you are writing C#.** An ABI plugin in .NET needs NativeAOT, which strips the
 reflection `System.Text.Json` depends on, so every payload then needs a hand-written `JsonTypeInfo`.
@@ -32,7 +32,7 @@ the rest: a second front end, injecting tools, and narrowing what an agent may d
 ## Quick start (C#)
 
 From nothing to a plugin a user can install, with cxagent's own tools. For a step-by-step
-walk-through that builds a real weather plugin, see the [SDK tutorial](../sdk/README.md).
+walk-through that builds a real weather plugin, see the [SDK tutorial](../README.md).
 
 ```
 cxagent plugin new weather --lang csharp        # or: dotnet new install CxAgent.Plugins.Templates
@@ -49,7 +49,7 @@ cxagent plugin verify weather.catalog.json       # what a user's install would g
 
 - **`new`** writes the project: a sidecar, one tool with a per-call gate, the plugin class, a README,
   and a test project. It never writes over a folder that holds anything.
-- **`check`** and **`call`** are covered in [plugin-testing.md](plugin-testing.md).
+- **`check`** and **`call`** are covered in [testing.md](testing.md).
 - **`pack`** refuses a plugin `check` refuses. The entry's description, publisher, license and
   repository come from:
   1. its options;
@@ -59,7 +59,7 @@ cxagent plugin verify weather.catalog.json       # what a user's install would g
   Anything left unset is written as `<fill in: …>`, and `verify` refuses it until you do.
 - **`verify`** takes the entry's zips from `https://` or, before you upload, from a local path.
 
-To list it in cxagent's catalog, see [RELEASING.md](../../plugins/RELEASING.md). C plugins get
+To list it in cxagent's catalog, see [RELEASING.md](../../../plugins/RELEASING.md). C plugins get
 the same start with the C SDK.
 
 ## Quick start (C)
@@ -75,7 +75,7 @@ cxagent plugin pack build --native build/wordcount.so=linux-x64
 ```
 
 The project carries the C SDK in `cxp/`. You write tools; it implements the ABI. See
-[plugin-sdk-c.md](plugin-sdk-c.md), and the [C tutorial](../sdk/README.md#tutorial-c-wordcount).
+[c-sdk.md](c-sdk.md), and the [C tutorial](../README.md#tutorial-c-wordcount).
 
 ## The project
 
@@ -334,8 +334,8 @@ A native plugin has no equivalent static check: there is no way to inspect a sha
 exports without calling into it, so a native plugin that declares a command in `describe()`'s
 `commands` array but never exports `cxagent_plugin_command` is refused **the first time that command
 is actually run**, not at load, naming the missing export. See
-[`Abi/README.md`](../Core/Plugins/Abi/README.md#command---one-command-a-person-typed) and
-[`sdk/c/cxagent_plugin.h`](../sdk/c/cxagent_plugin.h) for the wire shape, which mirrors
+[`sdk/c/ABI.md`](../c/ABI.md#command--one-command-a-person-typed) and
+[`sdk/c/cxagent_plugin.h`](../c/cxagent_plugin.h) for the wire shape, which mirrors
 `CommandResult` field for field.
 
 ## Permission
@@ -562,7 +562,7 @@ made inside `invoke` wants. From a thread of your own, read `host->current_call(
 copy it, and pass the copy; a report naming a call that has already returned is dropped. `log` with
 NULL outside any call goes to your plugin's own log, which reaches the transcript. The export is optional — a library without it
 loads and runs as before, its calls just report nothing until they return. See
-[`sdk/c/cxagent_plugin.h`](../sdk/c/cxagent_plugin.h) for the table's full rules.
+[`sdk/c/cxagent_plugin.h`](../c/cxagent_plugin.h) for the table's full rules.
 
 ## Spawning processes
 
@@ -665,7 +665,7 @@ of interrupting it, and drops any goals still queued.
 
 **On the ABI side, `wantResult: true` is refused.** A native plugin reaches for the same ability
 through the optional `cxagent_plugin_poll` export rather than a method call — see
-[`Abi/README.md`](../Core/Plugins/Abi/README.md) — and that channel has no reply path back to the
+[`sdk/c/ABI.md`](../c/ABI.md) — and that channel has no reply path back to the
 plugin at all: fire-and-forget is the whole contract there, not a default.
 
 ## Settings
@@ -736,14 +736,14 @@ index a plugin binary sitting in `.cxagent/plugins`. The global folder avoids th
 
 ## See also
 
-- [`plugin-testing.md`](plugin-testing.md) — `cxagent plugin check`, `cxagent plugin call` and CxAgent.Plugins.Testing
-- [`publishing-plugins.md`](publishing-plugins.md) — from `pack` to the catalog: upload, verify, submit
+- [`testing.md`](testing.md) — `cxagent plugin check`, `cxagent plugin call` and CxAgent.Plugins.Testing
+- [`publishing.md`](publishing.md) — from `pack` to the catalog: upload, verify, submit
 - [`IPlugin.cs`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/IPlugin.cs) — the managed contract, documented per method
 - [`sdk/c/cxagent_plugin.h`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/sdk/c/cxagent_plugin.h) — the seven C functions, with the ownership rules
-- [`Abi/README.md`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/Abi/README.md) — the JSON envelopes crossing the ABI boundary
+- [`sdk/c/ABI.md`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/sdk/c/ABI.md) — the JSON envelopes crossing the ABI boundary
 
 Hosting a plugin rather than writing one:
 
-- [`docs/api.md`](api.md#plugins) — `LoadPlugin`, the registry, the loader, child-process reaping
-- [`docs/tools.md`](tools.md) — the other kind of tool: compiled into your app rather than loaded
-- [the package README](../README.md#tools-that-arrive-at-run-time) — where plugins sit among everything else
+- [`docs/api.md`](../../docs/api.md#plugins) — `LoadPlugin`, the registry, the loader, child-process reaping
+- [`docs/tools.md`](../../docs/tools.md) — the other kind of tool: compiled into your app rather than loaded
+- [the package README](../../README.md#tools-that-arrive-at-run-time) — where plugins sit among everything else

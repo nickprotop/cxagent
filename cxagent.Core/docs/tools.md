@@ -5,7 +5,7 @@ anything. This is about the other kind — a tool **you** write, that does somet
 not have anticipated.
 
 > Compiled into your app. For tools that arrive at run time from a DLL you did not build, see
-> [writing a plugin](plugins.md) — same `IAgentTool` at the end, different way in.
+> [writing a plugin](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/plugins.md) — same `IAgentTool` at the end, different way in.
 
 ```csharp
 new SessionPorts
@@ -273,4 +273,4 @@ what you agreed to was decided by the rule the tool returned.
 
 - [API reference →](api.md)
 - [Permissions →](../README.md#permissions)
-- [Writing a plugin →](plugins.md)
+- [Writing a plugin →](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/plugins.md)

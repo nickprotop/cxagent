@@ -20,12 +20,13 @@ on:
       - 'COMMANDS.md'
       - 'CONFIG.md'
       - 'SCRIPTING.md'
-      - 'cxagent.Core/docs/plugins.md'
-      # THE WALKTHROUGH AND ITS IMAGES. render_docs.py renders four documents and this list named
-      # three, so an edit to the walkthrough — or a new screenshot in it — published only when some
-      # OTHER trigger happened to fire. The screenshots reached the site at all because the commit
-      # adding them also touched plugins.json.
+      # EVERY DOCUMENT render_docs.py RENDERS, AND ITS IMAGES. A rendered document missing from this
+      # list publishes an edit only when some OTHER trigger happens to fire.
       - 'docs/screenshots/**'
+      - 'cxagent.Core/sdk/README.md'
+      - 'cxagent.Core/sdk/docs/**'
+      - 'cxagent.Core/sdk/c/ABI.md'
+      - 'cxagent.Core/sdk/images/**'
       - '.github/workflows/pages.yml'
   # DISPATCHABLE WITH THE SAME INPUT release.yml PASSES, because that is how a release publishes its
   # catalog: only a master-ref deployment is served, so the release dispatches this workflow on master
@@ -68,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Render the three documents
+      - name: Render the documents
         run: python3 site/build/render_docs.py --root . --out _site
 
       - name: Copy the authored pages

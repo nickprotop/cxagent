@@ -27,7 +27,7 @@ Targets `net8.0`, `net9.0` and `net10.0`.
 | **Permissions** | every call passes a gate you answer; decisions persist and scope to a folder |
 | **Tool selection** | [narrow what an agent is offered](docs/api.md#tool-selection) — per session, turn, or type |
 | **MCP** | stdio and HTTP servers |
-| **Plugins** | [tools from a DLL loaded at run time](docs/plugins.md) — approved once, against a hash of what you load |
+| **Plugins** | [tools from a DLL loaded at run time](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/plugins.md) — approved once, against a hash of what you load |
 | **Providers** | Anthropic, OpenAI-compatible, Ollama — several at once |
 | **Stores** | resume a session; a usage archive you can query |
 
@@ -37,7 +37,7 @@ Targets `net8.0`, `net9.0` and `net10.0`.
 |---|---|
 | **[api.md](docs/api.md)** | the supported API: the types an app uses, configuration, and tool selection |
 | **[tools.md](docs/tools.md)** | injecting tools of your own |
-| **[plugins.md](docs/plugins.md)** | tools loaded from a DLL at run time |
+| **[plugins.md](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/plugins.md)** | tools loaded from a DLL at run time |
 | **[examples/ToolAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ToolAgent)** | a runnable console app with an injected tool |
 | **[examples/SpectreAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent)** | the same, with a rendered UI |
 | **[examples/ReadOnlyAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ReadOnlyAgent)** | taking tools away — a selection you can watch hold |
@@ -45,14 +45,14 @@ Targets `net8.0`, `net9.0` and `net10.0`.
 
 ### What a version promises
 
-**What [api.md](docs/api.md), [tools.md](docs/tools.md) and [plugins.md](docs/plugins.md) document is
+**What [api.md](docs/api.md), [tools.md](docs/tools.md) and [plugins.md](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/plugins.md) document is
 the API**, and from 1.0 it follows semantic versioning: a change that breaks it waits for the next
 major version. Some other types are public because the cxagent app is built on this library and
 needs them; they are not documented here, and a minor release may change them. If you find yourself
 depending on one, open an issue — that is how something becomes part of the documented API.
 
 The plugin contract is versioned separately, by its own package,
-[CxAgent.Plugins.Abstractions](docs/plugins.md), whose major version is the contract number.
+[CxAgent.Plugins.Abstractions](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/plugins.md), whose major version is the contract number.
 
 Below: the mental model, then the four calls an app makes.
 
@@ -303,7 +303,7 @@ plugin has already decided to run it, and Core does not pretend otherwise.
 A plugin is not sandboxed: it runs in your process and can do what your process can. Core enforces
 the decision to load it, and the plugin declares which of its own tools need a prompt.
 
-**[Writing a plugin →](docs/plugins.md)**
+**[Writing a plugin →](https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/sdk/docs/plugins.md)**
 
 ---
 
@@ -590,7 +590,7 @@ session.Mode        // delegation and edit mode
 - **[API reference →](docs/api.md)** — every public member, with parameters and who calls it
 - **[Injecting your own tools →](docs/tools.md)** — the `IAgentTool` interface, the two gates, and
   what `Gate` should return
-- **[Writing a plugin →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/docs/plugins.md)** — tools loaded from a DLL at run time: the
+- **[Writing a plugin →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/sdk/docs/plugins.md)** — tools loaded from a DLL at run time: the
   lifecycle, the sidecar, permission and settings
 - **[SpectreAgent →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent)** — a second front end in about a hundred lines: a
   prompt, streamed text, one line per tool
