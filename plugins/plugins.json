@@ -50,7 +50,7 @@
     {
       "name": "csharp-lsp",
       "displayName": "C# Language Server",
-      "version": "0.9.39",
+      "version": "0.9.40",
       "description": "Go-to-definition, find-references and diagnostics for C#, backed by a language server. Crosses project boundaries: a reference in a test project resolves into the project under test.",
       "publisher": "nickprotop",
       "license": "MIT",
@@ -103,7 +103,7 @@
     {
       "name": "calculator",
       "displayName": "Calculator",
-      "version": "0.9.39",
+      "version": "0.9.40",
       "description": "Arithmetic a model can trust. One tool takes a whole expression and returns the exact result \u2014 a language model approximates arithmetic rather than computing it, and a calculation spread over several turns goes wrong somewhere in the middle.",
       "publisher": "nickprotop",
       "license": "MIT",
@@ -136,7 +136,7 @@
     {
       "name": "triggers",
       "displayName": "Triggers",
-      "version": "0.9.39",
+      "version": "0.9.40",
       "description": "Work that starts without anybody typing \u2014 on a clock. Schedules a prompt to arrive later in the same session; fires only while cxagent is running.",
       "publisher": "nickprotop",
       "license": "MIT",
@@ -181,7 +181,7 @@
     {
       "name": "clone-finder",
       "displayName": "Clone Finder",
-      "version": "0.9.39",
+      "version": "0.9.40",
       "description": "Duplicated code found without reading the repository. One tool returns the duplicated blocks ranked by size, each as locations plus a couple of lines to recognise it by \u2014 so finding duplication costs a call rather than the context the refactor then needs.",
       "publisher": "nickprotop",
       "license": "MIT",
