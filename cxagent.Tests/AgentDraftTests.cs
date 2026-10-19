@@ -191,4 +191,20 @@ public class AgentDraftTests
         Assert.False(draft.AnyProvider);
         Assert.Equal(["local", "all"], draft.Providers);
     }
+
+    /// <summary>A bare "all" in a type's provider means every provider, so an entry that is itself
+    /// named all is added by its full name — added alone it would silently become any-provider, and
+    /// beside another it would disable the type.</summary>
+    [Theory]
+    [InlineData("all")]
+    [InlineData("ALL")]
+    public void AddingAnEntryNamedAll_WritesItsModelToo(string name)
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("planner")!, null);
+        draft.AddProvider("local", "qwen");
+        draft.AddProvider(name, "m1");
+
+        Assert.Equal(["local", $"{name}:m1"], draft.Providers);
+        Assert.True(draft.ListsProvider(name));
+    }
 }

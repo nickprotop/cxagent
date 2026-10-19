@@ -323,7 +323,7 @@ public sealed class AgentsTab
                 add.AddItem(pick);
                 var addButton = Controls.Button(" + Add ").OnClick((_, _) =>
                 {
-                    if (pick.SelectedIndex is var p and >= 0 && p < left.Count) { draft.Providers.Add(left[p]); Rebuild(null, "add"); }
+                    if (pick.SelectedIndex is var p and >= 0 && p < left.Count) { draft.AddProvider(left[p], providers[left[p]].Model); Rebuild(null, "add"); }
                 }).Build();
                 add.AddItem(addButton);
                 stack.AddBare(add);

@@ -81,6 +81,15 @@ public sealed class AgentDraft
     public bool ListsProvider(string name) =>
         Providers.Any(w => w == name || AgentTypeConfig.NameOf(w) == name);
 
+    /// <summary>
+    /// Adds a provider to the list by name — or, for an entry that is itself named <c>all</c>, as
+    /// <c>all:model</c>. In a type's provider the bare word means every provider: added alone it would
+    /// make the type any-provider, and beside another name it would disable the type.
+    /// </summary>
+    public void AddProvider(string name, string model) =>
+        Providers.Add(string.Equals(name, AgentTypeConfig.AnyProviderWord, StringComparison.OrdinalIgnoreCase)
+            ? $"{name}:{model}" : name);
+
     private readonly IReadOnlyList<string> _originalProviders;
     private bool ProvidersChanged => !Providers.SequenceEqual(_originalProviders, StringComparer.Ordinal);
     public int? MaxTurns { get; set; }
