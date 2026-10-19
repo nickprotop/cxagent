@@ -106,6 +106,8 @@
     <!-- THE PLUGIN HARNESS, for `cxagent plugin check|call` — the same code an author's tests run
          through the CxAgent.Plugins.Testing package, so the command and the test cannot disagree. -->
     <ProjectReference Include="../cxagent.Core/sdk/testing/CxAgent.Plugins.Testing.csproj" />
+    <!-- FOR pack's info file in YAML, read node by node (no reflection): ~650 KB beside an 89 MB app. -->
+    <PackageReference Include="YamlDotNet" Version="18.0.0" />
   </ItemGroup>
 
   <!-- THE PLUGIN TEMPLATE, EMBEDDED for `cxagent plugin new` — the same files the dotnet new template

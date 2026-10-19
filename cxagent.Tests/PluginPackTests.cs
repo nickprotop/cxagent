@@ -112,4 +112,87 @@ public class PluginPackTests
         Assert.Contains("cxagent plugin verify harness.catalog.json", output);
         Assert.Contains("https://github.com/nickprotop/cxagent/issues/new/choose", output);
     }
+
+    private static async Task<JsonElement> EntryAfter(params string[] args)
+    {
+        var outDir = Folders.NewFolder("pack-out-");
+        var (exit, _, err) = await Run(["pack", .. args, "--out", outDir]);
+        Assert.True(exit == 0, err);
+        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(outDir, "harness.catalog.json")));
+        return doc.RootElement.Clone();
+    }
+
+    private static string InfoFile(string name, string text)
+    {
+        var path = Path.Combine(Folders.NewFolder("pack-info-"), name);
+        File.WriteAllText(path, text);
+        return path;
+    }
+
+    [Fact]
+    public async Task AJsonInfoFile_FillsTheEntry()
+    {
+        var info = InfoFile("info.json", """{"description":"from json","publisher":"pj","license":"Apache-2.0","repository":"https://example.org/j"}""");
+
+        var entry = await EntryAfter(Folders.Harness(), "--info", info);
+
+        Assert.Equal("from json", entry.GetProperty("description").GetString());
+        Assert.Equal("pj", entry.GetProperty("publisher").GetString());
+        Assert.Equal("Apache-2.0", entry.GetProperty("license").GetString());
+        Assert.Equal("https://example.org/j", entry.GetProperty("repository").GetString());
+    }
+
+    [Fact]
+    public async Task AYamlInfoFile_FillsTheEntry()
+    {
+        var info = InfoFile("info.yaml", "description: from yaml\npublisher: py\nlicense: MIT\nrepository: \"https://example.org/y\"\n");
+
+        var entry = await EntryAfter(Folders.Harness(), "--info", info);
+
+        Assert.Equal("from yaml", entry.GetProperty("description").GetString());
+        Assert.Equal("https://example.org/y", entry.GetProperty("repository").GetString());
+    }
+
+    [Fact]
+    public async Task AnOption_OverridesTheInfoFile()
+    {
+        var info = InfoFile("info.json", """{"description":"from the file"}""");
+
+        var entry = await EntryAfter(Folders.Harness(), "--info", info, "--description", "from the option");
+
+        Assert.Equal("from the option", entry.GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task TheInfoFile_OverridesTheCsproj()
+    {
+        var project = Folders.NewFolder("pack-proj-");
+        File.WriteAllText(Path.Combine(project, "cxagent.Tests.PluginFixture.Harness.csproj"),
+            "<Project><PropertyGroup><Description>from the csproj</Description><Authors>csproj author</Authors></PropertyGroup></Project>");
+        var dir = Path.Combine(project, "bin", "Debug", "net10.0");
+        Directory.CreateDirectory(dir);
+        foreach (var f in Directory.GetFiles(Folders.Harness())) File.Copy(f, Path.Combine(dir, Path.GetFileName(f)));
+        var info = InfoFile("info.yml", "description: from the file\n");
+
+        var entry = await EntryAfter(dir, "--info", info);
+
+        Assert.Equal("from the file", entry.GetProperty("description").GetString());
+        Assert.Equal("csproj author", entry.GetProperty("publisher").GetString());
+    }
+
+    [Theory]
+    [InlineData("info.json", """{"licence":"MIT"}""")]
+    [InlineData("info.yaml", "licence: MIT\n")]
+    [InlineData("info.json", """{"description":5}""")]
+    [InlineData("info.txt", "description: x\n")]
+    [InlineData("info.json", "not json")]
+    public async Task AnInfoFileItCannotUse_IsUsage(string name, string text)
+    {
+        var (exit, _, _) = await Run("pack", Folders.Harness(), "--info", InfoFile(name, text), "--out", Folders.NewFolder("pack-out-"));
+        Assert.Equal(2, exit);
+    }
+
+    [Fact]
+    public async Task AnInfoFileThatIsNotThere_IsUsage() =>
+        Assert.Equal(2, (await Run("pack", Folders.Harness(), "--info", "/no/such/info.json")).Exit);
 }

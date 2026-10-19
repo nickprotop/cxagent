@@ -19,7 +19,8 @@ public static class PluginCli
                cxagent plugin call <folder> <tool> ['<json>'] [options]
                cxagent plugin call <folder> --command <name> [arguments…] [--json]
                cxagent plugin pack <folder> [--native <lib>=<rid> …] [--out <folder>] [--description t]
-                                   [--publisher t] [--license t] [--repository url] [--json]
+                                   [--publisher t] [--license t] [--repository url]
+                                   [--info file.json|file.yaml] [--json]
                cxagent plugin verify <entry.json | plugins.json> [--json]
 
         call options:

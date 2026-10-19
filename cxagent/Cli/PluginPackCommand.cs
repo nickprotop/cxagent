@@ -18,8 +18,9 @@ internal sealed record CatalogText(string? Description, string? Publisher, strin
 /// <summary>One zip pack wrote: the platform it is for ("any" for managed), its path, its hash, the binary inside.</summary>
 internal sealed record PackedZip(string Rid, string Zip, string Hash, string File);
 
-/// <summary>What <c>cxagent plugin pack</c> was asked to do.</summary>
-internal sealed record PackRequest(string Folder, IReadOnlyList<NativeBuild> Native, string OutDir, CatalogText Text, bool Json);
+/// <summary>What <c>cxagent plugin pack</c> was asked to do. <paramref name="Info"/> is the --info file's fields, empty without one.</summary>
+internal sealed record PackRequest(string Folder, IReadOnlyList<NativeBuild> Native, string OutDir, CatalogText Text,
+    IReadOnlyDictionary<string, string> Info, bool Json);
 
 /// <summary>
 /// <c>cxagent plugin pack &lt;folder&gt;</c> — the zips a release ships, each sha256, the catalog entry
@@ -111,7 +112,7 @@ internal static class PluginPackCommand
 
     private static PackRequest? Parse(string[] args, out string? error)
     {
-        string? folder = null, outDir = null, description = null, publisher = null, license = null, repository = null;
+        string? folder = null, outDir = null, description = null, publisher = null, license = null, repository = null, info = null;
         var native = new List<NativeBuild>();
         var json = false;
         for (var i = 0; i < args.Length; i++)
@@ -125,6 +126,7 @@ internal static class PluginPackCommand
                 case "--publisher": publisher = Next(); break;
                 case "--license": license = Next(); break;
                 case "--repository": repository = Next(); break;
+                case "--info": info = Next(); break;
                 case "--native":
                     var pair = Next().Split('=', 2);
                     if (pair.Length != 2 || !Rids.Contains(pair[1]))
@@ -157,9 +159,11 @@ internal static class PluginPackCommand
             : !Directory.Exists(folder) ? $"no folder '{folder}'."
             : outDir is "" ? "--out takes a folder."
             : null;
+        IReadOnlyDictionary<string, string> fields = new Dictionary<string, string>();
+        if (error is null && info is not null && PackInfoFile.Read(info, out error) is { } read) fields = read;
         return error is null
             ? new PackRequest(Path.GetFullPath(folder!), native, Path.GetFullPath(outDir ?? "."),
-                new CatalogText(description, publisher, license, repository), json)
+                new CatalogText(description, publisher, license, repository), fields, json)
             : null;
     }
 
@@ -192,14 +196,15 @@ internal static class PluginPackCommand
     private static string Sha256(string file) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file))).ToLowerInvariant();
 
     /// <summary>
-    /// The entry's text: the option, else the plugin's csproj, else a placeholder verify refuses — so
-    /// a field nobody filled in cannot reach the catalog looking deliberate.
+    /// The entry's text: the option, else the --info file, else the plugin's csproj, else a placeholder
+    /// verify refuses — so a field nobody filled in cannot reach the catalog looking deliberate.
     /// </summary>
     private static IReadOnlyDictionary<string, string> TextFor(PackRequest request, string binary)
     {
         var project = ProjectOf(Path.GetDirectoryName(binary)!, Path.GetFileNameWithoutExtension(binary));
         string Pick(string field, string? given, string property) =>
             given is { Length: > 0 } ? given
+            : request.Info.TryGetValue(field, out var fromFile) && fromFile.Length > 0 ? fromFile
             : project?.Descendants(property).FirstOrDefault()?.Value is { Length: > 0 } fromProject ? fromProject
             : $"<fill in: {field}>";
 
