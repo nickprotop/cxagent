@@ -167,7 +167,7 @@ internal sealed class AbiHostProcess : IAsyncDisposable
                 // to that call and the line is done — it must never complete the call's waiter.
                 if (isEvent)
                 {
-                    RouteReport(line);
+                    RouteReport(line, CallFor, (level, text) => PluginLogged?.Invoke(level, text));
                     continue;
                 }
 
@@ -220,6 +220,11 @@ internal sealed class AbiHostProcess : IAsyncDisposable
                     continue;
                 }
 
+                // THE CALL'S CONTEXT GOES BEFORE ITS WAITER IS RELEASED, on this thread. The waiter
+                // resumes asynchronously, so Invoke's own removal runs later; until then this loop
+                // would go on reading, and a report the plugin made just after its reply would
+                // still reach a call that has already returned.
+                _contexts.TryRemove(reply.Id, out _);
                 tcs.TrySetResult(reply);
             }
         }
@@ -543,13 +548,20 @@ internal sealed class AbiHostProcess : IAsyncDisposable
         }
     }
 
+    private Jobs.IJobContext? CallFor(long id) => _contexts.TryGetValue(id, out var call) ? call : null;
+
     /// <summary>
     /// Delivers one report a native plugin made — progress, a log line, streamed text — to the call it
     /// names, or a call-less log line to <see cref="PluginLogged"/>. Anything it cannot place is
     /// dropped. NEVER THROWS: this runs on the only reader this process has, and a report a context
     /// could not take must not end the loop every other call is waiting on.
     /// </summary>
-    private void RouteReport(string line)
+    /// <param name="line">One line carrying an <c>"event"</c>.</param>
+    /// <param name="callFor">The context of the call with this request id, or null when none is in
+    /// flight.</param>
+    /// <param name="pluginLog">Where a call-less log line goes.</param>
+    internal static void RouteReport(string line, Func<long, Jobs.IJobContext?> callFor,
+        Action<Jobs.JobLogLevel, string>? pluginLog)
     {
         try
         {
@@ -557,11 +569,11 @@ internal sealed class AbiHostProcess : IAsyncDisposable
             var level = (Jobs.JobLogLevel)Math.Clamp(report.Level ?? 2, 0, 4);
             if (report.Id == 0)
             {
-                if (report.Event == "log" && report.Text is { } text) PluginLogged?.Invoke(level, text);
+                if (report.Event == "log" && report.Text is { } text) pluginLog?.Invoke(level, text);
                 return;
             }
 
-            if (!_contexts.TryGetValue(report.Id, out var call)) return;
+            if (callFor(report.Id) is not { } call) return;
             switch (report.Event)
             {
                 case "progress":

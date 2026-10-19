@@ -170,7 +170,13 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
     /// message names the file.</exception>
     public static PluginManifest FromSidecar(IPlugin plugin)
     {
-        var path = Path.ChangeExtension(plugin.GetType().Assembly.Location, null) + ".plugin.json";
+        // AN ASSEMBLY LOADED FROM BYTES HAS NO FILE, so there is no folder to look beside; naming
+        // ".plugin.json" in the current directory would send its author looking in the wrong place.
+        var location = plugin.GetType().Assembly.Location;
+        if (string.IsNullOrEmpty(location))
+            throw new InvalidOperationException(
+                $"{plugin.GetType().Name}'s assembly has no file location, so it has no sidecar beside it.");
+        var path = Path.ChangeExtension(location, null) + ".plugin.json";
         if (!File.Exists(path))
             throw new InvalidOperationException($"no sidecar at '{path}' for {plugin.GetType().Name}.");
 

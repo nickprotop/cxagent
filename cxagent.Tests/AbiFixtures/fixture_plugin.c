@@ -14,6 +14,8 @@
  * range, so only a check that compares the two catches a plugin contradicting itself.
  * FIXTURE_REPORTS: exports cxagent_plugin_attach and reports through the host's table — start logs
  * with no call; "echo" reports progress, a log line and two streamed chunks from inside the call;
+ * "stray" reports for an id never issued and logs with an id that does not parse; "pair" succeeds only
+ * while a second "pair" call is in flight. Start also logs a Warning-level line.
  * "echo_dynamic" copies current_call() and reports once more from its own thread, 200ms after the
  * call returned, which the host must drop rather than route anywhere.
  * FIXTURE_NOINVOKE: omits cxagent_plugin_invoke entirely — a library missing a required export.
@@ -165,7 +167,10 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_start(const char* context_json)
     (void)context_json;
 #ifdef FIXTURE_REPORTS
     /* NOT INSIDE A CALL, so this goes to the plugin's own log. */
-    if (g_host != NULL) g_host->log(NULL, 2, "started");
+    if (g_host != NULL) {
+        g_host->log(NULL, 2, "started");
+        g_host->log(NULL, 3, "careful");
+    }
 #endif
     return dup_str("{\"ok\":true}");
 }
@@ -187,6 +192,11 @@ CXAGENT_PLUGIN_EXPORT const char* cxagent_plugin_invoke(const char* tool_name, c
         return dup_str("{\"ok\":true,\"result\":{\"success\":false,\"exitCode\":1,"
             "\"errorMessage\":\"no second call arrived\",\"permissionDenied\":false,\"decidedBy\":null,"
             "\"output\":{},\"logFile\":null,\"durationMs\":1}}");
+    if (g_host != NULL && tool_name != NULL && strcmp(tool_name, "stray") == 0) {
+        /* AN ID THE HOST NEVER ISSUED, AND ONE THAT IS NOT AN ID AT ALL: both reach no call. */
+        g_host->progress("999999", 10, "stray");
+        g_host->log("not-a-number", 2, "unplaceable");
+    }
     if (g_host != NULL && tool_name != NULL && strcmp(tool_name, "echo") == 0) {
         /* NULL call ids: this thread's call, so a report from inside invoke needs no id. */
         g_host->progress(NULL, 50, "half");

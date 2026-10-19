@@ -25,6 +25,16 @@ public class AbiReportingTests
         public void ReportTextDelta(string delta) { lock (Seen) Seen.Add($"stream {delta}"); }
     }
 
+    private sealed class Throwing : IJobContext
+    {
+        public void ReportProgress(double percent, string? message = null) => throw new InvalidOperationException();
+        public string? Requester => null;
+        public string? WorkingDirectory => null;
+        public void Log(string line) => throw new InvalidOperationException();
+        public void Log(JobLogLevel level, string line) => throw new InvalidOperationException();
+        public void ReportTextDelta(string delta) => throw new InvalidOperationException();
+    }
+
     private sealed class Logger(List<string> lines) : IPluginLogger
     {
         public void Log(string message) { lock (lines) lines.Add(message); }
@@ -153,6 +163,94 @@ public class AbiReportingTests
             lock (pluginLog) Assert.Contains("started", pluginLog);
         }
         finally { await plugin.Stop(CancellationToken.None); }
+    }
+
+    /// <summary>
+    /// The plugin's own log keeps a level worth noticing: a warning from start must not read like
+    /// an ordinary line. Info stays bare, as a managed plugin's own lines are.
+    /// </summary>
+    [Fact]
+    public async Task APluginsOwnWarning_KeepsItsLevel()
+    {
+        if (NativeFixtures.Path("fixture-reports") is not { } lib) return;
+        var pluginLog = new List<string>();
+        var plugin = await StartAsync(lib, pluginLog);
+        try
+        {
+            for (var i = 0; i < 50 && !pluginLog.Contains("[Warning] careful"); i++) await Task.Delay(20);
+
+            lock (pluginLog)
+            {
+                Assert.Contains("[Warning] careful", pluginLog);
+                Assert.Contains("started", pluginLog);
+            }
+        }
+        finally { await plugin.Stop(CancellationToken.None); }
+    }
+
+    /// <summary>Review focus 2's other half: a report naming an id the host never issued goes nowhere.</summary>
+    [Fact]
+    public async Task AReportForAnIdNeverIssued_ReachesNoCall()
+    {
+        if (NativeFixtures.Path("fixture-reports") is not { } lib) return;
+        var plugin = await StartAsync(lib);
+        try
+        {
+            var call = new Recording();
+
+            var result = await plugin.Invoke("stray", NoArguments, call, CancellationToken.None);
+
+            Assert.True(result.Success, result.ErrorMessage);
+            Assert.Empty(call.Seen);
+        }
+        finally { await plugin.Stop(CancellationToken.None); }
+    }
+
+    /// <summary>
+    /// "No call" is a NULL id outside an invoke, and nothing else: a log line whose id does not parse
+    /// is a plugin bug, and sending it to the plugin's own log would hide that bug behind a line
+    /// that looks deliberate.
+    /// </summary>
+    [Fact]
+    public async Task ALogWithAnUnreadableCallId_IsDropped_NotSentToThePluginsLog()
+    {
+        if (NativeFixtures.Path("fixture-reports") is not { } lib) return;
+        var pluginLog = new List<string>();
+        var plugin = await StartAsync(lib, pluginLog);
+        try
+        {
+            await plugin.Invoke("stray", NoArguments, new Recording(), CancellationToken.None);
+            await plugin.Invoke("echo", NoArguments, new Recording(), CancellationToken.None);
+
+            lock (pluginLog) Assert.DoesNotContain(pluginLog, line => line.Contains("unplaceable"));
+        }
+        finally { await plugin.Stop(CancellationToken.None); }
+    }
+
+    /// <summary>
+    /// A line the reader cannot place costs that line and nothing else: the reader is the only one
+    /// this host has, and every other call's reply waits on it.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"event":5,"id":3}""")]
+    [InlineData("""{"event":"log","id":"x","text":"t"}""")]
+    [InlineData("""{"event":"progress","id":3,"percent":"lots"}""")]
+    [InlineData("""{"event":"teleport","id":3}""")]
+    [InlineData("not json")]
+    public void AMalformedReport_IsDropped_WithoutThrowing(string line)
+    {
+        var call = new Recording();
+
+        AbiHostProcess.RouteReport(line, id => id == 3 ? call : null, (_, _) => throw new InvalidOperationException());
+
+        Assert.Empty(call.Seen);
+    }
+
+    /// <summary>A context that throws while taking a report must not take the reader down with it.</summary>
+    [Fact]
+    public void AContextThatThrows_CostsOnlyThatReport()
+    {
+        AbiHostProcess.RouteReport("""{"event":"progress","id":3,"percent":5}""", _ => new Throwing(), null);
     }
 
     /// <summary>The export is optional: a library without attach loads, runs, and reports nothing.</summary>

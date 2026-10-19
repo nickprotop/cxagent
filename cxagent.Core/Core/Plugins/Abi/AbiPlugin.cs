@@ -44,7 +44,10 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
 
         // THE PLUGIN'S OWN LOG — what it says outside any call — goes where a managed plugin's goes:
         // the logger Load is handed. Null until Load, and a line before then has nowhere to go.
-        _host.PluginLogged += (_, line) => _logger?.Log(line);
+        // IPluginLogger has no level, so one worth noticing is written into the line: a warning
+        // must not read like routine output. Info and below stay bare, as a managed plugin's are.
+        _host.PluginLogged += (level, line) =>
+            _logger?.Log(level >= JobLogLevel.Warning ? $"[{level}] {line}" : line);
     }
 
     /// <summary>This plugin's host process died unasked — see <see cref="AbiHostProcess.Died"/>.

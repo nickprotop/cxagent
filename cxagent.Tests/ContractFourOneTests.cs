@@ -100,4 +100,21 @@ public class ContractFourOneTests
 
         Assert.Null(PluginContractUse.Refusal(sidecar));
     }
+
+    /// <summary>
+    /// An assembly loaded from bytes has no file, so there is no "beside it" to look in. Saying
+    /// "no sidecar at '.plugin.json'" would send an author looking for a file in the wrong folder.
+    /// </summary>
+    [Fact]
+    public void FromSidecar_ForAnAssemblyWithNoFile_SaysSo()
+    {
+        var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "cxagent.Tests.PluginFixture.dll"));
+        var assembly = System.Reflection.Assembly.Load(bytes);
+        var plugin = (IPlugin)Activator.CreateInstance(
+            assembly.GetTypes().First(t => typeof(IPlugin).IsAssignableFrom(t) && !t.IsAbstract))!;
+
+        var refused = Assert.Throws<InvalidOperationException>(() => PluginManifest.FromSidecar(plugin));
+
+        Assert.Contains("no file location", refused.Message);
+    }
 }

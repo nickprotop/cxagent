@@ -66,11 +66,14 @@ internal static unsafe class HostCallbacks
     }
 
     // A NULL id is this thread's call; anything else is the decimal request id current_call handed out.
+    // AN ID THAT DOES NOT PARSE IS -1, never 0: 0 means "no call" and would send a log line to the
+    // plugin's own log, hiding the plugin's bug behind a line that looks deliberate. -1 names no
+    // request, so the app drops it.
     private static long CallOf(byte* id) =>
         id == null ? _current
         : long.TryParse(Marshal.PtrToStringUTF8((IntPtr)id), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
-            : 0;
+            : -1;
 
     private static string? Text(byte* utf8) => utf8 == null ? null : Marshal.PtrToStringUTF8((IntPtr)utf8);
 
