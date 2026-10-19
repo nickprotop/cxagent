@@ -31,8 +31,7 @@ public class SpawnedAgentsCommandTests
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
-        }).Create(briefing: null, callerContext: null, label: "find thing", type: null,
-            parentAgentId: null, turnTools: null);
+        }).Create(new() { Label = "find thing" });
 
     /// <summary>
     /// A BUSY AGENT IS SENT TO, NOT REFUSED.

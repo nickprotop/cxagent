@@ -419,18 +419,20 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         type = type with { Routing = pick.Routing! };
 
         string? planPath = null;
-        var child = _factory.Create(
+        var child = _factory.Create(new SubAgentFactory.ChildRequest
+        {
             // THE BRIEFING COMES FROM THE TYPE, never from the parent (D9). Config is the only
             // legitimate author of the highest-authority text in a child's prompt.
-            briefing: null,
-            callerContext: WithPlanPath(Read(call, "context"), type, Read(call, "description"),
+            Briefing = null,
+            CallerContext = WithPlanPath(Read(call, "context"), type, Read(call, "description"),
                 canWrite: ChildCanWrite(turnTools, type), out planPath),
             // The label the USER sees — status row and permission prompts. Never sent to the model.
-            label: Read(call, "description"),
-            type: type,
+            Label = Read(call, "description"),
+            Type = type,
             // So the child's logs land UNDER this agent's directory rather than beside it.
-            parentAgentId: parentAgentId,
-            turnTools: turnTools);
+            ParentAgentId = parentAgentId,
+            TurnTools = turnTools,
+        });
         onChild?.Invoke(child);
 
         // KEPT THE MOMENT IT EXISTS, NOT WHEN IT FINISHES. A child is reachable — by agent_send,

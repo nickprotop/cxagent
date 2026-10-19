@@ -237,7 +237,7 @@ public class BackgroundSpawnTests
     public async Task ARunnerFailureAfterTheAnswer_StillFinishesTheRun()
     {
         var (_, store, delivery, factory) = Wired(Says("x"));
-        var child = factory.Create(label: "boom");
+        var child = factory.Create(new() { Label = "boom" });
         var name = store.Keep(child, "boom");
         store.TryClaim(name);
         var run = store.BeginBackground(
@@ -315,7 +315,7 @@ public class BackgroundSpawnTests
     public async Task AStopAfterTheWorkEnded_IsRefused()
     {
         var (_, store, delivery, factory) = Wired(new MockLlmProvider());   // the send throws: an error
-        var child = factory.Create(label: "late");
+        var child = factory.Create(new() { Label = "late" });
         var name = store.Keep(child, "late");
         store.TryClaim(name);
         var run = store.BeginBackground(

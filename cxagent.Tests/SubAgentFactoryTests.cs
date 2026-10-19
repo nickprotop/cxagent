@@ -172,7 +172,7 @@ public class SubAgentFactoryTests
     [Fact]
     public async Task Create_PutsTheBriefingInTheChildsSystemPrompt()
     {
-        var child = NewFactory().Create(briefing: "Find every caller of ParseHeader.");
+        var child = NewFactory().Create(new() { Briefing = "Find every caller of ParseHeader." });
         await child.Agent.SendAsync("go", CancellationToken.None);
 
         var system = Assert.Single(child.Agent.Context.Messages, m => m.Role == "system");
@@ -254,7 +254,7 @@ public class SubAgentFactoryTests
         var elsewhere = new AgentType("planner", "brief",
             new TypeRouting(Answering(), 32_000, "small"));
 
-        Assert.Equal("small:mock-model", factory.Create(type: elsewhere).ModelId);
+        Assert.Equal("small:mock-model", factory.Create(new() { Type = elsewhere }).ModelId);
     }
 
     /// <summary>With no instance name there is nothing to qualify with, and the bare model is still

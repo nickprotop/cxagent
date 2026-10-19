@@ -201,7 +201,7 @@ public class AgentTypeToolsReachTheChildTests
             Tools = new ToolSelection([Tool.Inherited, Tool.Not.RunShell]),
         };
 
-        var child = factory.Create(type: type);
+        var child = factory.Create(new() { Type = type });
         await child.Agent.SendAsync("go", CancellationToken.None);
 
         var offered = (provider.LastTools ?? []).Select(t => t.Name).ToList();

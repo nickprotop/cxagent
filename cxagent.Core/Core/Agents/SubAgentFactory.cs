@@ -78,7 +78,7 @@ public sealed class SubAgentFactory
     /// <para>TWELVE PARAMETERS BECAME ONE, and the grouping is not cosmetic: these are exactly the
     /// values a child INHERITS. What a child gets differently — its own buffered sinks, its own log
     /// directory nested under its parent, a fresh context, a type's provider and window — is decided
-    /// in <see cref="SubAgentFactory.Create"/> and is deliberately NOT here. A child is not a copy of
+    /// in <see cref="SubAgentFactory.Create(ChildRequest)"/> and is deliberately NOT here. A child is not a copy of
     /// its parent, and this type is only the half that is shared.</para>
     ///
     /// <para>IMMUTABLE, AND DERIVED RATHER THAN MUTATED. <c>init</c> everywhere, so a caller cannot
@@ -346,20 +346,48 @@ public sealed class SubAgentFactory
     internal bool AllowBackground => _runtime.AllowBackground;
 
 
-    /// <param name="parentAgentId">
-    /// The spawning agent's id, so the child's logs nest beneath it. Null keeps the flat layout —
-    /// only the tests that predate nesting pass nothing.
-    /// </param>
-    /// <param name="turnTools">The parent's per-request selection, composed onto the session's for
-    /// this child. Null when the parent is not running under one.</param>
-    /// <param name="briefing">The child's highest-authority text, or null to take its type's.</param>
-    /// <param name="callerContext">What the parent already knew and passed down.</param>
-    /// <param name="label">A short name for the child's row in the UI.</param>
-    /// <param name="type">Which agent type to build, or null for the general one.</param>
-    public SubAgent Create(string? briefing = null, string? callerContext = null, string? label = null,
-        AgentType? type = null, string? parentAgentId = null,
-        Jobs.ToolSelection? turnTools = null)
+    /// <summary>
+    /// What one child is built from.
+    ///
+    /// <para>A RECORD, NOT SIX OPTIONAL ARGUMENTS. They grew one per feature, three of them strings in a
+    /// row, and a seventh would have been a fourth — two transposed strings compile and build the wrong
+    /// child. Named members make that a build error.</para>
+    /// </summary>
+    public sealed record ChildRequest
     {
+        /// <summary>The child's highest-authority text, or null to take its type's.</summary>
+        public string? Briefing { get; init; }
+
+        /// <summary>What the parent already knew and passed down.</summary>
+        public string? CallerContext { get; init; }
+
+        /// <summary>A short name for the child's row in the UI.</summary>
+        public string? Label { get; init; }
+
+        /// <summary>Which agent type to build, or null for the general one.</summary>
+        public AgentType? Type { get; init; }
+
+        /// <summary>The spawning agent's id, so the child's logs nest beneath it. Null keeps the flat
+        /// layout — only the tests that predate nesting pass nothing.</summary>
+        public string? ParentAgentId { get; init; }
+
+        /// <summary>The parent's per-request selection, composed onto the session's for this child. Null
+        /// when the parent is not running under one.</summary>
+        public Jobs.ToolSelection? TurnTools { get; init; }
+    }
+
+    /// <summary>A plain child: the general type, no briefing, nothing passed down.</summary>
+    public SubAgent Create() => Create(new ChildRequest());
+
+    /// <summary>Builds the child <paramref name="request"/> describes.</summary>
+    public SubAgent Create(ChildRequest request)
+    {
+        var briefing = request.Briefing;
+        var callerContext = request.CallerContext;
+        var label = request.Label;
+        var type = request.Type;
+        var parentAgentId = request.ParentAgentId;
+        var turnTools = request.TurnTools;
         var sink = new BufferedChatSink();
         var jobs = new BufferedJobPanel();
 
