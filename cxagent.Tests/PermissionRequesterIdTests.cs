@@ -38,4 +38,38 @@ public class PermissionRequesterIdTests
         Assert.Equal("find the loader", asked.Requester);
         File.Delete(file);
     }
+
+    private sealed class Denying : IPermissionGate
+    {
+        public List<PermissionRequest> Seen { get; } = [];
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct)
+        {
+            Seen.Add(request);
+            return Task.FromResult(PermissionOutcome.ByUser);
+        }
+    }
+
+    /// <summary>
+    /// THROUGH THE REAL GATED EXECUTOR: replace_in_file on a file asks, and a no leaves the file as it
+    /// was. With no request raised, the gate's loop had nothing to ask and the edit simply ran.
+    /// </summary>
+    [Fact]
+    public async Task AReplace_Asks_AndADenialLeavesTheFileUntouched()
+    {
+        var file = Path.Combine(Path.GetTempPath(), "replace-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(file, "keep this");
+        var gate = new Denying();
+        JobRegistry.CreateWithBuiltins(null, gate).TryGet("file", out var executor);
+
+        var result = await executor!.ExecuteAsync(
+            new JobParameters(new Dictionary<string, object?>
+                { ["action"] = "replace", ["path"] = file, ["pattern"] = "keep", ["replacement"] = "lost" }),
+            new JobContext("agent", "job", new Dictionary<string, JobResult>(), null),
+            CancellationToken.None);
+
+        Assert.Equal(PermissionKind.FileWrite, Assert.Single(gate.Seen).Kind);
+        Assert.False(result.Success);
+        Assert.Equal("keep this", File.ReadAllText(file));
+        File.Delete(file);
+    }
 }

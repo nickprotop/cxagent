@@ -301,7 +301,7 @@ public class PermissionPolicy
         // such a call, so this is unreachable today — but this is the gate, and the failure mode of
         // silently raising NO request for a write is that the write goes through unasked if that
         // validation ever moves. Fail toward asking, the same direction TryResolve already fails.
-        if (action is "read" or "write" or "append" or "delete" or "copy" or "move")
+        if (action is "read" or "write" or "append" or "delete" or "copy" or "move" or "replace" or "create")
         {
             if (path is null)
                 return [new PermissionRequest(
@@ -318,7 +318,20 @@ public class PermissionPolicy
                 break;
             case "write":
             case "append":
+            // EDITS ARE WRITES. replace_in_file changes a file as surely as write_file does, and create
+            // makes one; with no request here the gate's loop has nothing to ask and the call runs
+            // unasked, anywhere on disk.
+            case "replace":
+            case "create":
                 requests.Add(FileRequest(PermissionKind.FileWrite, target, root));
+                break;
+            // A WALK IS A READ OF WHAT IT WALKS. glob lists a folder and grep reads every file under it,
+            // so a folder outside the boundary asks as read_file would. No path is the working folder —
+            // the default the executor applies — so the gate judges the folder the walk will cover.
+            case "list":
+            case "search":
+                requests.Add(FileRequest(PermissionKind.FileRead,
+                    string.IsNullOrWhiteSpace(path) ? "." : path, root));
                 break;
             case "delete":
                 requests.Add(FileRequest(PermissionKind.FileWrite, target, root));
@@ -328,6 +341,12 @@ public class PermissionPolicy
                 requests.Add(FileRequest(PermissionKind.FileRead, target, root));
                 if (dest is not null)
                     requests.Add(FileRequest(PermissionKind.FileWrite, dest, root));
+                break;
+            // AN ACTION THIS GATE DOES NOT KNOW STILL ASKS. With no request the call would run unasked;
+            // asking about a write is the direction to fail.
+            default:
+                requests.Add(new PermissionRequest(PermissionKind.FileWrite,
+                    $"{action} {path ?? "(no path given)"}", null));
                 break;
         }
         return requests;

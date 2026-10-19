@@ -776,7 +776,7 @@ public class PermissionPolicyTests
     // "The given key 'path' was not present in the dictionary" before the executor was reached: 18
     // failures in one live session, on the exact call shape the tool advertises.
     [Fact]
-    public void SearchWithNoPath_RaisesNoRequestAndDoesNotThrow()
+    public void SearchWithNoPath_ReadsTheWorkingFolder_AndDoesNotThrow()
     {
         var p = new JobParameters(new Dictionary<string, object?>
         {
@@ -784,13 +784,16 @@ public class PermissionPolicyTests
             ["pattern"] = "needle",
         });
 
-        var requests = PermissionPolicy.RequestsFor("file", p, "/proj");
+        var request = Assert.Single(PermissionPolicy.RequestsFor("file", p, "/proj"));
 
-        Assert.Empty(requests);   // read-only: approval-free by design
+        // A WALK IS A READ: no path is the working folder, so inside a trusted folder it passes
+        // silently, as read_file does, and nothing here throws.
+        Assert.Equal(PermissionKind.FileRead, request.Kind);
+        Assert.Equal("/proj", request.Display);
     }
 
     [Fact]
-    public void ListWithNoPath_RaisesNoRequestAndDoesNotThrow()
+    public void ListWithNoPath_ReadsTheWorkingFolder_AndDoesNotThrow()
     {
         var p = new JobParameters(new Dictionary<string, object?>
         {
@@ -798,7 +801,9 @@ public class PermissionPolicyTests
             ["pattern"] = "*.cs",
         });
 
-        Assert.Empty(PermissionPolicy.RequestsFor("file", p, "/proj"));
+        var request = Assert.Single(PermissionPolicy.RequestsFor("file", p, "/proj"));
+        Assert.Equal(PermissionKind.FileRead, request.Kind);
+        Assert.Equal("/proj", request.Display);
     }
 
     // FAIL TOWARD ASKING. A write with no path cannot happen today (validation rejects it), but if
@@ -985,5 +990,55 @@ public class PermissionPolicyTests
             dir = Path.GetDirectoryName(dir);
 
         return dir ?? throw new DirectoryNotFoundException("repository root not found from " + AppContext.BaseDirectory);
+    }
+
+    /// <summary>
+    /// replace_in_file and create are WRITES to their path. With no request at all the gate's loop never
+    /// ran and the edit went through unasked, anywhere on disk, in every mode.
+    /// </summary>
+    [Theory]
+    [InlineData("replace")]
+    [InlineData("create")]
+    public void AnEditingAction_IsAWriteToItsPath(string action)
+    {
+        var root = MakeTempDir();
+        var req = Assert.Single(PermissionPolicy.RequestsFor("file",
+            Params(("action", action), ("path", "/etc/hosts")), root));
+        Assert.Equal(PermissionKind.FileWrite, req.Kind);
+        Assert.Equal("/etc/hosts", req.Display);
+    }
+
+    /// <summary>glob and grep READ what they walk: a path outside the folder asks, as read_file does.
+    /// No path means the working folder — the same default the executor applies.</summary>
+    [Theory]
+    [InlineData("list", "/etc", "/etc")]
+    [InlineData("search", "/etc", "/etc")]
+    [InlineData("list", null, null)]
+    [InlineData("search", null, null)]
+    public void AWalkingAction_IsAReadOfItsFolder(string action, string? path, string? expected)
+    {
+        var root = MakeTempDir();
+        var parameters = path is null ? Params(("action", action), ("pattern", "x")) : Params(("action", action), ("pattern", "x"), ("path", (object?)path));
+        var req = Assert.Single(PermissionPolicy.RequestsFor("file", parameters, root));
+        Assert.Equal(PermissionKind.FileRead, req.Kind);
+        Assert.Equal(expected ?? Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)), req.Display);
+    }
+
+    /// <summary>
+    /// EVERY ACTION THE FILE EXECUTOR ACCEPTS RAISES A REQUEST. An action with none runs ungated — the
+    /// gate's loop has nothing to ask about — so a new action added to the executor must fail this
+    /// test until the gate knows what it touches.
+    /// </summary>
+    [Fact]
+    public void EveryFileAction_RaisesARequest()
+    {
+        var root = MakeTempDir();
+        foreach (var action in CxAgent.Core.Jobs.Builtin.FileJobExecutor.KnownActions)
+        {
+            var requests = PermissionPolicy.RequestsFor("file",
+                Params(("action", action), ("path", Path.Combine(root, "a.txt")), ("dest", Path.Combine(root, "b.txt")),
+                       ("pattern", "x"), ("content", "y"), ("replacement", "z")), root);
+            Assert.True(requests.Count > 0, $"file action '{action}' raises no permission request, so it runs unasked.");
+        }
     }
 }

@@ -9,6 +9,10 @@ public class FileJobExecutor : IJobExecutor
         new() { "read", "write", "append", "delete", "copy", "move", "list", "search", "replace",
                 "create" };
 
+    /// <summary>Every action this executor accepts — what the permission gate must raise a request for,
+    /// since an action it raises none for runs unasked.</summary>
+    internal static IReadOnlySet<string> KnownActions => Actions;
+
     public string TypeName => "file";
     public string DisplayName => "File Operation";
 
