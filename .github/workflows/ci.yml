@@ -47,7 +47,11 @@ jobs:
       - name: Native fixtures were built
         shell: bash
         run: |
-          built=$(ls cxagent.Tests/bin/Debug/net10.0/fixture-*.{so,dylib,dll} 2>/dev/null | wc -l)
+          # FIND, NOT A GLOB LIST: ls exits non-zero for the extensions this OS never builds, and
+          # under pipefail that fails the step whatever was built.
+          find cxagent.Tests/bin/Debug/net10.0 -maxdepth 1 -name 'fixture-*' \
+            \( -name '*.so' -o -name '*.dylib' -o -name '*.dll' \) | tee fixtures.txt
+          built=$(wc -l < fixtures.txt)
           echo "fixtures built: $built"
           test "$built" -ge 8
       - name: Native tests
