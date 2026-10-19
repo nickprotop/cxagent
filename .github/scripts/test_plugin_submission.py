@@ -406,6 +406,13 @@ class Workflows(unittest.TestCase):
             self.assertIn('dotnet tool install -g cxagent --version "[0.9.38,)"',
                           (WORKFLOWS / name).read_text(encoding="utf-8"), name)
 
+    def test_a_job_that_fails_before_the_script_tells_the_author(self):
+        # AN INSTALL THAT FAILS never reaches the script, which is what comments on its own failures;
+        # the job's last step says it instead — and only then, or a failed script would say it twice.
+        text = (WORKFLOWS / "plugin-submission.yml").read_text(encoding="utf-8")
+        self.assertIn("if: failure() && steps.check.outcome != 'failure'", text)
+        self.assertIn("id: check", text)
+
     def test_only_the_submission_label_reruns_on_labeled(self):
         text = (WORKFLOWS / "plugin-submission.yml").read_text(encoding="utf-8")
         self.assertIn("github.event.label.name == 'plugin-submission'", text)

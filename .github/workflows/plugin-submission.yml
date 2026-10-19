@@ -49,6 +49,19 @@ jobs:
           dotnet tool install -g cxagent --version "[0.9.38,)"
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
       - name: Check the submission
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/plugin_submission.py
+      # A JOB THAT FAILS BEFORE THE CHECK — an install that cannot find the cxagent it needs, say —
+      # never reaches the script, which comments on its own failures. Only then is it said here, or a
+      # failed script would be reported twice. The issue's number is a number, never its text.
+      - name: Say the check could not run
+        if: failure() && steps.check.outcome != 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body
+          "**The check could not run.** This is the bot's problem, not your entry's; a maintainer will look. [This check's log]($RUN_URL)"
