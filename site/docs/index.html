@@ -44,6 +44,10 @@ links to GitHub, because it is written for someone already reading the source.</
 <li><a href="../docs/config.html">Configuration</a>
     <span>— every block of <code>config.json</code>, where the file lives on each OS, and what each
     key's absence means</span></li>
+<li><a href="../docs/scripting.html">Scripting</a>
+    <span>— running cxagent from a script or CI, and reading what it did</span></li>
+<li><a href="../docs/walkthrough.html">A session, in pictures</a>
+    <span>— captures from real sessions, mistakes included</span></li>
 </ul>
 </div>
 
@@ -54,12 +58,22 @@ configuration to start.</p>
 
 <div class="doc-group">
 <ul>
-<li><a href="../writing-a-plugin.html">The on-ramp</a>
-    <span>— from the calculator example to a catalog submission</span></li>
+<li><a href="../writing-a-plugin.html">Start here</a>
+    <span>— what a plugin is, and the path from <code>cxagent plugin new</code> to the catalog</span></li>
+<li><a href="../docs/sdk.html">The SDK and its tutorials</a>
+    <span>— a weather plugin in C#, a word counter in C, end to end</span></li>
 <li><a href="../docs/plugins.html">The contract</a>
-    <span>— the lifecycle, the sidecar, gating, settings, and the managed and ABI interfaces</span></li>
-<li><a href="../docs/plugin-publishing.html">Publishing a plugin</a>
-    <span>— adding a catalog entry, with a worked example of each <code>source</code> shape</span></li>
+    <span>— the lifecycle, the sidecar, gating, commands, settings</span></li>
+<li><a href="../docs/plugin-cli.html">The command line</a>
+    <span>— <code>new</code>, <code>check</code>, <code>call</code>, <code>pack</code>, <code>verify</code></span></li>
+<li><a href="../docs/plugin-testing.html">Testing</a>
+    <span>— from the command line, and from a C# test with CxAgent.Plugins.Testing</span></li>
+<li><a href="../docs/plugin-c-sdk.html">The C SDK</a>
+    <span>— the <code>cxp</code> API and building for every platform</span></li>
+<li><a href="../docs/plugin-abi.html">The C ABI</a>
+    <span>— what crosses each call, for a plugin written without <code>cxp</code></span></li>
+<li><a href="../docs/plugin-publishing.html">Publishing</a>
+    <span>— pack, upload, verify, submit, with a worked entry for each shape</span></li>
 </ul>
 </div>
 
@@ -85,8 +99,6 @@ configuration to start.</p>
 <ul>
 <li><a href="https://github.com/nickprotop/cxagent#readme">README</a>
     <span>— what cxagent is, and what it actually does to your machine</span></li>
-<li><a href="https://github.com/nickprotop/cxagent/tree/master/docs/screenshots">A session, in pictures</a>
-    <span>— eighteen captures from real sessions, mistakes included</span></li>
 <li><a href="https://github.com/nickprotop/cxagent/blob/master/ROADMAP.md">Roadmap</a>
     <span>— what is next</span></li>
 </ul>

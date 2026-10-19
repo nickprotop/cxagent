@@ -41,13 +41,13 @@
 
 <div class="footnote">
 <h2>Installing one</h2>
-<p>Put the plugin's file in your plugins folder — <code>~/.config/cxagent/plugins</code> on Linux,
-<code>%APPDATA%\cxagent\plugins</code> on Windows,
-<code>~/Library/Application Support/cxagent/plugins</code> on macOS. cxagent notices it and says so,
-without loading it. Turn it on for one session with <code>/plugin load csharp-lsp.dll</code>, or keep
-it in <code>config.json</code>:</p>
-<pre><code>"plugins": { "csharp-lsp": { "file": "csharp-lsp.dll" } }</code></pre>
-<p>Either way it asks once, on first load, and shows you what it is about to run.</p>
+<p>Press <strong>F2</strong> in cxagent, or type <code>/plugin browse</code>, to open the plugin
+manager: it lists this catalog, installs a plugin with its hash checked, and offers updates. Already
+know the one you want? <code>/plugin get csharp-lsp</code> downloads it into your global plugins
+folder.</p>
+<p>Installing is not loading. A plugin runs when you load it — <code>/plugin load csharp-lsp</code>
+for this session, or a <a href="docs/config.html#plugins-and-pluginpaths--plugins">config entry</a>
+to load it at every start — and the first load asks, showing you what it is about to run.</p>
 </div>
 
 <div class="footnote">
@@ -55,7 +55,7 @@ it in <code>config.json</code>:</p>
 <p>A plugin declares what it offers in a sidecar file cxagent reads <em>before</em> loading its
 assembly, so the load prompt can say what a plugin claims without running it.</p>
 <p><a href="writing-a-plugin.html">Write a plugin →</a><br>
-<a href="docs/plugins.html">The contract in full →</a></p>
+<a href="docs/plugin-publishing.html">Get it into this catalog →</a></p>
 </div>
 
 </section>
@@ -64,8 +64,8 @@ assembly, so the load prompt can say what a plugin claims without running it.</p
 
 <p>cxagent asks before loading any plugin, showing a hash of everything it would load. Nothing in
 your config file can pre-approve one, and if a single byte of the load set changes, the question
-comes back. Past that point a plugin is not sandboxed: it runs inside cxagent's own process and can
-do what that process can. What cxagent enforces is the decision to load it —
+comes back. Past that point a plugin is not sandboxed: a .NET plugin runs inside cxagent's own
+process, a native one in a host process of its own, and either can do what its process can. What cxagent enforces is the decision to load it —
 <strong>trusting a plugin is trusting its author</strong>, exactly as installing any other software
 is.</p>
 
