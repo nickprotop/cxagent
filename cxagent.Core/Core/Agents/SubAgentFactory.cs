@@ -458,6 +458,7 @@ public sealed class SubAgentFactory
             callerContext: callerContext,
             label: label,
             runsOn: $"{type?.Name ?? AgentTypeCatalog.DefaultTypeName} on {entry}",
+            root: request.Root?.Relative,
 
             // THE CHILD'S OWN SYSTEM PROMPT (D24). Without this it would be handed the session
             // prompt unchanged — told about /clear and /compress it cannot run, for a user it does

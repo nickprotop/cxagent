@@ -617,7 +617,9 @@ public sealed class JobsPanel
             CardControl(view.Running), new EquatableList(facts), "View transcript", Movable: view is { Running: true, Foreground: true })
         {
             // WHERE IT RUNS, always — a card for a paid child must not read like one for a free one.
-            RunsOn = view.Kept.Agent.ModelId is { Length: > 0 } m ? CxAgent.Core.Llm.ModelNames.ShortLabel(m) : null,
+            RunsOn = view.Kept.Agent.ModelId is { Length: > 0 } m
+                ? CxAgent.Core.Llm.ModelNames.ShortLabel(m) + (view.Kept.Agent.Root is { } folder ? $" in {folder}" : "")
+                : null,
         };
     }
 

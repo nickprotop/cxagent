@@ -104,6 +104,7 @@ public sealed class GatedAgentTool : IAgentTool
                     {
                         Requester = context.Requester,
                         RequesterRunsOn = (context as Execution.JobContext)?.RequesterRunsOn,
+                        RequesterRoot = (context as Execution.JobContext)?.RequesterRoot,
                         // THE ID TOO, from the concrete context: IJobContext is published and carries no agent id.
                         RequesterAgentId = (context as Execution.JobContext)?.AgentId,
                         // THE CALLER'S POLICY FIRST — see JobContext.Policy.
@@ -159,6 +160,7 @@ public sealed class GatedAgentTool : IAgentTool
                     {
                         Requester = context.Requester,
                         RequesterRunsOn = (context as Execution.JobContext)?.RequesterRunsOn,
+                        RequesterRoot = (context as Execution.JobContext)?.RequesterRoot,
                         // THE ID TOO, from the concrete context: IJobContext is published and carries no agent id.
                         RequesterAgentId = (context as Execution.JobContext)?.AgentId,
                         // THE CALLER'S POLICY FIRST — see JobContext.Policy.

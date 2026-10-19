@@ -745,6 +745,7 @@ public sealed class Agent
     /// </summary>
     private readonly string? _requesterLabel;
     private readonly string? _requesterRunsOn;
+    private readonly string? _requesterRoot;
 
     /// <summary>
     /// What THIS agent was created to do, fixed at construction — null for a plain session.
@@ -1076,6 +1077,8 @@ public sealed class Agent
     /// <param name="startedOn">The day the session began, for the system prompt; null is today.</param>
     /// <param name="runsOn">For a sub-agent, its type and where it runs (`planner on deepseek:…`), shown
     /// beside its label in its permission prompts; null for a session's own agent.</param>
+    /// <param name="root">For a sub-agent in a folder of its own, that folder relative to its parent's,
+    /// shown beside where it runs; null otherwise.</param>
     public Agent(ILlmProvider provider, JobRegistry executors, TokenLedger ledger,
         ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null, string? globalInstructionsDir = null,
@@ -1098,7 +1101,7 @@ public sealed class Agent
         IAgentDelivery? delivery = null,
         string? sessionId = null,
         DateOnly? startedOn = null,
-        string? runsOn = null)
+        string? runsOn = null, string? root = null)
     {
         // THE SESSION'S DAY, NOT THIS AGENT'S: a re-wire builds a new agent, and a session that began
         // yesterday must keep yesterday's date in its system prompt or the whole conversation is
@@ -1149,6 +1152,7 @@ public sealed class Agent
         // WHICH TYPE, ON WHICH PROVIDER — shown beside the label in a child's permission prompt, and
         // nowhere else: the label is what history, reports and MCP keep, and stays as it was.
         _requesterRunsOn = isSubAgent ? runsOn : null;
+        _requesterRoot = isSubAgent ? root : null;
         _mcp = mcp;
         _spawner = spawner;
         _delivery = delivery;
@@ -2895,6 +2899,9 @@ public sealed class Agent
             childId = child.Agent.Id;
             // WHERE IT RUNS, known only now — the row's title was written before the spawner picked.
             job.RunsOn = child.ModelId;
+            // AND WHERE IT WORKS, apart from RunsOn: RunsOn is the bare entry, which the stored envelope
+            // carries as runs_on.
+            job.ChildRoot = child.Root;
 
             // REACHABLE BY ID FROM HERE ON, because a child's repaint no longer closes over this
             // local: it arrives from the store's claim announcement, which knows an agent id and
@@ -2970,6 +2977,7 @@ public sealed class Agent
             // Rides with every tool call this agent makes, so the gate can say who is asking.
             Requester = _requesterLabel,
             RequesterRunsOn = _requesterRunsOn,
+            RequesterRoot = _requesterRoot,
 
             // AND WHERE IT WORKS, so a relative path resolves against THIS agent's folder rather
             // than the process's. Identical today, because one process runs one session from the
@@ -3160,7 +3168,7 @@ public sealed class Agent
                 ?? Text(ReportMcpWonOverInjected(call.Name,
                         _mcp is null || DynamicOffers(call.Name) ? null
                             : await _mcp.TryInvokeAsync(call, ct,
-                                new Permissions.RequestOrigin(_requesterLabel, _requesterRunsOn, _policy))))
+                                new Permissions.RequestOrigin(_requesterLabel, _requesterRunsOn, _policy) { Root = _requesterRoot })))
                 // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. ToolBindings.InvokeAsync
                 // answers "no such tool" rather than null, so it ENDS this chain — a link placed
                 // after it never runs at all, and looks perfectly correct while never running.

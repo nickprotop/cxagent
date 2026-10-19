@@ -904,7 +904,8 @@ public sealed class InlineJobSink : IToolObserver
         if (job.RunsOn is { Length: > 0 } runsOn)
         {
             var at = title.IndexOf(" · ", StringComparison.Ordinal);
-            var label = CxAgent.Core.Llm.ModelNames.ShortLabel(runsOn);
+            var label = CxAgent.Core.Llm.ModelNames.ShortLabel(runsOn)
+                      + (job.ChildRoot is { Length: > 0 } folder ? $" in {folder}" : "");
             title = at < 0 ? $"{title} · {label}" : $"{title[..at]} · {label}{title[at..]}";
         }
         var name = SharpConsoleUI.Parsing.MarkupParser.Escape(title);

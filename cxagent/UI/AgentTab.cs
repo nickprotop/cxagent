@@ -282,6 +282,7 @@ public sealed class AgentTab : IDisposable
         var lines = new List<string> { $"[bold]{MarkupParser.Escape(Kept.Name)}[/]" };
         // THE FULL name:model here — the tab is where a child is looked at closely.
         var facts = Kept.Agent.ModelId is { Length: > 0 } runsOn ? $"{Kept.TypeName} · {runsOn}" : Kept.TypeName;
+        if (Kept.Agent.Root is { } folder) facts += $" · in {folder}";
         if (_now is { } row)
         {
             facts += $" · {AgentRows.Word(row.State)} · {JobsPanel.Clock(row.Elapsed)}";

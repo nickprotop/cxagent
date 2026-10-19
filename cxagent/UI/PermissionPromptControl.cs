@@ -182,7 +182,10 @@ public sealed class PermissionPromptControl
         if (!string.IsNullOrWhiteSpace(_request.Requester))
             markup.AddLine($"[{ColorScheme.ThinkingMarkup}]asked for by: "
                          + SharpConsoleUI.Parsing.MarkupParser.Escape(_request.Requester!
-                             + (_request.RequesterRunsOn is { Length: > 0 } on ? $" ({CxAgent.Core.Llm.ModelNames.ShortLabel(on)})" : ""))
+                             + (_request.RequesterRunsOn is { Length: > 0 } on
+                                ? $" ({CxAgent.Core.Llm.ModelNames.ShortLabel(on)}"
+                                  + (_request.RequesterRoot is { Length: > 0 } folder ? $" in {folder}" : "") + ")"
+                                : ""))
                          + "[/]");
         // One AddLine per source line, same reasoning as ChoiceStepContent: a multi-line Display
         // (e.g. a shell command plus its working_dir) would otherwise paint its "\n" literally.

@@ -397,4 +397,16 @@ public class PermissionPromptControlTests
 
         Assert.Equal(heading, PermissionPromptControl.HeadingFor(request, offerTrust: !trusted && inside));
     }
+
+    [Fact]
+    public void ARootedChildsRequest_NamesItsFolder()
+    {
+        var request = ShellRequest("ls") with
+        {
+            Requester = "Plan it", RequesterRunsOn = "planner on local:qwen.gguf", RequesterRoot = "sub",
+        };
+        var text = string.Join("\n", FindMarkupLines(new PermissionPromptControl(request, offerTrust: false).BuildContent()));
+
+        Assert.Contains("asked for by: Plan it (planner on local:qwen in sub)", text, StringComparison.Ordinal);
+    }
 }

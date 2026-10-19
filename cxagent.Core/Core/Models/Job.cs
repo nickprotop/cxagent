@@ -105,6 +105,10 @@ public record Job
     /// </summary>
     public string? RunsOn { get; set; }
 
+    /// <summary>For a spawn whose child works in a folder of its own, that folder relative to the
+    /// parent's; null otherwise. Shown beside <see cref="RunsOn"/>.</summary>
+    public string? ChildRoot { get; set; }
+
     /// <summary>
     /// What a still-running job has to show BEHIND its expand — as opposed to
     /// <see cref="ProgressMessage"/>, which is the one line on the header.

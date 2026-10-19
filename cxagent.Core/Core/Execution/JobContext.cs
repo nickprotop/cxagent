@@ -77,6 +77,10 @@ internal sealed class JobContext : IJobHostContext
     /// prompt to show beside <see cref="Requester"/>. Display only; null for the parent's own work.</summary>
     public string? RequesterRunsOn { get; set; }
 
+    /// <summary>For a sub-agent in a folder of its own, that folder relative to its parent's, shown in the
+    /// prompt beside <see cref="RequesterRunsOn"/>. Display only; null otherwise.</summary>
+    public string? RequesterRoot { get; set; }
+
     /// <summary>The agent's own directory, so a relative path resolves where the model was told it
     /// would. Settable for the same reason <see cref="Requester"/> is.</summary>
     public string? WorkingDirectory { get; set; }

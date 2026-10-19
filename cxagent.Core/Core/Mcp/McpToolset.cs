@@ -184,6 +184,7 @@ public sealed class McpToolset
         {
             Requester = origin?.Label,
             RequesterRunsOn = origin?.RunsOn,
+            RequesterRoot = origin?.Root,
             Policy = origin?.Policy,
         };
 

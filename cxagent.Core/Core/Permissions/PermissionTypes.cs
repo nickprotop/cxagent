@@ -84,6 +84,10 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// </summary>
     public string? ShellWorkingDir { get; init; }
 
+    /// <summary>For a sub-agent working in a folder of its own, that folder relative to its parent's — shown
+    /// in the prompt beside <see cref="RequesterRunsOn"/>. Display only; null otherwise.</summary>
+    public string? RequesterRoot { get; init; }
+
     /// <summary>
     /// The asking agent's id — the key a front end looks the agent up by, beside <see cref="Requester"/>, which is
     /// a label to show.
@@ -222,4 +226,9 @@ public enum PermissionChoice { Once, Always, Deny, TrustFolder }
 /// become <see cref="PermissionRequest.Requester"/> and <see cref="PermissionRequest.RequesterRunsOn"/>,
 /// both null for the session's own agent; <see cref="Policy"/> is the asking session's own.
 /// </summary>
-public sealed record RequestOrigin(string? Label, string? RunsOn, PermissionPolicy? Policy);
+public sealed record RequestOrigin(string? Label, string? RunsOn, PermissionPolicy? Policy)
+{
+    /// <summary>A sub-agent's folder relative to its parent's, when it has one of its own — see
+    /// <see cref="PermissionRequest.RequesterRoot"/>.</summary>
+    public string? Root { get; init; }
+}

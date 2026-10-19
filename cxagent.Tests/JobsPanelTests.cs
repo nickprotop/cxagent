@@ -19,13 +19,13 @@ public class JobsPanelTests
             state, exit, TimeSpan.FromSeconds(74)), tail, agent);
 
     private static JobsPanel.AgentRow Agent(string handle, AgentRowState state, bool foreground = false,
-        string? description = null)
+        string? description = null, string? root = null)
     {
         var child = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
             MaxTurns = 5,
-        }).Create();
+        }).Create() with { Root = root };
         var began = DateTimeOffset.UtcNow.AddSeconds(-74);
         var ended = state is AgentRowState.Done or AgentRowState.Stopped or AgentRowState.Failed;
         return new(new AgentRowView(new StoredAgent(handle, "explore", description, began, child), state, foreground,
@@ -466,5 +466,13 @@ public class JobsPanelTests
         var text = Render(Agent("find-loader", AgentRowState.Running, description: "Find the config loader"));
 
         Assert.Contains("Agent · 1m 14s\n  mock-model\n  View transcript", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnAgentCard_NamesItsFolder_WhenItHasOne()
+    {
+        var text = Render(Agent("find-loader", AgentRowState.Running, description: "Find the config loader", root: "sub"));
+
+        Assert.Contains("Agent · 1m 14s\n  mock-model in sub\n  View transcript", text, StringComparison.Ordinal);
     }
 }

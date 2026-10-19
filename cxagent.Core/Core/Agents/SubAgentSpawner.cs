@@ -727,8 +727,9 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         return selection.Apply(writes).Count > 0;
     }
 
-    /// <param name="canWrite">
-    /// Whether the child will actually be offered a write tool.
+    /// <param name="target">
+    /// The child's label (the file name), its folder, and whether it will actually be offered a write
+    /// tool.
     ///
     /// <para>WITHOUT THIS THE MECHANISM CONTRADICTS ITSELF. It tells the child to write a file at an
     /// exact path, then replaces a marker in the answer with what is on disk — so a child that
@@ -742,7 +743,6 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// </param>
     /// <param name="context">What the parent passed down, which this may append to.</param>
     /// <param name="type">The child's type — only a plan-writing one gets a path.</param>
-    /// <param name="target">The child's label (the file name), whether it can write, and its folder.</param>
     /// <param name="planPath">Where the plan should be written — relative to the CHILD's folder — or null
     /// when the child cannot write.</param>
     private string? WithPlanPath(string? context, AgentType type, PlanTarget target, out string? planPath)

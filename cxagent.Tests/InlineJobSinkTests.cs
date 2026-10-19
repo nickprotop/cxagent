@@ -2102,4 +2102,15 @@ public class InlineJobSinkTests
 
         Assert.Contains("planner · x", InlineJobSink.CompactHeaderForTest(job), StringComparison.Ordinal);
     }
+
+    /// <summary>A child in a folder of its own says so beside where it runs; RunsOn stays the bare entry.</summary>
+    [Fact]
+    public void AWorkersRow_NamesItsFolder_WhenItHasOne()
+    {
+        var job = TypedJob("llm_agent", JobState.Succeeded) with { DisplayName = "general · a · b" };
+        job.RunsOn = "local:qwen.gguf";
+        job.ChildRoot = "sub";
+
+        Assert.Contains("general · local:qwen in sub · a · b", InlineJobSink.CompactHeaderForTest(job), StringComparison.Ordinal);
+    }
 }

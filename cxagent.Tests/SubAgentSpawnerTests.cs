@@ -2457,4 +2457,32 @@ public class SubAgentSpawnerTests
         Assert.True(Agent.IsInsideGitRepo(Path.Combine(scene.Root, "sub", "deep")));
         Assert.False(Agent.IsInsideGitRepo(Path.GetTempPath()));
     }
+
+    /// <summary>A rooted child's requests carry its folder for the prompt, beside where it runs.</summary>
+    [Fact]
+    public async Task ARootedChildsRequest_CarriesItsFolder()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "cx-rq-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "sub"));
+        var gate = new RecordingGate();
+        var childProvider = new MockLlmProvider();
+        childProvider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "t1", Name = "run_shell",
+                Arguments = System.Text.Json.JsonDocument.Parse("""{"command":"ls -l"}""").RootElement }],
+        });
+        childProvider.EnqueueResponse(new LlmResponse { Text = "listed", StopReason = "end_turn" });
+        var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = childProvider, Executors = JobRegistry.CreateWithBuiltins(null, gate), Ledger = new TokenLedger(),
+            MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000, WorkingDir = root,
+        });
+
+        await new SubAgentSpawner(factory).TryInvokeAsync(RootSpawn("sub"), null, CancellationToken.None);
+
+        var shell = Assert.Single(gate.Seen, r => r.Kind == CxAgent.Core.Permissions.PermissionKind.Shell);
+        Assert.Equal("sub", shell.RequesterRoot);
+        Assert.Equal("general on mock-model", shell.RequesterRunsOn);
+    }
 }

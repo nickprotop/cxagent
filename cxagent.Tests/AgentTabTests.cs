@@ -383,4 +383,13 @@ public sealed class AgentTabTests : IDisposable
 
         Assert.Contains(tab.HeaderLinesForTest(), l => l.Contains("general · mock-model", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void TheHeader_NamesTheChildsFolder_WhenItHasOne()
+    {
+        _front.SubAgents.Keep(Child(Says("found it")) with { Root = "sub" }, "finder");
+        using var tab = new AgentTab(_front, _front.SubAgents.Find("finder")!, Inline(new ChatTranscriptControl()));
+
+        Assert.Contains(tab.HeaderLinesForTest(), l => l.Contains("general · mock-model · in sub", StringComparison.Ordinal));
+    }
 }
