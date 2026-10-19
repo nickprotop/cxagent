@@ -137,4 +137,15 @@ public class InstanceDraftTests
         Assert.True(new InstanceDraft("other", Local) { Model = "x" }.ChangeFor(settings).Everyone);
         Assert.True(new InstanceDraft("new", Local) { IsNew = true }.AddChange(settings).Everyone);
     }
+
+    [Fact]
+    public void ADescription_IsWritten_AndEmptyingItClearsTheKey()
+    {
+        var draft = new InstanceDraft("local", Local) { Description = "  fast, free  " };
+        Assert.True(draft.IsDirty);
+        Assert.Equal("fast, free", draft.ToFields().Description);
+
+        var cleared = new InstanceDraft("local", Local with { Description = "old" }) { Description = "" };
+        Assert.Contains("description", cleared.ToFields().Clear);
+    }
 }

@@ -280,6 +280,10 @@ public sealed class ProvidersTab
             : "The server's base URL, usually ending in /v1.", url);
 
         fields.Add("Model", "The model id this instance sends requests to.", ModelEditor(draft));
+
+        var description = new PromptControl { Input = draft.Description ?? "", HorizontalAlignment = HorizontalAlignment.Stretch };
+        description.InputChanged += (_, text) => { draft.Description = text; Changed(); };
+        fields.Add("Description", "One line: what this entry is for, and whether it is free or paid. The model reads it when choosing where a sub-agent runs.", description);
         fields.Add("API key", "Stored in config.json, readable only by you. Never shown again once saved.", KeyEditor(draft));
         fields.Add("Thinking", "The level new sessions start at; /think and F10 change it per session.", ThinkingEditor(draft));
 

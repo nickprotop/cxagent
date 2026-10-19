@@ -188,4 +188,12 @@ public class ProviderEditsTests
 
         Assert.Equal("all", (string?)root["agents"]!["a"]!["provider"]);
     }
+
+    [Fact]
+    public void Update_WritesADescription()
+    {
+        var root = System.Text.Json.Nodes.JsonNode.Parse("""{ "providers": { "local": { "kind": "ollama", "model": "m" } } }""")!.AsObject();
+        ProviderEdits.Update(root, "local", new InstanceFields { Description = "fast, free" });
+        Assert.Equal("fast, free", (string?)root["providers"]!["local"]!["description"]);
+    }
 }

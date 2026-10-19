@@ -23,6 +23,7 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
 
     public string Model { get; set; } = original.Model;
     public string? BaseUrl { get; set; } = original.BaseUrl;
+    public string? Description { get; set; } = original.Description;
     public string? NewApiKey { get; set; }
     public bool ClearApiKey { get; set; }
     public string? Thinking { get; set; } = original.Thinking;
@@ -35,11 +36,12 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
 
     private bool KeyChanged => ClearApiKey ? Original.ApiKey is not null : !string.IsNullOrEmpty(NewApiKey);
     private bool UrlChanged => Blank(BaseUrl) != Blank(Original.BaseUrl);
+    private bool DescriptionChanged => Blank(Description) != Blank(Original.Description);
     private bool HeadersChanged => !SameHeaders(ExtraHeaders, Original.ExtraHeaders);
 
     /// <summary>Whether anything on screen differs from the file.</summary>
     public bool IsDirty =>
-        Model != Original.Model || UrlChanged || KeyChanged || Thinking != Original.Thinking
+        Model != Original.Model || UrlChanged || DescriptionChanged || KeyChanged || Thinking != Original.Thinking
         || ThinkingDisplay != Original.ThinkingDisplay || Reasoning != Original.Reasoning
         || CacheControl != Original.CacheControl || ContextWindow != Original.ContextWindow
         || MaxConcurrentAgents != Original.MaxConcurrentAgents || HeadersChanged;
@@ -67,6 +69,7 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
             Kind = IsNew ? Original.Kind : null,
             Model = Model != Original.Model || IsNew ? Model.Trim() : null,
             BaseUrl = Text(BaseUrl, Original.BaseUrl, "baseUrl"),
+            Description = Text(Description, Original.Description, "description"),
             ApiKey = !ClearApiKey && !string.IsNullOrEmpty(NewApiKey) ? NewApiKey : null,
             Thinking = Text(Thinking, Original.Thinking, "thinking"),
             ThinkingDisplay = ThinkingDisplay != Original.ThinkingDisplay
@@ -89,6 +92,7 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
     {
         Model = Model.Trim(),
         BaseUrl = Blank(BaseUrl),
+        Description = Blank(Description),
         ApiKey = ClearApiKey ? null : !string.IsNullOrEmpty(NewApiKey) ? NewApiKey : Original.ApiKey,
         Thinking = Thinking,
         ThinkingDisplay = ThinkingDisplay,
@@ -136,6 +140,7 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
         var what = new List<string>();
         if (Model != Original.Model) what.Add($"model {Original.Model} → {Model}");
         if (UrlChanged) what.Add("endpoint");
+        if (DescriptionChanged) what.Add("description");
         if (KeyChanged) what.Add("API key");
         if (Thinking != Original.Thinking) what.Add($"thinking {Original.Thinking ?? "default"} → {Thinking ?? "default"}");
         if (what.Count == 0) what.Add("settings");

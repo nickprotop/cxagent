@@ -13,6 +13,7 @@ public sealed record InstanceFields
     public string? Model { get; init; }
     public string? ApiKey { get; init; }
     public string? BaseUrl { get; init; }
+    public string? Description { get; init; }
     public IReadOnlyDictionary<string, string>? ExtraHeaders { get; init; }
     public int? ContextWindow { get; init; }
     public int? MaxConcurrentAgents { get; init; }
@@ -31,6 +32,7 @@ public sealed record InstanceFields
         Set(instance, "model", Model);
         Set(instance, "apiKey", ApiKey);
         Set(instance, "baseUrl", BaseUrl);
+        Set(instance, "description", Description);
         if (ExtraHeaders is { } headers)
             instance["extraHeaders"] = new JsonObject(headers.Select(kv =>
                 KeyValuePair.Create(kv.Key, (JsonNode?)JsonValue.Create(kv.Value))));
