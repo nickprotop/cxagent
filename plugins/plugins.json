@@ -229,7 +229,7 @@
         "linux-x64": {
           "kind": "url",
           "url": "https://github.com/nickprotop/cxagent-smoke-wordcount/releases/download/v1.0.0/wordcount-linux-x64.zip",
-          "sha256": "2111ec01227b30685e0e9b2942ea2556e56142908c4572f68257b643405252ee",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
           "file": "wordcount.so"
         },
         "osx-arm64": {
