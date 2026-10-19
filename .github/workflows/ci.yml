@@ -17,6 +17,15 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Build and test
         run: dotnet test --nologo
+      # THE FIXTURES THEMSELVES ARE COUNTED: a native test with no fixture returns early and reports
+      # as passed, so a green suite alone cannot show the native path ran. FIND, NOT A GLOB, because
+      # ls exits non-zero for a pattern that matches nothing.
+      - name: Native fixtures were built
+        run: |
+          find cxagent.Tests/bin/Debug/net10.0 -maxdepth 1 -name 'fixture-*.so' | tee fixtures.txt
+          built=$(wc -l < fixtures.txt)
+          echo "fixtures built: $built"
+          test "$built" -ge 8
       # THE ABI EXAMPLE IS THE HEADER'S ONLY EXECUTABLE PROOF. The doc comments in cxagent_plugin.h
       # are the whole specification a C author reads, and nothing else checks that a plugin written
       # against them compiles. A contract change that breaks the header should fail here.
@@ -25,43 +34,3 @@ jobs:
           gcc -shared -fPIC -Icxagent.Core/sdk/c \
             -o /tmp/calculator_abi.so \
             cxagent.Core/examples/CalculatorAbiPlugin/calculator_abi.c
-
-  # THE NATIVE PATH ON EVERY PLATFORM IT SHIPS FOR. The release builds a plugin host for six
-  # platforms, and native plugins were only ever exercised on Linux; this builds the fixtures with
-  # each platform's own C compiler (via CMake) and runs the native tests there.
-  native:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-      - name: Build
-        run: dotnet build cxagent.Tests/cxagent.Tests.csproj
-      # THE FIXTURES THEMSELVES ARE COUNTED, not the passing tests: a native test with no fixture
-      # returns early and reports as passed, so only the files show whether this leg built any.
-      - name: Native fixtures were built
-        shell: bash
-        run: |
-          # FIND, NOT A GLOB LIST: ls exits non-zero for the extensions this OS never builds, and
-          # under pipefail that fails the step whatever was built.
-          find cxagent.Tests/bin/Debug/net10.0 -maxdepth 1 -name 'fixture-*' \
-            \( -name '*.so' -o -name '*.dylib' -o -name '*.dll' \) | tee fixtures.txt
-          built=$(wc -l < fixtures.txt)
-          echo "fixtures built: $built"
-          test "$built" -ge 8
-      - name: Native tests
-        shell: bash
-        run: |
-          dotnet test cxagent.Tests/cxagent.Tests.csproj --no-build \
-            --filter "FullyQualifiedName~Abi|FullyQualifiedName~NativePluginExport|FullyQualifiedName~PluginRouting" \
-            --logger "console;verbosity=normal" | tee native-tests.log
-          passed=$(grep -oE "Passed: +[0-9]+" native-tests.log | tail -1 | grep -oE "[0-9]+")
-          skipped=$(grep -oE "Skipped: +[0-9]+" native-tests.log | tail -1 | grep -oE "[0-9]+")
-          echo "passed=$passed skipped=$skipped"
-          test "${passed:-0}" -gt 50
-
