@@ -1,0 +1,16 @@
+{
+  "pluginContract": 4,
+  "kind": "managed",
+  "client": true,
+  "name": "harness",
+  "version": "1.0.0",
+  "spawns": false,
+  "tools": [
+    { "name": "echo", "description": "echoes", "inputSchema": { "type": "object", "properties": { "text": { "type": "string" } } }, "gated": "dynamic" },
+    { "name": "submit", "description": "submits", "inputSchema": { "type": "object" }, "gated": false },
+    { "name": "slow", "description": "never returns", "inputSchema": { "type": "object" }, "gated": false }
+  ],
+  "commands": [
+    { "name": "harness-ping", "summary": "replies pong" }
+  ]
+}

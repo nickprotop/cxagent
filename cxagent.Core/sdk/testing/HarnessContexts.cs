@@ -56,3 +56,47 @@ internal sealed class HarnessContext(string workingDirectory, JsonElement settin
         public void Log(string message) { lock (owner._logged) owner._logged.Add(message); }
     }
 }
+
+/// <summary>Keeps every report a call makes, in order, and passes each to the caller as it happens.</summary>
+internal sealed class RecordingJobContext(string workingDirectory, Action<HarnessReport>? onReport) : CxAgent.Core.Jobs.IJobContext
+{
+    private readonly List<HarnessReport> _reports = [];
+
+    public IReadOnlyList<HarnessReport> Reports { get { lock (_reports) return [.. _reports]; } }
+    public string? Requester => "cxagent plugin call";
+    public string? WorkingDirectory { get; } = workingDirectory;
+
+    public void ReportProgress(double percent, string? message = null) => Add(new HarnessReport.Progress(percent, message));
+    public void Log(string line) => Add(new HarnessReport.Log(CxAgent.Core.Jobs.JobLogLevel.Info, line));
+    public void Log(CxAgent.Core.Jobs.JobLogLevel level, string line) => Add(new HarnessReport.Log(level, line));
+    public void ReportTextDelta(string delta) => Add(new HarnessReport.Stream(delta));
+
+    private void Add(HarnessReport report)
+    {
+        lock (_reports) _reports.Add(report);
+
+        // THE CALLER'S PRINTER MUST NOT FAIL THE PLUGIN'S CALL: for a native plugin this runs on the
+        // one thread every reply waits on.
+        try
+        {
+            onReport?.Invoke(report);
+        }
+        catch (Exception)
+        {
+        }
+    }
+}
+
+/// <summary>A client that starts nothing: each goal is kept, and accepted, so the plugin carries on.</summary>
+internal sealed class RecordingClient : IPluginClient
+{
+    private readonly List<string> _goals = [];
+
+    public IReadOnlyList<string> Goals { get { lock (_goals) return [.. _goals]; } }
+
+    public Task<SubmitResult> Submit(string goal, bool wantResult = false, CancellationToken ct = default)
+    {
+        lock (_goals) _goals.Add(goal);
+        return Task.FromResult(new SubmitResult(true, null, null));
+    }
+}

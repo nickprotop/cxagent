@@ -18,6 +18,13 @@ public sealed record HarnessOptions
     public string? WorkingDirectory { get; init; }
 }
 
+/// <summary>The plugin could not be loaded and started; <see cref="Problems"/> says why, one line each.</summary>
+public sealed class PluginLoadException(IReadOnlyList<PluginProblem> problems)
+    : Exception(string.Join(Environment.NewLine, problems))
+{
+    public IReadOnlyList<PluginProblem> Problems { get; } = problems;
+}
+
 /// <summary>
 /// Checks and runs a plugin folder the way a session would, with no session: the same sidecar rules,
 /// the same loaders, the same gate decision.
@@ -41,6 +48,59 @@ public static partial class PluginHarness
         // their refusal would repeat one already listed above.
         if (problems.Count == 0) await LoadProblems(found, options ?? new(), problems, ct).ConfigureAwait(false);
         return problems;
+    }
+
+    /// <summary>
+    /// Loads and starts the plugin in <paramref name="folder"/> — the sidecar checks, the loader a
+    /// session would pick, then Start. Throws <see cref="PluginLoadException"/> naming every problem
+    /// when it cannot.
+    /// </summary>
+    public static async Task<HarnessPlugin> LoadAsync(string folder, HarnessOptions? options = null, CancellationToken ct = default)
+    {
+        options ??= new();
+        var problems = new List<PluginProblem>();
+        if (PluginFolder.Find(folder, problems) is not { } found) throw new PluginLoadException(problems);
+
+        var parsed = PluginManifest.Parse(File.ReadAllText(found.Sidecar));
+        problems.AddRange(parsed.Errors.Select(e => new PluginProblem("sidecar", e)));
+        if (parsed.Manifest is { } sidecar) StaticProblems(sidecar, found, problems);
+        if (problems.Count > 0 || parsed.Manifest is null) throw new PluginLoadException(problems);
+
+        // A CLIENT ONLY WHEN THE SIDECAR ASKS FOR ONE — as a session hands it — so a plugin that
+        // forgot to declare it finds Client null here too, rather than passing a test and failing live.
+        var client = parsed.Manifest.Client ? new RecordingClient() : null;
+        var context = NewContext(options, client);
+        switch (await LoadInto(found, context, options, ct).ConfigureAwait(false))
+        {
+            case LoadOutcome.Failed f:
+                context.Dispose();
+                throw new PluginLoadException([new("load", f.Reason)]);
+            case LoadOutcome.Loaded l:
+                try
+                {
+                    await l.Instance.Start(ct).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // STOPPED AND REAPED BEFORE THE THROW: a Start that failed half way may already
+                    // hold a process, and the caller gets no plugin to dispose.
+                    try
+                    {
+                        await l.Instance.Stop(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    context.Dispose();
+                    throw new PluginLoadException([new("start", ex.Message)]);
+                }
+
+                return new HarnessPlugin(l.Instance, l.Manifest, context, client);
+            default:
+                context.Dispose();
+                throw new InvalidOperationException("unknown load result");
+        }
     }
 
     private static void StaticProblems(PluginManifest sidecar, PluginFolder found, List<PluginProblem> problems)
