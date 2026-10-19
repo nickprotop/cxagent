@@ -29,6 +29,11 @@ boundary costs.
 The [other examples](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples) cover
 the rest: a second front end, injecting tools, and narrowing what an agent may do.
 
+**Test it without a session.** `cxagent plugin check <folder>` runs every load-time check and
+`cxagent plugin call <folder> <tool>` runs one real call, gate included; the
+**CxAgent.Plugins.Testing** package does the same inside a C# test. See
+[plugin-testing.md](plugin-testing.md).
+
 ## The project
 
 A managed plugin is an ordinary `net10.0` library — no `RuntimeIdentifier`, so one build runs
@@ -686,6 +691,7 @@ index a plugin binary sitting in `.cxagent/plugins`. The global folder avoids th
 
 ## See also
 
+- [`plugin-testing.md`](plugin-testing.md) — `cxagent plugin check`, `cxagent plugin call` and CxAgent.Plugins.Testing
 - [`IPlugin.cs`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/IPlugin.cs) — the managed contract, documented per method
 - [`sdk/c/cxagent_plugin.h`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/sdk/c/cxagent_plugin.h) — the seven C functions, with the ownership rules
 - [`Abi/README.md`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/Abi/README.md) — the JSON envelopes crossing the ABI boundary

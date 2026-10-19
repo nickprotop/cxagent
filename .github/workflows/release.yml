@@ -527,6 +527,15 @@ jobs:
             -p:ContinuousIntegrationBuild=true \
             --output ./nupkg
 
+          # THE PLUGIN HARNESS, versioned with the release and carrying this release's plugin host —
+          # the one AbiHostProcess's version check accepts. AFTER THE TOOL: that pack builds the host
+          # in Release, and this one packs the host's files from where that build left them.
+          dotnet pack cxagent.Core/sdk/testing/CxAgent.Plugins.Testing.csproj \
+            --configuration Release \
+            -p:Version=${{ steps.version.outputs.VERSION }} \
+            -p:ContinuousIntegrationBuild=true \
+            --output ./nupkg
+
       # WHAT IS ACTUALLY IN IT, in the log. The README and docs/ are packed by an ItemGroup that a
       # future edit could silently drop, and a package whose links all 404 looks fine from here.
       # ONE unzip PER PACKAGE. `unzip -l ./nupkg/*.nupkg` lists only the FIRST archive and says
@@ -542,9 +551,9 @@ jobs:
       # ONE-TIME SETUP ON NUGET.ORG, and this job fails until it is done:
       #   1. nuget.org → account → Trusted Publishing → add a policy for
       #      owner `nickprotop`, repository `nickprotop/cxagent`, workflow `release.yml`.
-      #      A GLOB IN THE PACKAGE PATTERN (`cxagent*`) covers all three packages this job pushes —
-      #      CxAgent.Core, CxAgent.Plugins.Abstractions and cxagent, the dotnet tool — so one policy
-      #      is enough. Without a glob a
+      #      A GLOB IN THE PACKAGE PATTERN (`cxagent*`) covers all four packages this job pushes —
+      #      CxAgent.Core, CxAgent.Plugins.Abstractions, CxAgent.Plugins.Testing and cxagent, the
+      #      dotnet tool — so one policy is enough. Without a glob a
       #      policy is per-package, and a missing one fails that package's push alone, after the
       #      other has landed; --skip-duplicate makes the re-run safe either way.
       #   2. `gh variable set NUGET_USER --repo nickprotop/cxagent --body "<nuget.org user>"`
