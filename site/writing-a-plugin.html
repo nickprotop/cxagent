@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Writing a plugin — cxagent</title>
-<meta name="description" content="From the calculator example to a catalog entry: declaring a plugin contract, deciding what needs gating, publishing a release, and submitting it.">
+<meta name="description" content="From cxagent plugin new to a catalog entry: what a plugin is, the path from a template to a published plugin, and where the SDK documents each step.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Writing a plugin — cxagent">
@@ -28,70 +28,77 @@
 
 <span class="section-label">// &nbsp;AUTHORING</span>
 <h1>Writing a plugin</h1>
-<p class="lede">From an example that already runs, to an entry in the catalog.</p>
+<p class="lede">From <code>cxagent plugin new</code> to an entry in the catalog. Everything here is
+in <a href="docs/sdk.html">the SDK</a>; this page is the way in.</p>
 
 <h2>What a plugin is</h2>
 
 <p>A plugin is a library cxagent did not ship, loaded into a session at run time. It can add
-<strong>tools</strong> the model may call, and it can add a block of <strong>guidance to the system
-prompt</strong> — saying what individual tool descriptions cannot, such as that positions are 1-based
-or which file types it serves. A plugin that declares no tools and only that block is a valid plugin
-too.</p>
+<strong>tools</strong> the model may call, <strong>commands</strong> a person types, and a block of
+<strong>guidance to the system prompt</strong>. It declares all of this in a <strong>sidecar
+file</strong> that cxagent reads <em>before</em> loading it, so the load prompt can show what a
+plugin claims without running any of its code.</p>
 
-<p>It declares all of this in a <strong>sidecar file</strong> that cxagent reads <em>before</em> it
-loads the assembly, so the load prompt can show what a plugin claims without running any of its
-code.</p>
+<p>Two kinds: <strong>managed</strong>, a .NET assembly that runs inside cxagent's own process and is
+portable across every platform cxagent runs on; and <strong>native</strong>, a C library built per
+platform, which runs in a separate host process. Neither is sandboxed — a plugin can do what its
+process can. What cxagent enforces is the decision to load it, asked every time with a hash of
+everything it would load.</p>
 
-<p>Two flavours: <strong>managed</strong>, a .NET assembly, portable across every platform cxagent
-runs on; and <strong>ABI</strong>, a native library, for a plugin your language cannot write managed
-— not portable, so it ships per platform.</p>
-
-<p>Know what you are asking of a user. A plugin is not sandboxed: it runs in cxagent's own process
-and can do what that process can. The gate cxagent enforces is the decision to load it at all.</p>
-
-<h2>1. Start from the calculator</h2>
-
-<p>Both examples are a complete plugin in about a hundred lines, deliberately gating something
-absurd — adding two numbers — so the permission prompt is visible the first time you run it.</p>
+<h2>The path</h2>
 
 <div class="doc-group">
-<ul>
-<li><a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorPlugin">CalculatorPlugin</a>
-    <span>— managed, the usual starting point</span></li>
-<li><a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorAbiPlugin">CalculatorAbiPlugin</a>
-    <span>— the same calculator in one file of C</span></li>
-</ul>
+<ol>
+<li><a href="docs/sdk.html#1-start-from-the-template"><code>cxagent plugin new weather --lang csharp</code></a>
+    <span>— a working project: a sidecar, one tool with a per-call gate, the plugin, a README and a
+    test project. <code>--lang c</code> gives the same in C, with the C SDK.</span></li>
+<li><a href="docs/plugin-cli.html#cxagent-plugin-check-folder---json"><code>cxagent plugin check</code></a>
+    <span>— every load-time check, with no session and no model</span></li>
+<li><a href="docs/plugin-cli.html#cxagent-plugin-call-folder-tool-json-options"><code>cxagent plugin call</code></a>
+    <span>— one real call through load, start, the gate and invoke</span></li>
+<li><a href="docs/plugin-testing.html#cxagentpluginstesting">Test it</a>
+    <span>— the same from xunit, NUnit or MSTest, with CxAgent.Plugins.Testing</span></li>
+<li><a href="docs/plugin-cli.html#cxagent-plugin-pack-folder-options"><code>cxagent plugin pack</code></a>
+    <span>— the zips, their hashes and the catalog entry</span></li>
+<li><a href="docs/plugin-cli.html#cxagent-plugin-verify-entryjson--pluginsjson---https-only---json"><code>cxagent plugin verify</code></a>
+    <span>— what a user's install would get, with no plugin code run</span></li>
+<li><a href="docs/plugin-publishing.html#4-submit">Submit it</a>
+    <span>— paste the entry into the "Submit a plugin" issue; a bot verifies it and opens the pull
+    request</span></li>
+</ol>
 </div>
 
-<p>Copy one, rename it, and get it loading before you change what it does. Load it into a session
-with no config file to edit:</p>
+<p>The <a href="docs/sdk.html#tutorial-a-weather-plugin-end-to-end">C# tutorial</a> and the
+<a href="docs/sdk.html#tutorial-c-wordcount">C tutorial</a> walk this whole path with a real plugin.</p>
 
-<pre><code>/plugin load my-plugin.dll</code></pre>
+<h2>The sidecar</h2>
 
-<h2>2. Declare your plugin contract</h2>
+<p>What <code>plugin new</code> writes for a plugin called <code>weather</code>:</p>
 
-<p>Your sidecar names the contract version it was written against:</p>
+<pre><code>{
+  "pluginContract": 4,
+  "kind": "managed",
+  "name": "weather",
+  "version": "1.0.0",
+  "spawns": false,
+  "instructions": "weather_greet greets someone by name.",
+  "tools": [
+    {
+      "name": "weather_greet",
+      "description": "Greets someone by name. Asks before greeting anyone called admin.",
+      "inputSchema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] },
+      "gated": "dynamic"
+    }
+  ]
+}</code></pre>
 
-<pre><code>{ "pluginContract": 3, "name": "my-plugin", ... }</code></pre>
+<p><code>pluginContract</code> is the version of the plugin interface it was written against; cxagent
+loads a range of them and refuses one outside it. Every field is in
+<a href="docs/plugins.html#the-sidecar">the contract</a>.</p>
 
-<p>The host compares this against a <strong>range</strong>, not exact equality. A version above what
-the host understands is refused — it may require something the host has never heard of — and a
-version below the host's floor is refused too, because support for it was dropped rather than merely
-unimplemented. A contract-1 plugin is refused by a host whose floor has since risen past it exactly
-as an unfamiliar future contract would be refused for being too new: either direction, the host
-refuses rather than guessing at a shape it cannot verify.</p>
+<h2>Deciding what needs gating</h2>
 
-<p><strong>Check it back from your own <code>Load</code>.</strong> A host <em>older</em> than your
-contract has never heard of it and reads your manifest with its own rules — a cxagent predating
-<code>"dynamic"</code> takes it for <code>false</code> and offers your tools ungated. Nothing fails,
-and the gate you declared is simply not there. So verify:</p>
-
-<pre><code>if (context.HostContract &lt; 2)
-    throw new NotSupportedException($"needs contract 2; this host speaks {context.HostContract}.");</code></pre>
-
-<h2>3. Decide what needs gating</h2>
-
-<p>Each tool in your sidecar declares whether a call needs a human. There are three states:</p>
+<p>Each tool declares whether a call needs a person:</p>
 
 <div class="table-scroll">
 <table>
@@ -107,68 +114,29 @@ and the gate you declared is simply not there. So verify:</p>
 </table>
 </div>
 
-<p><strong><code>"dynamic"</code> is for when the arguments decide.</strong> A tool is not
-categorically safe or dangerous — a query that reads is not the same call as one that writes, and a
-lookup inside the working folder is not the same call as one outside it. That is exactly what the
-shipped <code>csharp-lsp</code> tools do: they run unasked inside the folder you started in, and ask
-before reading a file outside it. Declaring the tool <code>true</code> instead would make every
-lookup a prompt, which trains a user to click through them.</p>
+<p>The shipped <code>csharp-lsp</code> tools are <code>"dynamic"</code>: they run unasked inside the
+folder you started in, and ask before reading a file outside it. Declaring them <code>true</code>
+would make every lookup a prompt, which trains a user to click through them.
+<a href="docs/plugins.html#permission">Permission</a> covers the rest.</p>
 
-<p><code>"dynamic"</code> routes each call to a method that sees the arguments and returns either a
-gate with your own wording, or <code>null</code> for no prompt. <strong>Declaring
-<code>"dynamic"</code> without implementing <code>IPluginGateSource</code> fails the load</strong>:
-the sidecar promised a decision the assembly cannot make, and silently gating nothing is the wrong
-answer.</p>
+<h2>Going deeper</h2>
 
-<h2>4. Start work in your own session, if you need to</h2>
-
-<p>A plugin that only answers tool calls waits to be asked. Declare <code>"client": true</code> in
-your sidecar and a managed plugin can start a turn on its own — a scheduled wake, a watcher that
-noticed something — through <code>IPluginContext.Client</code>:</p>
-
-<pre><code>{ "name": "watcher", "client": true, "version": "1.0.0", ... }</code></pre>
-
-<p>A managed plugin also implements the marker interface <code>IPluginClientConsumer</code>, so the
-loader can check the binary against what the sidecar promised. <code>Client.Submit(goal, wantResult,
-ct)</code> asks the agent to do something, worded as a user would type it — fire-and-forget by
-default, or wait for the turn's final answer with <code>wantResult: true</code>. Its reach is your
-own session and nothing else; there is no target parameter.</p>
-
-<p>Most plugins never need this. It exists for the ones that originate work rather than only
-answering it.</p>
-
-<h2>5. Publish a release with your artifact</h2>
-
-<p>Publish the built plugin as a release asset on your own repository, and publish a
-<code>SHA256SUMS</code> — or the hash of the artifact itself — alongside it. Your catalog entry pins
-that hash, and it is the only thing vouching for a file hosted somewhere this project does not
-control.</p>
-
-<p>Version the plugin, and keep the version in the sidecar in step with the release that carries it.
-A catalog entry naming an asset no release carries is worse than no entry at all.</p>
-
-<h2>6. Submit it to the catalog</h2>
-
-<p>The <a href="plugins.html">catalog</a> is a committed file in the cxagent repository. To add an
-entry, open an issue from the plugin submission template:</p>
-
-<p><a href="https://github.com/nickprotop/cxagent/issues/new?template=submit_a_plugin.yml">Submit a
-plugin →</a></p>
-
-<p>It asks for the plugin's name, its repository, a one-line description, the contract it targets,
-the platforms it actually has downloads for, and its tools with each one's gating. Those are the
-fields the catalog carries, and they are what a reader judges before deciding to run your code —
-<code>publisher</code> and <code>repository</code> are claims, not facts a client can verify, which
-is why they must be true.</p>
-
-<p>The steps for adding an entry by hand, and a worked example of each <code>source</code> shape,
-are in <a href="docs/plugin-publishing.html">the publishing guide</a>.</p>
-
-<h2>The reference</h2>
-
-<p>The full contract — the lifecycle, the sidecar's every field, permission and settings, and the
-managed and ABI interfaces side by side — is at
-<a href="docs/plugins.html">/docs/plugins.html</a>.</p>
+<div class="doc-group">
+<ul>
+<li><a href="docs/plugins.html">The contract</a>
+    <span>— the lifecycle, the sidecar, permission, commands, settings, and starting work in your own
+    session</span></li>
+<li><a href="docs/plugin-cli.html">The command line</a>
+    <span>— every option of <code>new</code>, <code>check</code>, <code>call</code>, <code>pack</code>
+    and <code>verify</code></span></li>
+<li><a href="docs/plugin-c-sdk.html">The C SDK</a>
+    <span>— the <code>cxp</code> API and building for every platform</span></li>
+<li><a href="docs/plugin-abi.html">The C ABI</a>
+    <span>— what crosses each call, for a plugin written without <code>cxp</code></span></li>
+<li><a href="docs/plugin-publishing.html">Publishing</a>
+    <span>— upload, verify, submit, and what review checks</span></li>
+</ul>
+</div>
 
 </main>
 <footer>
