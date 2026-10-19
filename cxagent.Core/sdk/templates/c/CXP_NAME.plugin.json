@@ -1,0 +1,20 @@
+{
+  "pluginContract": 4,
+  "kind": "native",
+  "name": "CXP_NAME",
+  "version": "1.0.0",
+  "spawns": false,
+  "instructions": "CXP_NAME_count counts the lines and words in a file. Use it when asked how long a file is.",
+  "tools": [
+    {
+      "name": "CXP_NAME_count",
+      "description": "Counts the lines and words in a file. Asks before reading a file outside the working folder.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "file": { "type": "string", "description": "The file, relative to the working folder." } },
+        "required": ["file"]
+      },
+      "gated": "dynamic"
+    }
+  ]
+}

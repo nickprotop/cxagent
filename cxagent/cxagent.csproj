@@ -115,6 +115,12 @@
   <ItemGroup>
     <EmbeddedResource Include="../cxagent.Core/sdk/templates/csharp/**" Exclude="../cxagent.Core/sdk/templates/csharp/**/bin/**;../cxagent.Core/sdk/templates/csharp/**/obj/**"
                       LogicalName="template/csharp/%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- THE C TEMPLATE, AND THE SDK FILES COPIED INTO ITS cxp/ — a C project carries its SDK, so it
+         builds with nothing but a compiler and CMake. -->
+    <EmbeddedResource Include="../cxagent.Core/sdk/templates/c/**" Exclude="../cxagent.Core/sdk/templates/c/**/build/**"
+                      LogicalName="template/c/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../cxagent.Core/sdk/c/cxagent_plugin.h;../cxagent.Core/sdk/c/cxp.h;../cxagent.Core/sdk/c/cxp.c;../cxagent.Core/sdk/c/cxp.cmake;../cxagent.Core/sdk/c/cJSON.h;../cxagent.Core/sdk/c/cJSON.c;../cxagent.Core/sdk/c/cJSON-LICENSE"
+                      LogicalName="template/c/cxp/%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

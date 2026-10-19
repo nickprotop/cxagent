@@ -1,0 +1,77 @@
+# Builds the plugin for every platform cxagent runs on and, on a version tag, packs the six builds
+# into one release with its catalog entry.
+#
+# RUNNER LABELS checked against GitHub's hosted-runner reference on 2026-10-19
+# (docs.github.com/en/actions/reference/runners/github-hosted-runners). Intel macOS is
+# macos-15-intel; plain macos-13 is gone.
+name: build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: linux-x64,   os: ubuntu-latest,    lib: CXP_NAME.so }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm, lib: CXP_NAME.so }
+          - { rid: osx-x64,     os: macos-15-intel,   lib: CXP_NAME.dylib }
+          - { rid: osx-arm64,   os: macos-latest,     lib: CXP_NAME.dylib }
+          - { rid: win-x64,     os: windows-latest,   lib: CXP_NAME.dll }
+          - { rid: win-arm64,   os: windows-11-arm,   lib: CXP_NAME.dll }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+      # ONE FOLDER PER PLATFORM: the library, its sidecar and the README, wherever the generator put them
+      # (Visual Studio builds into build/Release, the others into build/).
+      - name: Collect
+        shell: bash
+        run: |
+          mkdir out
+          lib=$(find build -name '${{ matrix.lib }}' | head -1)
+          test -n "$lib"
+          cp "$lib" "$(dirname "$lib")/CXP_NAME.plugin.json" README.md out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CXP_NAME-${{ matrix.rid }}
+          path: out/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v4
+        with:
+          path: builds
+      # cxagent's own pack: one zip per platform, each sha256, and the catalog entry — refused if the
+      # plugin does not pass `cxagent plugin check`.
+      - name: Pack
+        run: |
+          dotnet tool install -g cxagent
+          native=""
+          for dir in builds/CXP_NAME-*; do
+            rid=${dir#builds/CXP_NAME-}
+            lib=$(ls "$dir"/CXP_NAME.so "$dir"/CXP_NAME.dylib "$dir"/CXP_NAME.dll 2>/dev/null | head -1)
+            native="$native --native $lib=$rid"
+          done
+          cxagent plugin pack builds/CXP_NAME-linux-x64 $native --out dist
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/*.zip dist/CXP_NAME.catalog.json --title "${{ github.ref_name }}"

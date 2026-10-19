@@ -36,9 +36,7 @@ internal static partial class PluginNewCommand
         if (name is null || !ValidName().IsMatch(name))
             return Task.FromResult(PluginCli.Fail(stderr,
                 $"'{name}' is not a plugin name: lowercase letters, digits and '-', starting with a letter, at most 40."));
-        if (lang is "c")
-            return Task.FromResult(PluginCli.Fail(stderr, "C plugins arrive with the C SDK; --lang c is not available yet."));
-        if (lang is not "csharp") return Task.FromResult(PluginCli.Fail(stderr, "--lang is csharp or c."));
+        if (lang is not ("csharp" or "c")) return Task.FromResult(PluginCli.Fail(stderr, "--lang is csharp or c."));
         if (dir is "") return Task.FromResult(PluginCli.Fail(stderr, "--dir takes a folder."));
 
         var target = Path.GetFullPath(dir ?? name);
@@ -47,7 +45,7 @@ internal static partial class PluginNewCommand
             return Task.FromResult(PluginCli.Fail(stderr, $"'{target}' is not empty; new never writes over anything."));
 
         var values = TemplateValues.For(name);
-        foreach (var file in PluginTemplate.Files("csharp"))
+        foreach (var file in PluginTemplate.Files(lang))
         {
             var path = Path.Combine(target, PluginTemplate.Fill(file.RelativePath, values));
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -57,8 +55,17 @@ internal static partial class PluginNewCommand
         stdout.WriteLine($"Created {name} in {target}.");
         stdout.WriteLine("Next:");
         stdout.WriteLine($"  cd {target}");
-        stdout.WriteLine("  dotnet build && cxagent plugin check bin/Debug/net10.0");
-        stdout.WriteLine($"  cxagent plugin call bin/Debug/net10.0 {name}_greet '{{\"name\":\"Ada\"}}'");
+        if (lang == "c")
+        {
+            stdout.WriteLine("  cmake -B build && cmake --build build && cxagent plugin check build");
+            stdout.WriteLine($"  cxagent plugin call build {name}_count '{{\"file\":\"CMakeLists.txt\"}}' --answer allow");
+        }
+        else
+        {
+            stdout.WriteLine("  dotnet build && cxagent plugin check bin/Debug/net10.0");
+            stdout.WriteLine($"  cxagent plugin call bin/Debug/net10.0 {name}_greet '{{\"name\":\"Ada\"}}'");
+        }
+
         return Task.FromResult(0);
     }
 }

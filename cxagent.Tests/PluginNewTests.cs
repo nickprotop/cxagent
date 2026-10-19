@@ -1,5 +1,6 @@
 using CxAgent.Cli;
 using CxAgent.Core.Plugins;
+using CxAgent.Plugins.Testing;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -75,15 +76,6 @@ public class PluginNewTests
     }
 
     [Fact] public async Task AnUnknownLanguage_IsUsage() => Assert.Equal(2, (await Run("new", "weather", "--lang", "cobol")).Exit);
-
-    /// <summary>C arrives with the C SDK; until then it is named, not silently ignored.</summary>
-    [Fact]
-    public async Task C_IsNotYetAvailable_AndSaysSo()
-    {
-        var (exit, _, err) = await Run("new", "weather", "--lang", "c", "--dir", Folders.NewFolder("new-"));
-        Assert.Equal(2, exit);
-        Assert.Contains("not available yet", err);
-    }
 
     /// <summary>
     /// The project leaves the catalog's description empty rather than holding sample text: pack then
@@ -163,3 +155,100 @@ public class PluginNewTests
         Assert.False(Directory.Exists(dir));
     }
 }
+
+/// <summary><c>cxagent plugin new --lang c</c>: the wordcount template with the C SDK beside it, building and loading.</summary>
+public class PluginNewCTests
+{
+    private static Task<CliRun.Outcome> Run(params string[] args) => CliRun.Run(args);
+
+    private static readonly string[] Tokens = ["CXP_NAME", "CXP_ROOT_NAMESPACE", "CXP_ABSTRACTIONS_VERSION", "CXP_TESTING_VERSION"];
+
+    private static bool OnPath(string tool) =>
+        (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator)
+            .Any(p => File.Exists(Path.Combine(p, OperatingSystem.IsWindows() ? tool + ".exe" : tool)));
+
+    private static async Task<string> NewProject(string name)
+    {
+        var dir = Path.Combine(Folders.NewFolder("newc-"), name);
+        var (exit, _, err) = await Run("new", name, "--lang", "c", "--dir", dir);
+        Assert.True(exit == 0, err);
+        return dir;
+    }
+
+    private static (int Exit, string Output) Cmake(string dir, params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("cmake") { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+        p.WaitForExit();
+        return (p.ExitCode, output);
+    }
+
+    [Fact]
+    public async Task ANewCPlugin_IsWritten_WithTheSdkBesideIt()
+    {
+        var dir = await NewProject("wordcount");
+
+        foreach (var file in new[] { "CMakeLists.txt", "wordcount.c", "wordcount.plugin.json", "README.md", ".gitignore",
+                                     ".github/workflows/build.yml", "cxp/cxp.h", "cxp/cxp.c", "cxp/cxp.cmake",
+                                     "cxp/cJSON.h", "cxp/cJSON.c", "cxp/cJSON-LICENSE", "cxp/cxagent_plugin.h" })
+            Assert.True(File.Exists(Path.Combine(dir, file)), file);
+        var ours = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+            .Where(f => !f.Contains(Path.DirectorySeparatorChar + "cxp" + Path.DirectorySeparatorChar));
+        foreach (var file in ours)
+            foreach (var token in Tokens)
+                Assert.DoesNotContain(token, File.ReadAllText(file));
+    }
+
+    [Fact]
+    public async Task ANewCPlugin_Builds_Loads_AndCounts()
+    {
+        if (!OnPath("cmake")) return;
+        var dir = await NewProject("wordcount");
+        Assert.Equal(0, Cmake(dir, "-B", "build").Exit);
+        var (built, output) = Cmake(dir, "--build", "build");
+        Assert.True(built == 0, output);
+
+        Assert.Empty(await PluginHarness.CheckAsync(Path.Combine(dir, "build")));
+        await using var plugin = await PluginHarness.LoadAsync(Path.Combine(dir, "build"), new HarnessOptions { WorkingDirectory = dir });
+        var call = await plugin.CallAsync("wordcount_count", new { file = "CMakeLists.txt" });
+
+        Assert.Null(call.Gate);
+        Assert.True(call.Result!.Success, call.Result.ErrorMessage);
+        Assert.Matches(@"^CMakeLists\.txt: \d+ lines, \d+ words$", call.Result.Output["content"]?.ToString());
+        Assert.NotEmpty(call.Progress);
+    }
+
+    [Fact]
+    public async Task AFileOutsideTheWorkingFolder_Asks()
+    {
+        if (!OnPath("cmake")) return;
+        var dir = await NewProject("wordcount");
+        Cmake(dir, "-B", "build");
+        Cmake(dir, "--build", "build");
+        var outside = Path.Combine(Folders.NewFolder("outside-"), "notes.txt");
+        File.WriteAllText(outside, "one two\nthree\n");
+        await using var plugin = await PluginHarness.LoadAsync(Path.Combine(dir, "build"), new HarnessOptions { WorkingDirectory = dir });
+
+        var call = await plugin.CallAsync("wordcount_count", new { file = outside });
+
+        Assert.Contains("outside the working folder", call.Gate!.Display);
+        Assert.True(call.StoppedAtGate);
+    }
+
+    /// <summary>A sidecar cxp.cmake cannot read fails the configure, naming it — never a library that describes nothing.</summary>
+    [Fact]
+    public async Task ASidecarCMakeCannotRead_FailsTheConfigure()
+    {
+        if (!OnPath("cmake")) return;
+        var dir = await NewProject("wordcount");
+        File.WriteAllText(Path.Combine(dir, "wordcount.plugin.json"), """{"name":"wordcount","version":"1.0.0"}""");
+
+        var (exit, output) = Cmake(dir, "-B", "build");
+
+        Assert.NotEqual(0, exit);
+        Assert.Contains("wordcount.plugin.json", output);
+    }
+}
+
