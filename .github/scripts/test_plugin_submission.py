@@ -257,5 +257,34 @@ class Handle(unittest.TestCase):
         self.assertFalse(runner.ran("gh issue comment"))
 
 
+WORKFLOWS = REPO / ".github" / "workflows"
+
+
+class Workflows(unittest.TestCase):
+    def test_no_workflow_interpolates_an_issue_field(self):
+        # AN ISSUE IS ANYONE'S TEXT. ${{ github.event.issue.body }} in a run: step is pasted into the
+        # shell before it runs; the script reads the event file instead.
+        for path in WORKFLOWS.glob("*.yml"):
+            text = path.read_text(encoding="utf-8")
+            for field in ("issue.body", "issue.title", "comment.body", "pull_request.title", "pull_request.body"):
+                self.assertNotIn(f"github.event.{field}", text, f"{path.name} interpolates {field}")
+
+    def test_the_bot_and_catalog_ci_verify_https_only(self):
+        self.assertIn("plugin_submission.py", (WORKFLOWS / "plugin-submission.yml").read_text(encoding="utf-8"))
+        self.assertIn("--https-only", (WORKFLOWS / "catalog.yml").read_text(encoding="utf-8"))
+
+    def test_only_the_bot_asks_to_write(self):
+        for path in WORKFLOWS.glob("*.yml"):
+            if path.name in ("plugin-submission.yml", "release.yml", "pages.yml"):
+                continue
+            self.assertIsNone(re.search(r":\s*write\b", path.read_text(encoding="utf-8")), path.name)
+
+    def test_the_form_names_the_heading_the_script_reads(self):
+        form = (REPO / ".github" / "ISSUE_TEMPLATE" / "submit_a_plugin.yml").read_text(encoding="utf-8")
+        self.assertIn("label: Catalog entry", form)
+        self.assertEqual(ps.ENTRY_HEADING, "### Catalog entry")
+        self.assertIn('labels: ["plugin-submission"]', form)
+
+
 if __name__ == "__main__":
     unittest.main()

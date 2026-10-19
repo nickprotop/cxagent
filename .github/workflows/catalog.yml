@@ -1,0 +1,28 @@
+name: catalog
+# A PR touching plugins/plugins.json: verify every third-party entry, as a user's install would fetch
+# it. First-party entries (with "directory") are skipped by verify and checked by PluginCatalogTests.
+#
+# READ-ONLY, AND NO SUBMITTED CODE RUNS: the released cxagent verifies, so a PR that edits verify's own
+# source cannot change what checks it, and verify only downloads, hashes and reads the zips.
+on:
+  pull_request:
+    paths:
+      - 'plugins/plugins.json'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install cxagent
+        run: |
+          dotnet tool install -g cxagent
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+      - name: Verify the catalog
+        run: cxagent plugin verify --https-only plugins/plugins.json

@@ -17,6 +17,9 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Build and test
         run: dotnet test --nologo
+      # THE SUBMISSION BOT'S LOGIC, tested without opening an issue. Standard library only.
+      - name: Test the submission script
+        run: python3 -m unittest discover -s .github/scripts -v
       # THE FIXTURES THEMSELVES ARE COUNTED: a native test with no fixture returns early and reports
       # as passed, so a green suite alone cannot show the native path ran. FIND, NOT A GLOB, because
       # ls exits non-zero for a pattern that matches nothing.

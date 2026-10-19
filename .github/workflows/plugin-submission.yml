@@ -1,0 +1,47 @@
+name: plugin submission
+# A "Submit a plugin" issue: verify the entry, comment, and open or update the PR adding it. Every
+# decision is in .github/scripts/plugin_submission.py, which has tests; this only installs and runs.
+#
+# THE ISSUE IS NEVER PASTED INTO A SHELL. The script reads it from the event file GitHub writes, and
+# no step here interpolates any issue field.
+#
+# THE RELEASED cxagent, not this tree: a tool built from a tag of this repository, the same verify an
+# author runs, and nothing a submission could change.
+#
+# A PR THIS OPENS DOES NOT TRIGGER catalog.yml (GitHub never starts workflows from the workflow token's
+# own pushes); this run has already verified it.
+on:
+  issues:
+    types: [opened, edited, reopened, closed, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+# ONE RUN PER ISSUE AT A TIME, the newest winning: each run recomputes everything from the issue as it
+# now stands, so a superseded one has nothing worth finishing.
+concurrency:
+  group: plugin-submission-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  submission:
+    if: contains(github.event.issue.labels.*.name, 'plugin-submission')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install cxagent
+        run: |
+          dotnet tool install -g cxagent
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+      - name: Check the submission
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/plugin_submission.py
