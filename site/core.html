@@ -106,8 +106,10 @@ by forgetting.</p>
 <h2>Tools</h2>
 
 <p>The agent gets read, write, edit, glob, grep, shell, http and web fetch without you registering
-anything, plus <code>todowrite</code>, <code>ask_user</code>, <code>agent</code> and
-<code>skill</code>. Each is wrapped in a permission gate at construction, so there is no path that
+anything, plus <code>todowrite</code>, <code>ask_user</code> and <code>skill</code>, and — where the
+agent may delegate — <code>agent</code> to start a sub-agent, <code>agent_send</code> to message one,
+and <code>task_list</code>, <code>task_output</code> and <code>task_stop</code> for those running in
+the background. Each is wrapped in a permission gate at construction, so there is no path that
 runs a tool ungated.</p>
 
 <p>You can add your own — a <code>deploy(env)</code>, a <code>queryOurWarehouse(sql)</code> — with
@@ -126,7 +128,7 @@ withheld tool is refused if called by name rather than merely hidden.</p>
 <li><a href="https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/docs/tools.md">tools.md</a>
     <span>— injecting tools of your own: the <code>IAgentTool</code> interface and the two gates</span></li>
 <li><a href="docs/plugins.html">The plugin contract</a>
-    <span>— tools loaded from a DLL at run time</span></li>
+    <span>— tools loaded from a plugin at run time, .NET or native</span></li>
 <li><a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples">The examples directory</a>
     <span>— five runnable apps, with what each one is for</span></li>
 </ul>

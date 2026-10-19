@@ -184,15 +184,18 @@
     <div class="u-item">
       <div class="u-num">01</div>
       <p class="u-title">It asks before it reaches out</p>
-      <p class="u-body">Reads and writes inside the working folder stop asking. Anything that writes
-      elsewhere, and every shell command, still stops.</p>
+      <p class="u-body">In a folder you trust, reads and commands that only read stop asking, and
+      writes inside it go through without asking in accept-edits mode. Commands that can write, and
+      anything outside the folder, still stop.</p>
     </div>
     <div class="u-item">
       <div class="u-num">02</div>
       <p class="u-title">Sub-agents keep their own context</p>
-      <p class="u-body">A worker gets its own window and its own turn count. The panel counts what
-      workers spent separately from what this agent spent, because a session that did most of its
-      work inside children otherwise looks identical to one that spawned none.</p>
+      <p class="u-body">A worker gets its own window and its own turn count. An agent type lists the
+      providers it may run on, each with a description, and the model picks one per spawn — or any
+      configured one, for a type set to <code>"all"</code>. Every row, card, tab and prompt says where
+      a child runs, and the panel counts what workers spent separately from what this agent spent.
+      <a href="docs/config.html#agents--sub-agent-types">Agent types →</a></p>
     </div>
     <div class="u-item">
       <div class="u-num">03</div>
@@ -203,8 +206,9 @@
     <div class="u-item">
       <div class="u-num">04</div>
       <p class="u-title">A plugin is a decision, not an install</p>
-      <p class="u-body">A plugin is a DLL you drop in a folder. Before any of it runs, cxagent reads
-      the sidecar file beside it, shows you a hash of everything it would load, and asks.</p>
+      <p class="u-body">Install one from the catalog with <strong>F2</strong>. Before any of it runs,
+      cxagent reads the sidecar file beside it, shows you a hash of everything it would load, and
+      asks — every time that hash changes.</p>
     </div>
     <div class="u-item">
       <div class="u-num">05</div>
