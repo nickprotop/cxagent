@@ -220,6 +220,13 @@ made by. In `/config`, the Agents tab edits the list (add, remove, reorder; the 
 row in the conversation, its card on the F7 tasks board, its agent tab's header, and any permission
 prompt it raises.
 
+**A spawn may also name a `root`**, a folder under the session's own — a git worktree made there, say —
+and the child works there: its file tools, shell and relative paths are judged against that folder,
+while the project's trust, mode and stored rules still apply (a stored rule can still permit a path
+outside the child's folder). A root outside the session's folder, or inside `.git`, `.vscode`,
+`.claude` or `.idea` — folders whose files can run code — is refused. Where it works shows beside
+where it runs.
+
 Ignoring loudly is deliberate. An edit that does nothing and says nothing is the worst of the three
 options — silently winning restores the drift, silently losing leaves you debugging a change that was
 never applied. If you want different text, give the type a name cxagent does not ship: any name that

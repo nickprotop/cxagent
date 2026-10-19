@@ -2485,4 +2485,12 @@ public class SubAgentSpawnerTests
         Assert.Equal("sub", shell.RequesterRoot);
         Assert.Equal("general on mock-model", shell.RequesterRunsOn);
     }
+
+    [Fact]
+    public void TheSchema_OffersARoot()
+    {
+        var schema = new SubAgentSpawner(FactoryOver(Answering("x"))).Definition.InputSchema.GetProperty("properties");
+        Assert.Equal("Optional. The folder the agent works in, relative to yours; it must be inside your folder. Omit to work where you do.",
+            schema.GetProperty("root").GetProperty("description").GetString());
+    }
 }

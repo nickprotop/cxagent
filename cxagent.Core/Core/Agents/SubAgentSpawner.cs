@@ -368,6 +368,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                 "type": {
                   "type": "string",
                   "description": "Optional. Which agent type to use — see the list in this tool's description. Omit for a general-purpose agent."
+                },
+                "root": {
+                  "type": "string",
+                  "description": "Optional. The folder the agent works in, relative to yours; it must be inside your folder. Omit to work where you do."
                 }{{BACKGROUND}}{{PROVIDER}}
               },
               "required": ["description", "prompt"]
