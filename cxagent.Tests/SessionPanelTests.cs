@@ -689,12 +689,16 @@ public class SessionPanelTests
                 init!.WaitForExit();
             // A "git" THAT NEVER ANSWERS IN TIME, so the timeout is certain rather than a race against
             // how fast real git is on this machine.
-            var slowGit = Path.Combine(dir, "slow-git.sh");
-            File.WriteAllText(slowGit, "#!/bin/sh\nsleep 5\n");
-            File.SetUnixFileMode(slowGit, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            //
+            // READ BY sh, NEVER EXECUTED: a test running in parallel that forks while this file is
+            // open for writing leaves a child holding that write handle until its own exec, and
+            // exec'ing the script meanwhile fails with "Text file busy" (about 1 in 25 under load).
+            // sh given "status --porcelain" reads the script named status from the working folder,
+            // and reading a file is never refused.
+            File.WriteAllText(Path.Combine(dir, "status"), "sleep 5\n");
 
             Assert.Equal("too slow to count",
-                SessionPanel.GitStatusForTest(dir, TimeSpan.FromMilliseconds(200), program: slowGit));
+                SessionPanel.GitStatusForTest(dir, TimeSpan.FromMilliseconds(200), program: "/bin/sh"));
         }
         finally { try { Directory.Delete(dir, recursive: true); } catch (Exception) { } }
     }
