@@ -121,6 +121,7 @@
     "WHAT YOU MAY STILL SET on a built-in name:",
     "  provider  a `providers` entry or a list of them (name or name:model); the first is the",
     "            default, and a spawn may choose another listed one. Omit to run on the session's.",
+    "            \"all\" offers every provider with no default: a spawn must name one.",
     "  maxTurns  absent inherits the session ceiling; 0 is unbounded.",
     "A 'briefing' or 'description' under a built-in name is IGNORED, and cxagent says so at",
     "  startup rather than leaving you to wonder why the edit did nothing.",
@@ -143,7 +144,7 @@
     "builder": {
       "maxTurns": 60
     },
-    "//planner": "Another built-in, given where it may run: a list of providers, the first its default. Both keys are still honoured.",
+    "//planner": "Another built-in, given where it may run: a list of providers, the first its default. Both keys are still honoured. Or \"provider\": \"all\": every entry in `providers`, with no default \u2014 a spawn must name one. It stands alone: [\"local\", \"all\"] disables the type.",
     "planner": {
       "provider": ["local"]
     },
