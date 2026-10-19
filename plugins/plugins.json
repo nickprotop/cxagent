@@ -210,6 +210,72 @@
           "gated": false
         }
       ]
+    },
+    {
+      "name": "wordcount",
+      "displayName": "wordcount",
+      "version": "1.0.0",
+      "description": "Counts the lines and words in a file.",
+      "publisher": "nickprotop",
+      "license": "MIT",
+      "repository": "https://github.com/nickprotop/cxagent-smoke-wordcount",
+      "sources": {
+        "linux-arm64": {
+          "kind": "url",
+          "url": "https://github.com/nickprotop/cxagent-smoke-wordcount/releases/download/v1.0.0/wordcount-linux-arm64.zip",
+          "sha256": "fe0d61318f396ec129f11c8196b6a59573e25496b63ae1d95110fbddfff25128",
+          "file": "wordcount.so"
+        },
+        "linux-x64": {
+          "kind": "url",
+          "url": "https://github.com/nickprotop/cxagent-smoke-wordcount/releases/download/v1.0.0/wordcount-linux-x64.zip",
+          "sha256": "2111ec01227b30685e0e9b2942ea2556e56142908c4572f68257b643405252ee",
+          "file": "wordcount.so"
+        },
+        "osx-arm64": {
+          "kind": "url",
+          "url": "https://github.com/nickprotop/cxagent-smoke-wordcount/releases/download/v1.0.0/wordcount-osx-arm64.zip",
+          "sha256": "c122c33867310b13abcd0996fd31f087df8f74ef55f509a3187e9b12bc1d82b5",
+          "file": "wordcount.dylib"
+        },
+        "osx-x64": {
+          "kind": "url",
+          "url": "https://github.com/nickprotop/cxagent-smoke-wordcount/releases/download/v1.0.0/wordcount-osx-x64.zip",
+          "sha256": "146a55502455bba046f578dab536d4c8aa9689762f8c69bd48e4877e277310bc",
+          "file": "wordcount.dylib"
+        },
+        "win-arm64": {
+          "kind": "url",
+          "url": "https://github.com/nickprotop/cxagent-smoke-wordcount/releases/download/v1.0.0/wordcount-win-arm64.zip",
+          "sha256": "d79c5919b00ae9c6ee9213d1e1a7a2eb5d8662313bf9b3f251ad3eb5ab36dfec",
+          "file": "wordcount.dll"
+        },
+        "win-x64": {
+          "kind": "url",
+          "url": "https://github.com/nickprotop/cxagent-smoke-wordcount/releases/download/v1.0.0/wordcount-win-x64.zip",
+          "sha256": "29c8ab92e24ab1e569a24b4545a127f383b91d5ffbc9b3e07edcca4df1da7bdd",
+          "file": "wordcount.dll"
+        }
+      },
+      "kind": "native",
+      "compatibility": {
+        "pluginContract": 4,
+        "platforms": [
+          "linux-arm64",
+          "linux-x64",
+          "osx-arm64",
+          "osx-x64",
+          "win-arm64",
+          "win-x64"
+        ]
+      },
+      "spawns": false,
+      "tools": [
+        {
+          "name": "wordcount_count",
+          "gated": "dynamic"
+        }
+      ]
     }
   ]
 }
