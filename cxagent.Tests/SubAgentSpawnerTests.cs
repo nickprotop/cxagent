@@ -1245,7 +1245,7 @@ public class SubAgentSpawnerTests
 
         var d = new SubAgentSpawner(FactoryOver(Answering("x")), types).Definition.Description;
 
-        Assert.Contains("[runs on small]", d, StringComparison.Ordinal);
+        Assert.Contains("- cheap: no special instructions. Runs on small:mock-model.", d, StringComparison.Ordinal);
 
         // The common type runs where the parent does and has nothing to say about it.
         Assert.Contains("- general: runs where you do", d, StringComparison.Ordinal);
@@ -2070,5 +2070,89 @@ public class SubAgentSpawnerTests
 
         Assert.Contains("- general: runs where you do, no special instructions", text,
             StringComparison.Ordinal);
+    }
+
+    private static MockLlmProvider AnsweringAs(string model, string answer)
+    {
+        var provider = new MockLlmProvider(model);
+        provider.EnqueueResponse(new LlmResponse { Text = answer, StopReason = "end_turn" });
+        return provider;
+    }
+
+    private static AgentTypeCatalog ProviderCatalog(params (string Name, AgentTypeConfig Cfg)[] types)
+    {
+        var registry = ProviderRegistry.FromProviders(
+            new Dictionary<string, ILlmProvider>(StringComparer.Ordinal)
+            {
+                ["local"] = Answering("from local"),
+                ["deepseek"] = AnsweringAs("deepseek/deepseek-v3.2", "from deepseek"),
+            },
+            "local", null,
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["local"] = "fast local, free", ["deepseek"] = "strong, paid" });
+        return new AgentTypeCatalog(types.ToDictionary(t => t.Name, t => t.Cfg, StringComparer.Ordinal), registry);
+    }
+
+    private static AgentTypeCatalog TwoProviderCatalog() => ProviderCatalog(
+        ("scout", new AgentTypeConfig("Search.", "local", Description: "Searches.") { Providers = ["local", "deepseek"] }),
+        ("broken", new AgentTypeConfig("Break.", Description: "Breaks things.") { Disabled = "provider 'typo' is not a configured provider" }));
+
+    private static ToolCall ProviderSpawn(string type, string provider) => new()
+    {
+        Id = "call-1", Name = "agent",
+        Arguments = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(
+            new { description = "d", prompt = "find it", type, provider })).RootElement,
+    };
+
+    [Fact]
+    public void Definition_ListsWhereEachTypeRuns_WithDescriptions()
+    {
+        var d = new SubAgentSpawner(FactoryOver(Answering("x")), TwoProviderCatalog()).Definition.Description;
+
+        Assert.Contains("- scout: Searches. Runs on local:mock-model (fast local, free) by default; or deepseek:deepseek/deepseek-v3.2 (strong, paid).", d, StringComparison.Ordinal);
+        Assert.Contains("- broken: Breaks things. (disabled: provider 'typo' is not a configured provider)", d, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Schema_OffersProvider_AsSoonAsAnyTypeListsOne()
+    {
+        static bool HasProvider(AgentTypeCatalog c) => new SubAgentSpawner(FactoryOver(Answering("x")), c)
+            .Definition.InputSchema.GetProperty("properties").TryGetProperty("provider", out _);
+
+        Assert.True(HasProvider(TwoProviderCatalog()));
+        Assert.True(HasProvider(ProviderCatalog(("scout", new AgentTypeConfig("Search.", "local") { Providers = ["local"] }))));
+        Assert.False(HasProvider(Catalog(("scout", "Search."))));
+    }
+
+    [Fact]
+    public async Task ASpawnNamingAListedProvider_RunsThere_AndTheRowSaysSo()
+    {
+        SubAgent? child = null;
+        await new SubAgentSpawner(FactoryOver(Answering("x")), TwoProviderCatalog())
+            .TryInvokeAsync(ProviderSpawn("scout", "deepseek"), c => child = c, CancellationToken.None);
+
+        Assert.Equal("deepseek:deepseek/deepseek-v3.2", child!.ModelId);
+    }
+
+    [Theory]
+    [InlineData("scout", "opus", "scout does not run on 'opus'. Its providers: local:mock-model, deepseek:deepseek/deepseek-v3.2.")]
+    [InlineData("general", "local", "general offers no choice of provider; omit 'provider'.")]
+    [InlineData("broken", "local", "broken is disabled: provider 'typo' is not a configured provider.")]
+    public async Task ASpawnTheTypeCannotRun_IsRefused(string type, string provider, string refusal) =>
+        Assert.Equal("error: " + refusal, await new SubAgentSpawner(FactoryOver(Answering("x")), TwoProviderCatalog())
+            .TryInvokeAsync(ProviderSpawn(type, provider), null, CancellationToken.None));
+
+    [Fact]
+    public async Task ATypeWithAList_IgnoresTheSessionsModel()
+    {
+        // /model moves the factory's default; a type with a list never depended on it. PASSES ALREADY
+        // after Task 3 (the catalog routes to the first offer) — it pins that this task keeps it so.
+        var factory = FactoryOver(Answering("x"));
+        factory.SwapDefaultProvider(new MockLlmProvider("switched"), 100_000, "other");
+        SubAgent? child = null;
+
+        await new SubAgentSpawner(factory, TwoProviderCatalog())
+            .TryInvokeAsync(TypedSpawn("scout"), c => child = c, CancellationToken.None);
+
+        Assert.Equal("local:mock-model", child!.ModelId);
     }
 }

@@ -254,17 +254,20 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             // Measured: the five shipped descriptions total ~1,620 characters against this tool's
             // ~2,150 of delegation advice (0.75x). Full briefings would be 4,558, or 2.3x, which is
             // what the rule exists to prevent.
-            var what = type.Description is { Length: > 0 } described
-                ? described
+            // "RUNS WHERE YOU DO" ONLY WHEN IT DOES: a type with providers, or a disabled one, does not.
+            var what = type.Description is { Length: > 0 } described ? described
+                : type.Offers.Count > 0 || type.Disabled is not null ? "no special instructions"
                 : "runs where you do, no special instructions";
 
-            // WHERE IT RUNS, ONLY WHEN THAT IS ELSEWHERE. A type bound to another instance is often
-            // bound to it FOR A REASON — a bigger window, a stronger model, a cheaper one — and that
-            // is a fact worth choosing by. Naming the instance rather than the model is the point:
-            // two instances can serve one model, so the model alone would report the routing as no
-            // routing at all. Silent for the common type, which runs where the parent does and has
-            // nothing to say.
-            var where = type.InstanceName is { Length: > 0 } instance ? $" [runs on {instance}]" : "";
+            // WHERE IT MAY RUN, ONLY WHEN THAT IS SAID. A type's providers are a choice worth making by —
+            // a stronger model, a cheaper one — so each comes with its description, and is named as
+            // name:model because two entries can serve one model. Silent for a type with no list, which
+            // runs where the parent does. A DISABLED type is listed with its reason rather than hidden,
+            // so a user who names it gets an answer the model can relay.
+            var sep = what.EndsWith('.') ? " " : ". ";
+            var where = type.Disabled is { } why ? $" (disabled: {why})"
+                : type.Offers.Count == 0 ? ""
+                : sep + RunsOn(type.Offers);
 
             sb.AppendLine($"- {type.Name}: {what}{where}");
         }
@@ -272,6 +275,14 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         return sb.ToString();
     }
 
+
+    private static string RunsOn(IReadOnlyList<TypeRouting> offers)
+    {
+        static string One(TypeRouting o) => o.Description is { Length: > 0 } d ? $"{o.Label} ({d})" : o.Label;
+        return offers.Count == 1
+            ? $"Runs on {One(offers[0])}."
+            : $"Runs on {One(offers[0])} by default; or {string.Join("; or ", offers.Skip(1).Select(One))}.";
+    }
 
     /// <inheritdoc/>
     public void Refresh(int? maxConcurrentAgents, AgentTypeCatalog types)
@@ -305,10 +316,26 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                         }
         """;
 
+    /// <summary>
+    /// The `provider` argument, offered as soon as any type lists a provider — even one, so a config
+    /// edit adding a second mid-session rarely meets a schema without it (the schema is built once, for
+    /// the prompt cache). With no lists at all there is nothing to choose.
+    /// </summary>
+    private const string ProviderProperty =
+        """
+        ,
+                        "provider": {
+                          "type": "string",
+                          "description": "Optional. Where the agent runs: one of its type's providers from this tool's description, as name:model. Omit for the type's default."
+                        }
+        """;
+
     private ToolDefinition Build() => new(ToolName, DescriptionWithTypes(),
         JsonDocument.Parse(
             SchemaTemplate.Replace("{{BACKGROUND}}", CanBackground ? BackgroundProperty.Trim() : "",
-                StringComparison.Ordinal)).RootElement);
+                    StringComparison.Ordinal)
+                .Replace("{{PROVIDER}}", _types.All.Any(t => t.Offers.Count > 0) ? ProviderProperty.Trim() : "",
+                    StringComparison.Ordinal)).RootElement);
 
     /// <summary>The spawn tool's argument schema, with a slot for the background flag.</summary>
     private const string SchemaTemplate =
@@ -331,7 +358,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                 "type": {
                   "type": "string",
                   "description": "Optional. Which agent type to use — see the list in this tool's description. Omit for a general-purpose agent."
-                }{{BACKGROUND}}
+                }{{BACKGROUND}}{{PROVIDER}}
               },
               "required": ["description", "prompt"]
             }
@@ -373,6 +400,13 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         var type = _types.Resolve(requested);
         if (type is null)
             return $"error: unknown agent type '{requested?.Trim()}'. Valid: {_types.Names}.";
+
+        // WHERE IT RUNS, FROM THE TYPE'S OWN LIST — config is the only source of a child's provider.
+        // Applied by replacing the type's routing, so the factory builds the child exactly as it always
+        // has from type.Provider, its window and its instance name.
+        var pick = type.Pick(Read(call, "provider"));
+        if (pick.Refusal is { } refusal) return "error: " + refusal;
+        type = type with { Routing = pick.Routing! };
 
         string? planPath = null;
         var child = _factory.Create(
