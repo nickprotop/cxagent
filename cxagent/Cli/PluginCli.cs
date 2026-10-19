@@ -14,7 +14,7 @@ namespace CxAgent.Cli;
 public static class PluginCli
 {
     private const string Usage = """
-        usage: cxagent plugin new <name> --lang csharp [--dir <folder>]
+        usage: cxagent plugin new <name> --lang csharp|c [--dir <folder>]
                cxagent plugin check <folder> [--json]
                cxagent plugin call <folder> <tool> ['<json>'] [options]
                cxagent plugin call <folder> --command <name> [arguments…] [--json]

@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace CxAgent.Cli;
 
 /// <summary>
-/// <c>cxagent plugin new &lt;name&gt; --lang csharp [--dir d]</c> — writes a working plugin project from
+/// <c>cxagent plugin new &lt;name&gt; --lang csharp|c [--dir d]</c> — writes a working plugin project from
 /// the embedded template.
 ///
 /// <para>IT NEVER OVERWRITES: a folder that exists and holds anything is refused, so a mistyped

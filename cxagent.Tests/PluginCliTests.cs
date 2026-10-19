@@ -26,6 +26,14 @@ public class PluginCliCheckTests
     private static Task<CliRun.Outcome> Run(params string[] args) => CliRun.Run(args);
 
     [Fact] public async Task NoVerb_IsUsage() => Assert.Equal(2, (await Run()).Exit);
+
+    /// <summary>The usage names both languages `new` takes — C is a template as much as C# is.</summary>
+    [Fact]
+    public async Task TheUsage_NamesBothLanguagesNewTakes()
+    {
+        var usage = (await Run()).Err + (await Run()).Out;
+        Assert.Contains("--lang csharp|c", usage, StringComparison.Ordinal);
+    }
     [Fact] public async Task AnUnknownVerb_IsUsage() => Assert.Equal(2, (await Run("frobnicate")).Exit);
     [Fact] public async Task CheckWithoutAFolder_IsUsage() => Assert.Equal(2, (await Run("check")).Exit);
 
