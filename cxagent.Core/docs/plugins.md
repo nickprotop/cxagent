@@ -488,8 +488,11 @@ act on; a blank string is something it has to guess about.
 ## Reporting while a call runs
 
 A managed plugin reports through the call's `IJobContext`: `ReportProgress(percent, message)`,
-`Log(level, line)`, and `ReportTextDelta(text)` for output that streams. `Log` lines go to the call's
-own log file. Progress and streamed text reach the host, which does not display them yet.
+`Log(level, line)`, and `ReportTextDelta(text)` for output that streams. While the call runs, its row
+shows the latest progress after the tool's name — `count_slowly {"n":20} · 45% · counted 9 of 20` —
+and expanding the row shows the text streamed so far, the last 200 lines of it. Once the call
+returns, the row shows how it ended and what it returned, as for any tool. `Log` lines go to the
+call's own log file.
 
 **A native plugin gets the same three by exporting `cxagent_plugin_attach`.** The host calls it once,
 before `start`, with a table of callbacks:

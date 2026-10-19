@@ -71,6 +71,12 @@ public sealed class InlineJobSink : IToolObserver
             foreach (var job in jobs)
             {
                 _known[job.Id] = job;
+
+                // A FOLDED CALL STARTING OPENS ITS ROUND. Recording opens one too, but a call is
+                // recorded when it finishes, so a round's first call would otherwise run its whole
+                // length with no row to show it in — its name, its clock, its progress all unseen.
+                if (!IsTerminal(job.State) && IsFolded(job) && !IsAChild(job.AgentId)) ClaimRoundForRunningNow();
+
                 if (_lines.ContainsKey(job.Id)) continue;
                 if (!ShouldShow(job)) continue;
 
@@ -1451,7 +1457,7 @@ public sealed class InlineJobSink : IToolObserver
     {
         if (_round is not { } r) return string.Empty;
         var calls = CallsOf(r);
-        return BodyFor(Timetable(calls, InFlightOfRound() is { } j ? new LiveRun(j) : null), calls);
+        return BodyFor(Timetable(calls, InFlightOfRound() is { } j ? new LiveRun(j) : null), calls, InFlightOfRound());
     }
 
     /// <summary>Test seam: the calls the round on screen is counting.</summary>
@@ -1555,6 +1561,17 @@ public sealed class InlineJobSink : IToolObserver
         round.Row ??= _chat.AddMessage(ChatRole.Tool, string.Empty, author: "Tools");
     }
 
+    /// <summary>
+    /// Opens the round for a call that has started but not finished, and claims its row now — the
+    /// same place-holding <see cref="ClaimRoundRowNow"/> does for a recorded call, without its "only
+    /// once there is a call" check: a running call is something to show. Must be on the UI thread.
+    /// </summary>
+    private void ClaimRoundForRunningNow()
+    {
+        var round = _round ??= new Round { AgentId = _parentAgentId, From = _lastSettledAt };
+        round.Row ??= _chat.AddMessage(ChatRole.Tool, string.Empty, author: "Tools");
+    }
+
     /// <summary>Draws a round's final state and forgets it. Must be on the UI thread.</summary>
     private void SettleRoundNow()
     {
@@ -1646,7 +1663,7 @@ public sealed class InlineJobSink : IToolObserver
         round.Row ??= _chat.AddMessage(ChatRole.Tool, string.Empty, author: "Tools");
 
         _chat.SetHeader(round.Row.Value, HeaderFor(table, calls, running));
-        _chat.UpdateMessage(round.Row.Value, BodyFor(table, calls));
+        _chat.UpdateMessage(round.Row.Value, BodyFor(table, calls, running));
     }
 
     /// <summary>
@@ -1692,8 +1709,17 @@ public sealed class InlineJobSink : IToolObserver
 
         // WHAT IS RUNNING, WHILE IT RUNS. The per-call rows this replaces each named a tool and its
         // argument as it happened, and a reader watching a long round is watching for exactly that.
+        // AND HOW FAR ALONG IT IS, when the call says: a plugin's own percent and message, which
+        // JobReportFeed leaves on the job and this tick picks up.
+        //
+        // NO COUNT BEFORE THE FIRST CALL HAS FINISHED: "0 calls · count_slowly" counts nothing, and
+        // the running call is named right after it — the same reason one finished call is named
+        // instead of counted, below.
         if (running is { } job && InFlightLabel(job) is { Length: > 0 } live)
-            return $"{summary} · {live}";
+        {
+            var named = calls.Count == 0 ? live : $"{summary} · {live}";
+            return job.ProgressMessage is { Length: > 0 } progress ? $"{named} · {progress}" : named;
+        }
 
         // OR WHAT THE ONE CALL WAS, once it is over — and INSTEAD OF THE COUNT, not after it. "1 call
         // · across 1 tool" beside a named call is three ways of saying one, and the durations still
@@ -1725,8 +1751,14 @@ public sealed class InlineJobSink : IToolObserver
     /// before the output was captured — still has its row, and an empty body under an expand is
     /// worse than the scaffolding it replaced.</para>
     /// </summary>
-    private static string BodyFor(string table, IReadOnlyList<ToolCallReport> calls)
+    private static string BodyFor(string table, IReadOnlyList<ToolCallReport> calls, Job? running = null)
     {
+        // WHAT THE RUNNING CALL HAS STREAMED SO FAR, while it runs — alone when it is the round's
+        // first call, after the table when earlier calls have rows of their own. Once it finishes it
+        // is no longer running, and the body is its output or the table as for any other call.
+        if (running?.ProgressBody is { Length: > 0 } streamed)
+            return calls.Count == 0 ? "\n" + streamed : BodyOf(table) + "\n\n" + streamed;
+
         if (calls.Count == 1 && calls[0].Output is { Length: > 0 } output)
             return "\n" + output.TrimEnd();
 
@@ -2482,6 +2514,11 @@ public sealed class InlineJobSink : IToolObserver
         // in-flight call's cost is compared against theirs directly. Through DisplayNumber like all
         // the rest: a bare format takes the current culture's group separator.
         var ms = DisplayNumber.Grouped((long)Elapsed(job).TotalMilliseconds);
+
+        // THE CALL'S OWN PROGRESS RIDES IN THE TARGET CELL, not a column of its own: a column only
+        // the live row fills would change the table's shape when that row settles.
+        if (job.ProgressMessage is { Length: > 0 } progress)
+            target = (target.Length > 0 ? target + " · " : "") + Md.EscapeCell(progress);
 
         return $"| {SpinnerGlyph()} | {Md.CodeSpan(tool)} | {target} | {ms} |";
     }

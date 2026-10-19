@@ -2958,6 +2958,14 @@ public sealed class Agent
         // waiting. A parent's row timer reads the flag and says so.
         ctx.PermissionWaitChanged += waiting => IsWaitingOnPermission = waiting;
 
+        // WHAT THE TOOL REPORTS WHILE IT WORKS — a plugin's progress and streamed text — lands on the
+        // job as fields the transcript's tick repaints from, never as a UI call per report: a
+        // chatty plugin would otherwise enqueue a repaint per chunk, and for a native plugin the
+        // reporting thread is the reader every call's reply waits on.
+        var reports = new JobReportFeed(job);
+        ctx.ProgressReported += reports.Progress;
+        ctx.TextDeltaReported += reports.Text;
+
         // THE CLOCK RESTARTS WHEN THE WORK DOES. `started` above is stamped when the ROW appears,
         // which is before the permission gate has asked the user anything — so a command the user
         // took four minutes to approve reported four minutes of runtime. Seen live: a shell call
@@ -3200,6 +3208,9 @@ public sealed class Agent
         }
         catch (OperationCanceledException)
         {
+            // BEFORE THE ROW SETTLES BELOW, which this path does ahead of the finally.
+            reports.Finish();
+
             // THE ROW MUST CLOSE EVEN THOUGH THE TURN IS ENDING. Without this the method was
             // straight-line, so a cancellation skipped everything below and left the job Running —
             // a row that spins for the rest of the session, because nothing sweeps them.
@@ -3244,6 +3255,11 @@ public sealed class Agent
         }
         finally
         {
+            // A SETTLED ROW SAYS HOW THE CALL ENDED, not how far along it was: the reported progress
+            // and text are cleared, and a report arriving after this — from a plugin's own thread —
+            // is ignored.
+            reports.Finish();
+
             // AND STOPPED HERE TOO, for the reason the begin above gives: a spawner built without a
             // store releases no claim and announces no stop, so this return is the only thing that
             // knows the work is over. A run left working holds a timer writing to a closed row once

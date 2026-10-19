@@ -52,10 +52,13 @@ internal sealed class JobContext : IJobHostContext
     /// </summary>
     public string AgentId => _agentId;
 
-    public void ReportProgress(double percent, string? message = null)
-    {
-        // TODO(P5): raise a progress event the UI subscribes to. Headless P3 is a no-op.
-    }
+    /// <summary>Raised when a tool reports how far along it is. Same shape and contract as
+    /// <see cref="ResourceReported"/>: this class knows nothing about the UI thread, and a subscriber
+    /// must not block — for a native plugin the caller is the one reader every call's reply waits
+    /// on.</summary>
+    public event Action<double, string?>? ProgressReported;
+
+    public void ReportProgress(double percent, string? message = null) => ProgressReported?.Invoke(percent, message);
 
     /// <summary>
     /// Raised when an executor's real work begins, after any permission prompt has been answered. The
