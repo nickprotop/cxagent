@@ -11,6 +11,7 @@
     <Authors>Nikolaos Protopapas</Authors>
     <Description>Check and call a cxagent plugin from a test: the same loaders, gate and lifecycle a session uses, with no session.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../cxagent.Core.csproj" />
@@ -41,6 +42,7 @@
                       ReferenceOutputAssembly="false"
                       GlobalPropertiesToRemove="SelfContained;RuntimeIdentifier;PublishSingleFile" />
     <None Include="build/CxAgent.Plugins.Testing.targets" Pack="true" PackagePath="build/;buildTransitive/" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
   <!-- THE HOST'S FILES ARE GATHERED WHEN PACK RUNS, AFTER THE BUILD — not by a glob in an ItemGroup,

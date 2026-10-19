@@ -13,7 +13,13 @@
     <NoDefaultExcludes>true</NoDefaultExcludes>
     <EnableDefaultItems>false</EnableDefaultItems>
     <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <!-- EnableDefaultItems is off, so the package's README is listed by hand. -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <!-- THE VERSIONS THE GENERATED PROJECT PINS are this release's: the contract package's own number,
        read from its project, and this package's version for the test package — the two are released
