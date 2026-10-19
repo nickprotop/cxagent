@@ -66,8 +66,11 @@ static cxp_result late(const cxp_call *call) {
     pthread_create(&thread, NULL, report_late, NULL);
     pthread_detach(thread);
 #endif
-    return cxp_ok_text("started");
+    // THE ID IN THE RESULT, so a test can tell a real id from an empty one the SDK would drop itself.
+    return cxp_ok_text(cxp_format("started %s", g_late_id));
 }
+
+static cxp_result badjson(const cxp_call *call) { (void)call; return cxp_ok_json(cJSON_CreateArray()); }
 
 #ifdef CXP_COUNT_ALLOCATIONS
 long cxp_test_outstanding(void);
@@ -91,5 +94,7 @@ CXP_PLUGIN(
     CXP_TOOL("always", echo, ask_always),
     CXP_TOOL("late", late, 0),
     CXP_TOOL("outstanding", outstanding, 0),
+    CXP_TOOL("nogate", echo, 0),
+    CXP_TOOL("badjson", badjson, 0),
     CXP_COMMAND("cxp-ping", ping)
 )

@@ -24,13 +24,19 @@ typedef SRWLOCK cxp_lock;
 #  define CXP_LOCK_INIT SRWLOCK_INIT
 #  define cxp_lock_take(l) AcquireSRWLockExclusive(l)
 #  define cxp_lock_give(l) ReleaseSRWLockExclusive(l)
-#  define CXP_THREAD_LOCAL __declspec(thread)
 #else
 #  include <pthread.h>
 typedef pthread_mutex_t cxp_lock;
 #  define CXP_LOCK_INIT PTHREAD_MUTEX_INITIALIZER
 #  define cxp_lock_take(l) pthread_mutex_lock(l)
 #  define cxp_lock_give(l) pthread_mutex_unlock(l)
+#endif
+
+/* BY COMPILER, NOT BY OS: MinGW's gcc builds for Windows but ignores __declspec(thread), which would
+   leave the arena one global shared by every call. Only MSVC needs the __declspec spelling. */
+#if defined(_MSC_VER)
+#  define CXP_THREAD_LOCAL __declspec(thread)
+#else
 #  define CXP_THREAD_LOCAL _Thread_local
 #endif
 
@@ -50,6 +56,8 @@ static char *g_working_directory;
 
 /* RETURNED WHEN EVEN THE ERROR CANNOT BE ALLOCATED: static, so free must never release it. */
 static const char OUT_OF_MEMORY[] = "{\"ok\":false,\"error\":\"cxp: out of memory\"}";
+/* A gate's own sentinel, in a gate's shape: OUT_OF_MEMORY would parse as a gate with no display. */
+static const char GATE_OUT_OF_MEMORY[] = "{\"display\":\"(cxp ran out of memory building this question)\",\"alwaysAskable\":false}";
 
 #ifdef CXP_COUNT_ALLOCATIONS
 static cxp_lock g_count_lock = CXP_LOCK_INIT;
@@ -91,6 +99,7 @@ char *cxp_format(const char *format, ...) {
 
     arena_item *item = malloc(sizeof(arena_item) + (size_t)n + 1);
     if (!item) { va_end(args); return NULL; }
+    count(1);
     char *text = (char *)(item + 1);
     vsnprintf(text, (size_t)n + 1, format, args);
     va_end(args);
@@ -104,6 +113,7 @@ static void arena_release(void) {
     while (t_arena) {
         arena_item *next = t_arena->next;
         free(t_arena);
+        count(-1);
         t_arena = next;
     }
 }
@@ -136,8 +146,14 @@ cxp_result cxp_ok_text(const char *text) {
     return result(1, NULL, output);
 }
 
+/* AN OUTPUT THAT IS NOT AN OBJECT is the author's mistake: said as a failed call, so they see it,
+   rather than a success the model reads as empty. */
 cxp_result cxp_ok_json(cJSON *output) {
-    return result(1, NULL, cJSON_IsObject(output) ? output : (cJSON_Delete(output), cJSON_CreateObject()));
+    if (!cJSON_IsObject(output)) {
+        cJSON_Delete(output);
+        return cxp_error("cxp_ok_json needs a cJSON object; its \"content\" is what the model reads.");
+    }
+    return result(1, NULL, output);
 }
 
 cxp_result cxp_error(const char *message) {
@@ -317,7 +333,19 @@ CXAGENT_PLUGIN_EXPORT const char *cxagent_plugin_invoke(const char *tool_name, c
 
 CXAGENT_PLUGIN_EXPORT const char *cxagent_plugin_gate(const char *tool_name, const char *call_json) {
     const cxp_entry *entry = find(1, tool_name);
-    if (!entry || !entry->gate) return NULL;
+    if (!entry) return NULL;
+
+    // FAILS CLOSED. cxagent asks a gate only for a tool its sidecar marks "dynamic" — the author said
+    // its calls may need permission — so a tool registered with no gate function asks every time,
+    // rather than letting every call through unasked.
+    if (!entry->gate) {
+        cJSON *out = cJSON_CreateObject();
+        cJSON_AddStringToObject(out, "display", cxp_format("run %s (no gate function registered)", tool_name));
+        cJSON_AddFalseToObject(out, "alwaysAskable");
+        char *text = print(out);
+        arena_release();
+        return text ? hand_over(text) : GATE_OUT_OF_MEMORY;
+    }
 
     cJSON *root;
     cxp_call call = make_call(tool_name, call_json, &root);
@@ -332,7 +360,11 @@ CXAGENT_PLUGIN_EXPORT const char *cxagent_plugin_gate(const char *tool_name, con
 
     free(g.display);
     end_call(&call, root);
-    return text ? hand_over(text) : NULL;
+
+    // A QUESTION THAT COULD NOT BE BUILT STILL ASKS, through a static question: only a gate that
+    // decided "no" returns NULL.
+    if (!g.ask) return NULL;
+    return text ? hand_over(text) : GATE_OUT_OF_MEMORY;
 }
 
 CXAGENT_PLUGIN_EXPORT const char *cxagent_plugin_stop(void) { return hand_over(copy("{\"ok\":true}")); }
@@ -378,7 +410,7 @@ CXAGENT_PLUGIN_EXPORT const char *cxagent_plugin_command(const char *name, const
 #endif
 
 CXAGENT_PLUGIN_EXPORT void cxagent_plugin_free(const char *ptr) {
-    if (!ptr || ptr == OUT_OF_MEMORY) return;
+    if (!ptr || ptr == OUT_OF_MEMORY || ptr == GATE_OUT_OF_MEMORY) return;
     count(-1);
     free((void *)ptr);
 }

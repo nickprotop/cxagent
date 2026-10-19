@@ -354,7 +354,7 @@ CXP_PLUGIN(
 - **`count`** reads the file:
   - `cxp_progress(call, percent, …)` every tenth of the file;
   - `cxp_stream(call, "N lines… ")` every thousand lines;
-  - finally `cxp_ok_text(cxp_format("%s: %ld lines, %ld words", …))`.
+  - finally `cxp_ok_text(cxp_format("%s: %lld lines, %lld words", …))`.
 
   A file it cannot open is `cxp_error(…)`, and `cxp_setting_bool("countBlankLines", 0)` reads the
   one setting.
@@ -366,11 +366,12 @@ Nothing is freed by hand: `cxp_format` strings live until the call returns.
 ```
 cmake -B build && cmake --build build
 cxagent plugin check build
-cxagent plugin call build wordcount_count '{"file":"big.txt"}'
+cxagent plugin call build wordcount_count '{"file":"CMakeLists.txt"}'
 ```
 
 The build folder holds `wordcount.so` (`.dylib` or `.dll` elsewhere), its sidecar and the README:
-everything a user installs.
+everything a user installs. Point the call at any file; the one below counts a 60,000-line file, big enough to
+show the progress and the running count.
 
 ![cxagent plugin call counting a 60,000-line file, with progress and the running count](images/wordcount-call.png)
 

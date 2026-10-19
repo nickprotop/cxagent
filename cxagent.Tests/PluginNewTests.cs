@@ -267,5 +267,86 @@ public class PluginNewCTests
         Assert.NotEqual(0, exit);
         Assert.Contains("wordcount.plugin.json", output);
     }
+
+    private static void SetSidecar(string dir, Action<System.Text.Json.Nodes.JsonObject> change)
+    {
+        var path = Path.Combine(dir, "wordcount.plugin.json");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        change(node);
+        File.WriteAllText(path, node.ToJsonString());
+    }
+
+    /// <summary>
+    /// Strict C11, every warning an error, and a sidecar no string literal survives: a "??=" trigraph
+    /// and one line past MSVC's 16 KB literal limit. The SDK and the template build clean regardless,
+    /// and describe returns the sidecar byte for byte.
+    /// </summary>
+    [Fact]
+    public async Task AStrictBuild_OfAHostileSidecar_IsCleanAndExact()
+    {
+        if (!OnPath("cmake")) return;
+        var dir = await NewProject("wordcount");
+        SetSidecar(dir, s => s["instructions"] = "what??= " + new string('x', 20_000));
+
+        Assert.Equal(0, Cmake(dir, "-B", "build", "-DCMAKE_C_FLAGS=-std=c11 -Wall -Wextra -Werror").Exit);
+        var (built, output) = Cmake(dir, "--build", "build");
+        Assert.True(built == 0, output);
+
+        Assert.Empty(await PluginHarness.CheckAsync(Path.Combine(dir, "build")));
+    }
+
+    /// <summary>A directory is not a file with nothing in it: counting one is an error, not "0 lines".</summary>
+    [Fact]
+    public async Task CountingADirectory_IsAFailedCall()
+    {
+        if (!OnPath("cmake")) return;
+        var dir = await NewProject("wordcount");
+        Cmake(dir, "-B", "build");
+        Cmake(dir, "--build", "build");
+        await using var plugin = await PluginHarness.LoadAsync(Path.Combine(dir, "build"), new HarnessOptions { WorkingDirectory = dir });
+
+        var call = await plugin.CallAsync("wordcount_count", new { file = "cxp" });
+
+        Assert.False(call.Result!.Success);
+    }
+
+    [Theory]
+    [InlineData("client", "\"yes\"")]
+    [InlineData("pluginContract", "\"4\"")]
+    public async Task ASidecarFieldOfTheWrongType_FailsTheConfigure(string field, string json)
+    {
+        if (!OnPath("cmake")) return;
+        var dir = await NewProject("wordcount");
+        SetSidecar(dir, s => s[field] = System.Text.Json.Nodes.JsonNode.Parse(json));
+
+        var (exit, output) = Cmake(dir, "-B", "build");
+
+        Assert.NotEqual(0, exit);
+        Assert.Contains("wordcount.plugin.json", output);
+        Assert.Contains(field, output);
+    }
+
+    /// <summary>A multi-config generator still puts the library in build/, where every printed command looks.</summary>
+    [Fact]
+    public async Task AMultiConfigBuild_PutsThePluginInBuild()
+    {
+        if (!OnPath("cmake") || !OnPath("ninja")) return;
+        var dir = await NewProject("wordcount");
+
+        Assert.Equal(0, Cmake(dir, "-B", "build", "-G", "Ninja Multi-Config").Exit);
+        Assert.Equal(0, Cmake(dir, "--build", "build", "--config", "Debug").Exit);
+
+        Assert.Empty(await PluginHarness.CheckAsync(Path.Combine(dir, "build")));
+    }
+
+    /// <summary>The release workflow packs with the info file the template ships, so CI's entry needs only its URLs.</summary>
+    [Fact]
+    public async Task TheReleaseWorkflow_PacksWithTheTemplatesInfoFile()
+    {
+        var dir = await NewProject("wordcount");
+
+        Assert.True(File.Exists(Path.Combine(dir, "catalog-info.yaml")));
+        Assert.Contains("--info catalog-info.yaml", File.ReadAllText(Path.Combine(dir, ".github", "workflows", "build.yml")));
+    }
 }
 

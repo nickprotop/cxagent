@@ -3,7 +3,8 @@
 #
 # RUNNER LABELS checked against GitHub's hosted-runner reference on 2026-10-19
 # (docs.github.com/en/actions/reference/runners/github-hosted-runners). Intel macOS is
-# macos-15-intel; plain macos-13 is gone.
+# macos-15-intel; plain macos-13 is gone. The Linux legs build on 22.04, so the library loads on any
+# glibc from 2.35 up rather than only on systems as new as the latest runner.
 name: build
 
 on:
@@ -18,8 +19,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { rid: linux-x64,   os: ubuntu-latest,    lib: CXP_NAME.so }
-          - { rid: linux-arm64, os: ubuntu-24.04-arm, lib: CXP_NAME.so }
+          - { rid: linux-x64,   os: ubuntu-22.04,     lib: CXP_NAME.so }
+          - { rid: linux-arm64, os: ubuntu-22.04-arm, lib: CXP_NAME.so }
           - { rid: osx-x64,     os: macos-15-intel,   lib: CXP_NAME.dylib }
           - { rid: osx-arm64,   os: macos-latest,     lib: CXP_NAME.dylib }
           - { rid: win-x64,     os: windows-latest,   lib: CXP_NAME.dll }
@@ -60,17 +61,22 @@ jobs:
         with:
           path: builds
       # cxagent's own pack: one zip per platform, each sha256, and the catalog entry — refused if the
-      # plugin does not pass `cxagent plugin check`.
+      # plugin does not pass `cxagent plugin check`. The entry's text comes from catalog-info.yaml; the
+      # repository is this one, whatever the file says.
       - name: Pack
         run: |
           dotnet tool install -g cxagent
+          # ON PATH FOR THIS STEP TOO: a global tool lands in ~/.dotnet/tools, which a hosted image does
+          # not promise to have on PATH.
+          export PATH="$PATH:$HOME/.dotnet/tools"
           native=""
           for dir in builds/CXP_NAME-*; do
             rid=${dir#builds/CXP_NAME-}
             lib=$(ls "$dir"/CXP_NAME.so "$dir"/CXP_NAME.dylib "$dir"/CXP_NAME.dll 2>/dev/null | head -1)
             native="$native --native $lib=$rid"
           done
-          cxagent plugin pack builds/CXP_NAME-linux-x64 $native --out dist
+          cxagent plugin pack builds/CXP_NAME-linux-x64 $native --info catalog-info.yaml \
+            --repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --out dist
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}

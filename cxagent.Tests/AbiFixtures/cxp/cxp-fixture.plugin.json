@@ -77,6 +77,22 @@
         "type": "object"
       },
       "gated": false
+    },
+    {
+      "name": "nogate",
+      "description": "dynamic, but registered with no gate",
+      "inputSchema": {
+        "type": "object"
+      },
+      "gated": "dynamic"
+    },
+    {
+      "name": "badjson",
+      "description": "returns a non-object",
+      "inputSchema": {
+        "type": "object"
+      },
+      "gated": false
     }
   ],
   "commands": [

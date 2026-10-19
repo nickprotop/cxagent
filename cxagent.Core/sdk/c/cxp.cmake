@@ -3,6 +3,8 @@
 #   include(cxp/cxp.cmake)
 #   cxp_add_plugin(<target> SIDECAR <name>.plugin.json SOURCES <your .c files>)
 #
+# Needs CMake 3.20 (string(JSON ...)).
+#
 # A shared library implementing the cxagent plugin ABI, built so the sidecar is the one truth:
 #   - the sidecar is embedded as describe's answer;
 #   - its "pluginContract" is the handshake;
@@ -29,28 +31,36 @@ function(cxp_add_plugin target)
   endif()
 
   # A SIDECAR THIS CANNOT READ FAILS THE CONFIGURE, naming the file: a library built from it would
-  # describe nothing cxagent can load.
+  # describe nothing cxagent can load. Types too — a string contract would reach the compiler as
+  # garbage, and "client": "yes" would export poll for a plugin that never submits.
   file(READ "${sidecar}" json)
-  string(JSON contract ERROR_VARIABLE err GET "${json}" pluginContract)
-  if(err)
-    message(FATAL_ERROR "${sidecar}: no readable \"pluginContract\" — ${err}")
+  string(JSON contract_type ERROR_VARIABLE err TYPE "${json}" pluginContract)
+  if(err OR NOT contract_type STREQUAL "NUMBER")
+    message(FATAL_ERROR "${sidecar}: \"pluginContract\" must be a number (${err}${contract_type}).")
   endif()
-  string(JSON client ERROR_VARIABLE noclient GET "${json}" client)
+  string(JSON contract GET "${json}" pluginContract)
+  string(JSON client_type ERROR_VARIABLE noclient TYPE "${json}" client)
+  if(NOT noclient AND NOT client_type STREQUAL "BOOLEAN")
+    message(FATAL_ERROR "${sidecar}: \"client\" must be true or false, not ${client_type}.")
+  endif()
+  if(NOT noclient)
+    string(JSON client GET "${json}" client)
+  endif()
   string(JSON commands ERROR_VARIABLE nocommands LENGTH "${json}" commands)
 
-  # THE SIDECAR AS ONE C STRING LITERAL: backslashes, then quotes, escaped; each line its own
-  # adjacent literal so a long sidecar stays within any compiler's line limits.
-  string(REPLACE "\\" "\\\\" escaped "${json}")
-  string(REPLACE "\"" "\\\"" escaped "${escaped}")
-  string(REPLACE "\r" "" escaped "${escaped}")
-  string(REPLACE "\n" "\\n\"\n\"" escaped "${escaped}")
+  # THE SIDECAR AS BYTES, not a string literal: no escaping to get wrong, no trigraph a "??=" in a
+  # description would trip, no source code page, and no limit on a literal's length (MSVC refuses one
+  # past 16 KB). Written only when it changed, so an unchanged sidecar rebuilds nothing.
+  file(READ "${sidecar}" hex HEX)
+  string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," bytes "${hex}")
   set(generated "${CMAKE_CURRENT_BINARY_DIR}/${target}-cxp")
-  file(WRITE "${generated}/cxp_manifest.h.new" "static const char CXP_MANIFEST[] =\n\"${escaped}\";\n")
-  file(COPY_FILE "${generated}/cxp_manifest.h.new" "${generated}/cxp_manifest.h" ONLY_IF_DIFFERENT)
+  configure_file("${CXP_DIR}/cxp_manifest.h.in" "${generated}/cxp_manifest.h" @ONLY)
 
   add_library(${target} SHARED ${CXP_SOURCES} "${CXP_DIR}/cxp.c" "${CXP_DIR}/cJSON.c")
   target_include_directories(${target} PRIVATE "${CXP_DIR}" "${generated}")
-  target_compile_definitions(${target} PRIVATE CXP_CONTRACT=${contract})
+  # CJSON_HIDE_SYMBOLS: cJSON is cxp's own; without it a Windows DLL would export all ~80 cJSON_
+  # functions beside the plugin's (Linux and macOS hide them through the visibility preset).
+  target_compile_definitions(${target} PRIVATE CXP_CONTRACT=${contract} CJSON_HIDE_SYMBOLS)
   if(NOT noclient AND client)
     target_compile_definitions(${target} PRIVATE CXP_CLIENT)
   endif()
@@ -61,11 +71,16 @@ function(cxp_add_plugin target)
   # NAMED AFTER THE SIDECAR, no "lib" prefix: weather.plugin.json beside weather.so, as the loader pairs them.
   get_filename_component(stem "${sidecar}" NAME)
   string(REGEX REPLACE "\\.plugin\\.json$" "" stem "${stem}")
+  # "$<1:dir>" AS THE OUTPUT FOLDER: a generator expression stops multi-config generators (Visual
+  # Studio, Ninja Multi-Config) adding build/Debug/, so every generator leaves the plugin in the build
+  # folder the printed commands and `cxagent plugin check build` look in.
   set_target_properties(${target} PROPERTIES
     OUTPUT_NAME "${stem}"
     PREFIX ""
     C_STANDARD 11
-    C_VISIBILITY_PRESET hidden)
+    C_VISIBILITY_PRESET hidden
+    LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_BINARY_DIR}>"
+    RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_BINARY_DIR}>")
   find_package(Threads REQUIRED)
   target_link_libraries(${target} PRIVATE Threads::Threads)
 

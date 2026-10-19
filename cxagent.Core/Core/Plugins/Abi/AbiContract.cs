@@ -64,8 +64,9 @@ internal sealed record AbiPluginContext(
     [property: JsonPropertyName("hostContract")] int HostContract = 0);
 
 /// <summary>
-/// The JSON <c>cxagent_plugin_invoke</c> receives — see Abi/README.md, "call". <see cref="Arguments"/>
-/// is always a JSON object, never null and never omitted; an argument-less tool receives <c>{}</c>.
+/// One call as cxagent sends it to the plugin host — see Abi/README.md, "call". The host hands
+/// <c>cxagent_plugin_invoke</c> and <c>cxagent_plugin_gate</c> only <see cref="Arguments"/>, which is
+/// always a JSON object, never null and never omitted; an argument-less tool receives <c>{}</c>.
 /// </summary>
 internal sealed record AbiInvokeCall(
     [property: JsonPropertyName("toolName")] string ToolName,

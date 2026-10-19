@@ -28,10 +28,12 @@ typedef struct cxp_call cxp_call;
 /* What a tool returns. Build one with cxp_ok_text, cxp_ok_json or cxp_error — never by hand. */
 typedef struct { char *envelope; } cxp_result;
 
-/* What a gate returns: cxp_no_ask(), cxp_ask(display) or cxp_ask_every_time(display). */
+/* What a gate returns: cxp_no_ask(), cxp_ask(display) or cxp_ask_every_time(display) — never by hand,
+   since cxp frees display. */
 typedef struct { char *display; int ask; int always_askable; } cxp_gate;
 
-/* What a command returns: cxp_reported(message), cxp_changed(message) or cxp_refused(message). */
+/* What a command returns: cxp_reported(message), cxp_changed(message) or cxp_refused(message) — never
+   by hand, since cxp frees message. */
 typedef struct { char *message; const char *status; } cxp_command_result;
 
 typedef cxp_result (*cxp_tool_fn)(const cxp_call *call);
@@ -43,13 +45,20 @@ typedef struct {
     int kind;                 /* 1 a tool, 2 a command, 0 the end of the table */
     const char *name;
     cxp_tool_fn tool;
-    cxp_gate_fn gate;         /* NULL: this tool never asks (the sidecar's "gated" still applies) */
+    cxp_gate_fn gate;         /* NULL for a tool the sidecar gates true or false; a "dynamic" tool with
+                                 no gate function asks on every call */
     cxp_command_fn command;
 } cxp_entry;
 
 #define CXP_TOOL(name, fn, gate) { 1, (name), (fn), (gate), 0 }
 #define CXP_COMMAND(name, fn) { 2, (name), 0, 0, (fn) }
-#define CXP_PLUGIN(...) const cxp_entry cxp_entries[] = { __VA_ARGS__, { 0, 0, 0, 0, 0 } };
+/* EXTERNAL LINKAGE IN C++ TOO: there a namespace-scope const would be internal, and cxp.c — compiled
+   as C — could not find the table. */
+#ifdef __cplusplus
+#  define CXP_PLUGIN(...) extern "C" const cxp_entry cxp_entries[] = { __VA_ARGS__, { 0, 0, 0, 0, 0 } };
+#else
+#  define CXP_PLUGIN(...) const cxp_entry cxp_entries[] = { __VA_ARGS__, { 0, 0, 0, 0, 0 } };
+#endif
 
 /* Arguments: NULL, or the fallback, when the key is missing or holds another type. */
 const char *cxp_arg_string(const cxp_call *call, const char *name);
@@ -82,8 +91,8 @@ cxp_command_result cxp_refused(const char *message);
    sidecar. Returns 0 when queued. */
 int cxp_submit(const char *goal);
 
-/* Reporting while a call runs. A NULL call is a log line for the plugin's own log; progress and
-   stream need a call. */
+/* Reporting while a call runs. Progress and stream need a call. cxp_log with a NULL call goes to the
+   plugin's own log when made outside any call — from start, say; inside a tool it goes to that call. */
 void cxp_progress(const cxp_call *call, double percent, const char *message);
 void cxp_log(const cxp_call *call, int level, const char *line);
 void cxp_stream(const cxp_call *call, const char *text);
@@ -95,7 +104,8 @@ void cxp_progress_any(const char *call_id, double percent, const char *message);
 void cxp_log_any(const char *call_id, int level, const char *line);
 void cxp_stream_any(const char *call_id, const char *text);
 
-/* printf into a string that lives until the current call returns. Free nothing yourself. */
+/* printf into a string that lives until the current call returns. Free nothing yourself. On a thread
+   of your own it is never released: use your own buffers there. */
 char *cxp_format(const char *format, ...)
 #if defined(__GNUC__) || defined(__clang__)
     __attribute__((format(printf, 1, 2)))

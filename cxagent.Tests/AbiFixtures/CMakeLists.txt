@@ -1,6 +1,8 @@
 # THE NATIVE TEST FIXTURES, ON EVERY PLATFORM. build.sh makes the same set with cc on Linux and macOS;
 # this is the build that also runs on Windows, and the one CI uses everywhere. KEEP THE TWO LISTS
-# IDENTICAL: a variant added to one and not the other is a fixture some platforms never test.
+# IDENTICAL: a variant added to one and not the other is a fixture some platforms never test. The one
+# exception is cxp-fixture, which needs cxp.cmake's manifest generation and so is built only here;
+# without cmake, CxpSdkTests skip.
 cmake_minimum_required(VERSION 3.20)
 project(cxagent_abi_fixtures C)
 

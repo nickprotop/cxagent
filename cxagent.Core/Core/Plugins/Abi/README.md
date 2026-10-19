@@ -10,8 +10,8 @@ vocabulary they exchange, and the reasoning behind it.
 | `cxagent_plugin_abi_version` | — (handshake only) | — | an `int32_t`, not JSON |
 | `cxagent_plugin_describe` | `IPlugin.Load`'s returned manifest | — | `PluginManifest` |
 | `cxagent_plugin_start` | `IPlugin.Start` | `AbiPluginContext` | `AbiResultEnvelope` (void) |
-| `cxagent_plugin_gate` | `IPluginGateSource.Gate` | `AbiInvokeCall` | a gate object, or NULL |
-| `cxagent_plugin_invoke` | `IPlugin.Invoke` | `AbiInvokeCall` | `AbiResultEnvelope` (JobResult) |
+| `cxagent_plugin_gate` | `IPluginGateSource.Gate` | the arguments object (`AbiInvokeCall.Arguments`) | a gate object, or NULL |
+| `cxagent_plugin_invoke` | `IPlugin.Invoke` | the arguments object (`AbiInvokeCall.Arguments`) | `AbiResultEnvelope` (JobResult) |
 | `cxagent_plugin_stop` | `IPlugin.Stop` | — | `AbiResultEnvelope` (void) |
 | `cxagent_plugin_poll` (optional) | `IPluginClient.Submit`, originated by the plugin rather than called into it | — | a submit request, or NULL |
 | `cxagent_plugin_command` (optional) | `IPluginCommandHandler.RunCommand` | a command name and its typed argument string | `CommandResult`, or NULL |
@@ -149,7 +149,7 @@ method is this plugin's own bug, not a name the caller must additionally validat
 ## `gate` — one per-call permission decision
 
 Called only for a tool whose manifest says `"gated": "dynamic"`, and only before the call it is
-about. Receives the same `AbiInvokeCall` JSON `invoke` does; returns either NULL or:
+about. Receives the same arguments object `invoke` does (`AbiInvokeCall.Arguments`); returns either NULL or:
 
 ```json
 { "display": "run: DROP TABLE users", "alwaysAskable": true }

@@ -155,6 +155,9 @@ public class CxpSdkTests
         var call = await plugin.CallAsync("late");
         await Task.Delay(500);
 
+        // A REAL ID WAS COPIED: an empty one would be dropped by the SDK itself, and this test would
+        // pass without the host's drop ever running.
+        Assert.Matches(@"^started \d+$", Content(call));
         Assert.DoesNotContain(call.Reports, r => r is HarnessReport.Progress { Percent: 99 });
         Assert.True((await plugin.CallAsync("typed")).Result!.Success);
     }
@@ -170,5 +173,31 @@ public class CxpSdkTests
 
         // COUNTED BEFORE THE outstanding CALL'S OWN ENVELOPE IS HANDED OVER: every earlier string freed is 0.
         Assert.Equal("0", Content(await plugin.CallAsync("outstanding")));
+    }
+
+    /// <summary>A "dynamic" tool registered with no gate function asks — the sidecar said its calls may need permission.</summary>
+    [Fact]
+    public async Task ADynamicToolWithNoGateFunction_Asks()
+    {
+        if (Folder() is not { } dir) return;
+        await using var plugin = await PluginHarness.LoadAsync(dir);
+
+        var call = await plugin.CallAsync("nogate", new { text = "hi" });
+
+        Assert.NotNull(call.Gate);
+        Assert.Contains("nogate", call.Gate!.Display);
+    }
+
+    /// <summary>cxp_ok_json with something other than an object is the author's mistake, said as a failed call — not empty output.</summary>
+    [Fact]
+    public async Task AnOkJsonThatIsNotAnObject_IsAFailedCall()
+    {
+        if (Folder() is not { } dir) return;
+        await using var plugin = await PluginHarness.LoadAsync(dir);
+
+        var call = await plugin.CallAsync("badjson");
+
+        Assert.False(call.Result!.Success);
+        Assert.Contains("object", call.Result.ErrorMessage);
     }
 }

@@ -1,0 +1,7 @@
+# What the catalog entry needs that the sidecar does not. `cxagent plugin pack --info catalog-info.yaml`
+# reads it, and so does the release job in .github/workflows/build.yml. A field left "" is written as
+# "<fill in: ...>", which `cxagent plugin verify` refuses: fill them in before you submit.
+description: Counts the lines and words in a file.
+publisher: ""
+license: ""
+repository: ""

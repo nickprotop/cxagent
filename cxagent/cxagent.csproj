@@ -119,7 +119,7 @@
          builds with nothing but a compiler and CMake. -->
     <EmbeddedResource Include="../cxagent.Core/sdk/templates/c/**" Exclude="../cxagent.Core/sdk/templates/c/**/build/**"
                       LogicalName="template/c/%(RecursiveDir)%(Filename)%(Extension)" />
-    <EmbeddedResource Include="../cxagent.Core/sdk/c/cxagent_plugin.h;../cxagent.Core/sdk/c/cxp.h;../cxagent.Core/sdk/c/cxp.c;../cxagent.Core/sdk/c/cxp.cmake;../cxagent.Core/sdk/c/cJSON.h;../cxagent.Core/sdk/c/cJSON.c;../cxagent.Core/sdk/c/cJSON-LICENSE"
+    <EmbeddedResource Include="../cxagent.Core/sdk/c/cxagent_plugin.h;../cxagent.Core/sdk/c/cxp.h;../cxagent.Core/sdk/c/cxp.c;../cxagent.Core/sdk/c/cxp.cmake;../cxagent.Core/sdk/c/cxp_manifest.h.in;../cxagent.Core/sdk/c/cJSON.h;../cxagent.Core/sdk/c/cJSON.c;../cxagent.Core/sdk/c/cJSON-LICENSE"
                       LogicalName="template/c/cxp/%(Filename)%(Extension)" />
   </ItemGroup>
 
