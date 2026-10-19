@@ -8,9 +8,12 @@
   "tools": [
     { "name": "echo", "description": "echoes", "inputSchema": { "type": "object", "properties": { "text": { "type": "string" } } }, "gated": "dynamic" },
     { "name": "submit", "description": "submits", "inputSchema": { "type": "object" }, "gated": false },
-    { "name": "slow", "description": "never returns", "inputSchema": { "type": "object" }, "gated": false }
+    { "name": "slow", "description": "never returns", "inputSchema": { "type": "object" }, "gated": false },
+    { "name": "stuck", "description": "never returns, whatever its token says", "inputSchema": { "type": "object" }, "gated": false },
+    { "name": "throws", "description": "throws", "inputSchema": { "type": "object" }, "gated": false }
   ],
   "commands": [
-    { "name": "harness-ping", "summary": "replies pong" }
+    { "name": "harness-ping", "summary": "replies pong" },
+    { "name": "harness-throw", "summary": "throws" }
   ]
 }

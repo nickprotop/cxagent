@@ -274,3 +274,106 @@ public class PluginHarnessCallTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => plugin.CallAsync("slow", ct: soon.Token));
     }
 }
+
+/// <summary>The harness when a plugin misbehaves: it comes back, cleans up, and answers as a session would.</summary>
+public class PluginHarnessMisbehaviourTests
+{
+    private static HarnessOptions With(string setting) =>
+        new() { Settings = JsonSerializer.SerializeToElement(new Dictionary<string, bool> { [setting] = true }) };
+
+    /// <summary>A session stops waiting when its turn is cancelled, whether or not the plugin reads the token.</summary>
+    [Fact]
+    public async Task ACallThatIgnoresItsToken_StillReturnsWhenTheTokenFires()
+    {
+        await using var plugin = await PluginHarness.LoadAsync(Folders.Harness(), new HarnessOptions { StopTimeout = TimeSpan.FromSeconds(1) });
+        using var soon = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => plugin.CallAsync("stuck", ct: soon.Token).WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    /// <summary>A Stop that never returns costs its time limit, not the rest of the run.</summary>
+    [Fact]
+    public async Task AStopThatHangs_IsAbandonedAtItsLimit()
+    {
+        var options = With("stopHangs") with { StopTimeout = TimeSpan.FromSeconds(1) };
+        var plugin = await PluginHarness.LoadAsync(Folders.Harness(), options);
+
+        await plugin.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Contains("did not return", plugin.StopError);
+    }
+
+    /// <summary>
+    /// The lifetime ends BEFORE Stop is awaited, as in a session: a plugin whose Stop waits for a loop
+    /// that exits on its lifetime stops cleanly, rather than waiting out the limit.
+    /// </summary>
+    [Fact]
+    public async Task AStopThatWaitsOnItsLifetime_Returns()
+    {
+        var plugin = await PluginHarness.LoadAsync(Folders.Harness(), With("stopWaitsOnLifetime"));
+
+        await plugin.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+
+        Assert.Null(plugin.StopError);
+    }
+
+    /// <summary>Check hands the plugin what a session would: a client, when the sidecar declares one.</summary>
+    [Fact]
+    public async Task Check_GivesADeclaredClient()
+    {
+        Assert.Empty(await PluginHarness.CheckAsync(Folders.Harness()));
+    }
+
+    /// <summary>A tool that throws is a failed call, as it is in a session — not an exception out of the harness.</summary>
+    [Fact]
+    public async Task AToolThatThrows_IsAFailedResult()
+    {
+        await using var plugin = await PluginHarness.LoadAsync(Folders.Harness());
+
+        var call = await plugin.CallAsync("throws");
+
+        Assert.False(call.Result!.Success);
+        Assert.Contains("the tool threw", call.Result.ErrorMessage);
+    }
+
+    /// <summary>A Start that throws OperationCanceledException of its own is a start problem, and the plugin is still stopped.</summary>
+    [Fact]
+    public async Task AStartThatCancelsItself_IsALoadProblem()
+    {
+        var refused = await Assert.ThrowsAsync<PluginLoadException>(
+            () => PluginHarness.LoadAsync(Folders.Harness(), With("startCancels")));
+
+        Assert.Equal("start", Assert.Single(refused.Problems).Field);
+    }
+
+    /// <summary>A command name a built-in already has is refused by a session; check says so first.</summary>
+    [Fact]
+    public async Task ACommandWithABuiltInName_IsAProblem()
+    {
+        var dir = Folders.WellFormedWithSidecar("""
+            {"pluginContract":2,"name":"fixture","version":"1.0.0","spawns":false,
+             "tools":[{"name":"wf_tool","description":"x","inputSchema":{"type":"object"}}],
+             "commands":[{"name":"model","summary":"x"}]}
+            """);
+
+        var problems = await PluginHarness.CheckAsync(dir);
+
+        Assert.Contains(problems, p => p.Field == "commands[0].name" && p.Message.Contains("/model"));
+    }
+
+    /// <summary>Every problem: a contract-2 sidecar using both client and kind is two lines, not the first one.</summary>
+    [Fact]
+    public async Task ClientAndKindBelowTheirContracts_AreTwoProblems()
+    {
+        var dir = Folders.WellFormedWithSidecar("""
+            {"pluginContract":2,"client":true,"kind":"managed","name":"fixture","version":"1.0.0","spawns":false,
+             "tools":[{"name":"wf_tool","description":"x","inputSchema":{"type":"object"}}]}
+            """);
+
+        var problems = await PluginHarness.CheckAsync(dir);
+
+        Assert.Contains(problems, p => p.Field == "client");
+        Assert.Contains(problems, p => p.Field == "kind");
+    }
+}

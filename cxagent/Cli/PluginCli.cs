@@ -18,6 +18,11 @@ public static class PluginCli
                cxagent plugin call <folder> <tool> ['<json>'] [options]
         """;
 
+    // THE SAME ESCAPING AS call's OUTPUT — see PluginCallCommand.Indented: a person or a JSON parser
+    // reads this, never a page that needs "°" written as "\u00B0".
+    private static readonly JsonSerializerOptions Relaxed =
+        new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr, CancellationToken ct = default)
     {
         if (args.Length == 0) return Fail(stderr, "no command.");
@@ -42,7 +47,7 @@ public static class PluginCli
             {
                 ok = problems.Count == 0,
                 problems = problems.Select(p => new { field = p.Field, message = p.Message }),
-            }));
+            }, Relaxed));
         }
         else if (problems.Count == 0)
         {

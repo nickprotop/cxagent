@@ -16,6 +16,9 @@ public sealed record HarnessOptions
 
     /// <summary>The folder the plugin works in. Default: the current directory.</summary>
     public string? WorkingDirectory { get; init; }
+
+    /// <summary>How long disposing waits for the plugin's Stop before abandoning it. Default: 10 seconds.</summary>
+    public TimeSpan StopTimeout { get; init; } = TimeSpan.FromSeconds(10);
 }
 
 /// <summary>The plugin could not be loaded and started; <see cref="Problems"/> says why, one line each.</summary>
@@ -46,7 +49,7 @@ public static partial class PluginHarness
 
         // THE LOAD STAGE RUNS ONLY ON A CLEAN SIDECAR: the loaders refuse on the first problem, and
         // their refusal would repeat one already listed above.
-        if (problems.Count == 0) await LoadProblems(found, options ?? new(), problems, ct).ConfigureAwait(false);
+        if (problems.Count == 0) await LoadProblems(found, sidecar, options ?? new(), problems, ct).ConfigureAwait(false);
         return problems;
     }
 
@@ -80,23 +83,21 @@ public static partial class PluginHarness
                 {
                     await l.Instance.Start(ct).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex)
                 {
-                    // STOPPED AND REAPED BEFORE THE THROW: a Start that failed half way may already
-                    // hold a process, and the caller gets no plugin to dispose.
-                    try
-                    {
-                        await l.Instance.Stop(CancellationToken.None).ConfigureAwait(false);
-                    }
-                    catch (Exception)
-                    {
-                    }
-
+                    // STOPPED AND REAPED BEFORE THE THROW, whatever was thrown: a Start that failed
+                    // half way may already hold a process, and the caller gets no plugin to dispose.
+                    context.EndLifetime();
+                    await HarnessPlugin.StopWithin(l.Instance, options.StopTimeout).ConfigureAwait(false);
                     context.Dispose();
+
+                    // THE CALLER'S OWN CANCELLATION STAYS A CANCELLATION; anything else — a plugin's
+                    // OperationCanceledException of its own included — is the plugin failing to start.
+                    if (ex is OperationCanceledException && ct.IsCancellationRequested) throw;
                     throw new PluginLoadException([new("start", ex.Message)]);
                 }
 
-                return new HarnessPlugin(l.Instance, l.Manifest, context, client);
+                return new HarnessPlugin(l.Instance, l.Manifest, context, client, options.StopTimeout);
             default:
                 context.Dispose();
                 throw new InvalidOperationException("unknown load result");
@@ -107,8 +108,12 @@ public static partial class PluginHarness
     {
         if (PluginContract.Refusal(sidecar, found.Sidecar) is { } contract)
             problems.Add(new("pluginContract", contract));
-        if (PluginContractUse.Refusal(sidecar) is { } use)
-            problems.Add(new(FieldOf(use), use));
+        // ONE LINE PER RULE BROKEN, where PluginContractUse.Refusal — which a loader stops at — names
+        // only the first. Same thresholds, so the two cannot disagree on whether a sidecar loads.
+        if (sidecar.Client && sidecar.Contract < PluginContractUse.ClientSince)
+            problems.Add(new("client", $"declared, but the plugin names contract {sidecar.Contract}; the client arrived in contract {PluginContractUse.ClientSince}, so declare {PluginContractUse.ClientSince}."));
+        if (sidecar.Kind is not null && sidecar.Contract < PluginContractUse.KindSince)
+            problems.Add(new("kind", $"declared, but the plugin names contract {sidecar.Contract}; \"kind\" arrived in contract {PluginContractUse.KindSince}, so declare {PluginContractUse.KindSince}."));
 
         var isAssembly = PluginResolver.IsDotNetAssembly(found.Binary);
         if (sidecar.Kind == PluginKind.Native && isAssembly)
@@ -119,11 +124,16 @@ public static partial class PluginHarness
         for (var i = 0; i < sidecar.Tools.Count; i++)
             if (CxAgent.Core.Jobs.Tool.IsKnown(sidecar.Tools[i].Name))
                 problems.Add(new($"tools[{i}].name", $"'{sidecar.Tools[i].Name}' is a built-in tool name; a plugin cannot take it."));
-    }
 
-    // PluginContractUse REFUSES ONE RULE AT A TIME, and its message says which field —
-    // "declares \"kind\" but names plugin contract 2" or "declares \"client\" …".
-    private static string FieldOf(string refusal) => refusal.Contains("declares \"kind\"") ? "kind" : "client";
+        // THE COMMAND TABLE A SESSION SEEDS: every built-in, and every name the app attaches a handler
+        // to, is one of these — so a plugin command named like one is refused at load.
+        for (var i = 0; i < sidecar.Commands.Count; i++)
+        {
+            var typed = "/" + sidecar.Commands[i].Name;
+            if (CxAgent.Core.Commands.SessionCommands.All.Any(c => c.Name == typed))
+                problems.Add(new($"commands[{i}].name", $"'{typed}' is a built-in command; a plugin cannot take it."));
+        }
+    }
 
     internal abstract record LoadOutcome
     {
@@ -172,9 +182,12 @@ public static partial class PluginHarness
         };
     }
 
-    private static async Task LoadProblems(PluginFolder found, HarnessOptions options, List<PluginProblem> problems, CancellationToken ct)
+    private static async Task LoadProblems(PluginFolder found, PluginManifest sidecar, HarnessOptions options,
+        List<PluginProblem> problems, CancellationToken ct)
     {
-        using var context = NewContext(options, client: null);
+        // A CLIENT WHEN THE SIDECAR DECLARES ONE, as a session hands it — a plugin whose Load needs its
+        // client would otherwise fail check and pass everywhere else.
+        using var context = NewContext(options, sidecar.Client ? new RecordingClient() : null);
         switch (await LoadInto(found, context, options, ct).ConfigureAwait(false))
         {
             case LoadOutcome.Failed f:
@@ -182,17 +195,11 @@ public static partial class PluginHarness
                 break;
             case LoadOutcome.Loaded l:
                 // LOADED, NOT STARTED: check asks whether it loads; Start is call's business. Stopped
-                // anyway — a native load already holds a host process.
-                try
-                {
-                    await l.Instance.Stop(ct).ConfigureAwait(false);
-                }
-                catch (Exception)
-                {
-                    // A STOP THAT THROWS after a load that passed is not what check answers; the
-                    // context's disposal still reaps anything it left.
-                }
-
+                // anyway — a native load already holds a host process. A Stop that fails or hangs
+                // after a load that passed is not what check answers; the context's disposal still
+                // reaps anything it left.
+                context.EndLifetime();
+                await HarnessPlugin.StopWithin(l.Instance, options.StopTimeout).ConfigureAwait(false);
                 break;
         }
     }

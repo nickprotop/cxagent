@@ -1,8 +1,12 @@
 using System.Globalization;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using CxAgent.Plugins.Testing;
 
 namespace CxAgent.Cli;
+
+/// <summary>The option values as typed, before any is checked — what <see cref="CallRequest.Parse"/> collects.</summary>
+internal sealed record RawCallOptions(string? Settings, string? SettingsFile, string? Answer, string? Timeout, string? Command);
 
 /// <summary>What <c>cxagent plugin call</c> was asked to do, parsed and checked before anything loads.</summary>
 internal sealed record CallRequest(string Folder, string? Tool, string? ArgumentsJson, string? Command,
@@ -44,7 +48,7 @@ internal sealed record CallRequest(string Folder, string? Tool, string? Argument
             }
         }
 
-        error = Check(positionals, command, settings, settingsFile, answer, timeout);
+        error = Check(positionals, new RawCallOptions(settings, settingsFile, answer, timeout, command));
         if (error is not null) return null;
 
         var options = new HarnessOptions
@@ -64,20 +68,28 @@ internal sealed record CallRequest(string Folder, string? Tool, string? Argument
     // A MISSING VALUE IS THE NEXT CHECK'S PROBLEM: null here reads as "not given", and Check says so.
     private static string? Value(string[] args, ref int i) => i + 1 < args.Length ? args[++i] : "";
 
-    private static string? Check(List<string> positionals, string? command, string? settings, string? settingsFile,
-        string? answer, string? timeout)
+    // THE LONGEST WAIT A CancellationTokenSource TAKES, in seconds — CancelAfter refuses more.
+    private static readonly double LongestTimeout = TimeSpan.FromMilliseconds(uint.MaxValue - 1).TotalSeconds;
+
+    private static string? Check(List<string> positionals, RawCallOptions raw)
     {
+        var command = raw.Command;
         var wanted = command is null ? "a plugin folder and a tool" : "a plugin folder";
         if (positionals.Count < (command is null ? 2 : 1)) return $"call takes {wanted}.";
         if (positionals.Count > (command is null ? 3 : 1)) return $"unexpected '{positionals[^1]}'.";
         if (command is "") return "--command takes a command name.";
-        if (settings is not null && settingsFile is not null) return "give --settings or --settings-file, not both.";
-        if (settingsFile is not null && !File.Exists(settingsFile)) return $"no settings file '{settingsFile}'.";
-        if (answer is not null and not "allow" and not "deny") return "--answer is allow or deny.";
-        if (timeout is not null && (!double.TryParse(timeout, CultureInfo.InvariantCulture, out var s) || s <= 0))
+        if (raw.Settings is not null && raw.SettingsFile is not null) return "give --settings or --settings-file, not both.";
+        if (raw.SettingsFile is not null && !File.Exists(raw.SettingsFile)) return $"no settings file '{raw.SettingsFile}'.";
+        if (raw.Answer is not null and not "allow" and not "deny") return "--answer is allow or deny.";
+
+        // FINITE AND IN RANGE: "NaN" and "Infinity" parse as doubles, and neither is a wait.
+        if (raw.Timeout is not null
+            && (!double.TryParse(raw.Timeout, CultureInfo.InvariantCulture, out var s) || !double.IsFinite(s) || s <= 0 || s > LongestTimeout))
             return "--timeout is a number of seconds.";
         if (command is null && positionals.Count > 2 && !IsObject(positionals[2])) return "arguments must be a JSON object.";
-        if (settings is not null && !IsObject(settings)) return "--settings must be a JSON object.";
+        if (raw.Settings is not null && !IsObject(raw.Settings)) return "--settings must be a JSON object.";
+        if (raw.SettingsFile is not null && !IsObject(File.ReadAllText(raw.SettingsFile)))
+            return $"'{raw.SettingsFile}' must hold a JSON object.";
         return null;
     }
 
@@ -110,30 +122,43 @@ internal sealed record CallRequest(string Folder, string? Tool, string? Argument
 /// </summary>
 internal static class PluginCallCommand
 {
-    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
+    // RELAXED ESCAPING: the default encoder writes "21°C" as "21\u00B0C", and this output is read by a
+    // person or parsed as JSON — never embedded in HTML, which is what the strict encoder guards.
+    private static readonly JsonSerializerOptions Indented = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         if (CallRequest.Parse(args, out var error) is not { } request) return PluginCli.Fail(stderr, error!);
 
+        // THE TIMEOUT COVERS START TOO: a plugin that hangs starting is the same overrun as one that
+        // hangs answering.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(request.Timeout);
+
         HarnessPlugin plugin;
         try
         {
-            plugin = await PluginHarness.LoadAsync(request.Folder, request.Options, ct).ConfigureAwait(false);
+            plugin = await PluginHarness.LoadAsync(request.Folder, request.Options, timeout.Token).ConfigureAwait(false);
         }
         catch (PluginLoadException ex)
         {
-            if (request.Json) stdout.WriteLine(JsonSerializer.Serialize(new { error = "load", problems = ex.Problems.Select(p => p.ToString()) }));
+            if (request.Json) stdout.WriteLine(JsonSerializer.Serialize(new { error = "load", problems = ex.Problems.Select(p => p.ToString()) }, Indented));
             else foreach (var p in ex.Problems) stdout.WriteLine(p.ToString());
             return 1;
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            return TimedOut(stderr, request);
         }
 
         // DISPOSED WHATEVER HAPPENS BELOW — a timeout included — so Stop runs and the plugin's
         // processes are reaped rather than outliving the command.
         await using (plugin.ConfigureAwait(false))
         {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(request.Timeout);
             try
             {
                 var exit = request.Command is { } name
@@ -152,6 +177,13 @@ internal static class PluginCallCommand
             {
                 // A TOOL OR COMMAND THE PLUGIN DOES NOT DECLARE: the message names the ones it does.
                 stderr.WriteLine($"cxagent plugin: {ex.Message.Split(" (Parameter")[0]}");
+                return 1;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // A COMMAND THAT THREW — a tool's throw is already a failed result. The plugin's
+                // fault, so exit 1, with what it said rather than a stack trace.
+                stderr.WriteLine($"cxagent plugin: the plugin threw: {ex.Message}");
                 return 1;
             }
         }

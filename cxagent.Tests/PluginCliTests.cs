@@ -184,3 +184,71 @@ public class PluginCliCallTests
         Assert.True(root.GetProperty("result").GetProperty("success").GetBoolean());
     }
 }
+
+/// <summary><c>cxagent plugin call</c> when the plugin or the command line misbehaves: an exit code, never a crash.</summary>
+public class PluginCliCallMisbehaviourTests
+{
+    private static Task<CliRun.Outcome> Run(params string[] args) => CliRun.Run(args);
+
+    [Theory]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("1e30")]
+    public async Task ATimeoutThatIsNotAUsableNumber_IsUsage(string timeout)
+    {
+        var (exit, _, _) = await Run("call", Folders.Harness(), "echo", "--timeout", timeout);
+        Assert.Equal(2, exit);
+    }
+
+    [Fact]
+    public async Task ASettingsFileThatIsNotAnObject_IsUsage()
+    {
+        var file = Path.GetTempFileName();
+        File.WriteAllText(file, "[1,2]");
+
+        var (exit, _, err) = await Run("call", Folders.Harness(), "echo", "--settings-file", file);
+
+        Assert.Equal(2, exit);
+        Assert.Contains("JSON object", err);
+        File.Delete(file);
+    }
+
+    [Fact]
+    public async Task ACommandThatThrows_ExitsOne()
+    {
+        var (exit, _, err) = await Run("call", Folders.Harness(), "--command", "harness-throw");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("the command threw", err);
+    }
+
+    [Fact]
+    public async Task AToolThatThrows_ExitsOne_WithTheFailure()
+    {
+        var (exit, output, _) = await Run("call", Folders.Harness(), "throws");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("the tool threw", output);
+    }
+
+    [Fact]
+    public async Task ACallDeafToItsToken_StillStopsAtTheTimeout()
+    {
+        var run = Run("call", Folders.Harness(), "stuck", "--timeout", "1");
+
+        var (exit, _, err) = await run.WaitAsync(TimeSpan.FromSeconds(20));
+
+        Assert.Equal(1, exit);
+        Assert.Contains("timed out after 1 s", err);
+    }
+
+    /// <summary>A result is printed as written: "21°C", not "21°C".</summary>
+    [Fact]
+    public async Task NonAsciiText_IsPrintedAsIs()
+    {
+        var (exit, output, _) = await Run("call", Folders.Harness(), "echo", """{"text":"21°C Αθήνα"}""", "--answer", "allow");
+
+        Assert.Equal(0, exit);
+        Assert.Contains("\"21°C Αθήνα\"", output);
+    }
+}

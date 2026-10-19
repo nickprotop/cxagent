@@ -13,14 +13,17 @@ public sealed class HarnessPlugin : IAsyncDisposable
     private readonly IPlugin _instance;
     private readonly HarnessContext _context;
     private readonly RecordingClient? _client;
+    private readonly TimeSpan _stopTimeout;
     private bool _disposed;
 
-    internal HarnessPlugin(IPlugin instance, PluginManifest manifest, HarnessContext context, RecordingClient? client)
+    internal HarnessPlugin(IPlugin instance, PluginManifest manifest, HarnessContext context, RecordingClient? client,
+        TimeSpan stopTimeout)
     {
         _instance = instance;
         Manifest = manifest;
         _context = context;
         _client = client;
+        _stopTimeout = stopTimeout;
     }
 
     /// <summary>What the plugin's code returned from Load — already checked against its sidecar.</summary>
@@ -63,7 +66,20 @@ public sealed class HarnessPlugin : IAsyncDisposable
             return new HarnessCall(question, Asked: true, answer, Result: null, Reports: []);
 
         var context = new RecordingJobContext(_context.WorkingDirectory, onReport);
-        var result = await _instance.Invoke(tool, call, context, ct).ConfigureAwait(false);
+        JobResult result;
+        try
+        {
+            // WAITASYNC, AS A SESSION WAITS: a cancelled call stops being waited on whether or not the
+            // plugin reads its token, so a plugin stuck in a blocking call cannot hold the caller.
+            result = await _instance.Invoke(tool, call, context, ct).WaitAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A TOOL THAT THROWS IS A FAILED CALL, as the session's agent records it — not an
+            // exception out of the harness that a session would never raise.
+            result = new JobResult { Success = false, ErrorMessage = ex.Message };
+        }
+
         return new HarnessCall(question, question is not null, answer, result, context.Reports);
     }
 
@@ -84,17 +100,31 @@ public sealed class HarnessPlugin : IAsyncDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _context.EndLifetime();
+        StopError = await StopWithin(_instance, _stopTimeout).ConfigureAwait(false);
+        _context.Dispose();
+    }
+
+    /// <summary>
+    /// Stops <paramref name="instance"/>, giving up after <paramref name="limit"/>; returns why it
+    /// failed, or null. A STOP THAT NEVER RETURNS IS ABANDONED, not awaited: the processes the plugin
+    /// registered are still killed after it, and a hung plugin costs its limit rather than the run.
+    /// </summary>
+    internal static async Task<string?> StopWithin(IPlugin instance, TimeSpan limit)
+    {
+        using var deadline = new CancellationTokenSource(limit);
         try
         {
-            await _instance.Stop(CancellationToken.None).ConfigureAwait(false);
+            await instance.Stop(deadline.Token).WaitAsync(limit).ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is OperationCanceledException && deadline.IsCancellationRequested))
+        {
+            return $"Stop did not return within {limit.TotalSeconds:0.#} s; it was abandoned.";
         }
         catch (Exception ex)
         {
-            StopError = ex.Message;
-        }
-        finally
-        {
-            _context.Dispose();
+            return ex.Message;
         }
     }
 

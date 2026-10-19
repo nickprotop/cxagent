@@ -48,7 +48,9 @@ answered: allow
   "success": true,
   "exitCode": 0,
   "errorMessage": null,
-  "output": { "content": "21°C, clear in Athens" }
+  "output": {
+    "content": "21°C, clear in Athens"
+  }
 }
 ```
 
@@ -116,7 +118,8 @@ public async Task SearchAsksAndAnswers()
   `PluginProblem(Field, Message)`. The list is empty when the plugin loads.
 - **`PluginHarness.LoadAsync(folder, options)`** loads and starts the plugin. It throws
   `PluginLoadException`, whose `Problems` say why, when it can't. `HarnessOptions` carries
-  `Settings`, `WorkingDirectory` and `HostDllPath`.
+  `Settings`, `WorkingDirectory`, `HostDllPath` and `StopTimeout`, how long disposing waits for the
+  plugin's Stop (10 seconds by default).
 - **`plugin.CallAsync(tool, args, answer, onReport, ct)`** returns a `HarnessCall`:
   - `Gate` is the question, or null when the call asks nothing.
   - `Answer` and `StoppedAtGate` say what happened at it.
@@ -127,7 +130,10 @@ public async Task SearchAsksAndAnswers()
     model's JSON arrives, so `Get<T>` converts exactly as it does in a session.
 - **`plugin.CommandAsync(name, arguments)`** runs a declared command.
 - **`plugin.Submits`** holds the goals the plugin submitted, and **`plugin.Logged`** its own log.
-- **Disposing** stops the plugin and kills any process it registered and left running.
+- **Disposing** ends the plugin's `Lifetime`, stops it, and kills any process it registered and
+  left running. A Stop that outlasts `StopTimeout` is abandoned and reported in `StopError`.
+- **A call is waited on as a session waits on it.** Cancelling its token stops the wait even if the
+  plugin never reads the token. A tool that throws gives a failed `Result`, not an exception.
 
 **Native plugins too.** The package carries the plugin host and copies it beside your test, so a
 C library loads and is called just as it would be in cxagent.

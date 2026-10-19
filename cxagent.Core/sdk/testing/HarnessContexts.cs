@@ -27,8 +27,19 @@ internal sealed class HarnessContext(string workingDirectory, JsonElement settin
     public void RegisterChildProcess(int pid) { lock (_children) _children.Add(pid); }
 
     /// <summary>
-    /// Cancels the lifetime and kills whatever the plugin registered and left running — a test that
-    /// leaves a language server behind leaks it into every later test on the machine.
+    /// Ends the plugin's lifetime — BEFORE its Stop is awaited, as a session does, so a Stop that waits
+    /// for a loop which exits on the lifetime returns rather than waiting on itself.
+    /// </summary>
+    public void EndLifetime() => _lifetime.Cancel();
+
+    /// <summary>
+    /// Ends the lifetime if it has not ended, and kills whatever the plugin registered and left
+    /// running — a test that leaves a language server behind leaks it into every later test on the
+    /// machine.
+    ///
+    /// <para>THE TOKEN SOURCE IS NOT DISPOSED: a plugin may still read <see cref="Lifetime"/> from a
+    /// thread of its own after Stop, and reading a disposed source's token throws. It holds no timer,
+    /// so leaving it to the collector costs nothing.</para>
     /// </summary>
     public void Dispose()
     {
@@ -47,8 +58,6 @@ internal sealed class HarnessContext(string workingDirectory, JsonElement settin
                 // ALREADY GONE — Stop reaped it, or it exited on its own. Nothing left to kill.
             }
         }
-
-        _lifetime.Dispose();
     }
 
     private sealed class Lines(HarnessContext owner) : IPluginLogger
