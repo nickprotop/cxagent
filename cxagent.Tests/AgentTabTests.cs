@@ -373,4 +373,14 @@ public sealed class AgentTabTests : IDisposable
         Assert.Contains(offered, v => v.Name == "finder");
         Assert.DoesNotContain(offered, v => v.Name == "gone");
     }
+
+    /// <summary>The tab's header names where the child runs, in full.</summary>
+    [Fact]
+    public void TheHeader_NamesWhereTheChildRuns()
+    {
+        _front.SubAgents.Keep(Child(Says("found it")), "finder");
+        using var tab = new AgentTab(_front, _front.SubAgents.Find("finder")!, Inline(new ChatTranscriptControl()));
+
+        Assert.Contains(tab.HeaderLinesForTest(), l => l.Contains("general · mock-model", StringComparison.Ordinal));
+    }
 }

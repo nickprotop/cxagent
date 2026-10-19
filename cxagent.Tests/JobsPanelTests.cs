@@ -72,7 +72,7 @@ public class JobsPanelTests
         var text = Render(Agent("find-loader", AgentRowState.Running, description: "Find the config loader"));
 
         Assert.Contains("◇ Find the config loader", text, StringComparison.Ordinal);
-        Assert.Contains("Agent · 1m 14s\n  View transcript", text, StringComparison.Ordinal);
+        Assert.Contains("Agent · 1m 14s\n  mock-model\n  View transcript", text, StringComparison.Ordinal);
         Assert.Contains("⏹", text, StringComparison.Ordinal);
     }
 
@@ -456,5 +456,15 @@ public class JobsPanelTests
         var shown = string.Join(" | ", painted.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0));
         Assert.True(painted.Contains("sleep 120", StringComparison.Ordinal), shown);
         Assert.Contains("Summarise prices.py", painted, StringComparison.Ordinal);
+    }
+
+    /// <summary>Where it runs is a line of its own: the facts line is cut at the panel's width, and a
+    /// label there would push out how the agent stands and how long it has run.</summary>
+    [Fact]
+    public void AnAgentCard_NamesWhereItRuns_OnALineOfItsOwn()
+    {
+        var text = Render(Agent("find-loader", AgentRowState.Running, description: "Find the config loader"));
+
+        Assert.Contains("Agent · 1m 14s\n  mock-model\n  View transcript", text, StringComparison.Ordinal);
     }
 }

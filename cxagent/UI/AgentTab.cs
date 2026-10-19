@@ -274,10 +274,16 @@ public sealed class AgentTab : IDisposable
 
     public void Dispose() => _attached.Dispose();
 
+    /// <summary>Test seam: the header's lines as the tab draws them.</summary>
+
+    internal List<string> HeaderLinesForTest() => HeaderLines();
+
+
     private List<string> HeaderLines()
     {
         var lines = new List<string> { $"[bold]{MarkupParser.Escape(Kept.Name)}[/]" };
-        var facts = Kept.TypeName;
+        // THE FULL name:model here — the tab is where a child is looked at closely.
+        var facts = Kept.Agent.ModelId is { Length: > 0 } runsOn ? $"{Kept.TypeName} · {runsOn}" : Kept.TypeName;
         if (_now is { } row)
         {
             facts += $" · {AgentRows.Word(row.State)} · {JobsPanel.Clock(row.Elapsed)}";

@@ -410,6 +410,7 @@ public sealed class JobsPanel
         private readonly JobsPanel _owner;
         private readonly MarkupControl _title = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
         private readonly MarkupControl _facts = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
+        private readonly MarkupControl _runsOn = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
         private readonly GridControl _top;
         private bool _hover;
         private bool _selected;
@@ -431,7 +432,8 @@ public sealed class JobsPanel
                 .Place(Button, 0, 2)
                 .WithAlignment(HorizontalAlignment.Stretch)
                 .Build();
-            Box = Ctl.Panel().NoBorder().WithPadding(0).AddControl(_top).AddControl(_facts).AddControl(Anchor).Build();
+            _runsOn.Visible = false;
+            Box = Ctl.Panel().NoBorder().WithPadding(0).AddControl(_top).AddControl(_facts).AddControl(_runsOn).AddControl(Anchor).Build();
             Box.Margin = new Margin(0, 0, 0, 1);
 
             // A CLICK ANYWHERE ON THE CARD SELECTS IT; the link opens it, the button does what x does.
@@ -506,6 +508,11 @@ public sealed class JobsPanel
             var link = $"  [link=open]{Value(_shown.View)} ›[/]";
             SetIfChanged(_title, [bar + title]);
             SetIfChanged(_facts, [bar + facts]);
+            // WHERE IT RUNS, ON ITS OWN LINE: the facts line is cut at the panel's width, and a label of
+            // thirty-odd characters there would push out how the agent stands and how long it has run.
+            var runsOn = _shown.RunsOn is { Length: > 0 } r ? $"  {Muted(Cut(r, _usable))}" : null;
+            if (_runsOn.Visible != (runsOn is not null)) _runsOn.Visible = runsOn is not null;
+            if (runsOn is not null) SetIfChanged(_runsOn, [bar + runsOn]);
             SetIfChanged(Anchor, [bar + link]);
 
             if (Move.Visible != _shown.Movable) Move.Visible = _shown.Movable;
@@ -517,7 +524,10 @@ public sealed class JobsPanel
             }
 
             var controls = _shown.Movable ? $"⇥ {_shown.Control}" : _shown.Control;
-            Text = [$"{_shown.Mark} {TitleLine(_shown.Title, controls, _usable)}", facts, $"  {Value(_shown.View)} ›"];
+            var titleLine = $"{_shown.Mark} {TitleLine(_shown.Title, controls, _usable)}";
+            Text = runsOn is null
+                ? [titleLine, facts, $"  {Value(_shown.View)} ›"]
+                : [titleLine, facts, runsOn, $"  {Value(_shown.View)} ›"];
         }
 
         /// <summary>The card's surface — hovered, selected or plain — from the theme's current colours.</summary>
@@ -547,6 +557,9 @@ public sealed class JobsPanel
     private sealed record CardText(string Mark, string Title, string? Control, EquatableList Facts, string View,
         bool Movable = false)
     {
+        /// <summary>Where an agent runs, `name:model`, shown on a line of its own; null for a shell card.</summary>
+        public string? RunsOn { get; init; }
+
         public static CardText For(PanelRow row) => row switch
         {
             JobRow job => ShellCard(job),
@@ -601,7 +614,11 @@ public sealed class JobsPanel
         facts.Add(DisplayNumber.Took(view.Elapsed));
 
         return new CardText(Mark(view.Running, view.State == AgentRowState.Done, "◇"), OutputTail.OneLine(title),
-            CardControl(view.Running), new EquatableList(facts), "View transcript", Movable: view is { Running: true, Foreground: true });
+            CardControl(view.Running), new EquatableList(facts), "View transcript", Movable: view is { Running: true, Foreground: true })
+        {
+            // WHERE IT RUNS, always — a card for a paid child must not read like one for a free one.
+            RunsOn = view.Kept.Agent.ModelId is { Length: > 0 } m ? CxAgent.Core.Llm.ModelNames.ShortLabel(m) : null,
+        };
     }
 
     /// <summary>A card's mark, as markup: the kind while it runs, ✓ or ✗ once it has ended (decision 16).</summary>
