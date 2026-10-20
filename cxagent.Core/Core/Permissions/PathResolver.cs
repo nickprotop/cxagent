@@ -188,6 +188,12 @@ internal sealed class PathResolver(string folder)
     public static bool Contains(string folder, string real)
     {
         var f = Path.TrimEndingDirectorySeparator(folder);
+
+        // A FILESYSTEM ROOT CONTAINS EVERYTHING ON IT. Its spelling already ends in the separator (`/`, `C:\`), and a
+        // prefix of root-plus-separator (`//`) matched nothing — a session at the root contained nothing, by accident.
+        // A root is never trusted (PermissionPolicy.CanBeTrusted), so containing everything asks for everything.
+        if (f.EndsWith(Path.DirectorySeparatorChar) || f.EndsWith(Path.AltDirectorySeparatorChar))
+            return real.StartsWith(f, StringComparison.Ordinal);
         return real == f || real.StartsWith(f + Path.DirectorySeparatorChar, StringComparison.Ordinal);
     }
 

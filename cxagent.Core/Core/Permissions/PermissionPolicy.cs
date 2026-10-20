@@ -190,7 +190,8 @@ public class PermissionPolicy
 
     // EVERY TRUST READ GOES THROUGH HERE, so the override cannot be honoured by four of them and
     // missed by the fifth.
-    private TrustState RootTrust => TrustOverride ? TrustState.Trusted : _rules.GetTrust(_root);
+    private TrustState RootTrust => !CanBeTrusted ? TrustState.Untrusted
+        : TrustOverride ? TrustState.Trusted : _rules.GetTrust(_root);
 
     /// <summary>Whether the folder this policy judges is trusted — what an edit mode ACTUALLY does
     /// depends on it, so anything reporting a mode change has to be able to ask.</summary>
@@ -205,6 +206,24 @@ public class PermissionPolicy
     /// still owed.
     /// </remarks>
     public TrustState Trust => RootTrust;
+
+    /// <summary>
+    /// Whether this folder may be trusted at all. A filesystem root may not: trusting it would make every read on the
+    /// machine silent, and nobody means "my whole disk" by a project. The question is not offered for it, and a
+    /// trust stored for it does not take effect.
+    /// </summary>
+    public bool CanBeTrusted =>
+        Path.GetPathRoot(_boundary) is not { Length: > 0 } root
+        || Path.TrimEndingDirectorySeparator(root) != Path.TrimEndingDirectorySeparator(_boundary);
+
+    /// <summary>
+    /// The folder a trust question names: the one trusted — the project's real folder — with the spelling it was
+    /// opened as when that differs, so what a person agrees to is the folder the boundary is.
+    /// </summary>
+    public string TrustShown =>
+        PathResolver.RealFolder(_root) is var real && real == Path.TrimEndingDirectorySeparator(Path.GetFullPath(_root))
+            ? real
+            : $"{real} (opened as {_root})";
 
     /// <summary>
     /// Records this folder's trust classification.

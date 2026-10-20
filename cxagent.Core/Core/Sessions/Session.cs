@@ -430,7 +430,7 @@ public sealed partial class Session
         }
 
         var decision = Commands.ModeCommand.Decide(new Commands.ModeQuery(
-            argument, Host.Mode, Policy?.FolderTrusted ?? false, WorkingDirectory,
+            argument, Host.Mode, Policy?.FolderTrusted ?? false, Policy?.TrustShown ?? WorkingDirectory,
             _classifierConfigured));
 
         // A REFUSAL IS ITS OWN OUTCOME, and SetMode already said why — reporting it again here would
@@ -511,7 +511,15 @@ public sealed partial class Session
             return CommandStatus.Reported;
         }
 
-        var decision = TrustCommand.Decide(new(argument, Policy.Trust, Policy.Root));
+        // A FILESYSTEM ROOT CANNOT BE TRUSTED — see PermissionPolicy.CanBeTrusted — so `/trust yes` there is refused.
+        if (!Policy.CanBeTrusted && TrustCommand.Parse(argument.Trim()) == Permissions.TrustState.Trusted)
+        {
+            Say(new($"{Policy.TrustShown} is the root of the file system, which cannot be trusted — "
+                + "open the project folder instead.", Severity.Warning));
+            return CommandStatus.Refused;
+        }
+
+        var decision = TrustCommand.Decide(new(argument, Policy.Trust, Policy.TrustShown));
 
         if (decision.NewState is not { } state)
         {

@@ -510,7 +510,9 @@ public sealed class PermissionDecider : IPermissionGate
             // "auto review said ask?"; the button contradicted it.
             var offerTrust = (request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite)
                 && !request.Policy!.FolderTrusted
-                && request.Policy!.IsInBoundary(request.Display);
+                && request.Policy!.IsInBoundary(request.Display)
+                // AND ONLY WHERE TRUST CAN TAKE: a filesystem root never offers it (PermissionPolicy.CanBeTrusted).
+                && request.Policy!.CanBeTrusted;
 
             // `ct` is handed straight to the prompt hook rather than raced against it with a
             // second, gate-local TaskCompletionSource. Racing a LOCAL tcs resolves it to Deny on
@@ -595,7 +597,7 @@ public sealed class PermissionDecider : IPermissionGate
                 // does not ask, because the state is no longer Unknown. "It is on the Settings page"
                 // is not discovery for a decision the user did not know they were making.
                 _notice?.Invoke(request.Policy?.SessionId, new($"trusted this folder — file operations in "
-                    + $"{request.Policy!.Root} will not ask again", Severity.Info));
+                    + $"{request.Policy!.TrustShown} will not ask again", Severity.Info));
                 return true;
 
             case PermissionChoice.Deny:

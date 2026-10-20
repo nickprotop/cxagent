@@ -201,6 +201,12 @@ not a new permission.
 the name promises. A mode can add friction; it can never remove friction below what your trust
 decision permits.
 
+**Trust is the folder you really work in.** A folder opened through a link is trusted as the folder
+the link points at, and the question names it — "`/data/src` (opened as `~/src`)" — because that is
+the folder the agent can then read without asking. A grant made before under the link's own spelling
+no longer applies, so such a folder is asked about once more (on macOS, a project under `/tmp` is
+`/private/tmp`). The root of the file system is never offered trust: everything there keeps asking.
+
 **Inside the working directory is a scope, not a safety guarantee.** Writes to `.git/`, `.vscode/`,
 `.claude/`, `.idea/`, `.github/`, `.husky/`, `.devcontainer/` and `.cxagent/`, and to an `.envrc`, keep asking even
 under `accept-edits`, at any depth: `.git/hooks/*` runs on your next git command, `.git/config` can name a

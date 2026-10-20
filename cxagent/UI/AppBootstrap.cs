@@ -2167,7 +2167,11 @@ public static class AppBootstrap
         {
             if (permissionRules.GetTrust(session.WorkingDirectory) != TrustState.Unknown) return;
 
-            var prompt = new TrustQuestionControl(session.WorkingDirectory);
+            // A FILESYSTEM ROOT IS NEVER OFFERED TRUST — see PermissionPolicy.CanBeTrusted — so it is not asked about.
+            if (session.Policy?.CanBeTrusted == false) return;
+
+            // THE FOLDER TRUSTED IS THE REAL ONE, named as such, with what it was opened as when that differs.
+            var prompt = new TrustQuestionControl(session.Policy?.TrustShown ?? session.WorkingDirectory);
             var content = prompt.BuildContent();   // built ONCE — see PermissionPromptControl's contract
             mainWindow.ShowPermissionPrompt(content);
             try

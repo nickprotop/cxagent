@@ -116,15 +116,19 @@ internal static class FolderIdentity
     }
 
     /// <summary>
-    /// Trailing separators removed, so <c>/a/b</c> and <c>/a/b/</c> are one scope. Done here rather
-    /// than trusted to callers: two spellings of one folder would be two sets of rules, and the user
-    /// would grant the same thing twice without ever seeing why.
+    /// The folder as it really is — links followed, trailing separators removed — so <c>/a/b</c>, <c>/a/b/</c> and
+    /// a link to it are one scope. Done here rather than trusted to callers: two spellings of one folder would be
+    /// two sets of rules, and the user would grant the same thing twice without ever seeing why.
+    ///
+    /// <para>THE REAL FOLDER, BECAUSE IT IS WHAT IS GRANTED. A session opened through a link works in — and its
+    /// boundary is — the folder the link points at; trust keyed on the link's spelling would grant that folder
+    /// under another name.</para>
     /// </summary>
     private static string Normalise(string folder)
     {
         try
         {
-            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
+            return PathResolver.RealFolder(folder);
         }
         catch (Exception)
         {

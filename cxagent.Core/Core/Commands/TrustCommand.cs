@@ -106,7 +106,7 @@ internal static class TrustCommand
     /// stored value says "Untrusted", and the summary says yes/no. Accepting one and rejecting the
     /// others would make a security control feel broken at the moment it is being reached for.</para>
     /// </summary>
-    private static TrustState? Parse(string argument) => argument.ToLowerInvariant() switch
+    internal static TrustState? Parse(string argument) => argument.ToLowerInvariant() switch
     {
         "yes" or "y" or "trust" or "trusted" or "on" => TrustState.Trusted,
         "no" or "n" or "untrust" or "untrusted" or "off" => TrustState.Untrusted,

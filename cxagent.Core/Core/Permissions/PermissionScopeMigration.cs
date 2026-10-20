@@ -90,6 +90,11 @@ public static class PermissionScopeMigration
             // guessing would be the exact mistake this whole mechanism exists to avoid.
             if (!Directory.Exists(path)) continue;
 
+            // A LINK'S SPELLING MEANS LEAVE IT. Its folder is wherever the link points, and carrying what was granted
+            // under the spelling onto that folder would grant it — the escalation scopes are keyed on the real folder
+            // to prevent. Left in the file, unused: the real folder is asked about afresh.
+            if (PathResolver.RealFolder(path) != Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))) continue;
+
             var current = FolderIdentity.ScopeFor(path);
 
             // A path that yields no suffix (filesystem reports no birth time) collapses to the bare
