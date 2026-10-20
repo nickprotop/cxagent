@@ -23,9 +23,10 @@ public sealed class InstructionNotices(Action<Commands.Message> say)
     {
         foreach (var file in skipped)
             if (_said.Add(file.Path + "\0" + file.Reason))
-                say(new Commands.Message(
-                    $"{file.Path} {file.Reason}. Copy it into the repository, or put shared instructions in your "
-                    + "global CXAGENT.md.", Commands.Severity.Warning));
+                say(new Commands.Message(file.Reason.StartsWith("links outside", StringComparison.Ordinal)
+                    ? $"{file.Path} {file.Reason}. Copy it into the repository, or put shared instructions in your "
+                      + "global CXAGENT.md."
+                    : $"{file.Path} {file.Reason}.", Commands.Severity.Warning));
     }
 }
 
@@ -223,6 +224,15 @@ public static class ProjectInstructions
         return new ProjectInstructionFile(Path.GetFullPath(path), body);
     }
 
+    /// <summary>
+    /// Renders the file as the block that follows the system prompt, or an empty string when there
+    /// is nothing to add.
+    ///
+    /// <para>NAMED AND FENCED. The model is told where the text came from and that it takes
+    /// precedence — an unattributed paragraph appended to a system prompt reads as though the app
+    /// itself said it, and there would be no way for the model to weigh a project rule against a
+    /// general one.</para>
+    /// </summary>
     public static string Render(IReadOnlyList<ProjectInstructionFile> files)
     {
         if (files.Count == 0) return "";

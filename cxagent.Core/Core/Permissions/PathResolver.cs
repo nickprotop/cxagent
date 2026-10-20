@@ -137,7 +137,10 @@ internal sealed class PathResolver(string folder)
         var options = new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = false };
 
         var start = RealFolder(request.Start);
-        bool Followable(string real) => request.Within is null || request.Within.Any(folder => Contains(folder, real));
+        // THE FOLDERS A LINK MAY LAND IN, REAL, as every target is compared real: spelled through a link they would
+        // contain no target, and every link would go unfollowed.
+        var within = request.Within?.Select(RealFolder).ToList();
+        bool Followable(string real) => within is null || within.Any(folder => Contains(folder, real));
 
         var files = new List<string>();
         var unfollowed = new List<UnfollowedLink>();
@@ -221,9 +224,9 @@ internal sealed class PathResolver(string folder)
     {
         var f = Path.TrimEndingDirectorySeparator(folder);
 
-        // A FILESYSTEM ROOT CONTAINS EVERYTHING ON IT. Its spelling already ends in the separator (`/`, `C:\`), and a
-        // prefix of root-plus-separator (`//`) matched nothing — a session at the root contained nothing, by accident.
-        // A root is never trusted (PermissionPolicy.CanBeTrusted), so containing everything asks for everything.
+        // A FILESYSTEM ROOT CONTAINS EVERYTHING ON IT. Its spelling already ends in the separator (`/`, `C:\`), so a
+        // prefix of root-plus-separator (`//`) would match nothing. A root is never trusted
+        // (PermissionPolicy.CanBeTrusted), so containing everything asks for everything.
         if (f.EndsWith(Path.DirectorySeparatorChar) || f.EndsWith(Path.AltDirectorySeparatorChar))
             return real.StartsWith(f, StringComparison.Ordinal);
         return real == f || real.StartsWith(f + Path.DirectorySeparatorChar, StringComparison.Ordinal);

@@ -147,9 +147,13 @@ public static class HeadlessRun
         policy.Classifier = PermissionDecider.ClassifierFor(
             resolution.ClassifierInstance, resolution.Providers, resolution.ClassifierTimeoutSeconds);
 
+        // THE ROOT OF THE FILE SYSTEM CANNOT BE TRUSTED, --trust or not (PermissionPolicy.CanBeTrusted), so the advice
+        // to pass it would be advice that does nothing.
         if (!policy.FolderTrusted)
-            output.Said(new Message("this folder is not trusted: reads and writes that would ask are "
-                + "refused. --trust trusts it for this run.", Severity.Warning));
+            output.Said(new Message(policy.CanBeTrusted
+                ? "this folder is not trusted: reads and writes that would ask are refused. --trust trusts it for this run."
+                : "this is the root of the file system, which cannot be trusted: reads and writes that would ask are "
+                  + "refused. Run in the project folder instead.", Severity.Warning));
 
         // NO Ask: ask_user is then not offered at all, so the model never plans around asking
         // someone who is not there.

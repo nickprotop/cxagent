@@ -270,8 +270,9 @@ public static partial class InvocableCatalog
             foreach (var folder in walk.TooDeep)
                 problems.Add(new SkillProblem(folder, $"deeper than {MaxCommandDepth} folders — not read"));
             foreach (var link in walk.Unfollowed)
-                problems.Add(new SkillProblem(link.Path, link.Cycle
-                    ? "a link back into a folder above it — not followed"
+                problems.Add(new SkillProblem(link.Path,
+                    link.Cycle ? "a link back into a folder above it — not followed"
+                    : link.Target is null ? "a link that cannot be resolved — not read"
                     : "a link out of the repository — not read"));
             foreach (var folder in walk.Unreadable)
                 problems.Add(new SkillProblem(folder.Path, $"could not be read: {folder.Reason}"));

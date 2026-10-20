@@ -7,9 +7,9 @@ namespace CxAgent.Tests;
 
 /// <summary>
 /// TRUST IS THE FOLDER A SESSION REALLY WORKS IN. Opened through a link — a repository's <c>docs → ~</c> — the
-/// question named the link while the boundary became the home folder, so trusting "clone/docs" made every read in
-/// home silent. Trust, rules and edit modes now key on the real folder, and the question names it, saying what it
-/// was opened as when the two differ.
+/// boundary is the folder the link points at, so a question naming the link would ask about one folder and grant
+/// another: trusting "clone/docs" would make every read in home silent. Trust, rules and edit modes key on the real
+/// folder, and the question names it, saying what it was opened as when the two differ.
 ///
 /// <para>OLD GRANTS UNDER A LINK'S SPELLING STAY WHERE THEY ARE, UNUSED: the startup migration never carries one to
 /// the folder the link points at — that is the escalation itself — so the real folder is asked about afresh.</para>

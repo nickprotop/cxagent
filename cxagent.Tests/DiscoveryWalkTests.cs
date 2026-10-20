@@ -12,9 +12,9 @@ namespace CxAgent.Tests;
 /// THE DISCOVERY WALKS — a skill's file list, the command folders, a plugin's hash and its removal — go one way:
 /// a link that leaves is not followed, and a cycle of links ends.
 ///
-/// <para>STRUCTURAL, NOT TIMED. The old walks follow a cycle until the path is too long, which with two self-links
-/// is about 2^40 paths; a test that waited for that would hang the suite. Each assertion here reads what the walk
-/// returned — no path through the loop twice, no outside name — and so fails at once on the old code.</para>
+/// <para>STRUCTURAL, NOT TIMED. A walk that follows a cycle goes on until the path is too long — with two
+/// self-links, about 2^40 paths — and a test that waited for that would hang the suite. Each assertion here reads
+/// what the walk returned: no path through the loop twice, no outside name.</para>
 /// </summary>
 public sealed class DiscoveryWalkTests : IDisposable
 {
@@ -156,19 +156,24 @@ public sealed class DiscoveryWalkTests : IDisposable
         Assert.Equal(PluginIdentity.HashLoadSet(set), PluginIdentity.HashLoadSet(alias));
     }
 
+    /// <summary>A LINK INSIDE THE LOAD SET IS HASHED BY THE TEXT IT HOLDS: pointed at another file with the same bytes,
+    /// the load set is a different one — its hash moves — although every byte a reader of the link would get is the
+    /// same.</summary>
     [Fact]
     public void AnInsideLink_IsHashedAsItsTargetText()
     {
         if (OperatingSystem.IsWindows()) return;
         var set = Path.Combine(_top, "set");
         Directory.CreateDirectory(set);
-        File.WriteAllText(Path.Combine(set, "p.dll"), "bin");
-        File.CreateSymbolicLink(Path.Combine(set, "alias.dll"), Path.Combine(set, "p.dll"));
+        File.WriteAllText(Path.Combine(set, "p.dll"), "same");
+        File.WriteAllText(Path.Combine(set, "q.dll"), "same");
+        var alias = Path.Combine(set, "alias.dll");
+        File.CreateSymbolicLink(alias, Path.Combine(set, "p.dll"));
         var before = PluginIdentity.HashLoadSet(set);
 
-        File.WriteAllText(Path.Combine(set, "p.dll"), "changed");
+        File.Delete(alias);
+        File.CreateSymbolicLink(alias, Path.Combine(set, "q.dll"));
 
-        // THE CONTENT CHANGED once, under p.dll; the link names the same target, so only p.dll's change moves it.
         Assert.NotEqual(before, PluginIdentity.HashLoadSet(set));
         Assert.Null(PluginIdentity.InspectLoadSet(set).Refusal);
     }

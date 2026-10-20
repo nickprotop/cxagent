@@ -515,7 +515,11 @@ record PermissionRequest(PermissionKind Kind, string Display, string? AlwaysRule
 | Member | |
 |---|---|
 | `Kind` | `Shell`, `FileRead`, `FileWrite`, `Http`, `Mcp` |
-| `Display` | what to show — a verbatim command, or a **resolved** path |
+| `Display` | what is judged — a verbatim command, or a **resolved** path |
+| `Shown` | **what to show a person.** `Display`, except for an action on a link's own entry — a delete or a move — where it reads `link → target`: the link is what is removed, the target is what is judged. Show this, not `Display` |
+| `ActsOn` | the path the executor acts on once allowed — the judged target for an open, the entry for a delete or a move; the gate hands it over so nothing resolves the model's spelling a second time |
+| `Spelling` | the path as the model sent it — the key `ActsOn` is handed over under |
+| `ShellRunFolder` | a shell request's `working_dir`, resolved once — where the command is judged and where it runs |
 | `AlwaysRule` | exactly what "always" would persist. **Null means this cannot be honestly generalised** — a command carrying a custom environment, a chain — so do not offer an "always" button |
 
 ## PermissionChoice
@@ -525,7 +529,7 @@ record PermissionRequest(PermissionKind Kind, string Display, string? AlwaysRule
 | `Once` | allow this, ask again next time |
 | `Always` | allow and persist `AlwaysRule` for this folder |
 | `Deny` | refuse; the model sees it and can adapt |
-| `TrustFolder` | trust the working directory |
+| `TrustFolder` | trust the working directory. Offer it only when `PermissionPolicy.CanBeTrusted` — the root of the file system never takes trust — and name the folder by `PermissionPolicy.TrustShown`, the real folder trusted (with what it was opened as, when that differs) |
 
 ## What is decided before your hook
 

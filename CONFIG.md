@@ -497,6 +497,12 @@ A plugins folder inside a repository is a folder your tools read too: some langu
 plugin binary sitting in `.cxagent/plugins`. Prefer the global folder unless a plugin belongs to one
 project.
 
+**A plugin's folder holds what you approve.** A plugin folder holding a link that points outside it — or a
+loop of links — is refused, naming the link, gate or no gate: the hash you approve covers the folder, and
+code reached through such a link would run without it. A link inside the folder is fine, and so is a plugin
+folder that is itself a link (a dev build linked into `plugins/`); removing such a plugin removes the link
+and leaves the build.
+
 ---
 
 ## `theme` — colours
@@ -595,6 +601,14 @@ applies project instructions to every project.
 prefix that is re-sent on every turn, so a large instruction file is not a one-off cost but a
 permanent tax on the window. Instructions that stop mid-sentence with no explanation read as a bug in
 the agent, so the truncation says so.
+
+**A project's file must really be in the repository.** A project `AGENTS.md` (or `CXAGENT.md`, `CLAUDE.md`)
+that is a link pointing outside the repository is not read, and a warning says so once per session. It
+would otherwise put whatever it points at — a key, `/proc/self/environ` — into the prompt of anyone who
+clones the repository. A link that stays inside the repository (`AGENTS.md → docs/AGENTS.md`) reads as
+usual. If you share one instruction file across many repositories by linking it in, put it in your global
+`CXAGENT.md` instead — your own config folder may link anywhere. A device or a pipe is never read, and a
+file in UTF-16 or with a byte-order mark reads as its text.
 
 ---
 
@@ -715,6 +729,11 @@ the model is told which skills went and that it may reload them; without that it
 document it can no longer read. `/skills` shows what exists; the session panel shows what is
 currently in force.
 
+**Links stay inside the repository.** A project skill or skills folder (`.cxagent/skills`, `.agents/skills`)
+that is a link pointing outside the repository is not read, and is listed under `/skills` as a problem; a
+link to somewhere else in the same repository reads as usual. A skill's file list names only the files
+inside its own folder. Your global skills under cxagent's config folder may link anywhere.
+
 ---
 
 ## Custom commands
@@ -776,6 +795,11 @@ then — so ``!`git diff` `` sees what the turn changed. See [COMMANDS.md](COMMA
 
 **Headless too.** `cxagent -p "/review 42"` runs the file. With nobody to answer, a shell line runs
 only if a rule or the permission mode allows it, and a refusal is listed in `permission_denials`.
+
+**Links stay inside the repository.** A project command file linked to somewhere outside the repository is
+not read — it cannot stand in for one of yours of the same name — and is listed under `/skills` as a
+problem. A folder link back into a folder above it is reported once, not walked round. Your global
+commands may link anywhere.
 
 ---
 

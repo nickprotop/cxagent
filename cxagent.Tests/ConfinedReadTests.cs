@@ -15,9 +15,9 @@ namespace CxAgent.Tests;
 /// plugin's sidecar only inside its load set; the user's own global files wherever they link. Every read takes only
 /// a file with a size, at most a cap of it: a device or a pipe is never opened.
 ///
-/// <para>THE DEVICE AND PIPE CASES TEST <see cref="PathResolver.ReadConfined"/> DIRECTLY. The old read of
-/// <c>/dev/zero</c> allocates until memory runs out and the old read of a FIFO never returns, so neither can be
-/// shown failing first without taking the test host down with it.</para>
+/// <para>THE DEVICE AND PIPE CASES TEST <see cref="PathResolver.ReadConfined"/> DIRECTLY. A whole-file read of
+/// <c>/dev/zero</c> allocates until memory runs out and one of a FIFO never returns, so neither is run through the
+/// callers, where a failure would take the test host down with it.</para>
 /// </summary>
 public sealed class ConfinedReadTests : IDisposable
 {

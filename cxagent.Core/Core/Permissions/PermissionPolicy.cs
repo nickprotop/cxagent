@@ -803,7 +803,7 @@ public class PermissionPolicy
         if (resolved is null) return false;   // resolution failed: fail toward asking, never toward silence.
 
         // THE DIRECTORY AS GIVEN, not resolved: the boundary is real already, and the log folder is compared as
-        // spelled, so a log folder reached through a link asks for its reads — the safe direction, kept.
+        // spelled, so a log folder reached through a link asks for its reads — the safe direction.
         return PathResolver.Contains(Path.GetFullPath(directory), resolved);
     }
 

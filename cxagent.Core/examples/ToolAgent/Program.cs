@@ -45,7 +45,7 @@ using var manager = SessionManager.Create(new AppPaths(configDir), buildGate: st
         promptHook: (request, offerTrust, ct) =>
         {
             Console.WriteLine();
-            Console.WriteLine($"  {request.Kind}: {request.Display}");
+            Console.WriteLine($"  {request.Kind}: {request.Shown}");
 
             // NO "ALWAYS" WHEN AlwaysRule IS NULL. The button is absent rather than present and
             // quietly ignored — notify's calls cannot be generalised, and offering to remember one

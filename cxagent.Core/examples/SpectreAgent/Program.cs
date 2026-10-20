@@ -54,7 +54,7 @@ using var manager = SessionManager.Create(new AppPaths(configDir), buildGate: st
         promptHook: (request, offerTrust, ct) =>
         {
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[yellow]{request.Kind}[/] {request.Display.EscapeMarkup()}");
+            AnsiConsole.MarkupLine($"[yellow]{request.Kind}[/] {request.Shown.EscapeMarkup()}");
 
             var choices = new List<string> { "once", "deny" };
 
