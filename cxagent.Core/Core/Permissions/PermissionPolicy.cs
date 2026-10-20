@@ -92,8 +92,7 @@ public class PermissionPolicy
     /// trusted folder asked and every child root was refused. Trust and stored rules stay under the folder
     /// as it was opened (<see cref="Root"/>), so a grant made before still applies.</para>
     /// </summary>
-    public static string RealFolder(string folder) =>
-        TryResolve(folder, null) ?? Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
+    public static string RealFolder(string folder) => PathResolver.RealFolder(folder);
 
     /// <summary>Resolves <paramref name="path"/> as a request for it would be judged — relative to the
     /// boundary, symlinks followed — or null when it cannot be resolved.</summary>
@@ -714,51 +713,8 @@ public class PermissionPolicy
         return resolved == boundary || resolved.StartsWith(boundary + Path.DirectorySeparatorChar, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The real path a shell command's argument names: relative to the boundary when it is relative, every
-    /// link followed where it sits, and each <c>..</c> applied to where the walk really is — the kernel's
-    /// order, which <c>realpath</c> calls physical. Null when it cannot be walked: a loop of links, or a
-    /// path the file system rejects.
-    /// </summary>
-    private string? ResolveAsShell(string path)
-    {
-        // OFF UNIX THE SHELL IS NOT THE KERNEL'S WALK described here, and the collapsed form is the one there is.
-        if (OperatingSystem.IsWindows()) return TryResolve(path, _boundary);
-        try
-        {
-            var full = Path.IsPathRooted(path) ? path : Path.Combine(_boundary, path);
-            var pending = new List<string>(full.Split('/', StringSplitOptions.RemoveEmptyEntries));
-            var resolved = "/";
-            var links = 0;
-            while (pending.Count > 0)
-            {
-                var part = pending[0];
-                pending.RemoveAt(0);
-                if (part == ".") continue;
-                if (part == "..") { resolved = Path.GetDirectoryName(resolved) ?? "/"; continue; }
-
-                var next = Path.Combine(resolved, part);
-
-                // A LINK IS REPLACED BY WHAT IT SAYS, read from where it sits — and that text walked in turn,
-                // so its own links and `..` land where the kernel's would. Forty links is the kernel's own
-                // limit before it calls a path a loop.
-                if (new FileInfo(next).LinkTarget is { } target)
-                {
-                    if (++links > 40) return null;
-                    if (Path.IsPathRooted(target)) resolved = "/";
-                    pending.InsertRange(0, target.Split('/', StringSplitOptions.RemoveEmptyEntries));
-                    continue;
-                }
-                resolved = next;
-            }
-            return resolved;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
-                                      or NotSupportedException or ArgumentException)
-        {
-            return null;
-        }
-    }
+    // A SHELL ARGUMENT, walked from the boundary — see PathResolver.AsShellArgument.
+    private string? ResolveAsShell(string path) => new PathResolver(_boundary).AsShellArgument(path);
 
     /// <summary>
     /// Whether <paramref name="path"/> resolves to <paramref name="directory"/> or something beneath it.
@@ -1014,30 +970,10 @@ public class PermissionPolicy
     private static string PastCd(string command, CommandSubjects subjects) =>
         subjects.ChangesTo is null ? command : ReadOnlyCommands.CommandAfterCd(command) ?? command;
 
-    /// <summary>
-    /// The folder a command's paths are read in: <paramref name="folder"/>, or past a leading
-    /// <c>cd</c>, the folder it enters — null when that folder is the shell's to decide.
-    ///
-    /// <para>THE SHELL'S TARGETS ARE NOT NAMES. <c>~</c> is the home folder, <c>-</c> is <c>$OLDPWD</c>, and a
-    /// variable is whatever it holds; joined onto the folder as text, each would read as a folder inside it.
-    /// <c>CDPATH</c> is the other way a cd leaves, and the shell executor empties it for that reason.</para>
-    /// </summary>
-    private string? AfterCd(string folder, string? cd)
-    {
-        if (cd is null) return folder;
-        if (cd == "-" || cd.StartsWith('~') || cd.Contains('$', StringComparison.Ordinal)) return null;
-
-        // A cd IS LOGICAL WHERE IT CAN BE: `sh` collapses `cd link/..` as text and enters the folder that
-        // names, so the target is collapsed the same way and the paths read after it walk from there. Where
-        // that folder does not exist, dash fails the cd and bash — /bin/sh on macOS — enters the one the
-        // kernel's walk reaches, so that one is judged.
-        try
-        {
-            var logical = Path.GetFullPath(Path.Combine(folder, cd));
-            return Directory.Exists(logical) ? logical : ResolveAsShell(Path.Combine(folder, cd));
-        }
-        catch (ArgumentException) { return null; }
-    }
+    // THE FOLDER A COMMAND'S PATHS ARE READ IN past a leading cd, or null when the shell decides it — see
+    // PathResolver.AsShellCd.
+    private static string? AfterCd(string folder, string? cd) =>
+        new PathResolver(folder).AsShellCd(cd) is { ShellDecides: false } after ? after.Folder : null;
 
     /// <summary>
     /// Every token that refers to a path RELATIVE to the working directory resolves inside the root.
@@ -1158,14 +1094,8 @@ public class PermissionPolicy
         return places.Any(resolved => resolved is null || UnderCodeFolder(resolved, boundary));
     }
 
-    /// <summary>Whether something — a file, a folder, or a link even if dangling — is at <paramref name="path"/>.
-    /// When that cannot be told, the answer is yes: the token is then judged as a path, which asks.</summary>
-    private static bool Names(string path)
-    {
-        try { return File.Exists(path) || Directory.Exists(path) || new FileInfo(path).LinkTarget is not null; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
-            or ArgumentException or NotSupportedException) { return true; }   // cannot tell: treat it as a path
-    }
+    // WHETHER ANYTHING IS THERE, a dangling link included — see PathResolver.NamesAt.
+    private static bool Names(string path) => PathResolver.NamesAt(path);
 
     /// <summary>
     /// Whether a token asserts a LOCATION rather than merely being a word.
@@ -1424,73 +1354,6 @@ public class PermissionPolicy
             .Any(part => ExecutableConfigDirs.Contains(part, StringComparer.OrdinalIgnoreCase));
     }
 
-    private static string? TryResolve(string path, string? root)
-    {
-        try
-        {
-            var full = root is { Length: > 0 } ? Path.GetFullPath(path, root) : Path.GetFullPath(path);
-
-            // COMPONENT BY COMPONENT, NOT JUST THE DEEPEST EXISTING ENTRY. Walking up to the first
-            // entry that exists and resolving THAT lets a symlinked DIRECTORY through whenever
-            // anything below it exists: the entry landed on is a plain file, ResolveLinkTarget on a
-            // plain file is null — the link is the PARENT, and nothing looks at it.
-            //
-            // MEASURED against a real fixture with `root/link -> outside`, on a trusted folder, the
-            // deepest-entry walk gives:
-            //     link/x.txt       (existing)          silently allowed   WRONG
-            //     link/sub/new.txt (nested, new)       silently allowed   WRONG
-            //     link/x.txt       (not existing)      asked              correct
-            // The only shape it catches is the narrow one where the link itself is the deepest
-            // existing entry — which is exactly what a naive symlink test constructs, so such a test
-            // passes with the escape sitting underneath it.
-            //
-            // That is INVERTED RELATIVE TO RISK: creating a new file outside the boundary is caught,
-            // overwriting an existing one is not. No attacker needed — node_modules links, vendor/,
-            // monorepo package links and a docs -> ../shared-docs convention are ordinary layouts.
-            //
-            // Components below the deepest existing entry cannot be links (they do not exist), so
-            // walking the whole path costs nothing extra for them and follows a link at any depth.
-            var parts = new List<string>();
-            for (var cursor = full; cursor is not null; cursor = Path.GetDirectoryName(cursor))
-            {
-                var name = Path.GetFileName(cursor);
-                if (string.IsNullOrEmpty(name))
-                {
-                    parts.Add(cursor);   // the filesystem root ("/" or "C:\")
-                    break;
-                }
-                parts.Add(name);
-            }
-            parts.Reverse();
-
-            var resolved = parts[0];
-            for (var i = 1; i < parts.Count; i++)
-            {
-                resolved = Path.Combine(resolved, parts[i]);
-
-                // A LINK IS FOLLOWED WHEREVER IT SITS. returnFinalTarget walks a chain of links to
-                // its end; a component that does not exist is not a link, so this is a no-op there.
-                var target = Directory.Exists(resolved)
-                    ? Directory.ResolveLinkTarget(resolved, returnFinalTarget: true)
-                    : File.Exists(resolved)
-                        ? File.ResolveLinkTarget(resolved, returnFinalTarget: true)
-                        : null;
-
-                if (target is not null)
-                    resolved = target.FullName;
-            }
-
-            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(resolved));
-        }
-        // ArgumentException is in this list because RequestsFor RESOLVES rather than matching raw
-        // strings, so a path that Path.GetFullPath rejects outright — an embedded NUL, an empty
-        // string — reaches here and throws. Without it the exception escapes RequestsFor and
-        // surfaces as a raw "Null character in path" crash caught by the job executor, losing
-        // PermissionDenied = true. Fail toward asking, as everything else here does.
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
-                                      or NotSupportedException or ArgumentException)
-        {
-            return null;   // fail toward asking: never let a resolution error produce silent allow.
-        }
-    }
+    // THE FILE TOOL'S RESOLUTION — see PathResolver.AsFileTool, which this names for the many call sites here.
+    private static string? TryResolve(string path, string? root) => PathResolver.FileToolFrom(path, root);
 }
