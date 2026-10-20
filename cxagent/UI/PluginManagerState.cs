@@ -58,7 +58,9 @@ public static class PluginManagerState
             {
                 // Parse returns (null, errors) on bad JSON rather than throwing, so a broken sidecar
                 // is a null manifest here — not an exception.
-                var manifest = PluginManifest.Parse(File.ReadAllText(sidecar)).Manifest;
+                // READ AS LOADING READS IT — PluginResolver.ReadSidecar: inside its folder, capped, never a device — so a
+                // sidecar a cloned repository linked elsewhere is unreadable here too, not read to its end.
+                var manifest = PluginResolver.ReadSidecar(sidecar).Json is { } json ? PluginManifest.Parse(json).Manifest : null;
                 if (manifest is null) { unreadable.Add(name); continue; }
 
                 if (!string.IsNullOrEmpty(manifest.Version)) versions[name] = manifest.Version;

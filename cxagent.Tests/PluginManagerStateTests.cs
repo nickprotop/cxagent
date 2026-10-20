@@ -30,6 +30,26 @@ public class PluginManagerStateTests : IDisposable
         return home;
     }
 
+    /// <summary>
+    /// A SIDECAR LINKED OUT OF ITS FOLDER IS NOT READ — the manager reads sidecars as loading does, so one a cloned
+    /// repository linked to a file elsewhere, or to a device, is reported unreadable rather than read to its end.
+    /// </summary>
+    [Fact]
+    public void ASidecarLinkedOutOfItsFolder_IsUnreadable()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var home = Place("linked");
+        var away = Path.Combine(_dir, "away.json");
+        File.Move(Path.Combine(home, "linked.plugin.json"), away);
+        File.CreateSymbolicLink(Path.Combine(home, "linked.plugin.json"), away);
+
+        var inputs = PluginManagerState.Gather(
+            new Dictionary<string, PluginConfig> { ["linked"] = new("linked.dll") },
+            [], [_dir], [], _dir);
+
+        Assert.Contains("linked", inputs.Unreadable);
+    }
+
     /// <summary>A configured entry whose file resolves is not reported missing.</summary>
     [Fact]
     public void APresentFileIsNotMissing()
