@@ -23,10 +23,11 @@ public class SubAgentSpawnerTests
         return provider;
     }
 
-    private static SubAgentFactory FactoryOver(ILlmProvider provider) =>
+    private static SubAgentFactory FactoryOver(ILlmProvider provider, string? workingDir = null) =>
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
+            WorkingDir = workingDir,
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
@@ -1990,10 +1991,14 @@ public class SubAgentSpawnerTests
     {
         var catalog = Catalog(("scout", "Search."));
 
+        // ONE FOLDER FOR BOTH. A child given none reads the process cwd as it is built, and a test in the
+        // working-directory collection may move that between the two spawns — the prompts would then differ
+        // in a line this test is not about.
+        var folder = Path.GetTempPath();
         SubAgent? bare = null, general = null;
-        await new SubAgentSpawner(FactoryOver(Answering("x")), catalog)
+        await new SubAgentSpawner(FactoryOver(Answering("x"), folder), catalog)
             .TryInvokeAsync(TypedSpawn(null), c => bare = c, CancellationToken.None);
-        await new SubAgentSpawner(FactoryOver(Answering("x")), catalog)
+        await new SubAgentSpawner(FactoryOver(Answering("x"), folder), catalog)
             .TryInvokeAsync(TypedSpawn("general"), c => general = c, CancellationToken.None);
 
         Assert.Equal(
