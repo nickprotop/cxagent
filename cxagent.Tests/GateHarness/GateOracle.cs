@@ -146,7 +146,16 @@ public static class GateOracle
     private static string RunFolder(string? workingDir, PlaceSetup setup, GateFixture f) => workingDir switch
     {
         null => setup.AgentFolder,
-        var wd => Substitute(wd, setup, f) is var s && Path.IsPathRooted(s) ? s : setup.AgentFolder + "/" + s,
+        var wd => SubstituteFolder(wd, setup, f) is var s && Path.IsPathRooted(s) ? s : setup.AgentFolder + "/" + s,
+    };
+
+    /// <summary>Fills the placeholders a working_dir may carry: as a folder, an absolute path names the
+    /// folder itself rather than a file in it.</summary>
+    public static string SubstituteFolder(string text, PlaceSetup setup, GateFixture f) => text switch
+    {
+        "{abs-inside}" => setup.AgentFolder,
+        "{abs-outside}" => f.Outside,
+        _ => text,
     };
 
     /// <summary>Fills the placeholders a shape or working_dir may carry.</summary>
