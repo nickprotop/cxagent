@@ -1209,4 +1209,32 @@ public class PermissionPolicyTests
         Assert.True(child.IsSilentlyAllowed(ShellRead("cat inside.txt", null, scene.Sub, child)));
         Assert.False(scene.Parent.IsSilentlyAllowed(ShellRead("cat link", "sub", scene.Root, scene.Parent)));
     }
+
+    /// <summary>
+    /// A PROJECT OPENED THROUGH A SYMLINK IS STILL ITS OWN FOLDER. Paths are resolved to where they really
+    /// are; a boundary left as the link's spelling never contained any of them, so every read inside a
+    /// trusted folder asked and every child root was refused.
+    /// </summary>
+    [Fact]
+    public void AProjectOpenedThroughASymlink_IsStillItsOwnFolder()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var real = MakeTempDir();
+        Directory.CreateDirectory(Path.Combine(real, "sub"));
+        File.WriteAllText(Path.Combine(real, "a.txt"), "x");
+        var alias = Path.Combine(Path.GetTempPath(), "cx-alias-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateSymbolicLink(alias, real);
+
+        var rules = EmptyRules();
+        rules.SetTrust(alias, TrustState.Trusted);
+        var policy = new PermissionPolicy(alias, rules, EditMode.AcceptEdits);
+        PermissionRequest Read(string path) =>
+            PermissionPolicy.RequestsFor("file", Params(("action", "read"), ("path", path)), alias).Single() with { Policy = policy };
+
+        Assert.True(policy.IsSilentlyAllowed(Read("a.txt")));
+        Assert.True(policy.IsSilentlyAllowed(Read(Path.Combine(alias, "a.txt"))));
+        Assert.False(policy.IsSilentlyAllowed(Read("/etc/hostname")));
+        Assert.True(policy.FolderTrusted);   // trust stays stored under the folder as it was opened
+        Assert.Equal("sub", CxAgent.Core.Agents.ChildRoot.Resolve("sub", policy, alias).Root?.Relative);
+    }
 }

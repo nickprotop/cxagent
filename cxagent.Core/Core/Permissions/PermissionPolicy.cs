@@ -54,7 +54,7 @@ public class PermissionPolicy
         EditMode edits = EditMode.AlwaysAsk)
     {
         _root = workingDirRoot;
-        _boundary = workingDirRoot;
+        _boundary = RealFolder(workingDirRoot);
         _rules = rules;
         // THE FIELD, NOT THE PROPERTY: the property forwards to a parent, and a constructor has no
         // business reaching one.
@@ -81,8 +81,19 @@ public class PermissionPolicy
     /// is a grant for the project. What changes is the folder its files and commands are judged
     /// against, and the folder its relative paths mean.</para>
     /// </summary>
-    public PermissionPolicy NarrowedTo(string folder) =>
-        new(this, Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)));
+    public PermissionPolicy NarrowedTo(string folder) => new(this, RealFolder(folder));
+
+    /// <summary>
+    /// A folder as it really is on disk — symlinks followed — which is the form every path is resolved to
+    /// before it is compared against the boundary.
+    ///
+    /// <para>THE BOUNDARY IN THE SAME FORM AS THE PATHS. Opened through a link (<c>~/src</c> → <c>/data/src</c>),
+    /// a boundary kept as the link's spelling contained none of the resolved paths, so every read inside a
+    /// trusted folder asked and every child root was refused. Trust and stored rules stay under the folder
+    /// as it was opened (<see cref="Root"/>), so a grant made before still applies.</para>
+    /// </summary>
+    public static string RealFolder(string folder) =>
+        TryResolve(folder, null) ?? Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
 
     /// <summary>Resolves <paramref name="path"/> as a request for it would be judged — relative to the
     /// boundary, symlinks followed — or null when it cannot be resolved.</summary>

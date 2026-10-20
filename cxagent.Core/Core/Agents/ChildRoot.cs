@@ -32,7 +32,8 @@ public sealed record ChildRoot(string Absolute, string Relative)
         var boundaryText = policy?.Boundary ?? parentFolder;
         if (boundaryText is null)
             return ChildRootResult.Refused($"root '{asked}' is outside this agent's folder (none).");
-        var boundary = Path.TrimEndingDirectorySeparator(Path.GetFullPath(boundaryText));
+        // THE REAL FOLDER, in the form the resolved root below is in — see PermissionPolicy.RealFolder.
+        var boundary = PermissionPolicy.RealFolder(boundaryText);
 
         // A LEADING ~ IS THE HOME FOLDER, as a shell reads it. Taken literally it would name a folder
         // called "~" under the parent's — which does not exist, so the refusal would say "not a folder"
