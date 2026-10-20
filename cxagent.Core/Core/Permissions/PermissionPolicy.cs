@@ -696,6 +696,69 @@ public class PermissionPolicy
     private bool IsInsideBoundary(string path) => IsInside(path, _boundary);
 
     /// <summary>
+    /// Whether a path a shell command names lands inside the boundary, walked as the kernel walks it.
+    ///
+    /// <para>NOT <see cref="IsInsideBoundary"/>, which collapses <c>..</c> as text before following links —
+    /// right for the file tool, whose executor collapses it the same way before opening anything. A shell
+    /// command hands the raw path to the kernel, which follows <c>link</c> first and steps up from where it
+    /// led: <c>cat link/../secret</c> reads beside the link's target, while the collapsed text names a file
+    /// beside the link.</para>
+    /// </summary>
+    private bool IsInsideBoundaryAsShell(string path)
+    {
+        var resolved = ResolveAsShell(path);
+        if (resolved is null) return false;   // unresolvable: fail toward asking
+        var boundary = Path.TrimEndingDirectorySeparator(_boundary);
+        return resolved == boundary || resolved.StartsWith(boundary + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The real path a shell command's argument names: relative to the boundary when it is relative, every
+    /// link followed where it sits, and each <c>..</c> applied to where the walk really is — the kernel's
+    /// order, which <c>realpath</c> calls physical. Null when it cannot be walked: a loop of links, or a
+    /// path the file system rejects.
+    /// </summary>
+    private string? ResolveAsShell(string path)
+    {
+        // OFF UNIX THE SHELL IS NOT THE KERNEL'S WALK described here, and the collapsed form is the one there is.
+        if (OperatingSystem.IsWindows()) return TryResolve(path, _boundary);
+        try
+        {
+            var full = Path.IsPathRooted(path) ? path : Path.Combine(_boundary, path);
+            var pending = new List<string>(full.Split('/', StringSplitOptions.RemoveEmptyEntries));
+            var resolved = "/";
+            var links = 0;
+            while (pending.Count > 0)
+            {
+                var part = pending[0];
+                pending.RemoveAt(0);
+                if (part == ".") continue;
+                if (part == "..") { resolved = Path.GetDirectoryName(resolved) ?? "/"; continue; }
+
+                var next = Path.Combine(resolved, part);
+
+                // A LINK IS REPLACED BY WHAT IT SAYS, read from where it sits — and that text walked in turn,
+                // so its own links and `..` land where the kernel's would. Forty links is the kernel's own
+                // limit before it calls a path a loop.
+                if (new FileInfo(next).LinkTarget is { } target)
+                {
+                    if (++links > 40) return null;
+                    if (Path.IsPathRooted(target)) resolved = "/";
+                    pending.InsertRange(0, target.Split('/', StringSplitOptions.RemoveEmptyEntries));
+                    continue;
+                }
+                resolved = next;
+            }
+            return resolved;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                      or NotSupportedException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Whether <paramref name="path"/> resolves to <paramref name="directory"/> or something beneath it.
     ///
     /// <para>THE DIRECTORY IS A PARAMETER SO THERE IS ONE RESOLVER. <see cref="LogDir"/> needs the
@@ -939,7 +1002,7 @@ public class PermissionPolicy
         // a leading cd, where that went. Judged from the boundary instead, `ls ..` from `sub` would read as
         // leaving the project when it lists it; judged from before the cd, `cd sub && cat leak.txt` would read
         // the root's `leak.txt`. An absolute one is unchanged by the combine.
-        if (!subjects.Paths.All(p => IsInsideBoundary(Path.Combine(after, p)))) return false;
+        if (!subjects.Paths.All(p => IsInsideBoundaryAsShell(Path.Combine(after, p)))) return false;
 
         return RelativeSubjectsConfined(PastCd(request.What, subjects), after);
     }
@@ -957,11 +1020,21 @@ public class PermissionPolicy
     /// variable is whatever it holds; joined onto the folder as text, each would read as a folder inside it.
     /// <c>CDPATH</c> is the other way a cd leaves, and the shell executor empties it for that reason.</para>
     /// </summary>
-    private static string? AfterCd(string folder, string? cd)
+    private string? AfterCd(string folder, string? cd)
     {
         if (cd is null) return folder;
         if (cd == "-" || cd.StartsWith('~') || cd.Contains('$', StringComparison.Ordinal)) return null;
-        return Path.Combine(folder, cd);
+
+        // A cd IS LOGICAL WHERE IT CAN BE: `sh` collapses `cd link/..` as text and enters the folder that
+        // names, so the target is collapsed the same way and the paths read after it walk from there. Where
+        // that folder does not exist, dash fails the cd and bash — /bin/sh on macOS — enters the one the
+        // kernel's walk reaches, so that one is judged.
+        try
+        {
+            var logical = Path.GetFullPath(Path.Combine(folder, cd));
+            return Directory.Exists(logical) ? logical : ResolveAsShell(Path.Combine(folder, cd));
+        }
+        catch (ArgumentException) { return null; }
     }
 
     /// <summary>
@@ -1007,7 +1080,7 @@ public class PermissionPolicy
     /// a location, and an assertion about a location is exactly what a boundary is for.</para>
     /// </summary>
     private bool RelativeSubjectsConfined(string command, string from) =>
-        RelativeSubjects(command, from).All(IsInsideBoundary);
+        RelativeSubjects(command, from).All(IsInsideBoundaryAsShell);
 
     /// <summary>
     /// Every token of <paramref name="command"/> that refers to a path relative to <paramref name="from"/>,
@@ -1036,7 +1109,12 @@ public class PermissionPolicy
                 // ABSOLUTE PATHS ARE ALREADY THE OTHER CLAUSE'S JOB, and re-confining them here would
                 // be a second opinion on a question already answered — the drift that put four holes
                 // of one shape in this system. Tilde is likewise already refused, by FullyExamined.
-                if (Path.IsPathRooted(text) || text.StartsWith('~')) continue;
+                //
+                // EXCEPT ONE WITH A `..` IN IT. That clause keeps an absolute path only when it exists, and
+                // existence is tested on the text collapsed — `/root/link/../secret` is asked about as
+                // `/root/secret`, which may not exist, while the kernel reads beside the link's target.
+                if (text.StartsWith('~')) continue;
+                if (Path.IsPathRooted(text) && !text.Split('/').Contains("..")) continue;
 
                 var full = Path.Combine(from, text);
 
@@ -1069,12 +1147,13 @@ public class PermissionPolicy
         var subjects = CommandSubjects.Of(request.What);
         var after = AfterCd(folder, subjects.ChangesTo);
         if (after is null) return true;   // a cd the shell resolves: where it lands is not known here
-        var named = new List<string> { folder, after };
-        named.AddRange(subjects.Paths.Select(p => Path.Combine(after, p)));
-        named.AddRange(RelativeSubjects(PastCd(request.What, subjects), after));
+        // WHERE IT RUNS, as the executor and a logical cd name it; WHAT IT NAMES, as the kernel walks it.
+        var places = new List<string?> { TryResolve(folder, _boundary), TryResolve(after, _boundary) };
+        places.AddRange(subjects.Paths.Select(p => ResolveAsShell(Path.Combine(after, p))));
+        places.AddRange(RelativeSubjects(PastCd(request.What, subjects), after).Select(ResolveAsShell));
 
         var boundary = Path.TrimEndingDirectorySeparator(_boundary);
-        return named.Any(path => TryResolve(path, _boundary) is not { } resolved || UnderCodeFolder(resolved, boundary));
+        return places.Any(resolved => resolved is null || UnderCodeFolder(resolved, boundary));
     }
 
     /// <summary>Whether something — a file, a folder, or a link even if dangling — is at <paramref name="path"/>.

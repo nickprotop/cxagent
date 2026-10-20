@@ -107,6 +107,29 @@ public class ReadOnlyBoundaryTests : IDisposable
         finally { Directory.Delete(outside, recursive: true); }
     }
 
+    // `..` AFTER A LINK IS THE LINK TARGET'S PARENT. The kernel follows `out` and then steps up from where it
+    // led, so `cat out/../secret.txt` reads beside the outside folder — while the same text collapsed first
+    // names `<root>/secret.txt`, inside. A cd is the shell's logical kind, collapsed as text, so `cd out/..`
+    // stays in the folder.
+    [Fact]
+    public void ADotDotAfterALink_IsJudgedWhereTheLinkLed()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var top = Path.Combine(Path.GetTempPath(), "robound-top-" + Guid.NewGuid().ToString("N"));
+        var away = Path.Combine(top, "away");
+        Directory.CreateDirectory(away);
+        File.WriteAllText(Path.Combine(top, "secret.txt"), "beside");
+        Directory.CreateSymbolicLink(Path.Combine(_dir, "out"), away);
+        try
+        {
+            Assert.False(Silent("cat out/../secret.txt"));
+            Assert.False(Silent($"cat {_dir}/out/../secret.txt"));
+            Assert.True(Silent("cd out/.. && cat notes.txt"));
+            Assert.True(Silent("cat ./notes.txt"));
+        }
+        finally { Directory.Delete(top, recursive: true); }
+    }
+
     // AND THE SAME READ THROUGH THE FILE TOOL WAS ALREADY REFUSED, which is the asymmetry: the two
     // spellings now agree.
     [Fact]

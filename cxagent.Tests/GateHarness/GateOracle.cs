@@ -213,6 +213,9 @@ public static class GateOracle
         "{abs-inside}" => Path.Combine(setup.AgentFolder, "in.txt"),
         "{abs-real}" => Path.Combine(setup.Boundary, "in.txt"),
         "{abs-outside}" => Path.Combine(f.Outside, "in.txt"),
+        // `..` AFTER A LINK, spelled absolute: the file tool collapses it to the agent's folder, the kernel
+        // steps up from outside/.
+        "{abs-link-up}" => setup.AgentFolder + "/linkdir/../top-only.txt",
         _ => text,
     };
 

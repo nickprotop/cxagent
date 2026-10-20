@@ -67,7 +67,7 @@ public static class GateHarnessRunner
             await Parallel.ForEachAsync(runnable, new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (c, ct) =>
             {
                 var run = await Run(c, policies, f, ct);
-                var leaked = LeakMarkers(c.Place).FirstOrDefault(run.Output.Contains);
+                var leaked = LeakMarkers(c).FirstOrDefault(run.Output.Contains);
                 if (leaked is not null && !run.Prompted)
                     failures.Add($"{c.Name} → ran unasked and returned '{leaked}'");
             });
@@ -183,11 +183,21 @@ public static class GateHarnessRunner
         };
     }
 
-    // A BYTE FROM A FOLDER OUTSIDE THE BOUNDARY, by content or by a name only that folder has. A rooted child's
-    // boundary is sub, so the project's own files are outside it too.
-    private static string[] LeakMarkers(Place place) => place == Place.RootedChild
-        ? ["MARK:outside", "out-only.txt", "MARK:top", "top-only.txt", "MARK:proj", "proj-only.txt"]
-        : ["MARK:outside", "out-only.txt", "MARK:top", "top-only.txt"];
+    // A BYTE FROM A FOLDER OUTSIDE THE BOUNDARY: its content, or — for a verb that lists — a name only that folder
+    // has. A name from any other verb is the tool repeating the path it was given ("no such file: top-only.txt"),
+    // which reads nothing. A rooted child's boundary is sub, so the project's own files are outside it too.
+    private static string[] LeakMarkers(GateCase c)
+    {
+        string[] contents = c.Place == Place.RootedChild
+            ? ["MARK:outside", "MARK:top", "MARK:proj"]
+            : ["MARK:outside", "MARK:top"];
+        string[] names = c.Place == Place.RootedChild
+            ? ["out-only.txt", "top-only.txt", "proj-only.txt"]
+            : ["out-only.txt", "top-only.txt"];
+        return Lists(c.Verb) ? [.. contents, .. names] : contents;
+    }
+
+    private static bool Lists(string verb) => verb is "list" or "ls {p}" or "cd {p} && ls" or "cd - && ls {p}";
 
     // EVERY PATH THE CASES TOUCH, resolved in a handful of realpath calls rather than one per path.
     private static void Prime(IEnumerable<GateCase> cases, GateFixture f)

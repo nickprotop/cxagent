@@ -51,7 +51,8 @@ public static class GateCases
     public static readonly string[] Shapes =
         ["in.txt", "./in.txt", "sub/in.txt", "../in.txt", "../../in.txt", "{abs-inside}", "{abs-real}",
          "{abs-outside}", "~/in.txt", "$HOME/in.txt", "${HOME}/in.txt", "linkin", "linkup", "linkout",
-         "subout", "dangling", "linkdir/secret.txt", ".git/hooks/pc", "sub/.git/hooks/pc"];
+         "subout", "dangling", "linkdir/secret.txt", "linkdir/../top-only.txt", "linkdir/../proj/in.txt", "{abs-link-up}",
+         ".git/hooks/pc", "sub/.git/hooks/pc"];
 
     public static readonly string?[] WorkingDirs =
         [null, ".", "sub", "..", "{abs-inside}", "{abs-outside}", "linkdir", "missing"];
