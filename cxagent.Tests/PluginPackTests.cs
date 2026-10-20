@@ -4,6 +4,9 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary><c>cxagent plugin pack</c>: a release zip, its catalog entry, and what to do next.</summary>
+// IN THE working-directory COLLECTION: the pack output is reported relative to the process directory, and
+// a class elsewhere that moves it (the gate harness holds it for seconds) would change that answer mid-test.
+[Collection("working-directory")]
 public class PluginPackTests
 {
     private static Task<CliRun.Outcome> Run(params string[] args) => CliRun.Run(args);

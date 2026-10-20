@@ -9,16 +9,14 @@ namespace CxAgent.Tests.GateHarness;
 /// hole the harness exists to catch.
 /// </summary>
 [Collection("working-directory")]
-public sealed class GateOracleTests : IDisposable
+public sealed class GateOracleTests(GateFixture f) : IClassFixture<GateFixture>
 {
-    private readonly GateFixture _f = new();
-
-    public void Dispose() => _f.Dispose();
+    private readonly GateFixture _f = f;
 
     [Fact]
     public void OracleSelfTest()
     {
-        if (OperatingSystem.IsWindows()) return;
+        if (!GateFixture.Supported) return;
         var proj = GateOracle.RealOf(_f.Proj);
         var sub = GateOracle.RealOf(_f.Sub);
 
@@ -50,12 +48,28 @@ public sealed class GateOracleTests : IDisposable
         // A WORKING_DIR MOVES WHERE A RELATIVE PATH LANDS: `in.txt` from `..` of sub is the project's.
         Assert.Equal(Path.Combine(proj, "in.txt"), Touch(new GateCase("shell", "cat {p}", "in.txt", "..",
             Place.RootedChild, TrustState.Trusted, EditMode.AlwaysAsk)));
+
+        // A PATH PAST `cd sub` IS READ IN sub, and `subout` there leaves.
+        Assert.False(GateOracle.Inside(Touch(new GateCase("shell", "cd sub && cat {p}", "subout", null, Place.NewFolder,
+            TrustState.Trusted, EditMode.AlwaysAsk)), proj));
+        // `$HOME` IS THE HOME FOLDER to the shell, as `~` is.
+        Assert.False(GateOracle.Inside(Touch(new GateCase("shell", "cat {p}", "$HOME/in.txt", null, Place.NewFolder,
+            TrustState.Trusted, EditMode.AlwaysAsk)), proj));
+        // A FOLLOWING WALK of the project reaches outside through linkdir; a plain one names only the project.
+        var follows = GateOracle.Touches(new GateCase("shell", "grep -R MARK {p}", "", null, Place.NewFolder,
+            TrustState.Trusted, EditMode.AlwaysAsk), _f);
+        Assert.Contains(follows, t => !GateOracle.Inside(t.Target, proj));
+        // WHAT THE SHELL DECIDES IS OUTSIDE: `cd -`, and any env of the call's own.
+        Assert.Contains(GateOracle.Touches(new GateCase("shell", "cd - && ls {p}", "", null, Place.NewFolder,
+            TrustState.Trusted, EditMode.AlwaysAsk), _f), t => t.Target == GateOracle.Unknown);
+        Assert.Contains(GateOracle.Touches(new GateCase("shell", "cat {p}", "in.txt", null, Place.NewFolder,
+            TrustState.Trusted, EditMode.AlwaysAsk) { Env = "PATH" }, _f), t => t.Target == GateOracle.Unknown);
     }
 
     [Fact]
     public void TheOracle_ExpectsWhatTheSpecSays()
     {
-        if (OperatingSystem.IsWindows()) return;
+        if (!GateFixture.Supported) return;
         Assert.Equal(Expect.Silent, Expected("file", "read", "in.txt", null, TrustState.Trusted, EditMode.AlwaysAsk));
         Assert.Equal(Expect.Asks, Expected("file", "read", "linkout", null, TrustState.Trusted, EditMode.AcceptEdits));
         Assert.Equal(Expect.Asks, Expected("file", "read", "in.txt", null, TrustState.Untrusted, EditMode.AcceptEdits));
@@ -85,9 +99,14 @@ public sealed class GateOracleTests : IDisposable
         Assert.Equal(GateCases.FileVerbs.Length + GateCases.ShellVerbs.Length, cases.Select(c => c.Verb).Distinct().Count());
         Assert.Equal(GateCases.Shapes.Length + 1, cases.Select(c => c.Shape).Distinct().Count());
         Assert.Equal(GateCases.WorkingDirs.Length, cases.Where(c => c.Tool == "shell").Select(c => c.WorkingDir).Distinct().Count());
+        Assert.Equal(GateCases.EnvVariables.Length + 1, cases.Select(c => c.Env).Distinct().Count());
+        Assert.All(cases.Where(c => c.Env is not null), c => Assert.Null(c.WorkingDir));
     }
 
-    private string Touch(GateCase c) => GateOracle.Touches(c, _f)[0].Target;
+    // THE PATH THE VERB NAMES: a file call's first touch, a shell call's last (after its run folder).
+    private string Touch(GateCase c) => c.Tool == "file"
+        ? GateOracle.Touches(c, _f)[0].Target
+        : GateOracle.Touches(c, _f)[^1].Target;
 
     private Expect Expected(string tool, string verb, string shape, string? wd, TrustState trust, EditMode mode) =>
         GateOracle.Expected(new GateCase(tool, verb, shape, wd, Place.NewFolder, trust, mode), _f);

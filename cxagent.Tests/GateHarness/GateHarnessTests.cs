@@ -8,25 +8,24 @@ namespace CxAgent.Tests.GateHarness;
 /// or a code folder; silent where the rules say it passes. And every read the gate lets through, run for
 /// real, to catch the gate and the executor disagreeing about where a path is.
 ///
-/// <para>EACH SERIOUS BUG OF ONE CYCLE WAS A CASE OF THIS TABLE that one reviewer found by hand: an action
-/// that raised no request, a shell read leaving the folder, a working_dir judged in one folder and run in
-/// another, a bare link checked against the process directory, a project opened through a symlink. The
-/// table is probed whole, every run, so the next one is found by the suite instead.</para>
+/// <para>THE HOLES THIS GATE CAN HAVE ARE CELLS OF A TABLE — an action that raises no request, a read that
+/// leaves through a link, a working_dir judged in one folder and run in another, a path resolved against the
+/// process directory, a project opened through a symlink — and a hand probe visits the cells somebody
+/// thought of. The table is probed whole, every run, so a hole in a cell nobody thought of fails the
+/// suite.</para>
 ///
 /// <para>A FAILURE NAMES ITS CASE as one line, the way <see cref="GateCase.Name"/> spells it, so it can be
 /// rebuilt alone.</para>
 /// </summary>
 [Collection("working-directory")]
-public sealed class GateHarnessTests : IDisposable
+public sealed class GateHarnessTests(GateFixture f) : IClassFixture<GateFixture>
 {
-    private readonly GateFixture _f = new();
-
-    public void Dispose() => _f.Dispose();
+    private readonly GateFixture _f = f;
 
     [Fact]
     public void ThePolicyPass_HasNoFailures()
     {
-        if (OperatingSystem.IsWindows()) return;
+        if (!GateFixture.Supported) return;
         var failures = GateHarnessRunner.PolicyFailures(_f);
         Assert.True(failures.Count == 0, Report(failures));
     }
@@ -34,7 +33,7 @@ public sealed class GateHarnessTests : IDisposable
     [Fact]
     public async Task TheRealRunPass_HasNoFailures()
     {
-        if (OperatingSystem.IsWindows()) return;
+        if (!GateFixture.Supported) return;
         var report = await GateHarnessRunner.RealRunFailures(_f);
 
         // A PASS THAT RAN NOTHING IS NOT A PASS: the trusted, in-folder reads alone number in the hundreds.
