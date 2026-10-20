@@ -91,12 +91,40 @@ public class FileJobExecutorTests : IDisposable
             P(("action", "list"), ("pattern", "*")), PolicedContext(root), CancellationToken.None);
 
         Assert.True(r.Success, r.ErrorMessage);
-        Assert.Equal(4, (int)r.Output["count"]!);   // a/x, b/y, a/tob/y, b/toa/x
+        Assert.Equal(2, (int)r.Output["count"]!);   // a/x and b/y, each once
     }
 
     /// <summary>
-    /// INSIDE THE BOUNDARY THE WALK IS THE PLAIN ENUMERATION: the same files in the same order, links that stay
-    /// in followed as before, whether or not the call carries a policy.
+    /// EACH REAL FOLDER IS WALKED ONCE. Workspace packages that link to one another — ten of them, each linking to
+    /// every other — are a tree of ten folders, and are listed as ten files, not once per chain of links between
+    /// them, which grows factorially.
+    /// </summary>
+    [Fact]
+    public async Task AWalk_OfInterlinkedFolders_ListsEachRealFileOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var root = Path.Combine(_dir, "proj");
+        var packages = Enumerable.Range(0, 10).Select(i => Path.Combine(root, $"p{i}")).ToList();
+        foreach (var package in packages)
+        {
+            Directory.CreateDirectory(package);
+            File.WriteAllText(Path.Combine(package, "index.cs"), "x");
+        }
+        foreach (var package in packages)
+            foreach (var other in packages.Where(o => o != package))
+                Directory.CreateSymbolicLink(Path.Combine(package, "dep-" + Path.GetFileName(other)), other);
+
+        var r = await new FileJobExecutor().ExecuteAsync(
+            P(("action", "list"), ("pattern", "*.cs")), PolicedContext(root), CancellationToken.None);
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Equal(10, (int)r.Output["count"]!);
+    }
+
+    /// <summary>
+    /// INSIDE THE BOUNDARY THE WALK IS THE PLAIN ENUMERATION, ONCE PER REAL FILE: every file the plain enumeration
+    /// finds, links that stay in followed — a folder reached a second time through a link is not walked again, so a
+    /// file appears under the first path that reached it.
     /// </summary>
     [Fact]
     public async Task AWalk_InsideTheBoundary_IsThePlainEnumeration()
@@ -122,7 +150,15 @@ public class FileJobExecutorTests : IDisposable
             var walked = await new FileJobExecutor().ExecuteAsync(
                 P(("action", "list"), ("pattern", pattern)), PolicedContext(root), CancellationToken.None);
 
-            Assert.Equal(plain.Output["content"], walked.Output["content"]);
+            // THE SAME REAL FILES, each once.
+            static string Real(string f) =>
+                Path.Combine(PathResolver.RealFolder(Path.GetDirectoryName(f)!), Path.GetFileName(f));
+            var expected = ((string)plain.Output["content"]!).Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(Real).Distinct().Order().ToList();
+            var got = ((string)walked.Output["content"]!).Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(Real).ToList();
+            Assert.Equal(expected, got.Order().ToList());
+            Assert.Equal(got.Count, got.Distinct().Count());
         }
     }
 

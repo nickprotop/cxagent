@@ -124,8 +124,8 @@ internal sealed class PathResolver(string folder)
     /// the plain enumeration does exactly that until the path grows too long; such a link is reported, not entered.
     /// A link to a sibling is not a cycle, and is walked as the plain enumeration walks it.</para>
     ///
-    /// <para>THE PLAIN ENUMERATION'S RESULT wherever no link leaves: the same files in the same order — a folder's
-    /// files before its sub-folders, breadth first — matched as <c>Directory.EnumerateFiles</c> matches a pattern.
+    /// <para>THE PLAIN ENUMERATION'S FILES wherever no link leaves, each real folder walked once — a folder's files
+    /// before its sub-folders, breadth first — matched as <c>Directory.EnumerateFiles</c> matches a pattern.
     /// One read of each folder, links told apart by the entry's own attributes, and only links resolved.</para>
     /// </summary>
     public static WalkResult Walk(WalkRequest request)
@@ -144,6 +144,10 @@ internal sealed class PathResolver(string folder)
         var tooDeep = new List<string>();
         var unreadable = new List<UnreadableFolder>();
         var visited = 0;
+        // EACH REAL FOLDER ONCE. Folders that link to one another — workspace packages — are a tree of so many folders,
+        // and walking each again through every chain of links to it grows factorially; a folder already walked is
+        // not walked again, so a file is listed under the first path that reached it.
+        var walked = new HashSet<string>(StringComparer.Ordinal) { start };
         var queue = new Queue<PendingFolder>([new PendingFolder(request.Start, start, [start], 0)]);
         while (queue.TryDequeue(out var pending))
         {
@@ -191,7 +195,8 @@ internal sealed class PathResolver(string folder)
                 else if (!pending.Above.Contains(real!))
                 {
                     if (request.MaxDepth is { } deepest && pending.Depth + 1 > deepest) tooDeep.Add(entry.Path);
-                    else folders.Add(new PendingFolder(entry.Path, real!, [.. pending.Above, real!], pending.Depth + 1));
+                    else if (walked.Add(real!))
+                        folders.Add(new PendingFolder(entry.Path, real!, [.. pending.Above, real!], pending.Depth + 1));
                 }
             }
 
