@@ -189,8 +189,9 @@ public class ChildFeedTests
         provider.EnqueueResponse(new LlmResponse { Text = "found it", StopReason = "end_turn" });
         var child = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = provider, Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = provider, Ledger = new TokenLedger(),
             MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         }).Create();
 
         await child.Agent.SendAsync("look", CancellationToken.None);

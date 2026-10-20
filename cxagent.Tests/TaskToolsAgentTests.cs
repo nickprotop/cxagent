@@ -15,9 +15,10 @@ public class TaskToolsAgentTests
         var delivery = new RecordingDelivery();
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = child, Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = child, Ledger = new TokenLedger(),
             MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000, Delivery = delivery,
             MaxConcurrentAgents = cap,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
         var store = new SubAgentStore();
         return new Rig(new TaskTools(new TaskSources(DetachedProcessRegistry.Default, new FinishedShells(), "session", store)),
@@ -131,8 +132,9 @@ public class TaskToolsAgentTests
         var r = Wired(new HeldProvider("x"));
         r.Store.Keep(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = new MockLlmProvider(), Ledger = new TokenLedger(),
             MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         }).Create(), "fg");
         r.Store.TryClaim("fg");
         Assert.Contains("not running in the background", await Call(r, Tool.TaskStop, new { id = "fg" }));
@@ -267,8 +269,9 @@ public class TaskToolsAgentTests
         var r = Wired(new HeldProvider());
         r.Store.Keep(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = new MockLlmProvider(), Ledger = new TokenLedger(),
             MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         }).Create(), "fg");
         Assert.Contains("agent_send", await Call(r, Tool.TaskOutput, new { id = "fg" }));
     }
@@ -379,8 +382,9 @@ public class TaskToolsAgentTests
         var r = Wired(new HeldProvider());
         r.Store.Keep(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = new MockLlmProvider(), Ledger = new TokenLedger(),
             MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         }).Create(), "fg");
         Assert.Matches(@"'fg'.*— idle", await Call(r, Tool.TaskList, new { }));
         r.Store.TryClaim("fg");
@@ -433,8 +437,9 @@ public class TaskToolsAgentTests
             var store = new SubAgentStore();
             store.Keep(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
             {
-                Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+                Provider = new MockLlmProvider(), Ledger = new TokenLedger(),
                 MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+                Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
             }).Create(), "runner");
             var left = 0;
             var sent = 0;

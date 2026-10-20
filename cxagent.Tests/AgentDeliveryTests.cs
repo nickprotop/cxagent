@@ -177,11 +177,11 @@ public class AgentDeliveryTests : IDisposable
         return new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Executors = CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
+            Tools = new AgentTools(CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins()),
         }).Create();
     }
 

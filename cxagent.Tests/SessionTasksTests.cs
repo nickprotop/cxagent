@@ -24,8 +24,9 @@ public class SessionTasksTests : IDisposable
 
     private static SubAgent Child() => new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
     {
-        Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+        Provider = new MockLlmProvider(), Ledger = new TokenLedger(),
         MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+        Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
     }).Create();
 
     private static BackgroundRun Run(Session s, string name)

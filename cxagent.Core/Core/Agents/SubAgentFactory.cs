@@ -101,35 +101,45 @@ public sealed class SubAgentFactory
         /// model.</summary>
         public string? InstanceName { get; init; }
 
-        /// <summary>The tools a child may call — the parent's registry, not a narrowed copy.</summary>
-        public required JobRegistry Executors { get; init; }
+        /// <summary>
+        /// The session's tools, which a child inherits less what only the session may have — <see cref="Create(ChildRequest)"/>
+        /// takes out the spawner and the model-facing commands, and composes the selection.
+        ///
+        /// <para>THE PARENT'S REGISTRY, not a narrowed copy, and THE PARENT'S MCP TOOLSET (D21): a child that cannot
+        /// reach the docs server is crippled for the obvious use case — "go and find out how X works" is exactly
+        /// what a child is for.</para>
+        ///
+        /// <para>INJECTED TOOLS ARE KEPT, unlike spawn and ask. Those are withheld because a child has no user to
+        /// answer and no spawner to nest with; an injected tool usually answers to neither, since a child edits
+        /// files exactly as its parent does. THE FILTERING IS <see cref="Agent"/>'S, NOT THIS RECORD'S: a tool that
+        /// draws for a person declares <c>OfferToSubAgents => false</c> and the Agent constructor withholds it —
+        /// beside <c>_askUser</c>, and for the same reason it is enforced there: the guarantee then holds for any
+        /// path that builds a child, not only this one. So these are what a child COULD have; what it is offered is
+        /// decided one layer down. The live <c>Dynamic</c> source passes through whole for the same reason, and the
+        /// plugins' instructions with it, read from the same source on the same turn so a plugin's text arrives and
+        /// departs with its tools.</para>
+        ///
+        /// <para>THE SELECTION IS THE SESSION'S (S1 composed with S2), NOT THE TURN'S. This record is built once
+        /// when the session is wired, so a per-request S3 cannot live here — it rides the spawn call instead. A
+        /// child gets Then(this, turn's, type's), composed at the moment it is created.</para>
+        /// </summary>
+        public required AgentTools Tools { get; init; }
 
         /// <summary>
-        /// The embedder's injected tools, inherited whole.
+        /// The session's guards, which a child inherits with its policy narrowed to its own folder and no way to ask
+        /// the user — see <see cref="Create(ChildRequest)"/>.
         ///
-        /// <para>A CHILD KEEPS THESE BY DEFAULT, unlike spawn and ask. Those are withheld because a
-        /// child has no user to answer and no spawner to nest with; an injected tool usually answers
-        /// to neither, since a child edits files exactly as its parent does.</para>
+        /// <para>THE POLICY, so a child's MCP calls can be judged. A child using an MCP tool is the common case — an
+        /// explore agent calling a docs server — and without it the gate refuses the call for want of a policy,
+        /// exactly as it would for the parent. See <see cref="AgentGuards.Policy"/>.</para>
         ///
-        /// <para>THE FILTERING IS <see cref="Agent"/>'S, NOT THIS RECORD'S. A tool that draws for a
-        /// person declares <c>OfferToSubAgents => false</c> and the Agent constructor withholds it —
-        /// beside <c>_askUser</c>, and for the same reason it is enforced there: the guarantee then
-        /// holds for any path that builds a child, not only this one. So this list is what a child
-        /// COULD have; what it is offered is decided one layer down.</para>
+        /// <para>THE CLASSIFIER THE PARENT SPECULATES WITH, so a sub-agent's tool calls warm the classifier's cache
+        /// too rather than every delegated call paying its round trip synchronously at the gate — the exact cost the
+        /// parent avoids by starting the call the moment it parses a tool call. Null wherever no classifier is
+        /// reachable (headless runs, most tests, a fixed AllowAll/DenyAll gate): <see cref="Agent"/> treats a null
+        /// classifier as "never speculate", the same graceful fallback the parent gets.</para>
         /// </summary>
-        public IReadOnlyList<Jobs.IAgentTool>? AgentTools { get; init; }
-
-        /// <summary>
-        /// The session's LIVE tool source, inherited by every child the same way <see cref="AgentTools"/>
-        /// is — passed through whole, with Agent's constructor deciding per-tool what a child actually
-        /// gets via <c>OfferToSubAgents</c>. See <c>Agent._dynamicTools</c>.
-        /// </summary>
-        public Func<IReadOnlyList<Jobs.IAgentTool>>? DynamicTools { get; init; }
-
-        /// <summary>Each loaded plugin's system-prompt guidance — read per turn from the same live
-        /// source as <see cref="DynamicTools"/>, so a plugin's text arrives and departs with its
-        /// tools rather than lagging a turn behind them.</summary>
-        public Func<IReadOnlyList<Plugins.PluginInstructions>>? PluginInstructions { get; init; }
+        public AgentGuards Guards { get; init; } = new();
 
         /// <summary>
         /// Where a child's tools reach the CHILD, not its parent.
@@ -141,15 +151,6 @@ public sealed class SubAgentFactory
         /// same instance to every child is what makes each one reachable as itself.</para>
         /// </summary>
         public IAgentDelivery? Delivery { get; init; }
-
-        /// <summary>
-        /// The session's tool selection (S1 composed with S2), inherited by every child.
-        ///
-        /// <para>NOT THE TURN'S. This record is built once when the session is wired, so a
-        /// per-request S3 cannot live here — it rides the spawn call instead. A child gets
-        /// Then(this, turn's, type's), composed at the moment it is created.</para>
-        /// </summary>
-        public Jobs.ToolSelection? ToolSelection { get; init; }
 
         /// <summary>
         /// THE PARENT'S LEDGER, DELIBERATELY (D7). A child's spend is the session's spend: the figure
@@ -189,34 +190,6 @@ public sealed class SubAgentFactory
 
         /// <summary>cxagent's own config folder, so a user-level CXAGENT.md applies everywhere.</summary>
         public string? GlobalInstructionsDir { get; init; }
-
-        /// <summary>
-        /// THE PARENT'S TOOLSET, decided (D21). A child that cannot reach the docs server is crippled
-        /// for the obvious use case — "go and find out how X works" is exactly what a child is for.
-        /// </summary>
-        public Core.Mcp.McpToolset? Mcp { get; init; }
-
-        /// <summary>
-        /// The session's permission policy, inherited by every child so its MCP calls can be judged.
-        ///
-        /// <para>A child using an MCP tool is the common case — an explore agent calling a docs
-        /// server — and without this the gate refuses it for want of a policy, exactly as it did for
-        /// the parent. See AgentHost.AgentRuntime.Policy.</para>
-        /// </summary>
-        public Permissions.PermissionPolicy? Policy { get; init; }
-
-        /// <summary>
-        /// TASK 11 FOR CHILDREN: the same classifier the parent's <see cref="Agent"/> speculates
-        /// with, so a sub-agent's tool calls warm Task 10's cache too rather than every delegated
-        /// call paying the classifier's round trip synchronously at the gate — the exact cost the
-        /// parent avoids by starting the call the moment it parses a tool call, not when the gate
-        /// asks for it.
-        ///
-        /// <para>Null wherever no classifier is reachable (headless runs, most tests, a fixed
-        /// AllowAll/DenyAll gate) — <see cref="Agent"/> already treats a null classifier as "never
-        /// speculate", so this is the same graceful fallback the parent gets, not a new one.</para>
-        /// </summary>
-        public Permissions.ActionClassifier? Classifier { get; init; }
 
         /// <summary>
         /// A CHILD WORKS WHERE ITS PARENT DOES. Inherited rather than read from the process, so a
@@ -340,7 +313,7 @@ public sealed class SubAgentFactory
 
     /// <summary>The session's selection, for a caller that must predict what a child will have
     /// before creating one — see SubAgentSpawner.ChildCanWrite.</summary>
-    internal Jobs.ToolSelection? SessionToolSelection => _runtime.ToolSelection;
+    internal Jobs.ToolSelection? SessionToolSelection => _runtime.Tools.Selection;
 
     /// <summary>The port a background child's report reaches its parent through; null where nothing
     /// can be told, which keeps every spawn in the foreground.</summary>
@@ -350,7 +323,7 @@ public sealed class SubAgentFactory
     internal bool AllowBackground => _runtime.AllowBackground;
 
     /// <summary>The session's policy, whose boundary a spawn's root is judged against.</summary>
-    internal Permissions.PermissionPolicy? Policy => _runtime.Policy;
+    internal Permissions.PermissionPolicy? Policy => _runtime.Guards.Policy;
 
 
     /// <summary>
@@ -424,94 +397,105 @@ public sealed class SubAgentFactory
         var window = runtime.ContextWindow;
         var compressAbove = runtime.CompressAbove;
 
-        // NULL INHERITS, 0 IS UNBOUNDED — and Agent already translates 0, so this passes it through
-        // rather than re-implementing the rule in a second place.
-        var maxTurns = type?.MaxTurns ?? _runtime.MaxTurns;
+        var agent = new Agent(new AgentSetup
+        {
+            Model = new AgentModel(provider, _runtime.Ledger) { InstanceName = runtime.InstanceName },
 
-        var agent = new Agent(
-            provider,
-            _runtime.Executors,
-            _runtime.Ledger,
             // BOTH OBSERVERS ARE THE FEED, whose buffers are the child's own. A buffered chat sink with the parent's
             // job panel still leaks a row per tool call into the parent's transcript.
-            feed,
-            feed,
-            // ITS OWN LOG DIRECTORY, keyed by the child's id and NESTED UNDER THE PARENT'S. The only
-            // surface on which a finished child is inspectable after the fact — and while it sat at
-            // the top level it was indistinguishable from a session, so `ls -t` showed a child above
-            // the parent that spawned it and the newest directory was often not the newest session.
-            parentAgentId is null ? _runtime.Logs : _runtime.Logs?.Under(parentAgentId),
-            maxTurns,
-            compressAbove: compressAbove,
+            Outputs = new AgentOutputs(feed, feed)
+            {
+                // ITS OWN LOG DIRECTORY, keyed by the child's id and NESTED UNDER THE PARENT'S. The only
+                // surface on which a finished child is inspectable after the fact — and while it sat at
+                // the top level it was indistinguishable from a session, so `ls -t` showed a child above
+                // the parent that spawned it and the newest directory was often not the newest session.
+                Logs = parentAgentId is null ? _runtime.Logs : _runtime.Logs?.Under(parentAgentId),
+
+                // THE SAME PORT THE PARENT GETS, resolving by agent id — so a tool this child calls
+                // reaches THIS child rather than the session's agent. See SubAgentRuntime.Delivery.
+                Delivery = _runtime.Delivery,
+            },
+
+            Identity = new AgentIdentity
+            {
+                // ITS OWN FOLDER, when the spawn named one: where its tools start, and — through a policy
+                // narrowed to it — where its permission boundary is drawn.
+                WorkingDir = request.Root?.Absolute ?? _runtime.WorkingDir,
+
+                // THE CHILD'S OWN SYSTEM PROMPT (D24). Without this it would be handed the session
+                // prompt unchanged — told about /clear and /compress it cannot run, for a user it does
+                // not have, and never told that its final message is the entire answer.
+                IsSubAgent = true,
+                Label = label,
+
+                // parentAgentId IS THE SESSION'S ID, NEVER AN INTERMEDIATE PARENT'S: a child cannot
+                // spawn (no spawner — see Tools below), so whatever calls Create is always the session
+                // itself. Threaded through so TaskTools' kill rule ("the session may kill any job; a
+                // sub-agent only its own") can tell this child apart from the session it belongs to.
+                SessionId = parentAgentId,
+                RunsOn = $"{type?.Name ?? AgentTypeCatalog.DefaultTypeName} on {entry}",
+                Root = request.Root?.Relative,
+            },
+
+            // THE SESSION'S TOOLS, LESS WHAT ONLY THE SESSION MAY HAVE. The runtime's group is the session's own,
+            // so what a child must not hold is taken out here, by name:
+            //
+            //   * NO SPAWNER — a child constructed without one structurally CANNOT nest. That is what makes "no
+            //     sub-agents of sub-agents" true rather than aspirational: it is not a rule the child is asked to
+            //     follow, it is a tool it was never given. Agent does not refuse one, so nesting stays a change to
+            //     this line rather than to Agent.
+            //   * NO MODEL-FACING COMMANDS — they name slash commands for a user, and a child has none.
+            //
+            // INJECTED TOOLS PASS IN FULL; the Agent constructor decides what a child is actually offered, dropping
+            // any whose OfferToSubAgents is false — a tool that renders for a person would draw into a buffer
+            // nothing displays, succeed, and be discarded.
+            //
+            // S1∘S2 FROM THE RUNTIME, S3 FROM THE CALL, S4 FROM THE TYPE — composed in that order, here, because
+            // this is the only place all three are known. The type's terms go LAST so a `+` in it can reopen what a
+            // narrower session closed; composing onto a resolved set instead would make S4 narrowing-only, silently.
+            Tools = _runtime.Tools with
+            {
+                Spawner = null,
+                ModelFacingCommands = null,
+                Selection = Jobs.ToolSelection.Then(
+                    Jobs.ToolSelection.Then(_runtime.Tools.Selection, turnTools), type?.Tools),
+            },
+
+            // THE SESSION'S GUARDS, with the policy narrowed to the child's own folder when it has one, and NO WAY
+            // TO ASK THE USER: a child has nobody listening. The classifier passes straight through — Agent's own
+            // null check is what makes a null one "never speculate" rather than a crash.
+            Guards = _runtime.Guards with
+            {
+                Policy = request.Root is { } root ? _runtime.Guards.Policy?.NarrowedTo(root.Absolute) : _runtime.Guards.Policy,
+                AskUser = null,
+            },
+
+            // NO StartedOn: a child's prompt is dated the day it is built.
+            Brief = new AgentBrief
+            {
+                // THE TYPE'S BRIEFING WINS over the request's: the request is the caller saying what this child
+                // is for, and a type is a human in config saying how that work is done (D9).
+                Briefing = string.IsNullOrWhiteSpace(type?.Briefing) ? briefing : type!.Briefing,
+                CallerContext = callerContext,
+                GlobalInstructionsDir = _runtime.GlobalInstructionsDir,
+            },
+
+            // NULL INHERITS, 0 IS UNBOUNDED — Agent translates 0, so this passes it through rather than
+            // re-implementing the rule in a second place.
+            Limits = new AgentLimits(type?.MaxTurns ?? _runtime.MaxTurns) { CompressAbove = compressAbove },
+
             // A FRESH CONTEXT WITH THE WINDOW SET. Not the parent's: two agents sharing one context
             // is the failure the whole design exists to prevent.
-            context: new AgentContext(window),
-            // ITS OWN FOLDER, when the spawn named one: where its tools start, and — through a policy
-            // narrowed to it — where its permission boundary is drawn.
-            workingDir: request.Root?.Absolute ?? _runtime.WorkingDir,
-            instanceName: runtime.InstanceName,
-            globalInstructionsDir: _runtime.GlobalInstructionsDir,
-            mcp: _runtime.Mcp,
-            // THE TYPE'S BRIEFING WINS over the parameter: the parameter is the caller saying what
-            // this child is for, and a type is a human in config saying how that work is done (D9).
-            briefing: string.IsNullOrWhiteSpace(type?.Briefing) ? briefing : type!.Briefing,
-            callerContext: callerContext,
-            label: label,
-            runsOn: $"{type?.Name ?? AgentTypeCatalog.DefaultTypeName} on {entry}",
-            root: request.Root?.Relative,
-
-            // THE CHILD'S OWN SYSTEM PROMPT (D24). Without this it would be handed the session
-            // prompt unchanged — told about /clear and /compress it cannot run, for a user it does
-            // not have, and never told that its final message is the entire answer.
-            isSubAgent: true,
-
-            // PASSED IN FULL; the Agent constructor decides what a child is actually offered. Most
-            // injected tools are inherited — a child edits files exactly as its parent does — but one
-            // that draws for a PERSON declares OfferToSubAgents => false and is withheld there, where
-            // _askUser is withheld too, so the guarantee holds for every path that builds a child.
-            agentTools: _runtime.AgentTools,
-            dynamicTools: _runtime.DynamicTools,
-            pluginInstructions: _runtime.PluginInstructions,
-            // S1∘S2 FROM THE RUNTIME, S3 FROM THE CALL. Composed here because this is the only
-            // place both are known: the runtime is built once at session wiring, the turn's
-            // selection arrives with the spawn.
-            // S1∘S2 FROM THE RUNTIME, S3 FROM THE CALL, S4 FROM THE TYPE — composed in that order.
-            // The type's terms go LAST so a `+` in it can reopen what a narrower session closed;
-            // composing onto a resolved set instead would make S4 narrowing-only, silently.
-            toolSelection: Jobs.ToolSelection.Then(
-                Jobs.ToolSelection.Then(_runtime.ToolSelection, turnTools), type?.Tools),
-            policy: request.Root is { } root ? _runtime.Policy?.NarrowedTo(root.Absolute) : _runtime.Policy,
-            // THE SAME PORT THE PARENT GETS, resolving by agent id — so a tool this child calls
-            // reaches THIS child rather than the session's agent. See SubAgentRuntime.Delivery.
-            delivery: _runtime.Delivery,
-            // THE SAME CLASSIFIER THE PARENT SPECULATES WITH. Null passes straight through —
-            // Agent's own null check is what makes this "never speculate" rather than a crash.
-            classifier: _runtime.Classifier,
-            // parentAgentId IS THE SESSION'S ID, NEVER AN INTERMEDIATE PARENT'S: a child cannot
-            // spawn (no spawner — see the note below), so whatever calls Create is always the
-            // session itself. Threaded through so TaskTools' kill rule ("the session may
-            // kill any job; a sub-agent only its own") can tell this child apart from the session
-            // it belongs to.
-            sessionId: parentAgentId);
+            Conversation = new AgentContext(window),
+        });
 
         // THE TRANSCRIPT'S TOOL ROWS ARE DRAWN FROM FINISHED CALLS, which reach no observer — so the feed hears them
         // here, for a tab that opens later.
         agent.ToolCallFinished += feed.CallFinished;
 
-        // NOTE WHAT IS NOT PASSED, because both absences are load-bearing:
+        // NO SESSION STORE — Agent has no such member at all. Only AgentHost persists, which is precisely
+        // why a child must not be built through one.
         //
-        //   * NO SESSION STORE — Agent has no such parameter at all. Only AgentHost persists, which
-        //     is precisely why a child must not be built through one.
-        //
-        //   * NO SPAWNER — a child constructed without one structurally CANNOT nest. That is what
-        //     makes "no sub-agents of sub-agents" true rather than aspirational: it is not a rule the
-        //     child is asked to follow, it is a tool it was never given.
-        //
-        //   * INJECTED TOOLS *ARE* PASSED, though not all of them survive: the Agent constructor
-        //     drops any whose OfferToSubAgents is false. The two absences above are facts about
-        //     being a child — no user, no spawner — and most injected tools answer to neither. A
-        //     tool that renders for a person is the one that does: a child's rows go to a buffer
-        //     nothing displays, so it would draw, succeed, and be discarded.
         // instance:model, THE SAME LABEL THE LEDGER KEYS BY. A bare model name is ambiguous — two
         // instances can serve one model with different endpoints and windows — and this row is
         // written to the same history database the session rows are, so the two must agree or a

@@ -51,8 +51,9 @@ public sealed class AgentTabTests : IDisposable
 
     internal static SubAgent Child(ILlmProvider provider) => new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
     {
-        Provider = provider, Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+        Provider = provider, Ledger = new TokenLedger(),
         MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+        Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
     }).Create();
 
     internal static MockLlmProvider Says(params string[] answers)

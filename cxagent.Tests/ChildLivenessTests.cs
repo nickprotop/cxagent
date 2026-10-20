@@ -58,11 +58,11 @@ public class ChildLivenessTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = child,
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
         return new Agent(parent, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
@@ -137,13 +137,13 @@ public class ChildLivenessTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = child,
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
             MaxConcurrentAgents = setup.Cap,
             Delivery = setup.Delivery,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
         var agent = new Agent(parent, JobRegistry.CreateWithBuiltins(), new TokenLedger(),

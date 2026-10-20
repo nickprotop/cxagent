@@ -28,9 +28,10 @@ public class ModelFacingTextTests
     private static SubAgentSpawner Spawner(bool background) =>
         new(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = new MockLlmProvider(), Ledger = new TokenLedger(),
             MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
             Delivery = background ? new RecordingDelivery() : null,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         }), store: new SubAgentStore());
 
     /// <summary>EVERY TEXT THE MODEL READS — prompts, tool definitions, receipts — names only tools that exist.</summary>

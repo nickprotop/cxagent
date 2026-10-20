@@ -202,11 +202,11 @@ public class SkillsUiTests
                     new SubAgentFactory.SubAgentRuntime
                     {
                         Provider = childProvider,
-                        Executors = JobRegistry.CreateWithBuiltins(),
                         Ledger = new TokenLedger(),
                         MaxTurns = 50,
                         CompressAbove = 40_000,
                         ContextWindow = 200_000,
+                        Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
                     })))
             {
                 Mode = AgentMode.FanOut,

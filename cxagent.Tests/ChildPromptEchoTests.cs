@@ -17,8 +17,9 @@ public class ChildPromptEchoTests
         foreach (var a in answers) provider.EnqueueResponse(new LlmResponse { Text = a, StopReason = "end_turn" });
         var child = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = provider, Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = provider, Ledger = new TokenLedger(),
             MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         }).Create();
         var store = new SubAgentStore();
         store.Keep(child, "x");
@@ -77,8 +78,9 @@ public class ChildPromptEchoTests
         var delivery = new RecordingDelivery();
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = new MockLlmProvider(), Ledger = new TokenLedger(),
             MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000, Delivery = delivery,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
         var store = new SubAgentStore();
         var spawner = new SubAgentSpawner(factory, store: store);

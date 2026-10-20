@@ -23,8 +23,9 @@ public class JobsPanelTests
     {
         var child = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = new MockLlmProvider(), Ledger = new TokenLedger(),
             MaxTurns = 5,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         }).Create() with { Root = root };
         if (model is not null) child = child with { ModelId = model };
         var began = DateTimeOffset.UtcNow.AddSeconds(-74);

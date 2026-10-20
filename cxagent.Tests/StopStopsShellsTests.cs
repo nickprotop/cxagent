@@ -29,8 +29,9 @@ public sealed class StopStopsShellsTests : IDisposable
 
     private static SubAgent Child() => new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
     {
-        Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+        Provider = new MockLlmProvider(), Ledger = new TokenLedger(),
         MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000,
+        Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
     }).Create();
 
     /// <summary>
@@ -241,9 +242,10 @@ public sealed class StopStopsShellsTests : IDisposable
         var delivery = new RecordingDelivery();
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = deaf, Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = deaf, Ledger = new TokenLedger(),
             MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000,
             Delivery = delivery, AllowBackground = true,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
         var store = new SubAgentStore(_registry, _finished);
         var spawner = new SubAgentSpawner(factory, store: store);

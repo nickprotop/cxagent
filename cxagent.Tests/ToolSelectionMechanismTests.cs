@@ -209,10 +209,12 @@ public class ToolSelectionMechanismTests
         {
             WorkingDir = workingDir,
             Provider = provider,
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 5,
-            ToolSelection = selection,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins())
+            {
+                Selection = selection,
+            },
         });
 
     /// <summary>

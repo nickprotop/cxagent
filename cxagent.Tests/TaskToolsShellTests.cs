@@ -344,8 +344,9 @@ public class TaskToolsShellTests
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5);
         var child = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = new MockLlmProvider(), Ledger = new TokenLedger(),
             MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         }).Create();
 
         foreach (var names in new[] { parent.OfferedToolNames(), child.Agent.OfferedToolNames() })

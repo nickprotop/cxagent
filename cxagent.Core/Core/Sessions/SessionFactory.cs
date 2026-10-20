@@ -169,12 +169,6 @@ internal static class SessionFactory
         {
             Provider = resolution.Provider!,
             InstanceName = resolution.InstanceName,
-            Executors = executors,
-
-            // INHERITED WHOLE (and already gated): a child that edits files needs the same way to
-            // show the result as its parent, or the showing is silently skipped.
-            AgentTools = agentTools,
-            DynamicTools = dynamicTools,
 
             // SO A CHILD'S TOOLS REACH THE CHILD. This is the misdirection the port exists for: a
             // child inherits every plugin, and a plugin's own client only ever addressed the
@@ -183,12 +177,6 @@ internal static class SessionFactory
 
             // OFF WHERE NOBODY STAYS FOR THE REPORT — see SessionPorts.BackgroundAgents.
             AllowBackground = ports.BackgroundAgents,
-
-            // THE SAME LIVE SOURCE THE TOOLS COME FROM. Read per turn, so a plugin loaded at a turn
-            // boundary contributes its guidance on the same turn its tools appear, and unwiring
-            // removes both together.
-            PluginInstructions = session.Plugins.InstructionsForPrompt,
-            ToolSelection = toolSelection,
 
             // THE PARENT'S LEDGER (D7): a child's spend is the session's spend.
             Ledger = ledger,
@@ -206,17 +194,6 @@ internal static class SessionFactory
             ContextWindow = resolution.ContextWindow,
 
             GlobalInstructionsDir = shared.GlobalInstructionsDir,
-            Mcp = shared.Mcp,
-
-            // THE SAME POLICY THE PARENT GETS. A child calling an MCP tool is the common case, and
-            // without this the gate refuses it for want of a policy.
-            Policy = ports.Policy,
-
-            // THE SAME CLASSIFIER THE PARENT SPECULATES WITH (see AgentRuntime.Classifier below,
-            // line ~209, for the null story) — a sub-agent's `run_shell` otherwise pays the
-            // classifier's round trip synchronously at the gate, which is the one visible pause a
-            // delegated call has that the parent's own calls do not.
-            Classifier = (shared.Gate as Permissions.PermissionDecider)?.Classifier,
 
             // THE SESSION'S OWN RULE, injected rather than copied. A type on a different instance
             // has a different window, so the threshold must be re-derived from it — and a second
@@ -229,6 +206,30 @@ internal static class SessionFactory
             // spawn the model emits runs — the barrier still holds them all inside the turn.
             MaxConcurrentAgents = resolution.MaxConcurrentAgents,
             WorkingDir = session.WorkingDirectory,
+            Tools = new AgentTools(executors)
+            {
+                // INHERITED WHOLE (and already gated): a child that edits files needs the same way to
+                // show the result as its parent, or the showing is silently skipped.
+                Injected = agentTools,
+                Dynamic = dynamicTools,
+                // THE SAME LIVE SOURCE THE TOOLS COME FROM. Read per turn, so a plugin loaded at a turn
+                // boundary contributes its guidance on the same turn its tools appear, and unwiring
+                // removes both together.
+                PluginInstructions = session.Plugins.InstructionsForPrompt,
+                Selection = toolSelection,
+                Mcp = shared.Mcp,
+            },
+            Guards = new AgentGuards
+            {
+                // THE SAME POLICY THE PARENT GETS. A child calling an MCP tool is the common case, and
+                // without this the gate refuses it for want of a policy.
+                Policy = ports.Policy,
+                // THE SAME CLASSIFIER THE PARENT SPECULATES WITH (see AgentRuntime.Classifier below,
+                // line ~209, for the null story) — a sub-agent's `run_shell` otherwise pays the
+                // classifier's round trip synchronously at the gate, which is the one visible pause a
+                // delegated call has that the parent's own calls do not.
+                Classifier = (shared.Gate as Permissions.PermissionDecider)?.Classifier,
+            },
         }),
             agentTypes,
             // THE SESSION'S STORE, so a child survives a re-wire that replaces the agent that spawned

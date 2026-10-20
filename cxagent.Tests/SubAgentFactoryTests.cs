@@ -22,11 +22,11 @@ public class SubAgentFactoryTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider ?? Answering(),
-            Executors = executors ?? JobRegistry.CreateWithBuiltins(),
             Ledger = ledger ?? new TokenLedger(),
             MaxTurns = maxTurns,
             CompressAbove = 40_000,
             ContextWindow = contextWindow,
+            Tools = new AgentTools(executors ?? JobRegistry.CreateWithBuiltins()),
         });
 
     /// <summary>A provider with enough queued answers that a test never runs it dry — an empty
@@ -223,11 +223,11 @@ public class SubAgentFactoryTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = Answering(),
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             InstanceName = "local",
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
         Assert.Equal("local:mock-model", factory.Create().ModelId);
@@ -244,11 +244,11 @@ public class SubAgentFactoryTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = Answering(),
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             InstanceName = "local",
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
         var elsewhere = new AgentType("planner", "brief",
@@ -274,11 +274,11 @@ public class SubAgentFactoryTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = Answering(),
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             MaxConcurrentAgents = 2,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
         var slot = factory.ConcurrencySlot;
 

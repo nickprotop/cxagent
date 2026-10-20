@@ -70,9 +70,10 @@ public class BackgroundStressTests : IDisposable
         var delivery = new RefusingEveryFourth();
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = provider, Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = provider, Ledger = new TokenLedger(),
             MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000,
             Delivery = delivery, MaxConcurrentAgents = 4,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
         var store = new SubAgentStore();
         var spawner = new SubAgentSpawner(factory, store: store);

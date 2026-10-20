@@ -102,9 +102,9 @@ public class UserNamedTypeTests
             new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
             {
                 Provider = new MockLlmProvider(),
-                Executors = CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins(),
                 Ledger = new TokenLedger(),
                 MaxTurns = 5,
+                Tools = new AgentTools(CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins()),
             }),
             new AgentTypeCatalog(new Dictionary<string, AgentTypeConfig>(), null))
             .Definition.Description;

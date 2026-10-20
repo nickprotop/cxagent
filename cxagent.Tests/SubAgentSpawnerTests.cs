@@ -27,11 +27,11 @@ public class SubAgentSpawnerTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
     /// <summary>
@@ -74,8 +74,9 @@ public class SubAgentSpawnerTests
     private static SubAgentFactory CappedFactory(ILlmProvider provider, int cap) =>
         new(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = provider, Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = provider, Ledger = new TokenLedger(),
             MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000, MaxConcurrentAgents = cap,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
     /// <summary>
@@ -129,9 +130,10 @@ public class SubAgentSpawnerTests
     private static SubAgentSpawner BackgroundCapable(bool allow = true) =>
         new(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = Answering("x"), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = Answering("x"), Ledger = new TokenLedger(),
             MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000,
             Delivery = new RecordingDelivery(), AllowBackground = allow,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         }), store: new CxAgent.Core.Agents.SubAgentStore());
 
     /// <summary>
@@ -379,11 +381,11 @@ public class SubAgentSpawnerTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 2,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
         var result = await new SubAgentSpawner(factory).TryInvokeAsync(SpawnCall(), null, CancellationToken.None);
@@ -925,12 +927,12 @@ public class SubAgentSpawnerTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = ledger,
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
             MaxConcurrentAgents = maxConcurrent,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
     /// <summary>
@@ -1535,11 +1537,11 @@ public class SubAgentSpawnerTests
             spawner: new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
             {
                 Provider = childProvider,
-                Executors = JobRegistry.CreateWithBuiltins(),
                 Ledger = ledger,
                 MaxTurns = 50,
                 CompressAbove = 40_000,
                 ContextWindow = 200_000,
+                Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
             })))
         {
             Mode = AgentMode.FanOut,
@@ -1682,11 +1684,11 @@ public class SubAgentSpawnerTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = childProvider,
-            Executors = executors,
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
+            Tools = new AgentTools(executors),
         });
 
         await new SubAgentSpawner(factory).TryInvokeAsync(
@@ -1731,12 +1733,14 @@ public class SubAgentSpawnerTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = childProvider,
-            Executors = JobRegistry.CreateWithBuiltins(null, gate),
-            Mcp = new CxAgent.Core.Mcp.McpToolset([new OneToolServer()], gate),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins(null, gate))
+            {
+                Mcp = new CxAgent.Core.Mcp.McpToolset([new OneToolServer()], gate),
+            },
         });
 
         await new SubAgentSpawner(factory).TryInvokeAsync(
@@ -2344,13 +2348,16 @@ public class SubAgentSpawnerTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = Answering("ok"),
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
             WorkingDir = root,
-            Policy = policy,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
+            Guards = new AgentGuards
+            {
+                Policy = policy,
+            },
         });
         return new RootedScene(new SubAgentSpawner(factory), root, policy);
     }
@@ -2475,8 +2482,9 @@ public class SubAgentSpawnerTests
         childProvider.EnqueueResponse(new LlmResponse { Text = "listed", StopReason = "end_turn" });
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = childProvider, Executors = JobRegistry.CreateWithBuiltins(null, gate), Ledger = new TokenLedger(),
+            Provider = childProvider, Ledger = new TokenLedger(),
             MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000, WorkingDir = root,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins(null, gate)),
         });
 
         await new SubAgentSpawner(factory).TryInvokeAsync(RootSpawn("sub"), null, CancellationToken.None);

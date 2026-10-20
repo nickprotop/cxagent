@@ -46,13 +46,16 @@ public class SubAgentSpeculationTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = childProvider,
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
-            Policy = policy,
-            Classifier = classifier,
             WorkingDir = policy?.Root,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
+            Guards = new AgentGuards
+            {
+                Policy = policy,
+                Classifier = classifier,
+            },
         });
 
     /// <summary>A provider whose one queued response is a gated write, followed by a plain answer

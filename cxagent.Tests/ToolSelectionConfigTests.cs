@@ -190,9 +190,9 @@ public class AgentTypeToolsReachTheChildTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 5,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
         var type = new CxAgent.Core.Agents.AgentType("explore", "b",

@@ -26,11 +26,11 @@ public class SpawnedAgentsCommandTests
         new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = new CxAgent.Core.Llm.MockLlmProvider(),
-            Executors = CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins(),
             Ledger = new CxAgent.Core.Llm.TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
+            Tools = new AgentTools(CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins()),
         }).Create(new() { Label = "find thing" });
 
     /// <summary>

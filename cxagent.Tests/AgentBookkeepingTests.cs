@@ -27,8 +27,9 @@ public sealed class AgentBookkeepingTests : IDisposable
 
     private static SubAgent Child(ILlmProvider? provider = null) => new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
     {
-        Provider = provider ?? new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(),
+        Provider = provider ?? new MockLlmProvider(),
         Ledger = new TokenLedger(), MaxTurns = 5, CompressAbove = 40_000, ContextWindow = 200_000,
+        Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
     }).Create();
 
     internal static SubAgent ChildForTests() => Child();

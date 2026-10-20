@@ -63,8 +63,9 @@ public class AgentReachToolsTests
     {
         var child = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = provider, Executors = CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins(),
+            Provider = provider,
             Ledger = new TokenLedger(), MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000,
+            Tools = new AgentTools(CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins()),
         }).Create();
         var store = new SubAgentStore();
         store.Keep(child, "x");

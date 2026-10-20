@@ -66,7 +66,7 @@ public sealed class AgentHost : IDisposable
     /// a re-wire rebuilds the agent with the SAME briefing rather than silently dropping it.</summary>
 
     /// <summary>
-    /// The subprocesses behind <c>_runtime.Mcp</c>, held only so <see cref="Dispose"/> can end them.
+    /// The subprocesses behind <c>_runtime.Tools.Mcp</c>, held only so <see cref="Dispose"/> can end them.
     ///
     /// <para>Separate from the toolset because ownership and use are different concerns: the toolset
     /// is asked what tools exist and never asked to shut anything down, and the host is the thing

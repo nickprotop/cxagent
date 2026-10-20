@@ -17,9 +17,10 @@ public class BackgroundSpawnTests
         var delivery = new RecordingDelivery();
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = provider, Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = provider, Ledger = new TokenLedger(),
             MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000,
             Delivery = delivery, MaxConcurrentAgents = cap, AllowBackground = allow,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
         var store = new SubAgentStore();
         return new Rig(new SubAgentSpawner(factory, store: store), store, delivery, factory);
@@ -114,8 +115,9 @@ public class BackgroundSpawnTests
     {
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = Says("found it"), Executors = JobRegistry.CreateWithBuiltins(), Ledger = new TokenLedger(),
+            Provider = Says("found it"), Ledger = new TokenLedger(),
             MaxTurns = 50, CompressAbove = 40_000, ContextWindow = 200_000, Delivery = new RecordingDelivery(),
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
         Assert.Equal("completed", SubAgentEnvelope.StateOf(await Spawn(new SubAgentSpawner(factory))));
     }

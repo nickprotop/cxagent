@@ -25,11 +25,11 @@ public class SubAgentFridgeTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
     private static ToolCall Spawn(string description, string prompt) =>
