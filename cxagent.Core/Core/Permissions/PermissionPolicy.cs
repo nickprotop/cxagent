@@ -96,10 +96,10 @@ public class PermissionPolicy
 
     /// <summary>Resolves <paramref name="path"/> as a request for it would be judged — relative to the
     /// boundary, symlinks followed — or null when it cannot be resolved.</summary>
-    public string? Resolve(string path) => TryResolve(path, _boundary);
+    public string? Resolve(string path) => Paths.AsFileTool(path);
 
     /// <summary>The same resolution against any folder — for a caller with no policy to ask.</summary>
-    public static string? ResolveAgainst(string path, string folder) => TryResolve(path, folder);
+    public static string? ResolveAgainst(string path, string folder) => new PathResolver(folder).AsFileTool(path);
 
     /// <summary>Whether <paramref name="name"/> is a folder whose files can run code (a git hook, an
     /// editor task) — the set a write into is never silent.</summary>
@@ -384,7 +384,7 @@ public class PermissionPolicy
         // AN ACTION THAT NEEDS A PATH AND HAS NONE STILL ASKS. The executor's own validation rejects
         // such a call, so this is unreachable today — but this is the gate, and the failure mode of
         // silently raising NO request for a write is that the write goes through unasked if that
-        // validation ever moves. Fail toward asking, the same direction TryResolve already fails.
+        // validation ever moves. Fail toward asking, the same direction PathResolver.AsFileTool already fails.
         if (action is "read" or "write" or "append" or "delete" or "copy" or "move" or "replace" or "create")
         {
             if (path is null)
@@ -443,11 +443,11 @@ public class PermissionPolicy
     /// the form the "Always" prompt is documented to write (spec §Storage: "Always allow writes
     /// under /tmp/scratch/"). Granting the exact file would re-prompt on every sibling; this is
     /// the affordance the spec promises. If the path fails to resolve, AlwaysRule is null — fail
-    /// toward asking, exactly like the boundary check (<see cref="TryResolve"/>) already does,
+    /// toward asking, exactly like the boundary check (<see cref="PathResolver.AsFileTool"/>) already does,
     /// never toward a rule built from an unresolved string (that gap was C2).</summary>
     private static PermissionRequest FileRequest(PermissionKind kind, string path, string? root)
     {
-        var resolved = TryResolve(path, root);
+        var resolved = PathResolver.FileToolFrom(path, root);
         if (resolved is null)
             return new PermissionRequest(kind, path, null);
 
@@ -614,7 +614,7 @@ public class PermissionPolicy
     // The subject a stored rule is compared against. Shell rules are compared against the
     // command text (AlwaysRule) as-is — there is no filesystem path to resolve. File rules are
     // compared against the resolved FILE path — Display, which FileRequest already populated
-    // with TryResolve's output, never AlwaysRule (that's the file's own containing directory,
+    // with PathResolver.AsFileTool's output, never AlwaysRule (that's the file's own containing directory,
     // not the file). It is re-resolved here rather than trusted as pre-resolved so a subject
     // built by hand (or by any future caller that doesn't go through FileRequest) still gets
     // the same defence: "../" or a symlink lexically inside a granted directory must never
@@ -635,7 +635,7 @@ public class PermissionPolicy
     private string? RuleSubject(PermissionRequest request) => request.Kind switch
     {
         // Path-bearing: resolve before matching, and fail toward asking if it cannot be resolved.
-        PermissionKind.FileRead or PermissionKind.FileWrite => TryResolve(request.Display, _boundary),
+        PermissionKind.FileRead or PermissionKind.FileWrite => Paths.AsFileTool(request.Display),
 
         // SHELL MATCHES THE COMMAND, NOT THE RULE. A shell rule is a PATTERN — `git status *` — not
         // the whole command, so reading AlwaysRule here would compare a pattern against a stored
@@ -707,21 +707,20 @@ public class PermissionPolicy
     /// </summary>
     private bool IsInsideBoundaryAsShell(string path)
     {
-        var resolved = ResolveAsShell(path);
-        if (resolved is null) return false;   // unresolvable: fail toward asking
-        var boundary = Path.TrimEndingDirectorySeparator(_boundary);
-        return resolved == boundary || resolved.StartsWith(boundary + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+        var resolved = Paths.AsShellArgument(path);
+        return resolved is not null && PathResolver.Contains(_boundary, resolved);   // unresolvable: fail toward asking
     }
 
-    // A SHELL ARGUMENT, walked from the boundary — see PathResolver.AsShellArgument.
-    private string? ResolveAsShell(string path) => new PathResolver(_boundary).AsShellArgument(path);
+    // THE BOUNDARY'S RESOLVER: relative paths resolve from the boundary, as the model is told they do from the
+    // working directory, and every answer comes back real — the form the boundary is in.
+    private PathResolver Paths => new(_boundary);
 
     /// <summary>
     /// Whether <paramref name="path"/> resolves to <paramref name="directory"/> or something beneath it.
     ///
     /// <para>THE DIRECTORY IS A PARAMETER SO THERE IS ONE RESOLVER. <see cref="LogDir"/> needs the
     /// same geometry against a different folder, and a second containment test written beside this one
-    /// would be a second place to forget that <see cref="TryResolve"/> — not <c>GetFullPath</c> — is
+    /// would be a second place to forget that <see cref="PathResolver.AsFileTool"/> — not <c>GetFullPath</c> — is
     /// what makes a symlink out of the folder count as outside it. Four holes of exactly that shape
     /// have already been found in this file.</para>
     ///
@@ -731,12 +730,12 @@ public class PermissionPolicy
     /// </summary>
     private bool IsInside(string path, string directory)
     {
-        var resolved = TryResolve(path, _boundary);
+        var resolved = Paths.AsFileTool(path);
         if (resolved is null) return false;   // resolution failed: fail toward asking, never toward silence.
 
-        var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
-        return resolved == normalized ||
-               resolved.StartsWith(normalized + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+        // THE DIRECTORY AS GIVEN, not resolved: the boundary is real already, and the log folder is compared as
+        // spelled, so a log folder reached through a link asks for its reads — the safe direction, kept.
+        return PathResolver.Contains(Path.GetFullPath(directory), resolved);
     }
 
     /// <summary>
@@ -949,7 +948,7 @@ public class PermissionPolicy
         // — and none of it is in the text judged here. See PermissionRequest.CustomEnv.
         if (request.CustomEnv) return false;
 
-        var folder = request.ShellWorkingDir is { Length: > 0 } given ? TryResolve(given, _boundary) : _boundary;
+        var folder = request.ShellWorkingDir is { Length: > 0 } given ? Paths.AsFileTool(given) : _boundary;
         if (folder is null || !IsInsideBoundary(folder)) return false;   // unresolvable: fail toward asking
 
         var subjects = CommandSubjects.Of(request.What);
@@ -970,10 +969,9 @@ public class PermissionPolicy
     private static string PastCd(string command, CommandSubjects subjects) =>
         subjects.ChangesTo is null ? command : ReadOnlyCommands.CommandAfterCd(command) ?? command;
 
-    // THE FOLDER A COMMAND'S PATHS ARE READ IN past a leading cd, or null when the shell decides it — see
-    // PathResolver.AsShellCd.
-    private static string? AfterCd(string folder, string? cd) =>
-        new PathResolver(folder).AsShellCd(cd) is { ShellDecides: false } after ? after.Folder : null;
+    // THE FOLDER A COMMAND'S PATHS ARE READ IN past a leading cd, or null when the shell decides it or it cannot
+    // be resolved — see PathResolver.AsShellCd.
+    private static string? AfterCd(string folder, string? cd) => new PathResolver(folder).AsShellCd(cd).Folder;
 
     /// <summary>
     /// Every token that refers to a path RELATIVE to the working directory resolves inside the root.
@@ -1060,7 +1058,7 @@ public class PermissionPolicy
                 // decides that against the PROCESS's directory, so from a child's folder or a working_dir
                 // `cat link` was never looked at — and the link pointed out of the folder. Existence is
                 // tested here, from the folder the command runs in; a link counts even when dangling.
-                if (!IsPathReference(text) && !Names(full)) continue;
+                if (!IsPathReference(text) && !PathResolver.NamesAt(full)) continue;
 
                 yield return full;
             }
@@ -1079,23 +1077,20 @@ public class PermissionPolicy
     /// </summary>
     private bool ShellNamesCodeFolder(PermissionRequest request)
     {
-        var folder = request.ShellWorkingDir is { Length: > 0 } given ? TryResolve(given, _boundary) : _boundary;
+        var folder = request.ShellWorkingDir is { Length: > 0 } given ? Paths.AsFileTool(given) : _boundary;
         if (folder is null) return true;   // unresolvable: fail toward asking
 
         var subjects = CommandSubjects.Of(request.What);
         var after = AfterCd(folder, subjects.ChangesTo);
         if (after is null) return true;   // a cd the shell resolves: where it lands is not known here
         // WHERE IT RUNS, as the executor and a logical cd name it; WHAT IT NAMES, as the kernel walks it.
-        var places = new List<string?> { TryResolve(folder, _boundary), TryResolve(after, _boundary) };
-        places.AddRange(subjects.Paths.Select(p => ResolveAsShell(Path.Combine(after, p))));
-        places.AddRange(RelativeSubjects(PastCd(request.What, subjects), after).Select(ResolveAsShell));
+        var places = new List<string?> { Paths.AsFileTool(folder), Paths.AsFileTool(after) };
+        places.AddRange(subjects.Paths.Select(p => Paths.AsShellArgument(Path.Combine(after, p))));
+        places.AddRange(RelativeSubjects(PastCd(request.What, subjects), after).Select(Paths.AsShellArgument));
 
-        var boundary = Path.TrimEndingDirectorySeparator(_boundary);
-        return places.Any(resolved => resolved is null || UnderCodeFolder(resolved, boundary));
+        return places.Any(resolved => resolved is null || UnderCodeFolder(resolved, _boundary));
     }
 
-    // WHETHER ANYTHING IS THERE, a dangling link included — see PathResolver.NamesAt.
-    private static bool Names(string path) => PathResolver.NamesAt(path);
 
     /// <summary>
     /// Whether a token asserts a LOCATION rather than merely being a word.
@@ -1309,12 +1304,12 @@ public class PermissionPolicy
     {
         if (request.Kind != PermissionKind.FileWrite && !request.RemovesSource) return false;
 
-        var resolved = TryResolve(request.Display, _boundary);
+        var resolved = Paths.AsFileTool(request.Display);
         if (resolved is null) return true;   // unresolvable: fail toward asking, as everywhere here
 
         // Outside the boundary such a write always asks, so it is never silent — only the folders below
         // the boundary are this check's.
-        return UnderCodeFolder(resolved, Path.TrimEndingDirectorySeparator(Path.GetFullPath(_boundary)));
+        return UnderCodeFolder(resolved, _boundary);
     }
 
     /// <summary>
@@ -1347,13 +1342,11 @@ public class PermissionPolicy
     {
         if (request.Kind != PermissionKind.FileWrite && !request.RemovesSource) return false;
 
-        var resolved = TryResolve(request.Display, _boundary);
+        var resolved = Paths.AsFileTool(request.Display);
         if (resolved is null) return true;   // unresolvable: fail toward refusing
 
         return resolved.Split(Path.DirectorySeparatorChar)
             .Any(part => ExecutableConfigDirs.Contains(part, StringComparer.OrdinalIgnoreCase));
     }
 
-    // THE FILE TOOL'S RESOLUTION — see PathResolver.AsFileTool, which this names for the many call sites here.
-    private static string? TryResolve(string path, string? root) => PathResolver.FileToolFrom(path, root);
 }

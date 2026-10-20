@@ -43,8 +43,7 @@ public sealed record ChildRoot(string Absolute, string Relative)
             text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), text.Length > 1 ? text[2..] : "");
 
         var resolved = policy is not null ? policy.Resolve(text) : PermissionPolicy.ResolveAgainst(text, boundary);
-        if (resolved is null || !(resolved == boundary
-                                  || resolved.StartsWith(boundary + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+        if (resolved is null || !PathResolver.Contains(boundary, resolved))
             return ChildRootResult.Refused($"root '{asked}' is outside this agent's folder ({boundary}).");
 
         if (!Directory.Exists(resolved)) return ChildRootResult.Refused($"root '{asked}' is not a folder.");
