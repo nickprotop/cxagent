@@ -85,9 +85,7 @@ public class TaskToolsShellTests
         });
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(),
-            new TokenLedger(), new BufferedChatSink(), new BufferedJobPanel(), logs: null,
-            maxTurns: 5);
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5));
 
         await agent.SendAsync("list background tasks", CancellationToken.None);
 
@@ -340,8 +338,7 @@ public class TaskToolsShellTests
     [Fact]
     public void EveryAgent_IsOfferedTheTaskTools_AndNotTheRemovedOnes()
     {
-        var parent = new Agent(new MockLlmProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5);
+        var parent = new Agent(TestAgents.Setup(new MockLlmProvider(), new(new BufferedChatSink(), new BufferedJobPanel()), 5));
         var child = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = new MockLlmProvider(), Ledger = new TokenLedger(),

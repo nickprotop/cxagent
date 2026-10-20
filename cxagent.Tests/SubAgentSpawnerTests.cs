@@ -212,9 +212,10 @@ public class SubAgentSpawnerTests
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
         store = new SubAgentStore();
-        return new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), panel, logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(Answering("child done")), store: store))
+        return new Agent(TestAgents.Setup(provider, new(new RecordingSink(), panel), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(Answering("child done")), store: store) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -281,9 +282,10 @@ public class SubAgentSpawnerTests
         var child = new WakeBlockingProvider(arrived, gate);
 
         store = new SubAgentStore();
-        return new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(child), store: store))
+        return new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(child), store: store) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -547,9 +549,10 @@ public class SubAgentSpawnerTests
         // child mid-run, since the token is the parent's turn token handed straight down.
         var childProvider = new CancellingProvider(cts);
 
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(childProvider)))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(childProvider)) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -606,9 +609,10 @@ public class SubAgentSpawnerTests
 
         using var cts = new CancellationTokenSource();
 
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -642,9 +646,10 @@ public class SubAgentSpawnerTests
 
         using var cts = new CancellationTokenSource();
 
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -697,9 +702,10 @@ public class SubAgentSpawnerTests
         var bothArrived = new TaskCompletionSource();
         var gate = new RendezvousProvider(arrived, bothArrived);
 
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(gate)))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(gate)) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -760,9 +766,10 @@ public class SubAgentSpawnerTests
         var childProvider = new RecordingOrderProvider(order, "child-started");
 
         var jobs = new OrderRecordingJobPanel(order);
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), jobs, logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(childProvider)))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(childProvider)) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -794,9 +801,10 @@ public class SubAgentSpawnerTests
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(new FaultOnFirstProvider())))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(new FaultOnFirstProvider())) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -830,9 +838,10 @@ public class SubAgentSpawnerTests
 
         using var cts = new CancellationTokenSource();
 
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -864,10 +873,8 @@ public class SubAgentSpawnerTests
     [Fact]
     public void EveryAgentTracksItsOwnWait_AndStartsNotWaiting()
     {
-        var a = new Agent(new MockLlmProvider(), JobRegistry.CreateWithBuiltins(),
-            new TokenLedger(), new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5);
-        var b = new Agent(new MockLlmProvider(), JobRegistry.CreateWithBuiltins(),
-            new TokenLedger(), new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5);
+        var a = new Agent(TestAgents.Setup(new MockLlmProvider(), new(new RecordingSink(), new NullJobPanel()), 5));
+        var b = new Agent(TestAgents.Setup(new MockLlmProvider(), new(new RecordingSink(), new NullJobPanel()), 5));
 
         // PER AGENT, not per gate. The flag lives here precisely so two children sharing one gate —
         // and one display label, if they are the same type — remain distinguishable.
@@ -956,9 +963,10 @@ public class SubAgentSpawnerTests
         var release = new TaskCompletionSource();
         var gate = new RendezvousProvider(arrived, release);
 
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(gate, new TokenLedger(), maxConcurrent: 1)))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(gate, new TokenLedger(), maxConcurrent: 1)) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -1003,10 +1011,11 @@ public class SubAgentSpawnerTests
         var arrived = new SemaphoreSlim(0, 2);
         var release = new TaskCompletionSource();
 
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(
-                new RendezvousProvider(arrived, release), new TokenLedger())))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(
+                new RendezvousProvider(arrived, release), new TokenLedger())) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -1167,9 +1176,10 @@ public class SubAgentSpawnerTests
         provider.EnqueueResponse(new LlmResponse { Text = "the child failed, here is what I know", StopReason = "end_turn" });
         provider.EnqueueResponse(new LlmResponse { Text = "a later answer", StopReason = "end_turn" });
 
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new ThrowingSpawner())
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new ThrowingSpawner() },
+        })
         {
             // A SPAWNER IS NO LONGER ENOUGH — the agent must also be in fan-out mode. That is the
             // point of the mode: a session holding a spawner it is not using offers no spawn tool.
@@ -1419,9 +1429,10 @@ public class SubAgentSpawnerTests
         childProvider.EnqueueResponse(new LlmResponse { Text = "child done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), jobs, logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(childProvider)))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(childProvider)) },
+        })
         {
             // A SPAWNER IS NO LONGER ENOUGH — the agent must also be in fan-out mode. That is the
             // point of the mode: a session holding a spawner it is not using offers no spawn tool.
@@ -1478,9 +1489,10 @@ public class SubAgentSpawnerTests
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), jobs, logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(Answering("child done"))))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(Answering("child done"))) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -1532,9 +1544,10 @@ public class SubAgentSpawnerTests
             Usage = new LlmUsage { InputTokens = 700, OutputTokens = 30 },
         });
 
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), ledger,
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Model = new(provider, ledger),
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
             {
                 Provider = childProvider,
                 Ledger = ledger,
@@ -1542,7 +1555,8 @@ public class SubAgentSpawnerTests
                 CompressAbove = 40_000,
                 ContextWindow = 200_000,
                 Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
-            })))
+            })) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -1589,9 +1603,10 @@ public class SubAgentSpawnerTests
         });
         childProvider.EnqueueResponse(new LlmResponse { Text = "child done", StopReason = "end_turn" });
 
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(childProvider)))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(childProvider)) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -1625,9 +1640,10 @@ public class SubAgentSpawnerTests
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), jobs, logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(Answering("child done"))))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(Answering("child done"))) },
+        })
         {
             // A SPAWNER IS NO LONGER ENOUGH — the agent must also be in fan-out mode. That is the
             // point of the mode: a session holding a spawner it is not using offers no spawn tool.
@@ -1769,8 +1785,10 @@ public class SubAgentSpawnerTests
         });
         provider.EnqueueResponse(new LlmResponse { Text = "listed", StopReason = "end_turn" });
 
-        var parent = new Agent(provider, executors, new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(executors),
+        });
 
         await parent.SendAsync("list the files", CancellationToken.None);
 
@@ -1792,9 +1810,10 @@ public class SubAgentSpawnerTests
     public async Task SingleMode_DoesNotOfferTheSpawnTool_EvenWithASpawnerWired()
     {
         var provider = Answering("done");
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(Answering("child"))))
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(Answering("child"))) },
+        })
         {
             Mode = AgentMode.Single,
         };
@@ -1810,9 +1829,10 @@ public class SubAgentSpawnerTests
     public async Task FanOutMode_OffersTheSpawnTool()
     {
         var provider = Answering("done");
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(Answering("child"))))
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(Answering("child"))) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -1835,9 +1855,10 @@ public class SubAgentSpawnerTests
     public async Task SwitchingMode_TakesEffectNextPrompt_AndKeepsTheConversation()
     {
         var provider = Answering("one", "two", "three");
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(Answering("child"))))
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(Answering("child"))) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -1876,9 +1897,10 @@ public class SubAgentSpawnerTests
         });
         provider.EnqueueResponse(new LlmResponse { Text = "understood", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(Answering("child ran!"))))
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(Answering("child ran!"))) },
+        })
         {
             Mode = AgentMode.Single,
         };
@@ -2221,9 +2243,10 @@ public class SubAgentSpawnerTests
         });
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
         var jobs = new NullJobPanel();
-        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), jobs, logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(Answering("child done"))))
+        var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(FactoryOver(Answering("child done"))) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -2320,9 +2343,12 @@ public class SubAgentSpawnerTests
                 Arguments = System.Text.Json.JsonDocument.Parse("""{"path":"../b.md","content":"x"}""").RootElement }],
         });
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
-        var child = new Agent(provider, JobRegistry.CreateWithBuiltins(null, gate, session), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5,
-            workingDir: sub, policy: session.NarrowedTo(sub));
+        var child = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins(null, gate, session)),
+            Identity = new() { WorkingDir = sub },
+            Guards = new() { Policy = session.NarrowedTo(sub) },
+        });
 
         await child.SendAsync("write it", CancellationToken.None);
 

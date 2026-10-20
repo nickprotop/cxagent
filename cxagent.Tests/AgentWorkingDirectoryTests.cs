@@ -37,9 +37,10 @@ public class AgentWorkingDirectoryTests : IDisposable
     }
 
     private Agent Build(ToolCapturingProvider provider, string workingDir) =>
-        new(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2,
-            workingDir: workingDir);
+        new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 2) with
+        {
+            Identity = new() { WorkingDir = workingDir },
+        });
 
     /// <summary>
     /// THE SYSTEM PROMPT NAMES THE GIVEN DIRECTORY, not the process cwd. Reading the cwd lets an

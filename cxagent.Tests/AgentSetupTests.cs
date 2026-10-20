@@ -101,6 +101,17 @@ public sealed class AgentSetupTests
     }
 
     /// <summary>
+    /// ONE WAY TO BUILD AN AGENT. A second constructor beside the setup is where a flat parameter list grows back,
+    /// one reasonable argument per feature, and every value added there is one the groups never see.
+    /// </summary>
+    [Fact]
+    public void TheAgent_HasOneConstructor_TakingAnAgentSetup()
+    {
+        var ctor = Assert.Single(typeof(Agent).GetConstructors());
+        Assert.Equal([typeof(AgentSetup)], ctor.GetParameters().Select(p => p.ParameterType));
+    }
+
+    /// <summary>
     /// A CHILD NEVER GETS WHAT ONLY THE SESSION MAY HAVE — the spawner, the model-facing commands, the way to ask
     /// the user — even when the runtime it is built from carries all three. The runtime's groups are the session's,
     /// so the factory is what keeps them out; Agent does not refuse a child a spawner, because nesting is planned.

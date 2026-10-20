@@ -79,9 +79,10 @@ public class DynamicToolSourceTests
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(Done("first turn, nothing to call yet"));
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            dynamicTools: source.Get);
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Dynamic = source.Get },
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
 
@@ -110,9 +111,10 @@ public class DynamicToolSourceTests
         provider.EnqueueResponse(LlmResponse.WithToolCall("late_tool", new { }));
         provider.EnqueueResponse(Done("finished"));
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            dynamicTools: source.Get);
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Dynamic = source.Get },
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
 
@@ -129,9 +131,10 @@ public class DynamicToolSourceTests
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(Done("first turn"));
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            dynamicTools: source.Get);
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Dynamic = source.Get },
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
         Assert.Contains("late_tool", agent.LastOfferedToolNamesForTest);
@@ -171,9 +174,10 @@ public class DynamicToolSourceTests
         });
         provider.EnqueueResponse(Done("done"));
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            dynamicTools: source.Get);
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Dynamic = source.Get },
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
 

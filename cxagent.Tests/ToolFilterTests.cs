@@ -57,9 +57,10 @@ public class ToolFilterTests
     public async Task AWithheldBuiltinIsNotOffered()
     {
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            toolSelection: new ToolSelection([Tool.Inherited, Tool.Not.RunShell]));
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Selection = new ToolSelection([Tool.Inherited, Tool.Not.RunShell]) },
+        });
 
         var offered = await OfferedNames(agent, provider);
 
@@ -82,9 +83,10 @@ public class ToolFilterTests
             Usage = new LlmUsage { InputTokens = 1, OutputTokens = 1 },
         });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            toolSelection: new ToolSelection([Tool.Inherited, Tool.Not.RunShell]));
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Selection = new ToolSelection([Tool.Inherited, Tool.Not.RunShell]) },
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
 
@@ -96,10 +98,10 @@ public class ToolFilterTests
     public async Task AWithheldInjectedToolIsNotOffered()
     {
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            agentTools: [new EchoTool()],
-            toolSelection: new ToolSelection([Tool.Inherited, "-echo_tool"]));
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Injected = [new EchoTool()], Selection = new ToolSelection([Tool.Inherited, "-echo_tool"]) },
+        });
 
         Assert.DoesNotContain("echo_tool", await OfferedNames(agent, provider));
     }
@@ -108,9 +110,10 @@ public class ToolFilterTests
     public async Task AnExactSetKeepsOnlyWhatItNames()
     {
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            toolSelection: new ToolSelection([Tool.ReadFile, Tool.Grep]));
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Selection = new ToolSelection([Tool.ReadFile, Tool.Grep]) },
+        });
 
         var offered = await OfferedNames(agent, provider);
 
@@ -126,9 +129,10 @@ public class ToolFilterTests
         // S0 IS ABSOLUTE. The agent has no spawner, so `agent` is not in the assembled list at all —
         // and a + term can only ever match something that is.
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            toolSelection: new ToolSelection([Tool.Inherited, Tool.Also.Agent]));
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Selection = new ToolSelection([Tool.Inherited, Tool.Also.Agent]) },
+        });
 
         Assert.DoesNotContain(Tool.Agent, await OfferedNames(agent, provider));
     }
@@ -144,10 +148,10 @@ public class ToolFilterTests
                 JsonSerializer.SerializeToElement(new { type = "object" })))]);
 
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            mcp: mcp,
-            toolSelection: new ToolSelection([Tool.ReadFile]));
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Mcp = mcp, Selection = new ToolSelection([Tool.ReadFile]) },
+        });
 
         var offered = await OfferedNames(agent, provider);
 
@@ -161,8 +165,7 @@ public class ToolFilterTests
     {
         // The default must be free: every existing caller passes nothing and sees today's list.
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5);
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5));
 
         var offered = await OfferedNames(agent, provider);
 

@@ -55,9 +55,11 @@ public class McpPromptStabilityTests : IDisposable
         for (var i = 0; i < 4; i++) provider.EnqueueResponse(Done("ok"));
 
         var mcp = new McpToolset([new FakeServer("files", instructions: null)]);
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5,
-            workingDir: _dir, mcp: mcp);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Mcp = mcp },
+            Identity = new() { WorkingDir = _dir },
+        });
 
         await agent.SendAsync("first", CancellationToken.None);
         var before = SystemTextOf(provider);
@@ -83,9 +85,11 @@ public class McpPromptStabilityTests : IDisposable
         for (var i = 0; i < 4; i++) provider.EnqueueResponse(Done("ok"));
 
         var mcp = new McpToolset([]);
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5,
-            workingDir: _dir, mcp: mcp);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Mcp = mcp },
+            Identity = new() { WorkingDir = _dir },
+        });
 
         await agent.SendAsync("first", CancellationToken.None);
         Assert.DoesNotContain(provider.LastTools ?? [], t => t.Name.Contains("context7"));
@@ -107,9 +111,11 @@ public class McpPromptStabilityTests : IDisposable
         for (var i = 0; i < 2; i++) provider.EnqueueResponse(Done("ok"));
 
         var mcp = new McpToolset([new FakeServer("context7", "Use this for library documentation.")]);
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5,
-            workingDir: _dir, mcp: mcp);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Mcp = mcp },
+            Identity = new() { WorkingDir = _dir },
+        });
 
         await agent.SendAsync("first", CancellationToken.None);
 

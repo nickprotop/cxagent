@@ -51,9 +51,10 @@ public class ToolRefusalTests
         provider.EnqueueResponse(LlmResponse.WithToolCall(toolName, new { }));
         provider.EnqueueResponse(Done());
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            agentTools: injected, toolSelection: selection);
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Injected = injected, Selection = selection },
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
 

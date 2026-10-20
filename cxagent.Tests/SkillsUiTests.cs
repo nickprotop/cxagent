@@ -196,9 +196,9 @@ public class SkillsUiTests
             childProvider.EnqueueResponse(new LlmResponse { Text = "child done", StopReason = "end_turn" });
 
             var jobs = new NullJobPanel();
-            var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-                new RecordingSink(), jobs, logs: null, maxTurns: 50,
-                spawner: new SubAgentSpawner(new SubAgentFactory(
+            var parent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+            {
+                Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(new SubAgentFactory(
                     new SubAgentFactory.SubAgentRuntime
                     {
                         Provider = childProvider,
@@ -207,7 +207,8 @@ public class SkillsUiTests
                         CompressAbove = 40_000,
                         ContextWindow = 200_000,
                         Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
-                    })))
+                    })) },
+            })
             {
                 Mode = AgentMode.FanOut,
             };
@@ -246,8 +247,7 @@ public class SkillsUiTests
             Directory.SetCurrentDirectory(root);
 
             var provider = new ToolCapturingProvider();
-            var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-                new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
+            var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 2));
 
             await agent.SendAsync("do something", CancellationToken.None);
 
@@ -272,8 +272,7 @@ public class SkillsUiTests
             Directory.SetCurrentDirectory(root);
 
             var provider = new ToolCapturingProvider();
-            var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-                new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
+            var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 2));
 
             await agent.SendAsync("do something", CancellationToken.None);
 

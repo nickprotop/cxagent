@@ -20,8 +20,10 @@ public class AgentSpendAttributionTests
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" }
             with { Usage = new LlmUsage { InputTokens = 100, OutputTokens = 20 } });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), ledger,
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Model = new(provider, ledger),
+        });
         await agent.SendAsync("go", CancellationToken.None);
 
         Assert.Equal(120, ledger.ByModel["the-model"]);

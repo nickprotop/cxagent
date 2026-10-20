@@ -157,10 +157,11 @@ public class AskUserTests
     {
         var provider = new ToolCapturingProvider();
 
-        var child = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2,
-            isSubAgent: true,
-            askUser: (_, _) => Task.FromResult(new QuestionAnswers(["never reachable"])));
+        var child = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 2) with
+        {
+            Identity = new() { IsSubAgent = true },
+            Guards = new() { AskUser = (_, _) => Task.FromResult(new QuestionAnswers(["never reachable"])) },
+        });
 
         await child.SendAsync("do something", CancellationToken.None);
 
@@ -173,9 +174,10 @@ public class AskUserTests
     {
         var provider = new ToolCapturingProvider();
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2,
-            askUser: (_, _) => Task.FromResult(new QuestionAnswers(["ok"])));
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 2) with
+        {
+            Guards = new() { AskUser = (_, _) => Task.FromResult(new QuestionAnswers(["ok"])) },
+        });
 
         await agent.SendAsync("do something", CancellationToken.None);
 
@@ -188,8 +190,7 @@ public class AskUserTests
     {
         var provider = new ToolCapturingProvider();
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 2));
 
         await agent.SendAsync("do something", CancellationToken.None);
 

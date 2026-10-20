@@ -29,8 +29,7 @@ public class ConversationHistoryTests
     };
 
     private static Agent NewAgent(MockLlmProvider provider) =>
-        new(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5);
+        new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5));
 
     [Fact]
     public async Task AnAnswerWithNoToolCalls_IsInTheNextTurnsHistory()

@@ -568,9 +568,10 @@ public class AgentDeliveryTests : IDisposable
         });
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins(),
-            new TokenLedger(), new BufferedChatSink(), new BufferedJobPanel(), logs: null,
-            maxTurns: 5, agentTools: [tool], delivery: delivery);
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()) { Delivery = delivery }, 5) with
+        {
+            Tools = new(CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins()) { Injected = [tool] },
+        });
 
         await agent.SendAsync("call the tool", CancellationToken.None);
 

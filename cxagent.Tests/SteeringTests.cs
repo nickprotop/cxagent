@@ -35,8 +35,7 @@ public class SteeringTests
     }
 
     private static Agent NewAgent(MockLlmProvider provider, RecordingSink sink) =>
-        new(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            sink, new NullJobPanel(), logs: null, maxTurns: 50);
+        new Agent(TestAgents.Setup(provider, new(sink, new NullJobPanel()), 50));
 
     // THE CORRECTION LANDS IN THE CONVERSATION, in the same turn it was typed. Taken at the tool
     // barrier — after every result is recorded, before the next request is composed — because that

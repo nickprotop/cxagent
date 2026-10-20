@@ -50,11 +50,11 @@ public class PromptSelectionTests
             Usage = new LlmUsage { InputTokens = 1, OutputTokens = 1 },
         });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            spawner: new StubSpawner(),
-            askUser: (_, _) => Task.FromResult(new QuestionAnswers()),
-            toolSelection: selection);
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new StubSpawner(), Selection = selection },
+            Guards = new() { AskUser = (_, _) => Task.FromResult(new QuestionAnswers()) },
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
 
@@ -130,10 +130,11 @@ public class PromptSelectionTests
             Usage = new LlmUsage { InputTokens = 1, OutputTokens = 1 },
         });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            spawner: new StubSpawner(),
-            askUser: (_, _) => Task.FromResult(new QuestionAnswers()));
+        var agent = new Agent(TestAgents.Setup(provider, new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new StubSpawner() },
+            Guards = new() { AskUser = (_, _) => Task.FromResult(new QuestionAnswers()) },
+        });
 
         await agent.SendAsync("go", CancellationToken.None,
             turnTools: new ToolSelection([Tool.Inherited, Tool.Not.Agent]));

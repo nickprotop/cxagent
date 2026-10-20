@@ -18,8 +18,7 @@ namespace CxAgent.Tests;
 public class SilentRunTests
 {
     private static Agent NewAgent(MockLlmProvider provider, RecordingSink sink) =>
-        new(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            sink, new NullJobPanel(), logs: null, maxTurns: 50);
+        new Agent(TestAgents.Setup(provider, new(sink, new NullJobPanel()), 50));
 
     // AN EMPTY ANSWER IS NOT A COMPLETED RUN. Reported as Completed it was indistinguishable from a
     // finished run with a terse answer, which is exactly the confusion that cost a parent its

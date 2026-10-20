@@ -275,11 +275,11 @@ public class AgentToolDispatchTests : IDisposable
         //
         // WITHHELD AT CONSTRUCTION, like ask_user, so the guarantee holds for any path that builds a
         // child rather than only the factory's.
-        var child = new Agent(
-            new MockLlmProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            isSubAgent: true,
-            agentTools: [new EchoTool(offerToChildren: false)]);
+        var child = new Agent(TestAgents.Setup(new MockLlmProvider(), new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Injected = [new EchoTool(offerToChildren: false)] },
+            Identity = new() { IsSubAgent = true },
+        });
 
         Assert.False(child.KnowsInjectedToolForTest("echo_tool"));
     }
@@ -288,11 +288,11 @@ public class AgentToolDispatchTests : IDisposable
     public void AnOrdinaryInjectedToolIsStillOfferedToAChild()
     {
         // The default is true, so adding the opt-out changed nothing for tools that already existed.
-        var child = new Agent(
-            new MockLlmProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            isSubAgent: true,
-            agentTools: [new EchoTool(offerToChildren: true)]);
+        var child = new Agent(TestAgents.Setup(new MockLlmProvider(), new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Injected = [new EchoTool(offerToChildren: true)] },
+            Identity = new() { IsSubAgent = true },
+        });
 
         Assert.True(child.KnowsInjectedToolForTest("echo_tool"));
     }
@@ -302,11 +302,11 @@ public class AgentToolDispatchTests : IDisposable
     {
         // The opt-out is about children specifically. A parent withheld from its own tool would be
         // the feature deleting itself.
-        var parent = new Agent(
-            new MockLlmProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
-            isSubAgent: false,
-            agentTools: [new EchoTool(offerToChildren: false)]);
+        var parent = new Agent(TestAgents.Setup(new MockLlmProvider(), new(new BufferedChatSink(), new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Injected = [new EchoTool(offerToChildren: false)] },
+            Identity = new() { IsSubAgent = false },
+        });
 
         Assert.True(parent.KnowsInjectedToolForTest("echo_tool"));
     }
@@ -458,9 +458,10 @@ public class AgentToolDispatchTests : IDisposable
         provider.EnqueueResponse(Done("finished"));
 
         var sink = new BufferedChatSink();
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            sink, new BufferedJobPanel(), logs: null, maxTurns: 5,
-            mcp: mcp, agentTools: [clashing]);
+        var agent = new Agent(TestAgents.Setup(provider, new(sink, new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Mcp = mcp, Injected = [clashing] },
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
 
@@ -487,9 +488,10 @@ public class AgentToolDispatchTests : IDisposable
         provider.EnqueueResponse(Done("finished"));
 
         var sink = new BufferedChatSink();
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            sink, new BufferedJobPanel(), logs: null, maxTurns: 5,
-            mcp: mcp, dynamicTools: () => [plugin]);
+        var agent = new Agent(TestAgents.Setup(provider, new(sink, new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Mcp = mcp, Dynamic = () => [plugin] },
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
 
@@ -513,9 +515,10 @@ public class AgentToolDispatchTests : IDisposable
         provider.EnqueueResponse(Done("finished"));
 
         var sink = new BufferedChatSink();
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            sink, new BufferedJobPanel(), logs: null, maxTurns: 5,
-            mcp: mcp, agentTools: [new EchoTool()]);
+        var agent = new Agent(TestAgents.Setup(provider, new(sink, new BufferedJobPanel()), 5) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Mcp = mcp, Injected = [new EchoTool()] },
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
 

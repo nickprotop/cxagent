@@ -114,8 +114,7 @@ public class AgentTests
             provider.EnqueueResponse(new LlmResponse { Text = "ok", ToolCalls = [], Usage = new LlmUsage() });
 
         var sink = new RecordingSink();
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            sink, new NullJobPanel(), logs: null, maxTurns: 2);
+        var agent = new Agent(TestAgents.Setup(provider, new(sink, new NullJobPanel()), 2));
 
         await agent.SendAsync("first", CancellationToken.None);
         await agent.SendAsync("second", CancellationToken.None);
@@ -145,8 +144,7 @@ public class AgentTests
     {
         provider ??= NewProvider();
 
-        return new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+        return new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50));
     }
     // ---- self-containment ----------------------------------------------------------------------
 
@@ -225,8 +223,10 @@ public class AgentTests
             Role = "user", Content = "restored from an earlier session",
         });
 
-        var agent = new Agent(NewProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50, context: context);
+        var agent = new Agent(TestAgents.Setup(NewProvider(), new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Conversation = context,
+        });
 
         await agent.SendAsync("carry on", CancellationToken.None);
 
@@ -236,8 +236,10 @@ public class AgentTests
     // ---- the briefing --------------------------------------------------------------------------
 
     private static Agent BriefedAgent(string briefing, MockLlmProvider? provider = null) =>
-        new(provider ?? NewProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50, briefing: briefing);
+        new Agent(TestAgents.Setup(provider ?? NewProvider(), new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Brief = new() { Briefing = briefing },
+        });
 
     /// <summary>
     /// A BRIEFING REACHES THE MODEL, in the agent's own system message. The seam a caller uses to
@@ -382,8 +384,7 @@ public class AgentTests
         // and for the salvage call, so the returned string cannot tell them apart. What CAN is the
         // error the cap path announces before returning.
         var sink = new RecordingSink();
-        var agent = new Agent(NewProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            sink, new NullJobPanel(), logs: null, maxTurns: 0);
+        var agent = new Agent(TestAgents.Setup(NewProvider(), new(sink, new NullJobPanel()), 0));
 
         await agent.SendAsync("hello", CancellationToken.None);
 
@@ -465,8 +466,10 @@ public class AgentTests
         });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, executors, new TokenLedger(),
-            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+        {
+            Tools = new(executors),
+        });
 
         using var cts = new CancellationTokenSource();
         var run = agent.SendAsync("go", cts.Token);
@@ -505,8 +508,10 @@ public class AgentTests
         });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, executors, new TokenLedger(),
-            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+        {
+            Tools = new(executors),
+        });
 
         using var cts = new CancellationTokenSource();
         var run = agent.SendAsync("go", cts.Token);
@@ -540,8 +545,10 @@ public class AgentTests
         provider.EnqueueResponse(new LlmResponse { Text = "understood", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, executors, new TokenLedger(),
-            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+        {
+            Tools = new(executors),
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
 
@@ -623,8 +630,10 @@ public class AgentTests
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, executors, new TokenLedger(),
-            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+        {
+            Tools = new(executors),
+        });
 
         await agent.SendAsync("run it", CancellationToken.None);
 
@@ -680,8 +689,10 @@ public class AgentTests
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, executors, new TokenLedger(),
-            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+        {
+            Tools = new(executors),
+        });
 
         await agent.SendAsync("run it", CancellationToken.None);
 
@@ -721,8 +732,10 @@ public class AgentTests
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, executors, new TokenLedger(),
-            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), jobs), 50) with
+        {
+            Tools = new(executors),
+        });
 
         await agent.SendAsync("run it", CancellationToken.None);
 
@@ -765,8 +778,7 @@ public class AgentTests
             // those too.
             var prompt = "REMEMBER THIS MARKER: " + new string('x', 300) + "\nand a second line.";
 
-            var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-                new RecordingSink(), new NullJobPanel(), logs, maxTurns: 50);
+            var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()) { Logs = logs }, 50));
             await agent.SendAsync(prompt, CancellationToken.None);
             await Task.Delay(300);   // AppendAsync is fire-and-forget
 
@@ -836,8 +848,7 @@ public class AgentTests
             provider.EnqueueResponse(new LlmResponse { Text = $"answer {goal}", StopReason = "end_turn" });
         }
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 2));
 
         var first = await agent.SendAsync("first goal", CancellationToken.None);
         var second = await agent.SendAsync("second goal", CancellationToken.None);
@@ -861,8 +872,7 @@ public class AgentTests
             });
         provider.EnqueueResponse(new LlmResponse { Text = "here is what I got through", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 2));
 
         var result = await agent.SendAsync("do something long", CancellationToken.None);
 
@@ -888,8 +898,7 @@ public class AgentTests
                 ToolCalls = [ReadOfNothing("does-not-exist.txt")],
             });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50));
 
         var result = await agent.SendAsync("read that file", CancellationToken.None);
 
@@ -913,8 +922,7 @@ public class AgentTests
             });
         provider.EnqueueResponse(new LlmResponse { Text = "giving up", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50));
 
         await agent.SendAsync("read those files", CancellationToken.None);
 
@@ -940,8 +948,7 @@ public class AgentTests
         provider.EnqueueResponse(new LlmResponse { Text = "rolled, and --mode is ", StopReason = "max_tokens" });
         provider.EnqueueResponse(new LlmResponse { Text = "missing from --help.", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50));
 
         var result = await agent.SendAsync("report", CancellationToken.None);
 
@@ -958,8 +965,7 @@ public class AgentTests
         for (var i = 0; i < 3; i++)
             provider.EnqueueResponse(new LlmResponse { Text = $"part{i} ", StopReason = "max_tokens" });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50));
 
         var result = await agent.SendAsync("report", CancellationToken.None);
 
@@ -981,8 +987,7 @@ public class AgentTests
         });
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 50));
 
         await agent.SendAsync("read them", CancellationToken.None);
 

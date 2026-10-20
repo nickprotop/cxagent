@@ -288,8 +288,7 @@ public class TodoTests
         });
         provider.EnqueueResponse(new LlmResponse { Text = "noted", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 10);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 10));
 
         await agent.SendAsync("plan it", CancellationToken.None);
         Assert.Equal("the surviving step", Assert.Single(agent.Todos).Text);
@@ -317,8 +316,7 @@ public class TodoTests
     public async Task TheTool_IsAlwaysOffered()
     {
         var provider = new ToolCapturingProvider();
-        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 2));
 
         await agent.SendAsync("do something", CancellationToken.None);
 

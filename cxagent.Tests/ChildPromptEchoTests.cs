@@ -100,8 +100,7 @@ public class ChildPromptEchoTests
     public void TheSessionsOwnAgent_EchoesNothing()
     {
         var sink = new BufferedChatSink();
-        var agent = new Agent(new MockLlmProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            sink, new BufferedJobPanel(), null, 5);
+        var agent = new Agent(TestAgents.Setup(new MockLlmProvider(), new(sink, new BufferedJobPanel()), 5));
 
         agent.EchoPrompt("hi", fromUser: true);
         agent.EchoPrompt("hi", fromUser: false);

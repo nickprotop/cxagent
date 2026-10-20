@@ -27,9 +27,10 @@ public class TaskListPlacementTests : IDisposable
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
 
     private Agent Build(MockLlmProvider provider) =>
-        new(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 10,
-            workingDir: _dir);
+        new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 10) with
+        {
+            Identity = new() { WorkingDir = _dir },
+        });
 
     private static LlmResponse Done(string text) =>
         new() { Text = text, ToolCalls = [], StopReason = "end_turn", Usage = new LlmUsage() };

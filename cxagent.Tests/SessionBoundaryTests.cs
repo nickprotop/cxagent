@@ -81,9 +81,11 @@ public class SessionBoundaryTests
         var first = new RecordingObserver();
         var second = new RecordingObserver();
 
-        var agent = new Agent(provider, Core.Jobs.JobRegistry.CreateWithBuiltins(),
-            new Core.Llm.TokenLedger(), new FanOutObserver(first, second), new NullJobPanel(),
-            logs: null, maxTurns: 5);
+        var agent = new Agent(TestAgents.Setup(provider, new(new FanOutObserver(first, second), new NullJobPanel()), 5) with
+        {
+            Model = new(provider, new Core.Llm.TokenLedger()),
+            Tools = new(Core.Jobs.JobRegistry.CreateWithBuiltins()),
+        });
 
         await agent.SendAsync("go", CancellationToken.None);
 

@@ -65,9 +65,10 @@ public class ChildLivenessTests
             Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
-        return new Agent(parent, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(factory, store: store))
+        return new Agent(TestAgents.Setup(parent, new(new RecordingSink(), new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(factory, store: store) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -146,9 +147,10 @@ public class ChildLivenessTests
             Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
         });
 
-        var agent = new Agent(parent, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), setup.Jobs ?? new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(factory, store: store))
+        var agent = new Agent(TestAgents.Setup(parent, new(new RecordingSink(), setup.Jobs ?? new NullJobPanel()), 50) with
+        {
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Spawner = new SubAgentSpawner(factory, store: store) },
+        })
         {
             Mode = AgentMode.FanOut,
         };
@@ -229,8 +231,10 @@ public class ChildLivenessTests
             });
             model.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
             var jobs = new BufferedJobPanel();
-            var agent = new Agent(model, JobRegistry.CreateWithBuiltins(), new TokenLedger(), new RecordingSink(),
-                jobs, logs: null, maxTurns: 50, workingDir: dir);
+            var agent = new Agent(TestAgents.Setup(model, new(new RecordingSink(), jobs), 50) with
+            {
+                Identity = new() { WorkingDir = dir },
+            });
 
             await agent.SendAsync("read it", CancellationToken.None);
 
