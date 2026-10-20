@@ -65,9 +65,9 @@ public sealed class Agent
     /// collide either, and a bare Agent with nobody supplying one falls back to its own counter,
     /// which is correct for a transcript nothing else writes to.</para>
     ///
-    /// <para>A PROPERTY rather than a 17th constructor parameter, following <see cref="Mode"/> and
-    /// <see cref="TakePendingSteer"/>: the list is already long enough that one more would be read
-    /// positionally by nobody.</para>
+    /// <para>A PROPERTY, not a member of <see cref="AgentSetup"/>, following <see cref="Mode"/> and
+    /// <see cref="TakePendingSteer"/>: the session hands its minter over after the agent exists
+    /// (<c>AgentHost.UseTurnIds</c>), and again to each agent a re-wire builds.</para>
     /// </summary>
     public Func<ChatMessageId>? MintTurnId { get; set; }
 
@@ -88,8 +88,6 @@ public sealed class Agent
     /// <summary>The folder this agent works in, as it was given.</summary>
     internal string? WorkingDir => _workingDir;
 
-    /// <summary>The policy this agent's calls are judged by — a sub-agent's may be narrower than the
-    /// session's.</summary>
     /// <summary>What this agent was built from — read by tests that check a host or a factory forwarded every
     /// value.</summary>
     internal AgentSetup Setup { get; }
@@ -100,6 +98,11 @@ public sealed class Agent
     internal bool IsSubAgent => _isSubAgent;
     internal bool HasSpawner => _spawner is not null;
 
+    /// <summary>The session agent's id as this agent's kill rule reads it: the one it was given, or its own.</summary>
+    internal string SessionAgentId { get; }
+
+    /// <summary>The policy this agent's calls are judged by — a sub-agent's may be narrower than the
+    /// session's.</summary>
     internal Permissions.PermissionPolicy? Policy => _policy;
 
     /// <summary>
@@ -336,7 +339,7 @@ public sealed class Agent
     private readonly Func<IReadOnlyList<Plugins.PluginInstructions>>? _pluginInstructions;
     private readonly Permissions.PermissionPolicy? _policy;
 
-    /// <summary>Task 11's speculation handle — see the constructor parameter doc. Null wherever no
+    /// <summary>The speculation handle — see <see cref="AgentGuards.Classifier"/>. Null wherever no
     /// classifier is reachable, in which case every call site below is a no-op by construction
     /// (each checks this for null before calling Speculate).</summary>
     private readonly Permissions.ActionClassifier? _classifier;
@@ -664,8 +667,8 @@ public sealed class Agent
     /// asked for no longer matches what happened. Steering is a conversation the user is having with
     /// the session, and a child is not in it.</para>
     ///
-    /// <para>A PROPERTY rather than a 17th constructor parameter, following <see cref="Mode"/>: the
-    /// list is already long enough that one more would be read positionally by nobody.</para>
+    /// <para>A PROPERTY, not a member of <see cref="AgentSetup"/>, following <see cref="Mode"/>: only the
+    /// session's own agent is steered, and its host sets this on the agent it has just built.</para>
     /// </summary>
     public Func<SteerDelivery?>? TakePendingSteer { get; set; }
 
@@ -1051,7 +1054,7 @@ public sealed class Agent
         // PermissionGatedExecutor. Without it the gate refuses every MCP call for want of a policy —
         // see McpToolset.TryInvokeAsync.
         _policy = policy;
-        // TASK 11'S SPECULATION HANDLE. Held as-is, not wrapped — Speculate is itself already the
+        // THE SPECULATION HANDLE. Held as-is, not wrapped — Speculate is itself already the
         // "start it and forget it" API, so there is nothing for this layer to add beyond deciding
         // WHEN to call it (see the tool-call dispatch loop below).
         _classifier = classifier;
@@ -1120,7 +1123,7 @@ public sealed class Agent
         //
         // AND ANY ID THE SESSION'S AGENT HAD BEFORE THIS ONE, asked through the property for the same
         // reason the token is.
-        var session = sessionId ?? Id;
+        var session = SessionAgentId = sessionId ?? Id;
         _tasks = new Jobs.TaskTools(new Jobs.TaskSources(Execution.DetachedProcessRegistry.Default,
             Execution.FinishedShells.Default, id => id == session || (IsSessionAgent?.Invoke(id) ?? false),
             spawner?.Store)
@@ -1933,12 +1936,12 @@ public sealed class Agent
             // export's timeline would put that work before the call that started it.
             History?.Record(messages);
 
-            // TASK 11: SPECULATE THE MOMENT THE CALLS ARE PARSED, not when the walk below reaches
+            // SPECULATE THE MOMENT THE CALLS ARE PARSED, not when the walk below reaches
             // each one. response.ToolCalls is complete right here — every call this turn's model
             // response asked for, before any of them has actually been dispatched — so this is the
             // earliest point that exists to start the classifier's 10-second round trip ahead of the
             // synchronous gate that will eventually need its answer. By the time the walk below
-            // reaches a gated call, the verdict is often already sitting in Task 10's cache.
+            // reaches a gated call, the verdict is often already sitting in the classifier's cache.
             //
             // ONLY WHERE A VERDICT COULD MATTER. ToolBindings.RequestsFor answers empty for
             // anything this toolset does not recognise (MCP, an embedder tool, a made-up name), and

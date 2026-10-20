@@ -224,8 +224,8 @@ internal static class SessionFactory
                 // THE SAME POLICY THE PARENT GETS. A child calling an MCP tool is the common case, and
                 // without this the gate refuses it for want of a policy.
                 Policy = ports.Policy,
-                // THE SAME CLASSIFIER THE PARENT SPECULATES WITH (see AgentRuntime.Classifier below,
-                // line ~209, for the null story) — a sub-agent's `run_shell` otherwise pays the
+                // THE SAME CLASSIFIER THE PARENT SPECULATES WITH (see the session agent's Guards below for
+                // when it is null) — a sub-agent's `run_shell` otherwise pays the
                 // classifier's round trip synchronously at the gate, which is the one visible pause a
                 // delegated call has that the parent's own calls do not.
                 Classifier = (shared.Gate as Permissions.PermissionDecider)?.Classifier,
@@ -341,7 +341,7 @@ internal static class SessionFactory
                     // instead of going through PermissionGatedExecutor, so without this the gate refuses
                     // every MCP call for want of a policy.
                     Policy = ports.Policy,
-                    // TASK 11: THE SAME CLASSIFIER PermissionDecider CONSULTS, so the agent can warm its
+                    // THE SAME CLASSIFIER PermissionDecider CONSULTS, so the agent can warm its
                     // cache at parse time. `is PermissionDecider` rather than a new field on
                     // IPermissionGate — see Session.Turn.cs's ResetTurnState call for the same pattern:
                     // only the real, interactive gate owns a classifier at all, so the fixed

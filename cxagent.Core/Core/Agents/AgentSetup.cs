@@ -8,9 +8,9 @@ namespace CxAgent.Core.Agents;
 /// <summary>
 /// Everything an <see cref="Agent"/> is built from, as seven named groups and its conversation.
 ///
-/// <para>GROUPS, NOT A LIST. The constructor's arguments are the same values every caller passes, and as one flat
-/// list they compiled cleanly in each other's places — six strings, four of them a folder or a name. A group
-/// names what its values are, and passing one in another's place is a build error.</para>
+/// <para>GROUPS, NOT A LIST. Six of these values are strings, four of them a folder or a name; as one flat list any
+/// two compile in each other's places. A group names what its values are, and passing one in another's place is a
+/// build error.</para>
 ///
 /// <para>EVERY GROUP AND THE CONVERSATION ARE REQUIRED, so a setup cannot be half-built: a group left out is a
 /// build error, not an agent that silently has no spawn tool. Within a group what is optional is an

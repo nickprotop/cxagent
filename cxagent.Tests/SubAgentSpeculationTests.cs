@@ -10,11 +10,10 @@ namespace CxAgent.Tests;
 
 /// <summary>
 /// TASK 11 FOR CHILDREN: a sub-agent speculates on a classifier verdict exactly like its parent
-/// does, once <see cref="SubAgentFactory.SubAgentRuntime.Classifier"/> is set. Without this a child's
-/// gated tool calls were the one place left paying the classifier's full round trip SYNCHRONOUSLY —
-/// every other call site had already been moved ahead of the gate by <see cref="Agent"/>'s own
-/// speculation loop; a delegated <c>run_shell</c> was the exception, because <see
-/// cref="SubAgentFactory.Create"/> built its child with no classifier to speculate with at all.
+/// does, once the runtime's <see cref="AgentGuards.Classifier"/> is set. Without it a child's gated
+/// tool calls pay the classifier's full round trip SYNCHRONOUSLY at the gate, where every call
+/// <see cref="Agent"/>'s own speculation loop reaches starts it at parse time instead — a child built
+/// with no classifier has nothing to speculate with.
 ///
 /// <para>THE PROPERTY THAT ACTUALLY REGRESSES IS THE CALL COUNT, not any internal cache state: a
 /// speculated verdict costs the classifier's underlying provider exactly ONE call (the speculative

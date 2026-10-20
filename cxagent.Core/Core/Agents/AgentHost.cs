@@ -48,23 +48,6 @@ public sealed class AgentHost : IDisposable
     }
     private readonly IToolObserver _jobPanel;
 
-
-    /// <summary>
-    /// cxagent's own config directory, where a user-level CXAGENT.md may sit — or null when there is
-    /// none to read.
-    ///
-    /// <para>OUR CONFIG FOLDER ONLY — whatever <c>AppPaths.ConfigDir</c> resolves to on this OS, not a
-    /// hardcoded <c>~/.config</c>. Another product's user-level file, such as
-    /// <c>~/.claude/CLAUDE.md</c>, is not read: honouring it would mean silently obeying instructions
-    /// written for a different agent with different tools. A repo's CLAUDE.md is different — it
-    /// describes the PROJECT, so it is read where the project is.</para>
-    /// </summary>
-
-    /// <summary>Connected MCP servers, passed straight to the agent. Null when none are configured.</summary>
-
-    /// <summary>What this host's agent was created to do, or null for a plain session. Fixed here so
-    /// a re-wire rebuilds the agent with the SAME briefing rather than silently dropping it.</summary>
-
     /// <summary>
     /// The subprocesses behind <c>_runtime.Tools.Mcp</c>, held only so <see cref="Dispose"/> can end them.
     ///
@@ -435,9 +418,14 @@ public sealed class AgentHost : IDisposable
         public AgentGuards Guards { get; init; } = new();
 
         /// <summary>
-        /// What the session's agent is told: its briefing, cxagent's config folder (so a user-level CXAGENT.md applies
-        /// wherever they work), and the day the session began, carried across re-wires so a later day builds the same
-        /// system prompt.
+        /// What the session's agent is told: its briefing, cxagent's config folder, and the day the session began —
+        /// fixed here so a re-wire rebuilds the agent with the SAME briefing and date rather than dropping one.
+        ///
+        /// <para>OUR CONFIG FOLDER ONLY, where a user-level CXAGENT.md may sit — whatever <c>AppPaths.ConfigDir</c>
+        /// resolves to on this OS, not a hardcoded <c>~/.config</c>. Another product's user-level file, such as
+        /// <c>~/.claude/CLAUDE.md</c>, is not read: honouring it would mean silently obeying instructions written for
+        /// a different agent with different tools. A repo's CLAUDE.md is different — it describes the PROJECT, so it is
+        /// read where the project is.</para>
         /// </summary>
         public AgentBrief Brief { get; init; } = new();
 

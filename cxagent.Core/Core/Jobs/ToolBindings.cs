@@ -343,7 +343,7 @@ public static class ToolBindings
     }
 
     /// <summary>
-    /// TASK 11: the same call-to-executor-type and argument mapping <see cref="InvokeAsync"/> uses to
+    /// The same call-to-executor-type and argument mapping <see cref="InvokeAsync"/> uses to
     /// dispatch a call, exposed so an agent can build the <see cref="Permissions.PermissionRequest"/>s
     /// a call WOULD raise at parse time — before it is dispatched — and start speculating on them.
     ///

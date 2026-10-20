@@ -9,9 +9,9 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// AN AGENT IS BUILT FROM NAMED GROUPS, and each group stays small. The constructor took 31 parameters, grown one
-/// reasonable parameter per feature; these tests hold the line CLAUDE.md draws at three, and pin that what the
-/// constructor derives from what it is not given is what it always derived.
+/// AN AGENT IS BUILT FROM NAMED GROUPS, and each group stays small. A flat list grows one reasonable parameter per
+/// feature; these tests hold the line CLAUDE.md draws at three, keep the constructor single, and pin what it derives
+/// from what it is not given.
 /// </summary>
 public sealed class AgentSetupTests
 {
@@ -22,11 +22,13 @@ public sealed class AgentSetupTests
     [Fact]
     public void EveryGroup_TakesAtMostThreePositionalParameters()
     {
+        // EVERY MEMBER BUT THE CONVERSATION, whatever a new group is called — a filter by name would let a group named
+        // otherwise grow unchecked.
         var groups = typeof(AgentSetup).GetProperties().Select(p => p.PropertyType)
-            .Where(t => t.Namespace == typeof(AgentSetup).Namespace && t.Name.StartsWith("Agent", StringComparison.Ordinal))
+            .Where(t => t != typeof(AgentContext))
             .ToList();
 
-        Assert.Equal(7, groups.Count);
+        Assert.Equal(typeof(AgentSetup).GetProperties().Length - 1, groups.Count);
         Assert.All(groups, g => Assert.True(Positional(g) <= 3, $"{g.Name} takes {Positional(g)} positionally"));
     }
 
@@ -42,30 +44,34 @@ public sealed class AgentSetupTests
         group.GetConstructors().Select(c => c.GetParameters().Length).DefaultIfEmpty(0).Max();
 
     /// <summary>
-    /// WHAT IS NOT GIVEN IS DERIVED AS IT ALWAYS WAS: no spawner, not a sub-agent, no policy, today's date taken when
-    /// the agent is built, an unbounded turn cap for 0 — and a conversation of its own for each agent, even two built
-    /// from one setup.
+    /// WHAT IS NOT GIVEN IS DERIVED: no spawner, not a sub-agent, no policy, its own id as the session's, today's date
+    /// taken when the agent is built, an unbounded turn cap for 0 — and a conversation of its own for each agent, even
+    /// two built from one setup.
     /// </summary>
     [Fact]
-    public void TheDefaults_AreTheOldParameterDefaults()
+    public void WhatIsNotGiven_IsDerivedInTheConstructor()
     {
         var setup = Minimal(maxTurns: 0);
 
+        var before = DateOnly.FromDateTime(DateTime.Now);
         var first = new Agent(setup);
+        var after = DateOnly.FromDateTime(DateTime.Now);
         var second = new Agent(setup);
 
         Assert.False(first.HasSpawner);
         Assert.False(first.IsSubAgent);
         Assert.Null(first.Policy);
-        Assert.Equal(DateOnly.FromDateTime(DateTime.Now), first.StartedOn);
+        Assert.Equal(first.Id, first.SessionAgentId);
+        // EITHER SIDE OF THE CONSTRUCTION, so a run that crosses midnight still passes.
+        Assert.Contains(first.StartedOn, new[] { before, after });
         Assert.Equal(int.MaxValue, first.MaxTurns);
         Assert.NotSame(first.Context, second.Context);
     }
 
     /// <summary>
     /// THE SESSION HOST FORWARDS EVERY VALUE: its runtime's tools, guards and brief reach the agent whole, and the
-    /// model, outputs, identity and limits it builds carry what the runtime said. A value dropped on the way would
-    /// compile cleanly and leave the agent without it — the failure the groups exist to make impossible.
+    /// model, outputs, identity and limits it builds carry what the runtime said. A value dropped on the way compiles
+    /// and leaves the agent without it, so each one is checked here.
     /// </summary>
     [Fact]
     public void TheHost_ForwardsEveryValue()
@@ -80,13 +86,17 @@ public sealed class AgentSetupTests
         };
         var guards = new AgentGuards { Policy = policy, AskUser = (_, _) => Task.FromResult(new QuestionAnswers([])) };
         var brief = new AgentBrief { Briefing = "b", GlobalInstructionsDir = dir, StartedOn = new DateOnly(2026, 1, 2) };
+        var delivery = new NoDelivery();
+        var logs = new LogFileManager(new AppPaths(dir));
         var runtime = new AgentHost.AgentRuntime
         {
             Provider = new MockLlmProvider(), InstanceName = "inst", WorkingDir = dir, Tools = tools, Guards = guards,
-            Brief = brief,
+            Brief = brief, Delivery = delivery, Orchestrator = new OrchestratorSettings(MaxTurns: 12, ContextCompressThreshold: 12_345),
         };
+        var sink = new BufferedChatSink();
+        var jobs = new BufferedJobPanel();
 
-        var host = new AgentHost(runtime, new BufferedChatSink(), new BufferedJobPanel(), new AgentHost.SessionStores());
+        var host = new AgentHost(runtime, sink, jobs, new AgentHost.SessionStores { Logs = logs });
         var setup = host.AgentSetup;
 
         Assert.Same(tools, setup.Tools);
@@ -94,6 +104,13 @@ public sealed class AgentSetupTests
         Assert.Same(brief, setup.Brief);
         Assert.Same(runtime.Provider, setup.Model.Provider);
         Assert.Equal("inst", setup.Model.InstanceName);
+        Assert.Same(host.Ledger, setup.Model.Ledger);
+        Assert.Same(sink, setup.Outputs.Sink);
+        Assert.Same(jobs, setup.Outputs.Jobs);
+        Assert.Same(logs, setup.Outputs.Logs);
+        Assert.Same(delivery, setup.Outputs.Delivery);
+        Assert.Equal(12, setup.Limits.MaxTurns);
+        Assert.Equal(12_345, setup.Limits.CompressAbove);
         Assert.Equal(dir, setup.Identity.WorkingDir);
         Assert.Null(setup.Identity.SessionId);   // the session's own agent: its id IS the session's
         Assert.False(setup.Identity.IsSubAgent);

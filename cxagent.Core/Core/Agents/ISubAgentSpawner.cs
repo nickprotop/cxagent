@@ -46,10 +46,10 @@ public interface ISubAgentSpawner
     /// <summary>
     /// Where this spawner keeps the children it made, or null when it keeps none.
     ///
-    /// <para>ON THE INTERFACE RATHER THAN AS ANOTHER <c>Agent</c> CONSTRUCTOR PARAMETER. That list is
-    /// already long, and the store is not an independent thing an agent is given — it belongs to the
-    /// spawner, and an agent that cannot spawn has nothing to reach. Reading it from here keeps the
-    /// two facts in one place instead of letting a caller pair a spawner with somebody else's store.</para>
+    /// <para>ON THE INTERFACE RATHER THAN IN <see cref="AgentTools"/>. The store is not an independent
+    /// thing an agent is given — it belongs to the spawner, and an agent that cannot spawn has nothing to
+    /// reach. Reading it from here keeps the two facts in one place instead of letting a caller pair a
+    /// spawner with somebody else's store.</para>
     ///
     /// <para>A DEFAULT MEMBER, so an existing implementation — the test fakes among them — keeps
     /// compiling and simply keeps nothing.</para>
