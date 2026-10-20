@@ -1991,9 +1991,8 @@ public class SubAgentSpawnerTests
     {
         var catalog = Catalog(("scout", "Search."));
 
-        // ONE FOLDER FOR BOTH. A child given none reads the process cwd as it is built, and a test in the
-        // working-directory collection may move that between the two spawns — the prompts would then differ
-        // in a line this test is not about.
+        // ONE FOLDER FOR BOTH, named rather than read from the process, so the comparison rests only on what
+        // this test controls.
         var folder = Path.GetTempPath();
         SubAgent? bare = null, general = null;
         await new SubAgentSpawner(FactoryOver(Answering("x"), folder), catalog)
