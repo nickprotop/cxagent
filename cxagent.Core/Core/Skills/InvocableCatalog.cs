@@ -184,11 +184,9 @@ public static partial class InvocableCatalog
     {
         try
         {
-            if (!Directory.Exists(folder)) return null;
-            var info = new DirectoryInfo(folder);
-            var target = info.ResolveLinkTarget(returnFinalTarget: true);
-            return Path.GetFullPath(target?.FullName ?? info.FullName)
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            // EVERY LINK ON THE PATH, not only the last — the one resolver's real folder — so two spellings of one
+            // folder are one source however the links fall.
+            return Directory.Exists(folder) ? Permissions.PathResolver.RealFolder(folder) : null;
         }
         catch (Exception)
         {

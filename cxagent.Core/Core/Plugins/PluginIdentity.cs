@@ -147,7 +147,7 @@ public static class PluginIdentity
             string? name;
             try
             {
-                name = PluginManifest.Parse(File.ReadAllText(sidecar)).Manifest?.Name;
+                name = PluginResolver.ReadSidecar(sidecar).Json is { } json ? PluginManifest.Parse(json).Manifest?.Name : null;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

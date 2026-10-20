@@ -730,9 +730,9 @@ public static class ProviderConfigLoader
             // manifest, which is ManagedPluginLoader.Load's own job when it actually tries to load
             // the plugin. Refusing config here over a sidecar the user has not finished writing would
             // take every provider and every other plugin down with it.
-            string sidecarJson;
-            try { sidecarJson = File.ReadAllText(sidecarPath); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+            // READ AS EVERY SIDECAR IS — Plugins.PluginResolver.ReadSidecar — so a sidecar linked out of its folder, or to a
+            // device, is no more read here than at load.
+            if (Plugins.PluginResolver.ReadSidecar(sidecarPath).Json is not { } sidecarJson) continue;
 
             var parsed = PluginManifest.Parse(sidecarJson);
             if (parsed.Manifest is null) continue;
