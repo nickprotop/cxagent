@@ -691,4 +691,19 @@ public class ShellJobExecutorTests
         Assert.True(result.Success, result.ErrorMessage);
         Assert.Equal(Path.Combine(agentFolder, "inner"), result.Output["stdout"]?.ToString()?.Trim());
     }
+
+    /// <summary>A working_dir that is not a folder is a failed call the model can correct, not an exception.</summary>
+    [Fact]
+    public async Task AWorkingDirThatIsNotAFolder_FailsWithAReason()
+    {
+        var agentFolder = Path.Combine(Path.GetTempPath(), "cx-wd-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(agentFolder);
+
+        var result = await new ShellJobExecutor().ExecuteAsync(
+            P(("command", "pwd"), ("working_dir", "missing")),
+            new CollectingContext { WorkingDirectory = agentFolder }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("working_dir 'missing' is not a folder.", result.ErrorMessage);
+    }
 }

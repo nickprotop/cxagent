@@ -115,6 +115,12 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
         if (workingDir is { Length: > 0 } && !Path.IsPathRooted(workingDir)
             && context.WorkingDirectory is { Length: > 0 } agentFolder)
             workingDir = Path.GetFullPath(workingDir, agentFolder);
+
+        // A FOLDER THAT IS NOT THERE IS THE MODEL'S TO CORRECT, said as a failed call. Left to the process
+        // start it surfaced as an exception with the full path, which reads as cxagent breaking rather than
+        // as a wrong argument.
+        if (parameters.Get<string?>("working_dir", null) is { Length: > 0 } given && !Directory.Exists(workingDir))
+            return new JobResult { Success = false, ErrorMessage = $"working_dir '{given}' is not a folder." };
         // A DEFAULT TIMEOUT, because `timeout_seconds` is optional and a model almost never sends
         // it. Without one, ProcessRunner builds a CancellationTokenSource that is never scheduled to
         // fire, so `run_shell {"command":"npm install"}` — or a curl to a dead host, or a grep over
