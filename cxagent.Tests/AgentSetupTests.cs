@@ -129,6 +129,22 @@ public sealed class AgentSetupTests
     }
 
     /// <summary>
+    /// A SWITCHED MODEL IS THE SETUP'S MODEL: what the agent reports it runs on is what it talks to, not the model it
+    /// started with.
+    /// </summary>
+    [Fact]
+    public void ASwappedProvider_IsTheSetupsModel()
+    {
+        var agent = new Agent(Minimal(maxTurns: 5));
+        var next = new MockLlmProvider();
+
+        agent.SwapProvider(next, "other", contextWindow: null);
+
+        Assert.Same(next, agent.Setup.Model.Provider);
+        Assert.Equal("other", agent.Setup.Model.InstanceName);
+    }
+
+    /// <summary>
     /// A CHILD NEVER GETS WHAT ONLY THE SESSION MAY HAVE — the spawner, the model-facing commands, the way to ask
     /// the user — even when the runtime it is built from carries all three. The runtime's groups are the session's,
     /// so the factory is what keeps them out; Agent does not refuse a child a spawner, because nesting is planned.

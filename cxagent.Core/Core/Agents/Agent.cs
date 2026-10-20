@@ -88,9 +88,9 @@ public sealed class Agent
     /// <summary>The folder this agent works in, as it was given.</summary>
     internal string? WorkingDir => _workingDir;
 
-    /// <summary>What this agent was built from — read by tests that check a host or a factory forwarded every
-    /// value.</summary>
-    internal AgentSetup Setup { get; }
+    /// <summary>What this agent runs with: what it was built from, with the model it talks to now — read by tests
+    /// that check a host or a factory forwarded every value.</summary>
+    internal AgentSetup Setup { get; private set; }
 
     // WHAT THE CONSTRUCTOR DERIVED, for tests that pin the defaults: a turn cap of 0 or less is unbounded, and a
     // child is one only when built as one.
@@ -718,6 +718,7 @@ public sealed class Agent
         _provider = provider;
         _instanceName = instanceName;
         if (contextWindow is not null) _context.Window = contextWindow;
+        Setup = Setup with { Model = Setup.Model with { Provider = provider, InstanceName = instanceName } };
     }
 
     /// <summary>True when this agent can actually spawn: fan-out mode AND a spawner to do it with.
