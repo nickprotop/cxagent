@@ -921,6 +921,11 @@ public class PermissionPolicy
         // something where the command runs; judged from the boundary instead, `ls ..` from `sub` read as
         // leaving the project when it lists it. An absolute one is unchanged by the combine.
         var subjects = CommandSubjects.Of(request.What);
+
+        // A TILDE cd TARGET IS THE HOME FOLDER, which this does not resolve — the refusal CommandSubjects
+        // gives a tilde argument. The cd is taken off the chain before its arguments are examined, so
+        // without this `cd ~ && ls` joined `~` onto the folder as an ordinary name and listed home unasked.
+        if (subjects.ChangesTo is { } home && home.StartsWith('~')) return false;
         if (subjects.ChangesTo is { } cd && !IsInsideBoundary(Path.Combine(folder, cd))) return false;
         if (!subjects.Paths.All(p => IsInsideBoundary(Path.Combine(folder, p)))) return false;
 

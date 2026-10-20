@@ -49,6 +49,16 @@ public class ReadOnlyBoundaryTests : IDisposable
     public void ReadingOutsideTheFolderIsRefused(string command) =>
         Assert.False(Silent(command));
 
+    // A cd INTO THE HOME FOLDER LEAVES. The chain's cd target is taken off before the rest is examined, so a
+    // tilde there never met the tilde refusal the arguments get, and joined onto the folder as a plain name
+    // it read as `<folder>/~` — inside.
+    [Theory]
+    [InlineData("cd ~ && ls")]
+    [InlineData("cd ~/notes && ls")]
+    [InlineData("cd ~user && ls")]
+    public void ACdIntoTheHomeFolder_IsRefused(string command) =>
+        Assert.False(Silent(command));
+
     // AND THE SAME READ THROUGH THE FILE TOOL WAS ALREADY REFUSED, which is the asymmetry: the two
     // spellings now agree.
     [Fact]
