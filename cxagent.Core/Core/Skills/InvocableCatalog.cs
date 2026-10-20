@@ -104,7 +104,9 @@ public static partial class InvocableCatalog
 
     private enum Layout { Commands, Skills }
 
-    private sealed record Source(string Folder, Layout Layout, InvocableScope Scope);
+    // ROOT: the folder a project source's links must stay inside — the repository root (see decision 16 of the path
+    // resolver spec) — or null for the user's own folders, whose links are theirs to make.
+    private sealed record Source(string Folder, Layout Layout, InvocableScope Scope, string? Root);
 
     public static InvocableCatalogResult Find(CatalogRoots roots)
     {
@@ -138,16 +140,21 @@ public static partial class InvocableCatalog
         var seen = new HashSet<string>(OperatingSystem.IsWindows()
             ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
 
+        // THE PROJECT'S FOLDERS, nearest first, and the top of them: the root a project source's links stay in.
+        var levels = WalkedLevels(roots.WorkingDirectory);
+        var repoRoot = Permissions.PathResolver.RealFolder(levels[^1]);
+
         void Add(string folder, Layout layout, InvocableScope scope)
         {
             // ONCE, AT ITS FIRST POSITION. A symlinked folder — .agents/skills pointing at
             // .cxagent/skills — reaches its target twice. Reading it twice would shadow every file in
             // it by itself.
             var real = RealPath(folder);
-            if (real is not null && seen.Add(real)) sources.Add(new Source(folder, layout, scope));
+            if (real is not null && seen.Add(real))
+                sources.Add(new Source(folder, layout, scope, scope == InvocableScope.Project ? repoRoot : null));
         }
 
-        foreach (var dir in WalkedLevels(roots.WorkingDirectory))
+        foreach (var dir in levels)
         {
             Add(Path.Combine(dir, ".cxagent", "commands"), Layout.Commands, InvocableScope.Project);
             Add(Path.Combine(dir, ".cxagent", "skills"), Layout.Skills, InvocableScope.Project);
@@ -189,7 +196,7 @@ public static partial class InvocableCatalog
     private static List<Invocable> ReadCommands(Source source, List<SkillProblem> problems)
     {
         var files = new List<string>();
-        CommandFilesIn(source.Folder, files, problems, depth: 0);
+        CommandFilesIn(source, files, problems);
         files.Sort(StringComparer.Ordinal);
 
         var parsed = new List<Invocable>();
@@ -239,34 +246,40 @@ public static partial class InvocableCatalog
     }
 
     /// <summary>
-    /// Every <c>*.md</c> under <paramref name="folder"/>, one directory at a time.
+    /// Every command file under a source folder, by the one bounded walk: a link that leaves the source's root, or
+    /// loops back into a folder above it, is reported and not followed; past eight levels a folder is not read.
     ///
-    /// <para>A FOLDER THAT CANNOT BE READ COSTS ITSELF, NOT ITS NEIGHBOURS. One recursive enumeration
-    /// throws on the first unreadable subfolder and loses every file it had not reached yet; walking
-    /// by hand keeps what can be read and reports the one that could not.</para>
+    /// <para>A FOLDER THAT CANNOT BE READ COSTS ITSELF, NOT ITS NEIGHBOURS: the walk keeps what can be read and
+    /// reports the one that could not.</para>
+    ///
+    /// <para>A BOUND ON FAN-OUT, not only depth. Following every folder link, a folder of n links to itself costs
+    /// n^8 entries — four of them, eight seconds and 349,525 problems on every turn.</para>
     /// </summary>
-    private static void CommandFilesIn(string folder, List<string> files, List<SkillProblem> problems, int depth)
+    private static void CommandFilesIn(Source source, List<string> files, List<SkillProblem> problems)
     {
-        // A BOUND, because a symlink can point a folder back at an ancestor and the walk would follow
-        // it for ever. Eight levels of subfolders is far past any label anyone types.
-        if (depth > MaxCommandDepth)
-        {
-            problems.Add(new SkillProblem(folder, $"deeper than {MaxCommandDepth} folders — not read"));
-            return;
-        }
-
         try
         {
-            files.AddRange(Directory.EnumerateFiles(folder, "*.md"));
-            foreach (var sub in Directory.EnumerateDirectories(folder))
-                CommandFilesIn(sub, files, problems, depth + 1);
+            var walk = Permissions.PathResolver.Walk(new Permissions.WalkRequest(source.Folder, "*.md",
+                source.Root is { } root ? [root] : null, MaxVisited: MaxCommandEntries, MaxDepth: MaxCommandDepth));
+            files.AddRange(walk.Files);
+            foreach (var folder in walk.TooDeep)
+                problems.Add(new SkillProblem(folder, $"deeper than {MaxCommandDepth} folders — not read"));
+            foreach (var link in walk.Unfollowed)
+                problems.Add(new SkillProblem(link.Path, link.Cycle
+                    ? "a link back into a folder above it — not followed"
+                    : "a link out of the repository — not read"));
+            foreach (var folder in walk.Unreadable)
+                problems.Add(new SkillProblem(folder.Path, $"could not be read: {folder.Reason}"));
+            if (walk.Truncated)
+                problems.Add(new SkillProblem(source.Folder, $"more than {MaxCommandEntries} entries — the rest not read"));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            problems.Add(new SkillProblem(folder, $"could not be read: {ex.Message}"));
+            problems.Add(new SkillProblem(source.Folder, $"could not be read: {ex.Message}"));
         }
     }
 
+    private const int MaxCommandEntries = 10_000;
     private const int MaxCommandDepth = 8;
 
     private static List<Invocable> ReadSkills(Source source, List<SkillProblem> problems)

@@ -337,10 +337,11 @@ public class InvocableCatalogTests : IDisposable
         Command(commands, "ok");
         Directory.CreateSymbolicLink(Path.Combine(commands, "loop"), commands);
 
-        // ENDING, AND SAYING WHY, is the whole point: each lap of the loop finds ok.md again, so the
-        // copies clash with each other and the walk is reported rather than followed for ever.
+        // ENDING, AND SAYING WHY, is the whole point: the link back is reported and not entered, so ok.md is read
+        // once rather than once per lap of the loop.
         var result = Find();
 
-        Assert.Contains(result.Problems, p => p.Reason.Contains("deeper than"));
+        Assert.Contains(result.Problems, p => p.Reason.Contains("link back"));
+        Assert.Single(result.Entries, e => e.Name == "ok");
     }
 }

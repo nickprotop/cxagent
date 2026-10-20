@@ -48,7 +48,13 @@ public static class HeadlessPlugins
                 continue;
             }
 
-            var hash = PluginIdentity.HashLoadSet(dir);
+            // A LOAD SET THAT CANNOT BE IDENTIFIED — a link out of it, a loop — is skipped with the reason.
+            var identity = PluginIdentity.InspectLoadSet(dir);
+            if (identity.Hash is not { } hash)
+            {
+                skipped.Add($"{name} ({identity.Refusal})");
+                continue;
+            }
 
             if (named) runApproved.Add(hash);
             if (named || s.Rules.Matches(s.WorkingDir, PermissionKind.Plugin, hash))

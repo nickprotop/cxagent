@@ -44,6 +44,103 @@ internal sealed class PathResolver(string folder)
     public bool Names(string path) => NamesAt(Path.Combine(Folder, path));
 
     /// <summary>
+    /// Every file under a folder, as a recursive enumeration finds them — except through a link that lands outside
+    /// <see cref="WalkRequest.Within"/>, or back into a folder the walk is already inside.
+    ///
+    /// <para>A LINK IS FOLLOWED ONLY WHERE IT STAYS. The folder a caller judged is not the folder a link under it
+    /// leads to: followed blindly, a link to a folder elsewhere lists that folder's files, a search reads them, a
+    /// removal deletes them and a hash covers them. Each link is resolved and judged by where it lands; one landing
+    /// anywhere else is reported (<see cref="WalkResult.Unfollowed"/>), never walked.</para>
+    ///
+    /// <para>A CYCLE ENDS. A link into a folder already in the chain above it would walk that chain for ever, and
+    /// the plain enumeration does exactly that until the path grows too long; such a link is reported, not entered.
+    /// A link to a sibling is not a cycle, and is walked as the plain enumeration walks it.</para>
+    ///
+    /// <para>THE PLAIN ENUMERATION'S RESULT wherever no link leaves: the same files in the same order — a folder's
+    /// files before its sub-folders, breadth first — matched as <c>Directory.EnumerateFiles</c> matches a pattern.
+    /// One read of each folder, links told apart by the entry's own attributes, and only links resolved.</para>
+    /// </summary>
+    public static WalkResult Walk(WalkRequest request)
+    {
+        // THE MATCHING Directory.EnumerateFiles(path, pattern, SearchOption) DOES — the Win32 form of the pattern,
+        // case-sensitive where the file system is — so the same names match.
+        var expression = System.IO.Enumeration.FileSystemName.TranslateWin32Expression(request.Pattern);
+        var ignoreCase = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
+        var options = new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = false };
+
+        var start = RealFolder(request.Start);
+        bool Followable(string real) => request.Within is null || request.Within.Any(folder => Contains(folder, real));
+
+        var files = new List<string>();
+        var unfollowed = new List<UnfollowedLink>();
+        var tooDeep = new List<string>();
+        var unreadable = new List<UnreadableFolder>();
+        var visited = 0;
+        var queue = new Queue<PendingFolder>([new PendingFolder(request.Start, start, [start], 0)]);
+        while (queue.TryDequeue(out var pending))
+        {
+            var folders = new List<PendingFolder>();
+            // A FOLDER THAT CANNOT BE READ COSTS ITSELF, NOT THE REST: recorded, and the walk goes on. The folder is
+            // opened as the enumerable is built, so that is inside the try too.
+            List<FolderEntry> listed;
+            try
+            {
+                listed = [.. new System.IO.Enumeration.FileSystemEnumerable<FolderEntry>(pending.Path,
+                    (ref System.IO.Enumeration.FileSystemEntry e) => new FolderEntry(
+                        e.ToFullPath(), e.FileName.ToString(), e.IsDirectory,
+                        e.Attributes.HasFlag(FileAttributes.ReparsePoint)), options)];
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                unreadable.Add(new UnreadableFolder(pending.Path, ex.Message));
+                continue;
+            }
+
+            foreach (var entry in listed)
+            {
+                if (request.MaxVisited is { } cap && ++visited > cap)
+                    return new WalkResult(files, unfollowed, unreadable, tooDeep, Truncated: true);
+
+                // A LINK IS RESOLVED, and judged by where it lands; anything else is where its folder is.
+                var real = entry.IsLink
+                    ? FileToolFrom(entry.Path, null)
+                    : pending.Real + Path.DirectorySeparatorChar + entry.Name;
+                if (entry.IsLink)
+                {
+                    var cycle = entry.IsDirectory && real is not null && pending.Above.Contains(real);
+                    if (real is null || cycle || !Followable(real))
+                    {
+                        unfollowed.Add(new UnfollowedLink(entry.Path, real, real is not null && Contains(start, real), cycle));
+                        continue;
+                    }
+                }
+
+                if (!entry.IsDirectory)
+                {
+                    if (System.IO.Enumeration.FileSystemName.MatchesWin32Expression(expression, entry.Name, ignoreCase))
+                        files.Add(entry.Path);
+                }
+                else if (!pending.Above.Contains(real!))
+                {
+                    if (request.MaxDepth is { } deepest && pending.Depth + 1 > deepest) tooDeep.Add(entry.Path);
+                    else folders.Add(new PendingFolder(entry.Path, real!, [.. pending.Above, real!], pending.Depth + 1));
+                }
+            }
+
+            // FILES OF A FOLDER BEFORE ITS SUB-FOLDERS, breadth first: the plain enumeration's order.
+            foreach (var folder in folders) queue.Enqueue(folder);
+        }
+        return new WalkResult(files, unfollowed, unreadable, tooDeep, Truncated: false);
+    }
+
+    /// <summary>One entry of a folder, as the walk reads it.</summary>
+    private readonly record struct FolderEntry(string Path, string Name, bool IsDirectory, bool IsLink);
+
+    /// <summary>A folder still to walk: where it is as spelled, where it really is, every folder (real) the walk passed
+    /// through to reach it — a link back into one of those is a cycle — and how deep it is.</summary>
+    private sealed record PendingFolder(string Path, string Real, HashSet<string> Above, int Depth);
+
+    /// <summary>
     /// Whether <paramref name="real"/> is <paramref name="folder"/> or under it. Both must already be real: this
     /// compares, it does not resolve.
     /// </summary>
@@ -207,6 +304,26 @@ internal sealed class PathResolver(string folder)
         }
     }
 }
+
+/// <summary>What a walk is asked for: where it starts, the file names it lists (a Win32 pattern), the folders a link
+/// may land in to be followed — none at all for an empty list, and every one for null — and the most entries it
+/// visits and folders it descends (null: no bound).</summary>
+internal sealed record WalkRequest(string Start, string Pattern, IReadOnlyList<string>? Within,
+    int? MaxVisited = null, int? MaxDepth = null);
+
+/// <summary>What a walk found: the files it listed, as spelled under its start; the links it did not follow; the
+/// folders it could not read; and whether it stopped at its bounds — folders past the depth, or entries past the
+/// visit cap.</summary>
+internal sealed record WalkResult(IReadOnlyList<string> Files, IReadOnlyList<UnfollowedLink> Unfollowed,
+    IReadOnlyList<UnreadableFolder> Unreadable, IReadOnlyList<string> TooDeep, bool Truncated);
+
+/// <summary>A folder a walk could not read, and why — the walk goes on past it.</summary>
+internal sealed record UnreadableFolder(string Path, string Reason);
+
+/// <summary>A link a walk did not follow: where it is, what it really points at (null when that cannot be told),
+/// whether that is under the walk's start, and whether following it would have walked a folder already in the
+/// chain above it.</summary>
+internal sealed record UnfollowedLink(string Path, string? Target, bool InsideStart, bool Cycle);
 
 /// <summary>Where a leading <c>cd</c> goes: <see cref="Folder"/>, or — <see cref="ShellDecides"/> — a target the
 /// shell resolves at run time (<c>-</c>, <c>~</c>, a variable). A null folder with the shell not deciding is a cd

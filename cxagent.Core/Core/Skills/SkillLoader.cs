@@ -149,7 +149,8 @@ internal sealed class SkillLoader
     ///
     /// <para>A PROJECT SKILL'S FILES ARE INSIDE THE WORKING BOUNDARY and read without a prompt; a
     /// GLOBAL skill's are in the config directory, outside it, and asking is correct — those files
-    /// are not part of the repository the user is working in.</para>
+    /// are not part of the repository the user is working in. Only files inside the skill's own folder are
+    /// listed: a link out of it names files that are not the skill's.</para>
     /// </summary>
     private static string Files(SkillInfo skill)
     {
@@ -157,8 +158,10 @@ internal sealed class SkillLoader
         try
         {
             if (!Directory.Exists(skill.Directory)) return "";
-            files = Directory
-                .EnumerateFiles(skill.Directory, "*", SearchOption.AllDirectories)
+            // BY THE ONE BOUNDED WALK: a link out of the skill's own folder is not listed — its names are not the
+            // skill's — and a link looping back ends instead of being walked for ever.
+            files = Permissions.PathResolver.Walk(new Permissions.WalkRequest(skill.Directory, "*",
+                    [Permissions.PathResolver.RealFolder(skill.Directory)], MaxVisited: 10_000)).Files
                 // The body is already in this message; listing it invites a re-read of what the model
                 // is holding.
                 .Where(f => !string.Equals(Path.GetFileName(f), "SKILL.md", StringComparison.Ordinal))

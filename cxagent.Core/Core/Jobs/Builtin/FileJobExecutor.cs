@@ -326,59 +326,16 @@ public class FileJobExecutor : IJobExecutor
     {
         if (boundary is null) return Directory.EnumerateFiles(dir, pattern, SearchOption.AllDirectories).ToList();
 
-        // THE MATCHING Directory.EnumerateFiles(path, pattern, SearchOption) DOES — the Win32 form of the
-        // pattern, case-sensitive where the file system is — so the same names match.
-        var expression = System.IO.Enumeration.FileSystemName.TranslateWin32Expression(pattern);
-        var ignoreCase = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
-        var options = new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = false };
+        // THE BOUNDARY AND THE WALKED FOLDER: a link landing in either is followed — the second because a person
+        // approved walking it, if it is outside. No visit cap: a large repository is listed whole.
+        var walk = Permissions.PathResolver.Walk(new Permissions.WalkRequest(dir, pattern,
+            [boundary, Permissions.PathResolver.RealFolder(dir)]));
 
-        var start = Permissions.PermissionPolicy.RealFolder(dir);
-        var bounds = new[] { boundary, start };
-        bool Within(string real, string folder) =>
-            real == folder || real.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.Ordinal);
-        bool Stays(string real) => bounds.Any(b => Within(real, b));
-
-        var files = new List<string>();
-        var queue = new Queue<PendingFolder>([new PendingFolder(dir, start, [start])]);
-        while (queue.TryDequeue(out var pending))
-        {
-            var entries = new System.IO.Enumeration.FileSystemEnumerable<WalkEntry>(pending.Path,
-                (ref System.IO.Enumeration.FileSystemEntry e) => new WalkEntry(
-                    e.ToFullPath(), e.FileName.ToString(), e.IsDirectory,
-                    e.Attributes.HasFlag(FileAttributes.ReparsePoint)), options);
-
-            var folders = new List<PendingFolder>();
-            foreach (var entry in entries)
-            {
-                // A LINK IS RESOLVED, and judged by where it lands; anything else is where its folder is.
-                var real = entry.IsLink
-                    ? Permissions.PermissionPolicy.ResolveAgainst(entry.Path, dir)
-                    : pending.Real + Path.DirectorySeparatorChar + entry.Name;
-                if (entry.IsLink && (real is null || !Stays(real))) continue;
-
-                if (!entry.IsDirectory)
-                {
-                    if (System.IO.Enumeration.FileSystemName.MatchesWin32Expression(expression, entry.Name, ignoreCase))
-                        files.Add(entry.Path);
-                }
-                else if (!pending.Above.Contains(real!))
-                {
-                    folders.Add(new PendingFolder(entry.Path, real!, [.. pending.Above, real!]));
-                }
-            }
-
-            // FILES OF A FOLDER BEFORE ITS SUB-FOLDERS, breadth first: the plain enumeration's order.
-            foreach (var folder in folders) queue.Enqueue(folder);
-        }
-        return files;
+        // AN UNREADABLE FOLDER FAILS THE CALL, as the plain enumeration's exception does — the model is told which.
+        if (walk.Unreadable.FirstOrDefault() is { } folder)
+            throw new UnauthorizedAccessException($"could not read '{folder.Path}': {folder.Reason}");
+        return [.. walk.Files];
     }
-
-    /// <summary>One entry of a folder, as the walk reads it.</summary>
-    private readonly record struct WalkEntry(string Path, string Name, bool IsDirectory, bool IsLink);
-
-    /// <summary>A folder still to walk: where it is as spelled, where it really is, and every folder (real)
-    /// the walk passed through to reach it — a link back into one of those is a cycle.</summary>
-    private sealed record PendingFolder(string Path, string Real, HashSet<string> Above);
 
     private static void ListInto(WalkScope scope, JobParameters parameters,
         Dictionary<string, object?> output)

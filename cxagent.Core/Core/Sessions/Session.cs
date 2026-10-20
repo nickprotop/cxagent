@@ -590,7 +590,14 @@ public sealed partial class Session
             return false;
         }
 
-        var hash = CxAgent.Core.Plugins.PluginIdentity.HashLoadSet(loadSetDirectory);
+        // A LOAD SET THAT CANNOT BE IDENTIFIED CANNOT BE APPROVED — a link out of it, or a loop — and is refused
+        // with the reason, before any question.
+        var identity = CxAgent.Core.Plugins.PluginIdentity.InspectLoadSet(loadSetDirectory);
+        if (identity.Hash is not { } hash)
+        {
+            Say(new Message($"plugin '{manifest.Name}' was not loaded — {identity.Refusal}", Severity.Warning));
+            return false;
+        }
 
             // DECLARED CAPABILITY, NOT INFERRED BEHAVIOUR. Spawns is the one thing a manifest
             // declares that reads as a capability sentence; "read files in this folder" is true of
@@ -728,7 +735,7 @@ public sealed partial class Session
         // hash changed since its approval is not the one approved.
         if (Services?.Gate is not null)
         {
-            var hash = CxAgent.Core.Plugins.PluginIdentity.HashLoadSet(loadSetDirectory);
+            var hash = CxAgent.Core.Plugins.PluginIdentity.InspectLoadSet(loadSetDirectory).Hash ?? "";
             var approval = new ApprovedLoad(Path.GetFullPath(loadSetDirectory), hash);
             bool approved, changed = false;
             lock (_approvedLoads)

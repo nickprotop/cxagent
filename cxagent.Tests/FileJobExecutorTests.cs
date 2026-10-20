@@ -109,6 +109,11 @@ public class FileJobExecutorTests : IDisposable
             File.WriteAllText(Path.Combine(root, file), "x");
         Directory.CreateSymbolicLink(Path.Combine(root, "linked"), Path.Combine(root, "src"));
         File.CreateSymbolicLink(Path.Combine(root, "f.cs"), Path.Combine(root, "a.cs"));
+        // A PNPM-STYLE TREE: every package a link into .pnpm, inside the project — listed through, as before.
+        var store = Path.Combine(root, "node_modules", ".pnpm", "pkg@1", "node_modules", "pkg");
+        Directory.CreateDirectory(store);
+        File.WriteAllText(Path.Combine(store, "index.cs"), "x");
+        Directory.CreateSymbolicLink(Path.Combine(root, "node_modules", "pkg"), store);
 
         foreach (var pattern in new[] { "*", "*.cs", "?.cs" })
         {

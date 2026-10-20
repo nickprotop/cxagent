@@ -305,6 +305,11 @@ lifecycle calls; everything else is in `CxAgent.Core.Plugins`.
 
 **`loadSetDirectory` is hashed, not the file.** `PluginIdentity.HashLoadSet` covers the whole
 directory, so a plugin's approval survives nothing changing and lapses the moment anything does.
+**No link in it is followed:** a link inside the folder is hashed by the text it holds, and a link
+pointing outside it — or a loop of links — means the load set cannot be identified and is refused.
+`PluginIdentity.InspectLoadSet` returns the hash or the reason (`LoadSetIdentity`); `HashLoadSet` throws
+`LoadSetRefusedException` with it. `PluginIdentity.ListLoadSet` lists the folder the same way — files, and
+links as links — for a host that removes a plugin and must not follow a link to delete what it points at.
 
 **A load with no gate wired does not ask.** A headless host loading a plugin has already decided to
 run it, and Core does not invent a prompt with nobody to answer it. Wire `SessionPorts.Policy` and a

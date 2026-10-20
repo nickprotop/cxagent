@@ -1,4 +1,5 @@
 using CxAgent.Core.Llm;
+using CxAgent.Core.Plugins;
 
 namespace CxAgent.UI;
 
@@ -84,7 +85,10 @@ public static class PluginRemover
         {
             // A NESTED PLUGIN IS ITS DIRECTORY, which is the load-set design's own definition: the
             // folder is what the hash covers and what dependency resolution reads from.
-            var all = Directory.EnumerateFiles(home, "*", SearchOption.AllDirectories)
+            // NO LINK FOLLOWED: a link inside the folder is removed as a link, and what it points at — which may be
+            // anywhere — stays. Following one would list, and delete, the files at its other end.
+            var walk = PluginIdentity.ListLoadSet(home);
+            var all = walk.Files.Concat(walk.Links)
                 .OrderBy(f => f, StringComparer.Ordinal)
                 .ToList();
 
@@ -127,7 +131,13 @@ public static class PluginRemover
 
         foreach (var path in plan.Files)
         {
-            try { File.Delete(path); }
+            // A LINK TO A FOLDER IS REMOVED AS A LINK — Directory.Delete without recursion unlinks it and leaves
+            // its target; File.Delete on it would fail.
+            try
+            {
+                if (Directory.Exists(path) && new DirectoryInfo(path).LinkTarget is not null) Directory.Delete(path);
+                else File.Delete(path);
+            }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 failed.Add(path);
