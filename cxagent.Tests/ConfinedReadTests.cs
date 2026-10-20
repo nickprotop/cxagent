@@ -172,6 +172,26 @@ public sealed class ConfinedReadTests : IDisposable
         Assert.True(read.Truncated);
     }
 
+    /// <summary>
+    /// DECODED AS File.ReadAllText DECODES: a UTF-8 byte-order mark is stripped, UTF-16 is read by its mark, and a cap
+    /// never cuts a character in half — a sidecar saved by an editor that writes a BOM still parses, and an
+    /// AGENTS.md written as UTF-16 reaches the prompt as its text.
+    /// </summary>
+    [Fact]
+    public void AByteOrderMark_IsHonoured_AndTheCapKeepsWholeCharacters()
+    {
+        var bom = Path.Combine(_repo, "bom.json");
+        File.WriteAllText(bom, """{"name":"p"}""", new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        var utf16 = Path.Combine(_repo, "AGENTS.md");
+        File.WriteAllText(utf16, "Use tabs.", System.Text.Encoding.Unicode);
+        var accents = Path.Combine(_repo, "accents.md");
+        File.WriteAllText(accents, "ééé");
+
+        Assert.Equal("""{"name":"p"}""", PathResolver.ReadConfined(new ConfinedRead(bom, _repo, 1024)).Text);
+        Assert.Equal("Use tabs.", PathResolver.ReadConfined(new ConfinedRead(utf16, _repo, 1024)).Text);
+        Assert.Equal("é", PathResolver.ReadConfined(new ConfinedRead(accents, _repo, MaxBytes: 3)).Text);
+    }
+
     [Fact]
     public void ASkippedInstructionFile_IsSaidOncePerSession()
     {

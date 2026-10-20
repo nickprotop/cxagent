@@ -75,13 +75,40 @@ internal sealed class PathResolver(string folder)
             int n;
             while (total < buffer.Length && (n = stream.Read(buffer, total, buffer.Length - total)) > 0) total += n;
             var truncated = total > read.MaxBytes;
-            return new ConfinedText(System.Text.Encoding.UTF8.GetString(buffer, 0, Math.Min(total, read.MaxBytes)),
-                null, truncated);
+            return new ConfinedText(Decode(buffer, Math.Min(total, read.MaxBytes), truncated), null, truncated);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
             return new ConfinedText(null, $"could not be read: {ex.Message}", Truncated: false);
         }
+    }
+
+    /// <summary>
+    /// Text from the bytes read, decoded as <c>File.ReadAllText</c> decodes — by a byte-order mark when there is one
+    /// (UTF-8, UTF-16 and UTF-32, either order), UTF-8 otherwise — so a file that read before reads the same. A
+    /// sidecar saved by an editor that writes a mark still parses; an instruction file written as UTF-16 reaches the
+    /// prompt as its text, not as bytes with NULs between them.
+    ///
+    /// <para>A CUT NEVER SPLITS A CHARACTER. When the cap stopped the read, the decoder is not flushed, so a character
+    /// whose bytes run past the cap is left out rather than turned into a replacement character.</para>
+    /// </summary>
+    private static string Decode(byte[] bytes, int count, bool truncated)
+    {
+        var (encoding, skip) = bytes switch
+        {
+            [0xEF, 0xBB, 0xBF, ..] => (System.Text.Encoding.UTF8, 3),
+            [0xFF, 0xFE, 0x00, 0x00, ..] => (System.Text.Encoding.UTF32, 4),
+            [0x00, 0x00, 0xFE, 0xFF, ..] => (new System.Text.UTF32Encoding(bigEndian: true, byteOrderMark: true), 4),
+            [0xFF, 0xFE, ..] => (System.Text.Encoding.Unicode, 2),
+            [0xFE, 0xFF, ..] => (System.Text.Encoding.BigEndianUnicode, 2),
+            _ => (System.Text.Encoding.UTF8, 0),
+        };
+        if (count <= skip) return "";
+
+        var decoder = encoding.GetDecoder();
+        var chars = new char[encoding.GetMaxCharCount(count - skip)];
+        var written = decoder.GetChars(bytes, skip, count - skip, chars, 0, flush: !truncated);
+        return new string(chars, 0, written);
     }
 
     /// <summary>
