@@ -90,6 +90,16 @@ public sealed class Agent
 
     /// <summary>The policy this agent's calls are judged by — a sub-agent's may be narrower than the
     /// session's.</summary>
+    /// <summary>What this agent was built from — read by tests that check a host or a factory forwarded every
+    /// value.</summary>
+    internal AgentSetup Setup { get; }
+
+    // WHAT THE CONSTRUCTOR DERIVED, for tests that pin the defaults: a turn cap of 0 or less is unbounded, and a
+    // child is one only when built as one.
+    internal int MaxTurns => _maxTurns;
+    internal bool IsSubAgent => _isSubAgent;
+    internal bool HasSpawner => _spawner is not null;
+
     internal Permissions.PermissionPolicy? Policy => _policy;
 
     /// <summary>
@@ -1102,7 +1112,73 @@ public sealed class Agent
         string? sessionId = null,
         DateOnly? startedOn = null,
         string? runsOn = null, string? root = null)
+        : this(new AgentSetup
+        {
+            Model = new AgentModel(provider, ledger) { InstanceName = instanceName },
+            Outputs = new AgentOutputs(sink, jobs) { Logs = logs, Delivery = delivery },
+            Identity = new AgentIdentity
+            {
+                WorkingDir = workingDir, IsSubAgent = isSubAgent, Label = label, SessionId = sessionId,
+                RunsOn = runsOn, Root = root,
+            },
+            Tools = new AgentTools(executors)
+            {
+                Mcp = mcp, Spawner = spawner, Injected = agentTools, Dynamic = dynamicTools,
+                PluginInstructions = pluginInstructions, ModelFacingCommands = modelFacingCommands, Selection = toolSelection,
+            },
+            Guards = new AgentGuards { Policy = policy, Classifier = classifier, AskUser = askUser },
+            Brief = new AgentBrief
+            {
+                Briefing = briefing, CallerContext = callerContext, GlobalInstructionsDir = globalInstructionsDir,
+                StartedOn = startedOn,
+            },
+            Limits = new AgentLimits(maxTurns) { CompressAbove = compressAbove },
+            Conversation = context,
+        })
     {
+    }
+
+    /// <summary>
+    /// Builds an agent from its <see cref="AgentSetup"/> — what it talks to, where it reports, who it is, what it may
+    /// use, what checks it, what it is told, how far it may go, and its conversation.
+    /// </summary>
+    public Agent(AgentSetup setup)
+    {
+        // THE SETUP READ ONCE, into the names the body below uses — so how each value is derived (a default, a
+        // refusal for a sub-agent, a trim) reads exactly as it does for every value, in one place.
+        Setup = setup;
+        var provider = setup.Model.Provider;
+        var ledger = setup.Model.Ledger;
+        var instanceName = setup.Model.InstanceName;
+        var sink = setup.Outputs.Sink;
+        var jobs = setup.Outputs.Jobs;
+        var logs = setup.Outputs.Logs;
+        var delivery = setup.Outputs.Delivery;
+        var workingDir = setup.Identity.WorkingDir;
+        var isSubAgent = setup.Identity.IsSubAgent;
+        var label = setup.Identity.Label;
+        var sessionId = setup.Identity.SessionId;
+        var runsOn = setup.Identity.RunsOn;
+        var root = setup.Identity.Root;
+        var executors = setup.Tools.Executors;
+        var mcp = setup.Tools.Mcp;
+        var spawner = setup.Tools.Spawner;
+        var agentTools = setup.Tools.Injected;
+        var dynamicTools = setup.Tools.Dynamic;
+        var pluginInstructions = setup.Tools.PluginInstructions;
+        var modelFacingCommands = setup.Tools.ModelFacingCommands;
+        var toolSelection = setup.Tools.Selection;
+        var policy = setup.Guards.Policy;
+        var classifier = setup.Guards.Classifier;
+        var askUser = setup.Guards.AskUser;
+        var briefing = setup.Brief.Briefing;
+        var callerContext = setup.Brief.CallerContext;
+        var globalInstructionsDir = setup.Brief.GlobalInstructionsDir;
+        var startedOn = setup.Brief.StartedOn;
+        var maxTurns = setup.Limits.MaxTurns;
+        var compressAbove = setup.Limits.CompressAbove;
+        var context = setup.Conversation;
+
         // THE SESSION'S DAY, NOT THIS AGENT'S: a re-wire builds a new agent, and a session that began
         // yesterday must keep yesterday's date in its system prompt or the whole conversation is
         // re-sent uncached.
