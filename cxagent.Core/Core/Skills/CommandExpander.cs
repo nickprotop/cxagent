@@ -140,7 +140,9 @@ internal static class CommandExpander
     private static async Task<string?> ReadAsync(Segment.At at, ExpansionPorts ports,
         CancellationToken ct)
     {
-        var full = Path.GetFullPath(Path.Combine(ports.WorkingDirectory, at.Path));
+        // RESOLVED ONCE: the gate judges this real path and this is what is read, so a link retargeted while the
+        // question is answered cannot change which file is attached.
+        if (new PathResolver(ports.WorkingDirectory).AsFileTool(at.Path) is not { } full) return null;
 
         // NOT A FILE, NOT A QUESTION. @Override, @types/node and @mentions are common in prose and
         // code samples; only a path that exists is an include, and anything else stays as written

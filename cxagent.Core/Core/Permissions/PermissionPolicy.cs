@@ -349,6 +349,7 @@ public class PermissionPolicy
         // The process's cwd is the fallback only because that is what every root-less caller of
         // RequestsFor got before the root parameter existed.
         var facts = ShellFacts(command, root ?? Directory.GetCurrentDirectory());
+        var runFolder = string.IsNullOrEmpty(workingDir) ? null : PathResolver.FileToolFrom(workingDir, root);
 
         return new PermissionRequest(PermissionKind.Shell, display.ToString(), alwaysRule,
             Subject: command)
@@ -360,6 +361,11 @@ public class PermissionPolicy
             Unattended = Jobs.Builtin.ShellArguments.IsBackground(parameters),
             CustomEnv = hasEnv,
             ShellWorkingDir = string.IsNullOrEmpty(workingDir) ? null : workingDir,
+            // RESOLVED ONCE, HERE — the folder the command is judged in and the one it starts in, so a link
+            // retargeted after the question cannot move it.
+            ShellRunFolder = runFolder,
+            Spelling = runFolder is null ? null : workingDir,
+            ActsOn = runFolder,
         };
     }
 
@@ -418,14 +424,15 @@ public class PermissionPolicy
                     string.IsNullOrWhiteSpace(path) ? "." : path, root));
                 break;
             case "delete":
-                requests.Add(FileRequest(PermissionKind.FileWrite, target, root));
+                requests.Add(OnEntry(FileRequest(PermissionKind.FileWrite, target, root), target, root));
                 break;
             case "copy":
             case "move":
                 // A MOVE REMOVES ITS SOURCE, which matters in a code folder — see PermissionRequest.RemovesSource.
-                requests.Add(FileRequest(PermissionKind.FileRead, target, root) with { RemovesSource = action == "move" });
+                var source = FileRequest(PermissionKind.FileRead, target, root) with { RemovesSource = action == "move" };
+                requests.Add(action == "move" ? OnEntry(source, target, root) : source);
                 if (dest is not null)
-                    requests.Add(FileRequest(PermissionKind.FileWrite, dest, root));
+                    requests.Add(OnEntry(FileRequest(PermissionKind.FileWrite, dest, root), dest, root));
                 break;
             // AN ACTION THIS GATE DOES NOT KNOW STILL ASKS. With no request the call would run unasked;
             // asking about a write is the direction to fail.
@@ -447,13 +454,34 @@ public class PermissionPolicy
     /// never toward a rule built from an unresolved string (that gap was C2).</summary>
     private static PermissionRequest FileRequest(PermissionKind kind, string path, string? root)
     {
+        // AN OPEN ACTS ON WHAT IS JUDGED HERE — the resolved target — so nothing resolves the spelling again and
+        // opens whatever a link points at by then (see PermissionRequest.ActsOn). Unresolved: the executor
+        // resolves it itself, and the request asks.
         var resolved = PathResolver.FileToolFrom(path, root);
         if (resolved is null)
-            return new PermissionRequest(kind, path, null);
+            return new PermissionRequest(kind, path, null) { Spelling = path };
 
         var dir = Path.GetDirectoryName(resolved);
         var alwaysRule = string.IsNullOrEmpty(dir) ? null : dir + Path.DirectorySeparatorChar;
-        return new PermissionRequest(kind, resolved, alwaysRule);
+        return new PermissionRequest(kind, resolved, alwaysRule) { Spelling = path, ActsOn = resolved };
+    }
+
+    // AN ENTRY ACTION ACTS ON THE ENTRY: a delete or a move removes the link itself, never what it points at — its
+    // real folder plus its own name, so the folders above it are the ones judged. The decision is still about the
+    // target, as it is for every file request.
+    private static PermissionRequest OnEntry(PermissionRequest request, string spelled, string? root)
+    {
+        try
+        {
+            var full = Path.GetFullPath(spelled, root ?? Directory.GetCurrentDirectory());
+            var name = Path.GetFileName(full);
+            var parent = Path.GetDirectoryName(full) is { } dir ? PathResolver.FileToolFrom(dir, null) : null;
+            return request with
+            {
+                ActsOn = parent is null || name.Length == 0 ? null : Path.Combine(parent, name),
+            };
+        }
+        catch (ArgumentException) { return request with { ActsOn = null }; }
     }
 
     private static PermissionRequest HttpRequest(JobParameters parameters)
@@ -962,7 +990,7 @@ public class PermissionPolicy
 
     // THE FOLDER A SHELL REQUEST RUNS IN, resolved — its working_dir, or the boundary — or null when it cannot be.
     private string? RunFolder(PermissionRequest request) =>
-        request.ShellWorkingDir is { Length: > 0 } given ? Paths.AsFileTool(given) : _boundary;
+        request.ShellWorkingDir is not { Length: > 0 } given ? _boundary : request.ShellRunFolder ?? Paths.AsFileTool(given);
 
     // ITS TOKENS, judged from where it runs — for a caller that needs only whether all of them were examined.
     private CommandSubjects SubjectsOf(PermissionRequest request) =>

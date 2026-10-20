@@ -86,6 +86,36 @@ public class CommandExpanderTests : IDisposable
         Assert.Equal("gh pr view '1; rm -rf ~'", Assert.Single(_ran));
     }
 
+    /// <summary>
+    /// AN INCLUDE READS THE FILE ITS QUESTION WAS ABOUT. The path is resolved once, the gate judges that, and that
+    /// is what is read — a link retargeted while the question is answered does not change which file is attached.
+    /// The message keeps the token as typed.
+    /// </summary>
+    [Fact]
+    public async Task AnAtFile_ReadsTheFileTheGateJudged()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        File.WriteAllText(Path.Combine(_dir, "a.txt"), "judged");
+        File.WriteAllText(Path.Combine(_dir, "b.txt"), "swapped");
+        var link = Path.Combine(_dir, "plan.md");
+        File.CreateSymbolicLink(link, Path.Combine(_dir, "a.txt"));
+        var ports = Ports() with
+        {
+            Allow = (_, _) =>
+            {
+                File.Delete(link);
+                File.CreateSymbolicLink(link, Path.Combine(_dir, "b.txt"));
+                return Task.FromResult(true);
+            },
+        };
+
+        var text = await CommandExpander.ExpandAsync(new ExpansionRequest(Command("See @plan.md"), ""), ports, default);
+
+        Assert.StartsWith("See @plan.md", text);
+        Assert.Contains("judged", text);
+        Assert.DoesNotContain("swapped", text);
+    }
+
     [Fact]
     public async Task AnAtFile_IsAttachedUnderThePrompt_AfterTheReadGate()
     {

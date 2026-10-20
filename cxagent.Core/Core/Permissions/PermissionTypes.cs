@@ -134,6 +134,32 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// </summary>
     public bool RemovesSource { get; init; }
 
+    /// <summary>The parameter value this request judged, as the model sent it — the key the executor finds its
+    /// judged path under (<c>JobContext.JudgedPaths</c>). Null for a request no executor acts on by path.</summary>
+    public string? Spelling { get; init; }
+
+    /// <summary>
+    /// The path the executor acts on once this request is allowed — resolved by the gate, so nothing resolves it
+    /// a second time and lands somewhere else.
+    ///
+    /// <para>THE JUDGED TARGET FOR AN OPEN — a read, a write, a copy's source — and THE ENTRY for an action on the
+    /// entry itself: a delete, a move, a copy's destination act on the link, as they always have, never on what
+    /// it points at. The entry is its real folder plus its own name, so the folders above it are the ones judged.
+    /// Null when the path could not be resolved; the executor then resolves it itself, and the request asked.</para>
+    /// </summary>
+    public string? ActsOn { get; init; }
+
+    /// <summary>For a shell request with a <c>working_dir</c>, that folder resolved — where the command runs, and
+    /// where its relative paths are judged from. Null for none, or one that could not be resolved.</summary>
+    public string? ShellRunFolder { get; init; }
+
+    /// <summary>What a person is shown: <see cref="Display"/> — and for an action on a link's entry, the link and
+    /// what it points at (<c>link → target</c>), since what is removed is the link and what is judged is where it
+    /// points.</summary>
+    public string Shown => Kind == PermissionKind.FileWrite && ActsOn is { } entry && entry != Display
+        ? $"{entry} → {Display}"
+        : Display;
+
     /// <summary>
     /// Raised while expanding a command the user typed — one of its <c>!`…`</c> lines or
     /// <c>@file</c> includes — rather than by the model.

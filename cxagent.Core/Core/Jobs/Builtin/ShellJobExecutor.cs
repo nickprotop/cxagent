@@ -116,6 +116,11 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
             && context.WorkingDirectory is { Length: > 0 } agentFolder)
             workingDir = Path.GetFullPath(workingDir, agentFolder);
 
+        // THE FOLDER THE GATE JUDGED, when one did — so a link retargeted since cannot move where the command runs.
+        if (parameters.Get<string?>("working_dir", null) is { Length: > 0 } spelled
+            && (context as JobContext)?.JudgedPaths?.GetValueOrDefault(spelled) is { } judged)
+            workingDir = judged;
+
         // A FOLDER THAT IS NOT THERE IS THE MODEL'S TO CORRECT, said as a failed call. Left to the process
         // start it surfaced as an exception with the full path, which reads as cxagent breaking rather than
         // as a wrong argument.

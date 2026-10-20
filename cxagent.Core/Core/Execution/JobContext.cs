@@ -95,6 +95,13 @@ internal sealed class JobContext : IJobHostContext
     public Permissions.PermissionPolicy? Policy { get; init; }
 
     /// <summary>
+    /// The paths the gate judged for this call, keyed by the spelling the model sent — set by the gate wrapper once
+    /// every request is allowed, read by the executor so it acts on what was judged rather than resolving the
+    /// spelling a second time (see <see cref="Permissions.PermissionRequest.ActsOn"/>). Null when no gate ran.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? JudgedPaths { get; set; }
+
+    /// <summary>
     /// Where to tell the agent that made this call something it should read later.
     ///
     /// <para>BESIDE <see cref="Requester"/> AND <see cref="WorkingDirectory"/> BECAUSE IT IS THE SAME

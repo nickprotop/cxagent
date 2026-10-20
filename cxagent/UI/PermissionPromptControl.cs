@@ -166,9 +166,9 @@ public sealed class PermissionPromptControl
         // laid-out height. Raising this surface says it locally, with nothing else moving.
         panel.BackgroundColor = ColorScheme.PromptSurface;
 
-        var displayed = _request.Display.Length > MaxDisplayChars
-            ? _request.Display[..MaxDisplayChars] + " …(truncated)"
-            : _request.Display;
+        var displayed = _request.Shown.Length > MaxDisplayChars
+            ? _request.Shown[..MaxDisplayChars] + " …(truncated)"
+            : _request.Shown;
 
         var markup = Ctl.Markup();
         markup.AddLine($"[bold]{SharpConsoleUI.Parsing.MarkupParser.Escape(HeadingFor(_request, _offerTrust))}[/]");

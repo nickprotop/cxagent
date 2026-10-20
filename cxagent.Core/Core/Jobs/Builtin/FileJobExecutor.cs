@@ -999,7 +999,8 @@ public class FileJobExecutor : IJobExecutor
                     + "absolute path, or a path relative to the working directory.");
         }
 
-        return resolved;
+        // WHAT THE GATE JUDGED, when one did — the hint above still reads the spelling, which is what it is about.
+        return (context as Execution.JobContext)?.JudgedPaths?.GetValueOrDefault(path) ?? resolved;
     }
 
     /// <summary>

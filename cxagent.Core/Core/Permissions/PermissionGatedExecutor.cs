@@ -122,6 +122,13 @@ public sealed class PermissionGatedExecutor : IJobExecutor
             }
         }
 
+        // WHAT WAS JUDGED, handed to the executor, which acts on it instead of resolving the spellings again.
+        if (context is Execution.JobContext concrete)
+            concrete.JudgedPaths = requests
+                .Where(r => r.Spelling is not null && r.ActsOn is not null)
+                .GroupBy(r => r.Spelling!, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().ActsOn!, StringComparer.Ordinal);
+
         // EVERY GATE HAS CLEARED — the work starts now. Before this line the elapsed time is the
         // user reading a prompt, which belongs to nobody's stopwatch.
         context.WorkStarting();
