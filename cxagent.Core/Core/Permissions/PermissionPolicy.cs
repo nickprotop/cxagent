@@ -833,7 +833,10 @@ public class PermissionPolicy
             // a property of a FOLDER, an approved shell command is a property of the PROCESS, and
             // nothing keeps it in the folder. This file's own comment 480 lines up says so — "IN-CWD
             // IS A SCOPE BOUNDARY, NOT A SAFETY ONE".
-            PermissionKind.Shell when FullyConfined(request) => ReviewEffect.MayApprove,
+            //
+            // NOR A CODE FOLDER INSIDE IT, for the reason the file tool's writes there always ask: what is
+            // in .git/hooks runs as the user, and that is a person's call — see ShellNamesCodeFolder.
+            PermissionKind.Shell when FullyConfined(request) && !ShellNamesCodeFolder(request) => ReviewEffect.MayApprove,
 
             // AND EVERY OTHER SHELL COMMAND STAYS UNREVIEWABLE, which is today's behaviour. Listed as
             // its own arm rather than falling into `_` so that a command failing the confinement is
@@ -981,7 +984,15 @@ public class PermissionPolicy
     /// without a verb's help. A token carrying a separator, or consisting of <c>..</c>, is asserting
     /// a location, and an assertion about a location is exactly what a boundary is for.</para>
     /// </summary>
-    private bool RelativeSubjectsConfined(string command, string from)
+    private bool RelativeSubjectsConfined(string command, string from) =>
+        RelativeSubjects(command, from).All(IsInsideBoundary);
+
+    /// <summary>
+    /// Every token of <paramref name="command"/> that refers to a path relative to <paramref name="from"/>,
+    /// joined onto it — the population <see cref="RelativeSubjectsConfined"/> confines, enumerated once so
+    /// every check of where a command's paths land asks about the same paths.
+    /// </summary>
+    private IEnumerable<string> RelativeSubjects(string command, string from)
     {
         foreach (var segment in command.Split(SegmentSeparators, StringSplitOptions.RemoveEmptyEntries))
         {
@@ -1013,11 +1024,34 @@ public class PermissionPolicy
                 // tested here, from the folder the command runs in; a link counts even when dangling.
                 if (!IsPathReference(text) && !Names(full)) continue;
 
-                if (!IsInsideBoundary(full)) return false;
+                yield return full;
             }
         }
+    }
 
-        return true;
+    /// <summary>
+    /// Whether a shell command reaches into a code folder below the boundary — by an argument, its cd
+    /// target, or the folder it runs in.
+    ///
+    /// <para>A PERSON'S TO APPROVE, NOT THE REVIEWER'S. A hook in <c>.git/hooks</c> runs as the user on their
+    /// next commit, and the file tool already asks for a write there in every mode. A command line cannot
+    /// be split into reads and writes reliably, so any path into one takes the command out of the
+    /// reviewer's reach; a read-only command touching one is silent before the reviewer is consulted, so
+    /// <c>cat .git/config</c> is not affected.</para>
+    /// </summary>
+    private bool ShellNamesCodeFolder(PermissionRequest request)
+    {
+        var folder = request.ShellWorkingDir is { Length: > 0 } given ? TryResolve(given, _boundary) : _boundary;
+        if (folder is null) return true;   // unresolvable: fail toward asking
+
+        var subjects = CommandSubjects.Of(request.What);
+        var named = new List<string> { folder };
+        if (subjects.ChangesTo is { } cd) named.Add(Path.Combine(folder, cd));
+        named.AddRange(subjects.Paths.Select(p => Path.Combine(folder, p)));
+        named.AddRange(RelativeSubjects(request.What, folder));
+
+        var boundary = Path.TrimEndingDirectorySeparator(_boundary);
+        return named.Any(path => TryResolve(path, _boundary) is not { } resolved || UnderCodeFolder(resolved, boundary));
     }
 
     /// <summary>Whether something — a file, a folder, or a link even if dangling — is at <paramref name="path"/>.

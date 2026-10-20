@@ -235,6 +235,31 @@ public class ShellApprovalTests
         }
     }
 
+    // ---- Clause: no code folder ------------------------------------------------------------------
+
+    /// <summary>
+    /// A COMMAND THAT NAMES A CODE FOLDER IS A PERSON'S TO APPROVE. A hook in <c>.git/hooks</c> runs as the
+    /// user on their next commit, so removing or rewriting one is not a question for a model's opinion —
+    /// the file tool already asks for a write there in every mode. A shell command cannot be told apart
+    /// into reads and writes reliably, so any path into one, by argument or by where it runs, takes it out
+    /// of the reviewer's reach.
+    /// </summary>
+    [Theory]
+    [InlineData("rm .git/hooks/pre-commit", null)]
+    [InlineData("touch vendor/.git/hooks/pre-commit", null)]
+    [InlineData("touch pre-commit", ".git/hooks")]
+    public void ACommandIntoACodeFolder_IsNotOffered(string command, string? workingDir)
+    {
+        var root = MakeTempDir();
+        Directory.CreateDirectory(Path.Combine(root, ".git", "hooks"));
+        Directory.CreateDirectory(Path.Combine(root, "vendor", ".git", "hooks"));
+        File.WriteAllText(Path.Combine(root, ".git", "hooks", "pre-commit"), "#!/bin/sh");
+        var policy = TrustedAutoPolicy(root);
+
+        Assert.Equal(ReviewEffect.None, policy.EffectFor(Shell(command) with { ShellWorkingDir = workingDir }));
+        Assert.Equal(ReviewEffect.MayApprove, policy.EffectFor(Shell("rm build.log")));
+    }
+
     // ---- Clause: trust ---------------------------------------------------------------------------
 
     [Fact]
