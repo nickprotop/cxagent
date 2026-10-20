@@ -47,6 +47,20 @@ internal sealed record CommandSubjects
     /// split missed: a quoted path containing a space, and a path carried in a flag value.</summary>
     public required IReadOnlyList<string> Paths { get; init; }
 
+    /// <summary>The tokens <see cref="Classify"/> found to be paths, as the command spells them — what a reader is
+    /// shown. <see cref="Paths"/> is what a boundary is held to.</summary>
+    public IReadOnlyList<string> Tokens { get; init; } = [];
+
+    /// <summary>The folder the command reads its paths in: where it runs, or past a leading <c>cd</c>, where that
+    /// went — null when the shell decides it (<see cref="CdShellDecides"/>) or it cannot be resolved.</summary>
+    public string? After { get; init; }
+
+    /// <summary>Whether a leading <c>cd</c>'s target is the shell's to decide: <c>-</c>, <c>~</c>, a variable.</summary>
+    public bool CdShellDecides { get; init; }
+
+    /// <summary>The characters that end one command of a line and begin the next — or redirect it.</summary>
+    internal static readonly char[] SegmentSeparators = ['&', ';', '|', '>', '<', '\n', '\r'];
+
     /// <summary>The directory a leading <c>cd</c> moves to, or null. Reported separately because the
     /// caller confines it the same way but the failure reads differently in a prompt.</summary>
     public string? ChangesTo { get; init; }
@@ -68,8 +82,12 @@ internal sealed record CommandSubjects
     /// rather than an exception or an empty result — an empty result would read as "nothing to
     /// check", which is precisely the failure this type is named after.</para>
     /// </summary>
-    public static CommandSubjects Of(string? command)
+    /// <param name="command">The command line.</param>
+    /// <param name="from">The folder it runs in — where its relative paths are, before any leading cd. The process
+    /// directory when not given, for a caller judging a command with no folder of its own.</param>
+    public static CommandSubjects Of(string? command, PathResolver? from = null)
     {
+        from ??= new PathResolver(Directory.GetCurrentDirectory());
         var paths = new List<string>();
         var unexamined = new List<string>();
 
@@ -90,6 +108,13 @@ internal sealed record CommandSubjects
             ReadOnlyCommands.IsReadOnly(text, out changesTo);
             text = inner;
         }
+
+        // WHERE ITS PATHS ARE READ: the run folder, or past the cd, where that goes. A target the shell decides
+        // leaves nothing to read them in, and that is itself a thing not examined.
+        var cd = from.AsShellCd(changesTo);
+        var after = cd.Folder;
+        if (cd.ShellDecides) unexamined.Add($"cd target the shell decides: {changesTo}");
+        var tokensFound = new List<string>();
 
         var tokens = Tokenize(text, unexamined);
 
@@ -144,7 +169,7 @@ internal sealed record CommandSubjects
                     var isFilter = value.Contains('*', StringComparison.Ordinal)
                                 || value.Contains('?', StringComparison.Ordinal);
 
-                    if (value.Length > 0 && !isFilter) Classify(value, paths, unexamined);
+                    if (value.Length > 0 && !isFilter) Classify(value, new ClassifyInto(after ?? from.Folder, paths, tokensFound, unexamined));
                 }
 
                 // A BARE FLAG IS NOT A SUBJECT. It selects behaviour within a verb already vouched
@@ -172,10 +197,19 @@ internal sealed record CommandSubjects
                 continue;
             }
 
-            Classify(token, paths, unexamined);
+            Classify(token, new ClassifyInto(after ?? from.Folder, paths, tokensFound, unexamined));
         }
 
-        return new CommandSubjects { Paths = paths, ChangesTo = changesTo, Unexamined = unexamined };
+        // AND EVERY TOKEN THAT ASSERTS A LOCATION, existing or not — see ReferencedPaths.
+        if (after is not null)
+            foreach (var referenced in ReferencedPaths(text, after))
+                if (!paths.Contains(referenced)) paths.Add(referenced);
+
+        return new CommandSubjects
+        {
+            Paths = paths, Tokens = tokensFound, ChangesTo = changesTo, After = after, CdShellDecides = cd.ShellDecides,
+            Unexamined = unexamined,
+        };
     }
 
     /// <summary>
@@ -187,20 +221,134 @@ internal sealed record CommandSubjects
     /// for want of a file named TODO — friction with no safety behind it, and friction is what makes
     /// a gate get routed around.</para>
     /// </summary>
-    private static void Classify(string token, List<string> paths, List<string> unexamined)
+    private static void Classify(string token, ClassifyInto into)
     {
         try
         {
-            if (File.Exists(token) || Directory.Exists(token)) paths.Add(token);
+            // FROM THE FOLDER THE COMMAND READS IT IN — the process directory has no say in what a command touches.
+            var full = Path.Combine(into.Folder, token);
+            if (PathResolver.NamesAt(full))
+            {
+                into.Paths.Add(full);
+                into.Tokens.Add(token);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
                                       or ArgumentException or NotSupportedException)
         {
             // COULD NOT TELL. A token we cannot even test is the definition of unexamined, and the
             // whole point of this type is that it says so instead of falling through as "not a path".
-            unexamined.Add($"unreadable: {token}");
+            into.Unexamined.Add($"unreadable: {token}");
         }
     }
+
+    /// <summary>Where <see cref="Classify"/> looks and what it fills: the folder tokens are read in, the joined paths,
+    /// their spellings, and anything it could not tell about.</summary>
+    private sealed record ClassifyInto(string Folder, List<string> Paths, List<string> Tokens, List<string> Unexamined);
+
+    /// <summary>
+    /// Every token of <paramref name="command"/> that refers to a path relative to <paramref name="from"/> (and an
+    /// absolute one with a <c>..</c>), joined onto it — the population the boundary is held to beyond the paths
+    /// <see cref="Classify"/> found.
+    ///
+    /// <para>THE SECOND VACUOUS PASS IN <c>PermissionPolicy.FullyConfined</c>. The first was structure —
+    /// <c>&gt;</c>, <c>|</c> and <c>$(</c> are tokens that are not paths, so the dangerous part of a
+    /// command was never parsed as one and the boundary was enforced against an empty list; that is
+    /// what <c>PermissionPolicy.ExaminableSegments</c> closed. This is the identical sentence reached through
+    /// path shape: <c>CommandSubjects.Classify</c> records a token only when it EXISTS, and it tests
+    /// existence against the PROCESS working directory while the boundary resolves against the
+    /// SESSION root. A relative token therefore lands in neither — it is not found where the process
+    /// stands, so it never becomes a path, and "every path is inside" holds on nothing at all.</para>
+    ///
+    /// <para>MEASURED ON THE LIVE PREDICATE, which is how it was found. Trusted root, auto mode:
+    /// <c>rm -rf ../outside &amp;&amp; echo gone</c> returned MayApprove, one classifier ALLOW away
+    /// from running silently against a folder the user never trusted, while the absolute spelling
+    /// <c>rm -rf /etc</c> was correctly refused. The same probe showed <c>rm -rf ./src</c> and
+    /// <c>cat ./sub/../file.txt</c> reporting ZERO paths, which is the tell that the gap is relative
+    /// shape in general rather than <c>..</c> in particular.</para>
+    ///
+    /// <para>WHY NOT REPAIR <see cref="CommandSubjects"/> INSTEAD, which would have made the existing
+    /// boundary clause non-vacuous rather than adding a second one beside it. That was the preferred
+    /// shape and it does not fit: <c>CommandSubjects.Of</c> is static and root-less, and its
+    /// <c>Classify</c> deliberately records only paths that EXIST so <c>grep TODO .</c> does not
+    /// refuse for want of a file named TODO. Collecting relative tokens by SHAPE breaks that
+    /// deliberate behaviour for its pre-existing read-only caller; collecting them by EXISTENCE needs
+    /// a root the type has no way to know, and threading one in would put a second path resolver
+    /// beside this file's — which <c>CommandSubjects</c>' own doc comment gives as the reason a tilde
+    /// is refused rather than expanded. So the confinement happens here, where the root is known and
+    /// where <c>PermissionPolicy.IsInsideBoundary</c> is already the single resolver.</para>
+    ///
+    /// <para>IT IS A RESOLUTION, NOT A STRING MATCH ON <c>..</c>, and that distinction is the whole
+    /// value: <c>./sub/../file.txt</c> names a file inside the root by an ugly spelling and stays
+    /// approvable, while <c>../outside</c> does not, because the answer comes from where the path
+    /// actually lands. Refusing every dot-dot would have been cheaper and would have made the
+    /// predicate lie about what it enforces.</para>
+    ///
+    /// <para>ONLY TOKENS THAT ARE PATH REFERENCES, so this does not become the friction
+    /// <c>Classify</c> was written to avoid. A bare word like <c>build</c> or a grep pattern is not
+    /// claimed as a path — it names no directory component and the shell will not treat it as one
+    /// without a verb's help. A token carrying a separator, or consisting of <c>..</c>, is asserting
+    /// a location, and an assertion about a location is exactly what a boundary is for.</para>
+    /// </summary>
+    private static IEnumerable<string> ReferencedPaths(string command, string from)
+    {
+        foreach (var segment in command.Split(SegmentSeparators, StringSplitOptions.RemoveEmptyEntries))
+        {
+            // THE VERB IS NOT A SUBJECT, the same carve-out CommandSubjects makes and for the same
+            // reason — and ExaminableSegments has ALREADY refused any verb containing a slash, so
+            // skipping it here cannot let a path-shaped program through.
+            foreach (var token in segment.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1))
+            {
+                var text = token.Trim('"', '\'');
+
+                // A FLAG CARRYING ITS VALUE, unwrapped for the reason CommandSubjects unwraps it:
+                // `--file=../secret` and `-f ../secret` are one read spelled two ways, and a rule
+                // that separates them is not one anybody can hold in their head.
+                var eq = text.IndexOf('=', StringComparison.Ordinal);
+                if (text.StartsWith('-') && eq > 0) text = text[(eq + 1)..].Trim('"', '\'');
+
+                if (text.Length == 0 || text.StartsWith('-')) continue;
+
+                // ABSOLUTE PATHS ARE ALREADY THE OTHER CLAUSE'S JOB, and re-confining them here would
+                // be a second opinion on a question already answered — the drift that put four holes
+                // of one shape in this system. Tilde is likewise already refused, by FullyExamined.
+                //
+                // EXCEPT ONE WITH A `..` IN IT. That clause keeps an absolute path only when it exists, and
+                // existence is tested on the text collapsed — `/root/link/../secret` is asked about as
+                // `/root/secret`, which may not exist, while the kernel reads beside the link's target.
+                if (text.StartsWith('~')) continue;
+                if (Path.IsPathRooted(text) && !text.Split('/').Contains("..")) continue;
+
+                var full = Path.Combine(from, text);
+
+                // A BARE WORD IS A PATH WHEN IT NAMES SOMETHING WHERE THE COMMAND RUNS. CommandSubjects
+                // decides that against the PROCESS's directory, so from a child's folder or a working_dir
+                // `cat link` was never looked at — and the link pointed out of the folder. Existence is
+                // tested here, from the folder the command runs in; a link counts even when dangling.
+                if (!IsPathReference(text) && !PathResolver.NamesAt(full)) continue;
+
+                yield return full;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether a token asserts a LOCATION rather than merely being a word.
+    ///
+    /// <para>THE LINE IS DRAWN AT A DIRECTORY SEPARATOR because that is where the shell draws it: a
+    /// token containing <c>/</c> can only be a path, while a bare word is whatever the verb decides —
+    /// a grep pattern, a git ref, a build target. Claiming bare words as paths is precisely the
+    /// friction <c>CommandSubjects.Classify</c> documents avoiding, and friction is what gets a gate
+    /// routed around.</para>
+    ///
+    /// <para><c>..</c> ALONE IS THE EXCEPTION, because it carries no separator and is unambiguously a
+    /// location — <c>cd ..</c>, <c>rm -rf ..</c>. A bare <c>.</c> needs no exception: it resolves to
+    /// the root itself and is inside by definition, so admitting it would change no answer.</para>
+    /// </summary>
+    internal static bool IsPathReference(string token) =>
+        token.Contains('/', StringComparison.Ordinal)
+        || token.Contains('\\', StringComparison.Ordinal)
+        || token == "..";
 
     /// <summary>
     /// Split on spaces, honouring quotes, so a quoted path with a space stays one token.

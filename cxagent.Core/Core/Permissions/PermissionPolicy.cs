@@ -566,7 +566,7 @@ public class PermissionPolicy
             && RootTrust == TrustState.Trusted
             && ReadOnlyCommands.IsReadOnly(request.What, out _))
         {
-            var subjects = CommandSubjects.Of(request.What);
+            var subjects = SubjectsOf(request);
             if (subjects.FullyExamined && ShellStaysInside(request))
                 return true;
         }
@@ -601,7 +601,7 @@ public class PermissionPolicy
         // separately last time, and that is why one of them still had the flag-value hole.
         if (request.Kind == PermissionKind.Shell)
         {
-            var subjects = CommandSubjects.Of(request.What);
+            var subjects = SubjectsOf(request);
             if (!subjects.FullyExamined) return false;
             if (!ShellStaysInside(request)) return false;
         }
@@ -912,7 +912,7 @@ public class PermissionPolicy
     private bool FullyConfined(PermissionRequest request)
     {
         var command = request.What;
-        var subjects = CommandSubjects.Of(command);
+        var subjects = SubjectsOf(request);
 
         // FullyExamined FIRST — it is what refuses `ls ~/`, whose boundary clauses would otherwise pass
         // vacuously on an empty path list. The cd target and the paths are judged in ShellStaysInside, at
@@ -948,122 +948,26 @@ public class PermissionPolicy
         // — and none of it is in the text judged here. See PermissionRequest.CustomEnv.
         if (request.CustomEnv) return false;
 
-        var folder = request.ShellWorkingDir is { Length: > 0 } given ? Paths.AsFileTool(given) : _boundary;
+        var folder = RunFolder(request);
         if (folder is null || !IsInsideBoundary(folder)) return false;   // unresolvable: fail toward asking
 
-        var subjects = CommandSubjects.Of(request.What);
-        var after = AfterCd(folder, subjects.ChangesTo);
-        if (after is null || !IsInsideBoundary(after)) return false;
-
-        // THE PATHS CommandSubjects FOUND, FROM THE FOLDER THE COMMAND READS THEM IN — where it runs, and past
-        // a leading cd, where that went. Judged from the boundary instead, `ls ..` from `sub` would read as
-        // leaving the project when it lists it; judged from before the cd, `cd sub && cat leak.txt` would read
-        // the root's `leak.txt`. An absolute one is unchanged by the combine.
-        if (!subjects.Paths.All(p => IsInsideBoundaryAsShell(Path.Combine(after, p)))) return false;
-
-        return RelativeSubjectsConfined(PastCd(request.What, subjects), after);
+        // THE PATHS THE COMMAND NAMES, FROM THE FOLDER IT READS THEM IN — where it runs, and past a leading cd,
+        // where that went; CommandSubjects returns them joined. Judged from the boundary instead, `ls ..` from
+        // `sub` would read as leaving the project when it lists it; judged from before the cd,
+        // `cd sub && cat leak.txt` would read the root's `leak.txt`.
+        var subjects = CommandSubjects.Of(request.What, new PathResolver(folder));
+        if (subjects.After is not { } after || !IsInsideBoundary(after)) return false;
+        return subjects.Paths.All(IsInsideBoundaryAsShell);
     }
 
-    // THE COMMAND A LEADING cd RUNS, which is what is read from the folder it enters; the cd's own target is
-    // judged from where the command starts, by AfterCd.
-    private static string PastCd(string command, CommandSubjects subjects) =>
-        subjects.ChangesTo is null ? command : ReadOnlyCommands.CommandAfterCd(command) ?? command;
+    // THE FOLDER A SHELL REQUEST RUNS IN, resolved — its working_dir, or the boundary — or null when it cannot be.
+    private string? RunFolder(PermissionRequest request) =>
+        request.ShellWorkingDir is { Length: > 0 } given ? Paths.AsFileTool(given) : _boundary;
 
-    // THE FOLDER A COMMAND'S PATHS ARE READ IN past a leading cd, or null when the shell decides it or it cannot
-    // be resolved — see PathResolver.AsShellCd.
-    private static string? AfterCd(string folder, string? cd) => new PathResolver(folder).AsShellCd(cd).Folder;
+    // ITS TOKENS, judged from where it runs — for a caller that needs only whether all of them were examined.
+    private CommandSubjects SubjectsOf(PermissionRequest request) =>
+        CommandSubjects.Of(request.What, new PathResolver(RunFolder(request) ?? _boundary));
 
-    /// <summary>
-    /// Every token that refers to a path RELATIVE to the working directory resolves inside the root.
-    ///
-    /// <para>THE SECOND VACUOUS PASS IN <see cref="FullyConfined"/>. The first was structure —
-    /// <c>&gt;</c>, <c>|</c> and <c>$(</c> are tokens that are not paths, so the dangerous part of a
-    /// command was never parsed as one and the boundary was enforced against an empty list; that is
-    /// what <see cref="ExaminableSegments"/> closed. This is the identical sentence reached through
-    /// path shape: <c>CommandSubjects.Classify</c> records a token only when it EXISTS, and it tests
-    /// existence against the PROCESS working directory while the boundary resolves against the
-    /// SESSION root. A relative token therefore lands in neither — it is not found where the process
-    /// stands, so it never becomes a path, and "every path is inside" holds on nothing at all.</para>
-    ///
-    /// <para>MEASURED ON THE LIVE PREDICATE, which is how it was found. Trusted root, auto mode:
-    /// <c>rm -rf ../outside &amp;&amp; echo gone</c> returned MayApprove, one classifier ALLOW away
-    /// from running silently against a folder the user never trusted, while the absolute spelling
-    /// <c>rm -rf /etc</c> was correctly refused. The same probe showed <c>rm -rf ./src</c> and
-    /// <c>cat ./sub/../file.txt</c> reporting ZERO paths, which is the tell that the gap is relative
-    /// shape in general rather than <c>..</c> in particular.</para>
-    ///
-    /// <para>WHY NOT REPAIR <see cref="CommandSubjects"/> INSTEAD, which would have made the existing
-    /// boundary clause non-vacuous rather than adding a second one beside it. That was the preferred
-    /// shape and it does not fit: <c>CommandSubjects.Of</c> is static and root-less, and its
-    /// <c>Classify</c> deliberately records only paths that EXIST so <c>grep TODO .</c> does not
-    /// refuse for want of a file named TODO. Collecting relative tokens by SHAPE breaks that
-    /// deliberate behaviour for its pre-existing read-only caller; collecting them by EXISTENCE needs
-    /// a root the type has no way to know, and threading one in would put a second path resolver
-    /// beside this file's — which <c>CommandSubjects</c>' own doc comment gives as the reason a tilde
-    /// is refused rather than expanded. So the confinement happens here, where the root is known and
-    /// where <see cref="IsInsideBoundary"/> is already the single resolver.</para>
-    ///
-    /// <para>IT IS A RESOLUTION, NOT A STRING MATCH ON <c>..</c>, and that distinction is the whole
-    /// value: <c>./sub/../file.txt</c> names a file inside the root by an ugly spelling and stays
-    /// approvable, while <c>../outside</c> does not, because the answer comes from where the path
-    /// actually lands. Refusing every dot-dot would have been cheaper and would have made the
-    /// predicate lie about what it enforces.</para>
-    ///
-    /// <para>ONLY TOKENS THAT ARE PATH REFERENCES, so this does not become the friction
-    /// <c>Classify</c> was written to avoid. A bare word like <c>build</c> or a grep pattern is not
-    /// claimed as a path — it names no directory component and the shell will not treat it as one
-    /// without a verb's help. A token carrying a separator, or consisting of <c>..</c>, is asserting
-    /// a location, and an assertion about a location is exactly what a boundary is for.</para>
-    /// </summary>
-    private bool RelativeSubjectsConfined(string command, string from) =>
-        RelativeSubjects(command, from).All(IsInsideBoundaryAsShell);
-
-    /// <summary>
-    /// Every token of <paramref name="command"/> that refers to a path relative to <paramref name="from"/>,
-    /// joined onto it — the population <see cref="RelativeSubjectsConfined"/> confines, enumerated once so
-    /// every check of where a command's paths land asks about the same paths.
-    /// </summary>
-    private IEnumerable<string> RelativeSubjects(string command, string from)
-    {
-        foreach (var segment in command.Split(SegmentSeparators, StringSplitOptions.RemoveEmptyEntries))
-        {
-            // THE VERB IS NOT A SUBJECT, the same carve-out CommandSubjects makes and for the same
-            // reason — and ExaminableSegments has ALREADY refused any verb containing a slash, so
-            // skipping it here cannot let a path-shaped program through.
-            foreach (var token in segment.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1))
-            {
-                var text = token.Trim('"', '\'');
-
-                // A FLAG CARRYING ITS VALUE, unwrapped for the reason CommandSubjects unwraps it:
-                // `--file=../secret` and `-f ../secret` are one read spelled two ways, and a rule
-                // that separates them is not one anybody can hold in their head.
-                var eq = text.IndexOf('=', StringComparison.Ordinal);
-                if (text.StartsWith('-') && eq > 0) text = text[(eq + 1)..].Trim('"', '\'');
-
-                if (text.Length == 0 || text.StartsWith('-')) continue;
-
-                // ABSOLUTE PATHS ARE ALREADY THE OTHER CLAUSE'S JOB, and re-confining them here would
-                // be a second opinion on a question already answered — the drift that put four holes
-                // of one shape in this system. Tilde is likewise already refused, by FullyExamined.
-                //
-                // EXCEPT ONE WITH A `..` IN IT. That clause keeps an absolute path only when it exists, and
-                // existence is tested on the text collapsed — `/root/link/../secret` is asked about as
-                // `/root/secret`, which may not exist, while the kernel reads beside the link's target.
-                if (text.StartsWith('~')) continue;
-                if (Path.IsPathRooted(text) && !text.Split('/').Contains("..")) continue;
-
-                var full = Path.Combine(from, text);
-
-                // A BARE WORD IS A PATH WHEN IT NAMES SOMETHING WHERE THE COMMAND RUNS. CommandSubjects
-                // decides that against the PROCESS's directory, so from a child's folder or a working_dir
-                // `cat link` was never looked at — and the link pointed out of the folder. Existence is
-                // tested here, from the folder the command runs in; a link counts even when dangling.
-                if (!IsPathReference(text) && !PathResolver.NamesAt(full)) continue;
-
-                yield return full;
-            }
-        }
-    }
 
     /// <summary>
     /// Whether a shell command reaches into a code folder below the boundary — by an argument, its cd
@@ -1077,38 +981,19 @@ public class PermissionPolicy
     /// </summary>
     private bool ShellNamesCodeFolder(PermissionRequest request)
     {
-        var folder = request.ShellWorkingDir is { Length: > 0 } given ? Paths.AsFileTool(given) : _boundary;
+        var folder = RunFolder(request);
         if (folder is null) return true;   // unresolvable: fail toward asking
 
-        var subjects = CommandSubjects.Of(request.What);
-        var after = AfterCd(folder, subjects.ChangesTo);
-        if (after is null) return true;   // a cd the shell resolves: where it lands is not known here
+        var subjects = CommandSubjects.Of(request.What, new PathResolver(folder));
+        if (subjects.After is not { } after) return true;   // a cd the shell resolves: where it lands is not known here
         // WHERE IT RUNS, as the executor and a logical cd name it; WHAT IT NAMES, as the kernel walks it.
         var places = new List<string?> { Paths.AsFileTool(folder), Paths.AsFileTool(after) };
-        places.AddRange(subjects.Paths.Select(p => Paths.AsShellArgument(Path.Combine(after, p))));
-        places.AddRange(RelativeSubjects(PastCd(request.What, subjects), after).Select(Paths.AsShellArgument));
+        places.AddRange(subjects.Paths.Select(Paths.AsShellArgument));
 
         return places.Any(resolved => resolved is null || UnderCodeFolder(resolved, _boundary));
     }
 
 
-    /// <summary>
-    /// Whether a token asserts a LOCATION rather than merely being a word.
-    ///
-    /// <para>THE LINE IS DRAWN AT A DIRECTORY SEPARATOR because that is where the shell draws it: a
-    /// token containing <c>/</c> can only be a path, while a bare word is whatever the verb decides —
-    /// a grep pattern, a git ref, a build target. Claiming bare words as paths is precisely the
-    /// friction <c>CommandSubjects.Classify</c> documents avoiding, and friction is what gets a gate
-    /// routed around.</para>
-    ///
-    /// <para><c>..</c> ALONE IS THE EXCEPTION, because it carries no separator and is unambiguously a
-    /// location — <c>cd ..</c>, <c>rm -rf ..</c>. A bare <c>.</c> needs no exception: it resolves to
-    /// the root itself and is inside by definition, so admitting it would change no answer.</para>
-    /// </summary>
-    private static bool IsPathReference(string token) =>
-        token.Contains('/', StringComparison.Ordinal)
-        || token.Contains('\\', StringComparison.Ordinal)
-        || token == "..";
 
     /// <summary>
     /// True when every segment of a command line is a plain <c>verb args</c> this can name, with no
@@ -1145,7 +1030,7 @@ public class PermissionPolicy
             || command.Contains('`', StringComparison.Ordinal))
             return false;
 
-        foreach (var segment in command.Split(SegmentSeparators, StringSplitOptions.RemoveEmptyEntries))
+        foreach (var segment in command.Split(CommandSubjects.SegmentSeparators, StringSplitOptions.RemoveEmptyEntries))
         {
             var text = segment.Trim();
 
@@ -1235,7 +1120,6 @@ public class PermissionPolicy
     /// treatment is the whole feature: that class refuses a line containing any of them, which is why
     /// so many real commands prompt. Here each side of the operator is examined instead.</para>
     /// </summary>
-    private static readonly char[] SegmentSeparators = ['&', ';', '|', '>', '<', '\n', '\r'];
 
     /// <summary>
     /// Verbs no path check can confine, so no verdict on them may be honoured.
@@ -1285,8 +1169,9 @@ public class PermissionPolicy
     /// </summary>
     public static ActionFacts ShellFacts(string command, string root)
     {
-        var subjects = CommandSubjects.Of(command);
-        var paths = new List<string>(subjects.Paths);
+        // AS THE MODEL SPELLED THEM — facts for the reviewer to read, not the joined paths the boundary is held to.
+        var subjects = CommandSubjects.Of(command, new PathResolver(root));
+        var paths = new List<string>(subjects.Tokens);
         if (subjects.ChangesTo is { Length: > 0 } cd) paths.Add($"cd target: {cd}");
         paths.Add($"project root: {root}");
         return new ActionFacts { Paths = paths };

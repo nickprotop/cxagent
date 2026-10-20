@@ -158,7 +158,7 @@ public class ShellApprovalTests
         // MEASURED, NOT ASSUMED, and it contradicts the obvious reading of the bound. Deleting the
         // `ChangesTo` clause leaves BOTH cd tests passing, so the clause does no work for this
         // feature's population. Probed directly: for `cd .. && dotnet build | tail`,
-        // CommandSubjects reports ChangesTo=null and Paths=[".."].
+        // CommandSubjects reports ChangesTo=null and the token ".." (joined onto the folder in Paths).
         //
         // WHY. `CommandSubjects.Of` populates ChangesTo only when `ReadOnlyCommands.CommandAfterCd`
         // matches, and that returns null when the remainder is itself a chain. This feature's whole
@@ -177,9 +177,10 @@ public class ShellApprovalTests
 
         Assert.Equal(ReviewEffect.None, policy.EffectFor(Shell("cd .. && dotnet build | tail")));
 
-        var subjects = CommandSubjects.Of("cd .. && dotnet build | tail");
+        var subjects = CommandSubjects.Of("cd .. && dotnet build | tail", new PathResolver(root));
         Assert.Null(subjects.ChangesTo);
-        Assert.Contains("..", subjects.Paths);
+        Assert.Contains("..", subjects.Tokens);
+        Assert.Contains(Path.Combine(root, ".."), subjects.Paths);
     }
 
     [Fact]
