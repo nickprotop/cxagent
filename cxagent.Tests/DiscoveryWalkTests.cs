@@ -89,6 +89,30 @@ public sealed class DiscoveryWalkTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(home, "data")));
     }
 
+    /// <summary>A PLUGIN WHOSE HOME IS A LINK — a dev build linked into the plugins folder — is removed as a link: the
+    /// build output it points at stays.</summary>
+    [Fact]
+    public void RemovingAPluginWhoseHomeIsALink_RemovesOnlyTheLink()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var plugins = Path.Combine(_top, "plugins");
+        var build = Path.Combine(_top, "build");
+        Directory.CreateDirectory(plugins);
+        Directory.CreateDirectory(build);
+        File.WriteAllText(Path.Combine(build, "x.dll"), "bin");
+        File.WriteAllText(Path.Combine(build, "x.plugin.json"), "{}");
+        var home = Path.Combine(plugins, "x");
+        Directory.CreateSymbolicLink(home, build);
+
+        var plan = Assert.IsType<RemovalPlan.Removable>(PluginRemover.Plan("x", "x.dll", home, [plugins],
+            new Dictionary<string, PluginConfig> { ["x"] = new PluginConfig("x.dll") }));
+        PluginRemover.Remove(plan);
+
+        Assert.False(Directory.Exists(home));
+        Assert.True(File.Exists(Path.Combine(build, "x.dll")));
+        Assert.Contains("link", plan.Description, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void ALoadSetWithALinkOutside_IsRefused_NamingTheLink()
     {

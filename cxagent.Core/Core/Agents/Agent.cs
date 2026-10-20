@@ -3929,13 +3929,16 @@ public sealed class Agent
     }
 
     // A SKIPPED INSTRUCTION FILE IS SAID ONCE, though the prompt that skips it is built every turn — see
-    // InstructionNotices. Lazily made, so it says through this agent's own sink.
+    // InstructionNotices. This agent's own, for an agent with no policy to share the session's through.
     private InstructionNotices? _instructionNotices;
 
     private IReadOnlyList<ProjectInstructionFile> ScanInstructions(string cwd)
     {
         var scan = ProjectInstructions.Scan(cwd, _globalInstructionsDir);
-        (_instructionNotices ??= new InstructionNotices(_sink.Said)).Announce(scan.Skipped);
+        // THE SESSION'S, through its policy, so a sub-agent does not repeat what the session said; this agent's own
+        // only for one built with no policy.
+        (_policy?.InstructionNoticesFor(_sink.Said) ?? (_instructionNotices ??= new InstructionNotices(_sink.Said)))
+            .Announce(scan.Skipped);
         return scan.Files;
     }
 

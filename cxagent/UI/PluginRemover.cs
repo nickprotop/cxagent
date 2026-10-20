@@ -81,6 +81,11 @@ public static class PluginRemover
             !string.Equals(home, Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)),
                 StringComparison.Ordinal));
 
+        // A HOME THAT IS ITSELF A LINK — a dev build linked into the plugins folder — is removed as a link. What it
+        // points at is the build's own output, not something this install put there.
+        if (nested && new DirectoryInfo(home).LinkTarget is { } target)
+            return new RemovalPlan.Removable($"Remove the link {home} (its files, in {target}, stay).", [home], []);
+
         if (nested)
         {
             // A NESTED PLUGIN IS ITS DIRECTORY, which is the load-set design's own definition: the

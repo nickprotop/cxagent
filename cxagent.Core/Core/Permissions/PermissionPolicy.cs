@@ -83,6 +83,20 @@ public class PermissionPolicy
     /// </summary>
     public PermissionPolicy NarrowedTo(string folder) => new(this, RealFolder(folder));
 
+    // THE SESSION'S MEMORY OF WHAT IT HAS SAID about skipped instruction files — on the policy because the policy is
+    // the session's and a sub-agent's is narrowed from it, so a child finds the same memory and says nothing twice.
+    private Llm.InstructionNotices? _instructionNotices;
+
+    /// <summary>
+    /// The session's notices for skipped instruction files: one per session, shared with every sub-agent, saying
+    /// through the first agent that asked.
+    /// </summary>
+    internal Llm.InstructionNotices InstructionNoticesFor(Action<Commands.Message> say)
+    {
+        if (_parent is { } parent) return parent.InstructionNoticesFor(say);
+        lock (this) return _instructionNotices ??= new Llm.InstructionNotices(say);
+    }
+
     /// <summary>
     /// A folder as it really is on disk — symlinks followed — which is the form every path is resolved to
     /// before it is compared against the boundary.

@@ -192,6 +192,23 @@ public sealed class ConfinedReadTests : IDisposable
         Assert.Equal("é", PathResolver.ReadConfined(new ConfinedRead(accents, _repo, MaxBytes: 3)).Text);
     }
 
+    /// <summary>ONCE PER SESSION, ITS SUB-AGENTS INCLUDED: a child's policy is narrowed from the session's, and finds the
+    /// session's memory of what was said — a child rebuilding its prompt does not say it again.</summary>
+    [Fact]
+    public void ASubAgent_SharesTheSessionsNotices()
+    {
+        var policy = new PermissionPolicy(_repo, new PermissionRulesStore(new CxAgent.Core.Storage.AppPaths(_config)));
+        Directory.CreateDirectory(Path.Combine(_repo, "sub"));
+        var child = policy.NarrowedTo(Path.Combine(_repo, "sub"));
+        var said = new List<Message>();
+        var skipped = new SkippedInstructionFile("/r/AGENTS.md", "links outside the repository");
+
+        policy.InstructionNoticesFor(said.Add).Announce([skipped]);
+        child.InstructionNoticesFor(said.Add).Announce([skipped]);
+
+        Assert.Single(said);
+    }
+
     [Fact]
     public void ASkippedInstructionFile_IsSaidOncePerSession()
     {
