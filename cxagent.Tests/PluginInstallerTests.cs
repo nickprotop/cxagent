@@ -146,6 +146,34 @@ public class PluginInstallerTests : IDisposable
     /// AN ENTRY WITH NO HASH CANNOT BE VERIFIED, so it is refused rather than installed on trust.
     /// The catalog carries one for every plugin the release pipeline builds.
     /// </summary>
+    /// <summary>
+    /// A CATALOG NAME IS A FOLDER NAME, NOT A PATH. The installer replaces the folder it names, recursively —
+    /// so a name or file that climbs out of the plugins folder is refused before anything is written or removed.
+    /// </summary>
+    [Theory]
+    [InlineData("../victim", "demo.dll")]
+    [InlineData("a/b", "demo.dll")]
+    [InlineData("..", "demo.dll")]
+    [InlineData("demo", "../demo.dll")]
+    [InlineData("demo", "sub/demo.dll")]
+    public async Task AnEntryNamingAPathIsRefused_AndRemovesNothing(string name, string file)
+    {
+        // THE PLUGINS FOLDER ONE LEVEL DOWN, so what a climbing name would reach is still this test's own folder.
+        var (zip, sha) = MakeZip();
+        var plugins = Path.Combine(_dir, "plugins");
+        var victim = Path.Combine(_dir, "victim");
+        var installer = new PluginInstaller(new HttpClient(new Serves(zip)));
+        Directory.CreateDirectory(Path.Combine(plugins, "a"));
+        File.WriteAllText(Path.Combine(plugins, "a", "keep.txt"), "x");
+
+        var result = await installer.InstallAsync(Entry(sha) with { Name = name, File = file }, plugins, CancellationToken.None);
+
+        Assert.IsType<InstallResult.Refused>(result);
+        Assert.True(File.Exists(Path.Combine(plugins, "a", "keep.txt")));
+        Assert.False(Directory.Exists(victim));
+        Assert.Equal(["a"], Directory.GetFileSystemEntries(plugins).Select(Path.GetFileName));
+    }
+
     [Fact]
     public async Task AnEntryWithNoHashIsRefused()
     {

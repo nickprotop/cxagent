@@ -28,14 +28,28 @@ public abstract record InstallResult
 /// gate asks separately — showing a hash of the whole load set, which is a different question from
 /// the one this class answers.</para>
 /// </summary>
-public sealed class PluginInstaller(HttpClient? client = null)
+public sealed partial class PluginInstaller(HttpClient? client = null)
 {
+    // THE SHAPE A COMMAND NAME TAKES, for the same reason: a name, nothing a path could be made of.
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z0-9_-]+$")]
+    private static partial System.Text.RegularExpressions.Regex FolderName();
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z0-9_.-]+$")]
+    private static partial System.Text.RegularExpressions.Regex FileName();
+
     private static readonly HttpClient Shared = new();
     private readonly HttpClient _client = client ?? Shared;
 
     public async Task<InstallResult> InstallAsync(
         CatalogEntry entry, string pluginsFolder, CancellationToken ct)
     {
+        // A CATALOG NAME IS A FOLDER NAME, AND ITS FILE A FILE NAME — never paths. The folder the name gives is
+        // replaced recursively below, so a name that climbed out of the plugins folder would remove whatever it
+        // reached; refused before anything is fetched, written or removed.
+        if (!FolderName().IsMatch(entry.Name) || !FileName().IsMatch(entry.File) || entry.File.Trim('.').Length == 0)
+            return new InstallResult.Refused(
+                $"the catalog entry '{entry.Name}' names a path where a plain name belongs, so it was not installed.");
+
         // THIS MACHINE'S FILE: the single download, or for a native plugin the build for this platform
         // — each checked against its own hash below.
         if (entry.DownloadFor(System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier) is not { } download)
