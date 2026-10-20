@@ -178,7 +178,8 @@ public sealed class AgentSetupTests
         var runtime = Runtime(tools) with
         {
             InstanceName = "inst", Guards = new AgentGuards { Policy = policy, Classifier = classifier },
-            Delivery = delivery, Logs = logs, GlobalInstructionsDir = dir, WorkingDir = dir,
+            Delivery = delivery, Logs = logs, WorkingDir = dir,
+            Brief = new AgentBrief { Briefing = "the session's", GlobalInstructionsDir = dir, StartedOn = new DateOnly(2026, 1, 2) },
         };
 
         var setup = new SubAgentFactory(runtime).Create(new SubAgentFactory.ChildRequest
@@ -186,6 +187,7 @@ public sealed class AgentSetupTests
             Briefing = "brief", CallerContext = "known", Label = "lbl", ParentAgentId = "parent",
             Root = new ChildRoot(sub, "sub"),
         }).Agent.Setup;
+        var unbriefed = new SubAgentFactory(runtime).Create().Agent.Setup;
 
         Assert.Same(runtime.Provider, setup.Model.Provider);
         Assert.Same(runtime.Ledger, setup.Model.Ledger);
@@ -210,7 +212,8 @@ public sealed class AgentSetupTests
         Assert.Equal("brief", setup.Brief.Briefing);
         Assert.Equal("known", setup.Brief.CallerContext);
         Assert.Equal(dir, setup.Brief.GlobalInstructionsDir);
-        Assert.Null(setup.Brief.StartedOn);   // a child is dated the day it is built
+        Assert.Equal(new DateOnly(2026, 1, 2), setup.Brief.StartedOn);   // the session's day, not the child's
+        Assert.Null(unbriefed.Brief.Briefing);   // the session's briefing is the session's alone
         Assert.Equal(7, setup.Limits.MaxTurns);
         Assert.Equal(40_000, setup.Limits.CompressAbove);
         Assert.Equal(200_000, setup.Conversation!.Window);

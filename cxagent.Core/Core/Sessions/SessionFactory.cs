@@ -165,6 +165,15 @@ internal static class SessionFactory
         // as long as the session keeps it, which outlives the agent that spawned it.
         var delivery = new SessionAgentDelivery(session, session.SubAgents);
 
+        // ONE BRIEF FOR THE SESSION'S AGENT AND EVERY CHILD: OUR config folder, so a user-level CXAGENT.md applies
+        // wherever they work, and THE SESSION'S DAY, so a re-wire on a later day builds the same system prompt and a
+        // child spawned after midnight is dated as its parent is.
+        var brief = new AgentBrief
+        {
+            GlobalInstructionsDir = shared.GlobalInstructionsDir,
+            StartedOn = session.StartedOn,
+        };
+
         var subAgents = new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = resolution.Provider!,
@@ -193,7 +202,7 @@ internal static class SessionFactory
                 ?? OrchestratorSettings.DefaultCompressThreshold,
             ContextWindow = resolution.ContextWindow,
 
-            GlobalInstructionsDir = shared.GlobalInstructionsDir,
+            Brief = brief,
 
             // THE SESSION'S OWN RULE, injected rather than copied. A type on a different instance
             // has a different window, so the threshold must be re-derived from it — and a second
@@ -358,13 +367,7 @@ internal static class SessionFactory
                     // are identical but a named delegate has no implicit conversion to Func.
                     AskUser = ports.Ask is null ? null : (questions, ct) => ports.Ask(questions, ct),
                 },
-                Brief = new AgentBrief
-                {
-                    // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
-                    GlobalInstructionsDir = shared.GlobalInstructionsDir,
-                    // THE SESSION'S DAY, so a re-wire on a later day builds the same system prompt.
-                    StartedOn = session.StartedOn,
-                },
+                Brief = brief,
             },
             observers,
             toolObservers,

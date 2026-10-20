@@ -188,8 +188,12 @@ public sealed class SubAgentFactory
         /// <summary>Recomputes the threshold when a type brings its own window. See <c>Create</c>.</summary>
         public Func<int?, int?>? ThresholdFor { get; init; }
 
-        /// <summary>cxagent's own config folder, so a user-level CXAGENT.md applies everywhere.</summary>
-        public string? GlobalInstructionsDir { get; init; }
+        /// <summary>
+        /// What the session's agent is told: cxagent's config folder, so a user-level CXAGENT.md applies to a child
+        /// too, and the day the session began, so a child's prompt is dated as its parent's is. A child's own
+        /// briefing and caller context replace the session's — see <see cref="Create(ChildRequest)"/>.
+        /// </summary>
+        public AgentBrief Brief { get; init; } = new();
 
         /// <summary>
         /// A CHILD WORKS WHERE ITS PARENT DOES. Inherited rather than read from the process, so a
@@ -406,9 +410,9 @@ public sealed class SubAgentFactory
             Outputs = new AgentOutputs(feed, feed)
             {
                 // ITS OWN LOG DIRECTORY, keyed by the child's id and NESTED UNDER THE PARENT'S. The only
-                // surface on which a finished child is inspectable after the fact — and while it sat at
-                // the top level it was indistinguishable from a session, so `ls -t` showed a child above
-                // the parent that spawned it and the newest directory was often not the newest session.
+                // surface on which a finished child is inspectable after the fact — and nested, it cannot be
+                // mistaken for a session: the top level holds sessions only, so `ls -t` puts the newest
+                // session first rather than a child of an older one.
                 Logs = parentAgentId is null ? _runtime.Logs : _runtime.Logs?.Under(parentAgentId),
 
                 // THE SAME PORT THE PARENT GETS, resolving by agent id — so a tool this child calls
@@ -470,14 +474,14 @@ public sealed class SubAgentFactory
                 AskUser = null,
             },
 
-            // NO StartedOn: a child's prompt is dated the day it is built.
-            Brief = new AgentBrief
+            // THE SESSION'S BRIEF, with the child's own briefing and caller context in place of the session's — the
+            // instructions folder and the session's day carry over, so a child's prompt is dated as its parent's.
+            Brief = _runtime.Brief with
             {
                 // THE TYPE'S BRIEFING WINS over the request's: the request is the caller saying what this child
                 // is for, and a type is a human in config saying how that work is done (D9).
                 Briefing = string.IsNullOrWhiteSpace(type?.Briefing) ? briefing : type!.Briefing,
                 CallerContext = callerContext,
-                GlobalInstructionsDir = _runtime.GlobalInstructionsDir,
             },
 
             // NULL INHERITS, 0 IS UNBOUNDED — Agent translates 0, so this passes it through rather than
