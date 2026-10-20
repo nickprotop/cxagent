@@ -409,4 +409,27 @@ public class PermissionPromptControlTests
 
         Assert.Contains("asked for by: Plan it (planner on local:qwen in sub)", text, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// FROM A CHILD IN A FOLDER OF ITS OWN, THE BUTTON SAYS WHAT IT TRUSTS: the project, not the child's
+    /// folder the prompt names — trust is the project's (decision 6), and "Trust this folder" beside
+    /// "in sub" reads as trusting sub.
+    /// </summary>
+    [Fact]
+    public void TheTrustButton_FromARootedChild_NamesTheProject()
+    {
+        var (policy, root) = PolicyOver(trusted: false);
+        var request = FileWriteRequest(Path.Combine(root, "sub", "a.md")) with
+        {
+            Policy = policy, Requester = "child", RequesterRunsOn = "general on m", RequesterRoot = "sub",
+        };
+        var labels = FindButtons(new PermissionPromptControl(request, offerTrust: true).BuildContent()).Select(b => b.Text).ToList();
+
+        Assert.Contains($"Trust project ({Path.GetFileName(root)})", labels);
+        Assert.DoesNotContain("Trust this folder", labels);
+
+        var plain = FindButtons(new PermissionPromptControl(FileWriteRequest(Path.Combine(root, "a.md")) with { Policy = policy },
+            offerTrust: true).BuildContent()).Select(b => b.Text).ToList();
+        Assert.Contains("Trust this folder", plain);
+    }
 }

@@ -115,6 +115,17 @@ public sealed class PermissionPromptControl
     /// <see cref="HeadingTextFor"/> alone. A classifier that is down must cost a plainer prompt,
     /// never a wrong one.</para>
     /// </summary>
+    /// <summary>
+    /// What the Trust button says. A child in a folder of its own asks with "in sub" shown, while trust is
+    /// the PROJECT's (decision 6) — so there the button names the project it trusts, not "this folder".
+    /// </summary>
+    private static string TrustLabel(PermissionRequest request) =>
+        request.RequesterRoot is { Length: > 0 }
+            ? request.Policy?.Root is { Length: > 0 } project
+                ? $"Trust project ({Path.GetFileName(Path.TrimEndingDirectorySeparator(project))})"
+                : "Trust project"
+            : "Trust this folder";
+
     public static string HeadingFor(PermissionRequest request, bool offerTrust = false)
     {
         // WHERE THE PATH IS, from the request's own policy: the Trust button is offered only to an
@@ -238,7 +249,7 @@ public sealed class PermissionPromptControl
             toolbar.AddButton(ChoiceButton("Always allow", ColorScheme.Caution, PermissionChoice.Always));
 
         if (_offerTrust)
-            toolbar.AddButton(ChoiceButton("Trust this folder", ColorScheme.Caution,
+            toolbar.AddButton(ChoiceButton(TrustLabel(_request), ColorScheme.Caution,
                 PermissionChoice.TrustFolder));
 
         toolbar.AddButton(ChoiceButton("Deny", ColorScheme.Destructive, PermissionChoice.Deny));
