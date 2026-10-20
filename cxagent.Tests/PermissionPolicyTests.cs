@@ -1237,4 +1237,22 @@ public class PermissionPolicyTests
         Assert.True(policy.FolderTrusted);   // trust stays stored under the folder as it was opened
         Assert.Equal("sub", CxAgent.Core.Agents.ChildRoot.Resolve("sub", policy, alias).Root?.Relative);
     }
+
+    /// <summary>
+    /// A RELATIVE PATH IS JUDGED FROM WHERE THE COMMAND RUNS. `ls ..` from a working_dir of `sub` lists the
+    /// project — inside — and was asked about because the path was resolved from the project root instead.
+    /// Leaving the folder still asks.
+    /// </summary>
+    [Theory]
+    [InlineData("ls ..", "sub", true)]
+    [InlineData("cat ../inside.txt", "sub", true)]
+    [InlineData("cd .. && ls", "sub", true)]
+    [InlineData("ls ../..", "sub", false)]
+    [InlineData("cat ../../outside.txt", "sub", false)]
+    public void ARelativePath_IsJudgedFromTheCommandsFolder(string command, string workingDir, bool silent)
+    {
+        var root = ShellScene();
+        var policy = TrustedPolicy(root, EditMode.AcceptEdits);
+        Assert.Equal(silent, policy.IsSilentlyAllowed(ShellRead(command, workingDir, root, policy)));
+    }
 }

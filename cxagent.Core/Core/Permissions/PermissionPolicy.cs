@@ -559,10 +559,7 @@ public class PermissionPolicy
             && ReadOnlyCommands.IsReadOnly(request.What, out _))
         {
             var subjects = CommandSubjects.Of(request.What);
-            if (subjects.FullyExamined
-                && (subjects.ChangesTo is null || IsInsideBoundary(subjects.ChangesTo))
-                && subjects.Paths.All(IsInsideBoundary)
-                && ShellStaysInside(request))
+            if (subjects.FullyExamined && ShellStaysInside(request))
                 return true;
         }
 
@@ -597,7 +594,7 @@ public class PermissionPolicy
         if (request.Kind == PermissionKind.Shell)
         {
             var subjects = CommandSubjects.Of(request.What);
-            if (!subjects.FullyExamined || !subjects.Paths.All(IsInsideBoundary)) return false;
+            if (!subjects.FullyExamined) return false;
             if (!ShellStaysInside(request)) return false;
         }
 
@@ -887,11 +884,10 @@ public class PermissionPolicy
         var command = request.What;
         var subjects = CommandSubjects.Of(command);
 
-        // THE SPEC'S FOUR CLAUSES, unchanged and still necessary — FullyExamined is what refuses
-        // `ls ~/`, whose boundary clauses would otherwise pass vacuously on an empty path list.
+        // FullyExamined FIRST — it is what refuses `ls ~/`, whose boundary clauses would otherwise pass
+        // vacuously on an empty path list. The cd target and the paths are judged in ShellStaysInside, at
+        // the end, from the folder the command runs in.
         if (!subjects.FullyExamined) return false;
-        if (subjects.ChangesTo is { } cd && !IsInsideBoundary(cd)) return false;
-        if (!subjects.Paths.All(IsInsideBoundary)) return false;
 
         // AND THE CLAUSE THE SPEC ASSUMED FullyExamined ALREADY CARRIED. Every segment of the line
         // must be a command this recognises the shape of. Without it the confinement is enforced
@@ -920,6 +916,14 @@ public class PermissionPolicy
     {
         var folder = request.ShellWorkingDir is { Length: > 0 } given ? TryResolve(given, _boundary) : _boundary;
         if (folder is null || !IsInsideBoundary(folder)) return false;   // unresolvable: fail toward asking
+
+        // THE cd TARGET AND THE PATHS CommandSubjects FOUND, FROM THE SAME FOLDER. A relative one names
+        // something where the command runs; judged from the boundary instead, `ls ..` from `sub` read as
+        // leaving the project when it lists it. An absolute one is unchanged by the combine.
+        var subjects = CommandSubjects.Of(request.What);
+        if (subjects.ChangesTo is { } cd && !IsInsideBoundary(Path.Combine(folder, cd))) return false;
+        if (!subjects.Paths.All(p => IsInsideBoundary(Path.Combine(folder, p)))) return false;
+
         return RelativeSubjectsConfined(request.What, folder);
     }
 
