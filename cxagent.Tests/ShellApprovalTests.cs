@@ -25,6 +25,9 @@ namespace CxAgent.Tests;
 /// at all (CommandSubjects.cs:36-41 records the replay this comes from) — so this is a classifier
 /// call on almost every command an agent issues, not an occasional second opinion.</para>
 /// </summary>
+// IN THE working-directory COLLECTION: one test here sets the process directory, which every test
+// that reads it (or resolves a path against it) would otherwise race.
+[Collection("working-directory")]
 public class ShellApprovalTests
 {
     private static string MakeTempDir()
