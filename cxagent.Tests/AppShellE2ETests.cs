@@ -34,7 +34,7 @@ public class AppShellE2ETests
         var sink = new ChatTranscriptSink(system, mw.Chat);
         var jobPanelSink = new JobPanelSink(system, mw.JobPanel);
         var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = provider, Executors = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime { Provider = provider, Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             sink,
             jobPanelSink);
 

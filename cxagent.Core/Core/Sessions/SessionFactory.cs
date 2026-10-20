@@ -283,7 +283,6 @@ internal static class SessionFactory
             {
                 Provider = resolution.Provider!,
                 InstanceName = resolution.InstanceName,
-                Executors = executors,
 
                 // THE SAME workingDir THE PERMISSION GATE USES, captured once at startup.
                 // Sessions and permission rules are both scoped to the project they belong to,
@@ -305,12 +304,6 @@ internal static class SessionFactory
                 // previous agent started the session's after a re-wire mints a new id.
                 IsSessionAgent = session.IsSessionAgent,
 
-                // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
-                GlobalInstructionsDir = shared.GlobalInstructionsDir,
-
-                // THE SESSION'S DAY, so a re-wire on a later day builds the same system prompt.
-                StartedOn = session.StartedOn,
-
                 // The real window (when config told us one), so auto-compression derives its
                 // threshold from actual headroom instead of the fixed constant. Null on
                 // --mock/no-provider and whenever contextWindow is not configured.
@@ -320,52 +313,57 @@ internal static class SessionFactory
                 // omitting it silently disabled the turn cap in production while every unit
                 // test still passed.
                 Orchestrator = resolution.Orchestrator,
-
-                // The toolset, but NOT the servers: ownership stays with the session. Handing
-                // those over would let a re-wire dispose them, killing every server on a
-                // provider change and leaving the new host with a toolset over dead pipes.
-                Mcp = shared.Mcp,
-
-                // THE SAME POLICY THE PLUGINS GET (line 44). MCP builds its own PermissionRequest
-                // instead of going through PermissionGatedExecutor, so without this the gate refuses
-                // every MCP call for want of a policy.
-                Policy = ports.Policy,
-
-                // TASK 11: THE SAME CLASSIFIER PermissionDecider CONSULTS, so the agent can warm its
-                // cache at parse time. `is PermissionDecider` rather than a new field on
-                // IPermissionGate — see Session.Turn.cs's ResetTurnState call for the same pattern:
-                // only the real, interactive gate owns a classifier at all, so the fixed
-                // AllowAll/DenyAll gates (headless runs, most tests) simply leave this null and the
-                // agent never speculates.
-                Classifier = (shared.Gate as Permissions.PermissionDecider)?.Classifier,
-
-                Spawner = subAgents,
                 Mode = mode,
-
-                // HOW THE MODEL ASKS. The window owns the composer swap, so this is the one
-                // place that can put a question where the permission gate already asks. A
-                // sub-agent never gets it — Agent refuses regardless of what is passed here.
-                //
-                // WRAPPED, NOT PASSED DIRECTLY: AgentRuntime.AskUser is a bare Func for a type
-                // that has no reason to depend on the named AskUser delegate; SessionPorts.Ask
-                // is that named delegate for readability at its own call sites. The two shapes
-                // are identical but a named delegate has no implicit conversion to Func.
-                AskUser = ports.Ask is null ? null : (questions, ct) => ports.Ask(questions, ct),
-
-                // Already gated above. The host hands these to its agent and to every child.
-                AgentTools = agentTools,
-                DynamicTools = dynamicTools,
-                PluginInstructions = session.Plugins.InstructionsForPrompt,
 
                 // The same port every child gets, resolving by agent id — see its own construction
                 // above.
                 Delivery = delivery,
-
-                // THE HOST'S OWN AGENT ONLY, like AskUser above and for the same reason: a child has
-                // no user to type a command. SubAgentRuntime carries no such property at all, so the
-                // exclusion is a compile error rather than a rule someone must remember.
-                ModelFacingCommands = ports.ModelFacingCommands,
-                ToolSelection = toolSelection,
+                Tools = new AgentTools(executors)
+                {
+                    // The toolset, but NOT the servers: ownership stays with the session. Handing
+                    // those over would let a re-wire dispose them, killing every server on a
+                    // provider change and leaving the new host with a toolset over dead pipes.
+                    Mcp = shared.Mcp,
+                    Spawner = subAgents,
+                    // Already gated above. The host hands these to its agent and to every child.
+                    Injected = agentTools,
+                    Dynamic = dynamicTools,
+                    PluginInstructions = session.Plugins.InstructionsForPrompt,
+                    // THE HOST'S OWN AGENT ONLY, like AskUser below and for the same reason: a child has
+                    // no user to type a command. SubAgentFactory sets it to null for every child.
+                    ModelFacingCommands = ports.ModelFacingCommands,
+                    Selection = toolSelection,
+                },
+                Guards = new AgentGuards
+                {
+                    // THE SAME POLICY THE PLUGINS GET (line 44). MCP builds its own PermissionRequest
+                    // instead of going through PermissionGatedExecutor, so without this the gate refuses
+                    // every MCP call for want of a policy.
+                    Policy = ports.Policy,
+                    // TASK 11: THE SAME CLASSIFIER PermissionDecider CONSULTS, so the agent can warm its
+                    // cache at parse time. `is PermissionDecider` rather than a new field on
+                    // IPermissionGate — see Session.Turn.cs's ResetTurnState call for the same pattern:
+                    // only the real, interactive gate owns a classifier at all, so the fixed
+                    // AllowAll/DenyAll gates (headless runs, most tests) simply leave this null and the
+                    // agent never speculates.
+                    Classifier = (shared.Gate as Permissions.PermissionDecider)?.Classifier,
+                    // HOW THE MODEL ASKS. The window owns the composer swap, so this is the one
+                    // place that can put a question where the permission gate already asks. A
+                    // sub-agent never gets it — Agent refuses regardless of what is passed here.
+                    //
+                    // WRAPPED, NOT PASSED DIRECTLY: AgentGuards.AskUser is a bare Func for a type
+                    // that has no reason to depend on the named AskUser delegate; SessionPorts.Ask
+                    // is that named delegate for readability at its own call sites. The two shapes
+                    // are identical but a named delegate has no implicit conversion to Func.
+                    AskUser = ports.Ask is null ? null : (questions, ct) => ports.Ask(questions, ct),
+                },
+                Brief = new AgentBrief
+                {
+                    // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
+                    GlobalInstructionsDir = shared.GlobalInstructionsDir,
+                    // THE SESSION'S DAY, so a re-wire on a later day builds the same system prompt.
+                    StartedOn = session.StartedOn,
+                },
             },
             observers,
             toolObservers,

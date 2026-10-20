@@ -106,6 +106,9 @@ public sealed class AgentHost : IDisposable
     /// <summary>The date this host's agent puts in its system prompt.</summary>
     internal DateOnly AgentStartedOn => _agent.StartedOn;
 
+    /// <summary>What this host's agent was built from — for tests that check every runtime value reached it.</summary>
+    internal AgentSetup AgentSetup => _agent.Setup;
+
 
     // The whole settings record rather than the one field read today: the compaction threshold is
     // derived from it per-agent (see BuildAgent), and the turn ceiling reads MaxTurns.
@@ -412,7 +415,31 @@ public sealed class AgentHost : IDisposable
     public sealed record AgentRuntime
     {
         public required ILlmProvider Provider { get; init; }
-        public required JobRegistry Executors { get; init; }
+
+        /// <summary>
+        /// What the session's agent may use: the built-in executors, MCP, the spawner, the embedder's tools
+        /// (already wrapped in <see cref="Jobs.GatedAgentTool"/> by SessionFactory — this type does no wrapping of its
+        /// own, because the session's policy is not visible here, and wrapping in two places is how one of them ends
+        /// up being the copy that forgets), the live plugin tools and their guidance, the commands named to the model,
+        /// and the session's tool selection. Passed to the agent whole.
+        /// </summary>
+        public required AgentTools Tools { get; init; }
+
+        /// <summary>
+        /// What checks the session's agent: its policy, carried so MCP calls can be judged — an McpToolset is
+        /// manager-level, one per process, while a policy is per session, so it travels with the call; the
+        /// classifier PermissionDecider consults, so the agent can warm its cache at parse time (null wherever the
+        /// gate is not a PermissionDecider); and how the model asks the user (null in every headless path). Passed to
+        /// the agent whole; a child derives its own from it.
+        /// </summary>
+        public AgentGuards Guards { get; init; } = new();
+
+        /// <summary>
+        /// What the session's agent is told: its briefing, cxagent's config folder (so a user-level CXAGENT.md applies
+        /// wherever they work), and the day the session began, carried across re-wires so a later day builds the same
+        /// system prompt.
+        /// </summary>
+        public AgentBrief Brief { get; init; } = new();
 
         /// <summary>
         /// Which <c>providers</c> entry this is, for spend attribution and the UI's label.
@@ -426,43 +453,11 @@ public sealed class AgentHost : IDisposable
         /// <summary>Where the session works. Data, never the process's own directory.</summary>
         public string? WorkingDir { get; init; }
 
-        /// <summary>cxagent's config folder, so a user-level CXAGENT.md applies wherever they work.</summary>
-        public string? GlobalInstructionsDir { get; init; }
-
         /// <summary>The real window, so compaction derives its threshold from actual headroom.</summary>
         public int? ContextWindow { get; init; }
 
         /// <summary>Turn cap and compaction threshold. Null means nothing was configured.</summary>
         public OrchestratorSettings? Orchestrator { get; init; }
-
-        public Core.Mcp.McpToolset? Mcp { get; init; }
-
-        /// <summary>
-        /// The session's permission policy, carried so MCP calls can be judged.
-        ///
-        /// <para>THE TOOLSET CANNOT HOLD IT. An McpToolset is manager-level — one per process,
-        /// shared by every session — while a policy is per-session, so a field there would judge one
-        /// session's call by another session's rules. It travels with the CALL instead, the same way
-        /// Requester does.</para>
-        ///
-        /// <para>NULL IS REFUSED BY THE GATE, which is what shipped: nothing passed a policy, so
-        /// every MCP call was denied with "this request carried no session policy".</para>
-        /// </summary>
-        public Permissions.PermissionPolicy? Policy { get; init; }
-
-        /// <summary>
-        /// TASK 11: the same classifier <see cref="Permissions.PermissionDecider"/> consults, so the
-        /// agent can start warming its cache the moment a tool call is PARSED rather than waiting for
-        /// <see cref="Permissions.PermissionGatedExecutor"/> to ask for a verdict it needs synchronously.
-        ///
-        /// <para>NULL WHEREVER THE GATE ISN'T A <see cref="Permissions.PermissionDecider"/> — headless
-        /// runs and most tests use <see cref="Permissions.PermissionGate.AllowAll"/> or
-        /// <see cref="Permissions.PermissionGate.DenyAll"/>, neither of which owns a classifier at
-        /// all. Speculation is purely a latency optimisation, so "no classifier reachable" simply
-        /// means the agent never speculates and every gated call pays its normal synchronous cost —
-        /// exactly today's behaviour.</para>
-        /// </summary>
-        public Permissions.ActionClassifier? Classifier { get; init; }
 
         /// <summary>
         /// Where a tool this host's agent calls can send text back to that agent.
@@ -497,12 +492,6 @@ public sealed class AgentHost : IDisposable
         /// </summary>
         public Func<string, bool>? IsSessionAgent { get; init; }
 
-        public string? Briefing { get; init; }
-
-        /// <summary>The day the session began, for the system prompt — carried across re-wires.</summary>
-        public DateOnly? StartedOn { get; init; }
-        public ISubAgentSpawner? Spawner { get; init; }
-
         /// <summary>
         /// How this session is set up to work — BOTH axes.
         ///
@@ -513,49 +502,6 @@ public sealed class AgentHost : IDisposable
         /// what it meant.</para>
         /// </summary>
         public WorkingMode Mode { get; init; } = AgentMode.FanOut;
-
-        /// <summary>
-        /// How the model asks the user. Null in every headless path — a host with no UI must not
-        /// offer a tool whose whole behaviour is to wait for a person.
-        /// </summary>
-        public Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? AskUser { get; init; }
-
-        /// <summary>
-        /// The embedder's own tools, already wrapped in <see cref="Jobs.GatedAgentTool"/> by
-        /// SessionFactory. Empty in every path that injects nothing.
-        ///
-        /// <para>ALREADY GATED WHEN IT ARRIVES. This type does no wrapping of its own, because the
-        /// session's policy is not visible here — doing it in two places is how one of them ends up
-        /// being the copy that forgets.</para>
-        /// </summary>
-        public IReadOnlyList<Jobs.IAgentTool> AgentTools { get; init; } = [];
-
-        /// <summary>
-        /// A second, LIVE source of tools — consulted fresh every turn rather than snapshotted, so
-        /// a tool that starts existing after this host was built (a plugin loading at a later turn
-        /// boundary) is offered from the turn it arrives. See <c>Agent._dynamicTools</c>.
-        ///
-        /// <para>Null for every session with no such source, which is every session today: nothing
-        /// supplies this yet, and this field exists only so a later registry has somewhere to plug
-        /// in without another round of plumbing through Agent's constructor.</para>
-        /// </summary>
-        public Func<IReadOnlyList<Jobs.IAgentTool>>? DynamicTools { get; init; }
-
-        /// <summary>Each loaded plugin's system-prompt guidance — read per turn from the same live
-        /// source as <see cref="DynamicTools"/>, so a plugin's text arrives and departs with its
-        /// tools rather than lagging a turn behind them.</summary>
-        public Func<IReadOnlyList<Plugins.PluginInstructions>>? PluginInstructions { get; init; }
-
-        /// <summary>
-        /// The commands a host wants named to the model, or null for none — which is the default and
-        /// the normal case. See <c>SessionCommand.TellTheModel</c>: almost every command is the
-        /// user's to drive, and listing those costs tokens to enable a suggestion nobody wanted.
-        /// </summary>
-        public Func<IReadOnlyList<(string Name, string Summary)>>? ModelFacingCommands { get; init; }
-
-        /// <summary>The session's tool selection (S1 composed with S2), or null for no opinion.
-        /// A per-request selection is passed to <see cref="RunAsync"/> and composed onto it.</summary>
-        public Jobs.ToolSelection? ToolSelection { get; init; }
     }
 
     public AgentHost(AgentRuntime runtime, ISessionObserver sink, IToolObserver jobPanel,
@@ -808,52 +754,37 @@ public sealed class AgentHost : IDisposable
 
     private Agent BuildAgent()
     {
-        var agent = new Agent(_runtime.Provider, _runtime.Executors, Ledger, _sink, _jobPanel, _stores.Logs,
-            TurnCeiling,
+        var agent = new Agent(new AgentSetup
+        {
+            Model = new AgentModel(_runtime.Provider, Ledger) { InstanceName = _runtime.InstanceName },
+            Outputs = new AgentOutputs(_sink, _jobPanel) { Logs = _stores.Logs, Delivery = _runtime.Delivery },
 
-            // THE CONTEXT BOUND, which is what the "no turn cap" decision above rests on: a
-            // single-agent run ends when it runs out of room, not at an arbitrary turn number.
-            // The agent's own bound: it compresses its own context from inside its turn loop,
-            // which is the only place the measurement that triggers it is taken.
-            compressAbove: (_runtime.Orchestrator ?? OrchestratorSettings.Unbounded).EffectiveCompressThreshold(_runtime.ContextWindow)
-                ?? OrchestratorSettings.DefaultCompressThreshold,
+            // THE HOST ALREADY KNEW THIS and used it for persistence and history; the agent reads it rather than the
+            // process. No SessionId: this agent IS the session, so its own id is the one a child is given.
+            Identity = new AgentIdentity { WorkingDir = _runtime.WorkingDir },
 
-            // THE HOST ALREADY KNEW THIS and used it for persistence and history; the agent read
-            // the process instead. Same value in practice, different sources — which is only ever
-            // true until something moves the process.
-            workingDir: _runtime.WorkingDir,
-            instanceName: _runtime.InstanceName,
-            globalInstructionsDir: _runtime.GlobalInstructionsDir,
-            mcp: _runtime.Mcp,
-            briefing: _runtime.Briefing,
-            startedOn: _runtime.StartedOn,
+            // THE SESSION'S TOOLS WHOLE — the spawner among them, so the session's agent can delegate; model-facing
+            // commands only here, never on a child (see SubAgentFactory).
+            Tools = _runtime.Tools,
 
-            // FORWARDED, and this is the third of the three signature changes the spec counted:
-            // Agent takes it, AgentHost takes it, and BuildAgent must PASS it. Omitting this line
-            // compiles perfectly and produces a session whose agent silently has no spawn tool.
-            spawner: _runtime.Spawner,
-
-            // THE SAME CONTEXT THROUGHOUT. The agent is built once now, so this is the context it
-            // keeps for its whole life — prompt N+1 begins with everything prompt N learned.
-            context: Context,
-
-            // AND THE WAY TO ASK. Null in every headless path, and refused outright for a child —
+            // AND THE WAY TO ASK, among the guards. Null in every headless path, and refused outright for a child —
             // Agent enforces that itself rather than trusting whoever constructs it.
-            askUser: _runtime.AskUser,
+            Guards = _runtime.Guards,
+            Brief = _runtime.Brief,
 
-            // THE EMBEDDER'S OWN, gated before they got here. Offered to this agent and, through
-            // SubAgentRuntime, to every child it spawns.
-            agentTools: _runtime.AgentTools,
-            dynamicTools: _runtime.DynamicTools,
-            pluginInstructions: _runtime.PluginInstructions,
+            // THE CONTEXT BOUND, which is what the "no turn cap" decision above rests on: a single-agent run ends
+            // when it runs out of room, not at an arbitrary turn number. The agent compresses its own context from
+            // inside its turn loop, which is the only place the measurement that triggers it is taken.
+            Limits = new AgentLimits(TurnCeiling)
+            {
+                CompressAbove = (_runtime.Orchestrator ?? OrchestratorSettings.Unbounded).EffectiveCompressThreshold(_runtime.ContextWindow)
+                    ?? OrchestratorSettings.DefaultCompressThreshold,
+            },
 
-            // ONLY HERE, NEVER ON A CHILD. SubAgentFactory does not pass this and must not: a
-            // sub-agent has no user to type a command and no composer to type it into.
-            modelFacingCommands: _runtime.ModelFacingCommands,
-            toolSelection: _runtime.ToolSelection,
-            policy: _runtime.Policy,
-            classifier: _runtime.Classifier,
-            delivery: _runtime.Delivery)
+            // THE SAME CONTEXT THROUGHOUT. The agent is built once now, so this is the context it keeps for its whole
+            // life — prompt N+1 begins with everything prompt N learned.
+            Conversation = Context,
+        })
         {
             // THE STARTING MODE, applied here rather than passed to the constructor: Mode is a
             // settable property precisely so it can change later, and an initialiser says that more
@@ -1012,7 +943,7 @@ public sealed class AgentHost : IDisposable
             From = from,
             Observer = observer,
             // THE SESSION'S OWN, as a sub-agent gets them: same gate, same policy, same prompt.
-            Executors = _runtime.Executors,
+            Executors = _runtime.Tools.Executors,
             WorkingDir = _runtime.WorkingDir,
             Spent = usage =>
             {

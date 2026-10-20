@@ -22,7 +22,7 @@ public class AgentHostAsideTests
     }
 
     private static AgentHost Host(ILlmProvider provider) =>
-        new(new AgentHost.AgentRuntime { Provider = provider, Executors = JobRegistry.CreateWithBuiltins() },
+        new(new AgentHost.AgentRuntime { Provider = provider, Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(), new NullJobPanel());
 
     [Fact]
@@ -41,7 +41,7 @@ public class AgentHostAsideTests
         var mock = new MockLlmProvider();
         mock.EnqueueResponse(new LlmResponse { Text = "you decided X", StopReason = "end_turn" });
         var host = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = mock, Executors = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime { Provider = mock, Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(), new NullJobPanel(),
             resume: new CxAgent.Core.Storage.SessionSnapshot(
                 "AAAA01KZXC",

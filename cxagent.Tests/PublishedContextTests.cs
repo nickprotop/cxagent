@@ -42,7 +42,7 @@ public class PublishedContextTests
     }
 
     private static AgentHost Host(ILlmProvider provider) =>
-        new(new AgentHost.AgentRuntime { Provider = provider, Executors = JobRegistry.CreateWithBuiltins() },
+        new(new AgentHost.AgentRuntime { Provider = provider, Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(), new NullJobPanel());
 
     private static ToolCall Read(string path) => new()

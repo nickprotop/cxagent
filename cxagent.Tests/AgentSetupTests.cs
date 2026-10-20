@@ -1,6 +1,9 @@
 using CxAgent.Core.Agents;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Permissions;
+using CxAgent.Core.Sessions;
+using CxAgent.Core.Storage;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -57,6 +60,44 @@ public sealed class AgentSetupTests
         Assert.Equal(DateOnly.FromDateTime(DateTime.Now), first.StartedOn);
         Assert.Equal(int.MaxValue, first.MaxTurns);
         Assert.NotSame(first.Context, second.Context);
+    }
+
+    /// <summary>
+    /// THE SESSION HOST FORWARDS EVERY VALUE: its runtime's tools, guards and brief reach the agent whole, and the
+    /// model, outputs, identity and limits it builds carry what the runtime said. A value dropped on the way would
+    /// compile cleanly and leave the agent without it — the failure the groups exist to make impossible.
+    /// </summary>
+    [Fact]
+    public void TheHost_ForwardsEveryValue()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cx-setup-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var policy = new PermissionPolicy(dir, new PermissionRulesStore(new AppPaths(dir)));
+        var tools = new AgentTools(JobRegistry.CreateWithBuiltins())
+        {
+            Injected = [], Dynamic = () => [], PluginInstructions = () => [], ModelFacingCommands = () => [],
+            Selection = new ToolSelection(["read_file"]),
+        };
+        var guards = new AgentGuards { Policy = policy, AskUser = (_, _) => Task.FromResult(new QuestionAnswers([])) };
+        var brief = new AgentBrief { Briefing = "b", GlobalInstructionsDir = dir, StartedOn = new DateOnly(2026, 1, 2) };
+        var runtime = new AgentHost.AgentRuntime
+        {
+            Provider = new MockLlmProvider(), InstanceName = "inst", WorkingDir = dir, Tools = tools, Guards = guards,
+            Brief = brief,
+        };
+
+        var host = new AgentHost(runtime, new BufferedChatSink(), new BufferedJobPanel(), new AgentHost.SessionStores());
+        var setup = host.AgentSetup;
+
+        Assert.Same(tools, setup.Tools);
+        Assert.Same(guards, setup.Guards);
+        Assert.Same(brief, setup.Brief);
+        Assert.Same(runtime.Provider, setup.Model.Provider);
+        Assert.Equal("inst", setup.Model.InstanceName);
+        Assert.Equal(dir, setup.Identity.WorkingDir);
+        Assert.Null(setup.Identity.SessionId);   // the session's own agent: its id IS the session's
+        Assert.False(setup.Identity.IsSubAgent);
+        Assert.Same(host.Context, setup.Conversation);
     }
 
     private static AgentSetup Minimal(int maxTurns) => new()

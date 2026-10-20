@@ -19,7 +19,7 @@ public class AgentHostTests
         new(new AgentHost.AgentRuntime
             {
                 Provider = provider,
-                Executors = JobRegistry.CreateWithBuiltins(),
+                Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
             },
             sink ?? new RecordingSink(),
             new NullJobPanel());
@@ -141,7 +141,7 @@ public class AgentHostTests
             // WITH A WORKING DIRECTORY, as AppBootstrap wires it: resume is scoped to the folder a
             // session ran in, and a row saved without one is deliberately never offered.
             var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = mock, Executors = JobRegistry.CreateWithBuiltins(), WorkingDir = "/projects/here" },
+            new AgentHost.AgentRuntime { Provider = mock, WorkingDir = "/projects/here", Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(),
             new NullJobPanel(),
             new AgentHost.SessionStores { Resume = store });
@@ -175,7 +175,7 @@ public class AgentHostTests
             mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
             var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = mock, Executors = JobRegistry.CreateWithBuiltins(), WorkingDir = "/projects/here" },
+            new AgentHost.AgentRuntime { Provider = mock, WorkingDir = "/projects/here", Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(),
             new NullJobPanel(),
             new AgentHost.SessionStores { Resume = store });
@@ -202,7 +202,7 @@ public class AgentHostTests
             UpdatedAt: DateTimeOffset.UtcNow);
 
         var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = mock, Executors = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime { Provider = mock, Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(),
             new NullJobPanel(),
             resume: snapshot);
@@ -227,7 +227,7 @@ public class AgentHostTests
             mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
             var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = mock, Executors = JobRegistry.CreateWithBuiltins(), WorkingDir = "/projects/here" },
+            new AgentHost.AgentRuntime { Provider = mock, WorkingDir = "/projects/here", Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(),
             new NullJobPanel(),
             new AgentHost.SessionStores { Resume = store });
@@ -263,7 +263,7 @@ public class AgentHostTests
             UpdatedAt: DateTimeOffset.UtcNow);
 
         var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(),
             new NullJobPanel(),
             resume: snapshot);
@@ -298,7 +298,7 @@ public class AgentHostTests
             with { Usage = new LlmUsage { InputTokens = 30, OutputTokens = 12 } });
 
         var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = mock, Executors = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime { Provider = mock, Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(),
             new NullJobPanel(),
             ledger: mine);
@@ -318,7 +318,7 @@ public class AgentHostTests
     public void Ledger_WhenNotGiven_IsStillMadeHere()
     {
         var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(),
             new NullJobPanel());
 
@@ -346,7 +346,7 @@ public class AgentHostTests
 
         var before = new TokenLedger();
         var first = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = mock, Executors = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime { Provider = mock, Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(),
             new NullJobPanel(),
             ledger: before);
@@ -357,7 +357,7 @@ public class AgentHostTests
         // host over it.
         first.Dispose();
         var second = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = mock, Executors = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime { Provider = mock, Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(),
             new NullJobPanel(),
             ledger: new TokenLedger());
@@ -386,7 +386,7 @@ public class AgentHostTests
         var seeded = new TokenLedger(snapshot.InputTokens, snapshot.OutputTokens);
 
         var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(),
             new NullJobPanel(),
             ledger: seeded,
@@ -410,8 +410,9 @@ public class AgentHostTests
         var runner = new AgentHost(
             new AgentHost.AgentRuntime
             {
-                Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(),
+                Provider = new MockLlmProvider(),
                 Orchestrator = new OrchestratorSettings(MaxTurns: 0),
+                Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
             },
             new RecordingSink(),
             new NullJobPanel());
@@ -440,7 +441,7 @@ public class AgentHostTests
     {
         var server = new SpyDisposable();
         var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(), McpServers = [server] },
+            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), McpServers = [server], Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) },
             new RecordingSink(),
             new NullJobPanel());
 
@@ -457,8 +458,9 @@ public class AgentHostTests
         var runner = new AgentHost(
             new AgentHost.AgentRuntime
             {
-                Provider = new MockLlmProvider(), Executors = JobRegistry.CreateWithBuiltins(),
+                Provider = new MockLlmProvider(),
                 Orchestrator = new OrchestratorSettings(MaxTurns: 25),
+                Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
             },
             new RecordingSink(),
             new NullJobPanel());

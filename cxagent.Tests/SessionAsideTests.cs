@@ -237,7 +237,7 @@ public class SessionAsideTests : IDisposable
         manager.Commands.TryRun(session, "/btw");
 
         session.ReplaceHost(
-            new AgentHost(new AgentHost.AgentRuntime { Provider = model, Executors = session.Executors! },
+            new AgentHost(new AgentHost.AgentRuntime { Provider = model, Tools = new AgentTools(session.Executors!) },
                 new RecordingSink(), new NullJobPanel()),
             model, null, session.Executors!);
 
