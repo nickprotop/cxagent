@@ -50,8 +50,8 @@ public class ReadOnlyBoundaryTests : IDisposable
         Assert.False(Silent(command));
 
     // A cd INTO THE HOME FOLDER LEAVES. The chain's cd target is taken off before the rest is examined, so a
-    // tilde there never met the tilde refusal the arguments get, and joined onto the folder as a plain name
-    // it read as `<folder>/~` — inside.
+    // tilde there meets no tilde refusal of the arguments' kind; joined onto the folder as a plain name it
+    // would read as `<folder>/~` — inside.
     [Theory]
     [InlineData("cd ~ && ls")]
     [InlineData("cd ~/notes && ls")]
@@ -87,8 +87,8 @@ public class ReadOnlyBoundaryTests : IDisposable
     }
 
     // A PATH AFTER A cd NAMES SOMETHING IN THE FOLDER THE cd ENTERED. Judged from the folder before it,
-    // `cd sub && cat notes.txt` read `<root>/notes.txt` — inside — while the shell read `sub/notes.txt`, a
-    // link out of the folder.
+    // `cd sub && cat leak.txt` would read as `<root>/leak.txt` — inside — while the shell reads
+    // `sub/leak.txt`, a link out of the folder.
     [Fact]
     public void APathAfterACd_IsJudgedFromTheFolderItEntered()
     {

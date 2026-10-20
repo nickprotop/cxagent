@@ -710,6 +710,24 @@ public class PermissionPolicyTests
         Assert.True(Silent("copy"));
     }
 
+    /// <summary>
+    /// AND WITHOUT A FOLDER TO RESOLVE FROM: the policy judges the move's source against its own boundary, so
+    /// a caller that names no working folder still asks to move a hook away.
+    /// </summary>
+    [Fact]
+    public void AcceptEdits_AsksToMoveAFileOutOfACodeFolder_WithNoWorkingFolder()
+    {
+        var root = MakeTempDir();
+        var policy = TrustedPolicy(root, EditMode.AcceptEdits);
+        var requests = PermissionPolicy.RequestsFor("file", new JobParameters(new Dictionary<string, object?>
+        {
+            ["action"] = "move", ["path"] = Path.Combine(root, ".git", "hooks", "pre-commit"),
+            ["dest"] = Path.Combine(root, "kept.txt"),
+        }));
+
+        Assert.False(requests.All(r => policy.IsSilentlyAllowed(r with { Policy = policy })));
+    }
+
     /// <summary>READS ARE NOT EDITS. The deny-list guards writes; reading .git/config to answer a
     /// question about the repo is ordinary and must not start prompting.</summary>
     [Fact]

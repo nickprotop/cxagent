@@ -125,6 +125,16 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     public bool CustomEnv { get; init; }
 
     /// <summary>
+    /// Whether this read of a file also removes it — a move's source.
+    ///
+    /// <para>A READ EVERYWHERE BUT A CODE FOLDER, where removing a hook changes what runs as surely as editing
+    /// one. Carried as a flag rather than raised as a write so an ordinary move asks one question in
+    /// always-ask, and judged by the policy against its own boundary, which needs no working folder to know
+    /// where a code folder is.</para>
+    /// </summary>
+    public bool RemovesSource { get; init; }
+
+    /// <summary>
     /// Raised while expanding a command the user typed — one of its <c>!`…`</c> lines or
     /// <c>@file</c> includes — rather than by the model.
     ///

@@ -35,9 +35,8 @@ public class FileJobExecutorTests : IDisposable
 
     /// <summary>
     /// A WALK STAYS WHERE THE GATE LOOKED. The gate allows a list or search of a folder inside the boundary,
-    /// and the walk then followed every link it met — a link to a folder elsewhere listed that folder's files
-    /// and a link to a file elsewhere had its contents searched, unasked. A link that lands inside the
-    /// boundary is followed as before.
+    /// and a walk that followed every link would list the files of a folder elsewhere and search the contents
+    /// of a file elsewhere, unasked. A link that lands inside the boundary is followed.
     /// </summary>
     [Theory]
     [InlineData("list")]
@@ -70,6 +69,87 @@ public class FileJobExecutorTests : IDisposable
         Assert.DoesNotContain("outside", content);
         Assert.Contains(Path.Combine("linkin", "kept.txt"), content);
     }
+
+    /// <summary>
+    /// A CYCLE OF LINKS ENDS. Two folders that link to each other inside the boundary are each walked once
+    /// per way in, and the walk does not go round again — a link to a folder it is already inside is not
+    /// entered.
+    /// </summary>
+    [Fact]
+    public async Task AWalk_EndsOnACycleOfSiblingLinks()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var root = Path.Combine(_dir, "proj");
+        Directory.CreateDirectory(Path.Combine(root, "a"));
+        Directory.CreateDirectory(Path.Combine(root, "b"));
+        File.WriteAllText(Path.Combine(root, "a", "x.txt"), "x");
+        File.WriteAllText(Path.Combine(root, "b", "y.txt"), "y");
+        Directory.CreateSymbolicLink(Path.Combine(root, "a", "tob"), Path.Combine(root, "b"));
+        Directory.CreateSymbolicLink(Path.Combine(root, "b", "toa"), Path.Combine(root, "a"));
+
+        var r = await new FileJobExecutor().ExecuteAsync(
+            P(("action", "list"), ("pattern", "*")), PolicedContext(root), CancellationToken.None);
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Equal(4, (int)r.Output["count"]!);   // a/x, b/y, a/tob/y, b/toa/x
+    }
+
+    /// <summary>
+    /// INSIDE THE BOUNDARY THE WALK IS THE PLAIN ENUMERATION: the same files in the same order, links that stay
+    /// in followed as before, whether or not the call carries a policy.
+    /// </summary>
+    [Fact]
+    public async Task AWalk_InsideTheBoundary_IsThePlainEnumeration()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var root = Path.Combine(_dir, "proj");
+        foreach (var folder in new[] { "src", "src/deep", "docs", ".hidden" })
+            Directory.CreateDirectory(Path.Combine(root, folder));
+        foreach (var file in new[] { "a.cs", "src/b.cs", "src/deep/c.cs", "docs/d.md", ".hidden/e.cs", "Z.CS" })
+            File.WriteAllText(Path.Combine(root, file), "x");
+        Directory.CreateSymbolicLink(Path.Combine(root, "linked"), Path.Combine(root, "src"));
+        File.CreateSymbolicLink(Path.Combine(root, "f.cs"), Path.Combine(root, "a.cs"));
+
+        foreach (var pattern in new[] { "*", "*.cs", "?.cs" })
+        {
+            var plain = await new FileJobExecutor().ExecuteAsync(
+                P(("action", "list"), ("path", root), ("pattern", pattern)), Ctx, CancellationToken.None);
+            var walked = await new FileJobExecutor().ExecuteAsync(
+                P(("action", "list"), ("pattern", pattern)), PolicedContext(root), CancellationToken.None);
+
+            Assert.Equal(plain.Output["content"], walked.Output["content"]);
+        }
+    }
+
+    /// <summary>
+    /// THE GATE'S POLICY BOUNDS THE WALK when the call carries none of its own: a registry gated by a policy
+    /// gates every caller, including one whose context names no policy, and its walk stays where that gate
+    /// looked.
+    /// </summary>
+    [Fact]
+    public async Task AWalk_IsBoundedByTheRegistrysPolicy_WhenTheCallCarriesNone()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var root = Path.Combine(_dir, "proj");
+        var elsewhere = Path.Combine(_dir, "elsewhere");
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(elsewhere);
+        File.WriteAllText(Path.Combine(elsewhere, "away.txt"), "MARK outside");
+        Directory.CreateSymbolicLink(Path.Combine(root, "linkdir"), elsewhere);
+        var policy = new PermissionPolicy(root, new PermissionRulesStore(new AppPaths(Path.Combine(_dir, "config"))));
+        var context = new JobContext("a", "j", new Dictionary<string, JobResult>(), null) { WorkingDirectory = root };
+
+        var r = await new FileJobExecutor(policy).ExecuteAsync(
+            P(("action", "list"), ("pattern", "*")), context, CancellationToken.None);
+
+        Assert.DoesNotContain("away.txt", (string)r.Output["content"]!);
+    }
+
+    private JobContext PolicedContext(string root) => new("a", "j", new Dictionary<string, JobResult>(), null)
+    {
+        WorkingDirectory = root,
+        Policy = new PermissionPolicy(root, new PermissionRulesStore(new AppPaths(Path.Combine(_dir, "config")))),
+    };
 
     // THE BUG REPLACE ALREADY FIXED, through the other door. ReplaceAsync preserves a UTF-8 BOM
     // because a live drive turned HexEncoder.cs from EF BB BF into 2F 2F on a two-line insertion;

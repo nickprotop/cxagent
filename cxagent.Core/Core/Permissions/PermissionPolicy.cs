@@ -416,14 +416,8 @@ public class PermissionPolicy
                 break;
             case "copy":
             case "move":
-                // A MOVE OUT OF A CODE FOLDER REMOVES WHAT WAS THERE, and removing a hook changes what runs
-                // as surely as editing one — so that source is asked about as the write it is. Only there:
-                // a move's source is otherwise a read, so an ordinary move in always-ask stays one question.
-                requests.Add(FileRequest(
-                    action == "move" && root is { Length: > 0 } && TryResolve(target, root) is { } source
-                        && UnderCodeFolder(source, RealFolder(root))
-                        ? PermissionKind.FileWrite : PermissionKind.FileRead,
-                    target, root));
+                // A MOVE REMOVES ITS SOURCE, which matters in a code folder — see PermissionRequest.RemovesSource.
+                requests.Add(FileRequest(PermissionKind.FileRead, target, root) with { RemovesSource = action == "move" });
                 if (dest is not null)
                     requests.Add(FileRequest(PermissionKind.FileWrite, dest, root));
                 break;
@@ -937,9 +931,9 @@ public class PermissionPolicy
         if (after is null || !IsInsideBoundary(after)) return false;
 
         // THE PATHS CommandSubjects FOUND, FROM THE FOLDER THE COMMAND READS THEM IN — where it runs, and past
-        // a leading cd, where that went. Judged from the boundary instead, `ls ..` from `sub` read as leaving
-        // the project when it lists it; judged from before the cd, `cd sub && cat leak.txt` read the root's
-        // `leak.txt`. An absolute one is unchanged by the combine.
+        // a leading cd, where that went. Judged from the boundary instead, `ls ..` from `sub` would read as
+        // leaving the project when it lists it; judged from before the cd, `cd sub && cat leak.txt` would read
+        // the root's `leak.txt`. An absolute one is unchanged by the combine.
         if (!subjects.Paths.All(p => IsInsideBoundary(Path.Combine(after, p)))) return false;
 
         return RelativeSubjectsConfined(PastCd(request.What, subjects), after);
@@ -955,7 +949,7 @@ public class PermissionPolicy
     /// <c>cd</c>, the folder it enters — null when that folder is the shell's to decide.
     ///
     /// <para>THE SHELL'S TARGETS ARE NOT NAMES. <c>~</c> is the home folder, <c>-</c> is <c>$OLDPWD</c>, and a
-    /// variable is whatever it holds; joined onto the folder as text, each read as a folder inside it.
+    /// variable is whatever it holds; joined onto the folder as text, each would read as a folder inside it.
     /// <c>CDPATH</c> is the other way a cd leaves, and the shell executor empties it for that reason.</para>
     /// </summary>
     private static string? AfterCd(string folder, string? cd)
@@ -1292,12 +1286,12 @@ public class PermissionPolicy
     /// <see cref="ExecutableConfigDirs"/> for why in-cwd is scope rather than safety.
     /// </summary>
     /// <remarks>
-    /// WRITES ONLY. Reading <c>.git/config</c> to answer a question about the repo is ordinary, and
-    /// making reads prompt here would be friction with no safety behind it.
+    /// WRITES ONLY, and a move's source, which it removes. Reading <c>.git/config</c> to answer a question
+    /// about the repo is ordinary, and making reads prompt here would be friction with no safety behind it.
     /// </remarks>
     private bool IsExecutableConfig(PermissionRequest request)
     {
-        if (request.Kind != PermissionKind.FileWrite) return false;
+        if (request.Kind != PermissionKind.FileWrite && !request.RemovesSource) return false;
 
         var resolved = TryResolve(request.Display, _boundary);
         if (resolved is null) return true;   // unresolvable: fail toward asking, as everywhere here
@@ -1335,7 +1329,7 @@ public class PermissionPolicy
     /// </summary>
     public bool IsProtectedWrite(PermissionRequest request)
     {
-        if (request.Kind != PermissionKind.FileWrite) return false;
+        if (request.Kind != PermissionKind.FileWrite && !request.RemovesSource) return false;
 
         var resolved = TryResolve(request.Display, _boundary);
         if (resolved is null) return true;   // unresolvable: fail toward refusing

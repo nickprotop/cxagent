@@ -67,7 +67,7 @@ public class JobRegistry
         var reg = new JobRegistry();
         reg.Register(new PermissionGatedExecutor(
             new ShellJobExecutor(backgrounding), permissions, policy));
-        reg.Register(new PermissionGatedExecutor(new FileJobExecutor(), permissions, policy));
+        reg.Register(new PermissionGatedExecutor(new FileJobExecutor(policy), permissions, policy));
         reg.Register(new WaitJobExecutor());
         reg.Register(new PermissionGatedExecutor(new HttpJobExecutor(), permissions, policy));
         return reg;
