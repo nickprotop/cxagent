@@ -81,15 +81,10 @@ public static class AbiPluginLoader
             return new AbiPluginLoadResult.Failed(
                 $"no sidecar manifest at '{sidecarPath}' for plugin '{libraryPath}'.");
 
-        string sidecarJson;
-        try
-        {
-            sidecarJson = await File.ReadAllTextAsync(sidecarPath, ct);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return new AbiPluginLoadResult.Failed($"could not read sidecar manifest '{sidecarPath}': {ex.Message}");
-        }
+        // READ AS THE LOAD QUESTION READ IT — see PluginResolver.ReadSidecar — so what is checked is what was shown.
+        var sidecarRead = PluginResolver.ReadSidecar(sidecarPath);
+        if (sidecarRead.Json is not { } sidecarJson)
+            return new AbiPluginLoadResult.Failed($"could not read sidecar manifest '{sidecarPath}': {sidecarRead.Problem ?? "it is empty"}");
 
         var parsedSidecar = PluginManifest.Parse(sidecarJson);
         if (parsedSidecar.Manifest is null)

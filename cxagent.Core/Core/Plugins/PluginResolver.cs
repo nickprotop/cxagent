@@ -170,9 +170,22 @@ public static class PluginResolver
     public static PluginManifest? DeclaredManifest(string assemblyPath)
     {
         var sidecarPath = Path.ChangeExtension(assemblyPath, null) + ".plugin.json";
-        if (!File.Exists(sidecarPath)) return null;
+        return ReadSidecar(sidecarPath).Json is { } json ? PluginManifest.Parse(json).Manifest : null;
+    }
 
-        return PluginManifest.Parse(File.ReadAllText(sidecarPath)).Manifest;
+    /// <summary>
+    /// A sidecar's text, read the way every file that reaches a prompt is: only from inside the folder that holds
+    /// it — a sidecar linked out of its load set describes something other than what is there — only a file with a
+    /// size, at most a megabyte. Null text with no problem when there is no sidecar.
+    ///
+    /// <para>THE SIDECAR IS WHAT THE LOAD QUESTION SHOWS, read before any of the plugin's code runs, from a folder a
+    /// cloned repository may have written — so it is read with the same care as an instruction file.</para>
+    /// </summary>
+    public static SidecarText ReadSidecar(string sidecarPath)
+    {
+        var read = Permissions.PathResolver.ReadConfined(new Permissions.ConfinedRead(sidecarPath,
+            Path.GetDirectoryName(Path.GetFullPath(sidecarPath)), 1024 * 1024));
+        return new SidecarText(read.Text is { Length: > 0 } text ? text : null, read.Problem);
     }
 
     /// <summary>
@@ -233,7 +246,7 @@ public static class PluginResolver
         var sidecar = Path.ChangeExtension(pluginPath, null) + ".plugin.json";
         try
         {
-            if (File.Exists(sidecar) && PluginManifest.Parse(File.ReadAllText(sidecar)).Manifest?.Kind is { } kind)
+            if (ReadSidecar(sidecar).Json is { } json && PluginManifest.Parse(json).Manifest?.Kind is { } kind)
                 return kind == PluginKind.Native;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -373,3 +386,6 @@ public static class PluginResolver
         }
     }
 }
+
+/// <summary>A sidecar's JSON, or why it was not read — both null when there is no sidecar.</summary>
+public sealed record SidecarText(string? Json, string? Problem);

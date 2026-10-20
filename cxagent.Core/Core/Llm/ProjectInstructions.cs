@@ -3,6 +3,32 @@ namespace CxAgent.Core.Llm;
 /// <summary>One project's instruction file: where it was found, and what it said.</summary>
 public sealed record ProjectInstructionFile(string Path, string Text);
 
+/// <summary>An instruction file found and not read, and why — said to the user once (see <see cref="InstructionNotices"/>).</summary>
+public sealed record SkippedInstructionFile(string Path, string Reason);
+
+/// <summary>What a search for instruction files found: the files read, and the ones skipped.</summary>
+public sealed record InstructionScan(IReadOnlyList<ProjectInstructionFile> Files, IReadOnlyList<SkippedInstructionFile> Skipped);
+
+/// <summary>
+/// Says each skipped instruction file once — not every turn, though the prompt that skips it is built every turn.
+///
+/// <para>A SKIP THE USER WOULD WANT TO KNOW ABOUT. A shared <c>AGENTS.md</c> linked from outside the repository is an
+/// ordinary setup, and silently ignoring it reads as the agent ignoring its instructions.</para>
+/// </summary>
+public sealed class InstructionNotices(Action<Commands.Message> say)
+{
+    private readonly HashSet<string> _said = new(StringComparer.Ordinal);
+
+    public void Announce(IReadOnlyList<SkippedInstructionFile> skipped)
+    {
+        foreach (var file in skipped)
+            if (_said.Add(file.Path + "\0" + file.Reason))
+                say(new Commands.Message(
+                    $"{file.Path} {file.Reason}. Copy it into the repository, or put shared instructions in your "
+                    + "global CXAGENT.md.", Commands.Severity.Warning));
+    }
+}
+
 /// <summary>
 /// Project and user instructions — <c>CXAGENT.md</c>, <c>AGENTS.md</c> or <c>CLAUDE.md</c> found by
 /// walking up from the working directory, plus <c>CXAGENT.md</c> in cxagent's own config directory.
@@ -101,11 +127,24 @@ public static class ProjectInstructions
     /// <param name="home">The user's home folder, or null for the real one — where the walk stops short of a
     /// home kept in git (see <see cref="ProjectLevels"/>).</param>
     public static IReadOnlyList<ProjectInstructionFile> Find(
-        string startDirectory, string? globalDirectory = null, string? home = null)
+        string startDirectory, string? globalDirectory = null, string? home = null) =>
+        Scan(startDirectory, globalDirectory, home).Files;
+
+    /// <summary>
+    /// The instruction files <see cref="Find"/> reads, and the ones it skipped — a project file whose real path
+    /// leaves the repository is not read (a cloned repository could link it to a key), and is listed so the user
+    /// can be told.
+    /// </summary>
+    /// <param name="startDirectory">Where the search begins, walking upward — from its real folder, the one
+    /// trusted, so the repository root it finds always holds it.</param>
+    /// <param name="globalDirectory">cxagent's config folder, whose <c>CXAGENT.md</c> is read wherever it links.</param>
+    /// <param name="home">The user's home folder, or null for the real one.</param>
+    public static InstructionScan Scan(string startDirectory, string? globalDirectory = null, string? home = null)
     {
         var found = new List<ProjectInstructionFile>();
+        var skipped = new List<SkippedInstructionFile>();
 
-        if (globalDirectory is not null && Read(globalDirectory, GlobalFileName) is { } global)
+        if (globalDirectory is not null && Read(new InstructionRead(globalDirectory, GlobalFileName, null, skipped)) is { } global)
             found.Add(global);
 
         try
@@ -125,7 +164,8 @@ public static class ProjectInstructions
             // route; and on a shared machine the directories above ~ are writable by other people.
             //
             // THE PROJECT'S FOLDERS, nearest first — see ProjectLevels for where the walk stops and why.
-            var dirs = ProjectLevels.From(startDirectory, home);
+            var dirs = ProjectLevels.From(Permissions.PathResolver.RealFolder(startDirectory), home);
+            var root = dirs[^1];
 
             foreach (var name in ProjectFileNames)
             {
@@ -133,7 +173,7 @@ public static class ProjectInstructions
                 // the more specific claim about the code being worked on.
                 var matches = new List<ProjectInstructionFile>();
                 for (var i = dirs.Count - 1; i >= 0; i--)
-                    if (Read(dirs[i], name) is { } file) matches.Add(file);
+                    if (Read(new InstructionRead(dirs[i], name, root, skipped)) is { } file) matches.Add(file);
 
                 if (matches.Count == 0) continue;
 
@@ -150,45 +190,39 @@ public static class ProjectInstructions
             // Best effort, like every other read in this app that is not the work itself.
         }
 
-        return found;
+        return new InstructionScan(found, skipped);
     }
 
-    /// <summary>One named file, or null when it is absent, empty or unreadable.</summary>
-    private static ProjectInstructionFile? Read(string directory, string name)
+    /// <summary>One file to read: the folder and name, the folder its real path must stay in (null for the user's
+    /// own), and where a skip is recorded.</summary>
+    private sealed record InstructionRead(string Directory, string Name, string? Root, List<SkippedInstructionFile> Skipped);
+
+    /// <summary>One named file, or null when it is absent, empty, unreadable or refused.</summary>
+    private static ProjectInstructionFile? Read(InstructionRead read)
     {
-        try
+        var path = Path.Combine(read.Directory, read.Name);
+
+        // CONFINED, CAPPED, AND NEVER A DEVICE — see PathResolver.ReadConfined. Bytes enough for the character cap
+        // in any encoding UTF-8 allows.
+        var text = Permissions.PathResolver.ReadConfined(new Permissions.ConfinedRead(path, read.Root, MaxChars * 4));
+        if (text.Problem is { } problem && text.Text is null && File.Exists(path))
         {
-            var path = Path.Combine(directory, name);
-            if (!File.Exists(path)) return null;
-
-            var text = File.ReadAllText(path).Trim();
-
-            // AN EMPTY FILE IS NOT INSTRUCTIONS. A placeholder would otherwise produce a header
-            // announcing project instructions followed by nothing.
-            if (text.Length == 0) return null;
-
-            if (text.Length > MaxChars)
-                text = text[..MaxChars]
-                     + $"\n\n[truncated — {name} is longer than {MaxChars:N0} characters]";
-
-            return new ProjectInstructionFile(Path.GetFullPath(path), text);
-        }
-        catch (Exception)
-        {
-            // Unreadable is the same as absent.
+            read.Skipped.Add(new SkippedInstructionFile(Path.GetFullPath(path), problem));
             return null;
         }
+
+        // AN EMPTY FILE IS NOT INSTRUCTIONS. A placeholder would otherwise produce a header
+        // announcing project instructions followed by nothing.
+        var body = text.Text?.Trim();
+        if (string.IsNullOrEmpty(body)) return null;
+
+        if (body.Length > MaxChars || text.Truncated)
+            body = body[..Math.Min(body.Length, MaxChars)]
+                 + $"\n\n[truncated — {read.Name} is longer than {MaxChars:N0} characters]";
+
+        return new ProjectInstructionFile(Path.GetFullPath(path), body);
     }
 
-    /// <summary>
-    /// Renders the file as the block that follows the system prompt, or an empty string when there
-    /// is nothing to add.
-    ///
-    /// <para>NAMED AND FENCED. The model is told where the text came from and that it takes
-    /// precedence — an unattributed paragraph appended to a system prompt reads as though the app
-    /// itself said it, and there would be no way for the model to weigh a project rule against a
-    /// general one.</para>
-    /// </summary>
     public static string Render(IReadOnlyList<ProjectInstructionFile> files)
     {
         if (files.Count == 0) return "";

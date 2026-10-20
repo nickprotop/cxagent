@@ -170,7 +170,7 @@ public static class PluginDiscovery
                 PluginManifest? manifest;
                 try
                 {
-                    manifest = PluginManifest.Parse(File.ReadAllText(sidecar)).Manifest;
+                    manifest = PluginResolver.ReadSidecar(sidecar).Json is { } json ? PluginManifest.Parse(json).Manifest : null;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -260,8 +260,8 @@ public static class PluginDiscovery
             // this and what Load() returns, so reading it here is reading the same name early rather
             // than risking a second, different one.
             var sidecarPath = Path.ChangeExtension(assemblyPath, null) + ".plugin.json";
-            var sidecarManifest = File.Exists(sidecarPath)
-                ? PluginManifest.Parse(File.ReadAllText(sidecarPath)).Manifest
+            var sidecarManifest = PluginResolver.ReadSidecar(sidecarPath).Json is { } sidecarJson
+                ? PluginManifest.Parse(sidecarJson).Manifest
                 : null;
             var declaredName = sidecarManifest?.Name;
             if (string.IsNullOrEmpty(declaredName))

@@ -21,8 +21,8 @@ internal static class ProjectLevels
     /// <param name="home">The user's home folder, or null for the real one.</param>
     public static List<string> From(string start, string? home = null)
     {
-        home = Path.TrimEndingDirectorySeparator(Path.GetFullPath(
-            home ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)));
+        // REAL, as the start is when the caller passes it real — a home reached through a link is still home.
+        home = Permissions.PathResolver.RealFolder(home ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         var dirs = new List<string>();
         var foundRoot = false;
         try

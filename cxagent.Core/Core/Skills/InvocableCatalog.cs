@@ -118,7 +118,7 @@ public static partial class InvocableCatalog
         // EVERY SOURCE IS READ, EVEN AFTER ONE SUPPLIED A NAME: a broken file in a losing folder is
         // still a file the user wrote and expected to work, and silence about it is indistinguishable
         // from it never having been found.
-        foreach (var source in Sources(roots))
+        foreach (var source in Sources(roots, problems))
             foreach (var entry in Read(source, problems))
             {
                 if (winners.TryGetValue(entry.Name, out var winner))
@@ -134,14 +134,14 @@ public static partial class InvocableCatalog
         return new InvocableCatalogResult([.. order.Select(n => winners[n])], shadowed, problems);
     }
 
-    private static List<Source> Sources(CatalogRoots roots)
+    private static List<Source> Sources(CatalogRoots roots, List<SkillProblem> refused)
     {
         var sources = new List<Source>();
         var seen = new HashSet<string>(OperatingSystem.IsWindows()
             ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
 
         // THE PROJECT'S FOLDERS, nearest first, and the top of them: the root a project source's links stay in.
-        var levels = WalkedLevels(roots.WorkingDirectory);
+        var levels = WalkedLevels(Permissions.PathResolver.RealFolder(roots.WorkingDirectory));
         var repoRoot = Permissions.PathResolver.RealFolder(levels[^1]);
 
         void Add(string folder, Layout layout, InvocableScope scope)
@@ -150,7 +150,16 @@ public static partial class InvocableCatalog
             // .cxagent/skills — reaches its target twice. Reading it twice would shadow every file in
             // it by itself.
             var real = RealPath(folder);
-            if (real is not null && seen.Add(real))
+            if (real is null) return;
+
+            // A PROJECT SOURCE THAT IS ITSELF A LINK OUT OF THE REPOSITORY brings in a folder that is not the
+            // project's — `.agents/skills` pointed at another product's skills, or anywhere — so it is refused whole.
+            if (scope == InvocableScope.Project && !Permissions.PathResolver.Contains(repoRoot, real))
+            {
+                refused.Add(new SkillProblem(folder, $"links outside the repository (→ {real}) — not read"));
+                return;
+            }
+            if (seen.Add(real))
                 sources.Add(new Source(folder, layout, scope, scope == InvocableScope.Project ? repoRoot : null));
         }
 
@@ -210,9 +219,7 @@ public static partial class InvocableCatalog
                 continue;
             }
 
-            string text;
-            try { text = File.ReadAllText(file); }
-            catch (Exception) { problems.Add(new SkillProblem(file, "could not be read")); continue; }
+            if (Confined(file, source, problems) is not { } text) continue;
 
             var front = Frontmatter.Parse(text);
             if (front.Error is { } error) { problems.Add(new SkillProblem(file, error)); continue; }
@@ -280,6 +287,21 @@ public static partial class InvocableCatalog
     }
 
     private const int MaxCommandEntries = 10_000;
+
+    // THE MOST OF ONE COMMAND OR SKILL FILE READ: far past any real one, and a bound on a file that never ends.
+    private const int MaxInvocableBytes = 1024 * 1024;
+
+    /// <summary>
+    /// A command or skill file's text, read by the confined read: its real path inside the source's root (the
+    /// repository, for a project source — the user's own folders have none), only a file with a size, at most a
+    /// megabyte. Null, with the reason recorded, when it is refused or cannot be read.
+    /// </summary>
+    private static string? Confined(string path, Source source, List<SkillProblem> problems)
+    {
+        var read = Permissions.PathResolver.ReadConfined(new Permissions.ConfinedRead(path, source.Root, MaxInvocableBytes));
+        if (read.Problem is { } problem) problems.Add(new SkillProblem(path, problem));
+        return read.Text;
+    }
     private const int MaxCommandDepth = 8;
 
     private static List<Invocable> ReadSkills(Source source, List<SkillProblem> problems)
@@ -298,9 +320,7 @@ public static partial class InvocableCatalog
             var path = Path.Combine(subdirectory, SkillFileName);
             if (!File.Exists(path)) continue;   // not a skill folder; not a problem either
 
-            string text;
-            try { text = File.ReadAllText(path); }
-            catch (Exception) { problems.Add(new SkillProblem(path, "could not be read")); continue; }
+            if (Confined(path, source, problems) is not { } text) continue;
 
             var name = Path.GetFileName(subdirectory.TrimEnd(Path.DirectorySeparatorChar,
                                                              Path.AltDirectorySeparatorChar));

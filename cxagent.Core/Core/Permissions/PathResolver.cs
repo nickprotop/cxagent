@@ -44,6 +44,47 @@ internal sealed class PathResolver(string folder)
     public bool Names(string path) => NamesAt(Path.Combine(Folder, path));
 
     /// <summary>
+    /// Reads a file that reaches the prompt — an instruction file, a command, a skill, a sidecar — only from where it
+    /// belongs, and only as much as is wanted.
+    ///
+    /// <para>ITS REAL PATH MUST STAY IN <see cref="ConfinedRead.Root"/>. A repository's <c>AGENTS.md</c> linked to
+    /// <c>~/.ssh/id_rsa</c> or <c>/proc/self/environ</c> would otherwise put the key in the system prompt on the
+    /// first turn — sent to the provider, trusted folder or not. A link that stays inside reads as before.</para>
+    ///
+    /// <para>A FILE WITH NO SIZE IS NEVER OPENED. A device, a pipe and a <c>/proc</c> file all report a size of
+    /// nothing, and .NET reports them otherwise as ordinary files: <c>/dev/zero</c> read to its end never ends, and a
+    /// FIFO blocks the open itself. An empty file is no instructions either, so nothing is lost. A file with a size
+    /// is read through one stream, never past <see cref="ConfinedRead.MaxBytes"/>.</para>
+    /// </summary>
+    public static ConfinedText ReadConfined(ConfinedRead read)
+    {
+        try
+        {
+            if (FileToolFrom(read.Path, null) is not { } real)
+                return new ConfinedText(null, "could not be resolved", Truncated: false);
+            if (read.Root is { } root && !Contains(RealFolder(root), real))
+                return new ConfinedText(null, $"links outside {root} (→ {real}) — not read", Truncated: false);
+
+            var info = new FileInfo(real);
+            if (!info.Exists) return new ConfinedText(null, null, Truncated: false);
+            if (info.Length == 0) return new ConfinedText("", null, Truncated: false);
+
+            using var stream = new FileStream(real, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var buffer = new byte[Math.Min(read.MaxBytes + 1L, info.Length + 1)];
+            var total = 0;
+            int n;
+            while (total < buffer.Length && (n = stream.Read(buffer, total, buffer.Length - total)) > 0) total += n;
+            var truncated = total > read.MaxBytes;
+            return new ConfinedText(System.Text.Encoding.UTF8.GetString(buffer, 0, Math.Min(total, read.MaxBytes)),
+                null, truncated);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return new ConfinedText(null, $"could not be read: {ex.Message}", Truncated: false);
+        }
+    }
+
+    /// <summary>
     /// Every file under a folder, as a recursive enumeration finds them — except through a link that lands outside
     /// <see cref="WalkRequest.Within"/>, or back into a folder the walk is already inside.
     ///
@@ -304,6 +345,14 @@ internal sealed class PathResolver(string folder)
         }
     }
 }
+
+/// <summary>A read of one file: where it is, the folder its real path must stay inside (null: anywhere — the user's
+/// own files), and the most bytes to read.</summary>
+internal sealed record ConfinedRead(string Path, string? Root, int MaxBytes);
+
+/// <summary>What a confined read got: the text (null when there is no file, or it was refused — then
+/// <see cref="Problem"/> says why; empty when the file has no size), and whether the cap cut it short.</summary>
+internal sealed record ConfinedText(string? Text, string? Problem, bool Truncated);
 
 /// <summary>What a walk is asked for: where it starts, the file names it lists (a Win32 pattern), the folders a link
 /// may land in to be followed — none at all for an empty list, and every one for null — and the most entries it

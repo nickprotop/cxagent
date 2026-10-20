@@ -1554,7 +1554,7 @@ public sealed class Agent
                     ModelFacingCommands = _modelFacingCommands?.Invoke() ?? [],
                 })
                 // AFTER the general prompt, so a project can override it.
-                + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir))
+                + ProjectInstructions.Render(ScanInstructions(cwd))
                 // AND THE BRIEFING LAST, so what this agent was created to do outranks both the
                 // general prompt and the project's — it is the most specific instruction there is.
                 // Constant for the agent's life, so it extends the cache prefix rather than churning
@@ -3926,6 +3926,17 @@ public sealed class Agent
                 return path;
             }
         }
+    }
+
+    // A SKIPPED INSTRUCTION FILE IS SAID ONCE, though the prompt that skips it is built every turn — see
+    // InstructionNotices. Lazily made, so it says through this agent's own sink.
+    private InstructionNotices? _instructionNotices;
+
+    private IReadOnlyList<ProjectInstructionFile> ScanInstructions(string cwd)
+    {
+        var scan = ProjectInstructions.Scan(cwd, _globalInstructionsDir);
+        (_instructionNotices ??= new InstructionNotices(_sink.Said)).Announce(scan.Skipped);
+        return scan.Files;
     }
 
     private static string Clip(string text, int max) =>
