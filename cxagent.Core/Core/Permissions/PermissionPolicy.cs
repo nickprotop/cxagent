@@ -415,7 +415,14 @@ public class PermissionPolicy
                 break;
             case "copy":
             case "move":
-                requests.Add(FileRequest(PermissionKind.FileRead, target, root));
+                // A MOVE OUT OF A CODE FOLDER REMOVES WHAT WAS THERE, and removing a hook changes what runs
+                // as surely as editing one — so that source is asked about as the write it is. Only there:
+                // a move's source is otherwise a read, so an ordinary move in always-ask stays one question.
+                requests.Add(FileRequest(
+                    action == "move" && root is { Length: > 0 } && TryResolve(target, root) is { } source
+                        && UnderCodeFolder(source, RealFolder(root))
+                        ? PermissionKind.FileWrite : PermissionKind.FileRead,
+                    target, root));
                 if (dest is not null)
                     requests.Add(FileRequest(PermissionKind.FileWrite, dest, root));
                 break;
@@ -1237,14 +1244,23 @@ public class PermissionPolicy
         var resolved = TryResolve(request.Display, _boundary);
         if (resolved is null) return true;   // unresolvable: fail toward asking, as everywhere here
 
-        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_boundary));
-        if (!resolved.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-            return false;   // outside the boundary: such a write always asks, so it is never silent
-
-        var first = resolved[(root.Length + 1)..].Split(Path.DirectorySeparatorChar)[0];
-
-        return ExecutableConfigDirs.Contains(first, StringComparer.OrdinalIgnoreCase);
+        // Outside the boundary such a write always asks, so it is never silent — only the folders below
+        // the boundary are this check's.
+        return UnderCodeFolder(resolved, Path.TrimEndingDirectorySeparator(Path.GetFullPath(_boundary)));
     }
+
+    /// <summary>
+    /// Whether <paramref name="resolved"/> lies in a code folder below <paramref name="folder"/>.
+    ///
+    /// <para>AT ANY DEPTH. A vendored checkout's own <c>.git/hooks</c>, or a sub-project's
+    /// <c>.vscode/tasks.json</c>, runs just as the top-level one does. Only the segments BELOW the folder
+    /// count: a project that itself lives under a <c>.claude</c> folder (a worktree) is not one big code
+    /// folder.</para>
+    /// </summary>
+    private static bool UnderCodeFolder(string resolved, string folder) =>
+        resolved.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+        && resolved[(folder.Length + 1)..].Split(Path.DirectorySeparatorChar)
+            .Any(part => ExecutableConfigDirs.Contains(part, StringComparer.OrdinalIgnoreCase));
 
     /// <summary>
     /// A file-tool write into a folder whose contents execute — see <see cref="ExecutableConfigDirs"/>.
@@ -1253,11 +1269,11 @@ public class PermissionPolicy
     /// skip-permissions still refuses these. It reads requests, not shell text: a shell command that
     /// writes into these folders is a Shell request and is not seen here.</para>
     ///
-    /// <para>ANYWHERE ON THE PATH, NOT ONLY AT THE TOP OF THE WORKING FOLDER — wider than
-    /// <see cref="IsExecutableConfig"/>, which only decides what may be silent. Here nothing asks
-    /// afterwards: a run started in <c>repo/src</c> writing <c>../.git/hooks</c>, a vendored
-    /// checkout's own <c>.git</c>, or <c>~/.claude/settings.json</c> would otherwise be approved, and
-    /// each runs later outside the run.</para>
+    /// <para>ANYWHERE ON THE PATH, NOT ONLY BELOW THE WORKING FOLDER — wider than
+    /// <see cref="IsExecutableConfig"/>, which only decides what may be silent and leaves a path outside
+    /// the boundary to the boundary check. Here nothing asks afterwards: a run started in
+    /// <c>repo/src</c> writing <c>../.git/hooks</c>, or <c>~/.claude/settings.json</c>, would otherwise
+    /// be approved, and each runs later outside the run.</para>
     /// </summary>
     public bool IsProtectedWrite(PermissionRequest request)
     {

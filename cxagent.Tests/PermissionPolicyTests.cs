@@ -680,12 +680,34 @@ public class PermissionPolicyTests
     [InlineData(".vscode/tasks.json")]
     [InlineData(".claude/settings.json")]
     [InlineData(".idea/workspace.xml")]
+    // AT ANY DEPTH: a vendored checkout's own hooks, or a sub-project's editor tasks, run just the same.
+    [InlineData("vendor/lib/.git/hooks/pre-commit")]
+    [InlineData("app/.vscode/tasks.json")]
     public void AcceptEdits_StillAsksForExecutableConfig(string relative)
     {
         var root = MakeTempDir();
         var path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
 
         Assert.False(TrustedPolicy(root, EditMode.AcceptEdits).IsSilentlyAllowed(FileWrite(path)));
+    }
+
+    /// <summary>
+    /// A MOVE OUT OF A CODE FOLDER IS A WRITE THERE. It removes the source, and removing a hook changes what
+    /// runs as surely as editing one — so moving <c>.git/hooks/pre-commit</c> away asks, while copying it
+    /// (which leaves it in place) does not.
+    /// </summary>
+    [Fact]
+    public void AcceptEdits_AsksToMoveAFileOutOfACodeFolder()
+    {
+        var root = MakeTempDir();
+        var policy = TrustedPolicy(root, EditMode.AcceptEdits);
+        bool Silent(string action) => PermissionPolicy.RequestsFor("file", new JobParameters(new Dictionary<string, object?>
+        {
+            ["action"] = action, ["path"] = ".git/hooks/pre-commit", ["dest"] = "kept.txt",
+        }), root).All(r => policy.IsSilentlyAllowed(r with { Policy = policy }));
+
+        Assert.False(Silent("move"));
+        Assert.True(Silent("copy"));
     }
 
     /// <summary>READS ARE NOT EDITS. The deny-list guards writes; reading .git/config to answer a
