@@ -2,6 +2,9 @@ using System.Text;
 using CxAgent.Core.Models;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Jobs.Builtin;
+using CxAgent.Core.Execution;
+using CxAgent.Core.Permissions;
+using CxAgent.Core.Storage;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -28,6 +31,44 @@ public class FileJobExecutorTests : IDisposable
             P(("action", "read"), ("path", path)), Ctx, CancellationToken.None);
         Assert.True(read.Success);
         Assert.Equal("hello file", (string)read.Output["content"]!);
+    }
+
+    /// <summary>
+    /// A WALK STAYS WHERE THE GATE LOOKED. The gate allows a list or search of a folder inside the boundary,
+    /// and the walk then followed every link it met — a link to a folder elsewhere listed that folder's files
+    /// and a link to a file elsewhere had its contents searched, unasked. A link that lands inside the
+    /// boundary is followed as before.
+    /// </summary>
+    [Theory]
+    [InlineData("list")]
+    [InlineData("search")]
+    public async Task AWalk_DoesNotFollowALinkOutOfTheBoundary(string action)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var root = Path.Combine(_dir, "proj");
+        var elsewhere = Path.Combine(_dir, "elsewhere");
+        Directory.CreateDirectory(Path.Combine(root, "inner"));
+        Directory.CreateDirectory(elsewhere);
+        File.WriteAllText(Path.Combine(root, "inner", "kept.txt"), "MARK inside");
+        File.WriteAllText(Path.Combine(elsewhere, "away.txt"), "MARK outside");
+        Directory.CreateSymbolicLink(Path.Combine(root, "linkdir"), elsewhere);
+        File.CreateSymbolicLink(Path.Combine(root, "linkfile"), Path.Combine(elsewhere, "away.txt"));
+        Directory.CreateSymbolicLink(Path.Combine(root, "linkin"), Path.Combine(root, "inner"));
+        var rules = new PermissionRulesStore(new AppPaths(Path.Combine(_dir, "config")));
+        var context = new JobContext("a", "j", new Dictionary<string, JobResult>(), null)
+        {
+            WorkingDirectory = root,
+            Policy = new PermissionPolicy(root, rules),
+        };
+
+        var r = await new FileJobExecutor().ExecuteAsync(
+            P(("action", action), ("pattern", action == "list" ? "*" : "MARK")), context, CancellationToken.None);
+
+        Assert.True(r.Success, r.ErrorMessage);
+        var content = (string)r.Output["content"]!;
+        Assert.DoesNotContain("away.txt", content);
+        Assert.DoesNotContain("outside", content);
+        Assert.Contains(Path.Combine("linkin", "kept.txt"), content);
     }
 
     // THE BUG REPLACE ALREADY FIXED, through the other door. ReplaceAsync preserves a UTF-8 BOM

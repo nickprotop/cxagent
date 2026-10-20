@@ -290,9 +290,66 @@ public class FileJobExecutor : IJobExecutor
         return false;
     }
 
-    private static void ListInto(string path, JobParameters parameters,
+    /// <summary>Where a list or search walks, and the boundary its call was judged against — null when
+    /// the call came with no policy, and so passed no gate that drew one.</summary>
+    private sealed record WalkScope(string Path, string? Boundary);
+
+    private static string? BoundaryOf(IJobContext context) =>
+        (context as Execution.JobContext)?.Policy?.Boundary;
+
+    /// <summary>
+    /// Every file under <paramref name="dir"/> matching <paramref name="pattern"/>, as a recursive
+    /// enumeration finds them — except through a link that leaves <paramref name="boundary"/>.
+    ///
+    /// <para>THE WALK STAYS WHERE THE GATE LOOKED. The gate judges the folder a list or search names; a
+    /// recursive enumeration then follows every link it meets, so in a trusted folder a link to a folder
+    /// elsewhere listed that folder's files and a link to a file elsewhere had its contents searched —
+    /// both unasked. A link is followed when it lands inside the boundary, or inside the folder being
+    /// walked (which a person approved, if it is outside); one landing anywhere else is left out.</para>
+    ///
+    /// <para>NO BOUNDARY, NO CHANGE: a call with no policy passed no gate, so nothing here has a line to
+    /// hold, and the plain enumeration stands. A link back to the folder being walked, or one above it, is
+    /// not descended — it is a cycle, and the plain enumeration would walk it until the path grew too
+    /// long.</para>
+    /// </summary>
+    private static List<string> Walk(string dir, string pattern, string? boundary)
+    {
+        if (boundary is null) return Directory.EnumerateFiles(dir, pattern, SearchOption.AllDirectories).ToList();
+
+        // THE OPTIONS Directory.EnumerateFiles(path, pattern, SearchOption) USES, one level at a time, so the
+        // files found and their order are the plain enumeration's wherever no link leaves.
+        var options = new EnumerationOptions
+        {
+            MatchType = MatchType.Win32, AttributesToSkip = 0, IgnoreInaccessible = false,
+        };
+        var bounds = new[] { boundary, Permissions.PermissionPolicy.RealFolder(dir) };
+        bool Within(string real, string folder) =>
+            real == folder || real.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+        string? RealOf(string entry) => Permissions.PermissionPolicy.ResolveAgainst(entry, dir);
+
+        var files = new List<string>();
+        var queue = new Queue<string>([dir]);
+        while (queue.TryDequeue(out var folder))
+        {
+            foreach (var file in Directory.EnumerateFiles(folder, pattern, options))
+                if (new FileInfo(file).LinkTarget is null || RealOf(file) is { } real && bounds.Any(b => Within(real, b)))
+                    files.Add(file);
+
+            var here = Permissions.PermissionPolicy.RealFolder(folder);
+            foreach (var sub in Directory.EnumerateDirectories(folder, "*", options))
+            {
+                if (new DirectoryInfo(sub).LinkTarget is null) { queue.Enqueue(sub); continue; }
+                if (RealOf(sub) is { } real && bounds.Any(b => Within(real, b)) && !Within(here, real))
+                    queue.Enqueue(sub);
+            }
+        }
+        return files;
+    }
+
+    private static void ListInto(WalkScope scope, JobParameters parameters,
         Dictionary<string, object?> output)
     {
+        var path = scope.Path;
         var pattern = parameters.Get("pattern", "*");
         var limit = parameters.Get<int?>("limit", null) ?? 200;
 
@@ -304,9 +361,7 @@ public class FileJobExecutor : IJobExecutor
         // FILTERED BEFORE THE CAP, not after. An ignored file that consumed one of the limit slots
         // would shrink the answer without appearing in it — the cap would report "truncated" while
         // returning fewer real files than asked for.
-        var matches = WithoutIgnored(
-            Directory.EnumerateFiles(dir, NormalizeGlob(pattern), SearchOption.AllDirectories).ToList(),
-            dir);
+        var matches = WithoutIgnored(Walk(dir, NormalizeGlob(pattern), scope.Boundary), dir);
         var truncated = matches.Count > limit;
         if (truncated) matches = matches.Take(limit).ToList();
 
@@ -361,9 +416,10 @@ public class FileJobExecutor : IJobExecutor
     /// silently searches for something else, and the failure looks like "not found" rather than
     /// like a mistake.</para>
     /// </summary>
-    private static async Task SearchIntoAsync(string path, JobParameters parameters,
+    private static async Task SearchIntoAsync(WalkScope scope, JobParameters parameters,
         Dictionary<string, object?> output, CancellationToken ct)
     {
+        var path = scope.Path;
         var needle = parameters.Get("pattern", "");
         if (string.IsNullOrEmpty(needle))
         {
@@ -403,8 +459,7 @@ public class FileJobExecutor : IJobExecutor
         }
 
         var hits = new List<string>();
-        foreach (var file in WithoutIgnored(
-            Directory.EnumerateFiles(dir, NormalizeGlob(glob), SearchOption.AllDirectories).ToList(), dir))
+        foreach (var file in WithoutIgnored(Walk(dir, NormalizeGlob(glob), scope.Boundary), dir))
         {
             ct.ThrowIfCancellationRequested();
             if (hits.Count >= limit) break;
@@ -1013,10 +1068,10 @@ public class FileJobExecutor : IJobExecutor
                         await ReadAsync(path, parameters, output, ct);
                         break;
                     case "list":
-                        ListInto(path, parameters, output);
+                        ListInto(new WalkScope(path, BoundaryOf(context)), parameters, output);
                         break;
                     case "search":
-                        await SearchIntoAsync(path, parameters, output, ct);
+                        await SearchIntoAsync(new WalkScope(path, BoundaryOf(context)), parameters, output, ct);
                         break;
                     case "replace":
                         await ReplaceAsync(path, parameters, output, ct);
