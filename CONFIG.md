@@ -224,7 +224,7 @@ prompt it raises.
 and the child works there: its file tools, shell and relative paths are judged against that folder,
 while the project's trust, mode and stored rules still apply (a stored rule can still permit a path
 outside the child's folder). A root outside the session's folder, or inside `.git`, `.vscode`,
-`.claude` or `.idea` — folders whose files can run code — is refused. Where it works shows beside
+`.claude`, `.idea`, `.github`, `.husky` or `.devcontainer` — folders whose files can run code — is refused. Where it works shows beside
 where it runs.
 
 Ignoring loudly is deliberate. An edit that does nothing and says nothing is the worst of the three

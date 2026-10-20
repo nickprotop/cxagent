@@ -202,9 +202,11 @@ the name promises. A mode can add friction; it can never remove friction below w
 decision permits.
 
 **Inside the working directory is a scope, not a safety guarantee.** Writes to `.git/`, `.vscode/`,
-`.claude/` and `.idea/` keep asking even under `accept-edits`: `.git/hooks/*` runs on your next git
-command and `.git/config` can name a program to execute, and "accept edits" should not quietly mean
-"accept a hook". Reading those files is unaffected.
+`.claude/`, `.idea/`, `.github/`, `.husky/` and `.devcontainer/`, and to an `.envrc`, keep asking even
+under `accept-edits`, at any depth: `.git/hooks/*` runs on your next git command, `.git/config` can name a
+program to execute, and a workflow, a husky hook, a dev container or direnv runs project code without
+anyone running it by name — "accept edits" should not quietly mean "accept a hook". Moving a file out of
+one asks too. Reading those files is unaffected.
 
 **Shell is unaffected by `always-ask` and `accept-edits`.** Under both, read-only commands stay
 silent on a trusted folder and everything else asks. A pipe of reads is a read — `grep -n foo src | head`

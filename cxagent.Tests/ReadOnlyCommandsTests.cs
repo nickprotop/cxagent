@@ -99,6 +99,23 @@ public class ReadOnlyCommandsTests
     public void AnUnknownProgram_IsNotReadOnly() =>
         Assert.False(ReadOnlyCommands.IsReadOnly("dotnet build"));
 
+    /// <summary>
+    /// A FOLLOW DOES NOT END. `tail -f app.log` reads one file and never returns, so it runs until the call
+    /// gives up on it — and a command left running after its call is not one its text can vouch for. A plain
+    /// `tail` reads and stops, and stays on the list.
+    /// </summary>
+    [Theory]
+    [InlineData("tail -f app.log", false)]
+    [InlineData("tail -F app.log", false)]
+    [InlineData("tail -nf app.log", false)]
+    [InlineData("tail --follow app.log", false)]
+    [InlineData("tail --follow=name app.log", false)]
+    [InlineData("grep x app.log | tail -f", false)]
+    [InlineData("tail -n 20 app.log", true)]
+    [InlineData("tail app.log", true)]
+    public void AFollowingTail_IsNotReadOnly(string command, bool readOnly) =>
+        Assert.Equal(readOnly, ReadOnlyCommands.IsReadOnly(command));
+
     // ---- cd, the idiom that defeated all of the above ----------------------------------------
     //
     // Two agentic drives: two of three prompts were `cd <dir> && <something>`. The `&&`

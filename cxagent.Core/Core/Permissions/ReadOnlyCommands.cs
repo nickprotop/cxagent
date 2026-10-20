@@ -123,8 +123,18 @@ internal static class ReadOnlyCommands
         // the user has not vouched for.
         if (first.Contains('/', StringComparison.Ordinal)) return false;
 
+        // A FOLLOW DOES NOT END. `tail -f` reads one file and never returns, so it runs until the call gives up
+        // on it — and a command left running after its call is not one its text can vouch for.
+        if (first == "tail" && Follows(text)) return false;
+
         return SafeVerbs.Contains(first);
     }
+
+    private static bool Follows(string text) =>
+        text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1).Any(flag =>
+            flag.StartsWith("--follow", StringComparison.Ordinal)
+            || flag.StartsWith('-') && !flag.StartsWith("--", StringComparison.Ordinal)
+               && flag.AsSpan(1).IndexOfAny('f', 'F') >= 0);
 
     /// <summary>
     /// Whether a pipeline is only reads: every stage, on its own, a command this class would pass.

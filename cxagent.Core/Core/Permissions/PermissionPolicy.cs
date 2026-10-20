@@ -254,10 +254,15 @@ public class PermissionPolicy
     // agent legitimately editing a git hook or an editor task is rare enough that one prompt is the
     // right price, and it is the prompt a user would most want to see.
     //
+    // AND WHAT RUNS WITHOUT BEING NAMED: CI workflows (.github), husky's git hooks (.husky), direnv's per-folder
+    // script (.envrc — a file, matched as a path segment like the folders), and a dev container's build
+    // (.devcontainer). Each executes project code the next time something ordinary happens.
+    //
     // One accidental mitigation exists and is NOT relied on here: `git` is absent from
     // ReadOnlyCommands' safe verbs, so the agent can write a hook silently but cannot silently
     // trigger it. The user runs `git commit` themselves constantly, which is the point of a hook.
-    private static readonly string[] ExecutableConfigDirs = [".git", ".vscode", ".claude", ".idea"];
+    private static readonly string[] ExecutableConfigDirs =
+        [".git", ".vscode", ".claude", ".idea", ".github", ".husky", ".envrc", ".devcontainer"];
 
     /// <summary>The one mapping from executor params to permission requests: shell → one Shell
     /// request; file → per-action read/write requests (copy/move produce both a read of the

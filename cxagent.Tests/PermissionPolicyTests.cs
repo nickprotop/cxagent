@@ -98,10 +98,10 @@ public class PermissionPolicyTests
     /// <summary>
     /// AN UNATTENDED READ-ONLY COMMAND STILL ASKS.
     ///
-    /// <para>The read-only exemption vouches for a command by its text, and `tail -f` cannot write by
-    /// any reasonable reading — so without this a model could start a never-exiting process that
-    /// outlives the turn that asked, with no prompt at all. What earns the prompt is not what the
-    /// command does but how long it does it for, which its text does not say.</para>
+    /// <para>The read-only exemption vouches for a command by its text, and `tail app.log` cannot write by
+    /// any reasonable reading — so without this a model could start it in the background, outliving the
+    /// turn that asked, with no prompt at all. What earns the prompt is not what the command does but how
+    /// long it does it for, which its text does not say.</para>
     ///
     /// <para>THE SAME SHAPE THE EXEMPTION ALREADY GUARDS AGAINST. Its own comment records five holes
     /// of the form "verb vouched for, arguments ignored"; a parameter that changes the command's
@@ -116,9 +116,9 @@ public class PermissionPolicyTests
         var policy = new PermissionPolicy(root, rules);
 
         // THE SAME COMMAND BOTH WAYS, so the only thing under test is the flag.
-        Assert.True(policy.IsSilentlyAllowed(Shell("tail -f app.log")),
+        Assert.True(policy.IsSilentlyAllowed(Shell("tail app.log")),
             "a read-only command in a trusted folder is silent, and stays so");
-        Assert.False(policy.IsSilentlyAllowed(Shell("tail -f app.log") with { Unattended = true }),
+        Assert.False(policy.IsSilentlyAllowed(Shell("tail app.log") with { Unattended = true }),
             "an unattended command must cost a prompt — nothing will be watching when it keeps running");
     }
 
@@ -683,6 +683,12 @@ public class PermissionPolicyTests
     // AT ANY DEPTH: a vendored checkout's own hooks, or a sub-project's editor tasks, run just the same.
     [InlineData("vendor/lib/.git/hooks/pre-commit")]
     [InlineData("app/.vscode/tasks.json")]
+    // CI, git hooks managed by husky, direnv's per-folder script, and a dev container's build: each runs
+    // code from the project without anyone running it by name.
+    [InlineData(".github/workflows/ci.yml")]
+    [InlineData(".husky/pre-commit")]
+    [InlineData(".envrc")]
+    [InlineData(".devcontainer/devcontainer.json")]
     public void AcceptEdits_StillAsksForExecutableConfig(string relative)
     {
         var root = MakeTempDir();

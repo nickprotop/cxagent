@@ -540,7 +540,7 @@ members exist for it:
 | Member | |
 |---|---|
 | `PermissionPolicy.TrustOverride` | init-only: treat the folder as trusted **for this policy object only**. Nothing is written to `permissions.json`, so a script never changes the user's own setup |
-| `PermissionPolicy.IsProtectedWrite(request)` | true for a file-tool write with a `.git`, `.vscode`, `.claude` or `.idea` folder anywhere on its path — where what lands runs later. A hook that approves everything else should still refuse these. It reads requests, not shell text |
+| `PermissionPolicy.IsProtectedWrite(request)` | true for a file-tool write with a `.git`, `.vscode`, `.claude`, `.idea`, `.github`, `.husky` or `.devcontainer` folder, or an `.envrc`, anywhere on its path — where what lands runs later. A hook that approves everything else should still refuse these. It reads requests, not shell text |
 
 Answer `Once` or `Deny` from such a hook, never `Always` or `TrustFolder`: both persist.
 
