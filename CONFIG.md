@@ -224,7 +224,8 @@ prompt it raises.
 and the child works there: its file tools, shell and relative paths are judged against that folder,
 while the project's trust, mode and stored rules still apply (a stored rule can still permit a path
 outside the child's folder). A root outside the session's folder, or inside `.git`, `.vscode`,
-`.claude`, `.idea`, `.github`, `.husky` or `.devcontainer` — folders whose files can run code — is refused. Where it works shows beside
+`.claude`, `.idea`, `.github`, `.husky`, `.devcontainer` or `.cxagent` — folders whose files can run code — is
+refused. Where it works shows beside
 where it runs.
 
 Ignoring loudly is deliberate. An edit that does nothing and says nothing is the worst of the three
@@ -479,17 +480,18 @@ it writes.
 | `enabled` | default true. Whether the plugin loads at startup — and only that: `/plugin load <name>` still loads a disabled one for this session. `/plugin enable` and `/plugin disable` flip it, and disabling also unloads a plugin that is running. |
 | `settings` | handed to the plugin verbatim; cxagent does not read it. The plugin's own page says what it takes. |
 
-**Where cxagent looks:** each `pluginPaths` entry in order, then `<project>/.cxagent/plugins`, then
-the `plugins` folder beside this config — so a project's copy wins over a global one. A relative
+**Where cxagent looks:** each `pluginPaths` entry in order, then the `plugins` folder beside this
+config, then `<project>/.cxagent/plugins` — so a plugin you installed wins over a repository's file of the
+same name, and a cloned project cannot stand in for it. A relative
 `pluginPaths` entry resolves against **the project directory**, not the config folder; an absolute
 path or `~` means what it says. Each folder is searched itself and one level down, so
 `plugins/csharp-lsp/csharp-lsp.dll` is found the same as a loose file — and **a folder of its own is
 the layout to prefer**: a plugin's identity is a hash over everything in its folder, so two plugins
 sharing one re-ask each other's load prompt whenever either changes.
 
-**No config can pre-approve a plugin.** Loading one asks, showing a hash of everything it would load,
-and asks again when a byte of that changes; `enabled` decides when the question comes, never its
-answer.
+**No config can pre-approve a plugin.** Loading one asks — before any of its code runs, from what its
+sidecar declares — showing a hash of everything it would load, and asks again when a byte of that
+changes; `enabled` decides when the question comes, never its answer.
 
 A plugins folder inside a repository is a folder your tools read too: some language servers index a
 plugin binary sitting in `.cxagent/plugins`. Prefer the global folder unless a plugin belongs to one

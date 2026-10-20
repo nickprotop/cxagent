@@ -17,9 +17,19 @@ public static class PluginResolver
 
     private static string GlobalPluginsDir(string configDir) => Path.Combine(configDir, "plugins");
 
-    /// <summary>The folders searched for a configured plugin's file — same order and reasoning as
-    /// the front end's <c>PluginDiscovery.SearchFolders</c>: configured paths first, in the order
-    /// written, then the project-local folder, then the global one.</summary>
+    /// <summary>
+    /// The folders searched for a configured plugin's file, first match winning: configured paths first, in
+    /// the order written, then the global plugins folder, then the project's <c>.cxagent/plugins</c>.
+    ///
+    /// <para>THE GLOBAL FOLDER BEFORE THE PROJECT'S. A cloned repository is not the user's, and one shipping a
+    /// file named like a plugin they configured would otherwise load in its place — a stranger's code under
+    /// the name of something they installed. A plugin only the project has is still found, and asked about
+    /// before it runs like any other.</para>
+    ///
+    /// <para>RELATIVE CONFIGURED ENTRIES RESOLVE AGAINST THE PROJECT DIRECTORY: <c>.cxagent/plugins</c>-style
+    /// paths are meant to be read relative to the repo being worked in. The front end's
+    /// <c>PluginDiscovery.SearchFolders</c> is this.</para>
+    /// </summary>
     public static IReadOnlyList<string> SearchFolders(
         IReadOnlyList<string> configuredPaths, string projectDirectory, string configDir)
     {
@@ -33,8 +43,8 @@ public static class PluginResolver
                 : Path.Combine(projectDirectory, expanded));
         }
 
-        folders.Add(Path.Combine(projectDirectory, ProjectPluginsDirName));
         folders.Add(GlobalPluginsDir(configDir));
+        folders.Add(Path.Combine(projectDirectory, ProjectPluginsDirName));
 
         return folders;
     }

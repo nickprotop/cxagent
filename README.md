@@ -264,7 +264,7 @@ keeps writes inside the working directory silent and asks everywhere else; `alwa
 every one. **Shift+Tab cycles it** from the composer. It names what cxagent already did rather than
 granting anything new, and it cannot widen past your trust decision: on a folder you did not trust,
 `accept-edits` still asks for everything, and the listing says so. Writes to `.git/`, `.vscode/`,
-`.claude/`, `.idea/`, `.github/`, `.husky/`, `.devcontainer/` and an `.envrc` keep asking regardless — a
+`.claude/`, `.idea/`, `.github/`, `.husky/`, `.devcontainer/`, `.cxagent/` and an `.envrc` keep asking regardless — a
 hook that runs on your next git command is not what anyone means by "accept edits".
 
 **Named types** say how a delegated job should be done. **Five ship with cxagent** and need no

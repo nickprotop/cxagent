@@ -549,68 +549,48 @@ public sealed partial class Session
         return CommandStatus.Reported;
     }
 
+    /// <summary>A load set approved before it was loaded: where it is, and the hash it had when asked.</summary>
+    private sealed record ApprovedLoad(string Folder, string Hash);
+
+    // APPROVALS NOT YET USED. One per question answered yes, taken when the plugin registers. Locked: startup
+    // and a typed /plugin load reach it from different threads.
+    private readonly HashSet<ApprovedLoad> _approvedLoads = [];
+
     /// <summary>
-    /// Loads a plugin into this session's registry, offering its tools from the next turn boundary
-    /// on — see <see cref="Plugins.PluginRegistry.Load"/>.
+    /// Asks whether the plugin at <paramref name="assemblyPath"/> may load — BEFORE any of its code runs.
     ///
-    /// <para>REFUSED MID-TURN, not queued, for the SAME reason <see cref="SetMode(WorkingMode)"/>
-    /// refuses: the tool list is fixed once a request begins, so a tool cannot appear or vanish
-    /// between two turns of one request and leave the model chasing something that is no longer
-    /// there. This is that invariant reaching a new source of tools, not a new rule — see
-    /// <see cref="RefusedWhileBusy"/>.</para>
+    /// <para>FROM THE SIDECAR, NOT THE PLUGIN. Loading an assembly constructs its plugin and runs its Load, so a
+    /// question asked from what Load returned is a question about code that has already run as the user. The
+    /// sidecar is a file, read without running anything, and the loader refuses a plugin whose Load returns
+    /// anything else (<c>PluginManifestMatch</c>) — so the prompt built from it describes what will load. The
+    /// load set is hashed now, and <see cref="LoadPlugin"/> registers it only with that hash.</para>
     ///
-    /// <para>THE CALLER SUPPLIES AN ALREADY-LOADED PLUGIN. Nothing here constructs an
-    /// <see cref="Plugins.IPlugin"/> from disk — that is a loader's job, not the session's; this
-    /// method is what runs once a loader has one in hand.</para>
-    ///
-    /// <para>THE LOAD GATE — the only boundary Core can enforce on a binary it did not write. Runs
-    /// before the collision check, because a plugin the user declined must never be probed for name
-    /// collisions or offered to the model at all — declining is the end of the story, not a step
-    /// toward one. Asked ONLY when <see cref="Services"/> carries a gate: a headless session or a
-    /// test with no gate wired has nothing to ask and nothing to enforce with, matching every other
-    /// "no gate, no prompt" path this session already has (see SessionFactory.Wire's own tools
-    /// wrapping). <paramref name="loadSetDirectory"/> feeds <see cref="Plugins.PluginIdentity"/> —
-    /// the grant is over the CONTENT, not the path — while the path itself is what the prompt shows,
-    /// because origin and declared capability are the only things about a plugin Core can honestly
-    /// vouch for.</para>
+    /// <para>TRUE WITH NO GATE: nothing to ask and nothing to enforce with, as everywhere else here.</para>
     /// </summary>
-    /// <param name="plugin">The running instance, past its own Load call.</param>
-    /// <param name="manifest">What it declared it contributes.</param>
-    /// <param name="loadSetDirectory">The directory holding everything this plugin loads — hashed
-    /// whole for identity (see <see cref="Plugins.PluginIdentity.HashLoadSet"/>) and shown to the
-    /// user as where the plugin came from.</param>
-    /// <param name="ct">Only observed while awaiting the load prompt — the plugin itself is already
-    /// past its own Load call by the time this method is reached.</param>
-    /// <param name="context">
-    /// The context this plugin was loaded with, retained so unwire can dispose it and cancel
-    /// <see cref="Plugins.IPluginContext.Lifetime"/> — see <see cref="Plugins.LoadedPlugin"/>'s own
-    /// doc. Null for a caller with nothing to retain (a plugin loaded some other way than
-    /// <see cref="RunLoadRequest"/>, or a test).
-    /// </param>
-    /// <param name="client">This plugin's handle on this session, retained so unwire can sever it.</param>
-    /// <param name="announce">Whether this load says it loaded. False for a caller loading several at
-    /// once, which says so for all of them with <see cref="AnnouncePluginsLoaded"/>.</param>
-    public async Task<CommandStatus> LoadPlugin(Plugins.IPlugin plugin, Plugins.PluginManifest manifest,
-        string loadSetDirectory, CancellationToken ct = default, IDisposable? context = null,
-        Plugins.SessionPluginClient? client = null, bool announce = true)
+    /// <param name="assemblyPath">The plugin's binary, beside its sidecar.</param>
+    /// <param name="loadSetDirectory">The folder holding everything it loads — hashed whole for identity
+    /// (see <see cref="Plugins.PluginIdentity.HashLoadSet"/>) and shown as where it came from.</param>
+    /// <param name="ct">Observed while the question waits.</param>
+    public async Task<bool> ApproveLoadAsync(string assemblyPath, string loadSetDirectory, CancellationToken ct = default)
     {
-        // EVERY REFUSAL BELOW RETIRES THE PLUGIN: its Load has already run, so nothing else would
-        // stop it, end its Lifetime or sever its client — see PluginRegistry.DiscardAsync.
-        if (RefusedWhileBusy())
+        if (Services?.Gate is not { } gate) return true;
+
+        var manifest = CxAgent.Core.Plugins.PluginResolver.DeclaredManifest(assemblyPath);
+        if (manifest is null || string.IsNullOrEmpty(manifest.Name))
         {
-            await Plugins.DiscardAsync(plugin, manifest, context, client, ct);
-            return CommandStatus.Refused;
+            Say(new Message($"plugin '{assemblyPath}': no usable sidecar manifest beside it.", Severity.Warning));
+            return false;
         }
 
-        // A NAME ALREADY LOADED IS REFUSED BEFORE THE PROMPT, which would otherwise ask the user to
-        // approve a load the registry then turns away — a question whose answer cannot matter. The
-        // registry checks it again under its lock; this is the early, honest answer.
+        // A NAME ALREADY LOADED IS REFUSED BEFORE THE QUESTION, which would otherwise ask about a load the
+        // registry then turns away — a question whose answer cannot matter.
         if (Plugins.LoadedPluginNames.Contains(manifest.Name, StringComparer.Ordinal))
-            return await RefuseLoadedNameAsync(plugin, manifest, context, client, ct);
-
-        if (Services?.Gate is { } gate)
         {
-            var hash = CxAgent.Core.Plugins.PluginIdentity.HashLoadSet(loadSetDirectory);
+            Say(new Message($"plugin '{manifest.Name}' is already loaded.", Severity.Warning));
+            return false;
+        }
+
+        var hash = CxAgent.Core.Plugins.PluginIdentity.HashLoadSet(loadSetDirectory);
 
             // DECLARED CAPABILITY, NOT INFERRED BEHAVIOUR. Spawns is the one thing a manifest
             // declares that reads as a capability sentence; "read files in this folder" is true of
@@ -675,10 +655,93 @@ public sealed partial class Session
                 AlwaysRule: hash)
             { Policy = Policy };
 
-            var outcome = await gate.RequestAsync(request, ct);
-            if (!outcome.Allowed)
+        var outcome = await gate.RequestAsync(request, ct);
+        if (!outcome.Allowed)
+        {
+            Say(new Message($"plugin '{manifest.Name}' was not loaded — the user declined it.", Severity.Warning));
+            return false;
+        }
+
+        lock (_approvedLoads) _approvedLoads.Add(new ApprovedLoad(Path.GetFullPath(loadSetDirectory), hash));
+        return true;
+    }
+
+    /// <summary>
+    /// Loads a plugin into this session's registry, offering its tools from the next turn boundary
+    /// on — see <see cref="Plugins.PluginRegistry.Load"/>.
+    ///
+    /// <para>REFUSED MID-TURN, not queued, for the SAME reason <see cref="SetMode(WorkingMode)"/>
+    /// refuses: the tool list is fixed once a request begins, so a tool cannot appear or vanish
+    /// between two turns of one request and leave the model chasing something that is no longer
+    /// there. This is that invariant reaching a new source of tools, not a new rule — see
+    /// <see cref="RefusedWhileBusy"/>.</para>
+    ///
+    /// <para>THE CALLER SUPPLIES AN ALREADY-LOADED PLUGIN. Nothing here constructs an
+    /// <see cref="Plugins.IPlugin"/> from disk — that is a loader's job, not the session's; this
+    /// method is what runs once a loader has one in hand.</para>
+    ///
+    /// <para>THE LOAD GATE — the only boundary Core can enforce on a binary it did not write — IS ASKED BEFORE
+    /// THIS, by <see cref="ApproveLoadAsync"/>: an instance has already run its Load, so a question here would
+    /// come after the code it asks about. Under a gate this registers only a load set approved before it was
+    /// loaded, with the hash it had then, and refuses anything else — so use <see cref="LoadPluginFrom"/>,
+    /// which asks and then loads. With no gate wired (a headless host, a test) there is nothing to ask and
+    /// nothing to enforce with, matching every other "no gate, no prompt" path this session has.</para>
+    /// </summary>
+    /// <param name="plugin">The running instance, past its own Load call.</param>
+    /// <param name="manifest">What it declared it contributes.</param>
+    /// <param name="loadSetDirectory">The directory holding everything this plugin loads — hashed
+    /// whole for identity (see <see cref="Plugins.PluginIdentity.HashLoadSet"/>) and shown to the
+    /// user as where the plugin came from.</param>
+    /// <param name="ct">Observed while the plugin starts — it is already past its own Load call by the time
+    /// this method is reached.</param>
+    /// <param name="context">
+    /// The context this plugin was loaded with, retained so unwire can dispose it and cancel
+    /// <see cref="Plugins.IPluginContext.Lifetime"/> — see <see cref="Plugins.LoadedPlugin"/>'s own
+    /// doc. Null for a caller with nothing to retain (a plugin loaded some other way than
+    /// <see cref="RunLoadRequest"/>, or a test).
+    /// </param>
+    /// <param name="client">This plugin's handle on this session, retained so unwire can sever it.</param>
+    /// <param name="announce">Whether this load says it loaded. False for a caller loading several at
+    /// once, which says so for all of them with <see cref="AnnouncePluginsLoaded"/>.</param>
+    public async Task<CommandStatus> LoadPlugin(Plugins.IPlugin plugin, Plugins.PluginManifest manifest,
+        string loadSetDirectory, CancellationToken ct = default, IDisposable? context = null,
+        Plugins.SessionPluginClient? client = null, bool announce = true)
+    {
+        // EVERY REFUSAL BELOW RETIRES THE PLUGIN: its Load has already run, so nothing else would
+        // stop it, end its Lifetime or sever its client — see PluginRegistry.DiscardAsync.
+        if (RefusedWhileBusy())
+        {
+            await Plugins.DiscardAsync(plugin, manifest, context, client, ct);
+            return CommandStatus.Refused;
+        }
+
+        // A NAME ALREADY LOADED IS REFUSED BEFORE THE PROMPT, which would otherwise ask the user to
+        // approve a load the registry then turns away — a question whose answer cannot matter. The
+        // registry checks it again under its lock; this is the early, honest answer.
+        if (Plugins.LoadedPluginNames.Contains(manifest.Name, StringComparer.Ordinal))
+            return await RefuseLoadedNameAsync(plugin, manifest, context, client, ct);
+
+        // ASKED BEFORE IT WAS LOADED, OR NOT AT ALL. Under a gate a plugin registers only when ApproveLoadAsync
+        // approved this load set before any of its code ran — LoadPluginFrom, /plugin load and startup all
+        // ask there first. An instance that arrives otherwise has already run its Load as the user, and a
+        // question now could not undo that, so it is refused rather than asked about; and a load set whose
+        // hash changed since its approval is not the one approved.
+        if (Services?.Gate is not null)
+        {
+            var hash = CxAgent.Core.Plugins.PluginIdentity.HashLoadSet(loadSetDirectory);
+            var approval = new ApprovedLoad(Path.GetFullPath(loadSetDirectory), hash);
+            bool approved, changed = false;
+            lock (_approvedLoads)
             {
-                Say(new Message($"plugin '{manifest.Name}' was not loaded — the user declined it.",
+                approved = _approvedLoads.Remove(approval);
+                if (!approved) changed = _approvedLoads.RemoveWhere(a => a.Folder == approval.Folder) > 0;
+            }
+            if (!approved)
+            {
+                Say(new Message(changed
+                        ? $"plugin '{manifest.Name}' was not loaded — its files changed after it was approved."
+                        : $"plugin '{manifest.Name}' was not loaded — it was loaded before it was approved. "
+                          + "Load it with LoadPluginFrom, which asks before any of its code runs.",
                     Severity.Warning));
                 await Plugins.DiscardAsync(plugin, manifest, context, client, ct);
                 return CommandStatus.Reported;
@@ -998,6 +1061,52 @@ public sealed partial class Session
                 : System.Text.Json.JsonDocument.Parse("{}").RootElement;
         }
 
+        return await LoadApproved(new DiskLoad(target, assemblyPath, loadSetDirectory, declaredName, settings, configDir), ct);
+    }
+
+    /// <summary>
+    /// Loads the plugin at <paramref name="assemblyPath"/> into this session: asks first (see
+    /// <see cref="ApproveLoadAsync"/>), and only on a yes loads its assembly, runs its Load and registers it.
+    ///
+    /// <para>THE ONE WAY TO LOAD FROM DISK UNDER A GATE. <see cref="LoadPlugin"/> takes an instance, and an
+    /// instance has already run its code, so under a gate it accepts only a load set approved before loading —
+    /// which this method is what does.</para>
+    /// </summary>
+    /// <param name="assemblyPath">The plugin's binary; its sidecar sits beside it, and the folder holding both
+    /// is its load set.</param>
+    /// <param name="ct">Observed while the question waits and while the plugin loads.</param>
+    /// <param name="settings">The plugin's settings object, or none for an empty one.</param>
+    public async Task<CommandStatus> LoadPluginFrom(string assemblyPath, CancellationToken ct = default,
+        System.Text.Json.JsonElement? settings = null)
+    {
+        var full = Path.GetFullPath(assemblyPath, WorkingDirectory);
+        var declaredName = CxAgent.Core.Plugins.PluginResolver.DeclaredManifest(full)?.Name;
+        if (string.IsNullOrEmpty(declaredName))
+        {
+            Say(new Message($"plugin '{assemblyPath}': no usable sidecar manifest beside it.", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        var configDir = Services?.GlobalInstructionsDir ?? WorkingDirectory;
+        return await LoadApproved(new DiskLoad(assemblyPath, full, Path.GetDirectoryName(full)!, declaredName,
+            settings ?? System.Text.Json.JsonDocument.Parse("{}").RootElement, configDir), ct);
+    }
+
+    /// <summary>A plugin found on disk and about to be loaded: what the user called it, where its binary and load
+    /// set are, the name its sidecar declares, its settings, and where its child processes are recorded.</summary>
+    private sealed record DiskLoad(string Target, string AssemblyPath, string LoadSetDirectory, string DeclaredName,
+        System.Text.Json.JsonElement Settings, string ConfigDir);
+
+    // ASKS, AND ON A YES LOADS AND REGISTERS — in that order, so none of the plugin's code runs unapproved.
+    private async Task<CommandStatus> LoadApproved(DiskLoad load, CancellationToken ct)
+    {
+        // REFUSED WHILE BUSY BEFORE THE QUESTION, which LoadPlugin would refuse after it — an answer that
+        // cannot matter.
+        if (RefusedWhileBusy()) return CommandStatus.Refused;
+        if (!await ApproveLoadAsync(load.AssemblyPath, load.LoadSetDirectory, ct)) return CommandStatus.Reported;
+
+        var (target, assemblyPath, loadSetDirectory, declaredName, settings, configDir) = load;
+        var sidecarManifest = CxAgent.Core.Plugins.PluginResolver.DeclaredManifest(assemblyPath);
         // CONSTRUCTED ONLY WHEN THE SIDECAR DECLARES IT — see PluginResolver.PluginRuntime's own doc.
         // The declaration is what the load prompt disclosed and the user approved; a plugin that
         // never asked must never hold a reference it could stash during its own Load, before this

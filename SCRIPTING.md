@@ -63,8 +63,8 @@ list, so a run that needs `git diff` either gets it piped in — usually the bet
 stored rule or a wider mode.
 
 **`--dangerously-skip-permissions` still refuses one thing:** a file-tool write into a `.git`,
-`.vscode`, `.claude`, `.idea`, `.github`, `.husky` or `.devcontainer` folder, or an `.envrc`, anywhere on the
-path, because what lands there runs later,
+`.vscode`, `.claude`, `.idea`, `.github`, `.husky`, `.devcontainer` or `.cxagent` folder, or an `.envrc`,
+anywhere on the path, because what lands there runs later,
 outside the run. That check reads file-tool requests, not shell text — a shell command that writes
 there is approved like any other. Use it where the checkout is disposable: a CI container, a scratch
 clone.
@@ -230,7 +230,7 @@ The run needs no permissions at all — everything it reads arrived through the 
 | `--max-turns N` | stop after N turns, exit 3 |
 | `--thinking <level>` | think at that level for this run — one the model offers, as `/think` lists them; cxagent's own option. A level it does not offer exits 2; a model that does not answer when asked exits 1 |
 | `--permission-mode M` | `default` or `dontAsk` (refuse what would ask), `acceptEdits`, `auto`, `bypassPermissions` |
-| `--dangerously-skip-permissions` | approve everything but writes into `.git`, `.vscode`, `.claude`, `.idea`, `.github`, `.husky`, `.devcontainer`, `.envrc` |
+| `--dangerously-skip-permissions` | approve everything but writes into `.git`, `.vscode`, `.claude`, `.idea`, `.github`, `.husky`, `.devcontainer`, `.cxagent`, `.envrc` |
 | `--trust` | trust this folder for this run only |
 | `--plugin NAME` | load that configured plugin; `--plugin none` loads none |
 | `-c`, `-r <id>` | continue the newest session here, or that one |

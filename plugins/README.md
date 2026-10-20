@@ -27,12 +27,13 @@ Three folders, in this order, first match wins:
 | | |
 | --- | --- |
 | 1 | anything in `pluginPaths`, in the order you wrote it |
-| 2 | `<project>/.cxagent/plugins` — the repo you are working in |
-| 3 | `<config>/plugins` — `~/.config/cxagent/plugins`, or `%APPDATA%\cxagent\plugins` |
+| 2 | `<config>/plugins` — `~/.config/cxagent/plugins`, or `%APPDATA%\cxagent\plugins` |
+| 3 | `<project>/.cxagent/plugins` — the repo you are working in |
 
 The last two are always searched, so a plugin dropped in either is found with no `pluginPaths` entry
-at all. Project before global means a repo's own copy of a plugin shadows an installed one rather
-than colliding with it.
+at all. Global before project means a repository you cloned cannot stand in for a plugin you installed
+by shipping a file of the same name; a plugin only the project has is still found, and asks before it
+runs.
 
 Each of those is searched **itself and one level down**, so a plugin in a directory of its own —
 `plugins/csharp-lsp/csharp-lsp.dll` — is found exactly as one sitting loose in the folder is.

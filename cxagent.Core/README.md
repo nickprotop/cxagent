@@ -288,13 +288,15 @@ Injected tools are compiled into your app. A **plugin** is a DLL loaded from dis
 same tools, from code you did not build:
 
 ```csharp
-await session.LoadPlugin(instance, manifest, loadSetDirectory, ct);
+await session.LoadPluginFrom(assemblyPath, ct);
 ```
 
-`ManagedPluginLoader` turns a path into that instance; `PluginRegistry` holds it, refuses a tool name
-already taken, and unwires it cleanly at the end. The plugin declares what it offers in a sidecar
-file read *before* its assembly is loaded, so a host can show a user what a plugin claims without
-running it.
+It asks first and loads only on a yes: the plugin declares what it offers in a sidecar file read
+*before* its assembly is loaded, so the question shows what a plugin claims without running it — and a
+plugin you decline never runs at all. `PluginRegistry` holds what loads, refuses a tool name already
+taken, and unwires it cleanly at the end. A host that loads with `ManagedPluginLoader` itself calls
+`ApproveLoadAsync` before it and `LoadPlugin` after; under a gate, `LoadPlugin` refuses an instance that
+was not approved before it was loaded.
 
 **The load gate is the boundary you own.** Wire a permission gate and every load asks, against a
 content hash of the plugin's whole load set. Wire none and nothing asks — a headless host loading a

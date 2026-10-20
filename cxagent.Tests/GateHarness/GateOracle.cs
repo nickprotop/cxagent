@@ -45,7 +45,7 @@ public static class GateOracle
     public const string Unknown = "\0unknown";
 
     private static readonly string[] CodeFolders =
-        [".git", ".vscode", ".claude", ".idea", ".github", ".husky", ".envrc", ".devcontainer"];
+        [".git", ".vscode", ".claude", ".idea", ".github", ".husky", ".envrc", ".devcontainer", ".cxagent"];
     private static readonly ConcurrentDictionary<string, string> Real = new(StringComparer.Ordinal);
 
     /// <summary>Every path the case touches, resolved.</summary>

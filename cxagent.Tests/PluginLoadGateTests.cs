@@ -91,7 +91,7 @@ public class PluginLoadGateTests : IDisposable
         using var _ = manager;
         var plugin = new FakePlugin();
 
-        var status = await session.LoadPlugin(plugin, Manifest("lsp-rust", "lsp_rename"), _dir);
+        var status = await Asked(session, plugin, Manifest("lsp-rust", "lsp_rename"), _dir);
 
         Assert.Equal(CommandStatus.Changed, status);
         Assert.True(plugin.Started,
@@ -110,7 +110,7 @@ public class PluginLoadGateTests : IDisposable
         using var _ = manager;
         var plugin = new FakePlugin { StartFailure = new InvalidOperationException("no server on PATH") };
 
-        var status = await session.LoadPlugin(plugin, Manifest("lsp-rust", "lsp_rename"), _dir);
+        var status = await Asked(session, plugin, Manifest("lsp-rust", "lsp_rename"), _dir);
 
         Assert.Equal(CommandStatus.Reported, status);
         Assert.DoesNotContain("lsp_rename",
@@ -208,6 +208,50 @@ public class PluginLoadGateTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Registers <paramref name="plugin"/> the way a load from disk does: its manifest written as the sidecar
+    /// beside a <c>plugin.dll</c> in <paramref name="folder"/>, the load set asked about first
+    /// (<see cref="Session.ApproveLoadAsync"/>), and only on a yes handed to <see cref="Session.LoadPlugin"/> —
+    /// so these tests drive the question a real load asks, built from the same file.
+    /// </summary>
+    private static async Task<CommandStatus> Asked(Session session, IPlugin plugin, PluginManifest manifest,
+        string folder, IDisposable? context = null, SessionPluginClient? client = null)
+    {
+        var assembly = Path.Combine(folder, "plugin.dll");
+        if (!File.Exists(assembly)) File.WriteAllText(assembly, "content");
+        File.WriteAllText(Path.Combine(folder, "plugin.plugin.json"), SidecarOf(manifest));
+        if (!await session.ApproveLoadAsync(assembly, folder)) return CommandStatus.Reported;
+        return await session.LoadPlugin(plugin, manifest, folder, context: context, client: client);
+    }
+
+    // THE MANIFEST AS ITS SIDECAR WOULD SPELL IT — the fields the load question reads.
+    private static string SidecarOf(PluginManifest m) => JsonSerializer.Serialize(new Dictionary<string, object?>
+    {
+        ["pluginContract"] = m.Contract ?? 2,
+        ["name"] = m.Name,
+        ["version"] = m.Version,
+        ["instructions"] = m.Instructions,
+        ["spawns"] = m.Spawns,
+        ["client"] = m.Client,
+        ["tools"] = m.Tools.Select(t => new Dictionary<string, object?>
+        {
+            ["name"] = t.Name,
+            ["description"] = t.Description,
+            ["inputSchema"] = t.InputSchema,
+            ["gated"] = t.Gated switch
+            {
+                PluginGating.Always => (object)true,
+                PluginGating.Dynamic => "dynamic",
+                _ => false,
+            },
+        }).ToList(),
+        ["commands"] = m.Commands.Select(c => new Dictionary<string, object?>
+        {
+            ["name"] = c.Name,
+            ["summary"] = c.Summary,
+        }).ToList(),
+    });
+
     private Session SessionWithGate(IPermissionGate gate, out SessionManager manager)
     {
         manager = SessionManager.Create(new ProcessSetup
@@ -251,7 +295,7 @@ public class PluginLoadGateTests : IDisposable
             Instructions: hasInstructions ? "Positions are 1-based." : null,
             Spawns: false, tools);
 
-        await session.LoadPlugin(new FakePlugin(), manifest, _dir);
+        await Asked(session, new FakePlugin(), manifest, _dir);
 
         var request = Assert.Single(gate.Requests);
         Assert.Contains(expected, request.Display, StringComparison.Ordinal);
@@ -274,7 +318,7 @@ public class PluginLoadGateTests : IDisposable
             [new PluginToolManifest("t", "does something", EmptySchema())],
             [new PluginCommandManifest("schedule", "Wake the agent later")]);
 
-        await session.LoadPlugin(new FakePlugin(), manifest, _dir);
+        await Asked(session, new FakePlugin(), manifest, _dir);
 
         var request = Assert.Single(gate.Requests);
         Assert.Contains("1 command", request.Display, StringComparison.Ordinal);
@@ -293,7 +337,7 @@ public class PluginLoadGateTests : IDisposable
         var manifest = new PluginManifest("plain", "1.0.0", Instructions: null, Spawns: false,
             [new PluginToolManifest("thing", "does something", EmptySchema())]);
 
-        await session.LoadPlugin(new FakePlugin(), manifest, _dir);
+        await Asked(session, new FakePlugin(), manifest, _dir);
 
         var request = Assert.Single(gate.Requests);
         Assert.DoesNotContain("command", request.Display, StringComparison.Ordinal);
@@ -318,7 +362,7 @@ public class PluginLoadGateTests : IDisposable
         var manifest = new PluginManifest("scheduler", "1.0.0", Instructions: null, Spawns: false,
             [new PluginToolManifest("wake", "wakes the agent", EmptySchema())]) { Client = true };
 
-        await session.LoadPlugin(new FakePlugin(), manifest, _dir);
+        await Asked(session, new FakePlugin(), manifest, _dir);
 
         var request = Assert.Single(gate.Requests);
         Assert.Contains("start work in this conversation on its own", request.Display, StringComparison.Ordinal);
@@ -340,7 +384,7 @@ public class PluginLoadGateTests : IDisposable
         var manifest = new PluginManifest("plain", "1.0.0", Instructions: null, Spawns: false,
             [new PluginToolManifest("thing", "does something", EmptySchema())]);
 
-        await session.LoadPlugin(new FakePlugin(), manifest, _dir);
+        await Asked(session, new FakePlugin(), manifest, _dir);
 
         var request = Assert.Single(gate.Requests);
         Assert.DoesNotContain("start work in this conversation", request.Display, StringComparison.Ordinal);
@@ -362,7 +406,7 @@ public class PluginLoadGateTests : IDisposable
         var session = SessionWithGate(gate, out var manager);
         using var _ = manager;
 
-        await session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), _dir);
+        await Asked(session, new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), _dir);
 
         // THE GATE WAS ASKED — nothing in Session, SessionPorts or ResolvedConfig offers a path that
         // reaches the registry without going through RequestAsync first. A config flag that could
@@ -382,23 +426,38 @@ public class PluginLoadGateTests : IDisposable
         var session = SessionWithGate(gate, out var manager);
         using var _ = manager;
 
-        var status = await session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), _dir);
+        var status = await Asked(session, new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), _dir);
 
         Assert.Equal(CommandStatus.Reported, status);
         Assert.Empty(session.Plugins.CurrentTools());
     }
 
+    /// <summary>A DECLINED PLUGIN NEVER RUNS: the question comes before its load, so a decline hands the session
+    /// nothing — nothing started, nothing to stop.</summary>
+    [Fact]
+    public async Task ADeclinedLoad_NeverReachesThePlugin()
+    {
+        var session = SessionWithGate(new ScriptedGate(PermissionOutcome.ByUser), out var manager);
+        using var _ = manager;
+        var plugin = new FakePlugin();
+
+        var status = await Asked(session, plugin, Manifest("lsp-rust", "lsp_rename"), _dir);
+
+        Assert.Equal(CommandStatus.Reported, status);
+        Assert.False(plugin.Started);
+        Assert.Empty(session.Plugins.CurrentTools());
+    }
+
     /// <summary>
-    /// A DECLINED PLUGIN HAS ALREADY RUN ITS LOAD — the loader reads the manifest from it before the
-    /// prompt can say anything — so it is retired like an unwired one: stopped, its context disposed
-    /// so its Lifetime ends, and its client severed, or it could go on submitting into a session the
-    /// user just refused it.
+    /// AN INSTANCE LOADED WITHOUT BEING ASKED ABOUT HAS RUN ITS LOAD, so the refusal retires it like an unwired
+    /// one: stopped, its context disposed so its Lifetime ends, and its client severed — or it could go on
+    /// submitting into a session that never approved it.
     /// </summary>
     [Fact]
-    public async Task ADeclinedLoad_IsStopped_AndCutOff()
+    public async Task AnUnapprovedInstance_IsStopped_AndCutOff()
     {
         File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
-        var session = SessionWithGate(new ScriptedGate(PermissionOutcome.ByUser), out var manager);
+        var session = SessionWithGate(new ScriptedGate(PermissionOutcome.Allow), out var manager);
         using var _ = manager;
         var plugin = new FakePlugin();
         var context = new TrackedContext();
@@ -423,7 +482,7 @@ public class PluginLoadGateTests : IDisposable
         var context = new TrackedContext();
         var client = new SessionPluginClient(session, "shadow", session.Plugins.SubmitQueue);
 
-        await session.LoadPlugin(plugin, Manifest("shadow", "read_file"), _dir, context: context, client: client);
+        await Asked(session, plugin, Manifest("shadow", "read_file"), _dir, context: context, client: client);
 
         Assert.Empty(session.Plugins.CurrentTools());
         Assert.True(plugin.Stopped);
@@ -461,7 +520,7 @@ public class PluginLoadGateTests : IDisposable
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
             new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
 
-        await session.LoadPlugin(new FakePlugin(), Manifest("finder", "docs_search"), _dir);
+        await Asked(session, new FakePlugin(), Manifest("finder", "docs_search"), _dir);
 
         Assert.Empty(session.Plugins.CurrentTools());
         Assert.Contains("its tool 'docs_search' is already offered by MCP server 'docs'", sink.Transcript);
@@ -474,9 +533,10 @@ public class PluginLoadGateTests : IDisposable
         File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
         var session = SessionWithGate(new ScriptedGate(PermissionOutcome.Allow), out var manager);
         using var _ = manager;
-        await session.LoadPlugin(new FakePlugin(), Manifest("lsp", "lsp_definition"), _dir);
+        await Asked(session, new FakePlugin(), Manifest("lsp", "lsp_definition"), _dir);
         var second = new FakePlugin();
 
+        // HANDED OVER ALREADY LOADED, as an embedder could: the name check retires it before anything else.
         await session.LoadPlugin(second, Manifest("lsp", "lsp_hover"), _dir);
 
         Assert.Equal(["lsp_definition"], session.Plugins.CurrentTools().Select(t => t.Definition.Name).ToArray());
@@ -492,9 +552,9 @@ public class PluginLoadGateTests : IDisposable
         var gate = new ScriptedGate(PermissionOutcome.Allow);
         var session = SessionWithGate(gate, out var manager);
         using var _ = manager;
-        await session.LoadPlugin(new FakePlugin(), Manifest("lsp", "lsp_definition"), _dir);
+        await Asked(session, new FakePlugin(), Manifest("lsp", "lsp_definition"), _dir);
 
-        await session.LoadPlugin(new FakePlugin(), Manifest("lsp", "lsp_hover"), _dir);
+        await Asked(session, new FakePlugin(), Manifest("lsp", "lsp_hover"), _dir);
 
         Assert.Single(gate.Requests);
     }
@@ -508,7 +568,7 @@ public class PluginLoadGateTests : IDisposable
         var session = SessionWithGate(new ScriptedGate(PermissionOutcome.Allow), out var manager);
         using var _ = manager;
 
-        await session.LoadPlugin(new FakePlugin(), Manifest("asker", "ask_user"), _dir);
+        await Asked(session, new FakePlugin(), Manifest("asker", "ask_user"), _dir);
 
         Assert.Empty(session.Plugins.CurrentTools());
     }
@@ -524,7 +584,7 @@ public class PluginLoadGateTests : IDisposable
         using var _ = manager;
 
         var spawningManifest = Manifest("lsp-rust", "lsp_rename") with { Spawns = true };
-        await session.LoadPlugin(new FakePlugin(), spawningManifest, _dir);
+        await Asked(session, new FakePlugin(), spawningManifest, _dir);
 
         var display = gate.Requests[0].Display;
         Assert.Contains("lsp-rust wants to run a process and read files in this folder", display);
@@ -549,7 +609,7 @@ public class PluginLoadGateTests : IDisposable
         var session = SessionWithGate(gate, out var manager);
         using var _ = manager;
 
-        await session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), loadSet);
+        await Asked(session, new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), loadSet);
 
         Assert.Equal(PluginIdentity.HashLoadSet(loadSet), gate.Requests[0].AlwaysRule);
     }
@@ -566,7 +626,7 @@ public class PluginLoadGateTests : IDisposable
             AgentMode.Single);
         using var _ = manager;
 
-        var status = await session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), _dir);
+        var status = await Asked(session, new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), _dir);
 
         Assert.Equal(CommandStatus.Changed, status);
         Assert.Contains("lsp_rename", session.Plugins.CurrentTools().Select(t => t.Definition.Name));
@@ -616,7 +676,7 @@ public class PluginLoadGateTests : IDisposable
             },
             AgentMode.Single);
 
-        var loaded = await session.LoadPlugin(new FakePlugin(), manifest, _dir);
+        var loaded = await Asked(session, new FakePlugin(), manifest, _dir);
         Assert.Equal(CommandStatus.Changed, loaded);
 
         var tool = session.Plugins.CurrentTools().Single(t => t.Definition.Name == "lsp_rename");

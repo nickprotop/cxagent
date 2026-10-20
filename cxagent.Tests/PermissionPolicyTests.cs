@@ -689,6 +689,10 @@ public class PermissionPolicyTests
     [InlineData(".husky/pre-commit")]
     [InlineData(".envrc")]
     [InlineData(".devcontainer/devcontainer.json")]
+    // AND cxagent'S OWN: a plugin there runs on the next start, and a command or skill there is what the model
+    // is told when you type its name.
+    [InlineData(".cxagent/plugins/x.dll")]
+    [InlineData(".cxagent/commands/review.md")]
     public void AcceptEdits_StillAsksForExecutableConfig(string relative)
     {
         var root = MakeTempDir();

@@ -22,49 +22,12 @@ namespace CxAgent.UI;
 /// </summary>
 public static class PluginDiscovery
 {
-    /// <summary>The folder searched under a project directory when <c>pluginPaths</c> says nothing —
-    /// the project-local counterpart of <see cref="GlobalPluginsDir"/>, matching the <c>.cxagent/</c>
-    /// prefix this app already uses for project-scoped state.</summary>
-    private const string ProjectPluginsDirName = ".cxagent/plugins";
-
-    private static string GlobalPluginsDir(string configDir) => Path.Combine(configDir, "plugins");
-
-    /// <summary>
-    /// The folders searched for a plugin's <see cref="PluginConfig.File"/>, nearest (most specific)
-    /// first — a project overrides a globally installed plugin rather than colliding with it.
-    ///
-    /// <para>CONFIGURED PATHS COME FIRST, IN THE ORDER WRITTEN, because a user who bothered to list
-    /// <c>pluginPaths</c> stated their own precedence and this must not silently reorder it. The two
-    /// built-in defaults are appended after — project directory then global config directory — so an
-    /// unconfigured install still finds anything dropped in either without editing config.json, with
-    /// the same project-over-global precedence <see cref="ProjectInstructions.Find"/> already gives
-    /// project instruction files over the global one.</para>
-    ///
-    /// <para>RELATIVE ENTRIES RESOLVE AGAINST THE PROJECT DIRECTORY, not the config directory —
-    /// unlike <c>ProviderConfigLoader</c>'s config-time collision check, which has no project
-    /// directory to resolve against and falls back to the config directory instead. This is the
-    /// richer resolution that check's own doc says the runtime load has and it does not:
-    /// <c>.cxagent/plugins</c> is meant to be read relative to the repo being worked in, and a
-    /// plugin only findable that way is exactly the case config-time validation cannot see.</para>
-    /// </summary>
+    /// <summary>The folders searched for a configured plugin's file, in the order searched — Core's
+    /// <see cref="PluginResolver.SearchFolders"/>, which says why the global folder comes before the
+    /// project's. One copy, so startup and <c>/plugin load</c> cannot find different files.</summary>
     public static IReadOnlyList<string> SearchFolders(
-        IReadOnlyList<string> configuredPaths, string projectDirectory, string configDir)
-    {
-        var folders = new List<string>();
-
-        foreach (var raw in configuredPaths)
-        {
-            var expanded = ConfigVariable.Expand(raw);
-            folders.Add(Path.IsPathRooted(expanded)
-                ? expanded
-                : Path.Combine(projectDirectory, expanded));
-        }
-
-        folders.Add(Path.Combine(projectDirectory, ProjectPluginsDirName));
-        folders.Add(GlobalPluginsDir(configDir));
-
-        return folders;
-    }
+        IReadOnlyList<string> configuredPaths, string projectDirectory, string configDir) =>
+        PluginResolver.SearchFolders(configuredPaths, projectDirectory, configDir);
 
     /// <summary>
     /// The directory holding <paramref name="file"/> and its sidecar, searched for in
@@ -305,6 +268,14 @@ public static class PluginDiscovery
             {
                 report($"plugin '{name}': no usable sidecar manifest at '{sidecarPath}'.");
                 notLoaded.Add(new(name, "no usable sidecar manifest"));
+                continue;
+            }
+
+            // ASKED BEFORE ANY OF ITS CODE RUNS — the loader below constructs the plugin and runs its Load, so a
+            // question after it would be about code already run. See Session.ApproveLoadAsync.
+            if (!await session.ApproveLoadAsync(assemblyPath, loadSetDirectory, ct))
+            {
+                notLoaded.Add(new(name, "not approved"));
                 continue;
             }
 

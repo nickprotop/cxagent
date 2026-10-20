@@ -298,7 +298,9 @@ lifecycle calls; everything else is in `CxAgent.Core.Plugins`.
 
 | Method | Does |
 |---|---|
-| `LoadPlugin(plugin, manifest, loadSetDirectory, ct?)` | asks the gate, refuses a colliding tool name, starts the plugin, offers its tools. `CommandStatus.Changed` on success |
+| `LoadPluginFrom(assemblyPath, ct?, settings?)` | the way to load from disk: asks the gate **before any of the plugin's code runs** (from its sidecar, against a hash of its load set), then loads, refuses a colliding tool name, starts it and offers its tools. `CommandStatus.Changed` on success |
+| `ApproveLoadAsync(assemblyPath, loadSetDirectory, ct?)` | the question alone, for a host that loads with a context of its own: true when approved (always, with no gate). Call it before the loader, then `LoadPlugin` |
+| `LoadPlugin(plugin, manifest, loadSetDirectory, ct?)` | registers an instance already loaded: refuses a colliding tool name, starts it, offers its tools. **Under a gate it takes only a load set `ApproveLoadAsync` approved before loading, with the hash it had then** — anything else has already run its code and is refused |
 | `Plugins` | the session's `PluginRegistry` — `CurrentTools()`, `LoadedPluginNames`, `UnwireAsync(name, ct)` |
 
 **`loadSetDirectory` is hashed, not the file.** `PluginIdentity.HashLoadSet` covers the whole
@@ -540,7 +542,7 @@ members exist for it:
 | Member | |
 |---|---|
 | `PermissionPolicy.TrustOverride` | init-only: treat the folder as trusted **for this policy object only**. Nothing is written to `permissions.json`, so a script never changes the user's own setup |
-| `PermissionPolicy.IsProtectedWrite(request)` | true for a file-tool write with a `.git`, `.vscode`, `.claude`, `.idea`, `.github`, `.husky` or `.devcontainer` folder, or an `.envrc`, anywhere on its path — where what lands runs later. A hook that approves everything else should still refuse these. It reads requests, not shell text |
+| `PermissionPolicy.IsProtectedWrite(request)` | true for a file-tool write with a `.git`, `.vscode`, `.claude`, `.idea`, `.github`, `.husky`, `.devcontainer` or `.cxagent` folder, or an `.envrc`, anywhere on its path — where what lands runs later. A hook that approves everything else should still refuse these. It reads requests, not shell text |
 
 Answer `Once` or `Deny` from such a hook, never `Always` or `TrustFolder`: both persist.
 
