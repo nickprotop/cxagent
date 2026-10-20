@@ -135,6 +135,32 @@ public sealed class PluginAskBeforeLoadTests : IDisposable
     }
 
     /// <summary>
+    /// A LOAD SET THAT LINKS OUTSIDE ITSELF IS REFUSED WITH NO GATE TOO: there is no question to ask, but code from
+    /// outside the plugin's folder is still code nobody approved by that folder — refused, naming the link.
+    /// </summary>
+    [Fact]
+    public async Task ALoadSetLinkingOutside_IsRefused_EvenWithNoGate()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var plugin = Drop("cxagent.Tests.PluginFixture", "well-formed.dll");
+        var away = Path.Combine(_dir, "away");
+        Directory.CreateDirectory(away);
+        File.WriteAllText(Path.Combine(away, "dep.dll"), "elsewhere");
+        File.CreateSymbolicLink(Path.Combine(Path.GetDirectoryName(plugin)!, "dep.dll"), Path.Combine(away, "dep.dll"));
+        var manager = SessionManager.Create(new AppPaths(_dir));
+        using var owned = manager;
+        var sink = new BufferedChatSink();
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
+            new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
+
+        var status = await session.LoadPluginFrom(plugin, CancellationToken.None);
+
+        Assert.NotEqual(CommandStatus.Changed, status);
+        Assert.Empty(session.Plugins.CurrentTools());
+        Assert.Contains(sink.Notices, n => n.Contains("dep.dll", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// YOUR PLUGINS BEFORE THE REPOSITORY'S. A cloned project's <c>.cxagent/plugins</c> holding a file named like
     /// one you configured would otherwise load in its place; the global folder is searched first, so it cannot
     /// stand in for a plugin you installed. One only the project has is still found. Configured paths keep the

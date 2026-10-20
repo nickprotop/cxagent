@@ -581,6 +581,16 @@ public sealed partial class Session
     /// <param name="ct">Observed while the question waits.</param>
     public async Task<bool> ApproveLoadAsync(string assemblyPath, string loadSetDirectory, CancellationToken ct = default)
     {
+        // A LOAD SET THAT CANNOT BE IDENTIFIED IS REFUSED BY EVERY LOAD, gate or not — a link out of it brings in code
+        // nobody approved by its folder, and a loop cannot be walked. With no gate there is no question, but no
+        // stranger's code either.
+        var identity = CxAgent.Core.Plugins.PluginIdentity.InspectLoadSet(loadSetDirectory);
+        if (identity.Hash is not { } hash)
+        {
+            Say(new Message($"plugin '{Path.GetFileName(assemblyPath)}' was not loaded — {identity.Refusal}", Severity.Warning));
+            return false;
+        }
+
         if (Services?.Gate is not { } gate) return true;
 
         var manifest = CxAgent.Core.Plugins.PluginResolver.DeclaredManifest(assemblyPath);
@@ -595,15 +605,6 @@ public sealed partial class Session
         if (Plugins.LoadedPluginNames.Contains(manifest.Name, StringComparer.Ordinal))
         {
             Say(new Message($"plugin '{manifest.Name}' is already loaded.", Severity.Warning));
-            return false;
-        }
-
-        // A LOAD SET THAT CANNOT BE IDENTIFIED CANNOT BE APPROVED — a link out of it, or a loop — and is refused
-        // with the reason, before any question.
-        var identity = CxAgent.Core.Plugins.PluginIdentity.InspectLoadSet(loadSetDirectory);
-        if (identity.Hash is not { } hash)
-        {
-            Say(new Message($"plugin '{manifest.Name}' was not loaded — {identity.Refusal}", Severity.Warning));
             return false;
         }
 
@@ -741,9 +742,18 @@ public sealed partial class Session
         // ask there first. An instance that arrives otherwise has already run its Load as the user, and a
         // question now could not undo that, so it is refused rather than asked about; and a load set whose
         // hash changed since its approval is not the one approved.
+        // AND A LOAD SET THAT CANNOT BE IDENTIFIED NOW — a link out of it, a loop — is refused with that reason, by
+        // every load, gate or not.
+        var identity = CxAgent.Core.Plugins.PluginIdentity.InspectLoadSet(loadSetDirectory);
+        if (identity.Hash is not { } hash)
+        {
+            Say(new Message($"plugin '{manifest.Name}' was not loaded — {identity.Refusal}", Severity.Warning));
+            await Plugins.DiscardAsync(plugin, manifest, context, client, ct);
+            return CommandStatus.Reported;
+        }
+
         if (Services?.Gate is not null)
         {
-            var hash = CxAgent.Core.Plugins.PluginIdentity.InspectLoadSet(loadSetDirectory).Hash ?? "";
             var approval = new ApprovedLoad(Path.GetFullPath(loadSetDirectory), hash);
             bool approved, changed = false;
             lock (_approvedLoads)

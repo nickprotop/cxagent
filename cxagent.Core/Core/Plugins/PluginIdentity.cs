@@ -36,9 +36,12 @@ public static class PluginIdentity
     /// point, its sidecar, and any dependency assembly beside them.</param>
     /// <returns>A lowercase hex SHA-256 digest over the ordered set.</returns>
     /// <exception cref="LoadSetRefusedException">The load set cannot be identified — see <see cref="InspectLoadSet"/>.</exception>
-    public static string HashLoadSet(string loadSetDirectory) =>
-        InspectLoadSet(loadSetDirectory) is { Hash: { } hash } ? hash
-            : throw new LoadSetRefusedException(InspectLoadSet(loadSetDirectory).Refusal!);
+    public static string HashLoadSet(string loadSetDirectory)
+    {
+        // ONE INSPECTION: the folder can change between two, and the reason thrown must be the one found.
+        var identity = InspectLoadSet(loadSetDirectory);
+        return identity.Hash ?? throw new LoadSetRefusedException(identity.Refusal ?? "it cannot be identified");
+    }
 
     /// <summary>
     /// The load set's hash, or why it has none.
