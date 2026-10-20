@@ -180,29 +180,8 @@ public static partial class InvocableCatalog
         }
     }
 
-    /// <summary>The working folder up to the repo root, nearest first; the working folder alone when
-    /// no repo encloses it.</summary>
-    private static List<string> WalkedLevels(string start)
-    {
-        var dirs = new List<string>();
-        var foundRoot = false;
-        try
-        {
-            for (var d = new DirectoryInfo(start); d is not null; d = d.Parent)
-            {
-                dirs.Add(d.FullName);
-                var git = Path.Combine(d.FullName, ".git");
-                if (Directory.Exists(git) || File.Exists(git)) { foundRoot = true; break; }
-            }
-        }
-        catch (Exception)
-        {
-            // Best effort, like every read in this app that is not the work itself.
-        }
-
-        if (!foundRoot && dirs.Count > 1) dirs.RemoveRange(1, dirs.Count - 1);
-        return dirs;
-    }
+    // THE PROJECT'S FOLDERS, nearest first — the same walk the instruction files take; see ProjectLevels.
+    private static List<string> WalkedLevels(string start) => Llm.ProjectLevels.From(start);
 
     private static IEnumerable<Invocable> Read(Source source, List<SkillProblem> problems) =>
         source.Layout == Layout.Commands ? ReadCommands(source, problems) : ReadSkills(source, problems);

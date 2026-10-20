@@ -50,6 +50,26 @@ public class ProjectInstructionsTests : IDisposable
     }
 
     /// <summary>
+    /// A HOME THAT IS A REPOSITORY IS NOT THE PROJECT. With dotfiles kept in git at <c>~</c>, a folder under it
+    /// with no <c>.git</c> of its own — a downloaded tarball — would walk up to <c>~</c> and read its files as
+    /// the project's. The home folder is the project only when the agent works in it.
+    /// </summary>
+    [Fact]
+    public void Find_DoesNotTakeAHomeRepositoryAsTheProject()
+    {
+        var home = Dir("home");
+        Dir("home", ".git");
+        Write(home, "AGENTS.md", "the home folder's own");
+        var tarball = Dir("home", "Downloads", "tarball");
+        Write(tarball, "AGENTS.md", "the tarball's");
+
+        var found = ProjectInstructions.Find(tarball, home: home);
+
+        Assert.Equal("the tarball's", Assert.Single(found).Text);
+        Assert.Equal("the home folder's own", Assert.Single(ProjectInstructions.Find(home, home: home)).Text);
+    }
+
+    /// <summary>
     /// WALKS UP. An agent run from a subdirectory of a repo is still working in that repo, and its
     /// instructions sit at the root.
     /// </summary>

@@ -98,8 +98,10 @@ public static class ProjectInstructions
     /// continuing.</para>
     /// </remarks>
     /// <param name="startDirectory">Where the search for instruction files begins, walking upward.</param>
+    /// <param name="home">The user's home folder, or null for the real one — where the walk stops short of a
+    /// home kept in git (see <see cref="ProjectLevels"/>).</param>
     public static IReadOnlyList<ProjectInstructionFile> Find(
-        string startDirectory, string? globalDirectory = null)
+        string startDirectory, string? globalDirectory = null, string? home = null)
     {
         var found = new List<ProjectInstructionFile>();
 
@@ -122,25 +124,8 @@ public static class ProjectInstructions
             // agent" this class deliberately refuses at ~/.claude/CLAUDE.md, reached by the other
             // route; and on a shared machine the directories above ~ are writable by other people.
             //
-            // A .git ENTRY, FILE OR DIRECTORY. A submodule and a linked worktree mark their root
-            // with a .git FILE containing a gitdir: pointer, so testing for the directory alone
-            // walks straight past them and back out of the repo.
-            //
-            // NO REPO, NO WALK. Outside a worktree "the project" has no boundary that means
-            // anything, so the only directory whose file certainly describes THIS work is the one
-            // the agent was started in. Collecting ancestors there is how a scratch directory under
-            // ~ would pick up the home folder's own files.
-            var dirs = new List<DirectoryInfo>();
-            var foundRepoRoot = false;
-            for (var d = new DirectoryInfo(startDirectory); d is not null; d = d.Parent)
-            {
-                dirs.Add(d);
-                var dotGit = Path.Combine(d.FullName, ".git");
-                if (Directory.Exists(dotGit) || File.Exists(dotGit)) { foundRepoRoot = true; break; }
-            }
-
-            // Nothing above the start directory is part of any project, so nothing above it is read.
-            if (!foundRepoRoot && dirs.Count > 1) dirs.RemoveRange(1, dirs.Count - 1);
+            // THE PROJECT'S FOLDERS, nearest first — see ProjectLevels for where the walk stops and why.
+            var dirs = ProjectLevels.From(startDirectory, home);
 
             foreach (var name in ProjectFileNames)
             {
@@ -148,7 +133,7 @@ public static class ProjectInstructions
                 // the more specific claim about the code being worked on.
                 var matches = new List<ProjectInstructionFile>();
                 for (var i = dirs.Count - 1; i >= 0; i--)
-                    if (Read(dirs[i].FullName, name) is { } file) matches.Add(file);
+                    if (Read(dirs[i], name) is { } file) matches.Add(file);
 
                 if (matches.Count == 0) continue;
 
