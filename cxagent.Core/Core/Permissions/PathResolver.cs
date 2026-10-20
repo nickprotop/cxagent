@@ -24,6 +24,17 @@ internal sealed class PathResolver(string folder)
     /// outside, so a failure asks.</summary>
     public string? AsFileTool(string path) => FileToolFrom(path, Folder);
 
+    /// <summary>
+    /// The folder a call's relative paths are resolved from: its own, or — for a caller that has none — the
+    /// process directory.
+    ///
+    /// <para>THE ONE PLACE THAT FALLBACK IS MADE. The agent always sends a folder; an embedder or a test may not, and
+    /// the process directory is then the only folder there is. Written once, here, so the gate and the executors
+    /// cannot fall back to two different ones.</para>
+    /// </summary>
+    public static string FolderOrProcess(string? folder) =>
+        folder is { Length: > 0 } given ? given : Directory.GetCurrentDirectory();
+
     /// <summary>A folder as it really is on disk — symlinks followed — the form every path is compared in.</summary>
     public static string RealFolder(string folder) =>
         FileToolFrom(folder, null) ?? Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));

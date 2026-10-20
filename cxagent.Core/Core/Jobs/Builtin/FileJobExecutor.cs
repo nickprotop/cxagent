@@ -967,9 +967,7 @@ public class FileJobExecutor : IJobExecutor
     /// </summary>
     private static string Resolve(string path, IJobContext context)
     {
-        var resolved = context.WorkingDirectory is { Length: > 0 } root
-            ? Path.GetFullPath(path, root)
-            : Path.GetFullPath(path);
+        var resolved = Path.GetFullPath(path, Permissions.PathResolver.FolderOrProcess(context.WorkingDirectory));
 
         // A DROPPED LEADING SLASH, NAMED AS ITSELF. A model that means /tmp/x/App.cs and sends
         // "tmp/x/App.cs" has written a RELATIVE path that looks absolute, and resolving it against

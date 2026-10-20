@@ -283,6 +283,9 @@ public class PermissionPolicy
     public static IReadOnlyList<PermissionRequest> RequestsFor(string jobType,
         JobParameters parameters, string? root = null)
     {
+        // NO FOLDER, THE PROCESS'S — chosen once, here, for every request this builds (see FolderOrProcess).
+        root = PathResolver.FolderOrProcess(root);
+
         switch (jobType)
         {
             case "shell":
@@ -348,7 +351,7 @@ public class PermissionPolicy
         //
         // The process's cwd is the fallback only because that is what every root-less caller of
         // RequestsFor got before the root parameter existed.
-        var facts = ShellFacts(command, root ?? Directory.GetCurrentDirectory());
+        var facts = ShellFacts(command, PathResolver.FolderOrProcess(root));
         var runFolder = string.IsNullOrEmpty(workingDir) ? null : PathResolver.FileToolFrom(workingDir, root);
 
         return new PermissionRequest(PermissionKind.Shell, display.ToString(), alwaysRule,
@@ -473,7 +476,7 @@ public class PermissionPolicy
     {
         try
         {
-            var full = Path.GetFullPath(spelled, root ?? Directory.GetCurrentDirectory());
+            var full = Path.GetFullPath(spelled, PathResolver.FolderOrProcess(root));
             var name = Path.GetFileName(full);
             var parent = Path.GetDirectoryName(full) is { } dir ? PathResolver.FileToolFrom(dir, null) : null;
             return request with

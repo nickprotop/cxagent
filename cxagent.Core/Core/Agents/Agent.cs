@@ -3910,8 +3910,10 @@ public sealed class Agent
 
             try
             {
-                var full = System.IO.Path.GetFullPath(path);
+                // FROM THE AGENT'S FOLDER, as the tool resolves it — not the process's, which for a second session
+                // elsewhere names a different file. Collapsed as text, links not followed: a label, not a judgment.
                 var root = System.IO.Path.GetFullPath(workingDir);
+                var full = System.IO.Path.GetFullPath(path, root);
 
                 return full.StartsWith(root + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal)
                     ? System.IO.Path.GetRelativePath(root, full)
