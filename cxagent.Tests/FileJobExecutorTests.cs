@@ -37,6 +37,11 @@ public class FileJobExecutorTests : IDisposable
     /// A WALK STAYS WHERE THE GATE LOOKED. The gate allows a list or search of a folder inside the boundary,
     /// and a walk that followed every link would list the files of a folder elsewhere and search the contents
     /// of a file elsewhere, unasked. A link that lands inside the boundary is followed.
+    ///
+    /// <para>THE WALK STARTS IN <c>sub</c>, and the link inside it points out of <c>sub</c> but not out of the
+    /// boundary: the link is then the only way to <c>inner</c>. Started at the boundary itself, the walk would
+    /// reach <c>inner</c> directly too, and a folder is listed under whichever path the folder's entries happen
+    /// to name first.</para>
     /// </summary>
     [Theory]
     [InlineData("list")]
@@ -45,14 +50,16 @@ public class FileJobExecutorTests : IDisposable
     {
         if (OperatingSystem.IsWindows()) return;
         var root = Path.Combine(_dir, "proj");
+        var sub = Path.Combine(root, "sub");
         var elsewhere = Path.Combine(_dir, "elsewhere");
         Directory.CreateDirectory(Path.Combine(root, "inner"));
+        Directory.CreateDirectory(sub);
         Directory.CreateDirectory(elsewhere);
         File.WriteAllText(Path.Combine(root, "inner", "kept.txt"), "MARK inside");
         File.WriteAllText(Path.Combine(elsewhere, "away.txt"), "MARK outside");
-        Directory.CreateSymbolicLink(Path.Combine(root, "linkdir"), elsewhere);
-        File.CreateSymbolicLink(Path.Combine(root, "linkfile"), Path.Combine(elsewhere, "away.txt"));
-        Directory.CreateSymbolicLink(Path.Combine(root, "linkin"), Path.Combine(root, "inner"));
+        Directory.CreateSymbolicLink(Path.Combine(sub, "linkdir"), elsewhere);
+        File.CreateSymbolicLink(Path.Combine(sub, "linkfile"), Path.Combine(elsewhere, "away.txt"));
+        Directory.CreateSymbolicLink(Path.Combine(sub, "linkin"), Path.Combine(root, "inner"));
         var rules = new PermissionRulesStore(new AppPaths(Path.Combine(_dir, "config")));
         var context = new JobContext("a", "j", new Dictionary<string, JobResult>(), null)
         {
@@ -61,7 +68,8 @@ public class FileJobExecutorTests : IDisposable
         };
 
         var r = await new FileJobExecutor().ExecuteAsync(
-            P(("action", action), ("pattern", action == "list" ? "*" : "MARK")), context, CancellationToken.None);
+            P(("action", action), ("path", "sub"), ("pattern", action == "list" ? "*" : "MARK")), context,
+            CancellationToken.None);
 
         Assert.True(r.Success, r.ErrorMessage);
         var content = (string)r.Output["content"]!;
