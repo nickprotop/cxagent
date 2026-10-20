@@ -260,6 +260,22 @@ public class ShellApprovalTests
         Assert.Equal(ReviewEffect.MayApprove, policy.EffectFor(Shell("rm build.log")));
     }
 
+    /// <summary>
+    /// AND A PATH AFTER A cd IS JUDGED FROM WHERE THE cd WENT: `h` inside `sub` is a link to `sub/.git/hooks`,
+    /// so `cd sub &amp;&amp; touch h/pc` writes a hook however the root's own `h` reads.
+    /// </summary>
+    [Fact]
+    public void ACommandIntoACodeFolderAfterACd_IsNotOffered()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var root = MakeTempDir();
+        Directory.CreateDirectory(Path.Combine(root, "sub", ".git", "hooks"));
+        Directory.CreateSymbolicLink(Path.Combine(root, "sub", "h"), Path.Combine(root, "sub", ".git", "hooks"));
+        var policy = TrustedAutoPolicy(root);
+
+        Assert.Equal(ReviewEffect.None, policy.EffectFor(Shell("cd sub && touch h/pc")));
+    }
+
     // ---- Clause: trust ---------------------------------------------------------------------------
 
     [Fact]

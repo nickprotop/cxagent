@@ -30,6 +30,53 @@ public class CommandSubjectsTests
         Assert.Equal([file], subjects.Paths);
     }
 
+    // AN EXPANSION NAMES A PATH NOBODY READ. `$HOME/.ssh/id_rsa` is the user's key by the time the shell
+    // runs it, and the string says nothing of where it lands — the tilde's refusal, for the same reason.
+    // Double quotes still expand; only single quotes keep the text as written.
+    [Theory]
+    [InlineData("cat $HOME/.ssh/id_rsa")]
+    [InlineData("cat \"$HOME/.bashrc\"")]
+    [InlineData("ls ${HOME}")]
+    [InlineData("grep -r x $PWD/..")]
+    [InlineData("cat $1")]
+    public void AnExpansion_IsUnexamined(string command) =>
+        Assert.False(CommandSubjects.Of(command).FullyExamined);
+
+    // A DOLLAR THE SHELL DOES NOT EXPAND IS TEXT: single-quoted, or with nothing after it to name.
+    [Theory]
+    [InlineData("grep 'a$b' .")]
+    [InlineData("grep -n 'end$' .")]
+    [InlineData("echo cost$")]
+    public void ADollarTheShellLeavesAlone_IsExamined(string command) =>
+        Assert.True(CommandSubjects.Of(command).FullyExamined);
+
+    // A WALK THAT FOLLOWS LINKS reads wherever they point, which the folder it was given does not say:
+    // `grep -R x .` in a project with a link to the home folder searches the home folder.
+    [Theory]
+    [InlineData("grep -R x .")]
+    [InlineData("grep -Rn x .")]
+    [InlineData("grep --dereference-recursive x .")]
+    [InlineData("rg -L x")]
+    [InlineData("rg --follow x")]
+    [InlineData("du -L .")]
+    [InlineData("du --dereference .")]
+    [InlineData("tree -l")]
+    [InlineData("ls -RL")]
+    [InlineData("ls -R -L .")]
+    public void AWalkThatFollowsLinks_IsUnexamined(string command) =>
+        Assert.False(CommandSubjects.Of(command).FullyExamined);
+
+    // AND ONE THAT DOES NOT FOLLOW them stays examined: `-r` walks without following, and `ls -L` on its own
+    // looks at one entry.
+    [Theory]
+    [InlineData("grep -r x .")]
+    [InlineData("grep -rn x .")]
+    [InlineData("ls -L .")]
+    [InlineData("du -sh .")]
+    [InlineData("rg x")]
+    public void AWalkThatDoesNotFollowLinks_IsExamined(string command) =>
+        Assert.True(CommandSubjects.Of(command).FullyExamined);
+
     // A PATTERN IS NOT A FILE, and treating it as one would make `grep TODO .` refuse for want of a
     // file called TODO. Friction with no safety behind it is what gets a gate routed around.
     [Fact]

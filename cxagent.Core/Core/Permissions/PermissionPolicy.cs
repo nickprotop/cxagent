@@ -352,6 +352,7 @@ public class PermissionPolicy
             // different answer than the executor does about the same JSON — see ShellArguments for
             // why a disagreement is a silent bypass rather than a cosmetic split.
             Unattended = Jobs.Builtin.ShellArguments.IsBackground(parameters),
+            CustomEnv = hasEnv,
             ShellWorkingDir = string.IsNullOrEmpty(workingDir) ? null : workingDir,
         };
     }
@@ -924,22 +925,44 @@ public class PermissionPolicy
     /// </summary>
     private bool ShellStaysInside(PermissionRequest request)
     {
+        // A CUSTOM ENVIRONMENT DECIDES WHERE THINGS LAND — OLDPWD and CDPATH move a cd, PATH picks the binary
+        // — and none of it is in the text judged here. See PermissionRequest.CustomEnv.
+        if (request.CustomEnv) return false;
+
         var folder = request.ShellWorkingDir is { Length: > 0 } given ? TryResolve(given, _boundary) : _boundary;
         if (folder is null || !IsInsideBoundary(folder)) return false;   // unresolvable: fail toward asking
 
-        // THE cd TARGET AND THE PATHS CommandSubjects FOUND, FROM THE SAME FOLDER. A relative one names
-        // something where the command runs; judged from the boundary instead, `ls ..` from `sub` read as
-        // leaving the project when it lists it. An absolute one is unchanged by the combine.
         var subjects = CommandSubjects.Of(request.What);
+        var after = AfterCd(folder, subjects.ChangesTo);
+        if (after is null || !IsInsideBoundary(after)) return false;
 
-        // A TILDE cd TARGET IS THE HOME FOLDER, which this does not resolve — the refusal CommandSubjects
-        // gives a tilde argument. The cd is taken off the chain before its arguments are examined, so
-        // without this `cd ~ && ls` joined `~` onto the folder as an ordinary name and listed home unasked.
-        if (subjects.ChangesTo is { } home && home.StartsWith('~')) return false;
-        if (subjects.ChangesTo is { } cd && !IsInsideBoundary(Path.Combine(folder, cd))) return false;
-        if (!subjects.Paths.All(p => IsInsideBoundary(Path.Combine(folder, p)))) return false;
+        // THE PATHS CommandSubjects FOUND, FROM THE FOLDER THE COMMAND READS THEM IN — where it runs, and past
+        // a leading cd, where that went. Judged from the boundary instead, `ls ..` from `sub` read as leaving
+        // the project when it lists it; judged from before the cd, `cd sub && cat leak.txt` read the root's
+        // `leak.txt`. An absolute one is unchanged by the combine.
+        if (!subjects.Paths.All(p => IsInsideBoundary(Path.Combine(after, p)))) return false;
 
-        return RelativeSubjectsConfined(request.What, folder);
+        return RelativeSubjectsConfined(PastCd(request.What, subjects), after);
+    }
+
+    // THE COMMAND A LEADING cd RUNS, which is what is read from the folder it enters; the cd's own target is
+    // judged from where the command starts, by AfterCd.
+    private static string PastCd(string command, CommandSubjects subjects) =>
+        subjects.ChangesTo is null ? command : ReadOnlyCommands.CommandAfterCd(command) ?? command;
+
+    /// <summary>
+    /// The folder a command's paths are read in: <paramref name="folder"/>, or past a leading
+    /// <c>cd</c>, the folder it enters — null when that folder is the shell's to decide.
+    ///
+    /// <para>THE SHELL'S TARGETS ARE NOT NAMES. <c>~</c> is the home folder, <c>-</c> is <c>$OLDPWD</c>, and a
+    /// variable is whatever it holds; joined onto the folder as text, each read as a folder inside it.
+    /// <c>CDPATH</c> is the other way a cd leaves, and the shell executor empties it for that reason.</para>
+    /// </summary>
+    private static string? AfterCd(string folder, string? cd)
+    {
+        if (cd is null) return folder;
+        if (cd == "-" || cd.StartsWith('~') || cd.Contains('$', StringComparison.Ordinal)) return null;
+        return Path.Combine(folder, cd);
     }
 
     /// <summary>
@@ -1045,10 +1068,11 @@ public class PermissionPolicy
         if (folder is null) return true;   // unresolvable: fail toward asking
 
         var subjects = CommandSubjects.Of(request.What);
-        var named = new List<string> { folder };
-        if (subjects.ChangesTo is { } cd) named.Add(Path.Combine(folder, cd));
-        named.AddRange(subjects.Paths.Select(p => Path.Combine(folder, p)));
-        named.AddRange(RelativeSubjects(request.What, folder));
+        var after = AfterCd(folder, subjects.ChangesTo);
+        if (after is null) return true;   // a cd the shell resolves: where it lands is not known here
+        var named = new List<string> { folder, after };
+        named.AddRange(subjects.Paths.Select(p => Path.Combine(after, p)));
+        named.AddRange(RelativeSubjects(PastCd(request.What, subjects), after));
 
         var boundary = Path.TrimEndingDirectorySeparator(_boundary);
         return named.Any(path => TryResolve(path, _boundary) is not { } resolved || UnderCodeFolder(resolved, boundary));

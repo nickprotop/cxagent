@@ -93,6 +93,19 @@ internal sealed record CommandSubjects
 
         var tokens = Tokenize(text, unexamined);
 
+        // AN EXPANSION NAMES A PATH NOBODY READ, the verb included. `cat $HOME/.ssh/id_rsa` is the user's key
+        // by the time the shell runs it, and nothing here can say where `$HOME`, `$OLDPWD` or `$1` lands —
+        // the tilde's refusal below, for the same reason, and expanding them here would be a second path
+        // resolver beside the shell's.
+        foreach (var entry in tokens.Where(t => t.Expands))
+            unexamined.Add($"expansion: {entry.Text}");
+
+        // A WALK THAT FOLLOWS LINKS reads wherever they point. `grep -R x .` names one folder and searches
+        // every folder a link under it reaches, so confining the folder it names confines nothing.
+        foreach (var stage in Stages(tokens))
+            if (FollowsLinks(stage))
+                unexamined.Add($"follows links: {string.Join(' ', stage.Select(t => t.Text))}");
+
         // THE VERB IS NOT A SUBJECT — a caller vouches for it separately, via SafeVerbs — but it is
         // also not nothing: skipping it silently is how "the verb is safe" came to stand in for "the
         // command is safe" in the first place.
@@ -204,9 +217,15 @@ internal sealed record CommandSubjects
         var current = new System.Text.StringBuilder();
         var quote = '\0';
         var wasQuoted = false;
+        var expands = false;
 
-        foreach (var c in text)
+        for (var i = 0; i < text.Length; i++)
         {
+            var c = text[i];
+
+            // A DOLLAR EXPANDS everywhere but inside single quotes, and only with something after it to name.
+            if (c == '$' && quote != '\'' && i + 1 < text.Length && IsExpansionStart(text[i + 1])) expands = true;
+
             if (quote != '\0')
             {
                 if (c == quote) quote = '\0';
@@ -220,9 +239,10 @@ internal sealed record CommandSubjects
             {
                 if (current.Length > 0 || wasQuoted)
                 {
-                    tokens.Add(new Token(current.ToString(), wasQuoted));
+                    tokens.Add(new Token(current.ToString(), wasQuoted, expands));
                     current.Clear();
                     wasQuoted = false;
+                    expands = false;
                 }
                 continue;
             }
@@ -231,9 +251,56 @@ internal sealed record CommandSubjects
         }
 
         if (quote != '\0') unexamined.Add("unterminated quote");
-        if (current.Length > 0 || wasQuoted) tokens.Add(new Token(current.ToString(), wasQuoted));
+        if (current.Length > 0 || wasQuoted) tokens.Add(new Token(current.ToString(), wasQuoted, expands));
 
         return tokens;
+    }
+
+    // WHAT A SHELL EXPANDS AFTER A DOLLAR: a name, a brace, a position, or one of the special parameters.
+    // `cost$` and `'end$'` stay text, as they do to the shell.
+    private static bool IsExpansionStart(char c) =>
+        char.IsAsciiLetterOrDigit(c) || c is '_' or '{' or '@' or '*' or '#' or '?' or '$' or '!' or '-';
+
+    // THE COMMANDS OF A PIPE, each starting at its own verb, so a flag is read against the program it is
+    // given to — `-L` means "follow links" to du and something else entirely to head.
+    private static IEnumerable<List<Token>> Stages(List<Token> tokens)
+    {
+        var stage = new List<Token>();
+        foreach (var token in tokens)
+        {
+            if (token.Text == "|" && !token.Quoted)
+            {
+                if (stage.Count > 0) yield return stage;
+                stage = [];
+                continue;
+            }
+            stage.Add(token);
+        }
+        if (stage.Count > 0) yield return stage;
+    }
+
+    /// <summary>
+    /// Whether this command walks through links: <c>grep -R</c>, <c>rg -L</c>, <c>du -L</c>, <c>tree -l</c>,
+    /// <c>ls -RL</c>. The plain recursive forms (<c>grep -r</c>, <c>rg</c>, <c>du</c>, <c>ls -R</c>) list a
+    /// link without entering it, so they stay what the folder they name says.
+    /// </summary>
+    private static bool FollowsLinks(List<Token> stage)
+    {
+        var verb = stage[0].Text;
+        var flags = stage.Skip(1).Where(t => !t.Quoted && t.Text.StartsWith('-')).Select(t => t.Text).ToList();
+        bool Short(char letter) => flags.Any(f => !f.StartsWith("--", StringComparison.Ordinal)
+                                                   && f.AsSpan(1).Contains(letter));
+        bool Long(string name) => flags.Contains(name, StringComparer.Ordinal);
+
+        return verb switch
+        {
+            "grep" or "egrep" or "fgrep" => Short('R') || Long("--dereference-recursive"),
+            "rg" => Short('L') || Long("--follow"),
+            "du" => Short('L') || Long("--dereference"),
+            "tree" => Short('l'),
+            "ls" => (Short('L') || Long("--dereference")) && (Short('R') || Long("--recursive")),
+            _ => false,
+        };
     }
 
     /// <summary>
@@ -245,6 +312,9 @@ internal sealed record CommandSubjects
     /// every bracketed grep pattern look like an unenumerated path set — measured on the real
     /// corpus, 43 invocations of ordinary searches, which is the friction that gets a gate routed
     /// around.</para>
+    ///
+    /// <para><see cref="Expands"/> SAYS THE SHELL WILL REWRITE IT — a <c>$</c> outside single quotes — so
+    /// the text is not the path that runs.</para>
     /// </summary>
-    private readonly record struct Token(string Text, bool Quoted);
+    private readonly record struct Token(string Text, bool Quoted, bool Expands);
 }

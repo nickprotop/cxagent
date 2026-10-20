@@ -127,7 +127,14 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
         // a huge tree — waits forever with nothing to interrupt it. Two minutes is long enough for
         // a build step and short enough that a wedged call fails while the user is still watching.
         var timeout = parameters.Get<int?>("timeout_seconds", null) ?? 120;
-        var env = parameters.Get<Dictionary<string, string>?>("env", null);
+        var asked = parameters.Get<Dictionary<string, string>?>("env", null);
+
+        // CDPATH EMPTIED unless the call sets it. The gate judges `cd outside` as the folder of that name
+        // where the command runs; an inherited CDPATH sends it to one under any CDPATH entry first. Empty is
+        // the plain current-folder lookup, so the cd goes where it was judged to. A call that sets CDPATH is a
+        // custom environment — asked about, so what it asks for stands.
+        var env = new Dictionary<string, string>(asked ?? []);
+        env.TryAdd("CDPATH", "");
 
         // WHERE THE REST OF A LONG OUTPUT GOES, when the session has a folder to put it in. Matched
         // on the concrete context rather than read off IJobContext: the interface is what plugins

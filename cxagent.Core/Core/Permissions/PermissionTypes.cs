@@ -116,6 +116,15 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     public bool Unattended { get; init; }
 
     /// <summary>
+    /// Whether a shell request carries an <c>env</c> of its own.
+    ///
+    /// <para>A DIFFERENT PROGRAM THAN ITS TEXT. <c>PATH</c> picks which <c>cat</c> runs, <c>LD_PRELOAD</c> what it
+    /// loads, <c>OLDPWD</c> and <c>CDPATH</c> where a <c>cd</c> goes — so nothing that vouches for a command by
+    /// reading it can vouch for this one, and it is never let through unasked.</para>
+    /// </summary>
+    public bool CustomEnv { get; init; }
+
+    /// <summary>
     /// Raised while expanding a command the user typed — one of its <c>!`…`</c> lines or
     /// <c>@file</c> includes — rather than by the model.
     ///

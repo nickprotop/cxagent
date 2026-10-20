@@ -41,6 +41,25 @@ public class ShellJobExecutorTests
     /// the schema lacks, and nothing walks the schema asking whether every param is advertised. Loud
     /// one way, silent the other.</para>
     /// </summary>
+    /// <summary>
+    /// A cd GOES WHERE ITS TEXT SAYS. With CDPATH inherited, `cd outside` enters a folder of that name under any
+    /// CDPATH entry before the one the gate judged — so the shell runs with it empty, which is the plain
+    /// current-folder lookup. A call that sets CDPATH itself is a custom environment, asked about, and kept.
+    /// </summary>
+    [Fact]
+    public async Task Execute_EmptiesAnInheritedCdpath_AndKeepsOneTheCallSets()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var plain = await new ShellJobExecutor().ExecuteAsync(
+            P(("command", "echo \"[$CDPATH]\"")), new CollectingContext(), CancellationToken.None);
+        var set = await new ShellJobExecutor().ExecuteAsync(
+            P(("command", "echo \"[$CDPATH]\""), ("env", new Dictionary<string, string> { ["CDPATH"] = "/x" })),
+            new CollectingContext(), CancellationToken.None);
+
+        Assert.Contains("[]", plain.Output["stdout"]?.ToString() ?? "");
+        Assert.Contains("[/x]", set.Output["stdout"]?.ToString() ?? "");
+    }
+
     [Fact]
     public async Task Execute_PassesEnvToTheProcess()
     {

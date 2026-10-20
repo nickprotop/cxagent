@@ -59,6 +59,54 @@ public class ReadOnlyBoundaryTests : IDisposable
     public void ACdIntoTheHomeFolder_IsRefused(string command) =>
         Assert.False(Silent(command));
 
+    // A cd WHOSE TARGET THE SHELL DECIDES leaves for a folder the text does not name: `-` is $OLDPWD, and a
+    // variable is whatever it holds.
+    [Theory]
+    [InlineData("cd - && ls")]
+    [InlineData("cd $HOME && ls")]
+    [InlineData("cd ${OLDPWD} && ls")]
+    public void ACdTheShellResolves_IsRefused(string command) =>
+        Assert.False(Silent(command));
+
+    // A CUSTOM ENVIRONMENT IS A DIFFERENT PROGRAM. PATH picks which `cat` runs, LD_PRELOAD what it loads, and
+    // OLDPWD or CDPATH where a cd goes — none of it in the text the read-only pass vouches for.
+    [Theory]
+    [InlineData("PATH")]
+    [InlineData("LD_PRELOAD")]
+    [InlineData("CDPATH")]
+    public void AReadWithACustomEnvironment_IsRefused(string variable)
+    {
+        var request = PermissionPolicy.RequestsFor("shell", new CxAgent.Core.Models.JobParameters(
+            new Dictionary<string, object?>
+            {
+                ["command"] = "cat notes.txt",
+                ["env"] = new Dictionary<string, string> { [variable] = "/tmp" },
+            }), _dir).Single();
+
+        Assert.False(_policy.IsSilentlyAllowed(request with { Policy = _policy }));
+    }
+
+    // A PATH AFTER A cd NAMES SOMETHING IN THE FOLDER THE cd ENTERED. Judged from the folder before it,
+    // `cd sub && cat notes.txt` read `<root>/notes.txt` — inside — while the shell read `sub/notes.txt`, a
+    // link out of the folder.
+    [Fact]
+    public void APathAfterACd_IsJudgedFromTheFolderItEntered()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var outside = Path.Combine(Path.GetTempPath(), "robound-out-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        File.WriteAllText(Path.Combine(outside, "secret.txt"), "away");
+        Directory.CreateDirectory(Path.Combine(_dir, "sub"));
+        File.CreateSymbolicLink(Path.Combine(_dir, "sub", "leak.txt"), Path.Combine(outside, "secret.txt"));
+        File.WriteAllText(Path.Combine(_dir, "sub", "kept.txt"), "in tree");
+        try
+        {
+            Assert.False(Silent("cd sub && cat leak.txt"));
+            Assert.True(Silent("cd sub && cat kept.txt"));
+        }
+        finally { Directory.Delete(outside, recursive: true); }
+    }
+
     // AND THE SAME READ THROUGH THE FILE TOOL WAS ALREADY REFUSED, which is the asymmetry: the two
     // spellings now agree.
     [Fact]
