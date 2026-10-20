@@ -86,6 +86,47 @@ public sealed class JudgedEntryTests : IDisposable
     }
 
     [Fact]
+    public async Task ACopy_WritesTheDestinationTheGateJudged()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        File.WriteAllText(Path.Combine(_proj, "src.txt"), "COPIED");
+        File.CreateSymbolicLink(Path.Combine(_proj, "destlink"), Path.Combine(_proj, "a", "f.txt"));
+
+        var r = await Run("file", new() { ["action"] = "copy", ["path"] = "src.txt", ["dest"] = "destlink" },
+            Retarget("destlink", "b/f.txt"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Equal("COPIED", File.ReadAllText(Path.Combine(_proj, "a", "f.txt")));
+        Assert.Equal("B", File.ReadAllText(Path.Combine(_proj, "b", "f.txt")));
+    }
+
+    /// <summary>
+    /// REMOVING SOMETHING OUTSIDE THE FOLDER ASKS, even when it points inside: a delete or a move acts on the link
+    /// itself, so the link's own folder is held to the boundary as well as its target.
+    /// </summary>
+    [Theory]
+    [InlineData("delete")]
+    [InlineData("move")]
+    public void AnEntryActionOnALinkOutside_Asks_ThoughItPointsInside(string action)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var away = Path.Combine(_dir, "away");
+        Directory.CreateDirectory(away);
+        var link = Path.Combine(away, "lnk");
+        File.CreateSymbolicLink(link, Path.Combine(_proj, "a", "f.txt"));
+        var rules = new PermissionRulesStore(new AppPaths(Path.Combine(_dir, "config")));
+        rules.SetTrust(_proj, TrustState.Trusted);
+        var policy = new PermissionPolicy(_proj, rules, EditMode.AcceptEdits);
+
+        var requests = PermissionPolicy.RequestsFor("file", new JobParameters(new Dictionary<string, object?>
+        {
+            ["action"] = action, ["path"] = link, ["dest"] = "moved",
+        }), _proj);
+
+        Assert.False(requests.All(r => policy.IsSilentlyAllowed(r with { Policy = policy })));
+    }
+
+    [Fact]
     public async Task AShellWorkingDir_IsTheFolderTheGateJudged()
     {
         if (OperatingSystem.IsWindows()) return;

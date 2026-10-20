@@ -454,7 +454,11 @@ public class PermissionPolicy
                 var source = FileRequest(PermissionKind.FileRead, target, root) with { RemovesSource = action == "move" };
                 requests.Add(action == "move" ? OnEntry(source, target, root) : source);
                 if (dest is not null)
-                    requests.Add(OnEntry(FileRequest(PermissionKind.FileWrite, dest, root), dest, root));
+                    // A MOVE'S DESTINATION IS AN ENTRY — a rename replaces whatever is there, link and all — and a
+                    // COPY'S IS AN OPEN: it writes the file the destination names, so it writes the judged target.
+                    requests.Add(action == "move"
+                        ? OnEntry(FileRequest(PermissionKind.FileWrite, dest, root), dest, root)
+                        : FileRequest(PermissionKind.FileWrite, dest, root));
                 break;
             // AN ACTION THIS GATE DOES NOT KNOW STILL ASKS. With no request the call would run unasked;
             // asking about a write is the direction to fail.
@@ -489,8 +493,9 @@ public class PermissionPolicy
     }
 
     // AN ENTRY ACTION ACTS ON THE ENTRY: a delete or a move removes the link itself, never what it points at — its
-    // real folder plus its own name, so the folders above it are the ones judged. The decision is still about the
-    // target, as it is for every file request.
+    // real folder plus its own name. The decision judges both: the target, as for every file request, and the entry,
+    // which AllowsSilentWrites also holds to the boundary — removing a link outside the folder asks, wherever it
+    // points.
     private static PermissionRequest OnEntry(PermissionRequest request, string spelled, string? root)
     {
         try
@@ -818,6 +823,10 @@ public class PermissionPolicy
         request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite
         && RootTrust == TrustState.Trusted
         && (IsInsideBoundary(request.Display) || ReadsOwnLog(request))
+        // AND THE ENTRY ACTED ON, when that is not the target — a delete or a move of a link removes the link, so a
+        // link outside the folder is outside however far inside it points. Compared, not resolved: the entry is
+        // real up to its own name, and resolving it would follow the link back inside.
+        && (request.ActsOn is not { } entry || entry == request.Display || PathResolver.Contains(_boundary, entry))
         && !IsExecutableConfig(request);
 
     /// <summary>

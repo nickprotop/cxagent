@@ -142,9 +142,9 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// The path the executor acts on once this request is allowed — resolved by the gate, so nothing resolves it
     /// a second time and lands somewhere else.
     ///
-    /// <para>THE JUDGED TARGET FOR AN OPEN — a read, a write, a copy's source — and THE ENTRY for an action on the
-    /// entry itself: a delete, a move, a copy's destination act on the link, as they always have, never on what
-    /// it points at. The entry is its real folder plus its own name, so the folders above it are the ones judged.
+    /// <para>THE JUDGED TARGET FOR AN OPEN — a read, a write, a copy's source or destination — and THE ENTRY for an
+    /// action on the entry itself: a delete, or a move's source or destination, acts on the link, never on what it
+    /// points at. The entry is its real folder plus its own name, and is held to the boundary as the target is.
     /// Null when the path could not be resolved; the executor then resolves it itself, and the request asked.</para>
     /// </summary>
     public string? ActsOn { get; init; }
