@@ -966,4 +966,173 @@ public class OutlinerTests
             static int (*handler)(int);
             """));
     }
+
+    /// <summary>
+    /// SCALA, as cats writes it: generics in brackets, a def with no parameter list, several
+    /// parameter lists, a body after <c>=</c> on the next line, <c>case class</c>, <c>object</c>,
+    /// <c>trait</c> and type aliases. An anonymous class inside a def's body stays hidden.
+    /// </summary>
+    [Fact]
+    public void Scala_DefsValsAndTypes()
+    {
+        Assert.Equal(
+        [
+            "3:0:final case class Kleisli[F[_], -A, B](run: A => F[B])",
+            "4:1:def ap[C, D](f: Kleisli[F, C, B => D])(implicit F: Apply[F]): Kleisli[F, C, D]",
+            "7:1:def dimap[C, D](f: C => A)(g: B => D)(implicit F: Functor[F]): Kleisli[F, C, D]",
+            "8:1:val first: Int",
+            "9:1:private[data] def local: String",
+            "12:0:object Kleisli extends KleisliInstances",
+            "13:1:implicit def monoid[F[_], A, B](implicit FB0: Monoid[F[B]]): Monoid[Kleisli[F, A, B]]",
+            "15:1:type Id[A]",
+            "18:0:sealed trait Validated[+E, +A]",
+        ], Outline("Kleisli.scala", """
+            package cats.data
+
+            final case class Kleisli[F[_], -A, B](run: A => F[B]) { self =>
+              def ap[C, D](f: Kleisli[F, C, B => D])(implicit F: Apply[F]): Kleisli[F, C, D] =
+                Kleisli { a => F.ap(f.run(a))(run(a)) }
+
+              def dimap[C, D](f: C => A)(g: B => D)(implicit F: Functor[F]): Kleisli[F, C, D] = ???
+              val first: Int = 1
+              private[data] def local: String = "x"
+            }
+
+            object Kleisli extends KleisliInstances {
+              implicit def monoid[F[_], A, B](implicit FB0: Monoid[F[B]]): Monoid[Kleisli[F, A, B]] =
+                new KleisliMonoid[F, A, B] { def FB: Monoid[F[B]] = FB0 }
+              type Id[A] = A
+            }
+
+            sealed trait Validated[+E, +A]
+            """));
+    }
+
+    /// <summary>
+    /// DART, as package:http writes it: <c>mixin class</c>, members with an <c>=&gt;</c> body,
+    /// getters and setters, named and factory constructors, mixins and extensions.
+    /// </summary>
+    [Fact]
+    public void Dart_ClassesMixinsExtensionsAndTheirMembers()
+    {
+        Assert.Equal(
+        [
+            "1:0:abstract mixin class BaseClient implements Client",
+            "3:1:Future<Response> head(Uri url, {Map<String, String>? headers})",
+            "6:1:String get name",
+            "7:1:set name(String value)",
+            "8:1:BaseClient.named(this.x)",
+            "9:1:factory BaseClient.create()",
+            "13:0:mixin Retry on BaseClient",
+            "14:1:void retry()",
+            "17:0:extension Bytes on Response",
+            "18:1:List<int> get bytes",
+        ], Outline("base_client.dart", """
+            abstract mixin class BaseClient implements Client {
+              @override
+              Future<Response> head(Uri url, {Map<String, String>? headers}) =>
+                  _sendUnstreamed('HEAD', url, headers);
+
+              String get name => 'base';
+              set name(String value) {}
+              BaseClient.named(this.x);
+              factory BaseClient.create() => _Impl();
+              final int x;
+            }
+
+            mixin Retry on BaseClient {
+              void retry() {}
+            }
+
+            extension Bytes on Response {
+              List<int> get bytes => [];
+            }
+            """));
+    }
+
+    /// <summary>
+    /// OBJECTIVE-C, as AFNetworking writes it: <c>@interface</c> and <c>@implementation</c> blocks
+    /// that end at <c>@end</c> rather than a brace, properties, and methods that start with
+    /// <c>-</c> or <c>+</c> and wrap their selector across lines.
+    /// </summary>
+    [Fact]
+    public void ObjectiveC_InterfacesImplementationsPropertiesAndMethods()
+    {
+        Assert.Equal(
+        [
+            "4:0:@interface AFHTTPSessionManager : AFURLSessionManager <NSSecureCoding, NSCopying>",
+            "6:1:@property (readonly, nonatomic, strong, nullable) NSURL *baseURL",
+            "8:1:+ (instancetype)manager",
+            "9:1:- (instancetype)initWithBaseURL:(nullable NSURL *)url sessionConfiguration:(nullable NSURLSessionConfiguration *)configuration",
+            "14:0:@implementation AFHTTPSessionManager",
+            "16:1:- (instancetype)initWithBaseURL:(NSURL *)url",
+        ], Outline("AFHTTPSessionManager.m", """
+            @class AFSecurityPolicy;
+            @protocol AFMultipartFormData;
+
+            @interface AFHTTPSessionManager : AFURLSessionManager <NSSecureCoding, NSCopying>
+
+            @property (readonly, nonatomic, strong, nullable) NSURL *baseURL;
+
+            + (instancetype)manager;
+            - (instancetype)initWithBaseURL:(nullable NSURL *)url
+                       sessionConfiguration:(nullable NSURLSessionConfiguration *)configuration;
+
+            @end
+
+            @implementation AFHTTPSessionManager
+
+            - (instancetype)initWithBaseURL:(NSURL *)url {
+                self = [super init];
+                return self;
+            }
+
+            @end
+            """));
+    }
+
+    /// <summary>A SCALA PACKAGE OBJECT holds a package's shared types and functions — cats keeps dozens there.</summary>
+    [Fact]
+    public void Scala_APackageObjectsMembers()
+    {
+        Assert.Equal(["2:0:package object data extends ScalaVersionSpecificPackage", "3:1:type ValidatedNel[+E, +A]", "4:1:val NonEmptyMap"],
+            Outline("package.scala", """
+                package cats
+                package object data extends ScalaVersionSpecificPackage {
+                  type ValidatedNel[+E, +A] = Validated[NonEmptyList[E], A]
+                  val NonEmptyMap = NonEmptyMapImpl
+                }
+                """));
+    }
+
+    /// <summary>DART'S <c>async</c>, <c>async*</c> AND <c>sync*</c> mark the body, not the declaration.</summary>
+    [Fact]
+    public void Dart_AnAsyncMarker_IsNotPartOfTheSignature()
+    {
+        Assert.Equal(["1:0:class Client", "2:1:Future<String> read(Uri url)", "3:1:Stream<int> ticks()"], Outline("client.dart", """
+            class Client {
+              Future<String> read(Uri url) async {}
+              Stream<int> ticks() async* {}
+            }
+            """));
+    }
+
+    /// <summary>
+    /// DART'S TOP-LEVEL VALUES are a library's API — status codes, a shared codec — shown up to
+    /// their <c>=</c>, as TypeScript's exported consts are. A field inside a class is not listed.
+    /// </summary>
+    [Fact]
+    public void Dart_TopLevelFinalAndConstValues()
+    {
+        Assert.Equal(["1:0:const normalClosure", "2:0:final HuffmanCodec http2HuffmanCodec", "6:0:class Codec"], Outline("status.dart", """
+            const normalClosure = 1000;
+            final HuffmanCodec http2HuffmanCodec = HuffmanCodec(
+              HuffmanEncoder(_codeWords),
+              HuffmanDecoder(generateHuffmanTree(_codeWords)),
+            );
+            class Codec {
+              final int size = 1;
+            }
+            """));
+    }
 }

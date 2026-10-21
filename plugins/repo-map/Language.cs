@@ -102,7 +102,8 @@ public sealed record Language(string Name, Family Family)
         return Path.GetExtension(path).ToLowerInvariant() switch
         {
             ".cs" => CSharp,
-            ".java" or ".kt" or ".kts" or ".scala" or ".swift" or ".dart" => Jvm,
+            ".java" or ".kt" or ".kts" or ".swift" or ".dart" => Jvm,
+            ".scala" => Scala,
             ".c" or ".h" or ".cpp" or ".hpp" or ".cc" or ".hh" or ".cxx" or ".hxx" or ".m" or ".mm" => C,
             ".php" => Php,
             ".js" or ".jsx" or ".mjs" or ".cjs" or ".ts" or ".tsx" or ".mts" or ".cts" => Script,
@@ -119,6 +120,13 @@ public sealed record Language(string Name, Family Family)
     { SlashComments = true, TripleQuotes = true, VerbatimStrings = true, Properties = true };
 
     public static readonly Language Jvm = new("JVM", Family.CLike) { SlashComments = true, TripleQuotes = true, SameLineBraces = true };
+
+    /// <summary>
+    /// SCALA HAS ITS OWN RULES, unlike the other JVM languages: its generics are in brackets, a def
+    /// may have no parameter list or several, and a body follows <c>=</c> — none of which the
+    /// "words, a name, a parameter list" rule reads.
+    /// </summary>
+    public static readonly Language Scala = new("Scala", Family.CLike) { SlashComments = true, TripleQuotes = true, SameLineBraces = true };
 
     public static readonly Language C = new("C", Family.CLike) { SlashComments = true };
 

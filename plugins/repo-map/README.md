@@ -64,10 +64,13 @@ TypeScript, Go, Rust, Python, Ruby and shell, recognised by file extension.
 Declarations are found by reading the source as text, with no language server and no native parser,
 so the plugin works the moment it is installed, in any repository. It finds:
 
-- types (classes, structs, interfaces, records, enums and traits);
-- functions, methods and constructors;
-- properties: C#'s, and the `var`, `val` and `let` of Swift, Kotlin, Scala and Dart;
-- what a JavaScript or TypeScript module exports with `export const`, shown up to its `=`.
+- types (classes, structs, interfaces, records, enums, traits, typedefs, Dart's mixins and extensions,
+  Scala's objects and Objective-C's `@interface` and `@implementation`);
+- functions, methods and constructors, operators and indexers included;
+- properties: C#'s, Objective-C's `@property`, Dart's getters, and the `var`, `val` and `let` of Swift,
+  Kotlin, Scala and Dart;
+- what a JavaScript or TypeScript module exports with `export const`, and a Dart library's top-level
+  `final` and `const` values, shown up to their `=`.
 
 It shows only what is declared at the top of a file or inside a type. Anything inside a function
 body is left out. A line it misreads costs one declaration and never the map.

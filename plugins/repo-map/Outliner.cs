@@ -102,6 +102,13 @@ public static class Outliner
                 if (goGroup == frames.Count && trimmed == ")") { goGroup = -1; continue; }
             }
 
+            // OBJECTIVE-C'S `@end` closes the block an `@interface` or `@implementation` opened.
+            if (language == Language.C && trimmed == "@end")
+            {
+                if (frames.Count > 0) frames.Pop();
+                continue;
+            }
+
             var inContainer = frames.All(f => f.Kind == Frame.Container);
             if (parens == 0 && pending is null && inContainer && trimmed.Length > 0 && !Skipped(trimmed, language))
             {
@@ -112,7 +119,7 @@ public static class Outliner
                 {
                     if (d.Kind != SymbolKind.Namespace && d.Name.Length > 0)
                     {
-                        var signature = Signature(source, i, toBody: d.Opens == Frame.Container);
+                        var signature = Signature(source, i, toBody: (d.Opens == Frame.Container && !d.NoBrace) || d.ToBrace);
                         if (d.Value && AssignmentAt(signature) is > 0 and var eq) signature = signature[..eq].TrimEnd();
                         // A SIGNATURE THAT COMES OUT EMPTY quotes nothing a reader could find, so
                         // whatever the line was, it is not shown as a declaration.
@@ -122,6 +129,11 @@ public static class Outliner
                     pending = d.Opens;
                     pendingName = d.Name;
                     pendingNamespace = d.Kind == SymbolKind.Namespace;
+                    if (d.NoBrace)
+                    {
+                        frames.Push(new Scope(Frame.Container, d.Name, Namespace: false));
+                        pending = null;
+                    }
                 }
                 // A BLOCK THAT DECLARES NOTHING ITSELF — `extern "C" {` around a whole C header,
                 // `declare module "x" {` around a declaration file — is seen through like a
@@ -173,6 +185,13 @@ public static class Outliner
             // semicolon — and must not claim the next declaration's brace as its own. A TYPE
             // always has a body, so its claim survives a header wrapped before its brace.
             if (language.SameLineBraces && parens == 0 && pending == Frame.Body) pending = null;
+
+            // A SCALA TYPE MAY HAVE NO BODY AT ALL — `final case class Valid[+A](a: A) extends V[A]` —
+            // and one whose header ends on its line without a brace or a dangling `extends` has none;
+            // kept, its claim would take the next declaration's brace and hide what follows.
+            if (language == Language.Scala && parens == 0 && pending == Frame.Container && !line.Contains('{')
+                && !ScalaHeaderContinues.IsMatch(trimmed))
+                pending = null;
         }
 
         return symbols;
@@ -270,10 +289,12 @@ public static class Outliner
     /// <c>&amp;&amp; b(…)</c>, <c>.Select(…)</c> — is the middle of something an earlier line began.</para>
     /// </summary>
     private static bool Skipped(string trimmed, Language language) =>
-        trimmed[0] is '#' or '}' or ')' or ']' or '?' or ':' or '.' or '+' or '-' or '/' or '%' or '|' or '&' or '=' or ',' or '!' or '>'
-        // A '<' CONTINUES A COMPARISON — except a Java or C# generic method's type parameters,
-        // which come before everything else: `<T extends Number> T make(…)`.
-        || (trimmed[0] == '<' && !(language.Family == Family.CLike && GenericMethodStart.IsMatch(trimmed)));
+        (trimmed[0] is '#' or '}' or ')' or ']' or '?' or ':' or '.' or '+' or '-' or '/' or '%' or '|' or '&' or '=' or ',' or '!' or '>'
+            // A '<' CONTINUES A COMPARISON — except a Java or C# generic method's type parameters,
+            // which come before everything else: `<T extends Number> T make(…)`.
+            || (trimmed[0] == '<' && !(language.Family == Family.CLike && GenericMethodStart.IsMatch(trimmed))))
+        // AN OBJECTIVE-C METHOD starts with `-` or `+` and its return type in parentheses.
+        && !(language == Language.C && ObjCMethod.IsMatch(trimmed));
 
     private static readonly Regex GenericMethodStart = new(@"^<[^()]*>\s+[\w@]", RegexOptions.Compiled);
 
@@ -286,6 +307,15 @@ public static class Outliner
         /// regex, an object literal, a call to <c>forwardRef</c>: what it holds, not what it is.
         /// </summary>
         public bool Value { get; init; }
+
+        /// <summary>
+        /// A block opened without a brace and closed by <c>@end</c>: Objective-C's
+        /// <c>@interface</c>, <c>@implementation</c> and <c>@protocol</c>.
+        /// </summary>
+        public bool NoBrace { get; init; }
+
+        /// <summary>A member whose head runs on until its <c>{</c> or <c>;</c> — an Objective-C selector wrapped across lines.</summary>
+        public bool ToBrace { get; init; }
     }
 
     /// <param name="typeName">The type the line sits in, or null at file or namespace scope.</param>
@@ -301,6 +331,7 @@ public static class Outliner
             Family.Rust => RustDeclaration(line),
             Family.Shell => ShellDeclaration(line, inType),
             Family.Script => ScriptDeclaration(line, inType),
+            _ when language == Language.Scala => ScalaDeclaration(line),
             _ => CLikeDeclaration(line, language, typeName),
         };
     }
@@ -321,11 +352,11 @@ public static class Outliner
     /// declaration on the same line. Stripped so the rules below see the declaration itself.
     /// </summary>
     private static readonly Regex LeadingAnnotations = new(
-        @"^(?:(?:\[[^\]]*\]|@(?!interface\b)[\w.]+(?:\([^)]*\))?|template\s*<[^>]*>)\s*)+", RegexOptions.Compiled);
+        @"^(?:(?:\[[^\]]*\]|@(?!interface\b|implementation\b|protocol\b|property\b|end\b)[\w.]+(?:\([^)]*\))?|template\s*<[^>]*>)\s*)+", RegexOptions.Compiled);
 
     private static readonly Regex TypeDecl = new(
-        @"^(?:(?:public|private|protected|internal|static|sealed|abstract|partial|readonly|unsafe|file|ref|data|open|final|export|default|declare|inline|value|inner|companion|annotation|fileprivate|override|virtual|new|strictfp|non-sealed|enum|typedef)\s+)*" +
-        @"(?<kw>class|struct|interface|enum|record|namespace|module|object|trait|protocol|extension|union|@interface)\b(?:\s+(?:class|struct))?\s+(?<name>[A-Za-z_$][\w$]*)",
+        @"^(?:(?:public|private|protected|internal|static|sealed|abstract|partial|readonly|unsafe|file|ref|data|open|final|export|default|declare|inline|value|inner|companion|annotation|fileprivate|override|virtual|new|strictfp|non-sealed|enum|typedef|base|mixin)\s+)*" +
+        @"(?<kw>class|struct|interface|enum|record|namespace|module|object|trait|protocol|extension|union|@interface|mixin)\b(?:\s+(?:class|struct))?\s+(?<name>[A-Za-z_$][\w$]*)",
         RegexOptions.Compiled);
 
     /// <summary><c>var</c>, <c>val</c> or <c>let</c> and a name, behind any modifiers — Swift's <c>private(set)</c> included.</summary>
@@ -360,6 +391,30 @@ public static class Outliner
     private static Found? CLikeDeclaration(string line, Language language, string? typeName)
     {
         var inType = typeName is not null;
+
+        // OBJECTIVE-C, read in C files: a class's interface or implementation (a block to its
+        // `@end`), a property, a method. A `@protocol Foo;` or `@class Foo;` only says one exists.
+        if (language == Language.C && line.StartsWith('@'))
+        {
+            if (ObjCBlock.Match(line) is { Success: true } block && !line.TrimEnd().EndsWith(';'))
+                return new Found(block.Groups["name"].Value, SymbolKind.Type, Frame.Container) { NoBrace = true };
+            if (ObjCProperty.Match(line) is { Success: true } property)
+                return new Found(property.Groups["name"].Value, SymbolKind.Member, Frame.Body);
+            return null;
+        }
+        if (language == Language.C && ObjCMethod.Match(line) is { Success: true } method)
+            return new Found(method.Groups["name"].Value, SymbolKind.Member, Frame.Body) { ToBrace = true };
+
+        // A DART GETTER: `String get name => …`, no parameter list for the method rule to find.
+        if (language == Language.Jvm && inType && DartGetter.Match(line) is { Success: true } getter)
+            return new Found(getter.Groups["name"].Value, SymbolKind.Member, Frame.Body);
+
+        // A DART TOP-LEVEL VALUE — `const normalClosure = 1000;`, `final HuffmanCodec codec = …` — is
+        // the library's API, shown up to its `=` as TypeScript's exported consts are. Only Dart
+        // declares a `final` or `const` outside a type among the languages read with these rules.
+        if (language == Language.Jvm && !inType && DartTopValue.Match(line) is { Success: true } value)
+            return new Found(value.Groups["name"].Value, SymbolKind.Member, Frame.Body) { Value = true };
+
         // A RETURN TYPE WRITTEN AS A MACRO — cJSON's `CJSON_PUBLIC(void) cJSON_free(…)` — reads as one
         // word here, so the call it looks like is not taken for the function. Same length, so every
         // position below still points into the line as written.
@@ -451,7 +506,9 @@ public static class Outliner
             // (`void IDisposable.Dispose(`). C++'s `Type::method` has no dot and needs no rule.
             // Read from what stands before the name, past any type argument: Gradle's
             // `tasks.register<Copy>(` is a call as surely as `tasks.register(` is.
-            if (before.EndsWith('.') && !(words.Length >= 2 && IsTypeWord(words[^2])))
+            // DART'S NAMED CONSTRUCTOR — `BaseClient.named(` inside BaseClient — is the exception.
+            if (before.EndsWith('.') && !(words.Length >= 2 && IsTypeWord(words[^2]))
+                && !(inType && before.Trim() == typeName + "."))
                 return null;
             // AND WITH TYPE ARGUMENTS IN BETWEEN: Java's `ImmutableSet.<String>builder(` is a call.
             if (ExplicitTypeArguments.IsMatch(before)) return null;
@@ -556,6 +613,35 @@ public static class Outliner
     private static readonly Regex GoFunc = new(@"^func\s+(?:\([^)]*\)\s*)?(?<name>\w+)\s*[\[(]", RegexOptions.Compiled);
     private static readonly Regex GoType = new(@"^type\s+(?<name>\w+)(?:\[[^\]]*\])?\s+(?<kw>struct|interface)?", RegexOptions.Compiled);
     private static readonly Regex GoMethod = new(@"^(?<name>[A-Za-z_]\w*)\s*\(", RegexOptions.Compiled);
+
+    private static readonly Regex DartTopValue = new(@"^(?:late\s+)?(?:final|const|var)\s+(?:[\w<>?,\[\] ]+?\s+)?(?<name>[A-Za-z_$][\w$]*)\s*=", RegexOptions.Compiled);
+    private static readonly Regex DartBodyMarker = new(@"\s+(?:async\*?|sync\*)$", RegexOptions.Compiled);
+    private static readonly Regex ObjCBlock = new(@"^@(?:interface|implementation|protocol)\s+(?<name>\w+)", RegexOptions.Compiled);
+    private static readonly Regex ObjCProperty = new(@"^@property\b.*?\*?\s*(?<name>\w+)\s*;", RegexOptions.Compiled);
+    private static readonly Regex ObjCMethod = new(@"^[-+]\s*\([^)]*\)\s*(?<name>\w+)", RegexOptions.Compiled);
+    private static readonly Regex DartGetter = new(@"^(?:(?:static|external|abstract)\s+)*(?:[\w<>?,\[\] ]+\s+)?get\s+(?<name>\w+)\s*(?:=>|\{|;|$)", RegexOptions.Compiled);
+
+    private static readonly Regex ScalaType = new(
+        @"^(?:(?:final|sealed|abstract|implicit|private|protected|case|open|transparent|inline|package)(?:\[[\w.]*\])?\s+)*(?<kw>class|object|trait|enum)\s+(?<name>[\w$]+)",
+        RegexOptions.Compiled);
+    private static readonly Regex ScalaMember = new(
+        @"^(?:(?:final|override|implicit|private|protected|lazy|inline|transparent|opaque|infix|abstract)(?:\[[\w.]*\])?\s+)*(?<kw>def|val|var|given|type)\s+(?<name>`[^`]+`|[\w$]+|[^\s\[(:=]+)",
+        RegexOptions.Compiled);
+    /// <summary>A Scala type header that goes on to its next line: a dangling <c>extends</c>, <c>with</c>, comma or bracket.</summary>
+    private static readonly Regex ScalaHeaderContinues = new(@"(?:\bextends|\bwith|,|\(|\[)$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// A Scala type or member. A member is shown up to its <c>=</c> (<see cref="Found.Value"/>): what
+    /// follows is its body or its value, and a <c>def</c>'s type comes before it.
+    /// </summary>
+    private static Found? ScalaDeclaration(string line)
+    {
+        if (ScalaType.Match(line) is { Success: true } t)
+            return new Found(t.Groups["name"].Value, SymbolKind.Type, Frame.Container);
+        if (ScalaMember.Match(line) is { Success: true } m)
+            return new Found(m.Groups["name"].Value.Trim('`'), m.Groups["kw"].Value == "type" ? SymbolKind.Type : SymbolKind.Member, Frame.Body) { Value = true };
+        return null;
+    }
 
     private static readonly Regex GoTypeGroup = new(@"^type\s*\($", RegexOptions.Compiled);
     private static readonly Regex GoGroupType = new(@"^(?<name>[A-Za-z_]\w*)(?:\[[^\]]*\])?\s*(?:=\s*)?(?<kw>struct|interface)?\b", RegexOptions.Compiled);
@@ -691,6 +777,8 @@ public static class Outliner
         // once the list is on one line.
         shown = Regex.Replace(shown, @",\s*\)", ")");
         if (language == Language.C && !toBody) shown = WithoutInitialisers(shown);
+        // DART'S `async`, `async*` AND `sync*` say how the body runs, not what the member takes.
+        if (language == Language.Jvm) shown = DartBodyMarker.Replace(shown, "");
         return shown.Length <= MaxSignature ? shown : shown[..MaxSignature].TrimEnd() + "…";
     }
 
@@ -742,7 +830,7 @@ public static class Outliner
             if (c is '(' or '[') depth++;
             else if (c is ')' or ']') depth--;
             else if (depth == 0 && c == '{' && language.Shape == Shape.Braces) return i;
-            else if (depth == 0 && c == '=' && i + 1 < code.Length && code[i + 1] == '>' && language == Language.CSharp) return i;
+            else if (depth == 0 && c == '=' && i + 1 < code.Length && code[i + 1] == '>' && (language == Language.CSharp || language == Language.Jvm)) return i;
             else if (depth == 0 && c == ';' && language.Shape == Shape.Braces) return i;
         }
         return code.Length;
