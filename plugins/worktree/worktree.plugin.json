@@ -1,0 +1,103 @@
+{
+  "pluginContract": 2,
+  "name": "worktree",
+  "version": "0.9.44",
+  "spawns": true,
+  "instructions": "A worktree is a separate checkout of this repository on its own branch, inside your folder. Work done there does not touch the files you and the user are working on until it is merged, and can be thrown away whole.\n\nUse one when a change is risky, experimental, or should be reviewed before it lands — and above all for a sub-agent's work: worktree_create, then spawn the agent with root set to the folder it returns, so every edit it makes lands in the worktree. When it finishes, worktree_diff shows what it did; worktree_merge brings it into the user's current branch (and removes the worktree), worktree_discard throws it away. Both ask the user first.\n\nA worktree starts from the last commit. Uncommitted changes in your own folder are not in it.\n\nDo not edit a worktree's files yourself while a sub-agent is working in it, and do not discard one a sub-agent is still using.",
+  "tools": [
+    {
+      "name": "worktree_create",
+      "description": "Creates a worktree: a separate checkout of this repository on a new branch, in a folder inside yours. Returns the folder — pass it as a sub-agent's root to have the agent work there.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A short name for the work, e.g. fix-login. Letters, digits, '.', '_' and '-'."
+          },
+          "base": {
+            "type": "string",
+            "description": "Optional. The commit or branch to start from. Default: the current commit."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "gated": false
+    },
+    {
+      "name": "worktree_list",
+      "description": "Lists the worktrees made here: each one's folder, branch, and how much work it holds that is not merged.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "gated": false
+    },
+    {
+      "name": "worktree_diff",
+      "description": "Shows what a worktree changed since it was created — committed or not, new files included.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The worktree's name."
+          },
+          "stat_only": {
+            "type": "boolean",
+            "description": "Only the list of changed files and line counts, not the diff itself. Default false."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "gated": false
+    },
+    {
+      "name": "worktree_merge",
+      "description": "Merges a worktree's work into the user's current branch: commits whatever it has not committed, merges its branch, and removes the worktree. A merge that conflicts is undone and changes nothing. Asks the user first.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The worktree's name."
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional. The commit message for work the worktree has not committed. Say what the change does."
+          },
+          "keep": {
+            "type": "boolean",
+            "description": "Optional. Keep the worktree and its branch after merging, to go on working there. Default false."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "gated": "dynamic"
+    },
+    {
+      "name": "worktree_discard",
+      "description": "Throws a worktree away: removes its folder and deletes its branch, with any work in it that was not merged. Asks the user first.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The worktree's name."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "gated": "dynamic",
+      "alwaysAskable": false
+    }
+  ]
+}
