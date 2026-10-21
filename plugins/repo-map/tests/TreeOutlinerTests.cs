@@ -753,4 +753,44 @@ public sealed class TreeOutlinerTests : IDisposable
         var found = Outline("A.cs", "class A\n{\n    string K() => $\"a\0b\";\n    void After() { }\n}\n");
         Assert.Equal(["1:0:class A", "3:1:string K()", "4:1:void After()"], found);
     }
+
+    /// <summary>OPERATORS, INDEXERS AND DESTRUCTORS ARE MEMBERS a reader looks for — <c>JToken</c>'s conversions are most of its API.</summary>
+    [Fact]
+    public void CSharp_OperatorsIndexersAndDestructors_AreMembers()
+    {
+        var found = Outline("Id.cs", """
+            public sealed class Id
+            {
+                public static implicit operator Id(string id) => new();
+                public static Id operator +(Id a, Id b) => a;
+                public object this[string key] => key;
+                ~Id() { }
+            }
+            """);
+        Assert.Equal(
+        [
+            "1:0:public sealed class Id",
+            "3:1:public static implicit operator Id(string id)",
+            "4:1:public static Id operator +(Id a, Id b)",
+            "5:1:public object this[string key]",
+            "6:1:~Id()",
+        ], found);
+    }
+
+    [Fact]
+    public void Cpp_OperatorsAndSpecialisations_AreMembers()
+    {
+        var found = Outline("a.h", """
+            struct checker {
+              auto operator()(int value) -> bool { return true; }
+            };
+            template <> inline auto find<false, char>(const char* first) -> bool { return false; }
+            """);
+        Assert.Equal(
+        [
+            "1:0:struct checker",
+            "2:1:auto operator()(int value) -> bool",
+            "4:0:template <> inline auto find<false, char>(const char* first) -> bool",
+        ], found);
+    }
 }

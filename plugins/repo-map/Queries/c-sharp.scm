@@ -41,3 +41,9 @@
 (type_argument_list (identifier) @name) @reference.type
 (member_access_expression expression: (identifier) @name) @reference.type
 (attribute name: (identifier) @name) @reference.type
+; Operators, conversions, indexers and destructors: members with no name of their own, so the
+; keyword stands in for one.
+(operator_declaration "operator" @name) @definition.method
+(conversion_operator_declaration "operator" @name) @definition.method
+(indexer_declaration "this" @name) @definition.method
+(destructor_declaration name: (identifier) @name) @definition.method

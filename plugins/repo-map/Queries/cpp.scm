@@ -22,3 +22,7 @@
 (call_expression function: (identifier) @name) @reference.call
 (call_expression function: (field_expression field: (field_identifier) @name)) @reference.call
 ((type_identifier) @name @reference.type)
+; Operators, destructors and explicit specialisations, which upstream's identifier-only pattern misses.
+(function_declarator declarator: (operator_name) @name) @definition.function
+(function_declarator declarator: (destructor_name) @name) @definition.function
+(function_declarator declarator: (template_function name: (identifier) @name)) @definition.function
