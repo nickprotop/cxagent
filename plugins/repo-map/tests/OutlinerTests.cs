@@ -451,4 +451,102 @@ public class OutlinerTests
         var found = Outline("x.cs", "}}}} ((( \"unterminated\n{{{{ ]]] class\n");
         Assert.NotNull(found);
     }
+
+    /// <summary>
+    /// AN ARROW WHOSE PARAMETERS ARE DESTRUCTURED ACROSS LINES IS A DECLARATION — the way most React
+    /// components are written. Its body's own consts stay out.
+    /// </summary>
+    [Fact]
+    public void TypeScript_AnArrowWithDestructuredParameters_IsFound()
+    {
+        Assert.Equal(["1:0:export const SidebarItem = ({ item, }: { item: Item; }) =>"], Outline("item.tsx", """
+            export const SidebarItem = ({
+              item,
+            }: {
+              item: Item;
+            }) => {
+              const tag = 1;
+              return tag;
+            };
+            """));
+    }
+
+    /// <summary>
+    /// AN EXPORTED CONST IS PART OF THE MODULE'S API whatever its value — a component wrapped in
+    /// <c>forwardRef</c>, a regex, a config object — and is shown up to its <c>=</c>, not with the
+    /// value. A local const and a destructuring export name nothing a reader can look up.
+    /// </summary>
+    [Fact]
+    public void TypeScript_ExportedConsts_AreFoundWithoutTheirValues()
+    {
+        Assert.Equal(
+        [
+            "1:0:export const cuid: RegExp",
+            "2:0:export const Accordion",
+            "9:0:export const config",
+        ], Outline("ui.ts", """
+            export const cuid: RegExp = /^[a-z]+$/;
+            export const Accordion = forwardRef<
+              HTMLDivElement,
+              Props
+            >(({ title }, ref) => {
+              return title;
+            });
+            const local = 3;
+            export const config = {
+              a: 1,
+            };
+            export const { GET } = make();
+            """));
+    }
+
+    /// <summary>
+    /// A MACRO'S BODY IS NOT CODE AT FILE SCOPE. The lines a <c>#define</c> continues with a
+    /// backslash are skipped with it, braces and all: <c>namespace fmt {</c> inside one opens nothing.
+    /// </summary>
+    [Fact]
+    public void C_AMultiLineMacroBody_IsSkipped()
+    {
+        Assert.Equal(["4:0:int visible(int x)"], Outline("ns.h", """
+            #define BEGIN_NS \
+              namespace fmt { \
+              struct hidden_t {};
+            int visible(int x);
+            """));
+    }
+
+    /// <summary>A CONSTRUCTOR'S INITIALISER LIST IS ITS BODY'S BUSINESS: the signature ends with the parameters.</summary>
+    [Fact]
+    public void Cpp_AConstructorsInitialiserList_IsNotInItsSignature()
+    {
+        Assert.Equal(
+        [
+            "1:0:class Value",
+            "2:1:constexpr Value(short x)",
+            "3:1:Value(int a, int b)",
+            "5:1:auto name() const -> std::string",
+        ], Outline("value.hpp", """
+            class Value {
+              constexpr Value(short x) : int_value(x) {}
+              Value(int a, int b)
+                  : first(a), second(b) {}
+              auto name() const -> std::string { return n; }
+            };
+            """));
+    }
+
+    /// <summary>A TRAILING COMMA, the way rustfmt writes a parameter list that wraps, is not shown.</summary>
+    [Fact]
+    public void Rust_ATrailingCommaInAWrappedParameterList_IsDropped()
+    {
+        Assert.Equal(["1:0:pub fn after(&mut self, line_count: usize) -> &mut Self"], Outline("b.rs", """
+            pub fn after(
+                &mut self,
+                line_count: usize,
+            ) -> &mut Self {
+                self
+            }
+            """));
+    }
 }
+

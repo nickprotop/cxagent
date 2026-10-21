@@ -47,8 +47,13 @@ several files spreads its weight across all of them, and names too common to mea
 `ToString`, `Run` and `Dispose`, are not counted. This is wrong in detail and right in aggregate,
 which is all a map needs.
 
+Tests, fixtures and bundled code rank below the project's own: files under `test/`, `tests/`,
+`testdata/`, `fixtures/`, `__tests__/`, `vendor/` or `third_party/`, and files named like tests
+(`*_test.go`, `*.test.ts`, `*.spec.ts`, `test_*.py`, `FooTest.java`, `AgentTests.cs`). They are still
+mapped and listed, only lower.
+
 With a focus, the ranking restarts at the focused files instead of anywhere at all, and the files
-that use them get a share of the restarts too.
+that use them get a share of the restarts too. A focus on a test file works like any other.
 
 ## What it reads
 
@@ -60,7 +65,8 @@ so the plugin works the moment it is installed, in any repository. It finds:
 
 - types (classes, structs, interfaces, records, enums and traits);
 - functions, methods and constructors;
-- C# properties.
+- C# properties;
+- what a JavaScript or TypeScript module exports with `export const`, shown up to its `=`.
 
 It shows only what is declared at the top of a file or inside a type. Anything inside a function
 body is left out. A line it misreads costs one declaration and never the map.

@@ -73,10 +73,23 @@ public static class Outliner
         string pendingName = "";
         var pendingNamespace = false;
 
+        // Whether the line before ended a preprocessor line with a backslash — see below.
+        var inMacro = false;
+
         for (var i = 0; i < text.Code.Length; i++)
         {
             var line = text.Code[i];
             var trimmed = line.Trim();
+
+            // A PREPROCESSOR LINE AND EVERY LINE ITS BACKSLASH CONTINUES IT WITH ARE NOT CODE AT THIS
+            // SCOPE — braces included. A macro body is text the compiler pastes elsewhere: fmt's
+            // `#define FMT_BEGIN_NAMESPACE \ namespace fmt {` opens no namespace where it is written,
+            // and counting that brace would put every later declaration one level too deep.
+            if (language == Language.C && (inMacro || trimmed.StartsWith('#')))
+            {
+                inMacro = trimmed.EndsWith('\\');
+                continue;
+            }
 
             var inContainer = frames.All(f => f.Kind == Frame.Container);
             if (parens == 0 && pending is null && inContainer && trimmed.Length > 0 && !Skipped(trimmed))
@@ -87,8 +100,11 @@ public static class Outliner
                 if (found is { } d)
                 {
                     if (d.Kind != SymbolKind.Namespace)
-                        symbols.Add(new Symbol(d.Name, Signature(source, i, toBody: d.Opens == Frame.Container), i + 1,
-                            frames.Count(f => !f.Namespace), d.Kind));
+                    {
+                        var signature = Signature(source, i, toBody: d.Opens == Frame.Container);
+                        if (d.Value && AssignmentAt(signature) is > 0 and var eq) signature = signature[..eq].TrimEnd();
+                        symbols.Add(new Symbol(d.Name, signature, i + 1, frames.Count(f => !f.Namespace), d.Kind));
+                    }
                     pending = d.Opens;
                     pendingName = d.Name;
                     pendingNamespace = d.Kind == SymbolKind.Namespace;
@@ -223,7 +239,16 @@ public static class Outliner
     private static bool Skipped(string trimmed) =>
         trimmed[0] is '#' or '}' or ')' or ']' or '?' or ':' or '.' or '+' or '-' or '/' or '%' or '|' or '&' or '=' or ',' or '!' or '<' or '>';
 
-    private sealed record Found(string Name, SymbolKind Kind, Frame Opens);
+    /// <summary>A declaration a line starts.</summary>
+    /// <param name="Opens">What its brace, when it comes, opens.</param>
+    private sealed record Found(string Name, SymbolKind Kind, Frame Opens)
+    {
+        /// <summary>
+        /// A binding to a value rather than a function — shown up to its <c>=</c>. The value is a
+        /// regex, an object literal, a call to <c>forwardRef</c>: what it holds, not what it is.
+        /// </summary>
+        public bool Value { get; init; }
+    }
 
     /// <param name="typeName">The type the line sits in, or null at file or namespace scope.</param>
     private static Found? Declaration(string line, Language language, string? typeName)
@@ -452,8 +477,14 @@ public static class Outliner
     private static readonly Regex ScriptFunction = new(
         @"^(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?function\s*\*?\s*(?<name>[\w$]+)", RegexOptions.Compiled);
     private static readonly Regex ScriptArrow = new(
-        @"^(?:export\s+)?(?:declare\s+)?(?:const|let|var)\s+(?<name>[\w$]+)\s*(?::[^=]+)?=\s*(?:async\s+)?(?:function\b|(?:\([^)]*\)|[\w$]+)\s*(?::[^=]+?)?=>|\($)",
+        @"^(?:export\s+)?(?:declare\s+)?(?:const|let|var)\s+(?<name>[\w$]+)\s*(?::[^=]+)?=\s*(?:async\s+)?(?:function\b|(?:\([^)]*\)|[\w$]+)\s*(?::[^=]+?)?=>|\(\{?$)",
         RegexOptions.Compiled);
+    /// <summary>
+    /// <c>export const NAME</c> whatever follows: a component wrapped in <c>forwardRef</c> or
+    /// <c>memo</c>, a regex, a config object. What a module exports is its API, function or not.
+    /// </summary>
+    private static readonly Regex ScriptExportedValue = new(
+        @"^export\s+(?:declare\s+)?(?:const|let|var)\s+(?<name>[\w$]+)", RegexOptions.Compiled);
     private static readonly Regex ScriptTypeAlias = new(
         @"^(?:export\s+)?(?:declare\s+)?type\s+(?<name>[\w$]+)", RegexOptions.Compiled);
     private static readonly Regex ScriptMethod = new(
@@ -463,6 +494,8 @@ public static class Outliner
     {
         if (ScriptFunction.Match(line) is { Success: true } f) return new Found(f.Groups["name"].Value, SymbolKind.Member, Frame.Body);
         if (ScriptArrow.Match(line) is { Success: true } a) return new Found(a.Groups["name"].Value, SymbolKind.Member, Frame.Body);
+        if (ScriptExportedValue.Match(line) is { Success: true } v)
+            return new Found(v.Groups["name"].Value, SymbolKind.Member, Frame.Body) { Value = true };
         if (ScriptTypeAlias.Match(line) is { Success: true } ta) return new Found(ta.Groups["name"].Value, SymbolKind.Type, Frame.Body);
 
         var type = TypeDecl.Match(line);
@@ -519,7 +552,34 @@ public static class Outliner
         var shown = display.ToString()[..Math.Min(cut, display.Length)];
         // A parameter list begun on the line after its "(" joins as "( string": the space was the line break.
         shown = Regex.Replace(Regex.Replace(shown, @"\s+", " "), @"([(\[<]) | ([)\]>])", "$1$2").Trim().TrimEnd(':').TrimEnd();
+        // A TRAILING COMMA — rustfmt's, and many formatters' for a list that wraps — says nothing
+        // once the list is on one line.
+        shown = Regex.Replace(shown, @",\s*\)", ")");
+        if (language == Language.C && !toBody) shown = WithoutInitialisers(shown);
         return shown.Length <= MaxSignature ? shown : shown[..MaxSignature].TrimEnd() + "…";
+    }
+
+    /// <summary>
+    /// A C++ constructor's signature without its initialiser list: <c>Value(short x) : v(x)</c> is
+    /// <c>Value(short x)</c>. The list is how the body starts, not what the constructor takes. Cut at
+    /// a single <c>:</c> after the parameters' closing parenthesis and any qualifiers — never at
+    /// <c>::</c>, which is a scope.
+    /// </summary>
+    private static string WithoutInitialisers(string signature)
+    {
+        var open = signature.IndexOf('(');
+        if (open < 0) return signature;
+        var depth = 0;
+        for (var i = open; i < signature.Length; i++)
+        {
+            if (signature[i] == '(') depth++;
+            else if (signature[i] == ')' && --depth == 0)
+            {
+                var after = Regex.Match(signature[(i + 1)..], @"^(?:\s*(?:const|noexcept|override|final))*\s*:(?!:)");
+                return after.Success ? signature[..(i + 1 + after.Length - 1)].TrimEnd() : signature;
+            }
+        }
+        return signature;
     }
 
     /// <summary>The display line trimmed by the same amount as its code line, so the two stay aligned.</summary>

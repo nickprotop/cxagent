@@ -86,6 +86,7 @@ public static class Ranker
         // word (`Message`, `count`) is written for a dozen reasons in every file, so it weighs a
         // tenth as much. And mentions count by their square root: a file that names a type forty
         // times uses it more than one that names it once, but not forty times more.
+        var aside = files.Select(f => IsAside(f.Path)).ToArray();
         var outgoing = new Dictionary<int, double>[n];
         for (var a = 0; a < n; a++)
         {
@@ -95,7 +96,8 @@ public static class Ranker
                 if (!declarers.TryGetValue(name, out var owners) || owners.Contains(a)) continue;
                 var weight = Distinctiveness(name) * (owners.Count > ManyDeclarers ? 0.1 : 1.0) * Math.Sqrt(count);
                 foreach (var b in owners)
-                    outgoing[a][b] = outgoing[a].GetValueOrDefault(b) + weight / owners.Count;
+                    outgoing[a][b] = outgoing[a].GetValueOrDefault(b)
+                        + weight / owners.Count * (aside[b] ? AsideShare : 1.0);
             }
         }
 
@@ -112,7 +114,7 @@ public static class Ranker
                 if (owner.TryGetValue(name, out var first) && first != a)
                     usedBy[name] = usedBy.GetValueOrDefault(name) + 1;
 
-        var (restart, unmatched) = Restarts(files, focus, outgoing);
+        var (restart, unmatched) = Restarts(files, focus, outgoing, aside);
         var rank = PageRank(outgoing, restart);
 
         var order = Enumerable.Range(0, n)
@@ -146,6 +148,44 @@ public static class Ranker
         && !(symbol.Kind == SymbolKind.Member && symbol.Signature.StartsWith("static ", StringComparison.Ordinal));
 
     /// <summary>
+    /// How much of a share a test, fixture or vendored file gets — of the walk's restarts, and of
+    /// every mention that points at it.
+    ///
+    /// <para>BOTH, NOT ONLY THE RESTARTS. A file's rank comes mostly from the files that mention
+    /// it, so a smaller restart alone leaves a testdata corpus or a bundled test framework that
+    /// declares widely-mentioned names near the top. Mentions FROM such a file keep their weight: a
+    /// test using the engine is real evidence that the engine matters.</para>
+    /// </summary>
+    private const double AsideShare = 0.1;
+
+    private static readonly HashSet<string> AsideFolders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "test", "tests", "testdata", "fixtures", "__tests__", "__mocks__", "vendor", "third_party",
+    };
+
+    /// <summary>
+    /// Whether a file is a test, a fixture, or someone else's code bundled in: under a folder
+    /// named for one, or named the way a test file is in its language.
+    ///
+    /// <para>BY NAME ALONE, so <c>attestation.go</c> and <c>Contest.java</c> are the project's own:
+    /// the rules match a whole folder name, or a test file's suffix or prefix, never the letters
+    /// "test" anywhere in a name.</para>
+    /// </summary>
+    public static bool IsAside(string path)
+    {
+        var parts = path.Replace('\\', '/').Split('/');
+        if (parts[..^1].Any(p => AsideFolders.Contains(p) || p.EndsWith(".Tests", StringComparison.Ordinal))) return true;
+
+        var file = parts[^1];
+        var stem = file.Contains('.') ? file[..file.LastIndexOf('.')] : file;
+        return stem.EndsWith("_test", StringComparison.Ordinal)
+            || stem.EndsWith(".test", StringComparison.Ordinal) || stem.EndsWith(".spec", StringComparison.Ordinal)
+            || (file.StartsWith("test_", StringComparison.Ordinal) && file.EndsWith(".py", StringComparison.Ordinal))
+            // CASE-SENSITIVE, so the suffix is a word of its own: AgentTests, FooTest — not Contest.
+            || (stem.Length > 4 && (stem.EndsWith("Test", StringComparison.Ordinal) || stem.EndsWith("Tests", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
     /// How much a mention of this name says: ten for a compound name of some length, a tenth for a
     /// private-looking one, one otherwise.
     /// </summary>
@@ -160,8 +200,10 @@ public static class Ranker
     /// Where the walk restarts: everywhere equally, or — with a focus — mostly at the focused files
     /// and partly at the files that use them.
     /// </summary>
+    /// <param name="aside">Which files are tests, fixtures or vendored code — see <see cref="IsAside"/>.
+    /// They restart less often, unless a focus names them: a reader asking about a test means it.</param>
     private static (double[] Restart, List<string> Unmatched) Restarts(IReadOnlyList<FileOutline> files,
-        IReadOnlyList<string> focus, Dictionary<int, double>[] outgoing)
+        IReadOnlyList<string> focus, Dictionary<int, double>[] outgoing, bool[] aside)
     {
         var n = files.Count;
         var restart = new double[n];
@@ -204,7 +246,8 @@ public static class Ranker
 
         if (focused.Count == 0)
         {
-            Array.Fill(restart, n == 0 ? 0 : 1.0 / n);
+            var total = aside.Sum(a => a ? AsideShare : 1.0);
+            for (var i = 0; i < n; i++) restart[i] = (aside[i] ? AsideShare : 1.0) / total;
             return (restart, unmatched);
         }
 

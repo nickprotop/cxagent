@@ -128,4 +128,49 @@ public class RankerTests
         var ranking = Ranker.Rank([File("x/A.cs", ["AlphaType"])], ["NoSuchThing", "x/A.cs"]);
         Assert.Equal(["NoSuchThing"], ranking.Unmatched);
     }
+
+    /// <summary>
+    /// TEST AND VENDORED CODE RANKS BELOW THE CODE IT SITS BESIDE. A test fixture, a testdata corpus
+    /// or a bundled library can be mentioned more than the project's own engine, and a map that led
+    /// with it would send the reader into code nobody here maintains.
+    /// </summary>
+    [Fact]
+    public void TestAndVendoredFiles_RankBelowTheProjectsOwn()
+    {
+        var files = new[]
+        {
+            File("src/engine.go", ["EngineCore"]),
+            File("testdata/fake.go", ["FakeThing"]),
+            File("vendor/lib/lib.go", ["VendoredThing"]),
+            File("src/a.go", ["AlphaUser"], "EngineCore", "FakeThing", "VendoredThing"),
+            File("src/b.go", ["BetaUser"], "EngineCore", "FakeThing", "VendoredThing"),
+            File("src/c.go", ["GammaUser"], "FakeThing", "VendoredThing"),
+            File("src/d.go", ["DeltaUser"], "FakeThing", "VendoredThing"),
+        };
+
+        var order = Ranker.Rank(files, []).Files.Select(f => f.Path).ToList();
+
+        Assert.True(order.IndexOf("src/engine.go") < order.IndexOf("testdata/fake.go"), string.Join(", ", order));
+        Assert.True(order.IndexOf("src/engine.go") < order.IndexOf("vendor/lib/lib.go"), string.Join(", ", order));
+    }
+
+    [Theory]
+    [InlineData("test/interface/convert.go", true)]
+    [InlineData("src/internal/types/testdata/issue.go", true)]
+    [InlineData("pkg/server/server_test.go", true)]
+    [InlineData("src/app.test.ts", true)]
+    [InlineData("src/app.spec.tsx", true)]
+    [InlineData("components/__tests__/Button.tsx", true)]
+    [InlineData("test_prices.py", true)]
+    [InlineData("guava/src/com/google/FooTest.java", true)]
+    [InlineData("cxagent.Tests/AgentTests.cs", true)]
+    [InlineData("third_party/zlib/zlib.h", true)]
+    [InlineData("tests/fixtures/x.rs", true)]
+    [InlineData("src/attestation.go", false)]
+    [InlineData("src/latest.ts", false)]
+    [InlineData("src/Contest.java", false)]
+    [InlineData("src/testing_utils.py", false)]
+    public void AsidePaths_AreRecognised(string path, bool aside) =>
+        Assert.Equal(aside, Ranker.IsAside(path));
 }
+
