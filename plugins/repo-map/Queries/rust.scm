@@ -63,5 +63,9 @@
     !trait) @reference.implementation
 
 ; --- cxagent local additions ------------------------------------------------------------------
-; Upstream marks type names only in impl headers.
+; Upstream marks type names only in impl headers, and an impl block as a reference, not as the
+; block of methods a reader looks for; and a trait's methods that have no body yet.
+(function_signature_item name: (identifier) @name) @definition.method
+(impl_item type: (type_identifier) @name) @definition.class
+(impl_item type: (generic_type type: (type_identifier) @name)) @definition.class
 ((type_identifier) @name @reference.type)
