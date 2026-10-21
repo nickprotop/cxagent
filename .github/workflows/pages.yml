@@ -137,7 +137,7 @@ jobs:
           gh release download "${{ steps.release.outputs.tag }}" --repo "${GITHUB_REPOSITORY}" \
               --pattern csharp-lsp.zip --pattern calculator.zip \
               --pattern clone-finder.zip --pattern triggers.zip \
-              --pattern 'repo-map-*.zip' --pattern worktree.zip --dir _artifact
+              --pattern worktree.zip --dir _artifact
 
       # A PLUGIN THAT HAS NOT SHIPPED YET IS NOT A BROKEN BUILD. The catalog entry lands on master
       # in one commit and the zip appears on the NEXT release, so between the two every Pages run
@@ -237,12 +237,6 @@ jobs:
               --plugin calculator=_artifact/calculator.zip \
               --plugin clone-finder=_artifact/clone-finder.zip \
               --plugin triggers=_artifact/triggers.zip \
-              --plugin repo-map@linux-x64=_artifact/repo-map-linux-x64.zip \
-              --plugin repo-map@linux-arm64=_artifact/repo-map-linux-arm64.zip \
-              --plugin repo-map@osx-x64=_artifact/repo-map-osx-x64.zip \
-              --plugin repo-map@osx-arm64=_artifact/repo-map-osx-arm64.zip \
-              --plugin repo-map@win-x64=_artifact/repo-map-win-x64.zip \
-              --plugin repo-map@win-arm64=_artifact/repo-map-win-arm64.zip \
               --plugin worktree=_artifact/worktree.zip \
               --version "$VERSION" \
               --out _site/catalog.json

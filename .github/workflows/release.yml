@@ -310,53 +310,7 @@ jobs:
           (cd triggers-build && zip -q ../plugin-out/triggers.zip \
              triggers.dll NCrontab.dll triggers.plugin.json README.md)
 
-      # REPO-MAP SHIPS ONE ZIP PER PLATFORM: its Tree-sitter parser is native code, so a zip carries
-      # one platform's libraries. The DLL is the same in all six — the build is deterministic, and only
-      # runtimes/<rid>/native differs.
-      #
-      # CARRIED FORWARD ONLY WHOLE. Six zips from the previous release, or six new ones: a mix would be
-      # a release whose platforms run different builds of one version.
-      - name: Build or carry forward the repo-map plugin, one zip per platform
-        run: |
-          # RELEASE TAGS ONLY — see the csharp-lsp step above for why --match matters.
-          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || echo "")
-          RIDS="linux-x64 linux-arm64 osx-x64 osx-arm64 win-x64 win-arm64"
-          SIDECAR=plugins/repo-map/repo-map.plugin.json
-          VERSION=$(python3 -c "import json;print(json.load(open('$SIDECAR'))['version'])")
-          mkdir -p plugin-out
-
-          if [ -n "$PREV_TAG" ] && git diff --quiet "$PREV_TAG" HEAD -- plugins/repo-map/ cxagent.Plugins.Abstractions/; then
-            carried=yes
-            for RID in $RIDS; do
-              curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/download/$PREV_TAG/repo-map-$RID.zip" \
-                   -o plugin-out/repo-map-$RID.zip || { carried=no; break; }
-            done
-            if [ "$carried" = yes ]; then
-              echo "repo-map unchanged since $PREV_TAG — carried its six zips forward."
-              exit 0
-            fi
-            echo "repo-map unchanged, but $PREV_TAG lacks a platform's zip — building all six."
-            rm -f plugin-out/repo-map-*.zip
-          fi
-
-          for RID in $RIDS; do
-            echo "building repo-map $VERSION for $RID"
-            dotnet build plugins/repo-map/repo-map.csproj -c Release -o ./repo-map-build-$RID \
-                -p:Version="$VERSION" -p:TreeSitterRid=$RID
-
-            # The assertions are what catch a sidecar, README, notice or native that stopped being
-            # copied, which no test would notice: the tests run on this runner's platform only.
-            test -f ./repo-map-build-$RID/repo-map.dll
-            test -f ./repo-map-build-$RID/repo-map.plugin.json
-            test -f ./repo-map-build-$RID/README.md
-            test -f ./repo-map-build-$RID/THIRD-PARTY-NOTICES.txt
-            test "$(ls ./repo-map-build-$RID/runtimes/$RID/native | wc -l)" = 15
-
-            (cd repo-map-build-$RID && zip -q -r ../plugin-out/repo-map-$RID.zip \
-               repo-map.dll repo-map.plugin.json README.md THIRD-PARTY-NOTICES.txt runtimes/$RID/native)
-          done
-
-      # THE SAME BUILD-OR-CARRY SCHEME, for the sixth plugin. Like clone-finder, it takes no NuGet
+      # THE SAME BUILD-OR-CARRY SCHEME, for the fifth plugin. Like clone-finder, it takes no NuGet
       # dependency, so its zip is the dll, its sidecar and its README.
       - name: Build or carry forward the worktree plugin
         run: |
@@ -408,7 +362,6 @@ jobs:
           cp plugin-out/calculator.zip release/
           cp plugin-out/clone-finder.zip release/
           cp plugin-out/triggers.zip release/
-          cp plugin-out/repo-map-*.zip release/
           cp plugin-out/worktree.zip release/
 
           # Checksums cover the scripts too: an installer fetched from a release is exactly the kind

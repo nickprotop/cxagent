@@ -39,10 +39,9 @@
     "win-x64, win-arm64), the same vocabulary the release matrix uses; `platforms` and the keys of",
     "`sources` must agree.",
     "",
-    "A managed plugin that carries native libraries is not portable either \u2014 repo-map ships",
-    "Tree-sitter's parser for one platform per zip \u2014 and uses `sources` the same way. A first-party",
-    "per-platform source is `{ \"kind\": \"release\", \"latest\": ..., \"sha256\": null }`, like a",
-    "single release source, and the site build stamps each platform's hash.",
+    "A managed plugin that carries native libraries is not portable either, and uses `sources` the",
+    "same way. A first-party per-platform source is `{ \"kind\": \"release\", \"latest\": ...,",
+    "\"sha256\": null }`, like a single release source, and the site build stamps each platform's hash.",
     "",
     "WHICH VERSION A CLIENT GETS. A `release` source uses `latest` \u2014 GitHub's always-current alias,",
     "which resolves to the newest release carrying that asset. There is deliberately no way to ask",
@@ -212,76 +211,6 @@
       "tools": [
         {
           "name": "find_clones",
-          "gated": false
-        }
-      ]
-    },
-    {
-      "name": "repo-map",
-      "displayName": "Repo Map",
-      "version": "0.9.44",
-      "description": "A map of a codebase for a model that has not read it. One tool returns the most-used files' declarations \u2014 types, functions, methods, each with its line number \u2014 ranked by how much the rest of the code uses them and cut to a token budget. No language server: Tree-sitter parses fourteen languages in-process, and Kotlin, Swift, Dart and Objective-C are read as text.",
-      "publisher": "nickprotop",
-      "license": "MIT",
-      "repository": "https://github.com/nickprotop/cxagent",
-      "sourceUrl": "https://github.com/nickprotop/cxagent/tree/master/plugins/repo-map",
-      "readme": "repo-map/README.md",
-      "directory": "repo-map",
-      "sources": {
-        "linux-x64": {
-          "kind": "release",
-          "checksums": "SHA256SUMS",
-          "sha256": null,
-          "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/repo-map-linux-x64.zip"
-        },
-        "linux-arm64": {
-          "kind": "release",
-          "checksums": "SHA256SUMS",
-          "sha256": null,
-          "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/repo-map-linux-arm64.zip"
-        },
-        "osx-x64": {
-          "kind": "release",
-          "checksums": "SHA256SUMS",
-          "sha256": null,
-          "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/repo-map-osx-x64.zip"
-        },
-        "osx-arm64": {
-          "kind": "release",
-          "checksums": "SHA256SUMS",
-          "sha256": null,
-          "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/repo-map-osx-arm64.zip"
-        },
-        "win-x64": {
-          "kind": "release",
-          "checksums": "SHA256SUMS",
-          "sha256": null,
-          "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/repo-map-win-x64.zip"
-        },
-        "win-arm64": {
-          "kind": "release",
-          "checksums": "SHA256SUMS",
-          "sha256": null,
-          "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/repo-map-win-arm64.zip"
-        }
-      },
-      "file": "repo-map.dll",
-      "kind": "managed",
-      "compatibility": {
-        "pluginContract": 2,
-        "platforms": [
-          "linux-x64",
-          "linux-arm64",
-          "osx-x64",
-          "osx-arm64",
-          "win-x64",
-          "win-arm64"
-        ]
-      },
-      "spawns": true,
-      "tools": [
-        {
-          "name": "repo_map",
           "gated": false
         }
       ]
