@@ -99,11 +99,14 @@ public static class Outliner
                 var found = Declaration(trimmed, language, typeName);
                 if (found is { } d)
                 {
-                    if (d.Kind != SymbolKind.Namespace)
+                    if (d.Kind != SymbolKind.Namespace && d.Name.Length > 0)
                     {
                         var signature = Signature(source, i, toBody: d.Opens == Frame.Container);
                         if (d.Value && AssignmentAt(signature) is > 0 and var eq) signature = signature[..eq].TrimEnd();
-                        symbols.Add(new Symbol(d.Name, signature, i + 1, frames.Count(f => !f.Namespace), d.Kind));
+                        // A SIGNATURE THAT COMES OUT EMPTY quotes nothing a reader could find, so
+                        // whatever the line was, it is not shown as a declaration.
+                        if (signature.Length > 0)
+                            symbols.Add(new Symbol(d.Name, signature, i + 1, frames.Count(f => !f.Namespace), d.Kind));
                     }
                     pending = d.Opens;
                     pendingName = d.Name;
@@ -287,6 +290,11 @@ public static class Outliner
         @"(?<kw>class|struct|interface|enum|record|namespace|module|object|trait|protocol|extension|union)\b(?:\s+(?:class|struct))?\s+(?<name>[A-Za-z_$][\w$]*)",
         RegexOptions.Compiled);
 
+    /// <summary><c>var</c>, <c>val</c> or <c>let</c> and a name, behind any modifiers — Swift's <c>private(set)</c> included.</summary>
+    private static readonly Regex JvmProperty = new(
+        @"^(?:(?:public|private|protected|internal|fileprivate|open|static|class|final|override|lazy|weak|unowned|lateinit|const|abstract|nonisolated|dynamic|late|(?:private|public|internal|fileprivate)\(set\))\s+)*(?:var|val|let)\s+(?<name>`?[A-Za-z_]\w*`?)",
+        RegexOptions.Compiled);
+
     /// <summary>A C# property: no parameter list, so the method rule cannot see it.</summary>
     private static readonly Regex PropertyDecl = new(
         @"^(?:[\w<>\[\],.?]+\s+)+(?<name>[A-Za-z_]\w*)\s*(?:\{\s*(?:get|set|init|private|protected|internal)\b|=>)",
@@ -327,6 +335,23 @@ public static class Outliner
             return TypeFound(type);
         }
 
+        // A C# PROPERTY BEFORE ANY CALL ON ITS LINE. `Progress => Reports.OfType<P>()` has a
+        // parenthesis, but it is in the expression body: the `=>` or `{ get` that makes the line a
+        // property comes first, and the method rule would take the call for the declaration.
+        if (language.Properties && inType && assign < 0 && PropertyDecl.Match(line) is { Success: true } prop
+            && (paren < 0 || prop.Index + prop.Length <= paren))
+        {
+            var first = line.Split(' ', 2)[0];
+            if (StatementWords.Contains(first)) return null;
+            return new Found(prop.Groups["name"].Value, SymbolKind.Member, Frame.Body);
+        }
+
+        // SWIFT'S, KOTLIN'S, SCALA'S AND DART'S PROPERTIES, computed or stored. Only a type or a
+        // file is read here, never a function body, so a `let` this sees is a member or a
+        // top-level binding, not a local.
+        if (language == Language.Jvm && JvmProperty.Match(line) is { Success: true } jp)
+            return new Found(jp.Groups["name"].Value.Trim('`'), SymbolKind.Member, Frame.Body) { Value = true };
+
         if (paren > 0 && (assign < 0 || assign > paren))
         {
             var head = line[..paren].TrimEnd();
@@ -346,18 +371,16 @@ public static class Outliner
             // A NAME REACHED THROUGH A DOT is a call (`Console.WriteLine(`) unless a return type
             // stands in front of it — then it is C#'s explicit interface implementation
             // (`void IDisposable.Dispose(`). C++'s `Type::method` has no dot and needs no rule.
-            if (head.Length > name.Length && head[head.Length - name.Length - 1] == '.'
-                && !(words.Length >= 2 && IsTypeWord(words[^2])))
+            // Read from what stands before the name, past any type argument: Gradle's
+            // `tasks.register<Copy>(` is a call as surely as `tasks.register(` is.
+            if (before.EndsWith('.') && !(words.Length >= 2 && IsTypeWord(words[^2])))
                 return null;
 
-            return new Found(name, SymbolKind.Member, Frame.Body);
-        }
+            // MARKUP IS NOT A RETURN TYPE. A brace in front of the name puts the call inside
+            // something — a PHP view's `{{ app()->version() }}` — and no declaration's head has one.
+            if (pre.IndexOfAny(['{', '}']) >= 0) return null;
 
-        if (language.Properties && inType && assign < 0 && PropertyDecl.Match(line) is { Success: true } prop)
-        {
-            var first = line.Split(' ', 2)[0];
-            if (StatementWords.Contains(first)) return null;
-            return new Found(prop.Groups["name"].Value, SymbolKind.Member, Frame.Body);
+            return new Found(name, SymbolKind.Member, Frame.Body);
         }
 
         return null;

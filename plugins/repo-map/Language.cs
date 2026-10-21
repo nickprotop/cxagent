@@ -82,6 +82,8 @@ public sealed record Language(string Name, Family Family)
         // MINIFIED BUNDLES ARE BUILD OUTPUT that happens to be committed: one line, thousands of
         // generated names, nothing a reader declared.
         if (name.EndsWith(".min.js", StringComparison.OrdinalIgnoreCase)) return null;
+        // A BLADE VIEW IS A TEMPLATE: HTML with {{ }} tags, ending in .php so the framework finds it.
+        if (name.EndsWith(".blade.php", StringComparison.OrdinalIgnoreCase)) return null;
 
         return Path.GetExtension(path).ToLowerInvariant() switch
         {

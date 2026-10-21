@@ -160,7 +160,7 @@ public static class Ranker
 
     private static readonly HashSet<string> AsideFolders = new(StringComparer.OrdinalIgnoreCase)
     {
-        "test", "tests", "testdata", "fixtures", "__tests__", "__mocks__", "vendor", "third_party",
+        "test", "tests", "spec", "testdata", "fixtures", "__tests__", "__mocks__", "vendor", "third_party",
     };
 
     /// <summary>
@@ -178,7 +178,7 @@ public static class Ranker
 
         var file = parts[^1];
         var stem = file.Contains('.') ? file[..file.LastIndexOf('.')] : file;
-        return stem.EndsWith("_test", StringComparison.Ordinal)
+        return stem.EndsWith("_test", StringComparison.Ordinal) || stem.EndsWith("_spec", StringComparison.Ordinal)
             || stem.EndsWith(".test", StringComparison.Ordinal) || stem.EndsWith(".spec", StringComparison.Ordinal)
             || (file.StartsWith("test_", StringComparison.Ordinal) && file.EndsWith(".py", StringComparison.Ordinal))
             // CASE-SENSITIVE, so the suffix is a word of its own: AgentTests, FooTest — not Contest.

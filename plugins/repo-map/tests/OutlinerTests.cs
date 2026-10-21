@@ -563,5 +563,99 @@ public class OutlinerTests
                 export function after() {}
                 """));
     }
+
+    /// <summary>
+    /// A QUALIFIED CALL WITH A TYPE ARGUMENT IS STILL A CALL. Gradle's Kotlin scripts are made of
+    /// <c>tasks.register&lt;Copy&gt;("…") {</c>, and none of those declares anything.
+    /// </summary>
+    [Fact]
+    public void Kotlin_AQualifiedCallWithATypeArgument_IsNotADeclaration()
+    {
+        // The val is a declaration — a binding the script names — and is shown up to its `=`.
+        Assert.Equal(["4:0:val nativeCompile"], Outline("build.gradle.kts", """
+            tasks.register<Copy>("copyResourcesTemplates") {
+              from("templates")
+            }
+            val nativeCompile = tasks.named<BuildNativeImageTask>("nativeCompile") {
+            }
+            """));
+    }
+
+    /// <summary>
+    /// MARKUP AROUND A CALL IS NOT A RETURN TYPE. A PHP view's <c>{{ app()->version() }}</c> declares
+    /// nothing, and a declaration whose signature would be empty is never shown.
+    /// </summary>
+    [Fact]
+    public void Php_TemplateMarkupAroundACall_DeclaresNothing()
+    {
+        Assert.Equal(["4:0:function real($a)"], Outline("view.php", """
+            <p>Laravel {{ app()->version() }}</p>
+            {{ $e->request()->host() }}
+            Laravel {{ app()->version() }}
+            function real($a)
+            {
+            }
+            """));
+    }
+
+    /// <summary>A BLADE VIEW IS A TEMPLATE, not PHP someone declared things in.</summary>
+    [Fact]
+    public void ABladeTemplate_IsNotRead() => Assert.Null(Language.For("resources/views/markdown.blade.php"));
+
+    /// <summary>
+    /// SWIFT'S AND KOTLIN'S PROPERTIES ARE DECLARATIONS, computed or stored: <c>var</c>, <c>val</c>
+    /// and <c>let</c> at the top of a type or a file, shown up to their body or their <c>=</c>. A
+    /// <c>let</c> in a function body stays out.
+    /// </summary>
+    [Fact]
+    public void SwiftAndKotlin_PropertiesAreFound()
+    {
+        Assert.Equal(
+        [
+            "1:0:public struct JSONEncoding",
+            "2:1:public static var `default`: JSONEncoding",
+            "3:1:public let options: Options",
+            "4:1:private var cache",
+            "5:1:public func encode(_ request: URLRequest) throws -> URLRequest",
+        ], Outline("JSONEncoding.swift", """
+            public struct JSONEncoding {
+                public static var `default`: JSONEncoding { JSONEncoding() }
+                public let options: Options
+                private var cache = Cache(size: 3)
+                public func encode(_ request: URLRequest) throws -> URLRequest {
+                    let local = 1
+                    return request
+                }
+            }
+            """));
+
+        Assert.Equal(["1:0:class Test", "2:1:val request by lazy", "3:1:var count: Int"], Outline("Test.kt", """
+            class Test {
+              val request by lazy { Request(server.url("/")) }
+              var count: Int = 0
+            }
+            """));
+    }
+
+    /// <summary>
+    /// A C# PROPERTY WITH AN EXPRESSION BODY IS A PROPERTY whatever the expression calls: the call
+    /// to the right of its <c>=&gt;</c> is not the declaration.
+    /// </summary>
+    [Fact]
+    public void CSharp_AnExpressionBodiedPropertyThatCalls_IsAProperty()
+    {
+        Assert.Equal(
+        [
+            "1:0:public sealed class Call",
+            "3:1:public IReadOnlyList<Report.Progress> Progress",
+            "4:1:private static Expression[] NoArgs",
+        ], Outline("Call.cs", """
+            public sealed class Call
+            {
+                public IReadOnlyList<Report.Progress> Progress => [.. Reports.OfType<Report.Progress>()];
+                private static Expression[] NoArgs => CollectionUtils.ArrayEmpty<Expression>();
+            }
+            """));
+    }
 }
 
