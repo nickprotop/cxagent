@@ -7,6 +7,14 @@
     <Nullable>enable</Nullable>
     <RootNamespace>CxAgent</RootNamespace>
     <AssemblyName>cxagent</AssemblyName>
+
+    <!-- THE RELEASE IS ONE FILE, AND ONLY THAT FILE IS UPLOADED. A single-file publish bundles the
+         managed assemblies and leaves native libraries beside the binary unless told otherwise, so
+         TextMateSharp's libonigwrap (code-block highlighting) and SQLite's libe_sqlite3 (input
+         history) never reached a user: the first highlighted code block ended the process. Bundled,
+         they are extracted next to the binary's own temp copy on first use. Set here rather than in
+         the workflow, so every single-file publish of cxagent gets it. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <!-- ALSO A DOTNET TOOL: `dotnet tool install -g cxagent`.
