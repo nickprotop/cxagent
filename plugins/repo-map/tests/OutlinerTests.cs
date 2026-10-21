@@ -389,12 +389,14 @@ public class OutlinerTests
     [Fact]
     public void RubyAndShell()
     {
+        // A RUBY MODULE IS A NAMESPACE, as `namespace` is in the brace languages: not shown, and no
+        // deeper. Counted as a type, every class in sinatra's `module Sinatra` sat one level down,
+        // where a type does not link the files that use it, and the library ranked below its specs.
         Assert.Equal(
         [
-            "1:0:module Billing",
-            "2:1:class Invoice",
-            "3:2:def total(items)",
-            "6:2:def self.build",
+            "2:0:class Invoice",
+            "3:1:def total(items)",
+            "6:1:def self.build",
         ], Outline("billing.rb", """
             module Billing
               class Invoice
@@ -656,6 +658,80 @@ public class OutlinerTests
                 private static Expression[] NoArgs => CollectionUtils.ArrayEmpty<Expression>();
             }
             """));
+    }
+
+    /// <summary>
+    /// A SHELL GROUP AROUND THE WHOLE SCRIPT IS SEEN THROUGH. nvm.sh wraps itself in <c>{ … }</c> so
+    /// a half-downloaded copy never runs; taken as a body, every function inside would vanish.
+    /// </summary>
+    [Fact]
+    public void Shell_AGroupAroundTheScript_IsSeenThrough()
+    {
+        Assert.Equal(["2:0:nvm_a()", "5:0:nvm_b()"], Outline("nvm.sh", """
+            { # this ensures the entire script is downloaded #
+            nvm_a() {
+              echo
+            }
+            nvm_b() {
+              { echo; inner() { :; }; } > /dev/null
+            }
+            }
+            """));
+    }
+
+    /// <summary>A RUBY SUPERCLASS KEEPS ITS SPACE: <c>class Request &lt; Rack::Request</c> is not a generic.</summary>
+    [Fact]
+    public void Ruby_ASuperclassKeepsItsSpacing()
+    {
+        Assert.Equal(["1:0:class Request < Rack::Request"], Outline("base.rb", """
+            class Request < Rack::Request
+            end
+            """));
+    }
+
+    /// <summary>
+    /// A COMMAND SUBSTITUTION INSIDE A DOUBLE-QUOTED STRING QUOTES FOR ITSELF. In
+    /// <c>"$(type "${COMMAND}" | sed 's/\(//g')"</c> the inner quotes open strings of their own;
+    /// read as closing the outer one, the quoting falls out of step, and a single quote — which
+    /// spans lines in shell — swallowed the functions after it. Taken from nvm.sh.
+    /// </summary>
+    [Fact]
+    public void Shell_QuotesInsideACommandSubstitution_HideNothing()
+    {
+        Assert.Equal(["1:0:nvm_command_info()", "21:0:nvm_has_colors()", "30:0:nvm_has_italics()"], Outline("nvm.sh", """"
+            nvm_command_info() {
+              local COMMAND
+              local INFO
+              COMMAND="${1}"
+              if type "${COMMAND}" | nvm_grep -q hashed; then
+                INFO="$(type "${COMMAND}" | command sed -E 's/\(|\)//g' | command awk '{print $4}')"
+              elif type "${COMMAND}" | nvm_grep -q aliased; then
+                # shellcheck disable=SC2230
+                INFO="$(which "${COMMAND}") ($(type "${COMMAND}" | command awk '{ $1=$2=$3=$4="" ;print }' | command sed -e 's/^\ *//g' -Ee "s/\`|'//g"))"
+              elif type "${COMMAND}" | nvm_grep -q "^${COMMAND} is an alias for"; then
+                # shellcheck disable=SC2230
+                INFO="$(which "${COMMAND}") ($(type "${COMMAND}" | command awk '{ $1=$2=$3=$4=$5="" ;print }' | command sed 's/^\ *//g'))"
+              elif type "${COMMAND}" | nvm_grep -q "^${COMMAND} is /"; then
+                INFO="$(type "${COMMAND}" | command awk '{print $3}')"
+              else
+                INFO="$(type "${COMMAND}")"
+              fi
+              nvm_echo "${INFO}"
+            }
+
+            nvm_has_colors() {
+              local NVM_NUM_COLORS
+              if nvm_has tput; then
+                NVM_NUM_COLORS="$(command tput -T "${TERM:-vt100}" colors)"
+              fi
+              [ -t 1 ] && [ "${NVM_NUM_COLORS:--1}" -ge 8 ] && [ "${NVM_NO_COLORS-}" != '--no-colors' ]
+            }
+
+            # terminals without italics may render the italic escape as reverse video instead, so check terminfo's `sitm` capability
+            nvm_has_italics() {
+              nvm_has_colors && command tput -T "${TERM:-vt100}" sitm >/dev/null 2>&1
+            }
+            """"));
     }
 }
 

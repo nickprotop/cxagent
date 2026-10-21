@@ -132,6 +132,13 @@ public static class Outliner
                     // A BRACE ENDS ANY PARENTHESIS STILL OPEN. None is, in code that compiles; one
                     // that seems to be was opened by something the stripper cannot read — a regex
                     // literal like /\(/ — and left open it would hide every declaration after it.
+                    // A SHELL `{` NO FUNCTION CLAIMED IS A GROUP COMMAND, seen through like a
+                    // namespace: nvm.sh wraps the whole script in one so a half-downloaded copy
+                    // never runs, and as a body it would hide every function in the file.
+                    case '{' when pending is null && language.Family == Family.Shell:
+                        frames.Push(new Scope(Frame.Container, "", Namespace: true));
+                        parens = 0;
+                        break;
                     case '{':
                         frames.Push(new Scope(pending ?? Frame.Body, pending is null ? "" : pendingName,
                             pending is not null && pendingNamespace));
@@ -165,7 +172,7 @@ public static class Outliner
         var symbols = new List<Symbol>();
         // Every def and class opens a frame, shown or not: a def inside a def is hidden only if
         // the outer one is remembered.
-        var frames = new Stack<(int Indent, Frame Kind)>();
+        var frames = new Stack<Indented>();
         var parens = 0;
         // The indentation of the line that left a parenthesis open — see the reset below.
         var openedAt = 0;
@@ -192,10 +199,15 @@ public static class Outliner
                 if (match.Success)
                 {
                     var isType = match.Groups["type"].Success;
-                    if (frames.All(f => f.Kind == Frame.Container))
+                    // A RUBY MODULE IS A NAMESPACE, as `namespace` is in the brace languages: not
+                    // shown, and adding no depth. Counted as a type, every class in a gem's one
+                    // top-level module sat a level down, where a type does not link the files that
+                    // use it.
+                    var isNamespace = isType && match.Groups["type"].Value == "module";
+                    if (!isNamespace && frames.All(f => f.Kind == Frame.Container))
                         symbols.Add(new Symbol(match.Groups["name"].Value, Signature(source, i, toBody: false), i + 1,
-                            frames.Count, isType ? SymbolKind.Type : SymbolKind.Member));
-                    frames.Push((indent, isType ? Frame.Container : Frame.Body));
+                            frames.Count(f => !f.Namespace), isType ? SymbolKind.Type : SymbolKind.Member));
+                    frames.Push(new Indented(indent, isType ? Frame.Container : Frame.Body, isNamespace));
                 }
             }
 
@@ -210,6 +222,9 @@ public static class Outliner
 
         return symbols;
     }
+
+    /// <summary>One open def, class or module, by the indentation it was written at.</summary>
+    private readonly record struct Indented(int Indent, Frame Kind, bool Namespace);
 
     private static int Indent(string line)
     {
@@ -574,7 +589,7 @@ public static class Outliner
         var cut = BodyStart(code.ToString(), language);
         var shown = display.ToString()[..Math.Min(cut, display.Length)];
         // A parameter list begun on the line after its "(" joins as "( string": the space was the line break.
-        shown = Regex.Replace(Regex.Replace(shown, @"\s+", " "), @"([(\[<]) | ([)\]>])", "$1$2").Trim().TrimEnd(':').TrimEnd();
+        shown = Regex.Replace(Regex.Replace(shown, @"\s+", " "), @"([(\[]|(?<=\w)<) | ([)\]>])", "$1$2").Trim().TrimEnd(':').TrimEnd();
         // A TRAILING COMMA — rustfmt's, and many formatters' for a list that wraps — says nothing
         // once the list is on one line.
         shown = Regex.Replace(shown, @",\s*\)", ")");

@@ -46,6 +46,14 @@ public static class Stripper
         var escapes = true;
         var spansLines = false;
 
+        // SHELL'S $( … ) INSIDE A DOUBLE-QUOTED STRING: the parenthesis depth at which each open
+        // substitution resumes its string. Inside one, quotes open strings of their own —
+        // `"$(type "${x}" | sed 's/(//')"` is one string around a command, not three strings —
+        // and reading them as the outer string's end puts the quoting out of step, where a
+        // single quote, which spans lines in shell, then swallows everything after it.
+        var substitutions = new Stack<int>();
+        var depth = 0;
+
         void Keep(char c) { code.Append(c); display.Append(c); }
         void Blank(char c) { var b = c == '\n' ? '\n' : ' '; code.Append(b); display.Append(b); }
         void Quote(char c) { code.Append(c == '\n' ? '\n' : ' '); display.Append(c); }
@@ -68,7 +76,14 @@ public static class Stripper
                     continue;
 
                 case State.Text:
-                    if (c == '\n' && !spansLines) { Keep(c); state = State.Code; continue; }
+                    if (c == '\n' && !spansLines) { Keep(c); state = State.Code; substitutions.Clear(); continue; }
+                    if (language.Family == Family.Shell && closer == "\"" && c == '$' && next == '(')
+                    {
+                        Quote(c); Quote(next); i++;
+                        substitutions.Push(depth++);
+                        state = State.Code;
+                        continue;
+                    }
                     if (escapes && c == '\\' && i + 1 < text.Length && text[i + 1] != '\n')
                     {
                         Quote(c); Quote(text[i + 1]); i++;
@@ -93,6 +108,19 @@ public static class Stripper
             }
 
             // State.Code from here on.
+            if (language.Family == Family.Shell && c == '(') depth++;
+            if (language.Family == Family.Shell && c == ')')
+            {
+                depth = Math.Max(0, depth - 1);
+                if (substitutions.Count > 0 && substitutions.Peek() == depth)
+                {
+                    substitutions.Pop();
+                    Quote(c);
+                    closer = "\""; escapes = true; spansLines = false;
+                    state = State.Text;
+                    continue;
+                }
+            }
             if (language.SlashComments && c == '/' && next == '/') { state = State.LineComment; Blank(c); continue; }
             if (language.SlashComments && c == '/' && next == '*') { state = State.BlockComment; Blank(c); Blank(next); i++; continue; }
             if (language.HashComments && c == '#' && HashStartsComment(text, i, language))
