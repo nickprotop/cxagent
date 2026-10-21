@@ -101,6 +101,15 @@ public static class Stripper
                 continue;
             }
 
+            if (language.RegexLiterals && c == '/' && RegexMayStart(text, i) && RegexEnd(text, i) is > 0 and var end)
+            {
+                Keep(c);
+                for (var j = i + 1; j < end; j++) Quote(text[j]);
+                Keep(text[end]);
+                i = end;
+                continue;
+            }
+
             if (language.TripleQuotes && (c == '"' || c == '\'') && next == c && i + 2 < text.Length && text[i + 2] == c
                 && (c == '"' || language.Family == Family.Python))
             {
@@ -163,6 +172,52 @@ public static class Stripper
         if (!language.Lifetimes) return false;
         if (i + 1 < text.Length && text[i + 1] == '\\') return false;
         return !(i + 2 < text.Length && text[i + 2] == '\'');
+    }
+
+    /// <summary>Words after which a value, and so a regex, can start.</summary>
+    private static readonly HashSet<string> RegexAfterWords =
+        ["return", "typeof", "case", "yield", "await", "in", "of", "void", "delete", "throw", "else", "do", "instanceof", "new"];
+
+    /// <summary>
+    /// Whether a <c>/</c> is where a value can start, which makes it a regex rather than a division.
+    ///
+    /// <para>AFTER AN OPERATOR, AN OPENING BRACKET, A KEYWORD OR NOTHING ON THE LINE. After a name, a
+    /// number or a closing bracket a value has just ended, and a slash divides it. Never after
+    /// <c>&lt;</c> or <c>&gt;</c>: in JSX <c>&lt;/div&gt;</c> closes a tag, and reading it as a regex
+    /// would blank markup up to the next slash, braces and all.</para>
+    /// </summary>
+    private static bool RegexMayStart(string text, int i)
+    {
+        var k = i - 1;
+        while (k >= 0 && text[k] is ' ' or '\t') k--;
+        if (k < 0 || text[k] == '\n') return true;
+        var before = text[k];
+        if ("=(,:[!&|?{};+-*%~^".Contains(before)) return true;
+        if (!(char.IsLetterOrDigit(before) || before is '_' or '$')) return false;
+
+        var start = k;
+        while (start > 0 && (char.IsLetterOrDigit(text[start - 1]) || text[start - 1] is '_' or '$')) start--;
+        return RegexAfterWords.Contains(text[start..(k + 1)]);
+    }
+
+    /// <summary>
+    /// Where the regex opened at <paramref name="i"/> closes: the next <c>/</c> not escaped and not in
+    /// a <c>[…]</c> class, on the same line. -1 when the line ends first — a regex cannot span lines,
+    /// so that slash was not one after all, and it is left as code.
+    /// </summary>
+    private static int RegexEnd(string text, int i)
+    {
+        var inClass = false;
+        for (var j = i + 1; j < text.Length; j++)
+        {
+            var c = text[j];
+            if (c == '\n') return -1;
+            if (c == '\\') { j++; continue; }
+            if (c == '[') inClass = true;
+            else if (c == ']') inClass = false;
+            else if (c == '/' && !inClass) return j;
+        }
+        return -1;
     }
 
     private static string[] Lines(StringBuilder text) =>

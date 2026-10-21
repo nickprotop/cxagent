@@ -548,5 +548,20 @@ public class OutlinerTests
             }
             """));
     }
+
+    /// <summary>A REGEX WITH A BACKTICK IN IT DOES NOT HIDE THE DECLARATIONS AFTER IT — zod's html5Email.</summary>
+    [Fact]
+    public void TypeScript_ARegexWithABacktick_HidesNothingAfterIt()
+    {
+        Assert.Equal(["1:0:export const html5Email: RegExp", "4:0:export const rfc5322Email", "6:0:export function after()"],
+            Outline("regexes.ts", """
+                export const html5Email: RegExp =
+                  /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9]$/;
+
+                export const rfc5322Email =
+                  /^(([^<>()\[\]\\.,;:\s@"]+)|(".+"))$/;
+                export function after() {}
+                """));
+    }
 }
 

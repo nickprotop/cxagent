@@ -65,4 +65,32 @@ public class StripperTests
         Assert.Contains("f() {", stripped.Code[0]);
         Assert.DoesNotContain("real", stripped.Code[0]);
     }
+
+    /// <summary>
+    /// A JAVASCRIPT REGEX LITERAL IS TEXT, NOT CODE. Read as code, the backtick in zod's email
+    /// regex opens a template string, and everything up to the next backtick in the file is blanked —
+    /// declarations included.
+    /// </summary>
+    [Fact]
+    public void AScriptRegexLiteral_IsBlankedLikeAString()
+    {
+        var stripped = Stripper.Strip("const email =\n  /^[a-z`'\"{]+\\/x[/]$/u;\nexport const next = 1;\n", Language.Script);
+
+        Assert.Equal("  /" + new string(' ', 18) + "/u;", stripped.Code[1]);
+        Assert.Equal("  /^[a-z`'\"{]+\\/x[/]$/u;", stripped.Display[1]);
+        Assert.Equal("export const next = 1;", stripped.Code[2]);
+    }
+
+    /// <summary>
+    /// A SLASH AFTER A VALUE DIVIDES, and one in a closing JSX tag closes it: neither opens a regex,
+    /// or a line of arithmetic or markup would lose its braces.
+    /// </summary>
+    [Theory]
+    [InlineData("const half = total / 2 / count;")]
+    [InlineData("const r = (a + b) / 2 / { x: 1 }.x;")]
+    [InlineData("return <div>{a}</div><p>{b}</p>;")]
+    [InlineData("const ratio = items.length/ size /2;")]
+    public void ASlashThatDividesOrClosesATag_IsCode(string line) =>
+        Assert.Equal(line, Stripper.Strip(line, Language.Script).Code[0]);
 }
+

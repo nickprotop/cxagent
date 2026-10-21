@@ -62,6 +62,15 @@ public sealed record Language(string Name, Family Family)
     public bool Properties { get; init; }
 
     /// <summary>
+    /// JavaScript's <c>/…/</c> regex literals.
+    ///
+    /// <para>READ AS CODE, ONE WITH A QUOTE OR A BACKTICK IN IT OPENS A STRING THAT IS NOT THERE. A
+    /// backtick's template string spans lines, so everything up to the next backtick in the file —
+    /// declarations included — would be blanked.</para>
+    /// </summary>
+    public bool RegexLiterals { get; init; }
+
+    /// <summary>
     /// The file's language, or null when it is not one this plugin reads.
     ///
     /// <para>BY EXTENSION ONLY. Sniffing content would cost a read of every file in a large tree to
@@ -99,7 +108,7 @@ public sealed record Language(string Name, Family Family)
 
     public static readonly Language Php = new("PHP", Family.CLike) { SlashComments = true, HashComments = true };
 
-    public static readonly Language Script = new("JavaScript", Family.Script) { SlashComments = true, Backticks = true, SameLineBraces = true };
+    public static readonly Language Script = new("JavaScript", Family.Script) { SlashComments = true, Backticks = true, SameLineBraces = true, RegexLiterals = true };
 
     public static readonly Language Go = new("Go", Family.Go) { SlashComments = true, Backticks = true, SameLineBraces = true };
 
