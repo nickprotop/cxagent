@@ -110,8 +110,24 @@ public static class TreeOutliner
                     references.Add(name);
             }
 
-        return new FileOutline(path, Symbols(text, definitions), new Dictionary<string, int>(StringComparer.Ordinal));
+        // A DECLARATION'S OWN NAME IS NOT A USE OF IT — Ruby's query marks every constant as a reference,
+        // the one in `class Widget` included.
+        var declared = definitions.Select(d => d.Name.StartIndex).ToHashSet();
+        var mentions = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var name in references)
+        {
+            if (declared.Contains(name.StartIndex)) continue;
+            var word = name.Text;
+            if (!Countable.IsMatch(word)) continue;
+            mentions[word] = mentions.GetValueOrDefault(word) + 1;
+        }
+
+        return new FileOutline(path, Symbols(text, definitions), mentions);
     }
+
+    /// <summary>The names <see cref="Ranker.MentionsIn"/> counts, so both readers feed the ranking the same kind of name.</summary>
+    private static readonly System.Text.RegularExpressions.Regex Countable =
+        new(@"^[A-Za-z_][A-Za-z0-9_]{2,}$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>
     /// What kind of thing a capture says it found. The suffixes are the tags convention's, plus the few
