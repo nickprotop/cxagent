@@ -24,13 +24,14 @@ namespace CxAgent.Plugins.Worktree;
 public sealed class WorktreePlugin : IPlugin, IPluginGateSource
 {
     private IPluginContext? _context;
-    private Worktrees? _worktrees;
+    private Git? _git;
+    private WorktreeSettings _settings = new();
 
     public Task<PluginManifest> Load(IPluginContext context, CancellationToken ct)
     {
         _context = context;
-        var settings = Settings(context.Settings, out var executable);
-        _worktrees = new Worktrees(new Git(executable, pid => context.RegisterChildProcess(pid)), settings);
+        _settings = Settings(context.Settings, out var executable);
+        _git = new Git(executable, pid => context.RegisterChildProcess(pid));
 
         // BESIDE THIS ASSEMBLY, not AppContext.BaseDirectory: that is the host's folder, and a
         // plugin is loaded from wherever it was installed.
@@ -51,10 +52,20 @@ public sealed class WorktreePlugin : IPlugin, IPluginGateSource
     /// </summary>
     public Task Stop(CancellationToken ct) => Task.CompletedTask;
 
+    /// <summary>
+    /// Runs one tool call OFF THE CALLER'S THREAD, with its git stopped when <paramref name="ct"/> is
+    /// cancelled: a checkout of a large repository can take a while, and neither the session nor a
+    /// user pressing Escape should have to wait it out.
+    /// </summary>
     public Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context, CancellationToken ct)
     {
-        var worktrees = _worktrees ?? throw new InvalidOperationException("Invoke before Load.");
+        var git = _git ?? throw new InvalidOperationException("Invoke before Load.");
+        var worktrees = new Worktrees(git.For(ct), _settings);
+        return Task.Run(() => Run(worktrees, toolName, call, context), ct);
+    }
 
+    private JobResult Run(Worktrees worktrees, string toolName, JobParameters call, IJobContext context)
+    {
         // THE CALLER'S FOLDER: the worktree folder is inside it, and a sub-agent's root is resolved
         // against the parent's folder, so the two must be the same one.
         var folder = context.WorkingDirectory ?? _context?.WorkingDirectory ?? Directory.GetCurrentDirectory();
@@ -64,14 +75,15 @@ public sealed class WorktreePlugin : IPlugin, IPluginGateSource
             "worktree_create" => Named(call, out var name) ?? worktrees.Create(folder, name, call.Get<string?>("base", null)),
             "worktree_list" => worktrees.List(folder),
             "worktree_diff" => Named(call, out var name) ?? worktrees.Diff(folder, name, call.Get("stat_only", false)),
-            "worktree_merge" => Named(call, out var name) ?? worktrees.Merge(folder, name, call.Get<string?>("message", null), call.Get("keep", false)),
+            "worktree_merge" => Named(call, out var name) ?? worktrees.Merge(folder,
+                new MergeRequest(name, call.Get<string?>("message", null), call.Get("keep", false))),
             "worktree_discard" => Named(call, out var name) ?? worktrees.Discard(folder, name),
             _ => Outcome.Refused($"this plugin has no tool named '{toolName}'."),
         };
 
-        return Task.FromResult(outcome.Ok
+        return outcome.Ok
             ? new JobResult { Success = true, Output = new Dictionary<string, object?> { ["content"] = outcome.Text } }
-            : new JobResult { Success = false, ErrorMessage = outcome.Text });
+            : new JobResult { Success = false, ErrorMessage = outcome.Text };
     }
 
     /// <summary>

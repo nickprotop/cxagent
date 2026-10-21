@@ -26,7 +26,7 @@ worktree_discard name: "fix-login"     → asks you, then throws it away
 | `worktree_create` | A new checkout on branch `worktree/<name>`, in `.worktrees/<name>` inside your folder | no |
 | `worktree_list` | The worktrees made here, and how much unmerged work each holds | no |
 | `worktree_diff` | What a worktree changed since it was made, committed or not, new files included | no |
-| `worktree_merge` | Commits what the worktree has not committed, merges its branch into yours, and removes it | **yes**, naming the worktree |
+| `worktree_merge` | Commits what the worktree has not committed, merges its branch into yours, and removes it (`keep: true` leaves it to go on working in) | **yes**, naming the worktree |
 | `worktree_discard` | Removes the folder and deletes the branch, with any unmerged work | **yes**, and never offers "Always" |
 
 Like any plugin's tools, each is also asked about once per folder before its first use, and "Always
@@ -48,10 +48,14 @@ branch into the worktree, resolve the conflicts there, and merge again.
 
 **A merge is a normal git merge.** It fast-forwards when your branch has not moved, and makes a merge
 commit when it has, following your git configuration. Uncommitted work in the worktree is first
-committed there, with the `message` you pass or `Work from worktree '<name>'`.
+committed there, with the `message` you pass or `Work from worktree '<name>'`. If that cannot be
+staged, nothing is merged or removed. A worktree still holding changes after the merge is kept, not
+removed. Git refuses to merge while you have changes staged in your own checkout, and that refusal is
+passed on as it is.
 
-**Only worktrees in `.worktrees/` are this plugin's.** Worktrees you made yourself elsewhere are not
-listed, merged or removed. Worktrees also outlive the session: an unmerged one is still there next
+**Only worktrees in `.worktrees/` on a `worktree/` branch are this plugin's.** Worktrees you made
+yourself are not listed, merged or removed, even one you put in that folder on a branch of your own.
+Making a worktree never prunes anyone else's. Worktrees also outlive the session: an unmerged one is still there next
 time, for `worktree_list` to show.
 
 **From the main checkout only.** Called from inside a worktree, every tool refuses. A sub-agent working
@@ -59,7 +63,7 @@ in a worktree cannot make, merge or discard worktrees of its own.
 
 ## What it needs
 
-`git` on `PATH`, or the path set as `git` in its settings. Every call runs a few git commands, which
+`git` 2.31 or newer on `PATH`, or the path set as `git` in its settings. Every call runs a few git commands, which
 have exited before the call returns. Each one is registered with cxagent, so a crash cannot leave one
 running.
 

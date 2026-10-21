@@ -145,6 +145,7 @@ public class WorktreeTests
     [InlineData("a/b")]
     [InlineData("x.lock")]
     [InlineData("")]
+    [InlineData("foo\n")]
     public void Create_RefusesANameThatIsNotOne(string name)
     {
         using var repo = new Repo();
@@ -187,7 +188,7 @@ public class WorktreeTests
         var inside = repo.Path(".worktrees/w");
 
         Assert.Contains("itself a worktree", Refused(Make().Create(inside, "x", null)).Text);
-        Assert.Contains("itself a worktree", Refused(Make().Merge(inside, "w", null, false)).Text);
+        Assert.Contains("itself a worktree", Refused(Make().Merge(inside, new MergeRequest("w", null, Keep: false))).Text);
         Assert.Contains("itself a worktree", Refused(Make().Discard(inside, "w")).Text);
     }
 
@@ -268,7 +269,7 @@ public class WorktreeTests
         File.WriteAllText(repo.Path(".worktrees/w/app.txt"), "one\nTWO\nthree\n");
         File.WriteAllText(repo.Path(".worktrees/w/added.txt"), "new\n");
 
-        var merged = Ok(Make().Merge(repo.Root, "w", "Shout two", keep: false)).Text;
+        var merged = Ok(Make().Merge(repo.Root, new MergeRequest("w", "Shout two", Keep: false))).Text;
 
         Assert.Contains("Merged worktree 'w' into main (fast-forward", merged);
         Assert.Equal("one\nTWO\nthree\n", repo.Read("app.txt"));
@@ -287,7 +288,7 @@ public class WorktreeTests
         repo.Write("other.txt", "main moved").Git("add", "-A");
         repo.Git("commit", "-q", "-m", "main moves");
 
-        Assert.Contains("(merge commit", Ok(Make().Merge(repo.Root, "w", null, keep: false)).Text);
+        Assert.Contains("(merge commit", Ok(Make().Merge(repo.Root, new MergeRequest("w", null, Keep: false))).Text);
         Assert.Equal("new\n", repo.Read("added.txt"));
     }
 
@@ -304,7 +305,7 @@ public class WorktreeTests
         repo.Write("app.txt", "one\nOURS\nthree\n").Git("commit", "-q", "-am", "ours");
         var before = repo.Git("rev-parse", "HEAD");
 
-        var refused = Refused(Make().Merge(repo.Root, "w", null, keep: false)).Text;
+        var refused = Refused(Make().Merge(repo.Root, new MergeRequest("w", null, Keep: false))).Text;
 
         Assert.Contains("conflicts in: app.txt", refused);
         Assert.Equal("one\nOURS\nthree\n", repo.Read("app.txt"));
@@ -320,7 +321,7 @@ public class WorktreeTests
         Ok(Make().Create(repo.Root, "w", null));
         File.WriteAllText(repo.Path(".worktrees/w/added.txt"), "new\n");
 
-        Assert.Contains("still at .worktrees/w", Ok(Make().Merge(repo.Root, "w", null, keep: true)).Text);
+        Assert.Contains("still at .worktrees/w", Ok(Make().Merge(repo.Root, new MergeRequest("w", null, Keep: true))).Text);
         Assert.True(Directory.Exists(repo.Path(".worktrees/w")));
     }
 
@@ -329,7 +330,148 @@ public class WorktreeTests
     {
         using var repo = new Repo();
         Ok(Make().Create(repo.Root, "w", null));
-        Assert.Contains("Nothing to merge", Ok(Make().Merge(repo.Root, "w", null, keep: true)).Text);
+        Assert.Contains("Nothing to merge", Ok(Make().Merge(repo.Root, new MergeRequest("w", null, Keep: true))).Text);
+    }
+
+    /// <summary>
+    /// A WORKTREE WHOSE CHANGES CANNOT BE STAGED IS NOT MERGED, AND NOT REMOVED. With nothing
+    /// committed, the merge would find "nothing to merge" and remove the folder — and with it the
+    /// edits it could not stage. The user approved a merge, not a deletion.
+    /// </summary>
+    [Fact]
+    public void Merge_WhenTheWorktreeCannotBeStaged_RefusesAndKeepsTheWork()
+    {
+        using var repo = new Repo();
+        Ok(Make().Create(repo.Root, "w", null));
+        File.WriteAllText(repo.Path(".worktrees/w/edit.txt"), "precious\n");
+        var gitDir = Repo.GitIn(repo.Path(".worktrees/w"), "rev-parse", "--absolute-git-dir").Trim();
+        File.WriteAllText(Path.Combine(gitDir, "index.lock"), "");
+
+        Refused(Make().Merge(repo.Root, new MergeRequest("w", null, Keep: false)));
+
+        Assert.True(File.Exists(repo.Path(".worktrees/w/edit.txt")));
+    }
+
+    /// <summary>
+    /// STAGED WORK IN THE USER'S INDEX IS NOT SWALLOWED. git refuses the merge itself, and the refusal
+    /// reaches the model with nothing merged and nothing removed.
+    /// </summary>
+    [Fact]
+    public void Merge_WithChangesStagedInTheUsersIndex_IsRefusedByGit()
+    {
+        using var repo = new Repo();
+        Ok(Make().Create(repo.Root, "w", null));
+        File.WriteAllText(repo.Path(".worktrees/w/added.txt"), "new\n");
+        repo.Write("other.txt", "moved").Git("add", "-A");
+        repo.Git("commit", "-q", "-m", "main moves");
+        repo.Write("staged.txt", "mine").Git("add", "staged.txt");
+
+        Refused(Make().Merge(repo.Root, new MergeRequest("w", null, Keep: false)));
+
+        Assert.Equal("A  staged.txt", repo.Git("status", "--porcelain").Trim());
+        Assert.True(Directory.Exists(repo.Path(".worktrees/w")));
+    }
+
+    /// <summary>
+    /// A HOOK THAT LEAVES A PROCESS HOLDING git'S OUTPUT does not hang the call: git has exited, and
+    /// waiting for the pipe to close would wait for the hook's leftover.
+    /// </summary>
+    [Fact]
+    public void AHookThatLeavesAProcessBehind_DoesNotHangTheMerge()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var repo = new Repo();
+        Ok(Make().Create(repo.Root, "w", null));
+        var hooks = repo.Path(".git/hooks/post-commit");
+        File.WriteAllText(hooks, "#!/bin/sh\nsleep 30 &\n");
+        File.SetUnixFileMode(hooks, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        File.WriteAllText(repo.Path(".worktrees/w/added.txt"), "new\n");
+
+        var clock = Stopwatch.StartNew();
+        Ok(Make().Merge(repo.Root, new MergeRequest("w", null, Keep: true)));
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(20), $"took {clock.Elapsed}");
+    }
+
+    /// <summary>A CANCELLED CALL STOPS ITS git rather than waiting the timeout out.</summary>
+    [Fact]
+    public void Cancelling_KillsARunningGit()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var repo = new Repo();
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        var git = new Git("sh", _ => { }).For(cancel.Token);
+
+        var clock = Stopwatch.StartNew();
+        var result = git.Run(repo.Root, "-c", "sleep 30");
+
+        Assert.False(result.Ok);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"took {clock.Elapsed}");
+    }
+
+    /// <summary>
+    /// git RUNS WITH NO TERMINAL TO ASK, IN ENGLISH, WITHOUT OPTIONAL LOCKS: no prompt can wait on the
+    /// user's TUI, "Fast-forward" is the word to look for whatever the locale, and a status here never
+    /// takes the index lock from a sub-agent running git in the same worktree.
+    /// </summary>
+    [Fact]
+    public void Git_RunsWithoutATerminalInTheCLocaleWithoutOptionalLocks()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var repo = new Repo();
+        var env = new Git("env", _ => { }).Run(repo.Root).Output;
+
+        Assert.Contains("GIT_TERMINAL_PROMPT=0", env);
+        Assert.Contains("LC_ALL=C", env);
+        Assert.Contains("GIT_OPTIONAL_LOCKS=0", env);
+        Assert.Equal("", new Git("cat", _ => { }).Run(repo.Root).Output);
+    }
+
+    /// <summary>
+    /// A WORKTREE IN THE FOLDER ON A BRANCH NOT UNDER THE PREFIX IS THE USER'S: not listed, and never
+    /// discarded — a discard would delete their real branch.
+    /// </summary>
+    [Fact]
+    public void AWorktreeOnAnotherBranch_IsNotThisPlugins()
+    {
+        using var repo = new Repo();
+        Ok(Make().Create(repo.Root, "ours", null));
+        repo.Git("worktree", "add", "-q", "-b", "feature", repo.Path(".worktrees/theirs"));
+
+        Assert.DoesNotContain("theirs", Ok(Make().List(repo.Root)).Text);
+        Refused(Make().Discard(repo.Root, "theirs"));
+        Assert.Contains("feature", repo.Git("branch", "--list", "feature"));
+    }
+
+    /// <summary>
+    /// CREATE TOUCHES NO OTHER WORKTREE. A worktree the user made elsewhere whose folder is missing —
+    /// on a drive not mounted right now — stays registered.
+    /// </summary>
+    [Fact]
+    public void Create_LeavesTheUsersMissingWorktreesRegistered()
+    {
+        using var repo = new Repo();
+        using var elsewhere = new Repo(init: false);
+        var theirs = Path.Combine(elsewhere.Root, "theirs");
+        repo.Git("worktree", "add", "-q", "-b", "theirs", theirs);
+        Directory.Delete(theirs, recursive: true);
+
+        Ok(Make().Create(repo.Root, "w", null));
+
+        Assert.Contains(theirs, repo.Git("worktree", "list"));
+    }
+
+    /// <summary>A WORKTREE WHOSE FOLDER WAS DELETED BY HAND can still be discarded, and then made again under its name.</summary>
+    [Fact]
+    public void AHandDeletedWorktree_IsDiscardedThenMadeAgain()
+    {
+        using var repo = new Repo();
+        Ok(Make().Create(repo.Root, "w", null));
+        Directory.Delete(repo.Path(".worktrees/w"), recursive: true);
+
+        Ok(Make().Discard(repo.Root, "w"));
+        Ok(Make().Create(repo.Root, "w", null));
+        Assert.True(File.Exists(repo.Path(".worktrees/w/app.txt")));
     }
 
     [Fact]
@@ -358,15 +500,55 @@ public class WorktreeTests
         Refused(Make(new WorktreeSettings("../outside", "agent/")).Create(repo.Root, "v", null));
     }
 
-    /// <summary>EVERY git PROCESS IS REGISTERED, so the host can reap one left running by a crash.</summary>
-    [Fact]
-    public void GitProcesses_AreRegisteredWithTheHost()
+    /// <summary>
+    /// A FOLDER NO SUB-AGENT COULD BE ROOTED IN IS REFUSED UP FRONT — inside one whose files run
+    /// code, or the agent's own folder — rather than made and then refused at the spawn.
+    /// </summary>
+    [Theory]
+    [InlineData(".git/wt")]
+    [InlineData(".cxagent/wt")]
+    [InlineData(".github/wt")]
+    [InlineData(".")]
+    [InlineData("./")]
+    public void AFolderNoAgentCouldWorkIn_IsRefused(string folder)
     {
         using var repo = new Repo();
-        int before;
-        lock (Children) before = Children.Count;
-        Ok(Make().List(repo.Root));
-        lock (Children) Assert.True(Children.Count > before);
+        Refused(Make(new WorktreeSettings(folder, "worktree/")).Create(repo.Root, "w", null));
+    }
+
+    /// <summary>A FOLDER NAMED WITH PATTERN CHARACTERS is excluded as that name, not as a pattern matching others.</summary>
+    [Fact]
+    public void AFolderWithPatternCharacters_IsExcludedLiterally()
+    {
+        using var repo = new Repo();
+        Ok(Make(new WorktreeSettings("box[1]", "worktree/")).Create(repo.Root, "w", null));
+
+        Assert.Contains("/box\\[1]/", File.ReadAllLines(repo.Path(".git/info/exclude")));
+        Assert.Equal("", repo.Git("status", "--porcelain"));
+    }
+
+    /// <summary>A FOLDER WRITTEN WITH A LEADING ./ is excluded as itself — git ignores a pattern spelled with one.</summary>
+    [Fact]
+    public void AFolderWithALeadingDot_IsExcludedCorrectly()
+    {
+        using var repo = new Repo();
+        Ok(Make(new WorktreeSettings("./wt", "worktree/")).Create(repo.Root, "w", null));
+
+        Assert.Contains("/wt/", File.ReadAllLines(repo.Path(".git/info/exclude")));
+        Assert.Equal("", repo.Git("status", "--porcelain"));
+    }
+
+    /// <summary>A git STILL RUNNING IS REGISTERED, so the host can reap one a crash leaves behind.</summary>
+    [Fact]
+    public void ARunningProcess_IsRegisteredWithTheHost()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var repo = new Repo();
+        var registered = new List<int>();
+
+        new Git("sh", registered.Add).Run(repo.Root, "-c", "sleep 0.5");
+
+        Assert.Single(registered);
     }
 }
 

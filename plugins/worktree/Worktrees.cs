@@ -7,6 +7,9 @@ namespace CxAgent.Plugins.Worktree;
 /// <param name="BranchPrefix">Put in front of a worktree's name to make its branch's.</param>
 public sealed record WorktreeSettings(string Folder = ".worktrees", string BranchPrefix = "worktree/");
 
+/// <summary>A merge to make: which worktree, the message for work it has not committed, and whether to keep it after.</summary>
+public sealed record MergeRequest(string Name, string? Message, bool Keep);
+
 /// <summary>What a tool call came to: text for the model, and whether it did what was asked.</summary>
 public sealed record Outcome(bool Ok, string Text)
 {
@@ -33,9 +36,29 @@ public sealed record Outcome(bool Ok, string Text)
 /// </summary>
 public sealed class Worktrees(Git git, WorktreeSettings settings)
 {
+    /// <summary>
+    /// Folders a sub-agent cannot be rooted in, because their files can run code — the same list
+    /// Core's <c>ChildRoot</c> refuses a spawn's root inside. A worktree there could be made and
+    /// never used, so the folder setting is refused up front instead.
+    /// </summary>
+    private static readonly string[] CodeFolders =
+        [".git", ".vscode", ".claude", ".idea", ".github", ".husky", ".envrc", ".devcontainer", ".cxagent"];
+
+    /// <summary>The folder setting with forward slashes and no leading <c>./</c> — git ignores an
+    /// exclude pattern written with one.</summary>
+    private string Folder
+    {
+        get
+        {
+            var f = settings.Folder.Replace('\\', '/').Trim();
+            while (f.StartsWith("./", StringComparison.Ordinal)) f = f[2..];
+            return f.Trim('/');
+        }
+    }
+
     /// <summary>What a worktree may be called: a folder name and a branch name both, with no way to
     /// climb out of the folder or look like an option to git.</summary>
-    private static readonly Regex Name = new(@"^[A-Za-z0-9][A-Za-z0-9._-]{0,47}$", RegexOptions.Compiled);
+    private static readonly Regex Name = new(@"^[A-Za-z0-9][A-Za-z0-9._-]{0,47}\z", RegexOptions.Compiled);
 
     /// <summary>Where the call is, as git sees it.</summary>
     /// <param name="Folder">The agent's folder.</param>
@@ -43,7 +66,7 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
     /// <param name="Prefix">The agent's folder relative to <paramref name="Top"/>, with a trailing slash, or empty.</param>
     private sealed record Place(string Folder, string Top, string Prefix)
     {
-        public string Home(WorktreeSettings settings) => Path.GetFullPath(Path.Combine(Folder, settings.Folder));
+        public string Home(string folder) => Path.GetFullPath(Path.Combine(Folder, folder));
     }
 
     /// <summary>One of this plugin's worktrees.</summary>
@@ -61,7 +84,7 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
         if (!git.Run(place.Top, "check-ref-format", "--branch", branch).Ok)
             return Outcome.Refused($"'{branch}' is not a branch name git accepts; choose another name.");
 
-        var path = Path.Combine(place.Home(settings), name);
+        var path = Path.Combine(place.Home(Folder), name);
         if (Directory.Exists(path) || File.Exists(path))
             return Outcome.Refused($"a worktree called '{name}' already exists at {Shown(place, path)}. Use it, or worktree_discard it first.");
         if (git.Run(place.Top, "rev-parse", "--verify", "--quiet", "refs/heads/" + branch).Ok)
@@ -75,9 +98,10 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
 
         if (Exclude(place) is { } excludeFailed) return excludeFailed;
 
-        // A worktree folder someone deleted by hand is still registered; prune it, or git refuses
-        // to make a new one at the same path.
-        git.Run(place.Top, "worktree", "prune");
+        // NO `worktree prune` FIRST: it would also forget the user's own worktrees on a drive that is
+        // not mounted right now. A worktree of this plugin's whose folder was deleted by hand still
+        // holds its branch, so the check above has already sent the caller to worktree_discard,
+        // which clears it.
         var made = git.Run(place.Top, "worktree", "add", "-b", branch, path, commit.Output.Trim());
         if (!made.Ok) return Outcome.Refused($"git could not create the worktree: {made.Why}");
 
@@ -99,14 +123,14 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
     {
         if (Locate(folder, out var place) is { } refusal) return refusal;
         var trees = Ours(place);
-        if (trees.Count == 0) return Outcome.Done($"No worktrees in {Shown(place, place.Home(settings))}.");
+        if (trees.Count == 0) return Outcome.Done($"No worktrees in {Shown(place, place.Home(Folder))}.");
 
         var lines = new List<string> { $"{trees.Count} worktree{(trees.Count == 1 ? "" : "s")}:" };
         foreach (var tree in trees)
         {
             var (ahead, changed) = Work(place, tree);
             var state = ahead == 0 && changed == 0 ? "nothing to merge"
-                : $"{ahead} commit{(ahead == 1 ? "" : "s")} and {changed} uncommitted change{(changed == 1 ? "" : "s")} not merged";
+                : $"{Commits(ahead)} and {Changes(changed)} not merged";
             lines.Add($"  {tree.Name}: {Shown(place, Path.Combine(tree.Path, place.Prefix))}, branch {tree.Branch ?? "(detached)"} — {state}");
         }
         return Outcome.Done(string.Join("\n", lines));
@@ -131,8 +155,7 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
         git.Run(tree.Path, "add", "--intent-to-add", "--all");
 
         var (ahead, changed) = Work(place, tree);
-        var header = $"worktree '{name}' (branch {tree.Branch ?? "(detached)"}): {ahead} commit{(ahead == 1 ? "" : "s")} "
-                   + $"and {changed} uncommitted change{(changed == 1 ? "" : "s")} since {mergeBase[..7]}.";
+        var header = $"worktree '{name}' (branch {tree.Branch ?? "(detached)"}): {Commits(ahead)} and {Changes(changed)} since {mergeBase[..7]}.";
 
         var stat = git.Run(tree.Path, "diff", "--stat=120", mergeBase);
         if (!stat.Ok) return Outcome.Refused($"git could not diff the worktree: {stat.Why}");
@@ -142,10 +165,10 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
         var statBlock = "```\n" + stat.Output.TrimEnd() + "\n```";
         if (statOnly) return Outcome.Done(header + "\n\n" + statBlock);
 
-        var diff = git.Run(tree.Path, "diff", mergeBase);
+        var diff = git.Run(tree.Path, MaxDiff + 1, "diff", mergeBase);
         var body = diff.Output.TrimEnd();
         var cut = body.Length > MaxDiff
-            ? $"\n\nThe diff is cut at {MaxDiff} characters of {body.Length}. Call again with stat_only for the full list, and read the files you need."
+            ? $"\n\nThe diff is cut at {MaxDiff} characters. Call again with stat_only for the full list, and read the files you need."
             : "";
         if (cut.Length > 0) body = body[..MaxDiff];
         // LONGER THAN ANY RUN OF BACKTICKS IN THE DIFF: a changed markdown file carries fences of its
@@ -155,8 +178,9 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
         return Outcome.Done(header + "\n\n" + statBlock + $"\n\n{fence}diff\n" + body + $"\n{fence}" + cut);
     }
 
-    public Outcome Merge(string folder, string name, string? message, bool keep)
+    public Outcome Merge(string folder, MergeRequest request)
     {
+        var (name, message, keep) = (request.Name, request.Message, request.Keep);
         if (Locate(folder, out var place) is { } refusal) return refusal;
         if (Find(place, name) is not { } tree) return Missing(folder, place, name);
         if (tree.Branch is null) return Outcome.Refused($"worktree '{name}' is not on a branch, so there is nothing to merge.");
@@ -169,7 +193,12 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
 
         // THE WORKTREE'S UNCOMMITTED WORK IS COMMITTED THERE FIRST. A merge takes commits, and a
         // sub-agent that edited files and stopped has left nothing but uncommitted changes.
-        git.Run(tree.Path, "add", "--all");
+        //
+        // A FAILED STAGE STOPS THE MERGE. Unchecked, nothing staged reads as nothing to merge, and
+        // the worktree would be removed with the edits it could not stage still in it.
+        var staged = git.Run(tree.Path, "add", "--all");
+        if (!staged.Ok)
+            return Outcome.Refused($"git could not stage the worktree's changes, so nothing was merged or removed: {staged.Why}");
         if (!git.Run(tree.Path, "diff", "--cached", "--quiet").Ok)
         {
             var commitMessage = string.IsNullOrWhiteSpace(message) ? $"Work from worktree '{name}'" : message.Trim();
@@ -178,9 +207,10 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
         }
 
         var ahead = CountCommits(place.Top, $"HEAD..{tree.Branch}");
+        if (ahead < 0) return Outcome.Refused($"git could not count the worktree's commits, so nothing was merged.");
         if (ahead == 0)
             return Outcome.Done($"Nothing to merge: worktree '{name}' has no work that {into} does not already have."
-                + (keep ? "" : " " + Remove(place, tree, merged: true).Text));
+                + (keep ? "" : " " + RemoveMerged(place, tree)));
 
         var merged = git.Run(place.Top, "merge", "--no-edit", tree.Branch);
         if (!merged.Ok)
@@ -207,7 +237,20 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
         var text = $"Merged worktree '{name}' into {into}"
                  + (fastForward ? $" (fast-forward to {head})" : $" (merge commit {head})")
                  + (summary.Length > 0 ? $": {summary}." : ".");
-        return Outcome.Done(text + " " + (keep ? $"The worktree is still at {Shown(place, tree.Path)} on {tree.Branch}." : Remove(place, tree, merged: true).Text));
+        return Outcome.Done(text + " " + (keep ? $"The worktree is still at {Shown(place, tree.Path)} on {tree.Branch}." : RemoveMerged(place, tree)));
+    }
+
+    /// <summary>
+    /// Removes a merged worktree — only if nothing in it is left uncommitted. What the merge took is
+    /// on the branch; anything still in the folder is not, and removing it would delete work the user
+    /// approved merging, not throwing away.
+    /// </summary>
+    private string RemoveMerged(Place place, Tree tree)
+    {
+        var status = git.Run(tree.Path, "status", "--porcelain");
+        if (!status.Ok || Count(status.Output) > 0)
+            return $"The worktree still has changes that were not merged, so it stays at {Shown(place, tree.Path)}.";
+        return Remove(place, tree, merged: true).Text;
     }
 
     public Outcome Discard(string folder, string name)
@@ -220,7 +263,7 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
         if (!removed.Complete) return Outcome.Refused($"Worktree '{name}' was not fully discarded. {removed.Text}");
 
         var lost = ahead == 0 && changed == 0 ? "It held no work that was not merged."
-            : $"{ahead} commit{(ahead == 1 ? "" : "s")} and {changed} uncommitted change{(changed == 1 ? "" : "s")} are gone.";
+            : $"{Commits(ahead)} and {Changes(changed)} are gone.";
         return Outcome.Done($"Discarded worktree '{name}'. {lost}");
     }
 
@@ -245,10 +288,10 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
         // An empty .worktrees folder is clutter the user did not make.
         try
         {
-            var home = place.Home(settings);
+            var home = place.Home(Folder);
             if (Directory.Exists(home) && !Directory.EnumerateFileSystemEntries(home).Any()) Directory.Delete(home);
         }
-        catch (IOException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
 
         return (true, "The worktree and its branch are removed.");
     }
@@ -278,11 +321,21 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
 
     private Outcome? CheckFolderSetting()
     {
-        var f = settings.Folder.Replace('\\', '/');
-        return Path.IsPathRooted(f) || f.Split('/').Contains("..") || f.Trim('/').Length == 0
-            ? Outcome.Refused($"the folder setting '{settings.Folder}' must be a folder inside yours, like .worktrees.")
-            : null;
+        var f = Folder;
+        var parts = f.Split('/');
+        if (Path.IsPathRooted(settings.Folder) || parts.Contains("..") || f is "" or ".")
+            return Outcome.Refused($"the folder setting '{settings.Folder}' must be a folder inside yours, like .worktrees.");
+        if (parts.FirstOrDefault(p => CodeFolders.Contains(p, StringComparer.OrdinalIgnoreCase)) is { } code)
+            return Outcome.Refused($"the folder setting '{settings.Folder}' is inside {code}, whose files can run code; a sub-agent cannot work there.");
+        return null;
     }
+
+    /// <summary>
+    /// A path written so the exclude file means it literally: <c>*</c>, <c>?</c>, <c>[</c> and a
+    /// backslash are pattern syntax there, and a folder may be named with any of them.
+    /// </summary>
+    private static string Literal(string path) =>
+        Regex.Replace(path, @"[*?\[\\]", m => "\\" + m.Value);
 
     /// <summary>
     /// Adds the worktrees folder to the repository's exclude file, once.
@@ -295,7 +348,7 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
         var path = git.Run(place.Top, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude").Output.Trim();
         if (path.Length == 0) return Outcome.Refused("git could not say where this repository's exclude file is.");
 
-        var entry = "/" + place.Prefix + settings.Folder.Replace('\\', '/').Trim('/') + "/";
+        var entry = "/" + Literal(place.Prefix + Folder) + "/";
         try
         {
             var existing = File.Exists(path) ? File.ReadAllLines(path) : [];
@@ -314,7 +367,7 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
     /// <summary>The worktrees git knows of whose folder is directly inside the worktrees folder.</summary>
     private List<Tree> Ours(Place place)
     {
-        var home = RealPath(place.Home(settings));
+        var home = RealPath(place.Home(Folder));
         var trees = new List<Tree>();
         string? path = null, branch = null;
 
@@ -322,9 +375,12 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
         {
             if (line.StartsWith("worktree ", StringComparison.Ordinal)) { path = line[9..]; branch = null; }
             else if (line.StartsWith("branch refs/heads/", StringComparison.Ordinal)) branch = line[18..];
+            // ON THIS PLUGIN'S BRANCH TOO, not only in its folder: a worktree the user put in the
+            // folder on a branch of their own is theirs, and discarding it would delete that branch.
             else if (line.Length == 0 && path is not null)
             {
-                if (SamePath(RealPath(Path.GetDirectoryName(path)!), home))
+                if (SamePath(RealPath(Path.GetDirectoryName(path)!), home)
+                    && branch is not null && branch.StartsWith(settings.BranchPrefix, StringComparison.Ordinal))
                     trees.Add(new Tree(Path.GetFileName(path), path, branch));
                 path = null;
             }
@@ -337,7 +393,7 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
     private Outcome Missing(string folder, Place place, string name)
     {
         var names = Ours(place).Select(t => t.Name).ToList();
-        return Outcome.Refused($"no worktree called '{name}' in {Shown(place, place.Home(settings))}."
+        return Outcome.Refused($"no worktree called '{name}' in {Shown(place, place.Home(Folder))}."
             + (names.Count > 0 ? $" There is: {string.Join(", ", names)}." : " There are none."));
     }
 
@@ -355,8 +411,17 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
         return (ahead, Count(git.Run(tree.Path, "status", "--porcelain").Output));
     }
 
-    private int CountCommits(string top, string range) =>
-        int.TryParse(git.Run(top, "rev-list", "--count", range).Output.Trim(), out var n) ? n : 0;
+    /// <summary>How many commits a range holds, or -1 when git cannot say — never 0, which would
+    /// tell a discard there was nothing to lose.</summary>
+    private int CountCommits(string top, string range)
+    {
+        var counted = git.Run(top, "rev-list", "--count", range);
+        return counted.Ok && int.TryParse(counted.Output.Trim(), out var n) ? n : -1;
+    }
+
+    private static string Commits(int n) => n < 0 ? "an unknown number of commits" : $"{n} commit{(n == 1 ? "" : "s")}";
+
+    private static string Changes(int n) => $"{n} uncommitted change{(n == 1 ? "" : "s")}";
 
     private static int Count(string porcelain) => porcelain.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
 
@@ -388,7 +453,7 @@ public sealed class Worktrees(Git git, WorktreeSettings settings)
                 if (new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: true) is { } target)
                     current = Path.GetFullPath(target.FullName);
             }
-            catch (IOException) { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
         return Path.TrimEndingDirectorySeparator(current);
     }
