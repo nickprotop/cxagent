@@ -79,6 +79,9 @@
   <ItemGroup>
     <None Include="repo-map.plugin.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="README.md" CopyToOutputDirectory="PreserveNewest" />
+    <!-- EMBEDDED, so a query cannot go missing from an install the way a loose file can. -->
+    <EmbeddedResource Include="Queries/*.scm" LogicalName="RepoMap.Queries.%(Filename)%(Extension)" />
+    <None Include="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
