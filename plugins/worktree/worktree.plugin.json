@@ -3,11 +3,11 @@
   "name": "worktree",
   "version": "0.9.44",
   "spawns": true,
-  "instructions": "A worktree is a separate checkout of this repository on its own branch, inside your folder. Work done there does not touch the files you and the user are working on until it is merged, and can be thrown away whole.\n\nUse one when a change is risky, experimental, or should be reviewed before it lands — and above all for a sub-agent's work: worktree_create, then spawn the agent with root set to the folder it returns, so every edit it makes lands in the worktree. When it finishes, worktree_diff shows what it did; worktree_merge brings it into the user's current branch (and removes the worktree), worktree_discard throws it away. Both ask the user first.\n\nA worktree starts from the last commit. Uncommitted changes in your own folder are not in it.\n\nDo not edit a worktree's files yourself while a sub-agent is working in it, and do not discard one a sub-agent is still using.",
+  "instructions": "A worktree is a separate checkout of this repository on its own branch, inside your folder. Work done there does not touch the files you and the user are working on until it is merged, and can be thrown away whole.\n\nUse one when a change is risky, experimental, or should be reviewed before it lands \u2014 and above all for a sub-agent's work: worktree_create, then spawn the agent with root set to the folder it returns, so every edit it makes lands in the worktree. When it finishes, worktree_diff shows what it did; worktree_merge brings it into the user's current branch (and removes the worktree), worktree_discard throws it away. Both ask the user first.\n\nA worktree starts from the last commit. Uncommitted changes in your own folder are not in it.\n\nDo not edit a worktree's files yourself while a sub-agent is working in it, and do not discard one a sub-agent is still using.",
   "tools": [
     {
       "name": "worktree_create",
-      "description": "Creates a worktree: a separate checkout of this repository on a new branch, in a folder inside yours. Returns the folder — pass it as a sub-agent's root to have the agent work there.",
+      "description": "Creates a worktree: a separate checkout of this repository on a new branch, in a folder inside yours. Returns the folder \u2014 pass it as a sub-agent's root to have the agent work there.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -37,7 +37,7 @@
     },
     {
       "name": "worktree_diff",
-      "description": "Shows what a worktree changed since it was created — committed or not, new files included.",
+      "description": "Shows what a worktree changed since it was created \u2014 committed or not, new files included.",
       "inputSchema": {
         "type": "object",
         "properties": {
