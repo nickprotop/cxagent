@@ -56,8 +56,9 @@ code. Three test fixtures that align are not always worth merging.
 
 ## What it does not need
 
-No permission prompt. The tool reads source under the directory you point it at, writes nothing,
-starts no process and opens no connection.
+The tool reads source under the directory you point it at, writes nothing, starts no process and
+opens no connection.
 
-Approval is still asked once for the plugin itself, as for any plugin: that prompt is about
-trusting the binary, not about what the tool does.
+You are asked twice, as for any plugin. The first prompt asks whether to load the plugin, and is
+about trusting the binary. The second asks whether `find_clones` may be used in this folder; "Always
+allow" answers that for good. The tool itself adds no prompt of its own.
