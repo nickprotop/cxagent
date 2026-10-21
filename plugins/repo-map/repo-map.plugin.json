@@ -1,0 +1,31 @@
+{
+  "pluginContract": 2,
+  "name": "repo-map",
+  "version": "0.9.44",
+  "spawns": true,
+  "instructions": "Call repo_map FIRST when you need to know how a codebase is laid out — before listing directories or opening files to find your way around. One call returns the declarations that matter most (types, functions, methods, each with its line number), ranked by how much the rest of the code uses them, so you can open exactly the file and line you need.\n\nPass focus to centre the map on what you are working on: a file path, a folder, or a symbol name, comma-separated. The map then ranks what those use and what uses them first.\n\nThe map is an outline, not the code. Read the file before you change anything in it.\n\nRaise max_tokens only when the map says it left files out and you need them; a narrower path or a focus usually answers the question for less.",
+  "tools": [
+    {
+      "name": "repo_map",
+      "description": "Maps a codebase without reading it: the most-used files' declarations (types, functions, methods), each with its line number, ranked by how much the rest of the code uses them and cut to a token budget.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Folder to map, relative to yours, e.g. . or src/. Default ."
+          },
+          "focus": {
+            "type": "string",
+            "description": "What to centre the map on: file paths, folders or symbol names, comma-separated, e.g. src/Agent.cs,RunTurn. What they use and what uses them rank first."
+          },
+          "max_tokens": {
+            "type": "integer",
+            "description": "Roughly how large the map may be. Default 2048, at most 16384."
+          }
+        }
+      },
+      "gated": false
+    }
+  ]
+}
