@@ -76,6 +76,11 @@ public static class Outliner
         // Whether the line before ended a preprocessor line with a backslash — see below.
         var inMacro = false;
 
+        // GO'S `type ( … )`: the frame depth the group opened at, or -1 outside one. Each line in
+        // it declares a type without the keyword, and its parenthesis is the group's, not a call's
+        // — counted, it would hide the whole group.
+        var goGroup = -1;
+
         for (var i = 0; i < text.Code.Length; i++)
         {
             var line = text.Code[i];
@@ -91,12 +96,18 @@ public static class Outliner
                 continue;
             }
 
+            if (language == Language.Go && pending is null)
+            {
+                if (goGroup < 0 && GoTypeGroup.IsMatch(trimmed)) { goGroup = frames.Count; continue; }
+                if (goGroup == frames.Count && trimmed == ")") { goGroup = -1; continue; }
+            }
+
             var inContainer = frames.All(f => f.Kind == Frame.Container);
-            if (parens == 0 && pending is null && inContainer && trimmed.Length > 0 && !Skipped(trimmed))
+            if (parens == 0 && pending is null && inContainer && trimmed.Length > 0 && !Skipped(trimmed, language))
             {
                 // The type this line sits in, or null at file or namespace scope.
                 var typeName = frames.Any(f => !f.Namespace) ? frames.First(f => !f.Namespace).Name : null;
-                var found = Declaration(trimmed, language, typeName);
+                var found = goGroup == frames.Count ? GoGroupEntry(trimmed) : Declaration(trimmed, language, typeName);
                 if (found is { } d)
                 {
                     if (d.Kind != SymbolKind.Namespace && d.Name.Length > 0)
@@ -241,8 +252,12 @@ public static class Outliner
     private static readonly Regex PythonDecl = new(
         @"^(?:async\s+)?(?:def\s+(?<name>\w+)|(?<type>class)\s+(?<name>\w+))", RegexOptions.Compiled);
 
+    /// <summary>
+    /// A Ruby <c>def</c>, <c>class</c> or <c>module</c>. A method's name may be an operator —
+    /// <c>def [](key)</c>, <c>def []=(k, v)</c>, <c>def &lt;=&gt;(o)</c> — which is how a collection reads.
+    /// </summary>
     private static readonly Regex RubyDecl = new(
-        @"^(?:def\s+(?:self\.)?(?<name>[\w?!=]+)|(?<type>class|module)\s+(?<name>[\w:]+))", RegexOptions.Compiled);
+        @"^(?:def\s+(?:self\.)?(?<name>\[\]=?|[\w?!=]+|[+\-*/%<>=!~^&|]+)|(?<type>class|module)\s+(?<name>[\w:]+))", RegexOptions.Compiled);
 
     /// <summary>
     /// Lines no declaration starts on.
@@ -254,8 +269,13 @@ public static class Outliner
     /// <para>AND A LINE THAT CONTINUES AN EXPRESSION. One starting with an operator — <c>? a(…)</c>,
     /// <c>&amp;&amp; b(…)</c>, <c>.Select(…)</c> — is the middle of something an earlier line began.</para>
     /// </summary>
-    private static bool Skipped(string trimmed) =>
-        trimmed[0] is '#' or '}' or ')' or ']' or '?' or ':' or '.' or '+' or '-' or '/' or '%' or '|' or '&' or '=' or ',' or '!' or '<' or '>';
+    private static bool Skipped(string trimmed, Language language) =>
+        trimmed[0] is '#' or '}' or ')' or ']' or '?' or ':' or '.' or '+' or '-' or '/' or '%' or '|' or '&' or '=' or ',' or '!' or '>'
+        // A '<' CONTINUES A COMPARISON — except a Java or C# generic method's type parameters,
+        // which come before everything else: `<T extends Number> T make(…)`.
+        || (trimmed[0] == '<' && !(language.Family == Family.CLike && GenericMethodStart.IsMatch(trimmed)));
+
+    private static readonly Regex GenericMethodStart = new(@"^<[^()]*>\s+[\w@]", RegexOptions.Compiled);
 
     /// <summary>A declaration a line starts.</summary>
     /// <param name="Opens">What its brace, when it comes, opens.</param>
@@ -291,18 +311,21 @@ public static class Outliner
     /// quoted name is spaces.
     /// </summary>
     private static readonly Regex Transparent = new(
-        @"^(?:extern\s+""[^""]*""|declare\s+global|declare\s+module\s+""[^""]*"")\s*\{?\s*$", RegexOptions.Compiled);
+        @"^(?:extern\s+""[^""]*""|declare\s+global|declare\s+module\s+""[^""]*""" +
+        // PHP'S GUARDED HELPERS: `if (! function_exists('app')) {` around each function of a helpers
+        // file, which declares it globally all the same.
+        @"|if\s*\(\s*!\s*(?:function|class|interface|trait|enum)_exists\s*\(.*\)\s*\))\s*\{?\s*$", RegexOptions.Compiled);
 
     /// <summary>
     /// <c>[Attr]</c>, <c>@Decorator(…)</c> and C++'s <c>template&lt;…&gt;</c> in front of a
     /// declaration on the same line. Stripped so the rules below see the declaration itself.
     /// </summary>
     private static readonly Regex LeadingAnnotations = new(
-        @"^(?:(?:\[[^\]]*\]|@[\w.]+(?:\([^)]*\))?|template\s*<[^>]*>)\s*)+", RegexOptions.Compiled);
+        @"^(?:(?:\[[^\]]*\]|@(?!interface\b)[\w.]+(?:\([^)]*\))?|template\s*<[^>]*>)\s*)+", RegexOptions.Compiled);
 
     private static readonly Regex TypeDecl = new(
-        @"^(?:(?:public|private|protected|internal|static|sealed|abstract|partial|readonly|unsafe|file|ref|data|open|final|export|default|declare|inline|value|inner|companion|annotation|fileprivate|override|virtual|new|strictfp|non-sealed|enum)\s+)*" +
-        @"(?<kw>class|struct|interface|enum|record|namespace|module|object|trait|protocol|extension|union)\b(?:\s+(?:class|struct))?\s+(?<name>[A-Za-z_$][\w$]*)",
+        @"^(?:(?:public|private|protected|internal|static|sealed|abstract|partial|readonly|unsafe|file|ref|data|open|final|export|default|declare|inline|value|inner|companion|annotation|fileprivate|override|virtual|new|strictfp|non-sealed|enum|typedef)\s+)*" +
+        @"(?<kw>class|struct|interface|enum|record|namespace|module|object|trait|protocol|extension|union|@interface)\b(?:\s+(?:class|struct))?\s+(?<name>[A-Za-z_$][\w$]*)",
         RegexOptions.Compiled);
 
     /// <summary><c>var</c>, <c>val</c> or <c>let</c> and a name, behind any modifiers — Swift's <c>private(set)</c> included.</summary>
@@ -337,18 +360,47 @@ public static class Outliner
     private static Found? CLikeDeclaration(string line, Language language, string? typeName)
     {
         var inType = typeName is not null;
+        // A RETURN TYPE WRITTEN AS A MACRO — cJSON's `CJSON_PUBLIC(void) cJSON_free(…)` — reads as one
+        // word here, so the call it looks like is not taken for the function. Same length, so every
+        // position below still points into the line as written.
+        if (language == Language.C && MacroReturnType.Match(line) is { Success: true } macro)
+            line = Regex.Replace(macro.Value, @"[^\w\s]", "_") + line[macro.Length..];
+
         // `struct foo bar = {…}` and `X y = new X(…)` assign; a declaration does not.
         var paren = line.IndexOf('(');
         var assign = AssignmentAt(line);
 
         var type = TypeDecl.Match(line);
+        // `object` IS A TYPE IN C#, not Kotlin's or Scala's keyword: `private readonly object _lock;` is a field.
+        if (type.Success && type.Groups["kw"].Value == "object" && language != Language.Jvm) type = Match.Empty;
         if (type.Success && assign < 0)
         {
             // A FORWARD DECLARATION (`class Foo;`) says a type exists somewhere else; the map
             // shows it where it is defined.
             if (Regex.IsMatch(line, @"^(?:\w+\s+)*(?:class|struct|union|enum)\s+\w+\s*;$")) return null;
-            return TypeFound(type);
+            // A VARIABLE OF A TYPE (`struct sigaction sa;`, `struct node *head;`) declares the variable,
+            // not the type.
+            if (Regex.IsMatch(line[(type.Index + type.Length)..], @"^\s*\**\s*\w+\s*(?:\[[^\]]*\])?\s*[;,]")) return null;
+            return TypeFound(type, language);
         }
+
+        // A C TYPEDEF THAT NAMES AN EXISTING TYPE — `typedef SRWLOCK cxp_lock;` — or a function
+        // pointer: `typedef cxp_result (*cxp_tool_fn)(…)` names the type cxp_tool_fn.
+        if (language == Language.C && SimpleTypedef.Match(line) is { Success: true } td)
+            return new Found(td.Groups["name"].Value, SymbolKind.Type, Frame.Body);
+        if (language == Language.C && FunctionPointerTypedef.Match(line) is { Success: true } fp)
+            return new Found(fp.Groups["name"].Value, SymbolKind.Type, Frame.Body);
+
+        // A C# INDEXER: `public object this[string key]`, no name of its own and no parentheses.
+        if (language.Properties && inType && CSharpIndexer.IsMatch(line))
+            return new Found("this", SymbolKind.Member, Frame.Body);
+
+        // A C# PROPERTY WITH ITS BRACE ON THE NEXT LINE — `public string FullName` and nothing else on
+        // the line. A field ends in `;` or `=`, a method has its parameters, so a type body's line of
+        // words ending in a name is a property whose accessors follow.
+        if (language.Properties && inType && assign < 0 && paren < 0 && AllmanProperty.Match(line) is { Success: true } ap
+            && !StatementWords.Contains(line.Split(' ', 2)[0]))
+            return new Found(ap.Groups["name"].Value, SymbolKind.Member, Frame.Body);
 
         // A C# PROPERTY BEFORE ANY CALL ON ITS LINE. `Progress => Reports.OfType<P>()` has a
         // parenthesis, but it is in the expression body: the `=>` or `{ get` that makes the line a
@@ -371,7 +423,18 @@ public static class Outliner
         {
             var head = line[..paren].TrimEnd();
             var name = NameAtEnd(head, out var before);
-            if (name is null || NotNames.Contains(name)) return null;
+            // A KEYWORD-LIKE NAME AFTER `function` IS STILL A NAME: Laravel's middleware declares `using(`.
+            if (name is null || (NotNames.Contains(name) && !FunctionKeywordBefore.IsMatch(before))) return null;
+
+            // A CALL THROUGH AN OBJECT OR A CLASS — `$middleware->trustProxies(`, `Route::get(` — declares
+            // nothing. `::` only in PHP: in C++ it qualifies the very name being defined.
+            if (before.EndsWith("->", StringComparison.Ordinal)
+                || (language == Language.Php && before.EndsWith("::", StringComparison.Ordinal)))
+                return null;
+
+            // A C FUNCTION-POINTER VARIABLE — `static void (*oldHandler)(int)` — has a `(` before its
+            // name, so what stands before it is the return type, not a function's name.
+            if (language == Language.C && line[(paren + 1)..].TrimStart().StartsWith('*')) return null;
 
             var pre = before.Trim();
             var words = pre.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
@@ -390,6 +453,8 @@ public static class Outliner
             // `tasks.register<Copy>(` is a call as surely as `tasks.register(` is.
             if (before.EndsWith('.') && !(words.Length >= 2 && IsTypeWord(words[^2])))
                 return null;
+            // AND WITH TYPE ARGUMENTS IN BETWEEN: Java's `ImmutableSet.<String>builder(` is a call.
+            if (ExplicitTypeArguments.IsMatch(before)) return null;
 
             // MARKUP IS NOT A RETURN TYPE. A brace in front of the name puts the call inside
             // something — a PHP view's `{{ app()->version() }}` — and no declaration's head has one.
@@ -401,13 +466,36 @@ public static class Outliner
         return null;
     }
 
-    /// <summary>An enum's body is its values, not members anyone calls, so it opens no container.</summary>
-    private static Found TypeFound(Match type) => type.Groups["kw"].Value switch
+    /// <summary>
+    /// An enum's body is its values, not members anyone calls, so it opens no container — except in
+    /// Java and its relatives, where an enum declares methods after its constants. A constant's own
+    /// body there (<c>HASH { … }</c>) is a block no declaration claims, and stays hidden.
+    /// </summary>
+    private static Found TypeFound(Match type, Language language) => type.Groups["kw"].Value switch
     {
         "namespace" or "module" => new Found(type.Groups["name"].Value, SymbolKind.Namespace, Frame.Container),
-        "enum" => new Found(type.Groups["name"].Value, SymbolKind.Type, Frame.Body),
+        "enum" when language != Language.Jvm => new Found(type.Groups["name"].Value, SymbolKind.Type, Frame.Body),
         _ => new Found(type.Groups["name"].Value, SymbolKind.Type, Frame.Container),
     };
+
+    /// <summary>A macro call standing where a C return type would: <c>CJSON_PUBLIC(void)</c> before a name and its parameters.</summary>
+    private static readonly Regex MacroReturnType = new(@"^(?:\w+\s+)*[A-Z_][A-Z0-9_]*\([^()]*\)(?=\s+[\w*][\w\s*]*\()", RegexOptions.Compiled);
+
+    /// <summary><c>typedef</c> an existing type to a new name, ending on its line.</summary>
+    private static readonly Regex SimpleTypedef = new(@"^typedef\s+(?!struct\b|union\b|enum\b)[\w\s]+?[\s*]+(?<name>\w+)\s*;$", RegexOptions.Compiled);
+
+    private static readonly Regex FunctionPointerTypedef = new(@"^typedef\s+[^(]*\(\s*\*\s*(?<name>\w+)\s*\)\s*\(", RegexOptions.Compiled);
+
+    private static readonly Regex CSharpIndexer = new(@"^(?:[\w<>\[\],.?]+\s+)+this\s*\[", RegexOptions.Compiled);
+
+    /// <summary>Words, then a name, then nothing: a C# property whose <c>{</c> is on the next line.</summary>
+    private static readonly Regex AllmanProperty = new(@"^(?:[\w<>\[\],.?]+\s+)+(?<name>[A-Za-z_]\w*)$", RegexOptions.Compiled);
+
+    /// <summary>The <c>function</c> keyword right before a name, PHP's or JavaScript's.</summary>
+    private static readonly Regex FunctionKeywordBefore = new(@"\bfunction\s*&?\s*$", RegexOptions.Compiled);
+
+    /// <summary>A dot and type arguments right before a name: Java's explicit <c>.&lt;T&gt;name(</c>.</summary>
+    private static readonly Regex ExplicitTypeArguments = new(@"\.\s*<[^()]*>\s*$", RegexOptions.Compiled);
 
     /// <summary>A word that can be a return type or a modifier: an identifier, perhaps generic, an array or nullable.</summary>
     private static bool IsTypeWord(string word) => Regex.IsMatch(word, @"^[A-Za-z_][\w.]*(?:<.*>)?[\[\]?*&]*$");
@@ -468,6 +556,15 @@ public static class Outliner
     private static readonly Regex GoFunc = new(@"^func\s+(?:\([^)]*\)\s*)?(?<name>\w+)\s*[\[(]", RegexOptions.Compiled);
     private static readonly Regex GoType = new(@"^type\s+(?<name>\w+)(?:\[[^\]]*\])?\s+(?<kw>struct|interface)?", RegexOptions.Compiled);
     private static readonly Regex GoMethod = new(@"^(?<name>[A-Za-z_]\w*)\s*\(", RegexOptions.Compiled);
+
+    private static readonly Regex GoTypeGroup = new(@"^type\s*\($", RegexOptions.Compiled);
+    private static readonly Regex GoGroupType = new(@"^(?<name>[A-Za-z_]\w*)(?:\[[^\]]*\])?\s*(?:=\s*)?(?<kw>struct|interface)?\b", RegexOptions.Compiled);
+
+    /// <summary>One line of a <c>type ( … )</c> group: a type, named first, its keyword left out.</summary>
+    private static Found? GoGroupEntry(string line) =>
+        GoGroupType.Match(line) is { Success: true } t
+            ? new Found(t.Groups["name"].Value, SymbolKind.Type, t.Groups["kw"].Value == "interface" ? Frame.Container : Frame.Body)
+            : null;
 
     private static Found? GoDeclaration(string line, bool inType)
     {
@@ -537,7 +634,7 @@ public static class Outliner
         if (ScriptTypeAlias.Match(line) is { Success: true } ta) return new Found(ta.Groups["name"].Value, SymbolKind.Type, Frame.Body);
 
         var type = TypeDecl.Match(line);
-        if (type.Success) return TypeFound(type);
+        if (type.Success) return TypeFound(type, Language.Script);
 
         // A CLASS BODY'S METHODS HAVE NOTHING IN FRONT OF THEIR NAME — `render() {` — so the rule
         // that refuses a bare call at file scope must allow one here. A class body holds no

@@ -23,10 +23,11 @@ public sealed record Stripped(string[] Code, string[] Display);
 /// and quotes it from <see cref="Stripped.Display"/> at the same columns; removing a comment would
 /// shift one against the other, and a signature would be cut in the wrong place.</para>
 ///
-/// <para>WRONG IS LOCAL. A string this does not recognise — a C# interpolation with quotes nested
-/// inside it, say — ends at the line, not at the end of the file: an ordinary string cannot span
-/// lines in any language here, so a newline inside one is taken as the end of it. One bad line
-/// costs one declaration, not the rest of the file.</para>
+/// <para>WRONG IS LOCAL, WHERE IT CAN BE. A string this does not recognise — a C# interpolation with
+/// quotes nested inside it, say — ends at the line, not at the end of the file: where an ordinary
+/// string cannot span lines, a newline inside one is taken as the end of it, and one bad line costs
+/// one declaration, not the rest of the file. Rust and PHP strings do span lines
+/// (<see cref="Language.SpanningStrings"/>), and there one is read to its closing quote.</para>
 /// </summary>
 public static class Stripper
 {
@@ -157,11 +158,25 @@ public static class Stripper
                 continue;
             }
 
+            // A RUST RAW STRING — r"…", r#"…"# — escapes nothing and ends only at its own quote and
+            // hashes, so a quote inside one (`r#"{ "a": 1 }"#`) does not end it.
+            if (language.Family == Family.Rust && c == 'r' && (next == '"' || next == '#') && RawQuoteAt(text, i) is > 0 and var quote)
+            {
+                for (var j = i; j < quote; j++) Keep(text[j]);
+                closer = "\"" + new string('#', quote - i - 1);
+                escapes = false; spansLines = true;
+                i = quote;
+                Open("\"");
+                continue;
+            }
+
             if (c == '"' || (c == '\'' && !IsLifetime(text, i, language)) || (c == '`' && language.Backticks))
             {
                 closer = c.ToString();
                 escapes = !(c == '`' && language.Family == Family.Go) && !(c == '\'' && language.Family == Family.Shell);
-                spansLines = c == '`' || (c == '\'' && language.Family == Family.Shell);
+                spansLines = c == '`' || (c == '\'' && language.Family == Family.Shell)
+                    // A RUST CHARACTER (`'{'`) IS ONE CHARACTER, never a line's worth.
+                    || (language.SpanningStrings && !(c == '\'' && language.Family == Family.Rust));
                 Open(closer);
                 continue;
             }
@@ -190,6 +205,19 @@ public static class Stripper
     {
         if (language.Family != Family.Shell) return true;
         return i == 0 || char.IsWhiteSpace(text[i - 1]) || text[i - 1] == ';';
+    }
+
+    /// <summary>
+    /// Where a Rust raw string's opening quote is — the <c>"</c> after <c>r</c> and any <c>#</c> —
+    /// or -1 when this <c>r</c> starts no raw string: it is the end of a name (<c>for</c>), or a name
+    /// itself (<c>r</c> as a variable).
+    /// </summary>
+    private static int RawQuoteAt(string text, int i)
+    {
+        if (i > 0 && (char.IsLetterOrDigit(text[i - 1]) || text[i - 1] == '_')) return -1;
+        var j = i + 1;
+        while (j < text.Length && text[j] == '#') j++;
+        return j < text.Length && text[j] == '"' ? j : -1;
     }
 
     /// <summary>

@@ -733,5 +733,237 @@ public class OutlinerTests
             }
             """"));
     }
-}
 
+    /// <summary>
+    /// A C# PROPERTY WITH ITS BRACE ON THE NEXT LINE is a property: Newtonsoft writes them all that
+    /// way. And <c>object</c> is C#'s type, not Kotlin's keyword — a field typed with it is a field.
+    /// </summary>
+    [Fact]
+    public void CSharp_AnAllmanProperty_IsAProperty_AndAnObjectFieldIsNotAType()
+    {
+        Assert.Equal(
+        [
+            "1:0:class Person",
+            "3:1:public string FullName",
+            "7:1:public override bool CanRead",
+        ], Outline("Person.cs", """
+            class Person
+            {
+                public string FullName
+                {
+                    get { return First + " " + Last; }
+                }
+                public override bool CanRead
+                {
+                    get { return true; }
+                }
+                private readonly object _lock;
+            }
+            """));
+    }
+
+    /// <summary>
+    /// JAVA'S OWN SHAPES: an annotation type, a generic method whose type parameters come first, an
+    /// enum with methods after its constants — and a call with explicit type arguments, which is
+    /// not a declaration.
+    /// </summary>
+    [Fact]
+    public void Java_AnnotationTypesGenericMethodsAndEnumMethods_ButNotAGenericCall()
+    {
+        Assert.Equal(
+        [
+            "1:0:public @interface Marked",
+            "2:0:interface Factory",
+            "3:1:<T extends Number> T make(Class<T> type)",
+            "5:0:public enum Impl",
+            "10:1:abstract int size()",
+            "11:1:static Impl parse(String s)",
+            "13:0:class Holder",
+        ], Outline("Impl.java", """
+            public @interface Marked {}
+            interface Factory {
+                <T extends Number> T make(Class<T> type);
+            }
+            public enum Impl {
+                Hash {
+                    @Override
+                    int size() { return 1; }
+                };
+                abstract int size();
+                static Impl parse(String s) { return Hash; }
+            }
+            class Holder {
+                static final Set<String> NAMES =
+                    ImmutableSet.<String>builder().add("a").build();
+            }
+            """));
+    }
+
+    /// <summary>
+    /// PHP: a helpers file declares its functions inside <c>if (! function_exists(…))</c>, and they
+    /// are the file's API; a method may be named like another language's keyword; a call through
+    /// <c>-&gt;</c> or <c>::</c> at the top of a script declares nothing.
+    /// </summary>
+    [Fact]
+    public void Php_GuardedFunctionsAndKeywordNamedMethods_ButNotCalls()
+    {
+        Assert.Equal(
+        [
+            "3:0:function app($abstract = null)",
+            "10:0:class Authorize",
+            "12:1:public static function using($ability, ...$models)",
+        ], Outline("helpers.php", """
+            <?php
+            if (! function_exists('app')) {
+                function app($abstract = null)
+                {
+                    return Container::getInstance();
+                }
+            }
+            $middleware->trustProxies(at: '*');
+            Route::get('/', fn () => view('welcome'));
+            class Authorize
+            {
+                public static function using($ability, ...$models)
+                {
+                }
+            }
+            """));
+    }
+
+    /// <summary>GO'S GROUPED TYPES: <c>type ( … )</c> declares each line inside it.</summary>
+    [Fact]
+    public void Go_TypesInAGroup()
+    {
+        Assert.Equal(
+        [
+            "4:0:formBinding struct",
+            "5:0:Handler interface",
+            "6:1:Serve() error",
+            "8:0:ID int",
+            "11:0:type Single struct",
+        ], Outline("a.go", """
+            package a
+
+            type (
+            	formBinding struct{}
+            	Handler     interface {
+            		Serve() error
+            	}
+            	ID int
+            )
+
+            type Single struct {
+            	A int
+            }
+            """));
+    }
+
+    /// <summary>
+    /// C: a return type written as a macro (<c>CJSON_PUBLIC(void)</c>) and a typedef are
+    /// declarations; a variable of a struct type and a function-pointer variable are not.
+    /// </summary>
+    [Fact]
+    public void C_MacroReturnTypesAndTypedefs_ButNotVariables()
+    {
+        Assert.Equal(
+        [
+            "1:0:typedef SRWLOCK cxp_lock",
+            "2:0:typedef struct cJSON_Hooks",
+            "5:0:CJSON_PUBLIC(void) cJSON_free(void *object)",
+        ], Outline("cjson.c", """
+            typedef SRWLOCK cxp_lock;
+            typedef struct cJSON_Hooks {
+                void *(*malloc_fn)(size_t sz);
+            } cJSON_Hooks;
+            CJSON_PUBLIC(void) cJSON_free(void *object)
+            {
+            }
+            struct sigaction sa;
+            static void (*oldHandler)(int, siginfo_t*, void*);
+            """));
+    }
+
+    /// <summary>RUBY'S OPERATOR METHODS are methods: <c>def [](key)</c> is how a hash-like class reads.</summary>
+    [Fact]
+    public void Ruby_OperatorMethods()
+    {
+        Assert.Equal(
+        [
+            "1:0:class IndifferentHash < Hash",
+            "2:1:def [](key)",
+            "5:1:def []=(key, value)",
+            "8:1:def ==(other)",
+        ], Outline("hash.rb", """
+            class IndifferentHash < Hash
+              def [](key)
+                super(convert_key(key))
+              end
+              def []=(key, value)
+                super
+              end
+              def ==(other)
+                true
+              end
+            end
+            """));
+    }
+
+    /// <summary>
+    /// A STRING SPANNING LINES, where the language allows one and this reads it — Rust, PHP — is a
+    /// string to its end; in Ruby the line ends it, and still hides nothing after. Read as code past its first line, a help text's braces would hide every declaration after it.
+    /// </summary>
+    [Theory]
+    [InlineData("a.rs", "const T: &'static str = \"\n_rg() {\n  local i\n\";\n\npub(crate) fn generate() -> String {\n}\n", "6:0:pub(crate) fn generate() -> String")]
+    [InlineData("b.rs", "const T: &str = r#\"\n{ \"quoted\" }\n\"#;\n\nfn after() {\n}\n", "5:0:fn after()")]
+    [InlineData("a.php", "<?php\n$sql = \"select {\n  from x\";\nfunction after()\n{\n}\n", "4:0:function after()")]
+    [InlineData("a.rb", "HELP = \"usage {\n  more\"\ndef after\nend\n", "3:0:def after")]
+    public void AStringAcrossLines_HidesNothingAfterIt(string path, string source, string expected)
+    {
+        Assert.Contains(expected, Outline(path, source));
+    }
+
+    /// <summary>
+    /// A RUBY REGEX WITH QUOTES IN IT hides nothing after it: sinatra's header pattern has three
+    /// double quotes, and read as a string that runs on, it would swallow the whole class below it.
+    /// </summary>
+    [Fact]
+    public void Ruby_ARegexWithQuotes_HidesNothingAfterIt()
+    {
+        Assert.Equal(["1:0:class Request", "3:1:def accept", "5:1:def safe?"], Outline("base.rb", """
+            class Request
+              HEADER_PARAM = /\s*[\w.]+=(?:[\w.]+|"(?:[^"\\]|\\.)*")?\s*/.freeze
+              def accept
+              end
+              def safe?
+              end
+            end
+            """));
+    }
+
+    /// <summary>A C# INDEXER is a member, named for what it is: <c>this[…]</c>.</summary>
+    [Fact]
+    public void CSharp_AnIndexer_IsAMember()
+    {
+        Assert.Equal(["1:0:class Bag", "3:1:public object this[string key]", "4:1:protected internal object this[int index]"], Outline("Bag.cs", """
+            class Bag
+            {
+                public object this[string key] => _items[key];
+                protected internal object this[int index]
+                {
+                    get { return null; }
+                }
+            }
+            """));
+    }
+
+    /// <summary>A C TYPEDEF OF A FUNCTION POINTER names a type: <c>cxp_tool_fn</c> is what a plugin's tools are.</summary>
+    [Fact]
+    public void C_AFunctionPointerTypedef_IsAType()
+    {
+        Assert.Equal(["1:0:typedef cxp_result (*cxp_tool_fn)(const cxp_call *call)"], Outline("cxp.h", """
+            typedef cxp_result (*cxp_tool_fn)(const cxp_call *call);
+            static int (*handler)(int);
+            """));
+    }
+}

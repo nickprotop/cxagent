@@ -58,6 +58,20 @@ public sealed record Language(string Name, Family Family)
     /// </summary>
     public bool SameLineBraces { get; init; }
 
+    /// <summary>
+    /// Whether an ordinary quoted string may run across lines — Rust's and PHP's do, and a help text
+    /// or an SQL query written that way is common.
+    ///
+    /// <para>NOT THE DEFAULT. Where a string cannot span lines, ending one at the newline keeps a
+    /// quote this cannot read local to its line; where it can, ending it there reads the rest of
+    /// the string as code, and its braces hide every declaration after it.</para>
+    ///
+    /// <para>NOT RUBY, though its strings span lines too: a regex literal with a quote in it
+    /// (sinatra's <c>/="(?:[^"\\]|\\.)*"/</c>), <c>%r{…}</c> and heredocs are syntax this does not read,
+    /// and one odd quote among them would then swallow the rest of the file instead of a line.</para>
+    /// </summary>
+    public bool SpanningStrings { get; init; }
+
     /// <summary>C#'s <c>{ get; }</c> properties, which carry no parameter list for the method rule to find.</summary>
     public bool Properties { get; init; }
 
@@ -108,13 +122,13 @@ public sealed record Language(string Name, Family Family)
 
     public static readonly Language C = new("C", Family.CLike) { SlashComments = true };
 
-    public static readonly Language Php = new("PHP", Family.CLike) { SlashComments = true, HashComments = true };
+    public static readonly Language Php = new("PHP", Family.CLike) { SlashComments = true, HashComments = true, SpanningStrings = true };
 
     public static readonly Language Script = new("JavaScript", Family.Script) { SlashComments = true, Backticks = true, SameLineBraces = true, RegexLiterals = true };
 
     public static readonly Language Go = new("Go", Family.Go) { SlashComments = true, Backticks = true, SameLineBraces = true };
 
-    public static readonly Language Rust = new("Rust", Family.Rust) { SlashComments = true, Lifetimes = true };
+    public static readonly Language Rust = new("Rust", Family.Rust) { SlashComments = true, Lifetimes = true, SpanningStrings = true };
 
     public static readonly Language Python = new("Python", Family.Python) { HashComments = true, TripleQuotes = true };
 
