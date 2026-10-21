@@ -174,7 +174,29 @@ public class RankerTests
     [InlineData("src/latest.ts", false)]
     [InlineData("src/Contest.java", false)]
     [InlineData("src/testing_utils.py", false)]
+    [InlineData("docs/js/typeahead.jquery.js", true)]
+    [InlineData("src/docs.go", false)]
     public void AsidePaths_AreRecognised(string path, bool aside) =>
         Assert.Equal(aside, Ranker.IsAside(path));
-}
 
+    /// <summary>
+    /// A FILE THAT SAYS IT IS GENERATED OR VENDORED IS ASIDE wherever it sits: a bundled C library in
+    /// an SDK folder, a protobuf stub beside the code that uses it.
+    /// </summary>
+    [Fact]
+    public void AFileMarkedAside_RanksBelowTheProjectsOwn()
+    {
+        var files = new[]
+        {
+            File("src/engine.c", ["engine_core"]),
+            File("sdk/c/cJSON.c", ["cJSON_Parse"]) with { Aside = true },
+            File("src/a.c", ["alpha_user"], "engine_core", "cJSON_Parse"),
+            File("src/b.c", ["beta_user"], "engine_core", "cJSON_Parse"),
+            File("src/c.c", ["gamma_user"], "cJSON_Parse"),
+            File("src/d.c", ["delta_user"], "cJSON_Parse"),
+        };
+
+        var order = Ranker.Rank(files, []).Files.Select(f => f.Path).ToList();
+        Assert.True(order.IndexOf("src/engine.c") < order.IndexOf("sdk/c/cJSON.c"), string.Join(", ", order));
+    }
+}

@@ -66,6 +66,27 @@ public class FileSourceTests
     }
 
     /// <summary>
+    /// GIT ALSO SAYS WHAT IS VENDORED OR GENERATED, through .gitattributes — GitHub's own
+    /// <c>linguist-vendored</c> and <c>linguist-generated</c>. A file marked either way is listed,
+    /// and ranked aside.
+    /// </summary>
+    [Fact]
+    public void GitattributesMarkingVendoredOrGenerated_IsRead()
+    {
+        using var tree = new TempTree()
+            .Write(".gitattributes", "lib/cJSON.c linguist-vendored\napi.pb.go linguist-generated=true\nown.c linguist-vendored=false\n")
+            .Write("lib/cJSON.c", "int cJSON_Parse(void) { return 0; }\n")
+            .Write("api.pb.go", "package a\n")
+            .Write("own.c", "int own(void) { return 0; }\n");
+        tree.Git("init", "-q").Git("add", ".");
+
+        var list = FileSource.List(tree.Root, _ => { });
+        var marked = list.Vendored.Select(f => Path.GetRelativePath(tree.Root, f).Replace('\\', '/')).Order().ToList();
+
+        Assert.Equal(["api.pb.go", "lib/cJSON.c"], marked);
+    }
+
+    /// <summary>
     /// A HOST THAT CANNOT RECORD git DOES NOT COST THE LIST. A host older than 0.9.44 throws when
     /// the process exits in the instant it is being recorded; git's answer is still the one to use.
     /// </summary>
@@ -263,5 +284,24 @@ public class MapTests
         Assert.Contains("def f()", map);
         Assert.DoesNotContain("read as text", map);
         Assert.DoesNotContain("without Tree-sitter", map);
+    }
+
+    /// <summary>A FILE .gitattributes CALLS VENDORED RANKS BELOW THE PROJECT'S OWN, however much the project calls it.</summary>
+    [Fact]
+    public async Task AVendoredFile_RanksBelowTheProjectsOwn()
+    {
+        using var tree = new TempTree()
+            .Write(".gitattributes", "lib/cjson.c linguist-vendored\n")
+            .Write("lib/cjson.c", "int cjson_parse(void) { return 0; }\n")
+            .Write("engine.c", "int engine_core(void) { return 0; }\n")
+            .Write("a.c", "int alpha_user(void) { return engine_core() + cjson_parse(); }\n")
+            .Write("b.c", "int beta_user(void) { return engine_core() + cjson_parse(); }\n")
+            .Write("c.c", "int gamma_user(void) { return cjson_parse(); }\n")
+            .Write("d.c", "int delta_user(void) { return cjson_parse(); }\n");
+        tree.Git("init", "-q").Git("add", ".");
+
+        var map = await Map(tree);
+
+        Assert.True(map.IndexOf("engine.c\n", StringComparison.Ordinal) < map.IndexOf("lib/cjson.c\n", StringComparison.Ordinal), map);
     }
 }

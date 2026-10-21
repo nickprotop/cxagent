@@ -6,7 +6,12 @@ namespace CxAgent.Plugins.RepoMap;
 /// <param name="Path">Relative to the mapped folder, with forward slashes.</param>
 /// <param name="Symbols">Its declarations, in source order.</param>
 /// <param name="Mentions">Every identifier in its code, comments and strings excluded, with how often it appears.</param>
-public sealed record FileOutline(string Path, IReadOnlyList<Symbol> Symbols, IReadOnlyDictionary<string, int> Mentions);
+public sealed record FileOutline(string Path, IReadOnlyList<Symbol> Symbols, IReadOnlyDictionary<string, int> Mentions)
+{
+    /// <summary>Whether the file says it is generated or vendored — in its first lines, or through
+    /// .gitattributes — and ranks aside whatever its path; see <see cref="Ranker.IsAside"/> for the path rules.</summary>
+    public bool Aside { get; init; }
+}
 
 /// <summary>The files in rank order, best first, and how many other files mention each symbol's name.</summary>
 /// <param name="Files">Every file that declares something, best first.</param>
@@ -86,7 +91,7 @@ public static class Ranker
         // word (`Message`, `count`) is written for a dozen reasons in every file, so it weighs a
         // tenth as much. And mentions count by their square root: a file that names a type forty
         // times uses it more than one that names it once, but not forty times more.
-        var aside = files.Select(f => IsAside(f.Path)).ToArray();
+        var aside = files.Select(f => f.Aside || IsAside(f.Path)).ToArray();
         var outgoing = new Dictionary<int, double>[n];
         for (var a = 0; a < n; a++)
         {
@@ -166,6 +171,9 @@ public static class Ranker
     private static readonly HashSet<string> AsideFolders = new(StringComparer.OrdinalIgnoreCase)
     {
         "test", "tests", "spec", "testdata", "fixtures", "__tests__", "__mocks__", "vendor", "third_party",
+        // A DOCS FOLDER holds examples and the site a documentation generator wrote — Alamofire's
+        // committed docset carries jQuery plugins that would otherwise lead its map.
+        "docs",
     };
 
     /// <summary>

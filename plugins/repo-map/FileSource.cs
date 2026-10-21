@@ -6,7 +6,11 @@ namespace CxAgent.Plugins.RepoMap;
 /// <param name="Files">Absolute paths, in a stable ordinal order so the same tree maps the same way.</param>
 /// <param name="FromGit">Whether git chose them, or the walk this falls back to without it.</param>
 /// <param name="Truncated">Whether the folder held more readable files than one map reads.</param>
-public sealed record FileList(IReadOnlyList<string> Files, bool FromGit, bool Truncated);
+public sealed record FileList(IReadOnlyList<string> Files, bool FromGit, bool Truncated)
+{
+    /// <summary>The listed files .gitattributes marks <c>linguist-vendored</c> or <c>linguist-generated</c>, as absolute paths.</summary>
+    public IReadOnlySet<string> Vendored { get; init; } = new HashSet<string>();
+}
 
 /// <summary>
 /// Which files under a folder a map reads.
@@ -59,7 +63,11 @@ public static class FileSource
         readable.Sort(StringComparer.Ordinal);
 
         var truncated = readable.Count > MaxFiles;
-        return new FileList(truncated ? readable.Take(MaxFiles).ToList() : readable, fromGit is not null, truncated);
+        var files = truncated ? readable.Take(MaxFiles).ToList() : readable;
+        return new FileList(files, fromGit is not null, truncated)
+        {
+            Vendored = fromGit is null ? new HashSet<string>() : MarkedVendored(root, files, onProcess),
+        };
     }
 
     private static bool IsPlainFile(string path)
@@ -132,6 +140,69 @@ public static class FileSource
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The files .gitattributes marks <c>linguist-vendored</c> or <c>linguist-generated</c> — GitHub's
+    /// own way to say "not ours" — or none when git cannot answer.
+    ///
+    /// <para>ONE git PROCESS FOR THE WHOLE LIST, fed on stdin: a process per file would cost a
+    /// large repository seconds.</para>
+    /// </summary>
+    private static HashSet<string> MarkedVendored(string root, IReadOnlyList<string> files, Action<int> onProcess)
+    {
+        var marked = new HashSet<string>(StringComparer.Ordinal);
+        if (files.Count == 0) return marked;
+        try
+        {
+            var psi = new ProcessStartInfo("git")
+            {
+                WorkingDirectory = root,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            foreach (var arg in new[] { "check-attr", "-z", "--stdin", "linguist-vendored", "linguist-generated" })
+                psi.ArgumentList.Add(arg);
+
+            using var git = Process.Start(psi);
+            if (git is null) return marked;
+            if (!git.HasExited)
+            {
+                // See GitFiles: a host older than 0.9.44 can throw here, and the command still works.
+                try { onProcess(git.Id); }
+                catch (System.ComponentModel.Win32Exception) { }
+            }
+
+            var stderr = git.StandardError.ReadToEndAsync();
+            var output = git.StandardOutput.ReadToEndAsync();
+            // WRITTEN WHILE IT IS READ: a long list would fill the pipe both ways at once otherwise.
+            var written = Task.Run(() =>
+            {
+                foreach (var file in files) { git.StandardInput.Write(Path.GetRelativePath(root, file)); git.StandardInput.Write('\0'); }
+                git.StandardInput.Close();
+            });
+            if (!git.WaitForExit(30_000))
+            {
+                try { git.Kill(entireProcessTree: true); } catch (Exception) { }
+                return marked;
+            }
+            written.Wait();
+            _ = stderr.Result;
+            if (git.ExitCode != 0) return marked;
+
+            // -z: <path> NUL <attribute> NUL <value> NUL, three fields per answer.
+            var fields = output.Result.Split('\0');
+            for (var i = 0; i + 2 < fields.Length; i += 3)
+                if (fields[i + 2] is "set" or "true")
+                    marked.Add(Path.GetFullPath(Path.Combine(root, fields[i])));
+        }
+        catch (Exception)
+        {
+            // Without git's answer nothing is marked, and the path rules still apply.
+        }
+        return marked;
     }
 
     private static List<string> Walk(string root)

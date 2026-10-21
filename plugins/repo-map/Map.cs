@@ -50,7 +50,8 @@ public static class Map
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
 
                 var relative = Path.GetRelativePath(request.Root, file).Replace('\\', '/');
-                outlines.Add(Parsing.FileReader.Outline(relative, text, language, engine));
+                var outline = Parsing.FileReader.Outline(relative, text, language, engine);
+                outlines.Add(list.Vendored.Contains(file) ? outline with { Aside = true } : outline);
             }
             // Copied before the engine is disposed with this map.
             notes = engine.Notes.ToList();
