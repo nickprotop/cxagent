@@ -16,7 +16,14 @@ internal sealed class FakeContext(string folder) : IPluginContext
     public string HostVersion => "0.0.0";
     public IPluginLogger Logger { get; } = new NullLogger();
     public CancellationToken Lifetime => CancellationToken.None;
-    public void RegisterChildProcess(int processId) => Children.Add(processId);
+    /// <summary>Whether each registered process was still running when it was registered — -1 for one that was not.</summary>
+    public List<int> Running { get; } = [];
+    public void RegisterChildProcess(int processId)
+    {
+        Children.Add(processId);
+        try { using var p = System.Diagnostics.Process.GetProcessById(processId); Running.Add(processId); }
+        catch (ArgumentException) { Running.Add(-1); }
+    }
 
     private sealed class NullLogger : IPluginLogger { public void Log(string message) { } }
 }
@@ -88,6 +95,26 @@ public class PluginTests
         Assert.Contains("outside", result.ErrorMessage);
     }
 
+    /// <summary>
+    /// A TRACKED FILE UNDER A FOLDER THAT IS NOW A LINK is judged by where it lands. git lists it
+    /// from its index without looking at the disk, so the root's check alone would let it through.
+    /// </summary>
+    [Fact]
+    public async Task ATrackedFileBehindALinkedFolder_IsNotRead()
+    {
+        using var outside = new TempTree().Write("secret.py", "def leaked_secret(): pass");
+        using var tree = new TempTree().Write("main.py", "def main(): pass").Write("docs/secret.py", "def original(): pass");
+        tree.Git("init", "-q").Git("add", "-A");
+        Directory.Delete(Path.Combine(tree.Root, "docs"), recursive: true);
+        Directory.CreateSymbolicLink(Path.Combine(tree.Root, "docs"), outside.Root);
+
+        var (result, _) = await Call(tree.Root, null);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.DoesNotContain("leaked_secret", Content(result));
+        Assert.Contains("def main()", Content(result));
+    }
+
     [Fact]
     public async Task AMissingFolder_IsAFailedCallTheModelCanFix()
     {
@@ -98,9 +125,12 @@ public class PluginTests
         Assert.Contains("no folder at 'nope'", result.ErrorMessage);
     }
 
-    /// <summary>THE git PROCESS IS REGISTERED, so the host can reap it if cxagent dies mid-call.</summary>
+    /// <summary>
+    /// A REGISTERED git IS ONE STILL RUNNING. A process registered after it exited has nothing to
+    /// reap, and the host reports it to the user as unrecordable.
+    /// </summary>
     [Fact]
-    public async Task TheGitProcess_IsRegisteredWithTheHost()
+    public async Task OnlyARunningGit_IsRegistered()
     {
         using var tree = new TempTree().Write("A.cs", "class A {}");
         tree.Git("init", "-q");
@@ -108,7 +138,7 @@ public class PluginTests
         var (result, context) = await Call(tree.Root, null);
 
         Assert.True(result.Success, result.ErrorMessage);
-        Assert.Single(context.Children);
+        Assert.DoesNotContain(-1, context.Running);
     }
 
     [Fact]

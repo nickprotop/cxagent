@@ -267,6 +267,69 @@ public class OutlinerTests
         Assert.Equal(["1:0:interface Store", "2:1:get(key: string): string", "4:0:class Memory", "5:1:get(key: string)"], found);
     }
 
+    /// <summary>
+    /// A BLOCK THAT DECLARES NOTHING ITSELF IS SEEN THROUGH. <c>extern "C" {</c> wraps whole C headers,
+    /// and <c>declare module "x" {</c> whole TypeScript declaration files; treated as a body, every
+    /// declaration inside would vanish from the map.
+    /// </summary>
+    [Fact]
+    public void ExternAndDeclareBlocks_AreSeenThrough()
+    {
+        Assert.Equal(["4:0:int cxp_ok(const char *text)"], Outline("cxp.h", """
+            #ifdef __cplusplus
+            extern "C" {
+            #endif
+            int cxp_ok(const char *text);
+            #ifdef __cplusplus
+            }
+            #endif
+            """));
+
+        Assert.Equal(["2:0:export function parse(text: string): Node", "5:0:interface Window"], Outline("x.d.ts", """
+            declare module "parser" {
+              export function parse(text: string): Node;
+            }
+            declare global {
+              interface Window { app: App }
+            }
+            """));
+    }
+
+    /// <summary>
+    /// ONE STRAY PARENTHESIS DOES NOT COST THE REST OF THE FILE. A regex literal the stripper cannot
+    /// recognise leaves a <c>(</c> open; a brace or a dedent ends whatever it seemed to start.
+    /// </summary>
+    [Fact]
+    public void AStrayParenthesis_DoesNotHideTheRestOfTheFile()
+    {
+        Assert.Equal(["1:0:function clean(s)", "4:0:function later()"], Outline("x.js", """
+            function clean(s) {
+              return s.replace(/\(/g, "");
+            }
+            function later() {
+            }
+            """));
+
+        Assert.Equal(["1:0:def clean(s)", "3:0:def later"], Outline("x.rb", """
+            def clean(s)
+              s.gsub(/\(/, "")
+            def later
+            end
+            """));
+    }
+
+    /// <summary>A CLASS HEADER WRAPPED BEFORE ITS BRACE still opens the class, in a language whose braces sit on the declaration's line.</summary>
+    [Fact]
+    public void AWrappedClassHeader_KeepsItsMembers()
+    {
+        Assert.Equal(["1:0:public class Foo extends Bar", "3:1:public void run()"], Outline("Foo.java", """
+            public class Foo
+                extends Bar {
+                public void run() { }
+            }
+            """));
+    }
+
     [Fact]
     public void C_FunctionsAndStructs_NotMacrosOrForwardDeclarations()
     {

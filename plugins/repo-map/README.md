@@ -68,7 +68,7 @@ body is left out. A line it misreads costs one declaration and never the map.
 **Which files.** `git ls-files` decides: the repository's tracked files, plus untracked files that
 are not ignored. Outside a repository it walks the folder instead, skipping dot-folders and the usual
 build output (`bin`, `obj`, `node_modules`, `dist`, `build`, `target`, `vendor`). Files over 1 MB and
-`*.min.js` are skipped, and symlinks are never followed.
+`*.min.js` are skipped, as are empty files, and a file is read only if it really is inside the folder: symlinks are never followed.
 
 ## What it asks, and what it does not need
 

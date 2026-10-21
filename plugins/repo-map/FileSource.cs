@@ -46,9 +46,15 @@ public static class FileSource
         var fromGit = GitFiles(root, onProcess);
         var all = fromGit ?? Walk(root);
 
+        // EACH FILE INSIDE THE ROOT, JUDGED WHERE IT LANDS. git lists a tracked file from its index
+        // without looking at the disk, so a folder replaced by a link since it was committed still
+        // lists its old files — and reading them would read wherever the link points.
+        var real = new Dictionary<string, string>(StringComparer.Ordinal);
+        var realRoot = Paths.Real(root, real);
         var readable = all
             .Where(f => Language.For(f) is not null)
             .Where(IsPlainFile)
+            .Where(f => Paths.Contains(realRoot, Paths.Real(f, real)))
             .ToList();
         readable.Sort(StringComparer.Ordinal);
 
@@ -61,7 +67,9 @@ public static class FileSource
         try
         {
             var info = new FileInfo(path);
-            return info.Exists && info.LinkTarget is null && info.Length <= MaxBytes;
+            // EMPTY IS SKIPPED, and that is also what keeps a FIFO out: .NET reports one as an empty
+            // regular file, and opening it to read blocks until something writes to it.
+            return info.Exists && info.LinkTarget is null && info.Length > 0 && info.Length <= MaxBytes;
         }
         catch (Exception)
         {
@@ -90,7 +98,9 @@ public static class FileSource
 
             using var git = Process.Start(psi);
             if (git is null) return null;
-            onProcess(git.Id);
+            // ONLY WHILE IT RUNS: a small repository's list is done in milliseconds, and a process
+            // already gone has nothing to reap — the host would report it as unrecordable.
+            if (!git.HasExited) onProcess(git.Id);
 
             // DRAINED WHILE IT RUNS: a large repository's list overfills the pipe, and git would
             // block writing it while this waited for git to exit.

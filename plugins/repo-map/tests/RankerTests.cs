@@ -62,6 +62,25 @@ public class RankerTests
                     < ranking.Files.ToList().FindIndex(f => f.Path == "ui/Dialog.cs"));
     }
 
+    /// <summary>
+    /// A FILE-LOCAL C FUNCTION LINKS NOTHING. <c>static int count(…)</c> cannot be called from another
+    /// file, so every file that says "count" is not using it — and there are hundreds.
+    /// </summary>
+    [Fact]
+    public void AStaticCFunction_DoesNotPullItsFileUp()
+    {
+        var helpers = new FileOutline("sdk/helpers.c",
+            [new Symbol("result", "static int result(int x)", 1, 0, SymbolKind.Member)], new Dictionary<string, int>());
+        var engine = File("core/EngineCore.cs", ["EngineCore"]);
+        // EIGHT FILES SAY "result" AND TWO USE THE ENGINE: counted, the word would win.
+        var sayers = Enumerable.Range(0, 8).Select(i => File($"u/S{i}.cs", [$"SayerNumber{i}"], "result")).ToList();
+        var users = Enumerable.Range(0, 2).Select(i => File($"u/U{i}.cs", [$"UserNumber{i}"], "EngineCore")).ToList();
+
+        var order = Ranker.Rank([helpers, engine, .. sayers, .. users], []).Files.Select(f => f.Path).ToList();
+
+        Assert.True(order.IndexOf("core/EngineCore.cs") < order.IndexOf("sdk/helpers.c"));
+    }
+
     /// <summary>With a focus, the focused file and what it uses come before what the rest of the code uses most.</summary>
     [Fact]
     public void Focus_PutsTheFocusedFileAndWhatItUsesFirst()
@@ -93,6 +112,14 @@ public class RankerTests
         Assert.Equal("src/core/Alpha.cs", Ranker.Rank(files, ["core"]).Files[0].Path);
         Assert.Equal("src/other/Gamma.cs", Ranker.Rank(files, ["Gamma.cs"]).Files[0].Path);
         Assert.Equal("src/other/Beta.cs", Ranker.Rank(files, ["BetaType"]).Files[0].Path);
+    }
+
+    /// <summary>AN ENTRY THAT MATCHES WHAT AN EARLIER ENTRY ALREADY FOCUSED still matched, and is not reported as matching nothing.</summary>
+    [Fact]
+    public void OverlappingFocusEntries_AreBothMatched()
+    {
+        var ranking = Ranker.Rank([File("src/Agents/Agent.cs", ["AgentType"])], ["src/Agents", "Agent.cs"]);
+        Assert.Empty(ranking.Unmatched);
     }
 
     [Fact]

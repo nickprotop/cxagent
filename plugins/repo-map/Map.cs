@@ -9,6 +9,9 @@ namespace CxAgent.Plugins.RepoMap;
 /// <param name="MaxTokens">The budget, already clamped.</param>
 public sealed record MapRequest(string Root, string Shown, IReadOnlyList<string> Focus, int MaxTokens = Map.DefaultTokens);
 
+/// <summary>What one map found: which files were listed, how many were read, and their ranking.</summary>
+public sealed record Survey(FileList List, int Read, Ranking Ranking);
+
 /// <summary>
 /// Lists, outlines, ranks and renders — the whole tool, apart from reading its arguments.
 /// </summary>
@@ -45,11 +48,12 @@ public static class Map
         }
 
         var ranking = Ranker.Rank(outlines, request.Focus);
-        return Render(request, list, outlines.Count, ranking);
+        return Render(request, new Survey(list, outlines.Count, ranking));
     }
 
-    private static string Render(MapRequest request, FileList list, int read, Ranking ranking)
+    private static string Render(MapRequest request, Survey survey)
     {
+        var (list, read, ranking) = (survey.List, survey.Read, survey.Ranking);
         // A TOKEN IS ABOUT FOUR CHARACTERS OF CODE. An estimate, and the budget is one: the point
         // is a map that fits beside the work, not an exact count.
         var budget = request.MaxTokens * 4;
@@ -61,8 +65,12 @@ public static class Map
                 : $"{read} source files under {request.Shown}, and no declarations found in any of them.";
 
         output.Append($"{read} source files under {request.Shown}, {ranking.Files.Count} declaring something. ");
-        output.Append(request.Focus.Count > 0
-            ? $"Centred on {string.Join(", ", request.Focus)}: what it uses and what uses it come first."
+        // ONLY WHAT MATCHED IS CLAIMED AS THE CENTRE. A focus that matched nothing left the whole
+        // folder ranked as usual, and the header must not say otherwise.
+        var centre = request.Focus.Select(f => f.Trim())
+            .Where(f => f is not ("" or "." or "./") && !ranking.Unmatched.Contains(f)).ToList();
+        output.Append(centre.Count > 0
+            ? $"Centred on {string.Join(", ", centre)}: what it uses and what uses it come first."
             : "Most-used first.");
         output.Append(" Each line is `line: declaration`.\n");
         if (ranking.Unmatched.Count > 0)

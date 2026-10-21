@@ -87,6 +87,20 @@ public class FileSourceTests
         Assert.Equal(["src/A.cs"], Listed(tree));
     }
 
+    /// <summary>
+    /// AN EMPTY FILE IS SKIPPED, and with it a FIFO, which .NET cannot tell from one: opening a FIFO
+    /// to read it blocks until something writes, and the map would hang.
+    /// </summary>
+    [Fact]
+    public void AFifo_IsSkippedRatherThanOpened()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var tree = new TempTree().Write("ok.py", "def ok(): pass");
+        using (var mkfifo = Process.Start("mkfifo", Path.Combine(tree.Root, "pipe.py"))!) mkfifo.WaitForExit();
+
+        Assert.Equal(["ok.py"], Listed(tree));
+    }
+
     [Fact]
     public void MinifiedAndHugeFiles_AreSkipped()
     {
@@ -176,6 +190,18 @@ public class MapTests
         Assert.Contains("public class Many", map);
         Assert.Contains("public void UsedEverywhere()", map);
         Assert.Contains("less-used declarations not shown", map);
+    }
+
+    /// <summary>A FOCUS THAT MATCHED NOTHING DOES NOT CLAIM TO CENTRE THE MAP: the whole folder was mapped, and the header says so.</summary>
+    [Fact]
+    public async Task AFocusThatMatchedNothing_IsNotClaimedAsTheCentre()
+    {
+        using var tree = new TempTree().Write("A.cs", "class Alpha {}");
+
+        var map = await Map(tree, RepoMap.Map.DefaultTokens, "Nope");
+
+        Assert.DoesNotContain("Centred on", map);
+        Assert.Contains("No file, folder or symbol matched: Nope.", map);
     }
 
     [Fact]

@@ -53,10 +53,18 @@ public static class Outliner
 
     private enum Frame { Container, Body }
 
+    /// <summary>One open brace: what opened it, the type's name when it is one, and whether it is a
+    /// namespace — a scope that adds no depth and names no type.</summary>
+    private readonly record struct Scope(Frame Kind, string Name, bool Namespace);
+
+    /// <summary>A file's text and the language it is in — what every rule below reads together.</summary>
+    private sealed record Source(Stripped Text, Language Language);
+
     private static List<Symbol> ByBraces(Stripped text, Language language)
     {
         var symbols = new List<Symbol>();
-        var frames = new Stack<(Frame Kind, string Name, bool Namespace)>();
+        var source = new Source(text, language);
+        var frames = new Stack<Scope>();
         var parens = 0;
 
         // A declaration whose body has not opened yet. Its "{" may be on a later line (Allman
@@ -73,17 +81,26 @@ public static class Outliner
             var inContainer = frames.All(f => f.Kind == Frame.Container);
             if (parens == 0 && pending is null && inContainer && trimmed.Length > 0 && !Skipped(trimmed))
             {
-                var inType = frames.Any(f => !f.Namespace);
-                var typeName = inType ? frames.First(f => !f.Namespace).Name : null;
-                var found = Declaration(trimmed, language, inType, typeName);
+                // The type this line sits in, or null at file or namespace scope.
+                var typeName = frames.Any(f => !f.Namespace) ? frames.First(f => !f.Namespace).Name : null;
+                var found = Declaration(trimmed, language, typeName);
                 if (found is { } d)
                 {
                     if (d.Kind != SymbolKind.Namespace)
-                        symbols.Add(new Symbol(d.Name, Signature(text, i, language), i + 1,
+                        symbols.Add(new Symbol(d.Name, Signature(source, i, toBody: d.Opens == Frame.Container), i + 1,
                             frames.Count(f => !f.Namespace), d.Kind));
                     pending = d.Opens;
                     pendingName = d.Name;
                     pendingNamespace = d.Kind == SymbolKind.Namespace;
+                }
+                // A BLOCK THAT DECLARES NOTHING ITSELF — `extern "C" {` around a whole C header,
+                // `declare module "x" {` around a declaration file — is seen through like a
+                // namespace. Taken as a body, everything inside it would be hidden.
+                else if (Transparent.IsMatch(trimmed))
+                {
+                    pending = Frame.Container;
+                    pendingName = "";
+                    pendingNamespace = true;
                 }
             }
 
@@ -93,13 +110,18 @@ public static class Outliner
                 {
                     case '(' or '[': parens++; break;
                     case ')' or ']': parens = Math.Max(0, parens - 1); break;
+                    // A BRACE ENDS ANY PARENTHESIS STILL OPEN. None is, in code that compiles; one
+                    // that seems to be was opened by something the stripper cannot read — a regex
+                    // literal like /\(/ — and left open it would hide every declaration after it.
                     case '{':
-                        frames.Push((pending ?? Frame.Body, pending is null ? "" : pendingName,
+                        frames.Push(new Scope(pending ?? Frame.Body, pending is null ? "" : pendingName,
                             pending is not null && pendingNamespace));
                         pending = null;
+                        parens = 0;
                         break;
                     case '}':
                         if (frames.Count > 0) frames.Pop();
+                        parens = 0;
                         break;
                     // A DECLARATION THAT ENDS WITHOUT A BODY — an interface method, a forward
                     // declaration, `namespace X;` — gives up its claim on the next brace.
@@ -109,10 +131,11 @@ public static class Outliner
                 }
             }
 
-            // WHERE THE BODY'S BRACE IS WRITTEN ON THE DECLARATION'S OWN LINE, a declaration that
-            // ends its line without one has no body — Go's interface methods, TypeScript's without a
-            // semicolon — and must not claim the next declaration's brace as its own.
-            if (language.SameLineBraces && parens == 0) pending = null;
+            // WHERE THE BODY'S BRACE IS WRITTEN ON THE DECLARATION'S OWN LINE, a member that ends
+            // its line without one has no body — Go's interface methods, TypeScript's without a
+            // semicolon — and must not claim the next declaration's brace as its own. A TYPE
+            // always has a body, so its claim survives a header wrapped before its brace.
+            if (language.SameLineBraces && parens == 0 && pending == Frame.Body) pending = null;
         }
 
         return symbols;
@@ -125,12 +148,21 @@ public static class Outliner
         // the outer one is remembered.
         var frames = new Stack<(int Indent, Frame Kind)>();
         var parens = 0;
+        // The indentation of the line that left a parenthesis open — see the reset below.
+        var openedAt = 0;
+        var source = new Source(text, language);
 
         for (var i = 0; i < text.Code.Length; i++)
         {
             var line = text.Code[i];
             var trimmed = line.Trim();
             if (trimmed.Length == 0) continue;
+
+            // A LINE NO DEEPER THAN THE ONE THAT OPENED A PARENTHESIS IS NOT ITS CONTINUATION —
+            // continuation lines are indented further, or begin by closing it. The parenthesis
+            // was opened by something the stripper cannot read, like Ruby's /\(/, and left open
+            // it would hide every declaration after it.
+            if (parens > 0 && Indent(line) <= openedAt && trimmed[0] is not (')' or ']' or '}')) parens = 0;
 
             if (parens == 0)
             {
@@ -142,17 +174,19 @@ public static class Outliner
                 {
                     var isType = match.Groups["type"].Success;
                     if (frames.All(f => f.Kind == Frame.Container))
-                        symbols.Add(new Symbol(match.Groups["name"].Value, Signature(text, i, language), i + 1,
+                        symbols.Add(new Symbol(match.Groups["name"].Value, Signature(source, i, toBody: false), i + 1,
                             frames.Count, isType ? SymbolKind.Type : SymbolKind.Member));
                     frames.Push((indent, isType ? Frame.Container : Frame.Body));
                 }
             }
 
+            var before = parens;
             foreach (var c in line)
             {
                 if (c is '(' or '[' or '{') parens++;
                 else if (c is ')' or ']' or '}') parens = Math.Max(0, parens - 1);
             }
+            if (before == 0 && parens > 0) openedAt = Indent(line);
         }
 
         return symbols;
@@ -191,20 +225,30 @@ public static class Outliner
 
     private sealed record Found(string Name, SymbolKind Kind, Frame Opens);
 
-    private static Found? Declaration(string line, Language language, bool inType, string? typeName)
+    /// <param name="typeName">The type the line sits in, or null at file or namespace scope.</param>
+    private static Found? Declaration(string line, Language language, string? typeName)
     {
         line = LeadingAnnotations.Replace(line, "");
         if (line.Length == 0) return null;
 
+        var inType = typeName is not null;
         return language.Family switch
         {
             Family.Go => GoDeclaration(line, inType),
             Family.Rust => RustDeclaration(line),
             Family.Shell => ShellDeclaration(line, inType),
             Family.Script => ScriptDeclaration(line, inType),
-            _ => CLikeDeclaration(line, language, inType, typeName),
+            _ => CLikeDeclaration(line, language, typeName),
         };
     }
+
+    /// <summary>
+    /// A line that opens a block without declaring anything: <c>extern "C" {</c>,
+    /// <c>declare global {</c>, <c>declare module "x" {</c>. Read from blanked code, so the
+    /// quoted name is spaces.
+    /// </summary>
+    private static readonly Regex Transparent = new(
+        @"^(?:extern\s+""[^""]*""|declare\s+global|declare\s+module\s+""[^""]*"")\s*\{?\s*$", RegexOptions.Compiled);
 
     /// <summary>
     /// <c>[Attr]</c>, <c>@Decorator(…)</c> and C++'s <c>template&lt;…&gt;</c> in front of a
@@ -242,8 +286,9 @@ public static class Outliner
         "return", "await", "throw", "new", "yield", "else", "case", "goto", "var", "let", "const",
     };
 
-    private static Found? CLikeDeclaration(string line, Language language, bool inType, string? typeName)
+    private static Found? CLikeDeclaration(string line, Language language, string? typeName)
     {
+        var inType = typeName is not null;
         // `struct foo bar = {…}` and `X y = new X(…)` assign; a declaration does not.
         var paren = line.IndexOf('(');
         var assign = AssignmentAt(line);
@@ -447,9 +492,14 @@ public static class Outliner
     /// <para>CONTINUED OVER LINES WHILE ITS PARENTHESES ARE OPEN. A parameter list one per line is
     /// the norm in several of these languages, and the first line alone — <c>public Agent(</c> —
     /// tells a reader nothing about what it takes.</para>
+    ///
+    /// <para>A TYPE'S HEADER RUNS ON TO ITS BRACE (<paramref name="toBody"/>): <c>class Foo</c>
+    /// wrapped before <c>extends Bar {</c> is one declaration. A member's does not, since one with no
+    /// body has nothing to run on to and would swallow the next line.</para>
     /// </summary>
-    private static string Signature(Stripped text, int first, Language language)
+    private static string Signature(Source source, int first, bool toBody)
     {
+        var (text, language) = (source.Text, source.Language);
         var code = new StringBuilder();
         var display = new StringBuilder();
         var depth = 0;
@@ -461,7 +511,8 @@ public static class Outliner
             foreach (var c in text.Code[i])
                 if (c == '(') depth++;
                 else if (c == ')') depth--;
-            if (depth <= 0) break;
+            if (depth > 0) continue;
+            if (!toBody || text.Code[i].IndexOfAny(['{', ';']) >= 0) break;
         }
 
         var cut = BodyStart(code.ToString(), language);

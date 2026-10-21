@@ -112,7 +112,7 @@ public static class Ranker
                 if (owner.TryGetValue(name, out var first) && first != a)
                     usedBy[name] = usedBy.GetValueOrDefault(name) + 1;
 
-        var (restart, unmatched) = Restarts(files, focus, declarers, outgoing);
+        var (restart, unmatched) = Restarts(files, focus, outgoing);
         var rank = PageRank(outgoing, restart);
 
         var order = Enumerable.Range(0, n)
@@ -136,9 +136,14 @@ public static class Ranker
     /// <para>AND ONLY AT THE TOP OF A FILE. A nested type is written through its parent
     /// (<c>PluginRequest.List</c>), so the parent's name already links its users; its own name is
     /// often a plain word — <c>List</c>, <c>Load</c> — that every file mentions for other reasons.</para>
+    ///
+    /// <para>AND NOT A FILE-LOCAL FUNCTION. In C and C++ a <c>static</c> function at the top of a
+    /// file cannot be called from any other, and its names — <c>count</c>, <c>copy</c>, <c>result</c>
+    /// — are words hundreds of files use for something else.</para>
     /// </summary>
     private static bool Links(Symbol symbol) =>
-        symbol.Depth == 0 && symbol.Kind is SymbolKind.Type or SymbolKind.Member;
+        symbol.Depth == 0 && symbol.Kind is SymbolKind.Type or SymbolKind.Member
+        && !(symbol.Kind == SymbolKind.Member && symbol.Signature.StartsWith("static ", StringComparison.Ordinal));
 
     /// <summary>
     /// How much a mention of this name says: ten for a compound name of some length, a tenth for a
@@ -156,7 +161,7 @@ public static class Ranker
     /// and partly at the files that use them.
     /// </summary>
     private static (double[] Restart, List<string> Unmatched) Restarts(IReadOnlyList<FileOutline> files,
-        IReadOnlyList<string> focus, Dictionary<string, List<int>> declarers, Dictionary<int, double>[] outgoing)
+        IReadOnlyList<string> focus, Dictionary<int, double>[] outgoing)
     {
         var n = files.Count;
         var restart = new double[n];
@@ -169,7 +174,9 @@ public static class Ranker
             if (entry.StartsWith("./", StringComparison.Ordinal)) entry = entry[2..];
             entry = entry.TrimEnd('/');
             if (entry is "" or ".") continue;
-            var before = focused.Count;
+            // MATCHED, NOT "ADDED SOMETHING NEW": an entry inside a folder an earlier entry already
+            // focused matches files that are already in the set, and still matched.
+            var matched = false;
 
             for (var i = 0; i < n; i++)
             {
@@ -178,15 +185,21 @@ public static class Ranker
                 // "src/Agents" finds everything under it.
                 if (path == entry || path.EndsWith("/" + entry, StringComparison.Ordinal)
                     || path.StartsWith(entry + "/", StringComparison.Ordinal) || path.Contains("/" + entry + "/", StringComparison.Ordinal))
+                {
                     focused.Add(i);
+                    matched = true;
+                }
             }
             // A SYMBOL: whoever declares it, counted even when the name is too common for ranking —
             // a reader asking about "Run" by name means it.
             for (var i = 0; i < n; i++)
                 if (files[i].Symbols.Any(s => s.Name == raw.Trim()))
+                {
                     focused.Add(i);
+                    matched = true;
+                }
 
-            if (focused.Count == before) unmatched.Add(raw.Trim());
+            if (!matched) unmatched.Add(raw.Trim());
         }
 
         if (focused.Count == 0)

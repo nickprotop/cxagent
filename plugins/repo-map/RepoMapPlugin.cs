@@ -60,7 +60,7 @@ public sealed class RepoMapPlugin : IPlugin
         // INSIDE THE CALLER'S FOLDER, judged where the path lands. This tool asks nobody's
         // permission, so it must not be a way to read what the caller's own file tools would have to
         // ask about — a map of someone's home folder is a listing of it.
-        if (!Contains(RealPath(folder), RealPath(root)))
+        if (!Paths.Contains(Paths.Real(folder), Paths.Real(root)))
             return Failed($"repo_map maps folders inside yours ({folder}); '{path}' is outside it.");
 
         var focus = (call.Get<string?>("focus", null) ?? "")
@@ -77,41 +77,4 @@ public sealed class RepoMapPlugin : IPlugin
     private void Register(int processId) => _context?.RegisterChildProcess(processId);
 
     private static JobResult Failed(string message) => new() { Success = false, ErrorMessage = message };
-
-    private static bool Contains(string folder, string path)
-    {
-        var comparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        var withSeparator = folder.EndsWith(Path.DirectorySeparatorChar) ? folder : folder + Path.DirectorySeparatorChar;
-        return path.Equals(folder, comparison) || path.StartsWith(withSeparator, comparison);
-    }
-
-    /// <summary>
-    /// The folder a path really is, every symlink along it followed.
-    ///
-    /// <para><see cref="Path.GetFullPath(string)"/> only collapses <c>..</c>; a link inside the
-    /// caller's folder that points out of it would pass a check on the spelling and map whatever it
-    /// points at.</para>
-    /// </summary>
-    internal static string RealPath(string path)
-    {
-        var full = Path.GetFullPath(path);
-        var root = Path.GetPathRoot(full)!;
-        var current = root;
-        foreach (var part in full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
-        {
-            current = Path.Combine(current, part);
-            try
-            {
-                if (new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: true) is { } target)
-                    current = Path.GetFullPath(target.FullName);
-            }
-            catch (IOException)
-            {
-                // A broken link resolves to nothing; the spelling stands, and Directory.Exists
-                // has already refused a folder that is not there.
-            }
-        }
-        return Path.TrimEndingDirectorySeparator(current);
-    }
 }
