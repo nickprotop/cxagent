@@ -69,3 +69,7 @@
 (impl_item type: (type_identifier) @name) @definition.class
 (impl_item type: (generic_type type: (type_identifier) @name)) @definition.class
 ((type_identifier) @name @reference.type)
+; An impl for a type that is not a plain or generic path — a slice, a primitive, a reference — and
+; a trait's associated types.
+(impl_item type: [(array_type) (primitive_type) (reference_type) (pointer_type) (tuple_type) (scoped_type_identifier)] @name) @definition.class
+(associated_type name: (type_identifier) @name) @definition.type

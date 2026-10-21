@@ -793,4 +793,33 @@ public sealed class TreeOutlinerTests : IDisposable
             "4:0:template <> inline auto find<false, char>(const char* first) -> bool",
         ], found);
     }
+
+    [Fact]
+    public void Go_TypeAliases_AreTypes()
+    {
+        Assert.Equal(["3:0:type byte = uint8"], Outline("b.go", "package builtin\n\ntype byte = uint8\n"));
+    }
+
+    /// <summary>AN IMPL FOR A TYPE THAT IS NOT A PATH — a slice, a primitive, a reference — is an impl all the same; so is a trait's associated type.</summary>
+    [Fact]
+    public void Rust_ImplsForAnyTypeAndAssociatedTypes()
+    {
+        var found = Outline("lib.rs", """
+            impl std::ops::Index<Match> for [u8] {
+                fn index(&self, m: Match) -> &[u8] { &self[m.start..m.end] }
+            }
+            impl<'a, S: Sink> Sink for &'a mut S {}
+            pub trait Sink {
+                type Error: SinkError;
+            }
+            """);
+        Assert.Equal(
+        [
+            "1:0:impl std::ops::Index<Match> for [u8]",
+            "2:1:fn index(&self, m: Match) -> &[u8]",
+            "4:0:impl<'a, S: Sink> Sink for &'a mut S",
+            "5:0:pub trait Sink",
+            "6:1:type Error: SinkError",
+        ], found);
+    }
 }

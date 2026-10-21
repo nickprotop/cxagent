@@ -47,3 +47,5 @@
 ; --- cxagent local additions ------------------------------------------------------------------
 ; Upstream lists an interface but not the methods it declares.
 (method_elem name: (field_identifier) @name) @definition.method
+; A type alias, which upstream's type_spec pattern does not match.
+(type_alias name: (type_identifier) @name) @definition.type
