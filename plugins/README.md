@@ -9,6 +9,7 @@ Each has its own page with its download and settings.
 | **calculator** | Arithmetic a model can trust — one tool takes a whole expression | nothing | [details](calculator/README.md) |
 | **triggers** | Work that starts without anybody typing — schedules a prompt to arrive later in the same session, on a delay, a time or a cron line | nothing | [details](triggers/README.md) |
 | **clone-finder** | Duplicated code found without reading the repository — one tool returns the duplicated blocks ranked by size | nothing | [details](clone-finder/README.md) |
+| **repo-map** | A map of a codebase without reading it — one tool returns the most-used files' declarations, with line numbers, ranked and cut to a budget | nothing | [details](repo-map/README.md) |
 | **worktree** | A git worktree for a sub-agent to work in, then its diff, a merge into your branch or a discard — merge and discard ask first | git | [details](worktree/README.md) |
 
 ## Installing one

@@ -1,0 +1,31 @@
+{
+  "pluginContract": 2,
+  "name": "repo-map",
+  "version": "0.9.44",
+  "spawns": true,
+  "instructions": "Before your first grep, glob or directory listing in a codebase you have not mapped in this conversation, call repo_map. One call, about 2,000 tokens, returns the declarations that matter most — types, functions, methods — each with its file and line number, ranked by how much the rest of the code uses them. That is usually enough to open the right file directly instead of searching for it, and it is cheaper than the searches it replaces.\n\nPass focus to centre the map on what you are looking for: a file path, a folder, or a symbol name, comma-separated.\n\nAfter the map, grep for exact strings as usual. The map is an outline, not the code: read a file before you change anything in it.",
+  "tools": [
+    {
+      "name": "repo_map",
+      "description": "Use this before grep or glob when you need to find where something lives in a codebase you have not mapped yet. Returns the most-used files' declarations (types, functions, methods) with their line numbers, ranked by how much the rest of the code uses them, within a token budget — one call instead of several searches.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Folder to map, relative to yours, e.g. . or src/. Default ."
+          },
+          "focus": {
+            "type": "string",
+            "description": "What to centre the map on: file paths, folders or symbol names, comma-separated, e.g. src/Agent.cs,RunTurn. What they use and what uses them rank first."
+          },
+          "max_tokens": {
+            "type": "integer",
+            "description": "Roughly how large the map may be. Default 2048, at most 16384."
+          }
+        }
+      },
+      "gated": false
+    }
+  ]
+}

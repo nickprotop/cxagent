@@ -310,15 +310,15 @@ jobs:
           (cd triggers-build && zip -q ../plugin-out/triggers.zip \
              triggers.dll NCrontab.dll triggers.plugin.json README.md)
 
-      # THE SAME BUILD-OR-CARRY SCHEME, for the fifth plugin. Like clone-finder, it takes no NuGet
-      # dependency, so its zip is the dll, its sidecar and its README.
-      - name: Build or carry forward the worktree plugin
+      # THE SAME BUILD-OR-CARRY SCHEME, for the fifth and sixth plugins. Like clone-finder, neither
+      # takes a NuGet dependency, so each zip is the dll, its sidecar and its README.
+      - name: Build or carry forward the repo-map and worktree plugins
         run: |
           # RELEASE TAGS ONLY — see the csharp-lsp step above for why --match matters.
           PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || echo "")
           mkdir -p plugin-out
 
-          for NAME in worktree; do
+          for NAME in repo-map worktree; do
             SIDECAR=plugins/$NAME/$NAME.plugin.json
             VERSION=$(python3 -c "import json;print(json.load(open('$SIDECAR'))['version'])")
             PLUGIN_INPUTS="plugins/$NAME/ cxagent.Plugins.Abstractions/"
@@ -362,6 +362,7 @@ jobs:
           cp plugin-out/calculator.zip release/
           cp plugin-out/clone-finder.zip release/
           cp plugin-out/triggers.zip release/
+          cp plugin-out/repo-map.zip release/
           cp plugin-out/worktree.zip release/
 
           # Checksums cover the scripts too: an installer fetched from a release is exactly the kind
