@@ -128,7 +128,10 @@ public class Query : IDisposable, IEquatable<Query>
     /// <param name="disposing">Set to <see langword="true"/> to dispose managed resources.</param>
     protected virtual void Dispose(bool disposing)
     {
-        if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) == 0)
+        // CXAGENT CHANGE 4 OF 4. A constructor whose native call threw leaves no handle, and the
+        // finalizer still runs: releasing nothing must not call native code, which — when the
+        // library itself is what failed to load — throws on the finalizer thread and kills the host.
+        if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) == 0 && _self != IntPtr.Zero)
         {
             ts_query_delete(_self);
         }

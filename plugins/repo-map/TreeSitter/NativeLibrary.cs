@@ -97,7 +97,7 @@ internal static class NativeLibrary
             return Path.Combine(AppContext.BaseDirectory, "runtimes", GetRID(), "native", name);
         }
 
-        // CXAGENT CHANGE 2 OF 3. Where a library sits beside the assembly that asks for it. A plugin
+        // CXAGENT CHANGE 2 OF 4. Where a library sits beside the assembly that asks for it. A plugin
         // is loaded from wherever it was installed, and AppContext.BaseDirectory is the host's folder.
         public string? GetAssemblyRuntimeTarget(Assembly assembly, string name)
         {
@@ -292,7 +292,7 @@ internal static class NativeLibrary
             }
             else if (searchAssemblyDirectory && assembly != null)
             {
-                // CXAGENT CHANGE 2 OF 3. The assembly's own folder FIRST: in cxagent the base
+                // CXAGENT CHANGE 2 OF 4. The assembly's own folder FIRST: in cxagent the base
                 // directory has no natives, so the order changes nothing there, and first is what
                 // lets a test prove this path is the one taken.
                 if (s_loader.GetAssemblyRuntimeTarget(assembly, variation) is { } own)
@@ -330,7 +330,7 @@ internal static class NativeLibrary
 
     static readonly Loader s_loader = Loader.GetPlatformDependentLoader();
 
-    // CXAGENT CHANGE 1 OF 3. A DllImport of "tree-sitter" resolves through this binding's own
+    // CXAGENT CHANGE 1 OF 4. A DllImport of "tree-sitter" resolves through this binding's own
     // loader, so it finds the library wherever the loader does. Without a resolver the runtime
     // probes only the assembly's folder itself and AppContext's, and a plugin keeps its natives under
     // runtimes/<rid>/native/ in its own install folder. A MODULE INITIALIZER, because a resolver

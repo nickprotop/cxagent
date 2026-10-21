@@ -154,7 +154,7 @@ public class Parser : IDisposable, IEquatable<Parser>
     }
 
     /// <summary>
-    /// CXAGENT CHANGE 3 OF 3. Parses, giving up once <paramref name="timeout"/> has passed.
+    /// CXAGENT CHANGE 3 OF 4. Parses, giving up once <paramref name="timeout"/> has passed.
     /// </summary>
     /// <returns>The tree, or null when the time ran out; the parser is reset and ready for the next parse.</returns>
     public Tree? Parse(string source, TimeSpan timeout)
@@ -234,7 +234,10 @@ public class Parser : IDisposable, IEquatable<Parser>
     /// <param name="disposing">Set to <see langword="true"/> to dispose managed resources.</param>
     protected virtual void Dispose(bool disposing)
     {
-        if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) == 0)
+        // CXAGENT CHANGE 4 OF 4. A constructor whose native call threw leaves no handle, and the
+        // finalizer still runs: releasing nothing must not call native code, which — when the
+        // library itself is what failed to load — throws on the finalizer thread and kills the host.
+        if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) == 0 && _self != IntPtr.Zero)
         {
             ts_parser_delete(_self);
         }
