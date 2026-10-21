@@ -154,6 +154,66 @@ public class Parser : IDisposable, IEquatable<Parser>
     }
 
     /// <summary>
+    /// CXAGENT CHANGE 3 OF 3. Parses, giving up once <paramref name="timeout"/> has passed.
+    /// </summary>
+    /// <returns>The tree, or null when the time ran out; the parser is reset and ready for the next parse.</returns>
+    public Tree? Parse(string source, TimeSpan timeout)
+    {
+        if (source == null)
+        {
+            throw new ArgumentNullException(nameof(source), "Source code cannot be null.");
+        }
+
+        // THE TEXT IS HANDED OVER AS UTF-16, the encoding Node's indexes are converted back from, and
+        // pinned for the whole parse: Tree-sitter reads it through the pointer as it goes.
+        var bytes = System.Text.Encoding.Unicode.GetBytes(source);
+        var pinned = System.Runtime.InteropServices.GCHandle.Alloc(bytes, System.Runtime.InteropServices.GCHandleType.Pinned);
+        try
+        {
+            var start = pinned.AddrOfPinnedObject();
+            TSReadCallback read = (_, byteIndex, _, bytesRead) =>
+            {
+                var left = byteIndex < bytes.Length ? bytes.Length - (int)byteIndex : 0;
+                System.Runtime.InteropServices.Marshal.WriteInt32(bytesRead, left);
+                return left > 0 ? start + (int)byteIndex : start;
+            };
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            TSProgressCallback progress = _ => clock.Elapsed > timeout;
+
+            var input = new TSInput
+            {
+                payload = IntPtr.Zero,
+                read = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(read),
+                encoding = InputEncoding.UTF16LE,
+                decode = IntPtr.Zero,
+            };
+            var options = new TSParseOptions
+            {
+                payload = IntPtr.Zero,
+                progress_callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(progress),
+            };
+
+            var tree = ts_parser_parse_with_options(Self, IntPtr.Zero, input, options);
+            // THE DELEGATES MUST OUTLIVE THE CALL: native code holds only their function pointers.
+            GC.KeepAlive(read);
+            GC.KeepAlive(progress);
+
+            if (tree == IntPtr.Zero)
+            {
+                // A CANCELLED PARSE RESUMES WHERE IT STOPPED on the next call unless reset — which
+                // would continue this file's parse with the next file's text.
+                Reset();
+                return null;
+            }
+            return new Tree(tree, source);
+        }
+        finally
+        {
+            pinned.Free();
+        }
+    }
+
+    /// <summary>
     /// Instruct the parser to start the next parse from the beginning.
     /// </summary>
     public void Reset()

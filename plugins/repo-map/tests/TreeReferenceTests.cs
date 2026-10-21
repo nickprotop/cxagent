@@ -8,7 +8,7 @@ public sealed class TreeReferenceTests : IDisposable
     private readonly Engine _engine = Engine.Open();
 
     private FileOutline Read(string path, string source) =>
-        TreeOutliner.Outline(path, source, _engine.ReaderFor(Grammars.For(path)!)!)!;
+        TreeOutliner.Outline(path, source, _engine.ReaderFor(Grammars.For(path)!)!, TreeOutliner.ParseBudget)!;
 
     public void Dispose() => _engine.Dispose();
 

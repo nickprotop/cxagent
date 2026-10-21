@@ -34,4 +34,16 @@ public class EngineTests
         var note = Assert.Single(engine.Notes);
         Assert.StartsWith("Python read as text: ", note);
     }
+
+    /// <summary>A PARSE THAT RUNS OUT OF TIME gives up, and the parser reads the next file as if nothing happened.</summary>
+    [Fact]
+    public void AParseOutOfTime_GivesNothing_AndTheParserStillWorks()
+    {
+        using var engine = Engine.Open();
+        var reader = engine.ReaderFor(Grammars.Python)!;
+        var source = string.Concat(Enumerable.Repeat("def f(a, b):\n    return a + b\n", 20_000));
+
+        Assert.Null(TreeOutliner.Outline("big.py", source, reader, TimeSpan.Zero));
+        Assert.NotNull(TreeOutliner.Outline("small.py", "def g():\n    pass\n", reader, TreeOutliner.ParseBudget));
+    }
 }

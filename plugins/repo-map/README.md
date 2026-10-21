@@ -37,10 +37,13 @@ Next by rank, declarations not shown:
 
 ## How files are ranked
 
-A file that mentions a name another file declares is taken to use that file. The files are then
-ranked with PageRank over that graph. A file many others use ranks high, and a file used by
-something many others use ranks higher still. So the types everything is built from come first and
-the leaves come last.
+A file that uses a name another file declares is taken to use that file. Where Tree-sitter parses a
+file, a use is a call, a type named in a signature, a base class, an import or a decorator, as the
+grammar's query marks them; a name in a comment or a string is not a use. Where a file is read as
+text, every word left once its comments and strings are blanked counts. The files are then ranked
+with PageRank over that graph. A file many others use ranks high, and a file used by something many
+others use ranks higher still. So the types everything is built from come first and the leaves come
+last.
 
 The matching is by name, because there is no compiler to resolve references. A name declared in
 several files spreads its weight across all of them, and names too common to mean anything, such as
@@ -58,13 +61,23 @@ that use them get a share of the restarts too. A focus on a test file works like
 
 ## What it reads
 
-**Languages:** C#, Java, Kotlin, Scala, Swift, Dart, C, C++, Objective-C, PHP, JavaScript,
-TypeScript, Go, Rust, Python, Ruby and shell, recognised by file extension.
+**Languages,** recognised by file extension:
 
-Declarations are found by reading the source as text, with no language server and no native parser,
-so the plugin works the moment it is installed, in any repository. It finds:
+| Read with | Languages |
+|---|---|
+| Tree-sitter | C, C++ (and `.h` headers), C#, Java, Scala, JavaScript, TypeScript, TSX, Go, Rust, Python, Ruby, PHP, shell |
+| Text | Kotlin, Swift, Dart, Objective-C |
 
-- types (classes, structs, interfaces, records, enums and traits);
+Tree-sitter is a real parser, compiled into the plugin with its native libraries beside it, so there
+is nothing to install and no language server. Each grammar's own upstream query says what a
+declaration is, with a few additions of this plugin's where one falls short. The text reader finds
+declarations by reading the source as text, and is also the fallback for every file when the parser cannot load on a machine, for a language whose
+query will not load, and for a single file that takes more than 2 seconds to parse. The map's header
+says when the parser could not load, or a language was read as text, and why.
+
+Either way it finds:
+
+- types (classes, structs, interfaces, records, enums, traits, and Rust's `impl` blocks);
 - functions, methods and constructors;
 - properties: C#'s, and the `var`, `val` and `let` of Swift, Kotlin, Scala and Dart;
 - what a JavaScript or TypeScript module exports with `export const`, shown up to its `=`.
@@ -96,3 +109,9 @@ allow" answers that for good. The tool itself adds no prompt of its own.
 ```
 
 It has no settings.
+
+## Size and licences
+
+Installed, the plugin is about 25 MB, nearly all of it Tree-sitter's grammars for one platform; the
+download is a few MB. Tree-sitter, its grammars and the .NET binding compiled into the plugin are MIT
+licensed, and `THIRD-PARTY-NOTICES.txt` beside the plugin carries each licence.

@@ -7,10 +7,14 @@ namespace CxAgent.Plugins.RepoMap;
 /// <param name="Shown">How the folder is named in the map's header — what the caller asked for.</param>
 /// <param name="Focus">Paths, folders or symbol names to centre on; empty for the whole folder.</param>
 /// <param name="MaxTokens">The budget, already clamped.</param>
-public sealed record MapRequest(string Root, string Shown, IReadOnlyList<string> Focus, int MaxTokens = Map.DefaultTokens);
+public sealed record MapRequest(string Root, string Shown, IReadOnlyList<string> Focus, int MaxTokens = Map.DefaultTokens)
+{
+    /// <summary>The parsers to read with; null opens this map's own. A caller that passes one owns it.</summary>
+    public Parsing.Engine? Engine { get; init; }
+}
 
-/// <summary>What one map found: which files were listed, how many were read, and their ranking.</summary>
-public sealed record Survey(FileList List, int Read, Ranking Ranking);
+/// <summary>What one map found: which files were listed, how many were read, their ranking, and what was read as text and why.</summary>
+public sealed record Survey(FileList List, int Read, Ranking Ranking, IReadOnlyList<string> Notes);
 
 /// <summary>
 /// Lists, outlines, ranks and renders — the whole tool, apart from reading its arguments.
@@ -31,24 +35,37 @@ public static class Map
     {
         var list = FileSource.List(request.Root, onProcess);
 
+        var owned = request.Engine is null ? Parsing.Engine.Open() : null;
+        var engine = request.Engine ?? owned!;
         var outlines = new List<FileOutline>(list.Files.Count);
-        foreach (var file in list.Files)
+        IReadOnlyList<string> notes;
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            var language = Language.For(file)!;
-            string text;
-            try { text = await File.ReadAllTextAsync(file, ct); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+            foreach (var file in list.Files)
+            {
+                ct.ThrowIfCancellationRequested();
+                var language = Language.For(file)!;
+                string text;
+                try { text = await File.ReadAllTextAsync(file, ct); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
 
-            var stripped = Stripper.Strip(text, language);
-            outlines.Add(new FileOutline(
-                Path.GetRelativePath(request.Root, file).Replace('\\', '/'),
-                Outliner.Outline(stripped, language),
-                Ranker.MentionsIn(stripped.Code)));
+                var relative = Path.GetRelativePath(request.Root, file).Replace('\\', '/');
+                // THE TREE WHERE THERE IS A GRAMMAR AND IT LOADED, the text reader otherwise — and for a
+                // file whose parse ran out of time.
+                var reader = Parsing.Grammars.For(file) is { } grammar ? engine.ReaderFor(grammar) : null;
+                outlines.Add((reader is null ? null : Parsing.TreeOutliner.Outline(relative, text, reader, Parsing.TreeOutliner.ParseBudget))
+                             ?? Parsing.TextOutliner.Outline(relative, text, language));
+            }
+            // Copied before the engine is disposed with this map.
+            notes = engine.Notes.ToList();
+        }
+        finally
+        {
+            owned?.Dispose();
         }
 
         var ranking = Ranker.Rank(outlines, request.Focus);
-        return Render(request, new Survey(list, outlines.Count, ranking));
+        return Render(request, new Survey(list, outlines.Count, ranking, notes));
     }
 
     private static string Render(MapRequest request, Survey survey)
@@ -75,6 +92,10 @@ public static class Map
         output.Append(" Each line is `line: declaration`.\n");
         if (ranking.Unmatched.Count > 0)
             output.Append($"No file, folder or symbol matched: {string.Join(", ", ranking.Unmatched)}.\n");
+        // WHAT WAS READ AS TEXT AND WHY, once each. A map read without its parser is still a map, but
+        // a reader comparing two of them deserves to know why one is thinner.
+        foreach (var note in survey.Notes)
+            output.Append(note.TrimEnd('.')).Append(".\n");
         if (list.Truncated)
             output.Append($"This folder has more than {FileSource.MaxFiles} source files; only the first {FileSource.MaxFiles} by path were read. Map a subfolder for the rest.\n");
         output.Append('\n');

@@ -10,12 +10,13 @@ namespace CxAgent.Plugins.RepoMap;
 /// <para>WHY THIS IS A PLUGIN AT ALL. A model finding its way around a repository lists folders and
 /// opens files, and every file opened to learn that it was the wrong one is context spent. One call
 /// that returns the declarations that matter most, each with a line number, replaces most of that
-/// wandering — the same idea as Aider's repository map, without its parser.</para>
+/// wandering — the same idea as Aider's repository map, which also parses with Tree-sitter.</para>
 ///
-/// <para>STANDALONE ON PURPOSE. No language server and no native parser: the outline comes from
-/// reading the source as text, which works the moment the plugin is installed, in any repository,
-/// for a dozen languages at once. A language server answers more precisely about one language and
-/// only after it has indexed; a map is wanted before either.</para>
+/// <para>STANDALONE ON PURPOSE. No language server and nothing to install: Tree-sitter is compiled
+/// into the plugin with one platform's native grammars beside it, and parses fourteen languages the
+/// moment the plugin is installed, in any repository. The rest — and every file, on a machine where
+/// those natives will not load — are read as text. A language server answers more precisely about
+/// one language and only after it has indexed; a map is wanted before either.</para>
 /// </summary>
 public sealed class RepoMapPlugin : IPlugin
 {

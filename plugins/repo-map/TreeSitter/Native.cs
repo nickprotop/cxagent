@@ -166,6 +166,19 @@ internal static class Native
     [DllImport(Libraries.TreeSitter, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void ts_parser_reset(IntPtr self);
 
+    // CXAGENT CHANGE 3 OF 3. Tree-sitter 0.25 cancels a parse through a progress callback, passed
+    // with the input in ts_parser_parse_with_options; the time limit the older API had is gone. The
+    // binding declares TSParseOptions already, and nothing that calls the function.
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate IntPtr TSReadCallback(IntPtr payload, uint byteIndex, TSPoint position, IntPtr bytesRead);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal delegate bool TSProgressCallback(IntPtr state);
+
+    [DllImport(Libraries.TreeSitter, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ts_parser_parse_with_options(IntPtr self, IntPtr old_tree, TSInput input, TSParseOptions parse_options);
+
     [DllImport(Libraries.TreeSitter, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void ts_parser_set_logger(IntPtr self, TSLogger logger);
 

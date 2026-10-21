@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Diagnostics;
 using CxAgent.Plugins.RepoMap;
 using Xunit;
@@ -225,5 +226,42 @@ public class MapTests
     {
         using var tree = new TempTree().Write("README.md", "# hi");
         Assert.Equal("No source files under . in a language repo_map reads.", await Map(tree));
+    }
+
+    [Fact]
+    public async Task MissingNatives_ReadEverythingAsTextAndSaySo()
+    {
+        using var tree = new TempTree().Write("a.py", "class Model:\n    pass\n").Write("b.py", "x = Model()\n");
+        using var engine = Parsing.Engine.Unavailable("libtree-sitter.so: cannot open shared object file");
+
+        var map = await RepoMap.Map.Build(new MapRequest(tree.Root, ".", []) { Engine = engine }, _ => { }, default);
+
+        Assert.Contains("class Model", map);
+        Assert.Single(Regex.Matches(map, "Parsed without Tree-sitter: libtree-sitter.so"));
+    }
+
+    [Fact]
+    public async Task AQueryThatDoesNotCompile_IsNamedInTheHeader_AndItsFilesAreStillMapped()
+    {
+        using var tree = new TempTree().Write("a.py", "class Model:\n    pass\n");
+        using var engine = Parsing.Engine.WithQueries(g => g == Parsing.Grammars.Python ? "(no_such_node) @name" : Parsing.Grammars.QueryText(g));
+
+        var map = await RepoMap.Map.Build(new MapRequest(tree.Root, ".", []) { Engine = engine }, _ => { }, default);
+
+        Assert.Contains("Python read as text: ", map);
+        Assert.Contains("class Model", map);
+    }
+
+    /// <summary>A KOTLIN FILE BESIDE PARSED ONES is read as text, and that is the normal path — no note.</summary>
+    [Fact]
+    public async Task AFallbackLanguage_IsReadAsTextWithoutANote()
+    {
+        using var tree = new TempTree().Write("A.kt", "class Widget {\n    fun draw() {}\n}\n").Write("b.py", "def f():\n    pass\n");
+        var map = await RepoMap.Map.Build(new MapRequest(tree.Root, ".", []), _ => { }, default);
+
+        Assert.Contains("class Widget", map);
+        Assert.Contains("def f()", map);
+        Assert.DoesNotContain("read as text", map);
+        Assert.DoesNotContain("without Tree-sitter", map);
     }
 }

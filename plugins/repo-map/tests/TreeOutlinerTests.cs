@@ -12,7 +12,7 @@ public sealed class TreeOutlinerTests : IDisposable
     private readonly Engine _engine = Engine.Open();
 
     private List<string> Outline(string path, string source) =>
-        TreeOutliner.Outline(path, source, _engine.ReaderFor(Grammars.For(path)!)!)!.Symbols
+        TreeOutliner.Outline(path, source, _engine.ReaderFor(Grammars.For(path)!)!, TreeOutliner.ParseBudget)!.Symbols
             .Select(s => $"{s.Line}:{s.Depth}:{s.Signature}")
             .ToList();
 

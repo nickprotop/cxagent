@@ -84,10 +84,10 @@ public static class TreeOutliner
     /// <summary>One definition the query found: its name, the node the query captured, and the node the map quotes.</summary>
     private sealed record Definition(TS.Node Name, TS.Node Node, TS.Node Head, SymbolKind Kind);
 
-    /// <summary>The file's outline, or null when its parse ran past <see cref="ParseBudget"/>.</summary>
-    public static FileOutline? Outline(string path, string text, Reader reader)
+    /// <summary>The file's outline, or null when its parse ran past <paramref name="budget"/> — normally <see cref="ParseBudget"/>.</summary>
+    public static FileOutline? Outline(string path, string text, Reader reader, TimeSpan budget)
     {
-        using var tree = reader.Parser.Parse(text);
+        using var tree = reader.Parser.Parse(text, budget);
         if (tree is null) return null;
 
         var definitions = new List<Definition>();

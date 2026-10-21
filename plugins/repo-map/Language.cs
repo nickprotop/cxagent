@@ -13,10 +13,11 @@ public enum Family { CLike, Script, Go, Rust, Python, Ruby, Shell }
 /// What the stripper and the outliner need to know about one language — its comments, its strings,
 /// and which declaration rules read it.
 ///
-/// <para>A TABLE, NOT A PARSER PER LANGUAGE. A map needs declarations and nothing else, and the
-/// syntax that hides a declaration is the same few things everywhere: a comment, a string, a body.
-/// Getting those three right per language is what lets one set of rules read a dozen languages; a
-/// real parser for each would be a dependency this plugin exists to avoid.</para>
+/// <para>THE TEXT READER'S TABLE. Most files are parsed with Tree-sitter (see Parsing/Grammars);
+/// this is how the rest are read — the languages with no grammar here, and every file on a machine
+/// whose natives will not load. A map needs declarations and nothing else, and the syntax that hides
+/// one is the same few things everywhere: a comment, a string, a body. Getting those three right per
+/// language is what lets one set of rules read them all without anything native.</para>
 /// </summary>
 public sealed record Language(string Name, Family Family)
 {
