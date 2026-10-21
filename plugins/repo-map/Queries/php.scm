@@ -1,5 +1,5 @@
 ; Source: tree-sitter/tree-sitter-php @ 7d07b41ce2d442ca9a90ed85d0075eccc17ae315, queries/tags.scm (MIT). Upstream, unchanged, down to
-; the local block. Captures used: @name with @definition.* or @reference.*; the rest is ignored.
+; the local block. Captures used: @name with @definition.*; references and the rest are ignored.
 
 (namespace_definition
   name: (namespace_name) @name) @definition.module
@@ -43,11 +43,5 @@
   name: (name) @name) @reference.call
 
 ; --- cxagent local additions ------------------------------------------------------------------
-; Upstream misses enums, type declarations, parents and static calls.
-(named_type (name) @name) @reference.type
-(base_clause (name) @name) @reference.class
-(scoped_call_expression scope: (name) @name) @reference.type
+; Upstream misses enums.
 (enum_declaration name: (name) @name) @definition.class
-; A use clause is a use of the class it names.
-(namespace_use_clause (qualified_name (name) @name)) @reference.import
-(namespace_use_clause (name) @name) @reference.import

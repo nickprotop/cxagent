@@ -1,5 +1,5 @@
 ; Source: tree-sitter/tree-sitter-scala @ 97aead18d97708190a51d4f551ea9b05b60641c9, queries/tags.scm (MIT). Upstream, unchanged, down to
-; the local block. Captures used: @name with @definition.* or @reference.*; the rest is ignored.
+; the local block. Captures used: @name with @definition.*; references and the rest are ignored.
 
 ; Definitions
 
@@ -66,11 +66,3 @@
 (extends_clause
   (generic_type
     (type_identifier) @name)) @reference.class
-
-
-; --- cxagent local additions ------------------------------------------------------------------
-; Upstream marks type names only after new and extends.
-((type_identifier) @name @reference.type)
-; An import is a use of the name at the end of its path. Anchored with "." and no field: one
-; pattern matches a node once, so an unanchored one would capture only the path's first segment.
-(import_declaration (identifier) @name .) @reference.import

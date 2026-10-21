@@ -1,5 +1,5 @@
 ; Source: tree-sitter/tree-sitter-java @ e10607b45ff745f5f876bfa3e94fbcc6b44bdc11, queries/tags.scm (MIT). Upstream, unchanged, down to
-; the local block. Captures used: @name with @definition.* or @reference.*; the rest is ignored.
+; the local block. Captures used: @name with @definition.*; references and the rest are ignored.
 
 (class_declaration
   name: (identifier) @name) @definition.class
@@ -23,13 +23,8 @@
 (superclass (type_identifier) @name) @reference.class
 
 ; --- cxagent local additions ------------------------------------------------------------------
-; Upstream misses constructors, enums, records and annotation types, and type names outside new and extends.
+; Upstream misses constructors, enums, records and annotation types.
 (constructor_declaration name: (identifier) @name) @definition.method
 (enum_declaration name: (identifier) @name) @definition.class
 (record_declaration name: (identifier) @name) @definition.class
 (annotation_type_declaration name: (identifier) @name) @definition.interface
-((type_identifier) @name @reference.type)
-(method_invocation object: (identifier) @name) @reference.type
-; An import is a use: of the class it names, and — for a static import — of the class it reaches into.
-(import_declaration (scoped_identifier name: (identifier) @name)) @reference.import
-(import_declaration (scoped_identifier scope: (scoped_identifier name: (identifier) @name))) @reference.import

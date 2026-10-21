@@ -42,4 +42,46 @@ public sealed class FileReaderTests : IDisposable
         var outline = FileReader.Outline("A.kt", "class Widget {\n    fun draw() {}\n}\n", Language.For("A.kt")!, _engine);
         Assert.Contains("class Widget", Signatures(outline));
     }
+
+    /// <summary>
+    /// THE RANKING COUNTS WHAT THE CODE MENTIONS, AS TEXT. Measured on 13 repositories, edges from
+    /// the parser's references alone ranked flask's app, zod's types and cxagent's Agent far lower than
+    /// every word the code uses does — a name passed as a value or reached through an alias is a use
+    /// too, and no query marks it. So a parsed file keeps its declarations from the tree and its
+    /// mentions from the text.
+    /// </summary>
+    [Fact]
+    public void AParsedFilesMentions_AreEveryNameItsCodeUses()
+    {
+        var outline = FileReader.Outline("a.py", "handler = Model\nregistry[key] = Session\n# Comment only\nlabel = \"Quoted\"\n", Language.For("a.py")!, _engine);
+        Assert.Contains("Model", outline.Mentions.Keys);
+        Assert.Contains("Session", outline.Mentions.Keys);
+        Assert.DoesNotContain("Comment", outline.Mentions.Keys);
+        Assert.DoesNotContain("Quoted", outline.Mentions.Keys);
+    }
+
+    /// <summary>
+    /// AN ANNOTATION IS A LABEL, NOT A DEPENDENCY. Every guava file imports and applies
+    /// <c>@GwtCompatible</c>; ranked by those uses, the annotation would outrank the classes the
+    /// files are actually built from. It is listed in its own file, and links nothing.
+    /// </summary>
+    [Fact]
+    public void AnAnnotationUsedEverywhere_DoesNotOutrankWhatTheFilesUse()
+    {
+        FileOutline Read(string path, string source) => FileReader.Outline(path, source, Language.For(path)!, _engine);
+        var files = new List<FileOutline>
+        {
+            Read("Marked.java", "package p;\npublic @interface Marked {}\n"),
+            Read("Core.java", "package p;\npublic class Core { public void run() {} }\n"),
+        };
+        // As in guava: the annotation on every file, the class it is built on in some of them.
+        for (var i = 0; i < 6; i++)
+            files.Add(Read($"User{i}.java", i < 2
+                ? $"package p;\nimport p.Marked;\n@Marked\nclass User{i} {{ void f(Core c) {{ }} }}\n"
+                : $"package p;\nimport p.Marked;\n@Marked\nclass User{i} {{ }}\n"));
+
+        var ranked = Ranker.Rank(files, []).Files.Select(f => f.Path).ToList();
+        Assert.True(ranked.IndexOf("Core.java") < ranked.IndexOf("Marked.java"), string.Join(", ", ranked));
+        Assert.Contains("public @interface Marked", files[0].Symbols.Select(s => s.Signature));
+    }
 }

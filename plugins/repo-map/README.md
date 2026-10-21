@@ -37,13 +37,13 @@ Next by rank, declarations not shown:
 
 ## How files are ranked
 
-A file that uses a name another file declares is taken to use that file. Where Tree-sitter parses a
-file, a use is a call, a type named in a signature, a base class, an import or a decorator, as the
-grammar's query marks them; a name in a comment or a string is not a use. Where a file is read as
-text, every word left once its comments and strings are blanked counts. The files are then ranked
-with PageRank over that graph. A file many others use ranks high, and a file used by something many
-others use ranks higher still. So the types everything is built from come first and the leaves come
-last.
+A file that mentions a name another file declares is taken to use that file. A mention is any word
+left in the code once its comments and strings are blanked, whichever reader found the declarations:
+measured on real repositories, that ranks a project's core higher than counting only the calls and
+type uses a parser marks, because a name passed as a value or reached through an alias is a use too.
+The files are then ranked with PageRank over that graph. A file many others use ranks high, and a
+file used by something many others use ranks higher still. So the types everything is built from
+come first and the leaves come last.
 
 The matching is by name, because there is no compiler to resolve references. A name declared in
 several files spreads its weight across all of them, and names too common to mean anything, such as
@@ -70,7 +70,9 @@ that use them get a share of the restarts too. A focus on a test file works like
 
 Tree-sitter is a real parser, compiled into the plugin with its native libraries beside it, so there
 is nothing to install and no language server. Each grammar's own upstream query says what a
-declaration is, with a few additions of this plugin's where one falls short. The text reader finds
+declaration is, with a few additions of this plugin's where one falls short. A file the parser cannot
+read cleanly, such as a C++ header full of macros it cannot expand, is also read as text, and
+whichever finds more declarations is used. The text reader finds
 declarations by reading the source as text, and is also the fallback for every file when the parser cannot load on a machine, for a language whose
 query will not load, and for a single file that takes more than 2 seconds to parse. The map's header
 says when the parser could not load, or a language was read as text, and why.

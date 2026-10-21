@@ -1,5 +1,5 @@
 ; Source: tree-sitter/tree-sitter-javascript @ 58404d8cf191d69f2674a8fd507bd5776f46cb11, queries/tags.scm (MIT). Upstream, unchanged, down to
-; the local block. Captures used: @name with @definition.* or @reference.*; the rest is ignored.
+; the local block. Captures used: @name with @definition.*; references and the rest are ignored.
 
 (
   (comment)* @doc
@@ -105,4 +105,3 @@
 ; Upstream leaves out constructors and exported values that are not functions.
 (method_definition name: (property_identifier) @name (#eq? @name "constructor")) @definition.method
 (export_statement (lexical_declaration (variable_declarator name: (identifier) @name) @definition.constant))
-(import_specifier name: (identifier) @name) @reference.import

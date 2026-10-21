@@ -9,15 +9,15 @@ namespace CxAgent.Plugins.RepoMap.Parsing;
 public sealed record Grammar(string Id, string Name, IReadOnlyList<string> Queries);
 
 /// <summary>
-/// Which grammar reads a file, and the query that finds its declarations and references.
+/// Which grammar reads a file, and the query that finds its declarations.
 ///
 /// <para>A LANGUAGE WITHOUT ONE IS READ AS TEXT. Kotlin, Swift, Dart and Objective-C have no grammar
 /// in the pinned package, and <see cref="For"/> returning null is the normal path for them, not a
 /// failure.</para>
 ///
 /// <para>QUERIES ARE JOINED, NOT COPIED. TypeScript's upstream query builds on JavaScript's, so a
-/// TypeScript grammar runs both files; JavaScript-only and JSX-only patterns live in files of their
-/// own, because a pattern naming a node a grammar lacks fails the whole query.</para>
+/// TypeScript grammar runs both files. A pattern there must compile against all three grammars: one
+/// naming a node a grammar lacks fails the whole query.</para>
 /// </summary>
 public static class Grammars
 {
@@ -26,9 +26,9 @@ public static class Grammars
     public static readonly Grammar CSharp = new("c-sharp", "C#", ["c-sharp.scm"]);
     public static readonly Grammar Java = new("java", "Java", ["java.scm"]);
     public static readonly Grammar Scala = new("scala", "Scala", ["scala.scm"]);
-    public static readonly Grammar JavaScript = new("javascript", "JavaScript", ["javascript.scm", "javascript-only.scm", "jsx.scm"]);
+    public static readonly Grammar JavaScript = new("javascript", "JavaScript", ["javascript.scm"]);
     public static readonly Grammar TypeScript = new("typescript", "TypeScript", ["javascript.scm", "typescript.scm"]);
-    public static readonly Grammar Tsx = new("tsx", "TSX", ["javascript.scm", "typescript.scm", "jsx.scm"]);
+    public static readonly Grammar Tsx = new("tsx", "TSX", ["javascript.scm", "typescript.scm"]);
     public static readonly Grammar Go = new("go", "Go", ["go.scm"]);
     public static readonly Grammar Rust = new("rust", "Rust", ["rust.scm"]);
     public static readonly Grammar Python = new("python", "Python", ["python.scm"]);

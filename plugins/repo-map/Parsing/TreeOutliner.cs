@@ -4,12 +4,13 @@ using TS = TreeSitter;
 namespace CxAgent.Plugins.RepoMap.Parsing;
 
 /// <summary>
-/// One file's declarations and references, from its syntax tree.
+/// One file's declarations, from its syntax tree.
 ///
 /// <para>THE GRAMMAR'S OWN QUERY SAYS WHAT A DECLARATION IS. Each grammar's upstream tags.scm marks
-/// definitions and references with the same capture names everywhere (<c>@definition.class</c>,
-/// <c>@reference.call</c>), so the code below knows a handful of node names that recur across
-/// grammars and nothing about any one language.</para>
+/// definitions with the same capture names everywhere (<c>@definition.class</c>,
+/// <c>@definition.method</c>), so the code below knows a handful of node names that recur across
+/// grammars and nothing about any one language. The query's <c>@reference.*</c> captures are not
+/// used: what a file mentions comes from its text — see <see cref="FileReader"/>.</para>
 ///
 /// <para>WHAT THE MAP SHOWS IS WHAT THE TEXT READER SHOWS: a type, or a member at a file's or a
 /// type's top level, never anything inside a body; the declaration as written up to its body or its
@@ -101,7 +102,6 @@ public static class TreeOutliner
         if (tree is null) return null;
 
         var definitions = new List<Definition>();
-        var references = new List<TS.Node>();
         using (var cursor = reader.Query.Execute(tree.RootNode))
             foreach (var match in cursor.Matches)
             {
@@ -109,35 +109,17 @@ public static class TreeOutliner
                 string? role = null;
                 foreach (var capture in match.Captures)
                     if (capture.Name == "name") name = capture.Node;
-                    else if (capture.Name.StartsWith("definition.", StringComparison.Ordinal)
-                             || capture.Name.StartsWith("reference.", StringComparison.Ordinal))
+                    else if (capture.Name.StartsWith("definition.", StringComparison.Ordinal))
                         (role, node) = (capture.Name, capture.Node);
 
                 if (name is null || node is null || role is null) continue;
-                if (role.StartsWith("definition.", StringComparison.Ordinal))
-                    definitions.Add(new Definition(name, node, Head(node), KindOf(role["definition.".Length..])));
-                else
-                    references.Add(name);
+                definitions.Add(new Definition(name, node, Head(node), KindOf(role["definition.".Length..])));
             }
 
-        // A DECLARATION'S OWN NAME IS NOT A USE OF IT — Ruby's query marks every constant as a reference,
-        // the one in `class Widget` included.
-        var declared = definitions.Select(d => d.Name.StartIndex).ToHashSet();
-        var mentions = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var name in references)
-        {
-            if (declared.Contains(name.StartIndex)) continue;
-            var word = name.Text;
-            if (!Countable.IsMatch(word)) continue;
-            mentions[word] = mentions.GetValueOrDefault(word) + 1;
-        }
-
-        return new Parsed(new FileOutline(path, Symbols(text, definitions), mentions), !tree.RootNode.HasError);
+        // NO MENTIONS: FileReader takes them from the text.
+        return new Parsed(new FileOutline(path, Symbols(text, definitions), new Dictionary<string, int>(StringComparer.Ordinal)),
+                          !tree.RootNode.HasError);
     }
-
-    /// <summary>The names <see cref="Ranker.MentionsIn"/> counts, so both readers feed the ranking the same kind of name.</summary>
-    private static readonly System.Text.RegularExpressions.Regex Countable =
-        new(@"^[A-Za-z_][A-Za-z0-9_]{2,}$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>
     /// What kind of thing a capture says it found. The suffixes are the tags convention's, plus the few

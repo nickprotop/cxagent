@@ -1,5 +1,5 @@
 ; Source: tree-sitter/tree-sitter-ruby @ 89bd7a8e5450cb6a942418a619d30469f259e5d6, queries/tags.scm (MIT). Upstream, unchanged, down to
-; the local block. Captures used: @name with @definition.* or @reference.*; the rest is ignored.
+; the local block. Captures used: @name with @definition.*; references and the rest are ignored.
 
 ; Method definitions
 
@@ -65,7 +65,3 @@
   (#is-not? local)
   (#not-match? @name "^(lambda|load|require|require_relative|__FILE__|__LINE__)$")
 )
-
-; --- cxagent local additions ------------------------------------------------------------------
-; Upstream marks a constant only where it is called.
-((constant) @name @reference.type)

@@ -1,5 +1,5 @@
 ; Source: tree-sitter/tree-sitter-go @ 2346a3ab1bb3857b48b29d779a1ef9799a248cd7, queries/tags.scm (MIT). Upstream, unchanged, down to
-; the local block. Captures used: @name with @definition.* or @reference.*; the rest is ignored.
+; the local block. Captures used: @name with @definition.*; references and the rest are ignored.
 
 (
   (comment)* @doc
