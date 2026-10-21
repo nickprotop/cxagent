@@ -90,7 +90,14 @@ public sealed class Git(string executable, Action<int> onProcess)
             // ONLY A PROCESS STILL RUNNING IS REGISTERED. Most git commands here finish in
             // milliseconds, often before this line; one already gone has nothing to reap, and a
             // host older than 0.9.44 puts "could not be recorded" in the user's transcript for it.
-            if (!git.HasExited) onProcess(git.Id);
+            if (!git.HasExited)
+            {
+                // A HOST OLDER THAN 0.9.44 THROWS when the process exits in the instant it is being
+                // recorded. The process is gone, so there is nothing left to record, and the command
+                // itself has done its work.
+                try { onProcess(git.Id); }
+                catch (System.ComponentModel.Win32Exception) { }
+            }
             git.StandardInput.Close();
 
             // DRAINED WHILE IT RUNS: output larger than the pipe would block git on its write while

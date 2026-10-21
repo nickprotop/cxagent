@@ -101,7 +101,14 @@ public static class FileSource
             // ONLY WHILE IT RUNS: a small repository's list is done in milliseconds, and a process
             // already gone has nothing to reap. A host older than 0.9.44 reports one registered
             // after it exited as unrecordable, in the user's transcript.
-            if (!git.HasExited) onProcess(git.Id);
+            if (!git.HasExited)
+            {
+                // A HOST OLDER THAN 0.9.44 THROWS when the process exits in the instant it is being
+                // recorded. The process is gone, so there is nothing left to record, and the command
+                // itself has done its work.
+                try { onProcess(git.Id); }
+                catch (System.ComponentModel.Win32Exception) { }
+            }
 
             // DRAINED WHILE IT RUNS: a large repository's list overfills the pipe, and git would
             // block writing it while this waited for git to exit.

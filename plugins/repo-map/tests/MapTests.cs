@@ -64,6 +64,22 @@ public class FileSourceTests
         Assert.Equal(["bin/Committed.cs", "src/New.cs", "src/Tracked.cs"], files);
     }
 
+    /// <summary>
+    /// A HOST THAT CANNOT RECORD git DOES NOT COST THE LIST. A host older than 0.9.44 throws when
+    /// the process exits in the instant it is being recorded; git's answer is still the one to use.
+    /// </summary>
+    [Fact]
+    public void AHostThatThrowsOnRegistering_StillGetsGitsList()
+    {
+        using var tree = new TempTree().Write(".gitignore", "skip/\n").Write("a.cs", "class A {}").Write("skip/b.cs", "class B {}");
+        tree.Git("init", "-q");
+
+        var list = FileSource.List(tree.Root, _ => throw new System.ComponentModel.Win32Exception());
+
+        Assert.True(list.FromGit);
+        Assert.Equal(["a.cs"], list.Files.Select(f => Path.GetRelativePath(tree.Root, f)));
+    }
+
     [Fact]
     public void WithoutARepository_TheWalkSkipsBuildOutputAndDotFolders()
     {

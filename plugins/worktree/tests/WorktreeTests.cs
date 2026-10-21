@@ -550,6 +550,23 @@ public class WorktreeTests
 
         Assert.Single(registered);
     }
+
+    /// <summary>
+    /// A HOST THAT CANNOT RECORD THE PROCESS DOES NOT FAIL THE COMMAND. A host older than 0.9.44
+    /// throws when the process exits in the instant it is being recorded; git ran all the same.
+    /// </summary>
+    [Fact]
+    public void AHostThatThrowsOnRegistering_DoesNotFailTheCommand()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var repo = new Repo();
+
+        var result = new Git("sh", _ => throw new System.ComponentModel.Win32Exception())
+            .Run(repo.Root, "-c", "sleep 0.3; echo ran");
+
+        Assert.True(result.Ok, result.Why);
+        Assert.Equal("ran", result.Output.Trim());
+    }
 }
 
 public class PluginTests
