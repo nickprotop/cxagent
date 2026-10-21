@@ -772,3 +772,21 @@ jobs:
           git -c user.name="cxagent release" -c user.email="noreply@github.com" \
               commit -am "cxagent-bin $V" || { echo "nothing changed"; exit 0; }
           git push
+
+  # EVERY RELEASE KEEPS ONLY THE NEWEST THREE, the one just made included. After `release`, so the new
+  # version is live before anything older goes; a failed release prunes nothing. Carry-forward reads
+  # the previous release, which is always among the three, and releases/latest/download always names
+  # the newest. The git tags stay and NuGet is untouched — see prune_releases.py.
+  prune:
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'nickprotop/cxagent' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Delete all but the newest three releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/prune_releases.py --repo "${GITHUB_REPOSITORY}" --current "${GITHUB_REF_NAME}" --keep 3
