@@ -31,9 +31,6 @@ public sealed record Symbol(string Name, string Signature, int Line, int Depth, 
 /// </summary>
 public static class Outliner
 {
-    /// <summary>Longest signature quoted. A parameter list longer than this is cut, and says so.</summary>
-    private const int MaxSignature = 160;
-
     /// <summary>How many lines a signature may continue over before it is cut — a parameter list per
     /// line is common, a declaration longer than this is rare.</summary>
     private const int MaxSignatureLines = 8;
@@ -588,13 +585,9 @@ public static class Outliner
 
         var cut = BodyStart(code.ToString(), language);
         var shown = display.ToString()[..Math.Min(cut, display.Length)];
-        // A parameter list begun on the line after its "(" joins as "( string": the space was the line break.
-        shown = Regex.Replace(Regex.Replace(shown, @"\s+", " "), @"([(\[]|(?<=\w)<) | ([)\]>])", "$1$2").Trim().TrimEnd(':').TrimEnd();
-        // A TRAILING COMMA — rustfmt's, and many formatters' for a list that wraps — says nothing
-        // once the list is on one line.
-        shown = Regex.Replace(shown, @",\s*\)", ")");
+        shown = Signatures.Normalise(shown);
         if (language == Language.C && !toBody) shown = WithoutInitialisers(shown);
-        return shown.Length <= MaxSignature ? shown : shown[..MaxSignature].TrimEnd() + "…";
+        return Signatures.Cut(shown);
     }
 
     /// <summary>
