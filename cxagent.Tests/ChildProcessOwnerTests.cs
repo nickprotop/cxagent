@@ -143,4 +143,49 @@ public class ChildProcessOwnerTests : IDisposable
         Assert.DoesNotContain(mine.Id.ToString(), file);
         Assert.Contains(theirs.Id.ToString(), file);
     }
+
+    /// <summary>
+    /// A RECORD WHOSE PROCESS HAS EXITED IS DROPPED WHEN THE NEXT ONE IS ADDED. A plugin that runs a
+    /// short command per call registers each one, and without this the file grows by one record per
+    /// call for the whole session, each a pid with nothing behind it left to reap.
+    /// </summary>
+    [Fact]
+    public void Add_DropsThisRunsRecordsWhoseProcessHasExited()
+    {
+        var me = Sleeper();
+        var done = Process.Start(new ProcessStartInfo("true") { UseShellExecute = false })!;
+        _started.Add(done);
+        var record = new ChildProcessRecord(done.Id, done.StartTime.ToUniversalTime(), "worktree");
+        done.WaitForExit();
+        var running = Sleeper();
+        var store = new ChildProcessStore(_dir, IdentityOf(me));
+        store.Add(record);
+
+        store.Add(ChildOf(running, "worktree"));
+
+        var file = File.ReadAllText(Path.Combine(_dir, "plugin-children.json"));
+        Assert.DoesNotContain($"\"Pid\": {done.Id},", file);
+        Assert.Contains($"\"Pid\": {running.Id},", file);
+    }
+
+    /// <summary>
+    /// A NEIGHBOUR'S RECORDS ARE ITS OWN TO CLEAR, exited or not: an add here drops only what this
+    /// run recorded, the same line <see cref="ChildProcessStore.ReapOwn"/> draws.
+    /// </summary>
+    [Fact]
+    public void Add_LeavesANeighboursExitedRecordsAlone()
+    {
+        var me = Sleeper();
+        var neighbour = Sleeper();
+        var done = Process.Start(new ProcessStartInfo("true") { UseShellExecute = false })!;
+        _started.Add(done);
+        var record = new ChildProcessRecord(done.Id, done.StartTime.ToUniversalTime(), "worktree");
+        done.WaitForExit();
+        new ChildProcessStore(_dir, IdentityOf(neighbour)).Add(record);
+
+        new ChildProcessStore(_dir, IdentityOf(me)).Add(ChildOf(Sleeper(), "worktree"));
+
+        var file = File.ReadAllText(Path.Combine(_dir, "plugin-children.json"));
+        Assert.Contains($"\"Pid\": {done.Id},", file);
+    }
 }

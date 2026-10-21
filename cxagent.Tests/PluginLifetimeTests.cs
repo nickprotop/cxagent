@@ -51,4 +51,29 @@ public class PluginLifetimeTests
         context.Dispose();
         Assert.True(context.Lifetime.IsCancellationRequested);
     }
+
+    /// <summary>
+    /// A PROCESS THAT HAS ALREADY EXITED IS NOT REPORTED. A plugin running a short command may
+    /// register it after it is gone; there is nothing left to reap, so there is nothing to tell the
+    /// user either.
+    /// </summary>
+    [Fact]
+    public void Registering_a_process_that_already_exited_reports_nothing()
+    {
+        using var doc = JsonDocument.Parse("{}");
+        var children = new ChildProcessStore(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()));
+        var reported = new List<string>();
+        using var context = new PluginResolver.RuntimeContext(new PluginResolver.PluginRuntime(
+            WorkingDirectory: Path.GetTempPath(), Settings: doc.RootElement, Report: reported.Add,
+            Children: children, PluginName: "test", SessionId: "s1", Client: null));
+        using var done = System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo("true") { UseShellExecute = false })!;
+        var pid = done.Id;
+        done.WaitForExit();
+
+        context.RegisterChildProcess(pid);
+
+        Assert.Empty(reported);
+    }
 }
+

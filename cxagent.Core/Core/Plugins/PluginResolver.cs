@@ -376,7 +376,10 @@ public static class PluginResolver
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
             {
-                runtime.Report($"plugin '{runtime.PluginName}': process {processId} could not be recorded ({ex.Message}) — it may have already exited.");
+                // ALREADY GONE, AND SAID NOTHING ABOUT. A plugin running a short command registers
+                // it as it starts, and the command often finishes first; a process that has exited
+                // has nothing left to reap, so a line in the user's transcript would report a
+                // failure that changes nothing. ChildProcessStore.Record is silent for the same case.
             }
         }
 

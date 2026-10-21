@@ -99,7 +99,8 @@ public static class FileSource
             using var git = Process.Start(psi);
             if (git is null) return null;
             // ONLY WHILE IT RUNS: a small repository's list is done in milliseconds, and a process
-            // already gone has nothing to reap — the host would report it as unrecordable.
+            // already gone has nothing to reap. A host older than 0.9.44 reports one registered
+            // after it exited as unrecordable, in the user's transcript.
             if (!git.HasExited) onProcess(git.Id);
 
             // DRAINED WHILE IT RUNS: a large repository's list overfills the pipe, and git would

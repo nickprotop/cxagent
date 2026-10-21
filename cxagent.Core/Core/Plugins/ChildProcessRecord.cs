@@ -175,11 +175,23 @@ public sealed class ChildProcessStore
         lock (_lock)
         {
             var records = Load(_path);
-            records.RemoveAll(r => r.Pid == record.Pid);
+            records.RemoveAll(r => r.Pid == record.Pid || (IsOwn(r) && !IsRunning(r.Pid, r.StartTimeUtc)));
             records.Add(record);
             Save(records);
         }
     }
+
+    /// <summary>
+    /// Whether this store's owner wrote <paramref name="record"/>.
+    ///
+    /// <para>WHY <see cref="Add"/> DROPS THIS RUN'S EXITED RECORDS. A plugin that runs a short command
+    /// per call registers every one, and nothing removes a record whose process ended on its own, so
+    /// the file would grow by one dead pid per call until the run quits. A neighbour's records are
+    /// left for that neighbour, as <see cref="ReapOwn"/> leaves them.</para>
+    /// </summary>
+    private bool IsOwn(ChildProcessRecord record) =>
+        record.OwnerPid == _owner.Pid && record.OwnerStartTimeUtc is { } started
+        && Truncate(started) == Truncate(_owner.StartTimeUtc);
 
     /// <summary>Clears one pid from the record — at Stop, at unwire, and after a startup reap kills
     /// or confirms it. Not an error to remove a pid that is not there: <see cref="ReapOrphans"/> and
@@ -244,11 +256,8 @@ public sealed class ChildProcessStore
     /// <param name="log">Told which plugin's process was killed, as <see cref="ReapOrphans"/> is.</param>
     public void ReapOwn(Action<string> log)
     {
-        bool Mine(ChildProcessRecord r) => r.OwnerPid == _owner.Pid && r.OwnerStartTimeUtc is { } started
-            && Truncate(started) == Truncate(_owner.StartTimeUtc);
-
         List<ChildProcessRecord> mine;
-        lock (_lock) mine = Load(_path).Where(Mine).ToList();
+        lock (_lock) mine = Load(_path).Where(IsOwn).ToList();
         if (mine.Count == 0) return;
 
         foreach (var record in mine) Kill(record, log);

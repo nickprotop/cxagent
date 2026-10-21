@@ -29,17 +29,14 @@ public class ChildProcessSessionScopeTests : IDisposable
 
     public void Dispose()
     {
+        foreach (var p in _started)
+        {
+            try { if (!p.HasExited) p.Kill(); } catch (InvalidOperationException) { }
+            p.Dispose();
+        }
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
     }
 
-    /// <summary>
-    /// A pid that is not running, recorded for one session.
-    /// </summary>
-    /// <remarks>
-    /// A DEAD PID IS ENOUGH TO TEST THE MATCHING. Kill checks the recorded start time against the
-    /// live process before killing anything, so a stale record is skipped — what this exercises is
-    /// which records are SELECTED and which survive in the file, not the killing itself.
-    /// </remarks>
     /// <summary>
     /// What the store has left, read from its file.
     /// </summary>
@@ -57,9 +54,23 @@ public class ChildProcessSessionScopeTests : IDisposable
             File.ReadAllText(path)) ?? [];
     }
 
-    private void Record(string plugin, string? session) =>
-        _store.Add(new ChildProcessRecord(999_000 + Random.Shared.Next(999),
-            DateTime.UtcNow.AddMinutes(-5), plugin, session));
+    private readonly List<System.Diagnostics.Process> _started = [];
+
+    /// <summary>
+    /// A running process, recorded for one session.
+    /// </summary>
+    /// <remarks>
+    /// A LIVE ONE, NOT A MADE-UP PID: adding a record drops this run's records whose process has
+    /// exited, so a dead pid would vanish at the next add and every assertion here would hold
+    /// whether the matching worked or not.
+    /// </remarks>
+    private void Record(string plugin, string? session)
+    {
+        var sleeper = System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo("sleep", "60") { UseShellExecute = false })!;
+        _started.Add(sleeper);
+        _store.Add(new ChildProcessRecord(sleeper.Id, sleeper.StartTime.ToUniversalTime(), plugin, session));
+    }
 
     /// <summary>UNWIRING IN ONE SESSION LEAVES THE OTHER'S RECORD ALONE.</summary>
     [Fact]

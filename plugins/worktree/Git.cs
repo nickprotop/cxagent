@@ -88,8 +88,8 @@ public sealed class Git(string executable, Action<int> onProcess)
         using (git)
         {
             // ONLY A PROCESS STILL RUNNING IS REGISTERED. Most git commands here finish in
-            // milliseconds, often before this line; one already gone has nothing to reap, and the
-            // host would put "could not be recorded" in the user's transcript for it.
+            // milliseconds, often before this line; one already gone has nothing to reap, and a
+            // host older than 0.9.44 puts "could not be recorded" in the user's transcript for it.
             if (!git.HasExited) onProcess(git.Id);
             git.StandardInput.Close();
 
