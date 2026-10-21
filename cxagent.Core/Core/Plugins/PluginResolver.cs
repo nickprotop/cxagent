@@ -374,7 +374,12 @@ public static class PluginResolver
                 runtime.Children.Add(new ChildProcessRecord(
                     processId, process.StartTime.ToUniversalTime(), runtime.PluginName, runtime.SessionId));
             }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            // ALL THREE ARE A PROCESS THAT HAS GONE: not running at all (ArgumentException), exited
+            // with its handle open (InvalidOperationException), or exited between being looked up and
+            // having its start time read (Win32Exception, from the /proc entry vanishing). The last
+            // escaping would fail the plugin's tool call over a process that only finished quickly.
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+                                          or System.ComponentModel.Win32Exception)
             {
                 // ALREADY GONE, AND SAID NOTHING ABOUT. A plugin running a short command registers
                 // it as it starts, and the command often finishes first; a process that has exited

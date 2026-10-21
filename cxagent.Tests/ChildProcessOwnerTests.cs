@@ -153,7 +153,8 @@ public class ChildProcessOwnerTests : IDisposable
     public void Add_DropsThisRunsRecordsWhoseProcessHasExited()
     {
         var me = Sleeper();
-        var done = Process.Start(new ProcessStartInfo("true") { UseShellExecute = false })!;
+        // A SHORT SLEEP, NOT `true`: the start time is read before it exits, and `true` can be gone first.
+        var done = Process.Start(new ProcessStartInfo("sleep", "0.3") { UseShellExecute = false })!;
         _started.Add(done);
         var record = new ChildProcessRecord(done.Id, done.StartTime.ToUniversalTime(), "worktree");
         done.WaitForExit();
@@ -177,7 +178,8 @@ public class ChildProcessOwnerTests : IDisposable
     {
         var me = Sleeper();
         var neighbour = Sleeper();
-        var done = Process.Start(new ProcessStartInfo("true") { UseShellExecute = false })!;
+        // A SHORT SLEEP, NOT `true`: the start time is read before it exits, and `true` can be gone first.
+        var done = Process.Start(new ProcessStartInfo("sleep", "0.3") { UseShellExecute = false })!;
         _started.Add(done);
         var record = new ChildProcessRecord(done.Id, done.StartTime.ToUniversalTime(), "worktree");
         done.WaitForExit();
