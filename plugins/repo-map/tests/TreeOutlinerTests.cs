@@ -742,4 +742,15 @@ public sealed class TreeOutlinerTests : IDisposable
     {
         Assert.Equal(["1:0:int add(int a, int b)"], Outline("a.c", "int add(int a, /* second */ int b) { return a + b; }\n"));
     }
+
+    /// <summary>
+    /// A NUL CHARACTER IS END OF INPUT TO TREE-SITTER'S LEXER, so one inside a string literal would end
+    /// the file there. It is read as a space instead: same length, so no line or offset moves.
+    /// </summary>
+    [Fact]
+    public void ANulCharacter_HidesNothingAfterIt()
+    {
+        var found = Outline("A.cs", "class A\n{\n    string K() => $\"a\0b\";\n    void After() { }\n}\n");
+        Assert.Equal(["1:0:class A", "3:1:string K()", "4:1:void After()"], found);
+    }
 }

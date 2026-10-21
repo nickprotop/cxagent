@@ -50,11 +50,7 @@ public static class Map
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
 
                 var relative = Path.GetRelativePath(request.Root, file).Replace('\\', '/');
-                // THE TREE WHERE THERE IS A GRAMMAR AND IT LOADED, the text reader otherwise — and for a
-                // file whose parse ran out of time.
-                var reader = Parsing.Grammars.For(file) is { } grammar ? engine.ReaderFor(grammar) : null;
-                outlines.Add((reader is null ? null : Parsing.TreeOutliner.Outline(relative, text, reader, Parsing.TreeOutliner.ParseBudget))
-                             ?? Parsing.TextOutliner.Outline(relative, text, language));
+                outlines.Add(Parsing.FileReader.Outline(relative, text, language, engine));
             }
             // Copied before the engine is disposed with this map.
             notes = engine.Notes.ToList();

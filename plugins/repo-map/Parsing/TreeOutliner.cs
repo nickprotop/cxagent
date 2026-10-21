@@ -84,9 +84,19 @@ public static class TreeOutliner
     /// <summary>One definition the query found: its name, the node the query captured, and the node the map quotes.</summary>
     private sealed record Definition(TS.Node Name, TS.Node Node, TS.Node Head, SymbolKind Kind);
 
+    /// <summary>A file's outline from its tree, and whether the tree had no syntax errors in it.</summary>
+    public sealed record Parsed(FileOutline Outline, bool Clean);
+
     /// <summary>The file's outline, or null when its parse ran past <paramref name="budget"/> — normally <see cref="ParseBudget"/>.</summary>
-    public static FileOutline? Outline(string path, string text, Reader reader, TimeSpan budget)
+    public static FileOutline? Outline(string path, string text, Reader reader, TimeSpan budget) =>
+        Parse(path, text, reader, budget)?.Outline;
+
+    /// <summary>As <see cref="Outline"/>, and whether the parse was clean — see <see cref="FileReader"/>.</summary>
+    public static Parsed? Parse(string path, string text, Reader reader, TimeSpan budget)
     {
+        // A NUL IS END OF INPUT TO TREE-SITTER'S LEXER: one inside a string literal would end the file
+        // there. A space is the same length, so no line, offset or signature moves.
+        text = text.Replace('\0', ' ');
         using var tree = reader.Parser.Parse(text, budget);
         if (tree is null) return null;
 
@@ -122,7 +132,7 @@ public static class TreeOutliner
             mentions[word] = mentions.GetValueOrDefault(word) + 1;
         }
 
-        return new FileOutline(path, Symbols(text, definitions), mentions);
+        return new Parsed(new FileOutline(path, Symbols(text, definitions), mentions), !tree.RootNode.HasError);
     }
 
     /// <summary>The names <see cref="Ranker.MentionsIn"/> counts, so both readers feed the ranking the same kind of name.</summary>
