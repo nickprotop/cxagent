@@ -34,9 +34,10 @@ def main() -> int:
                        help="the committed plugins.json")
     parser.add_argument("--out", required=True, type=Path,
                        help="where to write the published catalog")
-    parser.add_argument("--plugin", action="append", default=[], metavar="NAME=PATH",
+    parser.add_argument("--plugin", action="append", default=[], metavar="NAME[@RID]=PATH",
                        help="a catalog entry and the release artifact whose hash fills its "
-                            "source.sha256; repeat for each plugin")
+                            "source.sha256 -- or, as NAME@RID, its sources[RID].sha256; repeat "
+                            "for each plugin and platform")
     parser.add_argument("--version", metavar="X.Y.Z",
                        help="cxagent's own version, published as cxagentVersion for the site to "
                             "show; omitted locally, where there is no release to name")
@@ -45,13 +46,19 @@ def main() -> int:
     # EVERY PLUGIN IN ONE PASS. Chaining invocations would mean each reading the previous one's
     # output, so a failure partway leaves a half-stamped catalog already written — and this script
     # exists to make that state impossible.
+    # KEYED (name, rid): rid is None for an entry with one `source`, and names the platform for
+    # an entry with per-platform `sources` -- each a different zip with its own hash.
     assets = {}
     for pair in args.plugin:
-        name, _, path = pair.partition("=")
+        key, _, path = pair.partition("=")
+        name, _, rid = key.partition("@")
         if not name or not path:
-            print(f"error: --plugin wants NAME=PATH, got '{pair}'.", file=sys.stderr)
+            print(f"error: --plugin wants NAME=PATH or NAME@RID=PATH, got '{pair}'.", file=sys.stderr)
             return 1
-        assets[name] = Path(path)
+        assets[(name, rid or None)] = Path(path)
+
+    def label(name, rid):
+        return f"{name}@{rid}" if rid else name
 
     if not assets:
         print("error: no --plugin given; nothing to stamp.", file=sys.stderr)
@@ -59,9 +66,9 @@ def main() -> int:
 
     # LOUD, NOT NULL. A catalog published with sha256 still null looks exactly like the committed
     # file, so the one thing this script exists to add would be missing with nothing to show for it.
-    for name, path in assets.items():
+    for (name, rid), path in assets.items():
         if not path.is_file():
-            print(f"error: no artifact at '{path}' for '{name}' -- refusing to publish a catalog "
+            print(f"error: no artifact at '{path}' for '{label(name, rid)}' -- refusing to publish a catalog "
                   f"without the hash it exists to carry.", file=sys.stderr)
             return 1
 
@@ -75,39 +82,52 @@ def main() -> int:
     # A url ENTRY IS ALREADY PINNED. Stamping one would replace a hash the maintainer committed
     # deliberately -- pinning a file this project does not control -- with the hash of whatever CI
     # happened to be handed.
-    for entry in catalog.get("plugins", []):
-        name = entry.get("name")
-        if name in assets and (entry.get("source") or {}).get("kind") != "release":
-            print(f"error: '{name}' is not a 'release' entry; its sha256 is committed and must not "
+    def source_of(entry, rid):
+        return (entry.get("source") or {}) if rid is None else ((entry.get("sources") or {}).get(rid) or {})
+
+    by_name = {entry.get("name"): entry for entry in catalog.get("plugins", [])}
+    for (name, rid) in assets:
+        entry = by_name.get(name)
+        if entry is not None and source_of(entry, rid) and source_of(entry, rid).get("kind") != "release":
+            print(f"error: '{label(name, rid)}' is not a 'release' source; its sha256 is committed and must not "
                   f"be overwritten.", file=sys.stderr)
             return 1
 
     stamped = set()
-    for entry in catalog.get("plugins", []):
-        name = entry.get("name")
-        if name in assets:
-            digest = sha256_of(assets[name])
-            entry.setdefault("source", OrderedDict())["sha256"] = digest
-            stamped.add(name)
-            print(f"{name}: {digest}")
+    for (name, rid), path in assets.items():
+        entry = by_name.get(name)
+        if entry is None:
+            continue
+        source = source_of(entry, rid)
+        if not source:
+            continue
+        digest = sha256_of(path)
+        source["sha256"] = digest
+        stamped.add((name, rid))
+        print(f"{label(name, rid)}: {digest}")
 
     missing = set(assets) - stamped
     if missing:
-        print(f"error: no catalog entry named {', '.join(sorted(missing))}.", file=sys.stderr)
+        print(f"error: no catalog entry or source named {', '.join(sorted(label(n, r) for n, r in missing))}.",
+              file=sys.stderr)
         return 1
 
     # EVERY ENTRY LEAVES WITH A HASH, however it got one. An entry still null here is one a client
     # cannot verify, which is the whole reason this script exists — but the two source kinds get
     # there differently and only one of them is ours to stamp.
-    # AN ENTRY USING PER-RID `sources` HAS NO SINGLE `source.sha256` and is not unstamped — it
-    # carries a hash per platform. No such entry exists yet; the first ABI plugin would otherwise
-    # trip this check the day it is added.
-    unstamped = [e.get("name") for e in catalog.get("plugins", [])
-                 if "sources" not in e and (e.get("source") or {}).get("sha256") is None]
+    # AN ENTRY USING PER-RID `sources` carries a hash per platform, and each one counts: a platform
+    # left null is a download no client on that platform can verify.
+    unstamped = []
+    for e in catalog.get("plugins", []):
+        if "sources" in e:
+            unstamped += [f"{e.get('name')}@{rid}" for rid, source in e["sources"].items()
+                          if (source or {}).get("sha256") is None]
+        elif (e.get("source") or {}).get("sha256") is None:
+            unstamped.append(e.get("name"))
     if unstamped:
-        print(f"error: {', '.join(unstamped)} would publish with a null sha256. A 'release' entry "
-              f"needs --plugin NAME=PATH; a 'url' entry must carry its hash in plugins.json.",
-              file=sys.stderr)
+        print(f"error: {', '.join(unstamped)} would publish with a null sha256. A 'release' source "
+              f"needs --plugin NAME=PATH (or NAME@RID=PATH); a 'url' source must carry its hash in "
+              f"plugins.json.", file=sys.stderr)
         return 1
 
     # CXAGENT'S OWN VERSION, WHICH IS NOT A PLUGIN'S. A plugin that did not change keeps its number

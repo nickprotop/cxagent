@@ -141,15 +141,28 @@ public class PluginCatalogTests
     {
         var name = entry.GetProperty("name").GetString()!;
 
-        // PER-RID "sources" IS THE NATIVE SHAPE and carries no "source" at all; each one must be
-        // fetchable and carry its own hash, for the reason a url source states its own below.
+        // PER-RID "sources" — a native plugin's, or a managed one that carries natives. A "url" source
+        // is fetched as written and carries its own hash; a "release" source is cxagent's own asset,
+        // committed with sha256 null and stamped by the site build, like a single "release" source.
         if (entry.TryGetProperty("sources", out var sources))
         {
             foreach (var one in sources.EnumerateObject())
-            {
-                Assert.StartsWith("https://", one.Value.GetProperty("url").GetString());
-                Assert.Equal(64, one.Value.GetProperty("sha256").GetString()!.Length);
-            }
+                switch (one.Value.GetProperty("kind").GetString())
+                {
+                    case "url":
+                        Assert.StartsWith("https://", one.Value.GetProperty("url").GetString());
+                        Assert.Equal(64, one.Value.GetProperty("sha256").GetString()!.Length);
+                        break;
+                    case "release":
+                        Assert.Equal(
+                            $"https://github.com/nickprotop/cxagent/releases/latest/download/{name}-{one.Name}.zip",
+                            one.Value.GetProperty("latest").GetString());
+                        Assert.Equal(JsonValueKind.Null, one.Value.GetProperty("sha256").ValueKind);
+                        break;
+                    default:
+                        Assert.Fail($"'{name}' sources.{one.Name} has kind '{one.Value.GetProperty("kind").GetString()}'.");
+                        break;
+                }
             return;
         }
 
@@ -244,6 +257,8 @@ public class PluginCatalogTests
         // for why a url source states its own.
         foreach (var source in sources.EnumerateObject())
         {
+            // A RELEASE SOURCE IS CHECKED BY AssertDownloadable: its hash is stamped at publish time.
+            if (source.Value.GetProperty("kind").GetString() != "url") continue;
             Assert.StartsWith("https://", source.Value.GetProperty("url").GetString());
             Assert.Equal(64, source.Value.GetProperty("sha256").GetString()!.Length);
         }
@@ -264,7 +279,20 @@ public class PluginCatalogTests
 
         foreach (var entry in Entries())
         {
-            if (!entry.TryGetProperty("source", out var source)) continue;   // per-RID "sources": no release asset
+            if (entry.TryGetProperty("sources", out var perPlatform))
+            {
+                var name = entry.GetProperty("name").GetString()!;
+                foreach (var rid in perPlatform.EnumerateObject())
+                {
+                    if (rid.Value.GetProperty("kind").GetString() != "release") continue;
+                    // THE WORKFLOW BUILDS "<name>-$RID.zip" IN A LOOP over its RID list, so the asset
+                    // name is not written out whole anywhere — the loop's pattern and the RID are.
+                    Assert.Contains($"{name}-$RID.zip", workflow);
+                    Assert.Contains(rid.Name, workflow);
+                }
+                continue;
+            }
+            if (!entry.TryGetProperty("source", out var source)) continue;
             if (source.GetProperty("kind").GetString() != "release") continue;
 
             // THE FILENAME OUT OF THE DOWNLOAD URL. The catalog no longer names the asset

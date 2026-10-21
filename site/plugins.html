@@ -117,6 +117,49 @@ it.</p>
     return a;
   }
 
+  var PLATFORM_NAMES = {
+    "linux-x64": "Linux x64", "linux-arm64": "Linux ARM64",
+    "osx-x64": "macOS Intel", "osx-arm64": "macOS Apple Silicon",
+    "win-x64": "Windows x64", "win-arm64": "Windows ARM64"
+  };
+
+  // Every download an entry offers, in the order PLATFORM_NAMES lists them, then any other.
+  function downloadsOf(p) {
+    if (p.sources) {
+      var order = Object.keys(PLATFORM_NAMES);
+      var rank = function (rid) { var i = order.indexOf(rid); return i < 0 ? order.length : i; };
+      return Object.keys(p.sources)
+        .sort(function (a, b) { return rank(a) - rank(b); })
+        .map(function (rid) {
+          var s = p.sources[rid] || {};
+          return { rid: rid, label: PLATFORM_NAMES[rid] || rid, url: s.latest || s.url, sha256: s.sha256 };
+        })
+        .filter(function (d) { return d.url; });
+    }
+    var one = p.source || {};
+    var url = one.latest || one.url;
+    return url ? [{ rid: null, label: null, url: url, sha256: one.sha256 }] : [];
+  }
+
+  // A GUESS, AND IT ONLY PRESELECTS. A browser reports its OS reliably and its CPU barely: a Mac's
+  // user agent says Intel on Apple Silicon too, so a Mac gets Apple Silicon, which every Mac sold
+  // since 2020 is. A wrong guess costs one click in the dropdown.
+  function visitorRid() {
+    var ua = navigator.userAgent || "";
+    var arm = /arm64|aarch64/i.test(ua);
+    if (/Windows/i.test(ua)) return arm ? "win-arm64" : "win-x64";
+    if (/Mac OS X|Macintosh/i.test(ua)) return "osx-arm64";
+    if (/Linux/i.test(ua) && !/Android/i.test(ua)) return arm ? "linux-arm64" : "linux-x64";
+    return null;
+  }
+
+  function checksum(value) {
+    var sum = el("p", "note");
+    sum.appendChild(document.createTextNode("sha256 "));
+    sum.appendChild(el("code", null, value));
+    return sum;
+  }
+
   function metaItem(label, value) {
     var li = document.createElement("li");
     li.appendChild(document.createTextNode(label + " "));
@@ -146,7 +189,10 @@ it.</p>
     if (p.kind) facts.push(p.kind);
     if (compat.pluginContract !== undefined) facts.push("contract v" + compat.pluginContract);
     if (p.tools && p.tools.length) facts.push(p.tools.length === 1 ? "1 tool" : p.tools.length + " tools");
-    if (compat.platforms && compat.platforms.length) facts.push(compat.platforms.join(" · "));
+    // SIX RIDs DO NOT FIT A ONE-LINE SUMMARY; the dropdown below names them. Two or fewer still read
+    // better spelled out than counted.
+    if (compat.platforms && compat.platforms.length)
+      facts.push(compat.platforms.length > 2 ? compat.platforms.length + " platforms" : compat.platforms.join(" · "));
     if (p.version) facts.push("v" + p.version);
     if (facts.length) head.appendChild(el("span", "plugin-facts", facts.join("  ·  ")));
     row.appendChild(head);
@@ -198,21 +244,43 @@ it.</p>
 
     var links = el("p", "plugin-links");
     if (p.sourceUrl) links.appendChild(link(p.sourceUrl, "Source and README"));
-    var source = p.source || {};
-    if (source.latest) {
+    // ONE DOWNLOAD, OR ONE PER PLATFORM. A per-platform entry gets a dropdown preselected to the
+    // visitor's platform, and the link and the hash beside it follow the choice — so the hash shown
+    // is always the hash of the file that link fetches.
+    var downloads = downloadsOf(p);
+    var sum = null;
+    if (downloads.length === 1) {
       if (links.childNodes.length) links.appendChild(document.createTextNode(" · "));
-      links.appendChild(link(source.latest, "Download"));
+      links.appendChild(link(downloads[0].url, "Download"));
+      if (downloads[0].sha256) sum = checksum(downloads[0].sha256);
+    } else if (downloads.length > 1) {
+      if (links.childNodes.length) links.appendChild(document.createTextNode(" · "));
+      var get = link(downloads[0].url, "Download for");
+      var pick = el("select", "platform-pick");
+      pick.setAttribute("aria-label", "Platform to download " + (p.displayName || p.name) + " for");
+      downloads.forEach(function (d, i) {
+        var option = el("option", null, d.label);
+        option.value = String(i);
+        pick.appendChild(option);
+      });
+      var guess = downloads.findIndex(function (d) { return d.rid === visitorRid(); });
+      sum = checksum("");
+      var choose = function (i) {
+        get.href = downloads[i].url;
+        sum.lastChild.textContent = downloads[i].sha256 || "stamped when the next release ships";
+      };
+      pick.value = String(guess >= 0 ? guess : 0);
+      choose(Number(pick.value));
+      pick.addEventListener("change", function () { choose(Number(pick.value)); });
+      links.appendChild(get);
+      links.appendChild(document.createTextNode(" "));
+      links.appendChild(pick);
     }
     if (links.childNodes.length) body.appendChild(links);
 
     // THE CHECKSUM IS SHOWN, NOT HIDDEN BEHIND A CLAIM. A reader who wants to verify a download
     // needs the value in front of them, and one who does not can ignore a line of hex.
-    if (source.sha256) {
-      var sum = el("p", "note");
-      sum.appendChild(document.createTextNode("sha256 "));
-      sum.appendChild(el("code", null, source.sha256));
-      body.appendChild(sum);
-    }
+    if (sum) body.appendChild(sum);
 
     row.appendChild(body);
     return row;

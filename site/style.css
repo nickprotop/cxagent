@@ -309,6 +309,19 @@ figcaption strong { color: var(--fg-bright); }
 
 .note { color: var(--fg-dim); font-size: 0.92rem; }
 
+/* THE BROWSER'S OWN <select>, dressed in the site's tokens: keyboard and screen readers get the
+   native control, and light and dark follow the variables like everything else. */
+.platform-pick {
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--fg-bright);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.15rem 0.4rem;
+}
+.platform-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));

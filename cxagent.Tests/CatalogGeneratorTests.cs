@@ -26,21 +26,31 @@ public class CatalogGeneratorTests
     }
 
     /// <summary>
-    /// The release-sourced plugin names, read from the catalog itself rather than hardcoded.
-    /// The generator refuses to publish any release entry nobody stamped, so a hardcoded list
-    /// here goes stale the moment an entry is added — and these tests would then fail over a
-    /// plugin they never heard of instead of testing anything.
+    /// Every --plugin key the real catalog needs: <c>name</c> for a single release source,
+    /// <c>name@rid</c> for each release source of a per-platform entry. Read from the catalog itself
+    /// rather than hardcoded — the generator refuses an entry nobody stamped, so a hardcoded list goes
+    /// stale the moment an entry is added, and these tests would then fail over a plugin they never
+    /// heard of instead of testing anything.
     /// </summary>
     private static string[] ReleasePlugins(string root)
     {
-        var catalog = JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(root, "plugins", "plugins.json")));
-        return catalog.RootElement.GetProperty("plugins").EnumerateArray()
-            .Where(e => e.TryGetProperty("source", out var source)
-                        && source.GetProperty("kind").GetString() == "release")
-            .Select(e => e.GetProperty("name").GetString()!)
-            .ToArray();
+        var catalog = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "plugins", "plugins.json")));
+        var keys = new List<string>();
+        foreach (var e in catalog.RootElement.GetProperty("plugins").EnumerateArray())
+        {
+            var name = e.GetProperty("name").GetString()!;
+            if (e.TryGetProperty("sources", out var sources))
+                keys.AddRange(sources.EnumerateObject()
+                    .Where(s => s.Value.GetProperty("kind").GetString() == "release")
+                    .Select(s => $"{name}@{s.Name}"));
+            else if (e.TryGetProperty("source", out var source) && source.GetProperty("kind").GetString() == "release")
+                keys.Add(name);
+        }
+        return keys.ToArray();
     }
+
+    /// <summary>A temp file for a stamp key, named like the release asset it stands in for.</summary>
+    private static string AssetFor(string dir, string key) => Path.Combine(dir, key.Replace('@', '-') + ".zip");
 
     private static (int Exit, string Stdout, string Stderr) Run(params string[] args)
     {
@@ -76,7 +86,7 @@ public class CatalogGeneratorTests
             // forgotten-plugin check doing its job. Different bytes per asset, so a stamp landing
             // on the wrong entry cannot pass.
             var assets = ReleasePlugins(root)
-                .ToDictionary(name => name, name => Path.Combine(dir, $"{name}.zip"));
+                .ToDictionary(key => key, key => AssetFor(dir, key));
             foreach (var (name, asset) in assets)
                 File.WriteAllText(asset, $"not really a zip, but {name}'s hashes the same way");
             var outPath = Path.Combine(dir, "catalog.json");
@@ -100,16 +110,21 @@ public class CatalogGeneratorTests
             foreach (var entry in published.GetProperty("plugins").EnumerateArray())
             {
                 var name = entry.GetProperty("name").GetString()!;
-                if (!assets.TryGetValue(name, out var asset)) continue;
+                // ONE HASH PER DOWNLOAD: a per-platform entry carries one under each of its sources.
+                var stamped = entry.TryGetProperty("sources", out var sources)
+                    ? sources.EnumerateObject().Select(s => (Key: $"{name}@{s.Name}", Sha: s.Value.GetProperty("sha256").GetString()))
+                    : [(Key: name, Sha: entry.GetProperty("source").GetProperty("sha256").GetString())];
+                foreach (var (key, sha) in stamped)
+                {
+                    if (!assets.TryGetValue(key, out var asset)) continue;
 
-                var sha = entry.GetProperty("source").GetProperty("sha256").GetString();
+                    // The expected value, computed independently of the generator.
+                    using var stream = File.OpenRead(asset);
+                    var expected = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream))
+                        .ToLowerInvariant();
 
-                // The expected value, computed independently of the generator.
-                using var stream = File.OpenRead(asset);
-                var expected = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream))
-                    .ToLowerInvariant();
-
-                Assert.Equal(expected, sha);
+                    Assert.Equal(expected, sha);
+                }
             }
         }
         finally { Directory.Delete(dir, recursive: true); }
@@ -191,7 +206,7 @@ public class CatalogGeneratorTests
         try
         {
             var assets = ReleasePlugins(root)
-                .ToDictionary(name => name, name => Path.Combine(dir, $"{name}.zip"));
+                .ToDictionary(key => key, key => AssetFor(dir, key));
             foreach (var (name, asset) in assets)
                 File.WriteAllText(asset, $"bytes for {name}");
 
@@ -230,5 +245,78 @@ public class CatalogGeneratorTests
         {
             Directory.Delete(dir, recursive: true);
         }
+    }
+
+    private const string PerPlatformCatalog = """
+        {
+          "schemaVersion": 2,
+          "plugins": [
+            {
+              "name": "demo",
+              "sources": {
+                "linux-x64": { "kind": "release", "sha256": null, "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/demo-linux-x64.zip" },
+                "win-x64":   { "kind": "release", "sha256": null, "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/demo-win-x64.zip" }
+              }
+            }
+          ]
+        }
+        """;
+
+    private static string Sha(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// A PER-PLATFORM ENTRY IS STAMPED PER PLATFORM: each platform's zip is a different file with its
+    /// own hash, and a client verifies the one it downloads.
+    /// </summary>
+    [Fact]
+    public void APerPlatformEntryGetsEachPlatformsHash()
+    {
+        var dir = Directory.CreateTempSubdirectory("catalog-gen-").FullName;
+        try
+        {
+            var catalog = Path.Combine(dir, "plugins.json");
+            File.WriteAllText(catalog, PerPlatformCatalog);
+            var linux = Path.Combine(dir, "demo-linux-x64.zip");
+            var windows = Path.Combine(dir, "demo-win-x64.zip");
+            File.WriteAllText(linux, "linux bytes");
+            File.WriteAllText(windows, "windows bytes");
+            var outPath = Path.Combine(dir, "out.json");
+
+            var (exit, _, stderr) = Run("--catalog", catalog, "--out", outPath,
+                "--plugin", $"demo@linux-x64={linux}", "--plugin", $"demo@win-x64={windows}");
+
+            Assert.True(exit == 0, $"generator failed: {stderr}");
+            var sources = JsonDocument.Parse(File.ReadAllText(outPath)).RootElement
+                .GetProperty("plugins")[0].GetProperty("sources");
+            Assert.Equal(Sha(linux), sources.GetProperty("linux-x64").GetProperty("sha256").GetString());
+            Assert.Equal(Sha(windows), sources.GetProperty("win-x64").GetProperty("sha256").GetString());
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>A PLATFORM LEFT UNSTAMPED IS A DOWNLOAD NO CLIENT CAN VERIFY, so the catalog is not published.</summary>
+    [Fact]
+    public void APerPlatformEntryMissingOnePlatformsZip_Fails()
+    {
+        var dir = Directory.CreateTempSubdirectory("catalog-gen-").FullName;
+        try
+        {
+            var catalog = Path.Combine(dir, "plugins.json");
+            File.WriteAllText(catalog, PerPlatformCatalog);
+            var linux = Path.Combine(dir, "demo-linux-x64.zip");
+            File.WriteAllText(linux, "linux bytes");
+
+            var (exit, _, stderr) = Run("--catalog", catalog, "--out", Path.Combine(dir, "out.json"),
+                "--plugin", $"demo@linux-x64={linux}");
+
+            Assert.NotEqual(0, exit);
+            Assert.Contains("demo@win-x64", stderr);
+            Assert.False(File.Exists(Path.Combine(dir, "out.json")));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
     }
 }
