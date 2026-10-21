@@ -73,3 +73,7 @@
 ; a trait's associated types.
 (impl_item type: [(array_type) (primitive_type) (reference_type) (pointer_type) (tuple_type) (scoped_type_identifier)] @name) @definition.class
 (associated_type name: (type_identifier) @name) @definition.type
+; A use declaration is a use of what it names.
+(use_declaration argument: (identifier) @name) @reference.import
+(use_declaration argument: (scoped_identifier name: (identifier) @name)) @reference.import
+(use_list (identifier) @name) @reference.import

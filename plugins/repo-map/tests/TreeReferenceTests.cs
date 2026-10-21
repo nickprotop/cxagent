@@ -61,4 +61,21 @@ public sealed class TreeReferenceTests : IDisposable
         var file = Read("a.go", "package a\n\nfunc f() { g(); ab() }\n");
         Assert.Empty(file.Mentions);
     }
+
+    /// <summary>
+    /// AN IMPORT IS A USE. Guava's files reach Preconditions through <c>import static
+    /// ….Preconditions.checkNotNull</c> and never write the class name again; without the import,
+    /// the most-used class in the library would have no one using it.
+    /// </summary>
+    [Theory]
+    [InlineData("A.java", "import static com.google.common.base.Preconditions.checkNotNull;\nimport com.google.common.base.Strings;\nclass A {}\n", "Preconditions,Strings")]
+    [InlineData("a.rs", "use crate::sink::{Sink, SinkError};\nuse std::io::Read;\nfn f() {}\n", "Sink,SinkError,Read")]
+    [InlineData("a.php", "<?php\nuse Illuminate\\Support\\Collection;\nfunction f() {}\n", "Collection")]
+    [InlineData("a.scala", "import scala.collection.mutable.ListBuffer\nobject A\n", "ListBuffer")]
+    public void Imports_AreMentions(string path, string source, string names)
+    {
+        var mentions = Read(path, source).Mentions.Keys;
+        foreach (var name in names.Split(','))
+            Assert.Contains(name, mentions);
+    }
 }

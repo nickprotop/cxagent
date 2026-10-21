@@ -30,3 +30,6 @@
 (annotation_type_declaration name: (identifier) @name) @definition.interface
 ((type_identifier) @name @reference.type)
 (method_invocation object: (identifier) @name) @reference.type
+; An import is a use: of the class it names, and — for a static import — of the class it reaches into.
+(import_declaration (scoped_identifier name: (identifier) @name)) @reference.import
+(import_declaration (scoped_identifier scope: (scoped_identifier name: (identifier) @name))) @reference.import

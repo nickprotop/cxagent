@@ -71,3 +71,6 @@
 ; --- cxagent local additions ------------------------------------------------------------------
 ; Upstream marks type names only after new and extends.
 ((type_identifier) @name @reference.type)
+; An import is a use of the name at the end of its path. Anchored with "." and no field: one
+; pattern matches a node once, so an unanchored one would capture only the path's first segment.
+(import_declaration (identifier) @name .) @reference.import

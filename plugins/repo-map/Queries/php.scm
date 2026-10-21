@@ -48,3 +48,6 @@
 (base_clause (name) @name) @reference.class
 (scoped_call_expression scope: (name) @name) @reference.type
 (enum_declaration name: (name) @name) @definition.class
+; A use clause is a use of the class it names.
+(namespace_use_clause (qualified_name (name) @name)) @reference.import
+(namespace_use_clause (name) @name) @reference.import
