@@ -76,6 +76,19 @@ public static class TreeOutliner
 
     private static readonly HashSet<string> Comments = new(StringComparer.Ordinal) { "comment", "line_comment", "block_comment" };
 
+    /// <summary>
+    /// A function of any kind, named or not. What is defined inside one is that function's business —
+    /// an immediately-invoked wrapper's contents most of all — even where the query captures no
+    /// definition for the function itself.
+    /// </summary>
+    private static readonly HashSet<string> FunctionLike = new(StringComparer.Ordinal)
+    {
+        "function_expression", "arrow_function", "function", "generator_function", "function_declaration",
+        "generator_function_declaration", "function_definition", "method_definition", "method_declaration",
+        "constructor_declaration", "local_function_statement", "lambda_expression", "anonymous_method_expression",
+        "function_item", "closure_expression", "func_literal", "lambda", "method", "singleton_method",
+    };
+
     /// <summary>A node's identity: the binding makes a new object per visit, so nodes are compared by where and what they are.</summary>
     private readonly record struct Span(int Start, int End, string Type)
     {
@@ -171,7 +184,7 @@ public static class TreeOutliner
             {
                 var span = Span.Of(up);
                 // INSIDE A FUNCTION'S BODY: that function's business, never the file's.
-                if (members.Contains(span)) hidden = true;
+                if (members.Contains(span) || FunctionLike.Contains(up.Type)) hidden = true;
                 else if (types.TryGetValue(span, out var outer) && outer != d)
                 {
                     // ONE DECLARATION SEEN TWICE — typedef struct X { } X — is listed as the outer one.

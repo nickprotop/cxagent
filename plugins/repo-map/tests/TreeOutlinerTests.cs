@@ -822,4 +822,25 @@ public sealed class TreeOutlinerTests : IDisposable
             "6:1:type Error: SinkError",
         ], found);
     }
+
+    /// <summary>
+    /// INSIDE ANY FUNCTION IS INSIDE A BODY, named or not. A bundled library wraps itself in an
+    /// immediately-invoked function, and everything it defines in there is the bundle's business —
+    /// typeahead.jquery.js listed 190 such "declarations" at the top of its file.
+    /// </summary>
+    [Fact]
+    public void WhatAnAnonymousFunctionDefines_IsHidden()
+    {
+        var found = Outline("bundle.js", """
+            (function(root, factory) {
+                var _ = {
+                    isString: function(obj) { return typeof obj === "string"; },
+                };
+                function helper() {}
+                class Inner { m() {} }
+            })(this, function() {});
+            export function real() {}
+            """);
+        Assert.Equal(["8:0:export function real()"], found);
+    }
 }
