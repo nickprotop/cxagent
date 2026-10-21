@@ -78,4 +78,28 @@ public sealed class TreeReferenceTests : IDisposable
         foreach (var name in names.Split(','))
             Assert.Contains(name, mentions);
     }
+
+    /// <summary>
+    /// AN ANNOTATION IS A LABEL, NOT A DEPENDENCY. Every guava file imports and applies
+    /// <c>@GwtCompatible</c>; ranked by those uses, the annotation would outrank the classes the
+    /// files are actually built from. It is listed in its own file, and links nothing.
+    /// </summary>
+    [Fact]
+    public void AnAnnotationUsedEverywhere_DoesNotOutrankWhatTheFilesUse()
+    {
+        var files = new List<FileOutline>
+        {
+            Read("Marked.java", "package p;\npublic @interface Marked {}\n"),
+            Read("Core.java", "package p;\npublic class Core { public void run() {} }\n"),
+        };
+        // As in guava: the annotation on every file, the class it is built on in some of them.
+        for (var i = 0; i < 6; i++)
+            files.Add(Read($"User{i}.java", i < 2
+                ? $"package p;\nimport p.Marked;\n@Marked\nclass User{i} {{ void f(Core c) {{ }} }}\n"
+                : $"package p;\nimport p.Marked;\n@Marked\nclass User{i} {{ }}\n"));
+
+        var ranked = Ranker.Rank(files, []).Files.Select(f => f.Path).ToList();
+        Assert.True(ranked.IndexOf("Core.java") < ranked.IndexOf("Marked.java"), string.Join(", ", ranked));
+        Assert.Contains("public @interface Marked", Read("Marked.java", "package p;\npublic @interface Marked {}\n").Symbols.Select(s => s.Signature));
+    }
 }

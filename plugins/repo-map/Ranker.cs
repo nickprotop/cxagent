@@ -142,10 +142,15 @@ public static class Ranker
     /// <para>AND NOT A FILE-LOCAL FUNCTION. In C and C++ a <c>static</c> function at the top of a
     /// file cannot be called from any other, and its names — <c>count</c>, <c>copy</c>, <c>result</c>
     /// — are words hundreds of files use for something else.</para>
+    ///
+    /// <para>AND NOT A JAVA ANNOTATION TYPE. <c>@GwtCompatible</c> is imported and applied by nearly
+    /// every file in guava, as a label: counted, it would outrank the classes those files are built
+    /// from. It is still listed in its own file.</para>
     /// </summary>
     private static bool Links(Symbol symbol) =>
         symbol.Depth == 0 && symbol.Kind is SymbolKind.Type or SymbolKind.Member
-        && !(symbol.Kind == SymbolKind.Member && symbol.Signature.StartsWith("static ", StringComparison.Ordinal));
+        && !(symbol.Kind == SymbolKind.Member && symbol.Signature.StartsWith("static ", StringComparison.Ordinal))
+        && !symbol.Signature.Contains("@interface ", StringComparison.Ordinal);
 
     /// <summary>
     /// How much of a share a test, fixture or vendored file gets — of the walk's restarts, and of
