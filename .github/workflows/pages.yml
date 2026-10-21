@@ -136,7 +136,8 @@ jobs:
           # release -- would publish a value that does not match what the download URL serves.
           gh release download "${{ steps.release.outputs.tag }}" --repo "${GITHUB_REPOSITORY}" \
               --pattern csharp-lsp.zip --pattern calculator.zip \
-              --pattern clone-finder.zip --pattern triggers.zip --dir _artifact
+              --pattern clone-finder.zip --pattern triggers.zip \
+              --pattern repo-map.zip --pattern worktree.zip --dir _artifact
 
       # A PLUGIN THAT HAS NOT SHIPPED YET IS NOT A BROKEN BUILD. The catalog entry lands on master
       # in one commit and the zip appears on the NEXT release, so between the two every Pages run
@@ -229,6 +230,8 @@ jobs:
               --plugin calculator=_artifact/calculator.zip \
               --plugin clone-finder=_artifact/clone-finder.zip \
               --plugin triggers=_artifact/triggers.zip \
+              --plugin repo-map=_artifact/repo-map.zip \
+              --plugin worktree=_artifact/worktree.zip \
               --version "$VERSION" \
               --out _site/catalog.json
 

@@ -310,6 +310,38 @@ jobs:
           (cd triggers-build && zip -q ../plugin-out/triggers.zip \
              triggers.dll NCrontab.dll triggers.plugin.json README.md)
 
+      # THE SAME BUILD-OR-CARRY SCHEME, for the fifth and sixth plugins. Like clone-finder, neither
+      # takes a NuGet dependency, so each zip is the dll, its sidecar and its README.
+      - name: Build or carry forward the repo-map and worktree plugins
+        run: |
+          # RELEASE TAGS ONLY — see the csharp-lsp step above for why --match matters.
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || echo "")
+          mkdir -p plugin-out
+
+          for NAME in repo-map worktree; do
+            SIDECAR=plugins/$NAME/$NAME.plugin.json
+            VERSION=$(python3 -c "import json;print(json.load(open('$SIDECAR'))['version'])")
+            PLUGIN_INPUTS="plugins/$NAME/ cxagent.Plugins.Abstractions/"
+
+            if [ -n "$PREV_TAG" ] && git diff --quiet "$PREV_TAG" HEAD -- $PLUGIN_INPUTS \
+               && curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/download/$PREV_TAG/$NAME.zip" \
+                    -o plugin-out/$NAME.zip; then
+              echo "$NAME unchanged since $PREV_TAG — carried its zip forward."
+              continue
+            fi
+
+            echo "building $NAME $VERSION"
+            dotnet build plugins/$NAME/$NAME.csproj -c Release -o ./$NAME-build -p:Version="$VERSION"
+
+            # The assertions are what catch a sidecar or README that stopped being copied, which no
+            # test would notice.
+            test -f ./$NAME-build/$NAME.dll
+            test -f ./$NAME-build/$NAME.plugin.json
+            test -f ./$NAME-build/README.md
+
+            (cd $NAME-build && zip -q ../plugin-out/$NAME.zip $NAME.dll $NAME.plugin.json README.md)
+          done
+
       - name: Generate checksums
         run: |
           # STAGE INSTALL SCRIPTS AS ASSETS, matching cxpost/cxnet. They live in the repo and the
@@ -330,6 +362,8 @@ jobs:
           cp plugin-out/calculator.zip release/
           cp plugin-out/clone-finder.zip release/
           cp plugin-out/triggers.zip release/
+          cp plugin-out/repo-map.zip release/
+          cp plugin-out/worktree.zip release/
 
           # Checksums cover the scripts too: an installer fetched from a release is exactly the kind
           # of thing worth being able to verify.

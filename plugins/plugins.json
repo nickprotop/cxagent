@@ -210,6 +210,97 @@
           "gated": false
         }
       ]
+    },
+    {
+      "name": "repo-map",
+      "displayName": "Repo Map",
+      "version": "0.9.44",
+      "description": "A map of a codebase for a model that has not read it. One tool returns the most-used files' declarations \u2014 types, functions, methods, each with its line number \u2014 ranked by how much the rest of the code uses them and cut to a token budget. No language server: a dozen languages are read as text.",
+      "publisher": "nickprotop",
+      "license": "MIT",
+      "repository": "https://github.com/nickprotop/cxagent",
+      "sourceUrl": "https://github.com/nickprotop/cxagent/tree/master/plugins/repo-map",
+      "readme": "repo-map/README.md",
+      "directory": "repo-map",
+      "source": {
+        "kind": "release",
+        "checksums": "SHA256SUMS",
+        "sha256": null,
+        "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/repo-map.zip"
+      },
+      "file": "repo-map.dll",
+      "kind": "managed",
+      "compatibility": {
+        "pluginContract": 2,
+        "platforms": [
+          "any"
+        ]
+      },
+      "spawns": true,
+      "tools": [
+        {
+          "name": "repo_map",
+          "gated": false
+        }
+      ]
+    },
+    {
+      "name": "worktree",
+      "displayName": "Worktree Sandbox",
+      "version": "0.9.44",
+      "description": "Sandboxes for work that should not land until someone says so. Creates a git worktree inside your folder for a sub-agent to work in, shows its diff, and merges it into your branch or throws it away \u2014 merge and discard ask first, and a merge that conflicts is undone.",
+      "publisher": "nickprotop",
+      "license": "MIT",
+      "repository": "https://github.com/nickprotop/cxagent",
+      "sourceUrl": "https://github.com/nickprotop/cxagent/tree/master/plugins/worktree",
+      "readme": "worktree/README.md",
+      "directory": "worktree",
+      "source": {
+        "kind": "release",
+        "checksums": "SHA256SUMS",
+        "sha256": null,
+        "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/worktree.zip"
+      },
+      "file": "worktree.dll",
+      "kind": "managed",
+      "compatibility": {
+        "pluginContract": 2,
+        "platforms": [
+          "any"
+        ]
+      },
+      "spawns": true,
+      "tools": [
+        {
+          "name": "worktree_create",
+          "gated": false
+        },
+        {
+          "name": "worktree_list",
+          "gated": false
+        },
+        {
+          "name": "worktree_diff",
+          "gated": false
+        },
+        {
+          "name": "worktree_merge",
+          "gated": "dynamic"
+        },
+        {
+          "name": "worktree_discard",
+          "gated": "dynamic"
+        }
+      ],
+      "requires": {
+        "description": "git on PATH, or its path as the git setting.",
+        "default": "git"
+      },
+      "settings": {
+        "folder": "The folder inside yours that worktrees are made in. Defaults to .worktrees.",
+        "branchPrefix": "Put in front of a worktree's name to make its branch. Defaults to worktree/.",
+        "git": "The git command. Defaults to git."
+      }
     }
   ]
 }
