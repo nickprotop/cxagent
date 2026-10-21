@@ -176,6 +176,8 @@ public class RankerTests
     [InlineData("src/testing_utils.py", false)]
     [InlineData("docs/js/typeahead.jquery.js", true)]
     [InlineData("src/docs.go", false)]
+    [InlineData("src/Illuminate/Foundation/resources/exceptions/renderer/dist/scripts.js", true)]
+    [InlineData("src/distance.ts", false)]
     public void AsidePaths_AreRecognised(string path, bool aside) =>
         Assert.Equal(aside, Ranker.IsAside(path));
 

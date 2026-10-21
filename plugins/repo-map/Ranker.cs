@@ -174,6 +174,9 @@ public static class Ranker
         // A DOCS FOLDER holds examples and the site a documentation generator wrote — Alamofire's
         // committed docset carries jQuery plugins that would otherwise lead its map.
         "docs",
+        // A DIST FOLDER is build output that was committed — Laravel ships its exception page's
+        // bundled scripts — and the walk without git already skips it as such.
+        "dist",
     };
 
     /// <summary>
