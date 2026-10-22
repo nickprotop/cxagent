@@ -318,9 +318,11 @@ public sealed class AgentsTab
             var list = Option(RunsOn.List, "These providers", "The first is the default; a spawn may pick another from the list.");
             if (draft.Mode == RunsOn.List)
             {
+                // THE LIST BETWEEN TWO RULES, rows or none: an empty list's message stands where the rows
+                // would, so the section keeps one shape whether it holds providers or not.
+                stack.AddBare(Rule());
                 if (draft.ProviderProblem is { } problem)
                     stack.AddBare(new MarkupControl([$"    [{ColorScheme.CautionMarkup}]{MarkupParser.Escape(problem)}[/]"]));
-                if (draft.Providers.Count > 0) stack.AddBare(Rule());
                 for (var i = 0; i < draft.Providers.Count; i++)
                 {
                     var at = i;
@@ -350,7 +352,7 @@ public sealed class AgentsTab
                 if (left.Count > 0)
                 {
                     // A RULE BETWEEN WHAT IS LISTED AND WHAT CAN BE ADDED, so the picker is not read as a row.
-                    if (draft.Providers.Count > 0) stack.AddBare(Rule());
+                    stack.AddBare(Rule());
                     var add = new ToolbarControl { ItemSpacing = 1, Margin = new Margin(4, 0, 0, 0) };
                     var pick = new DropdownControl("", left) { HorizontalAlignment = HorizontalAlignment.Left };
                     pick.SelectedIndex = 0;
