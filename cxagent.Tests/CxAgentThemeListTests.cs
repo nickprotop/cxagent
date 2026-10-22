@@ -54,4 +54,43 @@ public class CxAgentThemeListTests
 
         Assert.Equal(SharpConsoleUI.Color.Cyan1, system.ThemeStateService.CurrentTheme.ListFocusedForegroundColor);
     }
+
+    /// <summary>NO CYAN IN A DIALOG: ModernGray's modal border and title are Cyan1, which this theme never
+    /// uses anywhere else. The library's own dialogs (Flow questions, file pickers) read these.</summary>
+    [Fact]
+    public void ModalChrome_IsTheDialogPalettes()
+    {
+        var theme = Installed();
+        var p = DialogPalette.For(theme);
+        Assert.Equal(p.ActiveBorder, theme.ModalBorderForegroundColor);
+        Assert.Equal(p.Title, theme.ModalTitleForegroundColor);
+        Assert.Equal(p.Surface, theme.ModalBackgroundColor);
+    }
+
+    [Fact]
+    public void TheActiveTab_IsAccentText_WithNoFill()
+    {
+        var theme = Installed();
+        var p = DialogPalette.For(theme);
+        Assert.Equal(p.Title, theme.TabHeaderActiveForegroundColor);
+        Assert.Equal(p.Surface, theme.TabHeaderActiveBackgroundColor);
+        Assert.Equal(p.Muted, theme.TabHeaderForegroundColor);
+        Assert.Equal(p.Surface, theme.TabHeaderBackgroundColor);
+    }
+
+    [Fact]
+    public void Scrollbars_AreMutedOnARuleTrack()
+    {
+        var theme = Installed();
+        var p = DialogPalette.For(theme);
+        Assert.Equal(p.Muted, theme.ScrollbarThumbUnfocusedColor);
+        Assert.Equal(p.Rule, theme.ScrollbarTrackColor);
+    }
+
+    [Fact]
+    public void AnUnfocusedListsSelection_IsTheDialogSelectionStep()
+    {
+        var theme = Installed();
+        Assert.Equal(DialogPalette.For(theme).Selection, theme.ListUnfocusedHighlightBackgroundColor);
+    }
 }

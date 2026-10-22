@@ -76,8 +76,32 @@ public static class CxAgentTheme
                 t.ListFocusedForegroundColor = Accent;
                 t.ListSelectedBackgroundColor = new Color(0x6f, 0x4e, 0x34);
                 t.ListSelectedForegroundColor = new Color(0xe0, 0xdc, 0xd5);
-                t.ListUnfocusedHighlightBackgroundColor = new Color(0x52, 0x3b, 0x29);
-                t.ListUnfocusedHighlightForegroundColor = new Color(0xe0, 0xdc, 0xd5);
+
+                // THE DIALOG PALETTE, FOR WHAT ONLY THE THEME CAN SET. Modal chrome reaches the dialogs
+                // the library draws itself; tab headers and scrollbars have no per-control colour. Taken
+                // from the palette of the theme being built, so they agree with cxagent's own dialogs.
+                // Theme-wide by nature: every tab strip and scrollbar in the app takes them.
+                var dialog = DialogPalette.For(t);
+                t.ModalBackgroundColor = dialog.Surface;
+                t.ModalBorderForegroundColor = dialog.ActiveBorder;
+                t.ModalTitleForegroundColor = dialog.Title;
+                t.TabHeaderActiveBackgroundColor = dialog.Surface;
+                t.TabHeaderActiveFocusedBackgroundColor = dialog.Surface;
+                t.TabHeaderActiveForegroundColor = dialog.Title;
+                t.TabHeaderActiveFocusedForegroundColor = dialog.Title;
+                t.TabHeaderBackgroundColor = dialog.Surface;
+                t.TabHeaderFocusedBackgroundColor = dialog.Surface;
+                t.TabHeaderForegroundColor = dialog.Muted;
+                t.TabHeaderFocusedForegroundColor = dialog.Foreground;
+                t.TabHeaderDisabledBackgroundColor = dialog.Surface;
+                t.ScrollbarThumbColor = dialog.Title;
+                t.ScrollbarThumbUnfocusedColor = dialog.Muted;
+                t.ScrollbarTrackColor = dialog.Rule;
+                t.ScrollbarTrackUnfocusedColor = dialog.Rule;
+                // An unfocused list keeps its selection visible as the card-selected step, not a brown
+                // bar: in a list/detail dialog the list is unfocused whenever the detail is being edited.
+                t.ListUnfocusedHighlightBackgroundColor = dialog.Selection;
+                t.ListUnfocusedHighlightForegroundColor = dialog.Foreground;
             })
             .Build();
 
