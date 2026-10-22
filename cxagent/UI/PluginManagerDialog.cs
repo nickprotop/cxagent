@@ -65,6 +65,7 @@ public static class PluginManagerDialog
     private static TabControl? _tabs;
     private static MarkupControl? _detailHeader;
     private static MarkupControl? _detailBody;
+    private static ScrollablePanelControl? _head;
     /// <summary>
     /// The rail's starting width in cells. Wide enough for the longest plugin name plus its commonest
     /// state on one line ("csharp-lsp-omnisharp" is 20, "disabled" 8) — the long NEEDS ATTENTION
@@ -81,7 +82,6 @@ public static class PluginManagerDialog
     // ran together as one unbroken bar — "DeactivateDisable auto-loadUninstall" — with nothing to
     // say where one target ends and the next begins. A toolbar spaces its items, which is the
     // whole difference between a row of buttons and a row that can be read.
-    private static ToolbarControl? _buttons;
     private static int _lastRailIndex;
 
     // WHICH PLUGIN THE PANEL LAST SHOWED. The Settings tab is torn down and rebuilt on every
@@ -186,42 +186,27 @@ public static class PluginManagerDialog
         // A LINE UNDER THE TOOLBAR, so the dialog-wide controls read as a band rather than as the
         // first row of the list. Without it the filter and the rail's first heading sit in one
         // undifferentiated column of text.
-        window.AddControl(new RuleControl
-        {
-            StickyPosition = StickyPosition.Top,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-        });
+        var topRule = DialogLook.Rule();
+        topRule.StickyPosition = StickyPosition.Top;
+        window.AddControl(topRule);
 
         // TWO COLUMNS, ONE ROW. The rail is a fixed width with a floor so it stays readable when the
         // window is dragged narrow; the panel takes what is left.
         var grid = new GridControl { VerticalAlignment = VerticalAlignment.Fill };
         grid.ColumnDefinitions.Add(GridLength.Cells(RailCells, min: 24));
         grid.ColumnDefinitions.Add(GridLength.Star(1));
-        grid.RowDefinitions.Add(GridLength.Star(1));
-
-        // A SECOND ROW FOR THE PANEL'S OWN ACTIONS. They act on the selected plugin, and the panel
-        // IS the selected plugin — so the panel's edge draws the boundary of what they affect. Sticky
-        // to the window they spanned the rail too, reading as dialog chrome rather than as buttons
-        // about one row, which is the same scope-invisibility that put Close among them.
-        //
-        // A RULE ABOVE THEM, in the same grey the settings hint uses, so the actions read as chrome
-        // separated from the panel rather than as the last line of it.
-        //
-        // ONE CELL EACH, NOT Auto: a control reports no intrinsic height from inside a grid cell, so
-        // an Auto track measures it as nothing and the row never appears.
-        grid.RowDefinitions.Add(GridLength.Cells(1));
-        grid.RowDefinitions.Add(GridLength.Cells(1));
-
+        grid.RowDefinitions.Add(GridLength.Cells(4));   // the selected plugin's name, actions, identity, rule
+        grid.RowDefinitions.Add(GridLength.Star(1));    // its details
         _rail = new ListControl
         {
             VerticalAlignment = VerticalAlignment.Fill,
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         _rail.SelectedIndexChanged += OnRailSelectionChanged;
-        // SPANS EVERY ROW, so the rail runs the full height beside the panel, its rule and the
-        // action row — a span short of the last row leaves the rail's column ending above the
-        // buttons with a gap no border explains.
-        grid.Place(_rail, 0, 0, rowSpan: 3);
+        ListDetail.StyleRail(_rail);
+        // SPANS EVERY ROW, so the rail runs the full height beside the head and the details — a span
+        // short of the last row leaves the rail's column ending early with a gap no border explains.
+        grid.Place(_rail, 0, 0, rowSpan: 2);
 
         // TWO TABS ONLY, Details and Settings — and Settings is added per selection, because for
         // most rows it must not exist at all (see RebuildSettingsTab). A Tools tab was considered
@@ -246,30 +231,16 @@ public static class PluginManagerDialog
             VerticalAlignment = VerticalAlignment.Fill,
         };
         _tabs.AddTab("Details", detailScroll);
-        // UNDER THE PANEL, NOT THE WINDOW. These act on the selected plugin, so they sit inside the
-        // column that shows it — sticky to the window they spanned the rail as well, reading as
-        // chrome about the dialog rather than actions on one row.
-        //
-        // CLOSE IS NOT AMONG THEM, for the same reason: closing acts on the dialog, and sharing a
-        // row gave the two kinds equal weight with no way to tell them apart. It is in the status
-        // bar, beside the key that also does it.
-        //
-        // Rebuilt whenever the selection moves, which is why it is its own control.
-        _buttons = new ToolbarControl
-        {
-            ItemSpacing = 2,
-            HorizontalAlignment = HorizontalAlignment.Center,
-        };
-        grid.Place(_tabs, 0, 1);
-        grid.Place(new RuleControl { Color = ColorScheme.MutedRgb }, 1, 1);
-        grid.Place(_buttons, 2, 1);
+        // THE HEAD, rebuilt per selection: the name, the actions on THIS plugin beside it, its identity
+        // and a rule. Outside the scroll, so Install or Update never scrolls away with a long README.
+        // CLOSE IS NOT AMONG THE ACTIONS: closing acts on the dialog, not on one plugin, and sharing a
+        // row would give the two kinds equal weight. It is in the footer, beside the key that also does it.
+        _head = new ScrollablePanelControl { HorizontalAlignment = HorizontalAlignment.Stretch, Margin = ListDetail.DetailInset };
+        _tabs.Margin = ListDetail.DetailInset;
+        grid.Place(_head, 0, 1);
+        grid.Place(_tabs, 1, 1);
 
-        // A DRAGGABLE DIVIDER, not a drawn one. The splitter IS the line between rail and panel and
-        // the handle that moves it, so the two cannot disagree — and it honours the rail column's
-        // own minimum (GridSplitterResize.cs:30-44 clamps so neither track crosses its Min), which
-        // is why 24 cells is expressed there rather than defended here. Focusable as well as
-        // draggable, so a keyboard user can widen the rail for a long plugin name.
-        grid.AddColumnSplitterAfter(0);
+        ListDetail.Divider(grid);
 
         // WHERE THE USER LEFT IT. Window.Left/Top are settable (Window.cs:797, :929), so a manager
         // dragged aside or resized reopens where it was rather than jumping back to centre — the
@@ -280,34 +251,12 @@ public static class PluginManagerDialog
         window.AddControl(grid);
 
 
-        // A LINE ABOVE THE STATUS BAR, closing the frame the toolbar's rule opens.
-        window.AddControl(new RuleControl
-        {
-            StickyPosition = StickyPosition.Bottom,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-        });
-
-        // THE STATUS BAR: what the rail is showing, and how to leave.
-        //
-        // ESC IS NAMED AND ALSO CLICKABLE. The key is the fast path and the button is the
-        // discoverable one — a status line that only said "Esc close" would strand a user reaching
-        // for a mouse, and a button alone would never teach the key.
-        // THE LABEL TAKES THE ROOM, THE BUTTON TAKES ITS SIZE. A ColumnContainer sizes to its
-        // content, so an unwidened label is clipped to whatever it happened to measure — the status
-        // text is the variable half and gets the remaining width explicitly.
-        _status = new MarkupControl([""]) { Wrap = false };
-
-        var statusBar = new HorizontalGridControl { HorizontalAlignment = HorizontalAlignment.Stretch };
-        var statusColumn = new ColumnContainer(statusBar) { Width = width - 14 };
-        statusColumn.AddContent(_status);
-        statusBar.AddColumn(statusColumn);
-
-        var closeColumn = new ColumnContainer(statusBar);
-        closeColumn.AddContent(Controls.Button("  Close  ").OnClick((_, _) => CloseIfOpen()).Build());
-        statusBar.AddColumn(closeColumn);
-
-        statusBar.StickyPosition = StickyPosition.Bottom;
-        window.AddControl(statusBar);
+        // THE FOOTER: what the rail is showing and how to leave, then Close — the key is the fast path,
+        // the button the discoverable one.
+        var footer = DialogLook.Footer("", Controls.Button(" Close ").OnClick((_, _) => CloseIfOpen()).Build());
+        window.AddControl(footer.Rule);
+        window.AddControl(footer.Row);
+        _status = footer.Hints;
 
         // F5 STAYS ON THE WINDOW: no global claims it, so this handler is reached directly. That is
         // deliberate rather than lucky — the tab strip is on F6 precisely because F5 means refresh
@@ -565,7 +514,7 @@ public static class PluginManagerDialog
         if (loaded > 0) left += $" · {loaded} loaded";
         if (shown.Count != _rows.Count) left += $" · {_rows.Count - shown.Count} hidden by filter";
 
-        _status.SetContent([$"[grey]{left}   ·   F5 refresh · Esc close[/]"]);
+        _status.SetContent([$"[{DialogLook.Palette.Muted.ToMarkup()}]{left} · F5 refresh · Esc close[/]"]);
     }
 
     /// <summary>
@@ -579,51 +528,32 @@ public static class PluginManagerDialog
     private static void FillRail(ListControl rail, IReadOnlyList<PluginRow> rows)
     {
         rail.ClearItems();
+        var loaded = _session?.Plugins.LoadedPluginNames ?? [];
 
-        foreach (var group in rows.GroupBy(r => r.Section))
+        // INSTALLED IS ALWAYS THERE, unfiltered: an empty section says "nothing installed yet" where a
+        // missing one says nothing, and the first thing a new user wonders is whether they have any.
+        var groups = rows.GroupBy(r => r.Section).ToList();
+        if (groups.All(g => g.Key != PluginRowSection.Installed) && string.IsNullOrEmpty(_filter?.Input))
         {
-            // MUTED, NOT A THEME'S DISABLED STYLE — the list has no per-item disabled styling, so
-            // a header left unstyled would read as just another plugin the arrows refuse to act on.
-            rail.AddItem(new ListItem($"[{ColorScheme.MutedMarkup} bold]{Heading(group.Key)}[/]")
-            {
-                IsEnabled = false,
-            });
-
-            foreach (var row in group)
-                rail.AddItem(new ListItem(RailText(row, RailCells)) { Tag = row });
+            rail.AddItem(new ListItem(PluginRailText.Heading(Heading(PluginRowSection.Installed), 0)) { IsEnabled = false });
+            rail.AddItem(new ListItem($"[{ColorScheme.MutedMarkup}]  Nothing installed yet[/]") { IsEnabled = false });
+            rail.AddItem(new ListItem("") { IsEnabled = false });
         }
+
+        var first = true;
+        foreach (var group in groups)
+        {
+            // MUTED CAPITALS WITH A COUNT, unselectable: the list has no per-item disabled styling, so a
+            // heading is told apart by its look, and the count answers "how many" before it is asked.
+            if (!first) rail.AddItem(new ListItem("") { IsEnabled = false });
+            first = false;
+            rail.AddItem(new ListItem(PluginRailText.Heading(Heading(group.Key), group.Count())) { IsEnabled = false });
+            foreach (var row in group)
+                rail.AddItem(new ListItem(PluginRailText.Row(row, loaded.Contains(row.Name, StringComparer.Ordinal), RailCells - 2)) { Tag = row });
+        }
+        ListDetail.Mark(rail);
     }
 
-    /// <summary>
-    /// A row's rail text: the name, and the state word under it.
-    ///
-    /// <para>TWO LINES, NOT TWO COLUMNS. ListItem has no second column, and at the rail's 34 cells
-    /// the longest states ("contract 3 · needs a newer cxagent", "loaded · 0.2.1 → 0.3.0") cannot
-    /// share a line with any name without truncating the half the user came to read.</para>
-    /// </summary>
-    /// <summary>
-    /// One row: the name, and its state beside it when both fit.
-    ///
-    /// <para>HEIGHT IS THE SCARCE DIMENSION, so a second line is spent only when the width cannot
-    /// take the state — a terminal gives fewer rows than columns, and two lines per plugin halves
-    /// how many a user sees at once. Most states are short ("loaded", "disabled"); it is the
-    /// NEEDS ATTENTION reasons that are long, and those are the rows worth a second line.</para>
-    ///
-    /// <para>MEASURED AGAINST THE COLUMN, not a guess: the rail is <see cref="RailCells"/> wide and
-    /// the splitter can widen it, so a name that wraps today may fit after a drag.</para>
-    /// </summary>
-    private static string RailText(PluginRow row, int cells)
-    {
-        var name = MarkupParser.Escape(row.Name);
-        if (row.State.Length == 0) return name;
-
-        var state = MarkupParser.Escape(row.State);
-
-        // Two spaces between, and one cell of margin so the text never touches the splitter.
-        return row.Name.Length + 2 + row.State.Length <= cells - 1
-            ? $"{name}  [{ColorScheme.MutedMarkup}]{state}[/]"
-            : $"{name}\n  [{ColorScheme.MutedMarkup}]{state}[/]";
-    }
 
     private static string Heading(PluginRowSection section) => section switch
     {
@@ -675,7 +605,10 @@ public static class PluginManagerDialog
         if (row is null)
         {
             _detailHeader.SetContent([""]);
-            _detailBody.SetContent([""]);
+            // NOTHING TO SHOW SAYS WHY, centred: a blank pane reads as one that failed to load.
+            _detailBody.SetContent([.. Enumerable.Repeat("", 6),
+                "No plugins to show",
+                $"[{ColorScheme.MutedMarkup}]Clear the filter, or F5 fetches the catalog again[/]"]);
             _tabs.RemoveTab("Settings");
             _settingsFields.Clear();
             _settingsStatus = null;
@@ -684,20 +617,8 @@ public static class PluginManagerDialog
             return;
         }
 
-        var lines = new List<string>
-        {
-            $"[bold]{MarkupParser.Escape(row.Catalog?.DisplayName ?? row.Name)}[/]",
-        };
-
-        if (row.Catalog is { } entry)
-        {
-            var identity = string.Join(" · ",
-                new[] { entry.QualifiedName, entry.Version, entry.License, entry.Publisher, StoreIdentity(entry) }
-                    .Where(part => part.Length > 0));
-            lines.Add($"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(identity)}[/]");
-        }
-
-        lines.Add("");
+        // THE NAME AND IDENTITY ARE THE HEAD'S (RebuildButtons), so the body opens on the facts.
+        var lines = new List<string>();
         lines.AddRange(FactLines(row));
 
         // THE STANDING NOTE, under the facts of the plugin it is about — a hash mismatch or a
@@ -721,6 +642,8 @@ public static class PluginManagerDialog
 
         ShowBody(row);
         RebuildSettingsTab(row);
+        // NO "Details" TAB STRIP WHILE IT IS THE ONLY TAB: a strip with one tab is a label for nothing.
+        _tabs.ShowTabHeader = _tabs.TabCount > 1;
         RebuildButtons(row);
         _lastDetailName = row.Name;
     }
@@ -910,7 +833,7 @@ public static class PluginManagerDialog
             {
                 if (File.Exists(readme))
                 {
-                    _detailBody!.SetMarkdown(Unwrap(File.ReadAllText(readme)));
+                    _detailBody!.SetMarkdown(Unwrap(ReadmeTitle.Drop(File.ReadAllText(readme), row.Name)));
                     return;
                 }
             }
@@ -1206,14 +1129,20 @@ public static class PluginManagerDialog
     /// </summary>
     private static void RebuildButtons(PluginRow? row)
     {
-        if (_buttons is null) return;
+        if (_head is null) return;
+        _head.ClearContents();
+        if (row is null) return;
 
-        // NO CLOSE APPENDED HERE. These act on the selected plugin; closing acts on the dialog, and
-        // sharing a row gave them equal weight with no way to see the difference. Close lives in the
-        // status bar, beside the key that also does it.
-        _buttons.Clear();
-        foreach (var button in RowButtons(row))
-            _buttons.AddItem(button);
+        // THE MAIN ACTION IN THE ACCENT — the first one, unless it is Uninstall, which is never the
+        // thing a reflex should land on.
+        var buttons = RowButtons(row).ToArray();
+        if (buttons.Length > 0 && buttons[0].Text.Trim() != "Uninstall") DialogLook.Main(buttons[0]);
+
+        var identity = row.Catalog is { } entry
+            ? string.Join(" · ", new[] { entry.QualifiedName, entry.Version, entry.License, entry.Publisher, StoreIdentity(entry) }
+                .Where(part => part.Length > 0))
+            : row.Name;
+        _head.AddControl(ListDetail.Header(row.Catalog?.DisplayName ?? row.Name, identity, buttons));
     }
 
     /// <summary>
