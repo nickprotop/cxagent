@@ -97,6 +97,12 @@ public static class Usage
             new("--trust", "Trust this folder for this run only."),
             new("--plugin NAME", "Load that configured plugin for this run, even one with enabled: false (repeatable, or comma-separated); --plugin none loads none."),
         ], Footer: "Exit: 0 answered, 1 failed, 2 usage, 3 turn limit, 130/143 interrupted."),
+        new("PLUGIN STORES",
+            "A folder of built plugins, one per subfolder, becomes the catalog and zips a web server serves as a plugin store. "
+            + "Users then run /plugin store add <name> <base-url>/catalog.json.",
+            [
+                new("store build FOLDER --url BASE --out DIR [--json]", "Write DIR/catalog.json and one zip per plugin, with downloads addressed under BASE (https, or http://localhost). Writes nothing on any problem. Exit: 0 built, 1 a plugin is at fault, 2 usage."),
+            ]),
         new("CONFIGURATION",
             "Providers, agent types, MCP servers and permissions live in config.json under your config directory. "
             + "Run cxagent once with no configuration and it offers to write one.",

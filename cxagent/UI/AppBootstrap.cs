@@ -94,8 +94,10 @@ public static class AppBootstrap
     {
         // THE PLUGIN AUTHOR'S COMMANDS, BEFORE ANYTHING ELSE: they use no config folder, no terminal UI
         // and no model, and the session's own parser would refuse "plugin" as an argument without -p.
-        if (args.Length > 0 && args[0] == "plugin")
+        // `store` is the same kind of command: it builds a plugin store's catalog from a folder.
+        if (args.Length > 0 && (args[0] == "plugin" || args[0] == "store"))
         {
+            var command = args[0];
             // CTRL+C CANCELS, NOT KILLS: the command's own cleanup then stops the plugin and reaps its
             // processes, where the default would end this process with a host still running.
             using var interrupted = new CancellationTokenSource();
@@ -103,12 +105,17 @@ public static class AppBootstrap
             Console.CancelKeyPress += onCancel;
             try
             {
-                return Cli.PluginCli.RunAsync(args[1..], Console.Out, Console.Error, interrupted.Token).GetAwaiter().GetResult();
+                var run = command == "store"
+                    ? Cli.StoreBuildCommand.RunVerbAsync(args[1..], Console.Out, Console.Error, interrupted.Token)
+                    : Cli.PluginCli.RunAsync(args[1..], Console.Out, Console.Error, interrupted.Token);
+                return run.GetAwaiter().GetResult();
             }
             catch (OperationCanceledException) when (interrupted.IsCancellationRequested)
             {
                 // 130, THE SHELL'S OWN CODE FOR AN INTERRUPT — reached after the plugin was stopped.
-                Console.Error.WriteLine("cxagent plugin: interrupted; the plugin was stopped.");
+                Console.Error.WriteLine(command == "store"
+                    ? "cxagent store: interrupted; no catalog was finished."
+                    : "cxagent plugin: interrupted; the plugin was stopped.");
                 return 130;
             }
             finally

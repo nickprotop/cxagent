@@ -50,17 +50,64 @@ internal static class PluginPackCommand
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    /// <summary>
+    /// What <see cref="PackAsync"/> made, or why it made nothing. <paramref name="Problems"/> are check's
+    /// findings or a refusal of the request; <paramref name="Usage"/> says the request itself was wrong
+    /// (a flag for the wrong kind of plugin), which a command reports as a typo and not as a plugin at fault.
+    /// </summary>
+    internal sealed record PackOutcome(IReadOnlyList<string> Problems, PackedPlugin? Packed, JsonObject? Entry,
+        IReadOnlyList<string> Unfilled, bool Usage = false);
+
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         if (Parse(args, out var error) is not { } request) return PluginCli.Fail(stderr, error!);
 
-        var problems = await PluginHarness.CheckAsync(request.Folder, ct: ct).ConfigureAwait(false);
-        if (problems.Count > 0)
+        var outcome = await PackAsync(request, _ => UploadUrl, ct).ConfigureAwait(false);
+        if (outcome.Packed is not { } packed)
         {
+            if (outcome.Usage) return PluginCli.Fail(stderr, outcome.Problems[0]);
             stdout.WriteLine("not packed — check found:");
-            foreach (var p in problems) stdout.WriteLine(p.ToString());
+            foreach (var p in outcome.Problems) stdout.WriteLine(p);
             return 1;
         }
+
+        var zips = packed.Zips;
+        var entryPath = Path.Combine(request.OutDir, $"{packed.Sidecar.Name}.catalog.json");
+        File.WriteAllText(entryPath, outcome.Entry!.ToJsonString(Indented) + Environment.NewLine);
+
+        var unfilled = outcome.Unfilled;
+        if (request.Json)
+        {
+            stdout.WriteLine(JsonSerializer.Serialize(new
+            {
+                zips = zips.Select(d => new { file = d.Zip, sha256 = d.Hash, platform = d.Rid }),
+                entry = entryPath,
+                unfilled,
+            }, Indented));
+            return 0;
+        }
+
+        foreach (var d in zips) stdout.WriteLine($"{d.Hash}  {Shown(d.Zip)}");
+        stdout.WriteLine($"wrote {Shown(entryPath)}");
+        if (!File.Exists(Path.Combine(request.Folder, "README.md")))
+            stdout.WriteLine("note: no README.md beside the plugin; the plugin manager shows the catalog description instead.");
+        if (unfilled.Count > 0) stdout.WriteLine($"still to fill in: {string.Join(", ", unfilled)} — in {Shown(entryPath)}");
+        NextSteps(stdout, packed, entryPath);
+        return 0;
+    }
+
+    /// <summary>
+    /// Checks the folder, writes its zips into <see cref="PackRequest.OutDir"/> and builds the catalog
+    /// entry, printing nothing: <c>plugin pack</c> and <c>store build</c> report the same work in their
+    /// own words. <paramref name="urlFor"/> turns a zip's file name into the address the entry gives for
+    /// it — a placeholder to fill in for pack, the store's own address for a store.
+    /// </summary>
+    internal static async Task<PackOutcome> PackAsync(PackRequest request, Func<string, string> urlFor, CancellationToken ct)
+    {
+        static PackOutcome Refused(string message, bool usage = false) => new([message], null, null, [], usage);
+
+        var problems = await PluginHarness.CheckAsync(request.Folder, ct: ct).ConfigureAwait(false);
+        if (problems.Count > 0) return new([.. problems.Select(p => p.ToString())], null, null, []);
 
         var sidecarPath = Directory.GetFiles(request.Folder, "*.plugin.json").Single();
         var sidecar = PluginManifest.Parse(File.ReadAllText(sidecarPath)).Manifest!;
@@ -70,13 +117,13 @@ internal static class PluginPackCommand
         // --native NAMES NATIVE BUILDS: on a managed plugin it is a wrong folder or a wrong flag, and
         // ignoring it would pack something other than what was asked for.
         if (!native && request.Native.Count > 0)
-            return PluginCli.Fail(stderr, $"{Path.GetFileName(binary)} is a .NET plugin; --native is for native libraries.");
+            return Refused($"{Path.GetFileName(binary)} is a .NET plugin; --native is for native libraries.", usage: true);
 
         // THIS MACHINE'S PLATFORM, WHEN NONE IS NAMED — but only one the catalog's vocabulary has: a
         // distro or musl runtime reports a RID that --native itself would refuse.
         var thisMachine = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
         if (native && request.Native.Count == 0 && !Rids.Contains(thisMachine))
-            return PluginCli.Fail(stderr, $"this machine reports platform '{thisMachine}', which the catalog does not name; pass --native {Path.GetFileName(binary)}=<rid>.");
+            return Refused($"this machine reports platform '{thisMachine}', which the catalog does not name; pass --native {Path.GetFileName(binary)}=<rid>.", usage: true);
 
         Directory.CreateDirectory(request.OutDir);
         var zips = new List<PackedZip>();
@@ -103,33 +150,13 @@ internal static class PluginPackCommand
 
         var packed = new PackedPlugin(sidecar, native, zips);
         var text = TextFor(request, binary);
-        var entryPath = Path.Combine(request.OutDir, $"{sidecar.Name}.catalog.json");
-        File.WriteAllText(entryPath, Entry(packed, text).ToJsonString(Indented) + Environment.NewLine);
-
         var unfilled = text.Where(t => t.Value.StartsWith("<fill in:", StringComparison.Ordinal)).Select(t => t.Key).ToList();
-        if (request.Json)
-        {
-            stdout.WriteLine(JsonSerializer.Serialize(new
-            {
-                zips = zips.Select(d => new { file = d.Zip, sha256 = d.Hash, platform = d.Rid }),
-                entry = entryPath,
-                unfilled,
-            }, Indented));
-            return 0;
-        }
-
-        foreach (var d in zips) stdout.WriteLine($"{d.Hash}  {Shown(d.Zip)}");
-        stdout.WriteLine($"wrote {Shown(entryPath)}");
-        if (!File.Exists(Path.Combine(request.Folder, "README.md")))
-            stdout.WriteLine("note: no README.md beside the plugin; the plugin manager shows the catalog description instead.");
-        if (unfilled.Count > 0) stdout.WriteLine($"still to fill in: {string.Join(", ", unfilled)} — in {Shown(entryPath)}");
-        NextSteps(stdout, packed, entryPath);
-        return 0;
+        return new([], packed, Entry(packed, text, urlFor), unfilled);
     }
 
     // A PATH AS THE PERSON TYPES IT: relative to where they are, so a printed command runs as printed
     // whatever --out was.
-    private static string Shown(string path) => Path.GetRelativePath(Environment.CurrentDirectory, path);
+    internal static string Shown(string path) => Path.GetRelativePath(Environment.CurrentDirectory, path);
 
     private static PackRequest? Parse(string[] args, out string? error)
     {
@@ -280,7 +307,7 @@ internal static class PluginPackCommand
         return null;
     }
 
-    private static JsonObject Entry(PackedPlugin packed, IReadOnlyDictionary<string, string> text)
+    private static JsonObject Entry(PackedPlugin packed, IReadOnlyDictionary<string, string> text, Func<string, string> urlFor)
     {
         var (sidecar, native, downloads) = (packed.Sidecar, packed.Native, packed.Zips);
         var entry = new JsonObject
@@ -298,13 +325,13 @@ internal static class PluginPackCommand
         {
             var sources = new JsonObject();
             foreach (var d in downloads)
-                sources[d.Rid] = new JsonObject { ["kind"] = "url", ["url"] = UploadUrl, ["sha256"] = d.Hash, ["file"] = d.File };
+                sources[d.Rid] = new JsonObject { ["kind"] = "url", ["url"] = urlFor(Path.GetFileName(d.Zip)), ["sha256"] = d.Hash, ["file"] = d.File };
             entry["sources"] = sources;
             entry["kind"] = "native";
         }
         else
         {
-            entry["source"] = new JsonObject { ["kind"] = "url", ["url"] = UploadUrl, ["sha256"] = downloads[0].Hash };
+            entry["source"] = new JsonObject { ["kind"] = "url", ["url"] = urlFor(Path.GetFileName(downloads[0].Zip)), ["sha256"] = downloads[0].Hash };
             entry["file"] = downloads[0].File;
             entry["kind"] = "managed";
         }

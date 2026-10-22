@@ -182,6 +182,42 @@ Whether the entry is truthful and useful: that the plugin exists, its entry matc
 its description is honest. It is not a security review. cxagent asks before loading any plugin,
 showing a hash of everything it would load, and that is the boundary a user relies on.
 
+## Running your own store
+
+A store is a `catalog.json` and the zips it points to, served from any static host. `cxagent store build`
+makes both from a folder of built plugins, one plugin per subfolder:
+
+```
+plugins/
+  weather/
+    weather.plugin.json
+    weather.dll
+    pack-info.json        description, publisher, license, repository
+  grep-tool/
+    grep-tool.plugin.json
+    libgrep-tool.so
+    linux-arm64/grep-tool.so   a native plugin's other platforms: <rid>/<library>
+```
+
+```
+cxagent store build plugins --url https://tools.example/cx --out site
+```
+
+`--url` is the address `site` is served from: https, or `http://localhost` for testing. The command
+checks every plugin as `plugin check` does, packs it as `plugin pack` does, and writes `site/catalog.json`
+with each download addressed `https://tools.example/cx/<zip>`, beside one zip per plugin (per platform,
+for a native one). It prints each zip's hash, then the line to give your users.
+
+Each plugin's catalog text comes from the `pack-info.json` (or `.yaml`) in its folder, else its project.
+If a plugin does not load, a field is still unfilled, two plugins share a name, or the catalog would
+fail `plugin verify`'s shape rules, nothing is written and each problem is listed under its folder's name.
+
+Exit codes: 0 built, 1 a plugin or the folder is at fault, 2 usage.
+
+Upload `site` so `catalog.json` is at `<base-url>/catalog.json`. Users then run
+`/plugin store add <name> <base-url>/catalog.json`, and the store's plugins appear in the plugin manager
+and install with `/plugin get <name>/<plugin>`.
+
 ## First-party plugins
 
 *For maintainers: a plugin that lives in this repository is built and released with cxagent itself, so
