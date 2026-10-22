@@ -834,6 +834,21 @@ public static class AppBootstrap
                 });
         }
 
+        // STORES ARE THE FRONT END'S TOO: they are read only by `get` and the plugin manager, and adding
+        // one reads its catalog over HTTP. The arguments are not completed — a store name is the user's
+        // to choose, and its URL is theirs to paste.
+        {
+            var pluginStore = new PluginStoreCommand(system, mainWindow, paths);
+            manager.Commands.RegisterVerb("/plugin",
+                new CommandArgument("store add|remove|list", "manage plugin stores — other catalogs beside the official one",
+                    Completes: false),
+                (_, arguments) =>
+                {
+                    FireAndForget.Run(pluginStore.HandleAsync(arguments), "store", mainWindow, system);
+                    return true;
+                });
+        }
+
         // DECLARED HERE, NOT IN CORE'S TABLE. A library cannot end its host's process, and a
         // command Core ships but can never service is one every consumer advertises and none can
         // run. Declaring it beside the handler keeps the two from drifting.

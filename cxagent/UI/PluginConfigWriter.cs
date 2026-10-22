@@ -1,3 +1,4 @@
+using CxAgent.Core.Plugins;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CxAgent.Core.Llm;
@@ -56,6 +57,19 @@ public static class PluginConfigWriter
     /// </summary>
     public static void SetTheme(string configPath, string theme)
         => MutateRoot(configPath, root => root["theme"] = theme);
+
+    /// <summary>
+    /// Replaces the <c>stores</c> list — removed when it is empty, so a config that never had stores
+    /// does not gain an empty one by adding and removing a store.
+    /// </summary>
+    public static void SetStores(string configPath, IReadOnlyList<PluginStore> stores)
+        => MutateRoot(configPath, root =>
+        {
+            if (stores.Count == 0) { root.Remove("stores"); return; }
+            root["stores"] = new JsonArray(stores
+                .Select(s => (JsonNode)new JsonObject { ["name"] = s.Name, ["url"] = s.Url })
+                .ToArray());
+        });
 
     /// <summary>
     /// One read-modify-write over the whole plugins block.

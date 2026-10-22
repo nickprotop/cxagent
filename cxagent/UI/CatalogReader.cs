@@ -61,6 +61,13 @@ public sealed class CatalogReader
         return FromCache(failure);
     }
 
+    /// <summary>
+    /// The last good copy alone, with no request — for a listing that describes what each catalog held
+    /// when it was last read, without a round of network calls just to print it. No cache is an
+    /// <see cref="Catalog.Error"/>.
+    /// </summary>
+    public Catalog ReadCached() => FromCache(null);
+
     private Catalog FromCache(string? failure)
     {
         try
