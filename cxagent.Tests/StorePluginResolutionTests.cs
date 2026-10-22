@@ -63,4 +63,53 @@ public sealed class StorePluginResolutionTests : IDisposable
         Place("notastore/repo-map");
         Assert.Empty(PluginDiscovery.FindUnconfigured(new Dictionary<string, PluginConfig>(), [_root]));
     }
+
+    [Fact]
+    public void ADotDotSegment_IsNeverAStorePlugin()
+    {
+        Place("acme/repo-map"); MarkStore("acme");
+        Assert.IsNotType<ResolveResult.Found>(
+            PluginResolver.Resolve("acme/..", new Dictionary<string, PluginConfig>(), [_root], _root));
+    }
+
+    [Fact]
+    public void AStorePlugin_IsReportedUnderItsFolderName_NotItsManifestName()
+    {
+        var home = Place("acme/repo-map"); MarkStore("acme");
+        File.WriteAllText(Path.Combine(home, "repo-map.plugin.json"),
+            """{"pluginContract":2,"name":"repomap","version":"1.0.0","tools":[]}""");
+        var found = PluginDiscovery.FindUnconfigured(new Dictionary<string, PluginConfig>(), [_root]);
+        Assert.Equal("acme/repo-map", Assert.Single(found).Name);
+    }
+
+    [Fact]
+    public void AMarkedStoreFolder_TopLevel_IsNotSearchedAsAPluginFolder()
+    {
+        Place("acme"); MarkStore("acme");   // a loose repo-map.dll directly in the store folder
+        Assert.Null(PluginDiscovery.FindLoadSetDirectory("repo-map.dll", [_root]));
+        Assert.IsNotType<ResolveResult.Found>(
+            PluginResolver.Resolve("repo-map.dll", new Dictionary<string, PluginConfig>(), [_root], _root));
+        Assert.Empty(PluginDiscovery.FindUnconfigured(new Dictionary<string, PluginConfig>(), [_root]));
+    }
+
+    [Fact]
+    public void AStorePluginWithTwoSidecars_IsNeitherResolvedNorListed()
+    {
+        var home = Place("acme/repo-map"); MarkStore("acme");
+        File.WriteAllText(Path.Combine(home, "other.dll"), "x");
+        File.WriteAllText(Path.Combine(home, "other.plugin.json"),
+            """{"pluginContract":2,"name":"other","version":"1.0.0","tools":[]}""");
+        Assert.IsNotType<ResolveResult.Found>(
+            PluginResolver.Resolve("acme/repo-map", new Dictionary<string, PluginConfig>(), [_root], _root));
+        Assert.Empty(PluginDiscovery.FindUnconfigured(new Dictionary<string, PluginConfig>(), [_root]));
+    }
+
+    [Fact]
+    public void TheOfficialStoreName_ResolvesAsTheBareName()
+    {
+        var official = Place("repo-map");
+        var found = Assert.IsType<ResolveResult.Found>(PluginResolver.Resolve("cxagent/repo-map",
+            new Dictionary<string, PluginConfig> { ["repo-map"] = new("repo-map.dll") }, [_root], _root));
+        Assert.Equal(official, found.LoadSetDirectory);
+    }
 }

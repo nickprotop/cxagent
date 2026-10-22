@@ -39,6 +39,10 @@ public class PluginStoresTests
     [InlineData("acme/", false, "", "")]
     [InlineData("/repo-map", false, "", "")]
     [InlineData("a/b/c", false, "", "")]
+    [InlineData("acme/..", false, "", "")]
+    [InlineData("../x", false, "", "")]
+    [InlineData("Acme/x", false, "", "")]
+    [InlineData("acme/a.b", false, "", "")]
     public void AQualifiedName_SplitsIntoStoreAndName(string typed, bool ok, string store, string name)
     {
         Assert.Equal(ok, PluginStores.TrySplit(typed, out var s, out var n));

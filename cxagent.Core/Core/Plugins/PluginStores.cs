@@ -30,6 +30,9 @@ public static partial class PluginStores
 
     [GeneratedRegex("^[a-z0-9-]{1,32}$")] private static partial Regex StoreName();
 
+    // The installer's plugin-name rule: no '.', so `..` and a dotted staging folder are not names.
+    [GeneratedRegex("^[A-Za-z0-9_-]+$")] private static partial Regex PluginName();
+
     /// <summary>Why this name or URL cannot be a store, or null when it can.</summary>
     public static string? Problem(string name, string url)
     {
@@ -74,11 +77,16 @@ public static partial class PluginStores
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return []; }
     }
 
-    /// <summary><c>store/name</c> split in two; false for anything else.</summary>
+    /// <summary>
+    /// <c>store/name</c> split in two; false for anything else. BOTH SEGMENTS ARE CHECKED, because they
+    /// become folder names under a plugins folder: <c>acme/..</c> or <c>../x</c> would otherwise name a
+    /// path outside the store, and a typed name is not trusted to be a folder.
+    /// </summary>
     public static bool TrySplit(string qualified, out string store, out string name)
     {
         var parts = qualified.Split('/');
-        (store, name) = parts is [var s, var n] && s.Length > 0 && n.Length > 0 ? (s, n) : ("", "");
-        return store.Length > 0;
+        var ok = parts is [var s, var n] && StoreName().IsMatch(s) && PluginName().IsMatch(n);
+        (store, name) = ok ? (parts[0], parts[1]) : ("", "");
+        return ok;
     }
 }

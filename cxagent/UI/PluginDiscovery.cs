@@ -61,7 +61,8 @@ public static class PluginDiscovery
             // DOT-PREFIXED DIRECTORIES SKIPPED — the installer's staging area is one, and a plugin
             // resolved out of a half-written extraction is bytes no hash covered. See PluginResolver.
             foreach (var nested in Directory.EnumerateDirectories(folder)
-                         .Where(d => !Path.GetFileName(d).StartsWith('.'))
+                         .Where(d => !Path.GetFileName(d).StartsWith('.')
+                                     && !File.Exists(Path.Combine(d, PluginStores.Marker)))
                          .OrderBy(d => d, StringComparer.Ordinal))
                 if (File.Exists(Path.Combine(nested, file)))
                     return nested;
@@ -168,22 +169,27 @@ public static class PluginDiscovery
             // of its own is invisible to a top-level scan — and this scan is the only thing that
             // tells a user an installed-but-unconfigured plugin exists at all. One level, matching
             // FindLoadSetDirectory: deeper is a plugin's own dependencies, not another plugin.
-            var scanned = new List<string> { folder };
-            scanned.AddRange(Directory.EnumerateDirectories(folder)
+            // A MARKED FOLDER IS A STORE'S, NOT A PLUGIN FOLDER: a loose file at its top level is not a
+            // find, exactly as FindLoadSetDirectory does not answer a bare name from it.
+            var subdirectories = Directory.EnumerateDirectories(folder)
                 .Where(d => !Path.GetFileName(d).StartsWith('.'))
-                .OrderBy(d => d, StringComparer.Ordinal));
+                .OrderBy(d => d, StringComparer.Ordinal).ToList();
+            var scanned = new List<string> { folder };
+            scanned.AddRange(subdirectories.Where(d => !File.Exists(Path.Combine(d, PluginStores.Marker))));
 
             // STORE FOLDERS ARE THE ONE PLACE TWO LEVELS ARE READ, because the marker says what they are:
-            // <folder>/<store>/<plugin> is a store's plugin, reported as `store/name`. Without the marker a
-            // subdirectory's own subdirectories are a plugin's dependencies, as above.
+            // <folder>/<store>/<plugin> is a store's plugin, reported as `store/<folder name>` — the
+            // spelling Resolve and HomeOf look it up by, whatever its manifest calls itself. A segment
+            // that is not a valid store or plugin name is skipped, as it could not be resolved either.
             var storeOf = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var storeFolder in scanned.Skip(1).Where(d => File.Exists(Path.Combine(d, PluginStores.Marker))).ToList())
+            foreach (var storeFolder in subdirectories.Where(d => File.Exists(Path.Combine(d, PluginStores.Marker))))
             foreach (var home in Directory.EnumerateDirectories(storeFolder)
-                         .Where(d => !Path.GetFileName(d).StartsWith('.'))
                          .OrderBy(d => d, StringComparer.Ordinal))
             {
+                var qualified = $"{Path.GetFileName(storeFolder)}/{Path.GetFileName(home)}";
+                if (!PluginStores.TrySplit(qualified, out _, out _)) continue;
                 scanned.Add(home);
-                storeOf[home] = Path.GetFileName(storeFolder);
+                storeOf[home] = qualified;
             }
 
             foreach (var scan in scanned)
@@ -204,18 +210,22 @@ public static class PluginDiscovery
                 }
 
                 if (manifest is null || string.IsNullOrEmpty(manifest.Name)) continue;
-                var reportedName = storeOf.TryGetValue(scan, out var owningStore)
-                    ? $"{owningStore}/{manifest.Name}" : manifest.Name;
+                var isStorePlugin = storeOf.TryGetValue(scan, out var qualifiedName);
+                var reportedName = isStorePlugin ? qualifiedName! : manifest.Name;
                 if (configured.ContainsKey(reportedName)) continue;
                 if (!seen.Add(reportedName)) continue;
 
                 // THE ENTRY-POINT FILE MUST ACTUALLY BE THERE. A sidecar whose binary was deleted is
                 // a leftover, and reporting it would send a user to `/plugin load` for something
                 // that cannot load. Same stem pairing every other sidecar lookup here uses.
+                // A STORE PLUGIN'S ENTRY POINT IS PluginResolver.StoreEntryPoint's, the same answer Resolve
+                // gives; any other pairs by stem here.
                 var stem = sidecar[..^".plugin.json".Length];
-                var file = Directory.EnumerateFiles(scan, Path.GetFileName(stem) + ".*")
-                    .FirstOrDefault(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
-                                      || f.EndsWith(".so", StringComparison.OrdinalIgnoreCase));
+                var file = isStorePlugin
+                    ? PluginResolver.StoreEntryPoint(scan)
+                    : Directory.EnumerateFiles(scan, Path.GetFileName(stem) + ".*")
+                        .FirstOrDefault(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+                                          || f.EndsWith(".so", StringComparison.OrdinalIgnoreCase));
                 if (file is null) continue;
 
                 found.Add(new UnconfiguredPlugin(

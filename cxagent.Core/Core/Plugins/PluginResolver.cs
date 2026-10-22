@@ -86,6 +86,12 @@ public static class PluginResolver
         IReadOnlyDictionary<string, PluginConfig> configured, IReadOnlyList<string> searchFolders,
         string projectDirectory)
     {
+        // THE OFFICIAL CATALOG'S OWN SPELLING: `cxagent/repo-map` is `repo-map`, so it resolves exactly as
+        // the bare name does, rather than hunting for a store folder named after the official catalog.
+        if (target.StartsWith(PluginStores.Official + "/", StringComparison.Ordinal)
+            && PluginStores.TrySplit(target, out _, out var officialName))
+            target = officialName;
+
         if (configured.TryGetValue(target, out var config))
         {
             // A STORE PLUGIN IS LOOKED FOR UNDER ITS STORE ONLY: its bare file name must never reach a
@@ -100,15 +106,14 @@ public static class PluginResolver
         }
 
         // A STORE PLUGIN BY ITS NAME, not configured yet: the one sidecar in its folder says which file.
-        if (PluginStores.TrySplit(target, out var store, out var plugin)
-            && searchFolders.Select(f => Path.Combine(f, store, plugin))
-                .FirstOrDefault(h => File.Exists(Path.Combine(Path.GetDirectoryName(h)!, PluginStores.Marker))
-                                     && Directory.Exists(h) && Directory.GetFiles(h, "*.plugin.json").Length == 1) is { } home)
-        {
-            var stem = Directory.GetFiles(home, "*.plugin.json")[0][..^".plugin.json".Length];
-            if (new[] { ".dll", ".so", ".dylib" }.Select(e => stem + e).FirstOrDefault(File.Exists) is { } binary)
-                return new ResolveResult.Found(binary, home);
-        }
+        if (PluginStores.TrySplit(target, out var store, out var plugin))
+            foreach (var folder in searchFolders)
+            {
+                var home = Path.Combine(folder, store, plugin);
+                if (File.Exists(Path.Combine(folder, store, PluginStores.Marker))
+                    && StoreEntryPoint(home) is { } binary)
+                    return new ResolveResult.Found(binary, home);
+            }
 
         // A PATH, NOT A NAME. A rooted or relative-with-separators path is taken as the user wrote
         // it (relative to the project directory); a bare filename is searched the same folders a
@@ -129,6 +134,21 @@ public static class PluginResolver
         return new ResolveResult.NotFound(
             $"'{target}' is not a configured plugin and no file matches it under "
             + $"{string.Join(", ", searchFolders)}.");
+    }
+
+    /// <summary>
+    /// The entry point of the store plugin installed in <paramref name="home"/>: the binary beside its one
+    /// sidecar, or null when the folder is missing, holds no sidecar or several, or the sidecar's binary
+    /// is gone. One definition, so resolving <c>store/name</c> and listing what is installed agree on
+    /// which folders are plugins.
+    /// </summary>
+    public static string? StoreEntryPoint(string home)
+    {
+        if (!Directory.Exists(home)) return null;
+        var sidecars = Directory.GetFiles(home, "*.plugin.json");
+        if (sidecars.Length != 1) return null;
+        var stem = sidecars[0][..^".plugin.json".Length];
+        return new[] { ".dll", ".so", ".dylib" }.Select(e => stem + e).FirstOrDefault(File.Exists);
     }
 
     /// <summary>
@@ -174,12 +194,16 @@ public static class PluginResolver
 
             if (!Directory.Exists(folder)) continue;
 
+            // A MARKED STORE FOLDER IS NOT A PLUGIN FOLDER: its plugins sit one level further down and are
+            // reached by `store/name` only, so a loose file at its top level must not answer a bare name.
+            //
             // A DOT-PREFIXED SUBDIRECTORY IS NOT A PLUGIN. The installer stages an extraction in
             // one, beside its destination so the final move cannot cross a filesystem; a hard kill
             // mid-install leaves that directory behind, and resolving a plugin out of a half-written
             // staging copy would load bytes no hash ever covered.
             foreach (var nested in Directory.EnumerateDirectories(folder)
-                         .Where(d => !Path.GetFileName(d).StartsWith('.'))
+                         .Where(d => !Path.GetFileName(d).StartsWith('.')
+                                     && !File.Exists(Path.Combine(d, PluginStores.Marker)))
                          .OrderBy(d => d, StringComparer.Ordinal))
                 if (File.Exists(Path.Combine(nested, file)))
                     return nested;

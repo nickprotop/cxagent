@@ -42,7 +42,7 @@ public static class HeadlessPlugins
             // --plugin naming it asks for this run anyway, the same way naming one approves it.
             if (!config.Enabled && !named) continue;
 
-            if (PluginDiscovery.FindLoadSetDirectory(config.File, s.SearchFolders) is not { } dir)
+            if (PluginDiscovery.HomeOf(name, config, s.SearchFolders) is not { } dir)
             {
                 skipped.Add($"{name} (not found)");
                 continue;

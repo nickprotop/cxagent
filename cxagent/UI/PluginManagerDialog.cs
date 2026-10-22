@@ -907,7 +907,7 @@ public static class PluginManagerDialog
     /// the gather, which already knows the folder it found them in.</summary>
     private static string? HomeOf(PluginRow row) =>
         row.Configured is { } config
-            ? PluginDiscovery.FindLoadSetDirectory(config.File, _searchFolders)
+            ? PluginDiscovery.HomeOf(row.Name, config, _searchFolders)
             : _inputs?.Unconfigured.FirstOrDefault(u => u.Name == row.Name)?.Folder;
 
     /// <summary>

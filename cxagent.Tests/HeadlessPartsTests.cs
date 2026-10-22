@@ -207,4 +207,19 @@ public class HeadlessPluginsTests : IDisposable
 
         Assert.True(choice.Load["lsp"].Enabled);
     }
+
+    /// <summary>A store plugin's file name must never reach the official folder's same-named copy.</summary>
+    [Fact]
+    public void AStorePlugin_DoesNotLoadTheOfficialCopy()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "repo-map"));
+        File.WriteAllText(Path.Combine(_dir, "repo-map", "repo-map.dll"), "");
+        var configured = new Dictionary<string, PluginConfig> { ["acme/repo-map"] = new("repo-map.dll") };
+
+        var choice = HeadlessPlugins.Select(new PluginSelection(configured,
+            new HeadlessOptions { Plugins = ["acme/repo-map"] }, [_dir], new PermissionRulesStore(new AppPaths(_dir)), _dir));
+
+        Assert.Empty(choice.Load);
+        Assert.Contains(choice.Skipped, x => x.StartsWith("acme/repo-map (not found)"));
+    }
 }
