@@ -42,7 +42,7 @@ public static class PluginManagerState
         // contract this host cannot speak, and reading only the configured ones would leave that row
         // saying "not configured" for something configuring would not fix.
         var found = configured
-            .Select(c => (Name: c.Key, Home: PluginDiscovery.FindLoadSetDirectory(c.Value.File, searchFolders),
+            .Select(c => (Name: c.Key, Home: PluginDiscovery.HomeOf(c.Key, c.Value, searchFolders),
                           c.Value.File))
             .Concat(unconfigured.Select(u => (u.Name, Home: (string?)u.Folder, u.File)));
 

@@ -88,11 +88,26 @@ public static class PluginResolver
     {
         if (configured.TryGetValue(target, out var config))
         {
-            var directory = FindLoadSetDirectory(config.File, searchFolders);
+            // A STORE PLUGIN IS LOOKED FOR UNDER ITS STORE ONLY: its bare file name must never reach a
+            // same-named official plugin, nor the official one reach a store's.
+            var directory = PluginStores.TrySplit(target, out var configuredStore, out var configuredName)
+                ? FindStoreLoadSet(configuredStore, configuredName, config.File, searchFolders)
+                : FindLoadSetDirectory(config.File, searchFolders);
             return directory is null
                 ? new ResolveResult.NotFound(
                     $"no file named '{config.File}' found under {string.Join(", ", searchFolders)}.")
                 : new ResolveResult.Found(Path.Combine(directory, config.File), directory);
+        }
+
+        // A STORE PLUGIN BY ITS NAME, not configured yet: the one sidecar in its folder says which file.
+        if (PluginStores.TrySplit(target, out var store, out var plugin)
+            && searchFolders.Select(f => Path.Combine(f, store, plugin))
+                .FirstOrDefault(h => File.Exists(Path.Combine(Path.GetDirectoryName(h)!, PluginStores.Marker))
+                                     && Directory.Exists(h) && Directory.GetFiles(h, "*.plugin.json").Length == 1) is { } home)
+        {
+            var stem = Directory.GetFiles(home, "*.plugin.json")[0][..^".plugin.json".Length];
+            if (new[] { ".dll", ".so", ".dylib" }.Select(e => stem + e).FirstOrDefault(File.Exists) is { } binary)
+                return new ResolveResult.Found(binary, home);
         }
 
         // A PATH, NOT A NAME. A rooted or relative-with-separators path is taken as the user wrote
@@ -114,6 +129,23 @@ public static class PluginResolver
         return new ResolveResult.NotFound(
             $"'{target}' is not a configured plugin and no file matches it under "
             + $"{string.Join(", ", searchFolders)}.");
+    }
+
+    /// <summary>
+    /// Where store <paramref name="store"/>'s plugin <paramref name="name"/> is installed: the first
+    /// search folder holding <c>&lt;store&gt;/&lt;name&gt;/&lt;file&gt;</c> under a folder marked as a
+    /// store's. That folder is the load set — the plugin's own files, never its neighbours'.
+    /// </summary>
+    public static string? FindStoreLoadSet(string store, string name, string file, IReadOnlyList<string> searchFolders)
+    {
+        foreach (var folder in searchFolders)
+        {
+            var storeFolder = Path.Combine(folder, store);
+            var home = Path.Combine(storeFolder, name);
+            if (File.Exists(Path.Combine(storeFolder, PluginStores.Marker)) && File.Exists(Path.Combine(home, file)))
+                return home;
+        }
+        return null;
     }
 
     /// <summary>

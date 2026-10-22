@@ -30,6 +30,16 @@ public static class PluginDiscovery
         PluginResolver.SearchFolders(configuredPaths, projectDirectory, configDir);
 
     /// <summary>
+    /// Where a configured plugin is installed: a store plugin (<c>acme/repo-map</c>) under its store's
+    /// folder only; any other by its file, one level deep. One function, so startup, F2 and the
+    /// collision checks cannot disagree about which copy a name means.
+    /// </summary>
+    public static string? HomeOf(string configuredName, PluginConfig config, IReadOnlyList<string> searchFolders) =>
+        PluginStores.TrySplit(configuredName, out var store, out var name)
+            ? PluginResolver.FindStoreLoadSet(store, name, config.File, searchFolders)
+            : FindLoadSetDirectory(config.File, searchFolders);
+
+    /// <summary>
     /// The directory holding <paramref name="file"/> and its sidecar, searched for in
     /// <see cref="SearchFolders"/> order — first match wins, matching every other search-path
     /// resolution in this codebase. Null when no folder holds it.
@@ -163,6 +173,19 @@ public static class PluginDiscovery
                 .Where(d => !Path.GetFileName(d).StartsWith('.'))
                 .OrderBy(d => d, StringComparer.Ordinal));
 
+            // STORE FOLDERS ARE THE ONE PLACE TWO LEVELS ARE READ, because the marker says what they are:
+            // <folder>/<store>/<plugin> is a store's plugin, reported as `store/name`. Without the marker a
+            // subdirectory's own subdirectories are a plugin's dependencies, as above.
+            var storeOf = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var storeFolder in scanned.Skip(1).Where(d => File.Exists(Path.Combine(d, PluginStores.Marker))).ToList())
+            foreach (var home in Directory.EnumerateDirectories(storeFolder)
+                         .Where(d => !Path.GetFileName(d).StartsWith('.'))
+                         .OrderBy(d => d, StringComparer.Ordinal))
+            {
+                scanned.Add(home);
+                storeOf[home] = Path.GetFileName(storeFolder);
+            }
+
             foreach (var scan in scanned)
             foreach (var sidecar in Directory.EnumerateFiles(scan, "*.plugin.json")
                          .OrderBy(f => f, StringComparer.Ordinal))
@@ -181,8 +204,10 @@ public static class PluginDiscovery
                 }
 
                 if (manifest is null || string.IsNullOrEmpty(manifest.Name)) continue;
-                if (configured.ContainsKey(manifest.Name)) continue;
-                if (!seen.Add(manifest.Name)) continue;
+                var reportedName = storeOf.TryGetValue(scan, out var owningStore)
+                    ? $"{owningStore}/{manifest.Name}" : manifest.Name;
+                if (configured.ContainsKey(reportedName)) continue;
+                if (!seen.Add(reportedName)) continue;
 
                 // THE ENTRY-POINT FILE MUST ACTUALLY BE THERE. A sidecar whose binary was deleted is
                 // a leftover, and reporting it would send a user to `/plugin load` for something
@@ -194,7 +219,7 @@ public static class PluginDiscovery
                 if (file is null) continue;
 
                 found.Add(new UnconfiguredPlugin(
-                    manifest.Name, Path.GetFileName(file), scan, manifest.Tools.Count));
+                    reportedName, Path.GetFileName(file), scan, manifest.Tools.Count));
             }
         }
 
@@ -242,7 +267,7 @@ public static class PluginDiscovery
             // disabled plugin is skipped before anything about it is even looked up.
             if (!config.Enabled) continue;
 
-            var loadSetDirectory = FindLoadSetDirectory(config.File, searchFolders);
+            var loadSetDirectory = HomeOf(name, config, searchFolders);
             if (loadSetDirectory is null)
             {
                 report($"plugin '{name}': no file named '{config.File}' found under "

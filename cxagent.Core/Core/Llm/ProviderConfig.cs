@@ -483,6 +483,9 @@ public record ProviderSettings(
     /// </summary>
     public IReadOnlyList<string> PluginPaths { get; init; } = [];
 
+    /// <summary>The user's plugin stores, from <c>stores</c> — empty when absent. See <see cref="Plugins.PluginStores"/>.</summary>
+    public IReadOnlyList<Plugins.PluginStore> Stores { get; init; } = [];
+
     /// <summary>
     /// Configured sub-agent types, empty when the block is absent — the common case.
     ///
@@ -716,6 +719,13 @@ public static class ProviderConfigLoader
         foreach (var (pluginName, config) in plugins)
         {
             if (!config.Enabled) continue;
+
+            // A STORE PLUGIN (`acme/repo-map`) IS NOT FOUND BY ITS FILE ALONE. FindSidecar looks for a bare
+            // file in pluginPaths' top level, which would answer with a different plugin's sidecar when
+            // one shares the filename — and a store's plugin lives under its store's folder, which
+            // config-read time cannot tell apart from a stray one without the marker check. Its tool
+            // names are still checked, at load, by the same collision rules.
+            if (pluginName.Contains('/')) continue;
 
             // UNRESOLVED IS "CANNOT CHECK THIS ONE", NOT AN ERROR — most often a plugin only
             // reachable through a project-local search folder this method was not handed (see
@@ -1248,6 +1258,8 @@ public static class ProviderConfigLoader
                     plugins[entry.Name] = new PluginConfig(file, pluginEnabled, pluginSettings);
                 }
 
+            var stores = Plugins.PluginStores.Read(root, errors);
+
             ValidatePluginCollisions(plugins,
                 config => FindSidecar(config.File, pluginPaths, configDir), errors);
 
@@ -1266,6 +1278,7 @@ public static class ProviderConfigLoader
                 Theme = theme,
                 Plugins = plugins,
                 PluginPaths = pluginPaths,
+                Stores = stores,
             };
         }
     }
