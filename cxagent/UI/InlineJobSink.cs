@@ -1468,7 +1468,7 @@ public sealed class InlineJobSink : IToolObserver
     {
         if (_round is not { } r) return string.Empty;
         var calls = CallsOf(r);
-        return BodyFor(Timetable(calls, InFlightOfRound() is { } j ? new LiveRun(j) : null), calls, InFlightOfRound());
+        return BodyFor(Timetable(calls, InFlightOfRound() is { } j ? new LiveRun(j) : null), calls, OutputOf, InFlightOfRound());
     }
 
     /// <summary>Test seam: the calls the round on screen is counting.</summary>
@@ -1595,7 +1595,7 @@ public sealed class InlineJobSink : IToolObserver
             // in-flight row, and the out column back.
             var table = Timetable(calls);
             _chat.SetHeader(id, HeaderFor(table, calls, running: null));
-            _chat.UpdateMessage(id, BodyFor(table, calls));
+            _chat.UpdateMessage(id, BodyFor(table, calls, OutputOf));
 
             // OPENED WHEN SOMETHING WENT WRONG. An ordinary round's working is an echo and stays
             // folded; a round holding a refusal or a failure is the one whose working is worth
@@ -1674,7 +1674,7 @@ public sealed class InlineJobSink : IToolObserver
         round.Row ??= _chat.AddMessage(ChatRole.Tool, string.Empty, author: "Tools");
 
         _chat.SetHeader(round.Row.Value, HeaderFor(table, calls, running));
-        _chat.UpdateMessage(round.Row.Value, BodyFor(table, calls, running));
+        _chat.UpdateMessage(round.Row.Value, BodyFor(table, calls, OutputOf, running));
     }
 
     /// <summary>
@@ -1762,7 +1762,7 @@ public sealed class InlineJobSink : IToolObserver
     /// before the output was captured — still has its row, and an empty body under an expand is
     /// worse than the scaffolding it replaced.</para>
     /// </summary>
-    private static string BodyFor(string table, IReadOnlyList<ToolCallReport> calls, Job? running = null)
+    private static string BodyFor(string table, IReadOnlyList<ToolCallReport> calls, Func<ToolCallReport, string?> outputOf, Job? running = null)
     {
         // WHAT THE RUNNING CALL HAS STREAMED SO FAR, while it runs — alone when it is the round's
         // first call, after the table when earlier calls have rows of their own. Once it finishes it
@@ -1770,11 +1770,19 @@ public sealed class InlineJobSink : IToolObserver
         if (running?.ProgressBody is { Length: > 0 } streamed)
             return calls.Count == 0 ? "\n" + streamed : BodyOf(table) + "\n\n" + streamed;
 
-        if (calls.Count == 1 && calls[0].Output is { Length: > 0 } output)
+        if (calls.Count == 1 && outputOf(calls[0]) is { Length: > 0 } output)
             return "\n" + output.TrimEnd();
 
         return BodyOf(table);
     }
+
+    /// <summary>
+    /// What a call returned, WHOLE: its job's own output while the sink still knows the job, the call
+    /// log's copy otherwise. The copy is capped at 4 KB for the log's sake, and an expanded row cut
+    /// there tells a person the tool's answer was truncated when the model read all of it.
+    /// </summary>
+    private string? OutputOf(ToolCallReport call) =>
+        _known.TryGetValue(call.CallId, out var job) && RawContent(job) is { Length: > 0 } full ? full : call.Output;
 
     /// <summary>The table without its summary line, which the header carries instead.</summary>
     private static string BodyOf(string table)

@@ -3349,8 +3349,9 @@ public sealed class Agent
             // repeating a tool name nine times.
             Target = job.DisplayName,
 
-            // WHAT IT RETURNED, capped. Nothing reads this yet — it is kept because the surfaces
-            // that will want it cannot go back and collect what was thrown away.
+            // WHAT IT RETURNED, capped: the call log keeps one per call for a whole session. A
+            // surface showing what the model read takes the job's own output, which is whole; this is
+            // the fallback once the job is gone.
             Output = ToolCallReport.Cap(result),
         });
 

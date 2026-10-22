@@ -321,6 +321,31 @@ public class SingleCallRowTests
         Assert.DoesNotContain("| tool |", sink.RoundBodyForTest());
     }
 
+    // THE WHOLE RESULT, NOT THE CALL LOG'S COPY. The report keeps 4 KB of each call for the log; the
+    // expanded body is where a person checks what the model read, and a cut there said the tool's
+    // answer was truncated when the model had all of it.
+    [Fact]
+    public void OneCallShowsItsWholeResult_NotTheReportsCappedCopy()
+    {
+        var (sink, _) = SinkFixture.Build();
+        var full = string.Concat(Enumerable.Range(0, 1000).Select(i => $"line{i:0000}\n"));
+        var job = new CxAgent.Core.Models.Job
+        {
+            Id = Guid.NewGuid().ToString(), AgentId = "parent", JobType = "file", DisplayName = "repo_map",
+            State = CxAgent.Core.Models.JobState.Succeeded,
+            Result = new CxAgent.Core.Models.JobResult { Success = true, Output = new Dictionary<string, object?> { ["content"] = full } },
+        };
+        sink.ToolUpdatedNow(job);
+        sink.RecordToolCall(new ToolCallReport(job.Id, "parent", "repo_map", "file", "succeeded", 5, full.Length,
+            DateTimeOffset.UtcNow) { Target = "repo_map", Output = ToolCallReport.Cap(full) });
+        sink.ClaimRoundRowForTest();
+        sink.PaintRoundForTest();
+
+        var body = sink.RoundBodyForTest();
+        Assert.Contains("line0999", body);
+        Assert.DoesNotContain("truncated at", body);
+    }
+
     // A CALL THAT RETURNED NOTHING KEEPS ITS TABLE. An empty body under an expand is worse than the
     // scaffolding it replaced.
     [Fact]
