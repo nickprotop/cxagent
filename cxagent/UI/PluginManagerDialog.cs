@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Permissions;
+using CxAgent.Core.Plugins;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
 using SharpConsoleUI;
@@ -400,9 +401,9 @@ public static class PluginManagerDialog
         _searchFolders = PluginDiscovery.SearchFolders(
             _manager!.Config.PluginPaths, projectDirectory, _paths!.ConfigDir);
 
-        _inputs = PluginManagerState.Gather(
+        _inputs = PluginManagerState.Gather(new GatherInputs(
             _manager.Config.Plugins, _session!.Plugins.LoadedPluginNames, _searchFolders,
-            _catalog.Plugins, projectDirectory);
+            _catalog.Plugins, projectDirectory, _paths.ConfigDir));
         _rows = PluginManagerRows.Build(_inputs);
 
         RefillRail();
@@ -1615,20 +1616,22 @@ public static class PluginManagerDialog
     /// <summary>
     /// Where an install may go: the two built-in folders plus every configured pluginPaths entry.
     ///
-    /// <para>READ OFF <see cref="_searchFolders"/> RATHER THAN RECOMPUTED — its last two entries
-    /// ARE the built-in project and global folders (PluginDiscovery.SearchFolders appends them in
-    /// that order), so this list cannot disagree with where a later load will look.</para>
+    /// <para>THE BUILT-IN TWO BY NAME, from the functions <see cref="_searchFolders"/> was built with,
+    /// so this list cannot disagree with where a later load will look — and cannot label one as the
+    /// other, which indexing into the search order (global before project) would.</para>
     /// </summary>
     private static IReadOnlyList<(string Label, string Folder)> InstallDestinations()
     {
+        var global = PluginResolver.GlobalFolder(_paths!.ConfigDir);
+        var project = PluginResolver.ProjectFolder(_projectDirectory!);
         var list = new List<(string, string)>
         {
-            ($"global — {_searchFolders[^1]}", _searchFolders[^1]),
-            ($"project — {_searchFolders[^2]}", _searchFolders[^2]),
+            ($"global — {global}", global),
+            ($"project — {project}", project),
         };
 
-        for (var i = 0; i < _searchFolders.Count - 2; i++)
-            list.Add(($"pluginPaths — {_searchFolders[i]}", _searchFolders[i]));
+        foreach (var folder in _searchFolders.Where(f => f != global && f != project))
+            list.Add(($"pluginPaths — {folder}", folder));
 
         return list;
     }

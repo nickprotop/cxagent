@@ -31,8 +31,8 @@ public class PluginRowActionsTests : IDisposable
     private IReadOnlyList<PluginRow> Rows(
         Dictionary<string, PluginConfig>? configured = null, string[]? loaded = null)
     {
-        var inputs = PluginManagerState.Gather(
-            configured ?? [], loaded ?? [], [_dir], [], _dir);
+        var inputs = PluginManagerState.Gather(new GatherInputs(
+            configured ?? [], loaded ?? [], [_dir], [], _dir, _dir));
         return PluginManagerRows.Build(inputs);
     }
 

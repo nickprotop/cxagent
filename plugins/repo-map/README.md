@@ -94,8 +94,12 @@ allow" answers that for good. The tool itself adds no prompt of its own.
 
 ```json
 "plugins": {
-  "repo-map": { "file": "repo-map/repo-map.dll" }
+  "repo-map": { "file": "repo-map.dll" }
 }
 ```
+
+The file name alone is enough: plugins are found one folder down, in `plugins/repo-map/`. Writing
+`repo-map/repo-map.dll` also finds it, but makes the whole plugins folder its load set, so
+installing any other plugin changes repo-map's hash and asks for approval again.
 
 It has no settings.

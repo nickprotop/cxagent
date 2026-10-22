@@ -15,7 +15,15 @@ public static class PluginResolver
 {
     private const string ProjectPluginsDirName = ".cxagent/plugins";
 
-    private static string GlobalPluginsDir(string configDir) => Path.Combine(configDir, "plugins");
+    /// <summary>
+    /// The user's own plugins folder, under cxagent's config directory — where <c>/plugin get</c>
+    /// installs. Named here rather than picked out of <see cref="SearchFolders"/> by position: the
+    /// search order is about precedence, and an index into it says nothing about which folder is whose.
+    /// </summary>
+    public static string GlobalFolder(string configDir) => Path.Combine(configDir, "plugins");
+
+    /// <summary>The project's plugins folder — a cloned repository's, not the user's.</summary>
+    public static string ProjectFolder(string projectDirectory) => Path.Combine(projectDirectory, ProjectPluginsDirName);
 
     /// <summary>
     /// The folders searched for a configured plugin's file, first match winning: configured paths first, in
@@ -43,8 +51,8 @@ public static class PluginResolver
                 : Path.Combine(projectDirectory, expanded));
         }
 
-        folders.Add(GlobalPluginsDir(configDir));
-        folders.Add(Path.Combine(projectDirectory, ProjectPluginsDirName));
+        folders.Add(GlobalFolder(configDir));
+        folders.Add(ProjectFolder(projectDirectory));
 
         return folders;
     }

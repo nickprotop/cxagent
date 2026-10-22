@@ -1,3 +1,4 @@
+using CxAgent.Core.Plugins;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Sessions;
@@ -123,10 +124,10 @@ public sealed class PluginGetCommand(
             return;
         }
 
-        // THE LAST FOLDER IS THE GLOBAL ONE — PluginDiscovery.SearchFolders orders them nearest
-        // first, so global is last. Read from the same function the loader uses rather than composed
-        // here, or an install lands somewhere the loader does not look.
-        var folder = PluginDiscovery.SearchFolders([], session.WorkingDirectory, paths.ConfigDir)[^1];
+        // THE GLOBAL FOLDER, BY NAME — the same function SearchFolders builds it with, so the install
+        // lands where the loader looks. Not by position: the search order puts the project's folder
+        // last, and a plugin installed there belongs to whichever repository the user happened to be in.
+        var folder = PluginResolver.GlobalFolder(paths.ConfigDir);
 
         var result = await new PluginInstaller().InstallAsync(entry, folder, CancellationToken.None);
 

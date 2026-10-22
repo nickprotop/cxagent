@@ -43,9 +43,9 @@ public class PluginManagerStateTests : IDisposable
         File.Move(Path.Combine(home, "linked.plugin.json"), away);
         File.CreateSymbolicLink(Path.Combine(home, "linked.plugin.json"), away);
 
-        var inputs = PluginManagerState.Gather(
+        var inputs = PluginManagerState.Gather(new GatherInputs(
             new Dictionary<string, PluginConfig> { ["linked"] = new("linked.dll") },
-            [], [_dir], [], _dir);
+            [], [_dir], [], _dir, _dir));
 
         Assert.Contains("linked", inputs.Unreadable);
     }
@@ -56,9 +56,9 @@ public class PluginManagerStateTests : IDisposable
     {
         Place("here");
 
-        var inputs = PluginManagerState.Gather(
+        var inputs = PluginManagerState.Gather(new GatherInputs(
             new Dictionary<string, PluginConfig> { ["here"] = new("here.dll") },
-            [], [_dir], [], _dir);
+            [], [_dir], [], _dir, _dir));
 
         Assert.Empty(inputs.MissingFiles);
     }
@@ -71,9 +71,9 @@ public class PluginManagerStateTests : IDisposable
     [Fact]
     public void AConfiguredEntryWithNoFileIsReportedMissing()
     {
-        var inputs = PluginManagerState.Gather(
+        var inputs = PluginManagerState.Gather(new GatherInputs(
             new Dictionary<string, PluginConfig> { ["ghost"] = new("ghost.dll") },
-            [], [_dir], [], _dir);
+            [], [_dir], [], _dir, _dir));
 
         Assert.Contains("ghost", inputs.MissingFiles);
     }
@@ -85,9 +85,9 @@ public class PluginManagerStateTests : IDisposable
     {
         Place("real", version: "2.5.0", contract: 1);
 
-        var inputs = PluginManagerState.Gather(
+        var inputs = PluginManagerState.Gather(new GatherInputs(
             new Dictionary<string, PluginConfig> { ["real"] = new("real.dll") },
-            [], [_dir], [], _dir);
+            [], [_dir], [], _dir, _dir));
 
         Assert.Equal("2.5.0", inputs.InstalledVersions["real"]);
         Assert.Equal(1, inputs.InstalledContracts["real"]);
@@ -99,9 +99,36 @@ public class PluginManagerStateTests : IDisposable
     {
         Place("stranger");
 
-        var inputs = PluginManagerState.Gather(
-            new Dictionary<string, PluginConfig>(), [], [_dir], [], _dir);
+        var inputs = PluginManagerState.Gather(new GatherInputs(
+            new Dictionary<string, PluginConfig>(), [], [_dir], [], _dir, _dir));
 
         Assert.Contains(inputs.Unconfigured, u => u.Name == "stranger");
+    }
+}
+
+/// <summary>
+/// WHICH FOLDER A ROW SAYS IT IS IN, against the real search order — the global folder sits before the
+/// project's in it, so a label read off the last entry calls every globally installed plugin "path".
+/// </summary>
+public class PluginManagerFolderLabelTests : IDisposable
+{
+    private readonly string _dir = Directory.CreateTempSubdirectory("cxagent-label-").FullName;
+    public void Dispose() => Directory.Delete(_dir, recursive: true);
+
+    [Fact]
+    public void APluginInTheGlobalFolder_IsLabelledGlobal()
+    {
+        var config = Path.Combine(_dir, "cfg");
+        var project = Path.Combine(_dir, "proj");
+        var home = Path.Combine(CxAgent.Core.Plugins.PluginResolver.GlobalFolder(config), "here");
+        Directory.CreateDirectory(home);
+        File.WriteAllText(Path.Combine(home, "here.dll"), "x");
+        File.WriteAllText(Path.Combine(home, "here.plugin.json"), """{ "pluginContract": 2, "name": "here", "version": "1.0.0", "tools": [] }""");
+
+        var inputs = PluginManagerState.Gather(new GatherInputs(
+            new Dictionary<string, PluginConfig> { ["here"] = new("here.dll") }, [],
+            CxAgent.Core.Plugins.PluginResolver.SearchFolders([], project, config), [], project, config));
+
+        Assert.Equal("global", inputs.Folders["here"]);
     }
 }

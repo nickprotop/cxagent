@@ -36,15 +36,16 @@ public class PluginManagerNestedSidecarTests : IDisposable
         { "pluginContract": 2, "name": "clone-finder", "version": "0.9.8", "tools": [] }
         """);
 
-        var inputs = PluginManagerState.Gather(
+        var inputs = PluginManagerState.Gather(new GatherInputs(
             new Dictionary<string, PluginConfig>
             {
                 ["clone-finder"] = new("clone-finder/clone-finder.dll"),
             },
-            loaded: ["clone-finder"],
-            searchFolders: [_dir],
-            catalog: [],
-            projectDirectory: _dir);
+            ["clone-finder"],
+            [_dir],
+            [],
+            _dir,
+            _dir));
 
         Assert.DoesNotContain("clone-finder", inputs.Unreadable);
         Assert.DoesNotContain("clone-finder", inputs.MissingFiles);
@@ -58,9 +59,9 @@ public class PluginManagerNestedSidecarTests : IDisposable
         { "pluginContract": 2, "name": "clone-finder", "version": "0.9.8", "tools": [] }
         """);
 
-        var inputs = PluginManagerState.Gather(
+        var inputs = PluginManagerState.Gather(new GatherInputs(
             new Dictionary<string, PluginConfig> { ["clone-finder"] = new("clone-finder/clone-finder.dll") },
-            loaded: [], searchFolders: [_dir], catalog: [], projectDirectory: _dir);
+            [], [_dir], [], _dir, _dir));
 
         Assert.Equal("0.9.8", inputs.InstalledVersions["clone-finder"]);
     }
@@ -71,9 +72,9 @@ public class PluginManagerNestedSidecarTests : IDisposable
     {
         Install("broken", "{ this is not json");
 
-        var inputs = PluginManagerState.Gather(
+        var inputs = PluginManagerState.Gather(new GatherInputs(
             new Dictionary<string, PluginConfig> { ["broken"] = new("broken/broken.dll") },
-            loaded: [], searchFolders: [_dir], catalog: [], projectDirectory: _dir);
+            [], [_dir], [], _dir, _dir));
 
         Assert.Contains("broken", inputs.Unreadable);
     }

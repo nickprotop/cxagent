@@ -13,15 +13,23 @@ namespace CxAgent.UI;
 /// <para>NOTHING HERE LOADS AN ASSEMBLY. A sidecar is data, and reading it is how a plugin's claims
 /// are known without running it — the same guarantee the load gate depends on.</para>
 /// </summary>
+/// <summary>
+/// What <see cref="PluginManagerState.Gather"/> reads from: config's plugins, what is loaded, where to
+/// look, the catalog, and the two directories the built-in folders are named from.
+/// </summary>
+public sealed record GatherInputs(
+    IReadOnlyDictionary<string, PluginConfig> Configured,
+    IReadOnlyList<string> Loaded,
+    IReadOnlyList<string> SearchFolders,
+    IReadOnlyList<CatalogEntry> Catalog,
+    string ProjectDirectory,
+    string ConfigDir);
+
 public static class PluginManagerState
 {
-    public static PluginManagerInputs Gather(
-        IReadOnlyDictionary<string, PluginConfig> configured,
-        IReadOnlyList<string> loaded,
-        IReadOnlyList<string> searchFolders,
-        IReadOnlyList<CatalogEntry> catalog,
-        string projectDirectory)
+    public static PluginManagerInputs Gather(GatherInputs inputs)
     {
+        var (configured, loaded, searchFolders, catalog, projectDirectory, configDir) = inputs;
         var missing = new HashSet<string>(StringComparer.Ordinal);
         var unreadable = new HashSet<string>(StringComparer.Ordinal);
         var versions = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -42,7 +50,7 @@ public static class PluginManagerState
         {
             if (home is null) { missing.Add(name); continue; }
 
-            folders[name] = LabelFor(home, searchFolders, projectDirectory);
+            folders[name] = LabelFor(home, projectDirectory, configDir);
 
             // BESIDE THE DLL, WHICH IS NOT ALWAYS `home`. A config entry may carry a subdirectory —
             // "clone-finder/clone-finder.dll" is what an install through the manager writes — and
@@ -89,17 +97,14 @@ public static class PluginManagerState
     /// <para>THREE WORDS, NOT TWO: a <c>pluginPaths</c> entry can point anywhere, and calling it
     /// either of the other two would be wrong.</para>
     /// </summary>
-    private static string LabelFor(string home, IReadOnlyList<string> searchFolders, string projectDirectory)
+    private static string LabelFor(string home, string projectDirectory, string configDir)
     {
         var full = Path.GetFullPath(home);
-        var project = Path.GetFullPath(Path.Combine(projectDirectory, ".cxagent", "plugins"));
 
-        if (Inside(full, project)) return "project";
-
-        // The LAST search folder is the global one — PluginDiscovery.SearchFolders appends the
-        // project's folder, then the global config directory's, after any configured paths.
-        var global = searchFolders.Count > 0 ? Path.GetFullPath(searchFolders[^1]) : null;
-        return global is not null && Inside(full, global) ? "global" : "path";
+        // BY NAME, NOT BY POSITION IN THE SEARCH ORDER: that order is about which copy wins, and the
+        // global folder is not at either end of it once pluginPaths come first.
+        if (Inside(full, Path.GetFullPath(PluginResolver.ProjectFolder(projectDirectory)))) return "project";
+        return Inside(full, Path.GetFullPath(PluginResolver.GlobalFolder(configDir))) ? "global" : "path";
     }
 
     /// <summary>Whether a directory IS a folder or sits directly inside it — the same one-level
