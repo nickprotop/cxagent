@@ -688,6 +688,13 @@ public sealed partial class Session
     }
 
     /// <summary>
+    /// How long a plugin's start may take before it is unloaded as failed. Long enough for a language
+    /// server to index a large solution; short enough that one that never answers does not hold every
+    /// plugin after it for good. Settable so a test need not wait it out.
+    /// </summary>
+    public TimeSpan PluginStartLimit { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Loads a plugin into this session's registry, offering its tools from the next turn boundary
     /// on — see <see cref="Plugins.PluginRegistry.Load"/>.
     ///
@@ -849,15 +856,25 @@ public sealed partial class Session
         // not running, with nothing in the transcript explaining why. Withdrawing the tools and
         // saying so once is the honest outcome — and UnwireAsync is already the path that stops the
         // plugin and reaps whatever it managed to spawn before failing.
+        //
+        // A START THAT NEVER FINISHES IS A FAILED ONE. Plugins load one after another, so a language
+        // server that never answers its first request held every plugin queued behind it, and the
+        // startup summary, forever. The limit is enforced around the task, not only through the token:
+        // a plugin that ignores cancellation is abandoned all the same, and unwiring stops it and reaps
+        // what it spawned.
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(PluginStartLimit);
         try
         {
-            await plugin.Start(ct);
+            await plugin.Start(limit.Token).WaitAsync(PluginStartLimit, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             await Plugins.UnwireAsync(manifest.Name, ct);
-            Say(new Message($"plugin '{manifest.Name}' failed to start and was unloaded: {ex.Message}",
-                Severity.Warning));
+            var why = ex is TimeoutException or OperationCanceledException
+                ? $"did not start within {PluginStartLimit.TotalSeconds:0} seconds and was unloaded — whatever it starts never answered"
+                : $"failed to start and was unloaded: {ex.Message}";
+            Say(new Message($"plugin '{manifest.Name}' {why}", Severity.Warning));
             return CommandStatus.Reported;
         }
 
