@@ -131,4 +131,25 @@ public class PluginManagerFolderLabelTests : IDisposable
 
         Assert.Equal("global", inputs.Folders["here"]);
     }
+
+    /// <summary>A store's plugin sits two levels down, so the label must look through the store folder.</summary>
+    [Fact]
+    public void AStorePlugin_IsLabelledByTheFolderHoldingItsStore_AndReadsItsVersion()
+    {
+        var config = Path.Combine(_dir, "cfg");
+        var project = Path.Combine(_dir, "proj");
+        var store = Path.Combine(CxAgent.Core.Plugins.PluginResolver.GlobalFolder(config), "acme");
+        var home = Path.Combine(store, "repo-map");
+        Directory.CreateDirectory(home);
+        File.WriteAllText(Path.Combine(store, CxAgent.Core.Plugins.PluginStores.Marker), "");
+        File.WriteAllText(Path.Combine(home, "repo-map.dll"), "x");
+        File.WriteAllText(Path.Combine(home, "repo-map.plugin.json"), """{ "pluginContract": 2, "name": "repo-map", "version": "1.0.0", "tools": [] }""");
+
+        var inputs = PluginManagerState.Gather(new GatherInputs(
+            new Dictionary<string, PluginConfig> { ["acme/repo-map"] = new("repo-map.dll") }, [],
+            CxAgent.Core.Plugins.PluginResolver.SearchFolders([], project, config), [], project, config));
+
+        Assert.Equal("global", inputs.Folders["acme/repo-map"]);
+        Assert.Equal("1.0.0", inputs.InstalledVersions["acme/repo-map"]);
+    }
 }

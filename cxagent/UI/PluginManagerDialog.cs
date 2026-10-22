@@ -114,6 +114,11 @@ public static class PluginManagerDialog
     // shows the last read immediately while a fresh fetch runs, instead of an empty AVAILABLE
     // section on every F2.
     private static Catalog _catalog = new([]);
+
+    // One note per store whose catalog could not be read. Held beside _catalog, not inside it: the
+    // official catalog's own age and error are what Catalog carries, and a store's trouble must not
+    // be mistaken for the official list being offline.
+    private static IReadOnlyList<string> _catalogNotes = [];
     private static bool _fetching;
     private static DateTimeOffset? _fetchedAt;
 
@@ -426,14 +431,19 @@ public static class PluginManagerDialog
             ? custom
             : CatalogReader.PublishedUrl;
 
-        var reader = new CatalogReader(null, Path.Combine(_paths!.ConfigDir, "catalog-cache.json"), url);
-        var read = await reader.ReadAsync(CancellationToken.None);
+        // EVERY CATALOG AT ONCE: the official one and each configured store's, so a store's plugins
+        // are listed beside the official ones and update from their own store.
+        var set = await CatalogSources.ReadAllAsync(
+            new CatalogSetRequest(PluginStores.ReadFile(ConfigPath()), _paths!.ConfigDir, url),
+            CancellationToken.None);
+        var read = new Catalog(set.Plugins, set.OfficialCachedAt, set.OfficialError);
 
         // MARSHALLED, because ReadAsync resumes wherever its ConfigureAwait(false) left it —
         // and everything below mutates controls the render loop is painting.
         _ws!.EnqueueOnUIThread(() =>
         {
             _catalog = read;
+            _catalogNotes = set.Notes;
             _fetching = false;
             if (read.Error is null) _fetchedAt = DateTimeOffset.UtcNow;
             if (_window is not null) Rebuild();
@@ -479,6 +489,11 @@ public static class PluginManagerDialog
                 : _catalog.CachedAt is { } cached
                     ? $"offline — showing a copy from {Age(cached)}"
                     : $"offline — {_catalog.Error}";
+
+        // A STORE THAT COULD NOT BE READ IS SAID HERE, beside the official line: its plugins are
+        // simply missing from the list otherwise, and an absent row explains nothing.
+        if (!_fetching && _catalogNotes.Count > 0)
+            text = string.Join("; ", text.Length > 0 ? _catalogNotes.Prepend(text) : _catalogNotes);
 
         _age.SetContent([$"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(text)}[/]"]);
     }
@@ -670,7 +685,7 @@ public static class PluginManagerDialog
         if (row.Catalog is { } entry)
         {
             var identity = string.Join(" · ",
-                new[] { entry.Name, entry.Version, entry.License, entry.Publisher }
+                new[] { entry.QualifiedName, entry.Version, entry.License, entry.Publisher, StoreIdentity(entry) }
                     .Where(part => part.Length > 0));
             lines.Add($"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(identity)}[/]");
         }
@@ -900,6 +915,15 @@ public static class PluginManagerDialog
         }
 
         _detailBody!.SetMarkdown(Unwrap(row.Catalog?.Description ?? ""));
+    }
+
+    /// <summary>The identity line's store part, or empty for an official plugin. The URL is shown so a
+    /// user can see which catalog a plugin they are about to run came from.</summary>
+    private static string StoreIdentity(CatalogEntry entry)
+    {
+        if (entry.Store is not { } store) return "";
+        var url = PluginStores.ReadFile(ConfigPath()).FirstOrDefault(s => s.Name == store)?.Url;
+        return url is null ? $"store: {store}" : $"store: {store} ({url})";
     }
 
     /// <summary>Where this plugin's files live, or null when it is not on disk. Configured rows
@@ -1456,7 +1480,7 @@ public static class PluginManagerDialog
 
         var destinations = InstallDestinations();
         var label = await FlowDialogs.ChooseAsync(_ws!, _window,
-            $"Install '{entry.Name}' {entry.Version} where?",
+            $"Install '{entry.QualifiedName}' {entry.Version} where?",
             destinations.Select(d => d.Label).ToList(), CancellationToken.None);
         if (label is null) return;
         var folder = destinations.First(d => d.Label == label).Folder;
@@ -1504,9 +1528,13 @@ public static class PluginManagerDialog
         // Nested installs update in place: InstallAsync writes pluginsFolder/name, so the parent
         // of the plugin's own directory is what it wants. A LOOSE copy's home is a search folder
         // itself, and the installer's own shadow check refuses that with the remedy.
+        // A STORE'S PLUGIN IS ONE LEVEL FURTHER DOWN: InstallAsync writes pluginsFolder/store/name
+        // itself, so handing it the store folder would nest the update under acme/acme.
         var folder = _searchFolders.Any(f => SamePath(f, home))
             ? home
-            : Path.GetDirectoryName(home)!;
+            : entry.Store is null
+                ? Path.GetDirectoryName(home)!
+                : Path.GetDirectoryName(Path.GetDirectoryName(home))!;
 
         if (!await AskDownloadAsync(entry)) return;
 
@@ -1588,7 +1616,7 @@ public static class PluginManagerDialog
                     break;
 
                 case InstallResult.Refused(var reason):
-                    _panelNote = (entry.Name, new[]
+                    _panelNote = (entry.QualifiedName, new[]
                     {
                         $"not installed — {entry.Name} could not be installed:",
                         "",
@@ -1599,7 +1627,7 @@ public static class PluginManagerDialog
                     break;
 
                 case InstallResult.HashMismatch(var expected, var actual):
-                    _panelNote = (entry.Name, new[]
+                    _panelNote = (entry.QualifiedName, new[]
                     {
                         "not installed — the catalog and the release disagree about this file:",
                         $"  catalog sha256:  {expected}",
@@ -1794,7 +1822,7 @@ public static class PluginManagerDialog
 
     /// <summary>The "[add to config]" offer after an install: the entry, enabled, with no settings
     /// — the Settings tab exists for those once the row is configured.</summary>
-    private static void AddToConfig(CatalogEntry entry) => AddToConfig(entry.Name, entry.File);
+    private static void AddToConfig(CatalogEntry entry) => AddToConfig(entry.QualifiedName, entry.File);
 
     /// <summary>
     /// Writes a config entry so this plugin loads at every start.

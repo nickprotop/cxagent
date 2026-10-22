@@ -87,7 +87,7 @@ public static class PluginManagerRows
         // FIRST WINS, RATHER THAN THROWING. ToDictionary would raise on a duplicate name, so one
         // malformed published catalog would make F2 crash instead of showing a rail.
         var catalog = new Dictionary<string, CatalogEntry>(StringComparer.Ordinal);
-        foreach (var e in inputs.Catalog) catalog.TryAdd(e.Name, e);
+        foreach (var e in inputs.Catalog) catalog.TryAdd(e.QualifiedName, e);
         var loaded = new HashSet<string>(inputs.Loaded, StringComparer.Ordinal);
         var rows = new List<PluginRow>();
         var placed = new HashSet<string>(StringComparer.Ordinal);
@@ -156,11 +156,13 @@ public static class PluginManagerRows
 
         foreach (var entry in inputs.Catalog)
         {
-            if (!placed.Add(entry.Name)) continue;
+            // QUALIFIED, SO A STORE'S "repo-map" IS A ROW OF ITS OWN beside the official one rather
+            // than losing the first-wins race to it.
+            if (!placed.Add(entry.QualifiedName)) continue;
 
             // NOT INSTALLED, SO IT NEEDS NOTHING FROM THE USER — an unusable catalog entry stays
             // listed with its reason rather than hidden, or a reader wonders where it went.
-            rows.Add(new PluginRow(entry.Name, PluginRowSection.Available, WhyItCannotRunHere(entry) ?? "",
+            rows.Add(new PluginRow(entry.QualifiedName, PluginRowSection.Available, WhyItCannotRunHere(entry) ?? "",
                 Catalog: entry));
         }
 

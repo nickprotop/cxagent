@@ -107,9 +107,21 @@ public static class PluginManagerState
         return Inside(full, Path.GetFullPath(PluginResolver.GlobalFolder(configDir))) ? "global" : "path";
     }
 
-    /// <summary>Whether a directory IS a folder or sits directly inside it — the same one-level
-    /// relationship the plugin searches use.</summary>
-    private static bool Inside(string candidate, string folder) =>
-        string.Equals(candidate, folder, StringComparison.Ordinal)
-        || string.Equals(Path.GetDirectoryName(candidate), folder, StringComparison.Ordinal);
+    /// <summary>
+    /// Whether a directory IS a folder or sits directly inside it — the same one-level relationship
+    /// the plugin searches use — or sits inside a STORE's folder directly inside it.
+    ///
+    /// <para>A STORE'S PLUGIN IS TWO LEVELS DOWN (<c>&lt;folder&gt;/acme/repo-map</c>). The middle
+    /// folder only counts when it carries the store marker, so an ordinary plugin folder that happens
+    /// to hold subfolders is not read as a store and its contents mislabelled.</para>
+    /// </summary>
+    private static bool Inside(string candidate, string folder)
+    {
+        if (string.Equals(candidate, folder, StringComparison.Ordinal)) return true;
+        var parent = Path.GetDirectoryName(candidate);
+        if (string.Equals(parent, folder, StringComparison.Ordinal)) return true;
+        return parent is not null
+            && string.Equals(Path.GetDirectoryName(parent), folder, StringComparison.Ordinal)
+            && File.Exists(Path.Combine(parent, PluginStores.Marker));
+    }
 }

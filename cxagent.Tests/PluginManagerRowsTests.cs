@@ -36,6 +36,34 @@ public class PluginManagerRowsTests
             unreadable ?? new HashSet<string>(),
             folders ?? new Dictionary<string, string>());
 
+    [Fact]
+    public void AStoresPlugin_IsAvailableUnderItsQualifiedName_BesideTheOfficialOne()
+    {
+        var rows = PluginManagerRows.Build(Inputs(catalog: [Entry("repo-map", "1.0.0", 2), Entry("repo-map", "1.0.0", 2) with { Store = "acme" }]));
+        Assert.Equal(["acme/repo-map", "repo-map"], rows.Where(r => r.Section == PluginRowSection.Available).Select(r => r.Name).Order());
+    }
+
+    [Fact]
+    public void AStorePluginsUpdate_ComesFromItsOwnStoreOnly()
+    {
+        var rows = PluginManagerRows.Build(Inputs(
+            configured: new Dictionary<string, PluginConfig> { ["acme/repo-map"] = new("repo-map.dll") },
+            versions: new Dictionary<string, string> { ["acme/repo-map"] = "1.0.0" },
+            catalog: [Entry("repo-map", "2.0.0", 2), Entry("repo-map", "1.0.0", 2) with { Store = "acme" }]));
+        Assert.DoesNotContain(rows, r => r.Name == "acme/repo-map" && r.Section == PluginRowSection.Updates);
+    }
+
+    [Fact]
+    public void AStoreRemoved_LeavesItsPluginsInstalled()
+    {
+        var rows = PluginManagerRows.Build(Inputs(
+            configured: new Dictionary<string, PluginConfig> { ["acme/repo-map"] = new("repo-map.dll") },
+            versions: new Dictionary<string, string> { ["acme/repo-map"] = "1.0.0" },
+            catalog: [Entry("repo-map", "2.0.0", 2)]));
+        var row = Assert.Single(rows, r => r.Name == "acme/repo-map");
+        Assert.Equal(PluginRowSection.Installed, row.Section);
+    }
+
     private static PluginRow Row(IReadOnlyList<PluginRow> rows, string name) =>
         Assert.Single(rows, r => r.Name == name);
 
