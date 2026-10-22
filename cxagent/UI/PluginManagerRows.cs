@@ -195,6 +195,35 @@ public static class PluginManagerRows
         System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
 
     /// <summary>
+    /// What <c>/plugin load</c> is given for a plugin that is not in config: a store plugin's
+    /// qualified name, an official one's entry-point file.
+    ///
+    /// <para>A BARE FILE NEVER REACHES A STORE'S FOLDER. The load resolves it against the plain
+    /// search folders, so it either finds nothing or loads the OFFICIAL copy of a same-named
+    /// plugin; the qualified name is what the resolver follows into the store's folder.</para>
+    /// </summary>
+    public static string LoadTarget(string name, string? file) =>
+        PluginStores.TrySplit(name, out _, out _) ? name : file ?? name;
+
+    /// <summary>
+    /// The folder to hand the installer so an update lands on top of the copy already there.
+    ///
+    /// <para>A LOOSE COPY'S HOME IS A SEARCH FOLDER ITSELF, so it is passed as is (the installer's
+    /// shadow check refuses it with the remedy). A nested plugin's parent is what the installer
+    /// wants, because it writes <c>folder/name</c>. A STORE'S PLUGIN IS ONE LEVEL FURTHER DOWN:
+    /// the installer writes <c>folder/store/name</c> itself, so handing it the store folder would
+    /// nest the update under <c>acme/acme</c>.</para>
+    /// </summary>
+    public static string UpdateFolder(string home, IReadOnlyList<string> searchFolders, bool isStore)
+    {
+        if (searchFolders.Any(f => string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(f)),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(home)), StringComparison.Ordinal)))
+            return home;
+        var parent = Path.GetDirectoryName(home)!;
+        return isStore ? Path.GetDirectoryName(parent)! : parent;
+    }
+
+    /// <summary>
     /// Why this catalog version cannot run in this cxagent, or null when it can — the one answer an
     /// Available row, an Updates row and <c>/plugin get</c> all give, so none of them offers a
     /// download the others would refuse.

@@ -64,6 +64,22 @@ public class PluginManagerRowsTests
         Assert.Equal(PluginRowSection.Installed, row.Section);
     }
 
+    [Fact]
+    public void LoadTarget_IsQualifiedForAStorePlugin_AndTheFileForAnOfficialOne()
+    {
+        Assert.Equal("acme/repo-map", PluginManagerRows.LoadTarget("acme/repo-map", "repo-map.dll"));
+        Assert.Equal("repo-map.dll", PluginManagerRows.LoadTarget("repo-map", "repo-map.dll"));
+    }
+
+    [Fact]
+    public void UpdateFolder_StepsAboveTheStoreFolder_ForAStorePlugin()
+    {
+        var search = Path.GetFullPath("/s/plugins");
+        Assert.Equal(search, PluginManagerRows.UpdateFolder(Path.Combine(search, "acme", "x"), [search], isStore: true));
+        Assert.Equal(search, PluginManagerRows.UpdateFolder(Path.Combine(search, "x"), [search], isStore: false));
+        Assert.Equal(search, PluginManagerRows.UpdateFolder(search, [search], isStore: false));
+    }
+
     private static PluginRow Row(IReadOnlyList<PluginRow> rows, string name) =>
         Assert.Single(rows, r => r.Name == name);
 

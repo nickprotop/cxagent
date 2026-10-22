@@ -32,6 +32,31 @@ public class PluginRemoverTests : IDisposable
     private static Dictionary<string, PluginConfig> Configured(params (string Name, string File)[] entries) =>
         entries.ToDictionary(e => e.Name, e => new PluginConfig(e.File));
 
+    [Fact]
+    public void AStorePlugin_RemovesExactlyItsOwnFolder()
+    {
+        var store = Path.Combine(_root, "acme");
+        Directory.CreateDirectory(store);
+        File.WriteAllText(Path.Combine(store, CxAgent.Core.Plugins.PluginStores.Marker), "");
+        var home = Place(Path.Combine(store, "demo"), "demo");
+
+        var plan = PluginRemover.Plan("acme/demo", "demo.dll", home, [_root], Configured(("acme/demo", "demo.dll")));
+
+        var removable = Assert.IsType<RemovalPlan.Removable>(plan);
+        Assert.All(removable.Files, f => Assert.StartsWith(home + Path.DirectorySeparatorChar, f));
+        Assert.Equal(2, removable.Files.Count);
+    }
+
+    [Fact]
+    public void AnUnmarkedGrandchild_IsStillBlocked()
+    {
+        var home = Place(Path.Combine(_root, "acme", "demo"), "demo");
+
+        var plan = PluginRemover.Plan("acme/demo", "demo.dll", home, [_root], Configured(("acme/demo", "demo.dll")));
+
+        Assert.IsType<RemovalPlan.Blocked>(plan);
+    }
+
     /// <summary>
     /// A NESTED PLUGIN IS ITS DIRECTORY, by the load-set design's own definition — the folder is
     /// what the hash covers and what dependency resolution reads. So everything in it goes.

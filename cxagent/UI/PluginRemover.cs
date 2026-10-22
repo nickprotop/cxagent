@@ -55,7 +55,12 @@ public static class PluginRemover
         {
             var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
             return string.Equals(home, root, StringComparison.Ordinal)
-                || string.Equals(Path.GetDirectoryName(home), root, StringComparison.Ordinal);
+                || string.Equals(Path.GetDirectoryName(home), root, StringComparison.Ordinal)
+                // A STORE'S PLUGIN, two levels down — but only under a folder carrying the store
+                // marker, so an arbitrary grandchild of a plugins folder is still not deletable.
+                // The plan removes the plugin's own folder; the store folder and its marker stay.
+                || (string.Equals(Path.GetDirectoryName(Path.GetDirectoryName(home)), root, StringComparison.Ordinal)
+                    && File.Exists(Path.Combine(Path.GetDirectoryName(home)!, PluginStores.Marker)));
         });
 
         if (!inside)

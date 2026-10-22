@@ -119,6 +119,10 @@ public static class PluginManagerDialog
     // official catalog's own age and error are what Catalog carries, and a store's trouble must not
     // be mistaken for the official list being offline.
     private static IReadOnlyList<string> _catalogNotes = [];
+
+    // Store name to catalog URL, filled by the fetch from the stores it already read, so selecting a
+    // row does not re-read config.json for the identity line.
+    private static IReadOnlyDictionary<string, string> _storeUrls = new Dictionary<string, string>();
     private static bool _fetching;
     private static DateTimeOffset? _fetchedAt;
 
@@ -433,8 +437,9 @@ public static class PluginManagerDialog
 
         // EVERY CATALOG AT ONCE: the official one and each configured store's, so a store's plugins
         // are listed beside the official ones and update from their own store.
+        var stores = PluginStores.ReadFile(ConfigPath());
         var set = await CatalogSources.ReadAllAsync(
-            new CatalogSetRequest(PluginStores.ReadFile(ConfigPath()), _paths!.ConfigDir, url),
+            new CatalogSetRequest(stores, _paths!.ConfigDir, url),
             CancellationToken.None);
         var read = new Catalog(set.Plugins, set.OfficialCachedAt, set.OfficialError);
 
@@ -444,6 +449,7 @@ public static class PluginManagerDialog
         {
             _catalog = read;
             _catalogNotes = set.Notes;
+            _storeUrls = stores.ToDictionary(x => x.Name, x => x.Url);
             _fetching = false;
             if (read.Error is null) _fetchedAt = DateTimeOffset.UtcNow;
             if (_window is not null) Rebuild();
@@ -922,7 +928,7 @@ public static class PluginManagerDialog
     private static string StoreIdentity(CatalogEntry entry)
     {
         if (entry.Store is not { } store) return "";
-        var url = PluginStores.ReadFile(ConfigPath()).FirstOrDefault(s => s.Name == store)?.Url;
+        var url = _storeUrls.GetValueOrDefault(store);
         return url is null ? $"store: {store}" : $"store: {store} ({url})";
     }
 
@@ -1435,7 +1441,7 @@ public static class PluginManagerDialog
 
         return row.Configured is not null
             ? $"load {row.Name}{once}"
-            : $"load {FileOf(row) ?? row.Name}";
+            : $"load {PluginManagerRows.LoadTarget(row.Name, FileOf(row))}";
     }
 
     /// <summary>The entry-point filename this row resolves to — config's word for a configured
@@ -1496,13 +1502,13 @@ public static class PluginManagerDialog
             // "done" is this menu's own terminal choice — a synthetic Cancel beside it would offer
             // two names for the same outcome.
             var next = await FlowDialogs.ChooseAsync(_ws, _window,
-                $"'{entry.Name}' installed — {files.Count} file(s) in {directory}\n"
+                $"'{entry.QualifiedName}' installed — {files.Count} file(s) in {directory}\n"
               + "Load it now (asks for approval first), add it to config.json so it loads at every "
               + "start, or neither.",
                 ["load now", "add to config", "done"], CancellationToken.None, appendCancel: false);
 
             if (next == "load now")
-                await LoadAsync($"load {entry.File}", $"'{entry.Name}' loaded");
+                await LoadAsync($"load {PluginManagerRows.LoadTarget(entry.QualifiedName, entry.File)}", $"'{entry.QualifiedName}' loaded");
             else if (next == "add to config")
                 _ws.EnqueueOnUIThread(() => AddToConfig(entry), "pluginManagerDialog.InstallFlowAsync");
             return;
@@ -1528,13 +1534,7 @@ public static class PluginManagerDialog
         // Nested installs update in place: InstallAsync writes pluginsFolder/name, so the parent
         // of the plugin's own directory is what it wants. A LOOSE copy's home is a search folder
         // itself, and the installer's own shadow check refuses that with the remedy.
-        // A STORE'S PLUGIN IS ONE LEVEL FURTHER DOWN: InstallAsync writes pluginsFolder/store/name
-        // itself, so handing it the store folder would nest the update under acme/acme.
-        var folder = _searchFolders.Any(f => SamePath(f, home))
-            ? home
-            : entry.Store is null
-                ? Path.GetDirectoryName(home)!
-                : Path.GetDirectoryName(Path.GetDirectoryName(home))!;
+        var folder = PluginManagerRows.UpdateFolder(home, _searchFolders, entry.Store is not null);
 
         if (!await AskDownloadAsync(entry)) return;
 
@@ -1544,7 +1544,7 @@ public static class PluginManagerDialog
         {
             _ws!.EnqueueOnUIThread(() =>
             {
-                Toast($"'{entry.Name}' updated to {entry.Version}", NotificationSeverity.Success);
+                Toast($"'{entry.QualifiedName}' updated to {entry.Version}", NotificationSeverity.Success);
                 Rebuild();
             }, "pluginManagerDialog.UpdateFlowAsync");
             return;
@@ -1585,7 +1585,7 @@ public static class PluginManagerDialog
         // put to the user.
         var outcome = await gate.RequestAsync(
             new PermissionRequest(PermissionKind.Http,
-                $"download '{entry.Name}' {entry.Version} from "
+                $"download '{entry.QualifiedName}' {entry.Version} from "
                 + $"{entry.DownloadFor(System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier)?.Url}",
                 AlwaysRule: null)
             { Policy = _session.Policy },
@@ -1618,7 +1618,7 @@ public static class PluginManagerDialog
                 case InstallResult.Refused(var reason):
                     _panelNote = (entry.QualifiedName, new[]
                     {
-                        $"not installed — {entry.Name} could not be installed:",
+                        $"not installed — {entry.QualifiedName} could not be installed:",
                         "",
                         reason,
                         "",
