@@ -60,6 +60,8 @@ public static class PluginDiscovery
 
             // DOT-PREFIXED DIRECTORIES SKIPPED — the installer's staging area is one, and a plugin
             // resolved out of a half-written extraction is bytes no hash covered. See PluginResolver.
+            // AND A STORE'S FOLDER: its plugins are reached only as store/name, so a bare file name
+            // must not find one there and load it in place of the official plugin it shadows.
             foreach (var nested in Directory.EnumerateDirectories(folder)
                          .Where(d => !Path.GetFileName(d).StartsWith('.')
                                      && !File.Exists(Path.Combine(d, PluginStores.Marker)))
