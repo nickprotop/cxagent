@@ -37,17 +37,16 @@ internal sealed class ChoiceStepContent : IFlowStepContent<string>
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Build();
 
-        // One AddLine per source line: a multi-line prompt (the final summary) would otherwise paint
-        // its "\n" literally. The first line is the question/heading and is bolded; any remaining
-        // lines are detail and stay plain.
-        var markup = Ctl.Markup();
-        var lines = _prompt.Replace("\r\n", "\n").Split('\n');
-        for (int i = 0; i < lines.Length; i++)
+        // THE DETAIL ONLY, one AddLine per source line: a multi-line detail would otherwise paint its
+        // "\n" literally. The question itself is the step's heading, which the host draws; a one-line
+        // question has no detail, and the choices then follow the heading directly.
+        if (_prompt.Length > 0)
         {
-            var esc = SharpConsoleUI.Parsing.MarkupParser.Escape(lines[i]);
-            markup.AddLine(i == 0 ? $"[bold]{esc}[/]" : esc);
+            var markup = Ctl.Markup();
+            foreach (var line in _prompt.Replace("\r\n", "\n").Split('\n'))
+                markup.AddLine(SharpConsoleUI.Parsing.MarkupParser.Escape(line));
+            panel.AddControl(markup.WithMargin(1, 1, 1, 1).Build());
         }
-        panel.AddControl(markup.WithMargin(1, 1, 1, 1).Build());
 
         foreach (var choice in _choices)
         {

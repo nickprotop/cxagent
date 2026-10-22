@@ -33,7 +33,9 @@ public static class FlowDialogs
         {
             var withCancel = appendCancel ? choices.Concat(new[] { CancelChoice }).ToList() : choices.ToList();
             var chosen = await ctx.Show(
-                new ChoiceStepContent(title, withCancel),
+                // THE BODY IS THE DETAIL ONLY: the library already shows the question twice, in the
+                // window's border and as the step's heading, and the body made it three.
+                new ChoiceStepContent(DetailOf(title), withCancel),
                 TitleOf(title),
                 FlowButtons.None);
 
@@ -51,4 +53,11 @@ public static class FlowDialogs
     /// the dialog body shows in full; flattened into a one-row title they only crowd it.
     /// </summary>
     internal static string TitleOf(string prompt) => prompt.Replace("\r\n", "\n").Split('\n')[0];
+
+    /// <summary>The prompt after its question: the detail the body shows, or empty for a one-line question.</summary>
+    internal static string DetailOf(string prompt)
+    {
+        var lines = prompt.Replace("\r\n", "\n").Split('\n');
+        return string.Join("\n", lines.Skip(1).SkipWhile(string.IsNullOrWhiteSpace));
+    }
 }
