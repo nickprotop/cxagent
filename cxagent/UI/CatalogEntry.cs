@@ -48,6 +48,15 @@ public sealed record CatalogEntry(
     public string? RequiresDefault { get; init; }
 
     /// <summary>
+    /// The store this entry came from, or null for the official catalog. Set by whoever read it, not
+    /// by the catalog's own text: a store's catalog cannot claim to be another store, or the official one.
+    /// </summary>
+    public string? Store { get; init; }
+
+    /// <summary>How a user types and sees this plugin: <c>repo-map</c>, or <c>acme/repo-map</c> for a store's.</summary>
+    public string QualifiedName => Store is null ? Name : $"{Store}/{Name}";
+
+    /// <summary>
     /// The download per runtime identifier, for a plugin shipping one artifact per platform — each
     /// with its own hash, since each build is a different file. Empty for a managed plugin, which has
     /// a single <see cref="DownloadUrl"/> and runs anywhere.
