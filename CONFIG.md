@@ -505,6 +505,39 @@ and leaves the build.
 
 ---
 
+## `stores` — other plugin catalogs
+
+```json
+"stores": [
+  { "name": "acme", "url": "https://tools.acme.example/cxagent/catalog.json" }
+]
+```
+
+A store is somebody else's plugin catalog, listed beside the official one in the plugin manager and
+reachable by `/plugin get`. `/plugin store add <name> <url>`, `remove` and `list` edit this list for you;
+`add` reads the catalog once first and saves nothing if it cannot.
+
+| key | |
+| --- | --- |
+| `name` | lowercase letters, digits and `-`, 1–32 characters; not `cxagent`, which is the official catalog, and not the name of a plugin already installed or in the official catalog. |
+| `url` | the store's `catalog.json`: `https://`, or `http://localhost` / `http://127.0.0.1` for a store under test. |
+
+**This file only.** A project cannot add a store; a store is somewhere plugins are listed from, and only
+you decide where that is.
+
+**A store's plugins are always `store/name`** — `acme/jira-search` — in `/plugin get`, `/plugin load`,
+the plugin manager and the `plugins` block, where the key is `acme/jira-search` and `file` is the bare
+file name. A plain name always means the official catalog. A store's plugins install to
+`plugins/<store>/<name>/`, every download is checked against the store's own sha256, and loading one asks
+exactly as any other plugin does. Removing a store leaves its installed plugins working; they stop
+getting updates.
+
+Each catalog is cached on its own (`catalog-cache-<name>.json` beside this file), so a store that cannot
+be reached shows its last good copy and a note naming it, and never holds up the others. To run a
+store, see `cxagent store build` in the SDK's publishing guide.
+
+---
+
 ## `theme` — colours
 
 ```json
