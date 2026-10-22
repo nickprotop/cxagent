@@ -60,7 +60,7 @@ public static class PluginRemover
                 // marker, so an arbitrary grandchild of a plugins folder is still not deletable.
                 // The plan removes the plugin's own folder; the store folder and its marker stay.
                 || (string.Equals(Path.GetDirectoryName(Path.GetDirectoryName(home)), root, StringComparison.Ordinal)
-                    && File.Exists(Path.Combine(Path.GetDirectoryName(home)!, PluginStores.Marker)));
+                    && PluginDiscovery.IsStoreFolder(Path.GetDirectoryName(home)));
         });
 
         if (!inside)
@@ -81,6 +81,16 @@ public static class PluginRemover
             return new RemovalPlan.Blocked(
                 $"{string.Join(", ", alsoNaming)} still name{(alsoNaming.Count == 1 ? "s" : "")} "
               + $"'{file}', so its files stay. Removing '{name}' from config is enough.");
+
+        // A LINKED STORE FOLDER IS REFUSED: the walk below would go through it and delete the files at
+        // its far end, which are not under any folder cxagent searches. Only the plugin's own folder
+        // being a link is handled further down, as a link removal.
+        if (Path.GetDirectoryName(home) is { } storeDir
+            && !pluginsFolders.Any(f => string.Equals(home, Path.TrimEndingDirectorySeparator(Path.GetFullPath(f)), StringComparison.Ordinal))
+            && PluginDiscovery.IsStoreFolder(storeDir)
+            && new DirectoryInfo(storeDir).LinkTarget is { } storeTarget)
+            return new RemovalPlan.Blocked(
+                $"'{name}' sits in the store folder {storeDir}, which is a link to {storeTarget}. Nothing was removed.");
 
         var nested = pluginsFolders.All(folder =>
             !string.Equals(home, Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)),

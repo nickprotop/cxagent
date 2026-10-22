@@ -122,6 +122,6 @@ public static class PluginManagerState
         if (string.Equals(parent, folder, StringComparison.Ordinal)) return true;
         return parent is not null
             && string.Equals(Path.GetDirectoryName(parent), folder, StringComparison.Ordinal)
-            && File.Exists(Path.Combine(parent, PluginStores.Marker));
+            && PluginDiscovery.IsStoreFolder(parent);
     }
 }

@@ -48,6 +48,25 @@ public class PluginRemoverTests : IDisposable
     }
 
     [Fact]
+    public void ASymlinkedStoreFolder_IsBlocked_AndNothingAtTheTargetIsDeleted()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var away = Path.Combine(_root, "away");
+        Directory.CreateDirectory(away);
+        File.WriteAllText(Path.Combine(away, CxAgent.Core.Plugins.PluginStores.Marker), "");
+        var target = Place(Path.Combine(away, "demo"), "demo");
+        var plugins = Path.Combine(_root, "plugins");
+        Directory.CreateDirectory(plugins);
+        File.CreateSymbolicLink(Path.Combine(plugins, "acme"), away);
+
+        var plan = PluginRemover.Plan("acme/demo", "demo.dll", Path.Combine(plugins, "acme", "demo"),
+            [plugins], Configured(("acme/demo", "demo.dll")));
+
+        Assert.IsType<RemovalPlan.Blocked>(plan);
+        Assert.True(File.Exists(Path.Combine(target, "demo.dll")));
+    }
+
+    [Fact]
     public void AnUnmarkedGrandchild_IsStillBlocked()
     {
         var home = Place(Path.Combine(_root, "acme", "demo"), "demo");

@@ -22,6 +22,11 @@ namespace CxAgent.UI;
 /// </summary>
 public static class PluginDiscovery
 {
+    /// <summary>Whether a directory is a store's folder: the one that holds the store marker, which
+    /// is what tells it apart from an ordinary plugin folder that happens to hold subfolders.</summary>
+    public static bool IsStoreFolder(string? directory) =>
+        directory is not null && File.Exists(Path.Combine(directory, PluginStores.Marker));
+
     /// <summary>The folders searched for a configured plugin's file, in the order searched — Core's
     /// <see cref="PluginResolver.SearchFolders"/>, which says why the global folder comes before the
     /// project's. One copy, so startup and <c>/plugin load</c> cannot find different files.</summary>
