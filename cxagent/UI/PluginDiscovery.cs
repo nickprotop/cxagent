@@ -181,17 +181,19 @@ public static class PluginDiscovery
 
             // STORE FOLDERS ARE THE ONE PLACE TWO LEVELS ARE READ, because the marker says what they are:
             // <folder>/<store>/<plugin> is a store's plugin, reported as `store/<folder name>` — the
-            // spelling Resolve and HomeOf look it up by, whatever its manifest calls itself. A segment
-            // that is not a valid store or plugin name is skipped, as it could not be resolved either.
+            // spelling Resolve and HomeOf look it up by, whatever its manifest calls itself. A FOLDER WHOSE
+            // NAMES ARE NOT A store/name (a hand-made `Acme/` or `calc.v2/`) is reported under its manifest
+            // name instead, which is what PluginStores.RegisteredName registers it as: no store/name can
+            // reach it, but it is installed, and a plugin left out of every listing is one nobody removes.
             var storeOf = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var storeFolder in subdirectories.Where(d => File.Exists(Path.Combine(d, PluginStores.Marker))))
             foreach (var home in Directory.EnumerateDirectories(storeFolder)
+                         .Where(d => !Path.GetFileName(d).StartsWith('.'))
                          .OrderBy(d => d, StringComparer.Ordinal))
             {
-                var qualified = $"{Path.GetFileName(storeFolder)}/{Path.GetFileName(home)}";
-                if (!PluginStores.TrySplit(qualified, out _, out _)) continue;
                 scanned.Add(home);
-                storeOf[home] = qualified;
+                var qualified = $"{Path.GetFileName(storeFolder)}/{Path.GetFileName(home)}";
+                if (PluginStores.TrySplit(qualified, out _, out _)) storeOf[home] = qualified;
             }
 
             foreach (var scan in scanned)

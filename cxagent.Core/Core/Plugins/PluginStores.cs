@@ -99,14 +99,18 @@ public static partial class PluginStores
     /// <para>FOLDER NAMES, NOT THE MANIFEST'S, because the folders are what <c>store/name</c> resolves
     /// through and what F2 lists — a store whose folder and manifest disagree is still reached by its
     /// folder.</para>
+    ///
+    /// <para>UNLESS THE FOLDERS ARE NOT A store/name. A marked <c>Acme/</c> or a plugin folder
+    /// <c>calc.v2</c> is made by hand — the installer writes neither — and <c>Acme/calc.v2</c> is a
+    /// spelling no command accepts, so a plugin registered under it could be listed but never named
+    /// again to unwire it. The manifest name is one that can be.</para>
     /// </summary>
     public static string RegisteredName(string manifestName, string loadSetDirectory)
     {
         var home = Path.TrimEndingDirectorySeparator(Path.GetFullPath(loadSetDirectory));
         var store = Path.GetDirectoryName(home);
-        return IsStoreFolder(store)
-            ? $"{Path.GetFileName(store)}/{Path.GetFileName(home)}"
-            : manifestName;
+        var qualified = $"{Path.GetFileName(store)}/{Path.GetFileName(home)}";
+        return IsStoreFolder(store) && TrySplit(qualified, out _, out _) ? qualified : manifestName;
     }
 
     /// <summary>

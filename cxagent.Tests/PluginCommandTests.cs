@@ -450,4 +450,24 @@ public class PluginCommandTests : IDisposable
         Assert.DoesNotContain("--once", PluginCommand.Usage, StringComparison.Ordinal);
         Assert.Contains("load <name|path> [{ settings }]", PluginCommand.Usage, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// OFFICIAL PLUGINS FIRST, THEN EACH STORE'S, as F2 lists them: an ordinal sort alone puts
+    /// <c>acme/…</c> ahead of <c>calculator</c>, and the official catalog is the one every user has.
+    /// Configured rows, then loaded-but-not-configured ones, each ordered that way.
+    /// </summary>
+    [Fact]
+    public void Rows_ListOfficialPluginsBeforeStorePlugins()
+    {
+        var configured = new Dictionary<string, PluginConfig>
+        {
+            ["acme/zeta"] = new("zeta.dll"),
+            ["calculator"] = new("calculator.dll"),
+            ["acme/alpha"] = new("alpha.dll"),
+        };
+
+        var rows = PluginCommand.Rows(configured, ["beta/x", "repo-map"]);
+
+        Assert.Equal(["calculator", "acme/alpha", "acme/zeta", "repo-map", "beta/x"], rows.Select(r => r.Name));
+    }
 }

@@ -1441,7 +1441,7 @@ public static class PluginManagerDialog
 
         return row.Configured is not null
             ? $"load {row.Name}{once}"
-            : $"load {PluginManagerRows.LoadTarget(row.Name, FileOf(row))}";
+            : $"load {PluginManagerRows.LoadTarget(row.Name, FileOf(row), _inputs?.Unconfigured.FirstOrDefault(u => u.Name == row.Name)?.Folder)}";
     }
 
     /// <summary>The entry-point filename this row resolves to — config's word for a configured

@@ -145,7 +145,12 @@ public static class PluginCommand
         var loaded = new HashSet<string>(loadedNames, StringComparer.Ordinal);
         var rows = new List<PluginRow>();
 
-        foreach (var (name, config) in configured.OrderBy(p => p.Key, StringComparer.Ordinal))
+        // OFFICIAL FIRST, THEN EACH STORE'S — F2's order, so the two listings of one session agree: a
+        // plain ordinal sort puts `acme/…` ahead of `calculator`, and the official plugins are the ones
+        // every user has. The qualified names then group each store's together.
+        foreach (var (name, config) in configured
+                     .OrderBy(p => Plugins.PluginStores.TrySplit(p.Key, out _, out _))
+                     .ThenBy(p => p.Key, StringComparer.Ordinal))
         {
             var state = loaded.Contains(name) ? PluginRowState.Loaded
                 : config.Enabled ? PluginRowState.Declared
@@ -156,7 +161,9 @@ public static class PluginCommand
         // LOADED BUT NOT IN CONFIG — a path-loaded plugin, exactly the case a config edit was never
         // required for. Omitting these would make `/plugin load <path>` invisible on the very
         // listing meant to show what is running.
-        foreach (var name in loaded.Where(n => !configured.ContainsKey(n)).OrderBy(n => n, StringComparer.Ordinal))
+        foreach (var name in loaded.Where(n => !configured.ContainsKey(n))
+                     .OrderBy(n => Plugins.PluginStores.TrySplit(n, out _, out _))
+                     .ThenBy(n => n, StringComparer.Ordinal))
             rows.Add(new PluginRow(name, PluginRowState.Loaded));
 
         return rows;

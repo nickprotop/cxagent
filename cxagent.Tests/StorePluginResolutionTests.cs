@@ -82,6 +82,27 @@ public sealed class StorePluginResolutionTests : IDisposable
         Assert.Equal("acme/repo-map", Assert.Single(found).Name);
     }
 
+    /// <summary>
+    /// A STORE FOLDER WHOSE NAMES ARE NOT store/name IS LISTED UNDER ITS MANIFEST NAME, the name a session
+    /// registers it by (PluginStores.RegisteredName), rather than dropped: it is installed, and a plugin
+    /// nobody is told about is one nobody can remove. Its load target is its path, the one spelling that
+    /// reaches into a store's folder without a store/name.
+    /// </summary>
+    [Theory]
+    [InlineData("Acme", "repo-map")]
+    [InlineData("acme", "repo.map")]
+    public void AStorePluginWhoseFoldersAreNotAName_IsListedUnderItsManifestName(string store, string folder)
+    {
+        var home = Place($"{store}/{folder}"); MarkStore(store);
+        var found = Assert.Single(PluginDiscovery.FindUnconfigured(new Dictionary<string, PluginConfig>(), [_root]));
+        Assert.Equal("repo-map", found.Name);
+        Assert.Equal(home, found.Folder);
+        Assert.Equal(Path.Combine(home, "repo-map.dll"), PluginManagerRows.LoadTarget(found.Name, found.File, found.Folder));
+        var loaded = Assert.IsType<ResolveResult.Found>(PluginResolver.Resolve(
+            PluginManagerRows.LoadTarget(found.Name, found.File, found.Folder), new Dictionary<string, PluginConfig>(), [_root], _root));
+        Assert.Equal(home, loaded.LoadSetDirectory);
+    }
+
     [Fact]
     public void AMarkedStoreFolder_TopLevel_IsNotSearchedAsAPluginFolder()
     {

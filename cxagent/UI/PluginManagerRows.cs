@@ -206,9 +206,17 @@ public static class PluginManagerRows
     /// <para>A BARE FILE NEVER REACHES A STORE'S FOLDER. The load resolves it against the plain
     /// search folders, so it either finds nothing or loads the OFFICIAL copy of a same-named
     /// plugin; the qualified name is what the resolver follows into the store's folder.</para>
+    ///
+    /// <para>A PLUGIN IN A STORE'S FOLDER WITHOUT A store/name — folders named by hand, listed under
+    /// its manifest name — has neither, so it is loaded by its path: the one spelling that reaches it,
+    /// and the copy F2 described rather than whichever plain search folder holds that file.</para>
     /// </summary>
-    public static string LoadTarget(string name, string? file) =>
-        PluginStores.TrySplit(name, out _, out _) ? name : file ?? name;
+    /// <param name="folder">Where a discovered plugin was found; null for a catalog or configured one.</param>
+    public static string LoadTarget(string name, string? file, string? folder = null) =>
+        PluginStores.TrySplit(name, out _, out _) ? name
+        : file is not null && folder is not null && PluginStores.IsStoreFolder(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder)))
+            ? Path.Combine(folder, file)
+        : file ?? name;
 
     /// <summary>
     /// The folder to hand the installer so an update lands on top of the copy already there.

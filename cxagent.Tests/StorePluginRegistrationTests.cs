@@ -89,6 +89,21 @@ public sealed class StorePluginRegistrationTests : IDisposable
         Assert.Equal("acme/calc", PluginStores.RegisteredName("calculator", home));
     }
 
+    /// <summary>
+    /// A MARKED FOLDER WHOSE NAMES ARE NOT store/name — made by hand, as nothing cxagent installs is —
+    /// registers the manifest name: <c>Acme/calc.v2</c> is a spelling no command accepts, so a plugin
+    /// registered under it could be listed but never named again to unwire or reload.
+    /// </summary>
+    [Theory]
+    [InlineData("Acme", "calculator")]
+    [InlineData("acme", "calc.v2")]
+    public void RegisteredName_IsTheManifestName_WhenTheFoldersAreNotAStoreName(string store, string folder)
+    {
+        MarkStore(store);
+        var home = Drop($"{store}/{folder}");
+        Assert.Equal("calculator", PluginStores.RegisteredName("calculator", home));
+    }
+
     [Fact]
     public void RegisteredName_IsTheManifestName_OutsideAStore()
     {
