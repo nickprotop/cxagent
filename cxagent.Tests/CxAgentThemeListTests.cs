@@ -93,4 +93,23 @@ public class CxAgentThemeListTests
         var theme = Installed();
         Assert.Equal(DialogPalette.For(theme).Selection, theme.ListUnfocusedHighlightBackgroundColor);
     }
+
+    /// <summary>
+    /// NO CYAN ANYWHERE IN THE THEME. ModernGray, which this theme starts from, draws a dozen things in
+    /// Cyan1 — a radio's dot, a focused button's label, a focused section header, table borders — and
+    /// each one left over is a colour this theme uses nowhere else, glaring in the middle of a dialog.
+    /// </summary>
+    [Fact]
+    public void NoColourInTheTheme_IsModernGraysCyan()
+    {
+        var theme = Installed();
+        var cyan = typeof(SharpConsoleUI.Themes.ITheme).GetProperties()
+            .Where(p => p.PropertyType == typeof(Color?) || p.PropertyType == typeof(Color))
+            .Where(p => p.GetValue(theme) is Color c && c == Color.Cyan1)
+            // THE STATUS BAR'S KEYS are not a dialog's, and the dialog work leaves the status bar as it is.
+            .Where(p => p.Name != nameof(SharpConsoleUI.Themes.ITheme.StatusBarShortcutForegroundColor))
+            .Select(p => p.Name)
+            .ToList();
+        Assert.True(cyan.Count == 0, string.Join(", ", cyan));
+    }
 }

@@ -102,6 +102,27 @@ public static class CxAgentTheme
                 // bar: in a list/detail dialog the list is unfocused whenever the detail is being edited.
                 t.ListUnfocusedHighlightBackgroundColor = dialog.Selection;
                 t.ListUnfocusedHighlightForegroundColor = dialog.Foreground;
+                // EVERY OTHER CYAN MODERNGRAY CARRIES — a radio's dot, a focused button's label, a focused
+                // section header, table chrome — in the accent, or in the border and rule colours for
+                // chrome: each leftover is a colour this theme uses nowhere else, glaring inside a dialog.
+                t.ActiveBorderForegroundColor = dialog.ActiveBorder;
+                t.ActiveTitleForegroundColor = dialog.Title;
+                t.ButtonFocusedForegroundColor = dialog.Title;
+                t.MenuBarHighlightForegroundColor = dialog.Title;
+                t.DropdownFocusedForegroundColor = dialog.Title;
+                t.ProgressBarFilledColor = dialog.Title;
+                t.TableBorderColor = dialog.Rule;
+                t.TableHeaderForegroundColor = dialog.Title;
+                t.TableScrollbarThumbColor = dialog.Muted;
+                t.CollapsibleHeaderFocusedForegroundColor = dialog.Title;
+                t.TabContentBorderColor = dialog.Rule;
+                t.DatePickerFocusedForegroundColor = dialog.Title;
+                t.DatePickerCalendarTodayColor = dialog.Title;
+                t.DatePickerCalendarHeaderColor = dialog.Title;
+                t.TimePickerFocusedForegroundColor = dialog.Title;
+                t.SliderFilledTrackColor = dialog.Title;
+                t.CheckboxFocusedForegroundColor = dialog.Title;
+                t.CheckboxCheckmarkColor = dialog.Title;
             })
             .Build();
 
