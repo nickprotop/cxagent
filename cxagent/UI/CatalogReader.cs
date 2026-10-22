@@ -164,7 +164,9 @@ public sealed class CatalogReader
                 {
                     Settings = settings,
                     Sources = sources,
-                    RequiresDefault = requiresDefault
+                    RequiresDefault = requiresDefault,
+                    FromRelease = IsRelease(source)
+                        || (many.ValueKind == JsonValueKind.Object && many.EnumerateObject().Any(rid => IsRelease(rid.Value)))
                 });
             }
 
@@ -183,6 +185,8 @@ public sealed class CatalogReader
     /// </summary>
     private static string? DownloadOf(JsonElement source) =>
         source.ValueKind == JsonValueKind.Object ? Str(source, "latest") ?? Str(source, "url") : null;
+
+    private static bool IsRelease(JsonElement source) => Str(source, "kind") == "release";
 
     private static string? Str(JsonElement element, string name) =>
         element.ValueKind == JsonValueKind.Object

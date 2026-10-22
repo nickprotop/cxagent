@@ -71,3 +71,23 @@ public sealed class CatalogSetTests : IDisposable
         Assert.Single(set.Notes);
     }
 }
+
+/// <summary>Whether an entry's download is cxagent's own release rather than a file hosted with its hash.</summary>
+public class CatalogReleaseSourceTests
+{
+    [Theory]
+    [InlineData("""{"kind":"release","sha256":"ab","latest":"https://github.com/x/releases/latest/download/d.zip"}""", true)]
+    [InlineData("""{"kind":"url","sha256":"ab","url":"https://x/d.zip"}""", false)]
+    public async Task AReleaseSource_IsMarked(string source, bool fromRelease)
+    {
+        var body = $$"""{"schemaVersion":2,"plugins":[{"name":"d","version":"1","kind":"managed","file":"d.dll","source":{{source}},"compatibility":{"pluginContract":2},"tools":[]}]}""";
+        var handler = new CatalogSetTests.ByUrl { ["https://o/c.json"] = body };
+        var dir = Directory.CreateTempSubdirectory("release-src-").FullName;
+        try
+        {
+            var catalog = await new CatalogReader(new HttpClient(handler), Path.Combine(dir, "c.json"), "https://o/c.json").ReadAsync(default);
+            Assert.Equal(fromRelease, Assert.Single(catalog.Plugins).FromRelease);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+}

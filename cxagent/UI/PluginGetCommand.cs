@@ -50,7 +50,7 @@ public sealed class PluginGetCommand(
 
         if (name.Length == 0)
         {
-            Say("usage: /plugin get <name> — the name as the catalog lists it, e.g. clone-finder.",
+            Say("usage: /plugin get <name> — e.g. clone-finder, or acme/jira-search for a store's.",
                 Severity.Warning);
             return;
         }
@@ -59,14 +59,16 @@ public sealed class PluginGetCommand(
             ? custom
             : CatalogReader.PublishedUrl;
 
-        // THE SAME CACHE THE MANAGER READS, so a catalog fetched by either is available to both and
-        // this works offline in a later run for the same reason the dialog does.
-        var reader = new CatalogReader(null, Path.Combine(paths.ConfigDir, "catalog-cache.json"), url);
+        // THE STORES AS CONFIG SAYS NOW, read fresh, so one added a moment ago with /plugin store add is
+        // here without a restart. THE SAME CACHES THE MANAGER READS, so a catalog fetched by either is
+        // available to both and this works offline in a later run for the same reason the dialog does.
+        var stores = PluginStores.ReadFile(Path.Combine(paths.ConfigDir, "config.json"));
 
-        Catalog catalog;
+        CatalogSet catalogs;
         try
         {
-            catalog = await reader.ReadAsync(CancellationToken.None);
+            catalogs = await CatalogSources.ReadAllAsync(
+                new CatalogSetRequest(stores, paths.ConfigDir, url), CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -74,30 +76,52 @@ public sealed class PluginGetCommand(
             return;
         }
 
-        if (Find(catalog, name) is not { } entry)
-        {
-            // THE NEAR MISSES, NOT A BARE REFUSAL. "not found" against a catalog the user cannot see
-            // leaves them guessing at spelling; the candidates are what turn it into a correction.
-            var near = catalog.Plugins
-                .Where(p => p.Name.Contains(name, StringComparison.OrdinalIgnoreCase)
-                         || name.Contains(p.Name, StringComparison.OrdinalIgnoreCase))
-                .Select(p => p.Name)
-                .Take(3)
-                .ToList();
+        // ONE LINE PER STORE THAT COULD NOT BE READ — said whether or not the name is from it, because
+        // a store that is quietly stale is how a user ends up installing last month's version.
+        foreach (var note in catalogs.Notes)
+            Say(note, Severity.Warning);
 
-            Say(near.Count > 0
-                    ? $"no plugin named '{name}' in the catalog. Did you mean {string.Join(", ", near)}?"
-                    : $"no plugin named '{name}' in the catalog. /plugin browse lists what is there.",
-                Severity.Warning);
-            return;
+        NameLookup.Found found;
+        switch (PluginNames.Find(name, catalogs.Plugins, stores))
+        {
+            case NameLookup.Found f:
+                found = f;
+                break;
+
+            case NameLookup.Refused(var message) when !name.Contains('/'):
+            {
+                // THE NEAR MISSES, NOT A BARE REFUSAL. "not found" against a catalog the user cannot see
+                // leaves them guessing at spelling; the candidates are what turn it into a correction.
+                var near = catalogs.Plugins
+                    .Where(p => p.Name.Contains(name, StringComparison.OrdinalIgnoreCase)
+                             || name.Contains(p.Name, StringComparison.OrdinalIgnoreCase))
+                    .Select(p => p.QualifiedName)
+                    .Take(3)
+                    .ToList();
+
+                Say(near.Count > 0
+                        ? $"{message} Did you mean {string.Join(", ", near)}?"
+                        : $"{message} /plugin browse lists what is there.",
+                    Severity.Warning);
+                return;
+            }
+
+            case NameLookup.Refused(var message):
+                Say(message, Severity.Warning);
+                return;
+
+            default:
+                return;
         }
+
+        var entry = found.Entry;
 
         // THE MANAGER'S OWN RULE, before anything is downloaded: a version this cxagent cannot load, or
         // one with no build for this machine, is refused here in the words its row uses. Installing it
         // anyway would replace an installed copy with one the loader refuses.
         if (PluginManagerRows.WhyItCannotRunHere(entry) is { } why)
         {
-            Say($"'{entry.Name}' {entry.Version} cannot be installed here: {why}.", Severity.Warning);
+            Say($"'{entry.QualifiedName}' {entry.Version} cannot be installed here: {why}.", Severity.Warning);
             return;
         }
 
@@ -112,7 +136,7 @@ public sealed class PluginGetCommand(
         // refused before the user ever sees it.
         var outcome = await gate.RequestAsync(
             new PermissionRequest(PermissionKind.Http,
-                $"download '{entry.Name}' {entry.Version} from "
+                $"download '{entry.QualifiedName}' {entry.Version} from "
                 + $"{entry.DownloadFor(System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier)?.Url}",
                 AlwaysRule: null)
             { Policy = session.Policy },
@@ -120,7 +144,7 @@ public sealed class PluginGetCommand(
 
         if (!outcome.Allowed)
         {
-            Say($"'{entry.Name}' was not downloaded.");
+            Say($"'{entry.QualifiedName}' was not downloaded.");
             return;
         }
 
@@ -146,19 +170,19 @@ public sealed class PluginGetCommand(
         switch (result)
         {
             case InstallResult.Installed(var directory, var files):
-                Say($"'{entry.Name}' {entry.Version} downloaded — {files.Count} file(s) in {directory}. "
-                  + $"Nothing is running yet: `/plugin load {entry.File}` tries it for this session, "
+                Say($"'{entry.QualifiedName}' {entry.Version} downloaded — {files.Count} file(s) in {directory}. "
+                  + $"Nothing is running yet: `{LoadHint(entry)}` tries it for this session, "
                   + "and /plugin browse can add it to config.json so it loads at every start.");
                 break;
 
             case InstallResult.HashMismatch(var expected, var actual):
                 // WHAT ARRIVED IS NOT WHAT WAS PUBLISHED, and that is worth more than "failed".
-                Say($"'{entry.Name}' was not installed: the download does not match the catalog's "
+                Say($"'{entry.QualifiedName}' was not installed: the download does not match the catalog's "
                   + $"checksum (expected {expected[..12]}…, got {actual[..12]}…).", Severity.Warning);
                 break;
 
             case InstallResult.Refused(var reason):
-                Say($"'{entry.Name}' was not installed: {reason}", Severity.Warning);
+                Say($"'{entry.QualifiedName}' was not installed: {reason}", Severity.Warning);
                 break;
         }
     }
@@ -175,13 +199,9 @@ public sealed class PluginGetCommand(
         arguments.Split(' ', 2) is [_, var rest] ? rest.Trim() : "";
 
     /// <summary>
-    /// The entry for this name, matched case-insensitively against the catalog's own name.
-    ///
-    /// <para>DISPLAY NAME TOO, because the site shows one and the catalog keys on the other — a
-    /// reader copying what they can see should not be told it does not exist.</para>
+    /// The command that loads what was just installed: a store plugin by its qualified name (its file
+    /// alone never reaches into a store's folder), any other by its file.
     /// </summary>
-    private static CatalogEntry? Find(Catalog catalog, string name) =>
-        catalog.Plugins.FirstOrDefault(p =>
-            string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)
-         || string.Equals(p.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+    public static string LoadHint(CatalogEntry entry) =>
+        entry.Store is null ? $"/plugin load {entry.File}" : $"/plugin load {entry.QualifiedName}";
 }

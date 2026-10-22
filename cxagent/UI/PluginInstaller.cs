@@ -1,3 +1,4 @@
+using CxAgent.Core.Plugins;
 using System.IO.Compression;
 using System.Security.Cryptography;
 
@@ -49,6 +50,18 @@ public sealed partial class PluginInstaller(HttpClient? client = null)
         if (!FolderName().IsMatch(entry.Name) || !FileName().IsMatch(entry.File) || entry.File.Trim('.').Length == 0)
             return new InstallResult.Refused(
                 $"the catalog entry '{entry.Name}' names a path where a plain name belongs, so it was not installed.");
+
+        // A STORE'S PLUGIN, UNDER ITS STORE'S FOLDER. The store name becomes a folder name too, so it is
+        // held to the store-name rule here as well as in config — and a store's entry must be a file the
+        // store hosts with its hash: a release source means cxagent's own release, which is no store's.
+        if (entry.Store is { } store)
+        {
+            if (PluginStores.Problem(store, "https://store") is not null)
+                return new InstallResult.Refused($"'{store}' is not a store name.");
+            if (entry.FromRelease)
+                return new InstallResult.Refused("a store's plugin must be a url download with its own sha256.");
+            pluginsFolder = Path.Combine(pluginsFolder, store);
+        }
 
         // THIS MACHINE'S FILE: the single download, or for a native plugin the build for this platform
         // — each checked against its own hash below.
@@ -114,6 +127,14 @@ public sealed partial class PluginInstaller(HttpClient? client = null)
 
             if (Directory.Exists(destination)) Directory.Delete(destination, recursive: true);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+
+            // THE MARK THAT MAKES THIS A STORE'S FOLDER to every search: its plugins are found as
+            // store/name and never by a bare file name. Written before the move, so the plugin never
+            // sits in an unmarked folder; and on install rather than on `store add`, so a removed
+            // store's plugins stay findable for as long as they are installed.
+            if (entry.Store is not null)
+                File.WriteAllText(Path.Combine(pluginsFolder, PluginStores.Marker), "");
+
             Directory.Move(staging, destination);
 
             var written = Directory.EnumerateFiles(destination, "*", SearchOption.AllDirectories)

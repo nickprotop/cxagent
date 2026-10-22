@@ -33,4 +33,17 @@ public class PluginGetCommandTests
         Assert.Equal("", PluginGetCommand.NameFrom("get"));
         Assert.Equal("", PluginGetCommand.NameFrom("get "));
     }
+
+    /// <summary>
+    /// THE NEXT STEP NAMES A STORE PLUGIN BY ITS QUALIFIED NAME: its file alone never reaches into a
+    /// store's folder, so "/plugin load repo-map.dll" would load the official copy, or nothing.
+    /// </summary>
+    [Fact]
+    public void TheLoadHint_NamesAStorePluginByItsQualifiedName()
+    {
+        var entry = new CatalogEntry("repo-map", "repo-map", "1.0.0", "", "", "", "", "", "repo-map.dll", "managed", 2, [],
+            null, null, null, null);
+        Assert.Equal("/plugin load repo-map.dll", PluginGetCommand.LoadHint(entry));
+        Assert.Equal("/plugin load acme/repo-map", PluginGetCommand.LoadHint(entry with { Store = "acme" }));
+    }
 }

@@ -53,6 +53,12 @@ public sealed record CatalogEntry(
     /// </summary>
     public string? Store { get; init; }
 
+    /// <summary>
+    /// Whether the download is cxagent's own release (<c>kind: release</c>) rather than a file hosted with
+    /// its hash. Only the official catalog can mean that; in a store's it names nothing the store hosts.
+    /// </summary>
+    public bool FromRelease { get; init; }
+
     /// <summary>How a user types and sees this plugin: <c>repo-map</c>, or <c>acme/repo-map</c> for a store's.</summary>
     public string QualifiedName => Store is null ? Name : $"{Store}/{Name}";
 

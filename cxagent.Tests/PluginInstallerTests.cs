@@ -451,4 +451,55 @@ public class PluginInstallerTests : IDisposable
         Assert.IsType<InstallResult.Refused>(result);
         Assert.False(Directory.Exists(Path.Combine(_dir, "..", "evil")));
     }
+
+    /// <summary>
+    /// A STORE'S PLUGIN GOES UNDER ITS STORE, beside the official plugins rather than among them, and the
+    /// store's folder is marked so every search knows its plugins are reached only as store/name.
+    /// </summary>
+    [Fact]
+    public async Task AStorePlugin_InstallsUnderItsStore_AndMarksTheStoreFolder()
+    {
+        var (zip, sha) = MakeZip();
+        var entry = Entry(sha) with { Store = "acme" };
+        var result = await new PluginInstaller(new HttpClient(new Serves(zip))).InstallAsync(entry, _dir, default);
+
+        var installed = Assert.IsType<InstallResult.Installed>(result);
+        Assert.Equal(Path.Combine(_dir, "acme", "demo"), installed.Directory);
+        Assert.True(File.Exists(Path.Combine(_dir, "acme", "demo", "demo.dll")));
+        Assert.True(File.Exists(Path.Combine(_dir, "acme", CxAgent.Core.Plugins.PluginStores.Marker)));
+    }
+
+    [Fact]
+    public async Task AStoreEntryWithoutAHash_IsRefused()
+    {
+        var (zip, _) = MakeZip();
+        var entry = Entry(sha: null!) with { Store = "acme" };
+        var result = await new PluginInstaller(new HttpClient(new Serves(zip))).InstallAsync(entry, _dir, default);
+
+        Assert.Contains("no checksum", Assert.IsType<InstallResult.Refused>(result).Reason);
+        Assert.False(Directory.Exists(Path.Combine(_dir, "acme", "demo")));
+    }
+
+    /// <summary>A release source means cxagent's own release; in a store's catalog it names nothing the store hosts.</summary>
+    [Fact]
+    public async Task AStoreEntryFromARelease_IsRefused()
+    {
+        var (zip, sha) = MakeZip();
+        var entry = Entry(sha) with { Store = "acme", FromRelease = true };
+        var result = await new PluginInstaller(new HttpClient(new Serves(zip))).InstallAsync(entry, _dir, default);
+
+        Assert.Contains("url download with its own sha256", Assert.IsType<InstallResult.Refused>(result).Reason);
+        Assert.False(Directory.Exists(Path.Combine(_dir, "acme")));
+    }
+
+    /// <summary>A store name read from config is checked again here: it becomes a folder name.</summary>
+    [Fact]
+    public async Task AStoreNameThatIsAPath_IsRefused()
+    {
+        var (zip, sha) = MakeZip();
+        var entry = Entry(sha) with { Store = ".." };
+        var result = await new PluginInstaller(new HttpClient(new Serves(zip))).InstallAsync(entry, _dir, default);
+
+        Assert.IsType<InstallResult.Refused>(result);
+    }
 }
