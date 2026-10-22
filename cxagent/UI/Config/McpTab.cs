@@ -31,6 +31,7 @@ public sealed class McpTab
     private readonly ScrollablePanelControl _detail;
     private readonly MarkupControl _status;
     private readonly ButtonControl _save;
+    private readonly ButtonControl _revert;
 
     private IReadOnlyDictionary<string, McpServerConfig>? _servers;
     private McpDraft? _draft;
@@ -46,42 +47,41 @@ public sealed class McpTab
         _root = new GridControl { VerticalAlignment = VerticalAlignment.Fill, HorizontalAlignment = HorizontalAlignment.Stretch };
         _root.ColumnDefinitions.Add(GridLength.Cells(RailCells, min: 22));
         _root.ColumnDefinitions.Add(GridLength.Star(1));
-        _root.RowDefinitions.Add(GridLength.Cells(1));
-        _root.RowDefinitions.Add(GridLength.Star(1));
-        _root.RowDefinitions.Add(GridLength.Cells(1));
+        _root.RowDefinitions.Add(GridLength.Cells(1));   // the toolbar
+        _root.RowDefinitions.Add(GridLength.Cells(1));   // a rule closing the toolbar off from the list
+        _root.RowDefinitions.Add(GridLength.Star(1));    // rail | detail
         _root.RowDefinitions.Add(GridLength.Cells(2));   // status — two lines, so a long one is not cut
-        _root.RowDefinitions.Add(GridLength.Cells(1));
 
+        // ONLY WHAT DOES NOT ACT ON THE SELECTION. The per-server actions sit in the detail's header,
+        // beside the server they act on.
         var toolbar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         toolbar.AddItem(Controls.Button(" + Add ").OnClick((_, _) => ShowKinds()).Build());
-        toolbar.AddItem(Controls.Button(" Enable / Disable ").OnClick((_, _) => _ = ToggleAsync()).Build());
-        toolbar.AddItem(Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build());
-        toolbar.AddItem(Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build());
-        toolbar.AddItem(Controls.Button(" Log in ").OnClick((_, _) => _ = LogInAsync()).Build());
         _root.Place(toolbar, 0, 0, colSpan: 2);
+        _root.Place(DialogLook.Rule(), 1, 0, colSpan: 2);
 
         _rail = new ListControl { VerticalAlignment = VerticalAlignment.Fill, HorizontalAlignment = HorizontalAlignment.Stretch };
         _rail.SelectedIndexChanged += OnRailSelectionChanged;
-        _root.Place(_rail, 1, 0, rowSpan: 4);
-        _root.AddColumnSplitterAfter(0);
+        ListDetail.StyleRail(_rail);
+        _root.Place(_rail, 2, 0, rowSpan: 2);
+        ListDetail.Divider(_root);
 
-        _detail = new ScrollablePanelControl { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Fill };
-        _root.Place(_detail, 1, 1);
-        _root.Place(new RuleControl { Color = ColorScheme.MutedRgb }, 2, 1);
-        _status = new MarkupControl([""]) { Wrap = true };
+        _detail = new ScrollablePanelControl { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Fill, Margin = ListDetail.DetailInset };
+        _root.Place(_detail, 2, 1);
+        _status = new MarkupControl([""]) { Wrap = true, Margin = ListDetail.DetailInset };
         _root.Place(_status, 3, 1);
 
-        _save = Controls.Button("  Save  ").OnClick((_, _) => _ = SaveAsync()).Build();
-        var actions = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Right };
-        actions.AddItem(Controls.Button(" Revert ").OnClick((_, _) => Revert()).Build());
-        actions.AddItem(_save);
-        _root.Place(actions, 4, 1);
+        // REVERT AND SAVE BELONG TO THE TAB, SHOWN IN THE DIALOG'S FOOTER while this tab is in front.
+        _revert = Controls.Button(" Revert ").OnClick((_, _) => Revert()).Build();
+        _save = DialogLook.Main(Controls.Button(" Save ").OnClick((_, _) => _ = SaveAsync()).Build(), main: false);
 
         Reload(select: null);
     }
 
     /// <summary>The tab's content.</summary>
     public IWindowControl Content => _root;
+
+    /// <summary>Revert and Save, for the dialog's footer to host while this tab is in front.</summary>
+    public IReadOnlyList<ButtonControl> Actions => [_revert, _save];
 
     /// <summary>The rail, focused when the tab opens.</summary>
     public ListControl Rail => _rail;
@@ -141,9 +141,11 @@ public sealed class McpTab
         {
             _draft = null;
             _detail.ClearContents();
-            _detail.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]No MCP servers yet. + Add connects one.[/]"]));
+            _detail.AddControl(ListDetail.Empty("No MCP servers yet", "+ Add connects one"));
             SetStatus("");
+            MarkSave();
         }
+        ListDetail.Mark(_rail);
     }
 
     /// <summary>The name and what it is doing — ● running, ✖ failed, ◌ needs login, ○ off — then the command.</summary>
@@ -184,17 +186,23 @@ public sealed class McpTab
         if (_draft is { IsNew: true } fresh && fresh.Name == row.Name) { BuildDetail(fresh, row); return; }
         if (_servers is null || !_servers.TryGetValue(row.Name, out var cfg)) return;
         if (_draft?.Name != row.Name) _draft = new McpDraft(row.Name, cfg);
-        _save.Text = "  Save  ";
+        _save.Text = " Save ";
         BuildDetail(_draft, row);
+        MarkSave();
     }
 
     private void BuildDetail(McpDraft draft, McpRow row)
     {
         _detail.ClearContents();
-        _detail.AddControl(new MarkupControl([
-            $"[bold]{MarkupParser.Escape(draft.IsNew ? "New MCP server" : draft.Name)}[/]  [{ColorScheme.MutedMarkup}]{(draft.IsRemote ? "remote (HTTP)" : "local command (stdio)")}[/]",
-            "",
-        ]));
+        var subtitle = draft.IsRemote ? "remote (HTTP)" : "local command (stdio)";
+        // THE ACTIONS ON THIS SERVER, beside its name. A server not yet saved has none: leaving it is Revert.
+        _detail.AddControl(draft.IsNew
+            ? ListDetail.Header("New MCP server", subtitle)
+            : ListDetail.Header(draft.Name, subtitle,
+                Controls.Button(" Enable / Disable ").OnClick((_, _) => _ = ToggleAsync()).Build(),
+                Controls.Button(" Log in ").OnClick((_, _) => _ = LogInAsync()).Build(),
+                Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build(),
+                Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build()));
 
         // WHY IT FAILED, FIRST: that is what the user opened this server to fix, and Save retries it.
         if (row.State == McpState.Failed && row.Reason is { } reason)
@@ -202,12 +210,12 @@ public sealed class McpTab
         else if (row.State == McpState.Running)
             _detail.AddControl(new MarkupControl([$"[{ColorScheme.AffirmativeMarkup}]● running · {row.Tools} tool{(row.Tools == 1 ? "" : "s")}[/]", ""]));
         else if (row.State == McpState.NeedsLogin)
-            _detail.AddControl(new MarkupControl([$"[{ColorScheme.CautionMarkup}]◌ this server needs you to log in — Log in, above[/]", ""]));
+            _detail.AddControl(new MarkupControl([$"[{ColorScheme.CautionMarkup}]◌ this server needs you to log in — Log in, at the top[/]", ""]));
 
         var fields = new FieldGrid();
         if (draft.IsNew)
         {
-            var nameBox = new PromptControl { Input = draft.Name, HorizontalAlignment = HorizontalAlignment.Stretch };
+            var nameBox = ListDetail.Input(new PromptControl { Input = draft.Name, HorizontalAlignment = HorizontalAlignment.Stretch });
             nameBox.InputChanged += (_, text) => { draft.Name = text.Trim(); Changed(); };
             fields.Add("Name", "What /mcp and the tool names call it.", nameBox);
             _firstField = nameBox;
@@ -215,7 +223,7 @@ public sealed class McpTab
 
         if (draft.IsRemote)
         {
-            var url = new PromptControl { Input = draft.Url ?? "", HorizontalAlignment = HorizontalAlignment.Stretch };
+            var url = ListDetail.Input(new PromptControl { Input = draft.Url ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
             url.InputChanged += (_, text) => { draft.Url = text; Changed(); };
             fields.Add("URL", "The server's MCP endpoint.", url);
             fields.Add("Headers", "Sent with every request — where a token usually goes. Values are never shown again.",
@@ -223,7 +231,7 @@ public sealed class McpTab
         }
         else
         {
-            var command = new PromptControl { Input = draft.CommandLine, HorizontalAlignment = HorizontalAlignment.Stretch };
+            var command = ListDetail.Input(new PromptControl { Input = draft.CommandLine, HorizontalAlignment = HorizontalAlignment.Stretch });
             command.InputChanged += (_, text) => { draft.CommandLine = text; Changed(); };
             fields.Add("Command", "One line, as you would type it — quotes group a word with spaces.", command);
             fields.Add("Environment", "Set for the server's process — where a token usually goes. Values are never shown again.",
@@ -232,10 +240,10 @@ public sealed class McpTab
 
         var advanced = new CollapsiblePanel { Title = "Advanced", IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch };
         var more = new FieldGrid();
-        var cwd = new PromptControl { Input = draft.Cwd ?? "", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var cwd = ListDetail.Input(new PromptControl { Input = draft.Cwd ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
         cwd.InputChanged += (_, text) => { draft.Cwd = text; Changed(); };
         more.Add("Working directory", "Where the command runs; empty is the session's folder.", cwd);
-        var timeout = new PromptControl { Input = draft.TimeoutMs?.ToString() ?? "", InputWidth = 12 };
+        var timeout = ListDetail.Input(new PromptControl { Input = draft.TimeoutMs?.ToString() ?? "", InputWidth = 12 });
         timeout.InputChanged += (_, text) => { draft.TimeoutMs = int.TryParse(text.Trim(), out var n) && n > 0 ? n : null; Changed(); };
         more.Add("Timeout", "Milliseconds a call may take; empty is the default.", timeout);
         advanced.AddControl(more.Control);
@@ -281,8 +289,8 @@ public sealed class McpTab
         // NAME, THEN THE VALUE MASKED: the name is not secret, the value is typed once and never shown.
         void Ask(string? key)
         {
-            var name = new PromptControl { Prompt = "Name: ", Input = key ?? "", HorizontalAlignment = HorizontalAlignment.Stretch };
-            var value = new PromptControl { Prompt = "Value: ", MaskCharacter = '•', HorizontalAlignment = HorizontalAlignment.Stretch };
+            var name = ListDetail.Input(new PromptControl { Prompt = "Name: ", Input = key ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
+            var value = ListDetail.Input(new PromptControl { Prompt = "Value: ", MaskCharacter = '•', HorizontalAlignment = HorizontalAlignment.Stretch });
             value.Entered += (_, text) =>
             {
                 var n = name.Input.Trim();
@@ -304,7 +312,14 @@ public sealed class McpTab
         return stack.Control;
     }
 
-    private void Changed() { if (_save.Text != "  Save  ") _save.Text = "  Save  "; }
+    private void Changed()
+    {
+        if (_save.Text != " Save ") _save.Text = " Save ";
+        MarkSave();
+    }
+
+    // THE ACCENT ONLY WHEN THERE IS SOMETHING TO SAVE.
+    public void MarkSave() => DialogLook.Main(_save, _draft?.IsDirty == true);
 
     private void SetStatus(string markup) => _status.SetContent([markup]);
 
@@ -380,7 +395,7 @@ public sealed class McpTab
     {
         if (Selected() is not { } from) return;
         _detail.ClearContents();
-        var box = new PromptControl { Prompt = "New name: ", Input = from, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var box = ListDetail.Input(new PromptControl { Prompt = "New name: ", Input = from, HorizontalAlignment = HorizontalAlignment.Stretch });
         _detail.AddControl(new MarkupControl([$"[bold]Rename '{MarkupParser.Escape(from)}'[/]", ""]));
         _detail.AddControl(box);
         _detail.AddControl(new MarkupControl(["", $"[{ColorScheme.MutedMarkup}]Enter renames · Revert cancels[/]"]));

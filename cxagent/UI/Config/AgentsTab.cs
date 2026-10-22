@@ -31,6 +31,7 @@ public sealed class AgentsTab
     private readonly ScrollablePanelControl _detail;
     private readonly MarkupControl _status;
     private readonly ButtonControl _save;
+    private readonly ButtonControl _revert;
 
     private ProviderSettings? _settings;
     private AgentDraft? _draft;
@@ -46,39 +47,45 @@ public sealed class AgentsTab
         _root = new GridControl { VerticalAlignment = VerticalAlignment.Fill, HorizontalAlignment = HorizontalAlignment.Stretch };
         _root.ColumnDefinitions.Add(GridLength.Cells(RailCells, min: 22));
         _root.ColumnDefinitions.Add(GridLength.Star(1));
-        _root.RowDefinitions.Add(GridLength.Cells(1));
-        _root.RowDefinitions.Add(GridLength.Star(1));
-        _root.RowDefinitions.Add(GridLength.Cells(1));
+        _root.RowDefinitions.Add(GridLength.Cells(1));   // the toolbar
+        _root.RowDefinitions.Add(GridLength.Cells(1));   // a rule closing the toolbar off from the list
+        _root.RowDefinitions.Add(GridLength.Star(1));    // rail | detail
         _root.RowDefinitions.Add(GridLength.Cells(2));   // status — two lines, so a long one is not cut
-        _root.RowDefinitions.Add(GridLength.Cells(1));
 
+        // ONLY WHAT DOES NOT ACT ON THE SELECTION. Rename and Remove sit in the detail's header.
         var toolbar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         toolbar.AddItem(Controls.Button(" + Add type ").OnClick((_, _) => StartNew()).Build());
-        toolbar.AddItem(Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build());
-        toolbar.AddItem(Controls.Button(" Remove / Reset to shipped ").OnClick((_, _) => _ = RemoveOrResetAsync()).Build());
         _root.Place(toolbar, 0, 0, colSpan: 2);
+        _root.Place(DialogLook.Rule(), 1, 0, colSpan: 2);
 
         _rail = new ListControl { VerticalAlignment = VerticalAlignment.Fill, HorizontalAlignment = HorizontalAlignment.Stretch };
         _rail.SelectedIndexChanged += OnRailSelectionChanged;
-        _root.Place(_rail, 1, 0, rowSpan: 4);
-        _root.AddColumnSplitterAfter(0);
+        ListDetail.StyleRail(_rail);
+        _root.Place(_rail, 2, 0, rowSpan: 2);
+        ListDetail.Divider(_root);
 
-        _detail = new ScrollablePanelControl { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Fill };
-        _root.Place(_detail, 1, 1);
-        _root.Place(new RuleControl { Color = ColorScheme.MutedRgb }, 2, 1);
-        _status = new MarkupControl([""]) { Wrap = true };
+        _detail = new ScrollablePanelControl { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Fill, Margin = ListDetail.DetailInset };
+        _root.Place(_detail, 2, 1);
+        _status = new MarkupControl([""]) { Wrap = true, Margin = ListDetail.DetailInset };
         _root.Place(_status, 3, 1);
 
-        _save = Controls.Button("  Save  ").OnClick((_, _) => _ = SaveAsync()).Build();
-        var actions = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Right };
-        actions.AddItem(Controls.Button(" Revert ").OnClick((_, _) => Revert()).Build());
-        actions.AddItem(_save);
-        _root.Place(actions, 4, 1);
+        // REVERT AND SAVE BELONG TO THE TAB, SHOWN IN THE DIALOG'S FOOTER while this tab is in front.
+        _revert = Controls.Button(" Revert ").OnClick((_, _) => Revert()).Build();
+        _save = DialogLook.Main(Controls.Button(" Save ").OnClick((_, _) => _ = SaveAsync()).Build(), main: false);
 
         Reload(null);
     }
 
     public IWindowControl Content => _root;
+
+    /// <summary>Revert and Save, for the dialog's footer to host while this tab is in front.</summary>
+    public IReadOnlyList<ButtonControl> Actions => [_revert, _save];
+
+    /// <summary>
+    /// The accent on Save only when there is something to save. The dialog calls this after each key:
+    /// this tab's editors write straight into the draft, with no change event of their own to hang it on.
+    /// </summary>
+    public void MarkSave() => DialogLook.Main(_save, _draft?.IsDirty == true);
     public ListControl Rail => _rail;
     public bool HasUnsaved => _draft?.IsDirty == true;
     public string? SelectedName => _draft?.Name;
@@ -128,16 +135,17 @@ public sealed class AgentsTab
         foreach (var (name, builtin, overridden, line) in rows)
         {
             var tag = name == AgentTypeCatalog.DefaultTypeName
-                ? $"[{ColorScheme.AccentMarkup}]default[/][{ColorScheme.MutedMarkup}]{(overridden ? " · set" : "")}[/]"
+                ? $"[{ColorScheme.MutedMarkup}]default{(overridden ? " · set" : "")}[/]"
                 : builtin
                 ? $"[{ColorScheme.MutedMarkup}]built-in{(overridden ? " · overridden" : "")}[/]"
-                : line == "new" ? $"[{ColorScheme.CautionMarkup}]new[/]" : $"[{ColorScheme.AccentMarkup}]yours[/]";
+                : line == "new" ? $"[{ColorScheme.CautionMarkup}]new[/]" : $"[{ColorScheme.MutedMarkup}]yours[/]";
             _rail.AddItem(new ListItem($"[bold]{MarkupParser.Escape(name)}[/] {tag}") { Tag = name });
         }
         var index = rows.FindIndex(r => r.Name == select);
         if (index < 0 && rows.Count > 0) index = 0;
         _lastIndex = index;
         if (index >= 0) { _rail.SelectedIndex = index; Show(rows[index].Name); }
+        ListDetail.Mark(_rail);
     }
 
     private void OnRailSelectionChanged(object? sender, int index)
@@ -171,16 +179,20 @@ public sealed class AgentsTab
                 : configured.TryGetValue(name, out var own) ? AgentDraft.ForOwn(name, own) : _draft;
         }
         if (_draft is not null) BuildDetail(_draft);
+        MarkSave();
     }
 
     private void BuildDetail(AgentDraft draft)
     {
         _detail.ClearContents();
         _firstField = null;
-        _detail.AddControl(new MarkupControl([
-            $"[bold]{MarkupParser.Escape(draft.IsNew ? "New agent type" : draft.Name)}[/]  [{ColorScheme.MutedMarkup}]{(draft.IsGeneral ? "the default" : draft.IsBuiltin ? "ships with cxagent" : "yours")}[/]",
-            "",
-        ]));
+        var subtitle = draft.IsGeneral ? "the default" : draft.IsBuiltin ? "ships with cxagent" : "yours";
+        // THE ACTIONS ON THIS TYPE, beside its name. A type not yet saved has none: leaving it is Revert.
+        _detail.AddControl(draft.IsNew
+            ? ListDetail.Header("New agent type", subtitle)
+            : ListDetail.Header(draft.Name, subtitle,
+                Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build(),
+                Controls.Button(" Remove / Reset to shipped ").OnClick((_, _) => _ = RemoveOrResetAsync()).Build()));
 
         var fields = new FieldGrid();
         if (draft.IsGeneral)
@@ -211,12 +223,12 @@ public sealed class AgentsTab
         {
             if (draft.IsNew)
             {
-                var name = new PromptControl { Input = draft.Name, HorizontalAlignment = HorizontalAlignment.Stretch };
+                var name = ListDetail.Input(new PromptControl { Input = draft.Name, HorizontalAlignment = HorizontalAlignment.Stretch });
                 name.InputChanged += (_, t) => { draft.Name = t.Trim(); };
                 fields.Add("Name", "What the model names when it spawns one.", name);
                 _firstField = name;
             }
-            var description = new PromptControl { Input = draft.Description ?? "", HorizontalAlignment = HorizontalAlignment.Stretch };
+            var description = ListDetail.Input(new PromptControl { Input = draft.Description ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
             description.InputChanged += (_, t) => draft.Description = t;
             fields.Add("Description", "When to reach for it — what the model reads when choosing.", description);
             var briefing = new MultilineEditControl(viewportHeight: 6) { HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -226,7 +238,7 @@ public sealed class AgentsTab
         }
 
         fields.Add("Provider", "Where it runs. The first is the default; a spawn may choose another listed one.", ProviderEditor(draft));
-        var turns = new PromptControl { Input = draft.MaxTurns?.ToString() ?? "", InputWidth = 8 };
+        var turns = ListDetail.Input(new PromptControl { Input = draft.MaxTurns?.ToString() ?? "", InputWidth = 8 });
         turns.InputChanged += (_, t) => draft.MaxTurns = int.TryParse(t.Trim(), out var n) && n >= 0 ? n : null;
         fields.Add("Max turns", draft.IsBuiltin && draft.Shipped?.DefaultMaxTurns is { } d
             ? $"Empty is its shipped {d}; 0 is no limit."
@@ -400,7 +412,7 @@ public sealed class AgentsTab
         if (_draft is not { IsBuiltin: false, IsNew: false, IsGeneral: false } draft) { SetStatus($"[{ColorScheme.MutedMarkup}]Select a type of your own to rename.[/]"); return; }
         var from = draft.Name;
         _detail.ClearContents();
-        var box = new PromptControl { Prompt = "New name: ", Input = from, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var box = ListDetail.Input(new PromptControl { Prompt = "New name: ", Input = from, HorizontalAlignment = HorizontalAlignment.Stretch });
         _detail.AddControl(new MarkupControl([$"[bold]Rename '{MarkupParser.Escape(from)}'[/]", ""]));
         _detail.AddControl(box);
         box.Entered += (_, t) =>

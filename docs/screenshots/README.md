@@ -439,10 +439,11 @@ levels instead — `low` to `max` — and shows its thinking the same way.
 
 ## Configuration, in the app
 
-![The configuration dialog on its Providers tab: the instances on the left with the default starred and the open tab counted, the selected one's endpoint, model, masked key and thinking level beside it](34-configuration.png)
+![The configuration dialog on its Providers tab: the Roles block above the instances, each saying its role and open tabs, the selected one's endpoint, model, masked key and thinking level beside it](34-configuration.png)
 
-`F8` opens one dialog for providers, MCP servers and agent types. The rail lists every instance — `★`
-marks the default, `◆` the auto-mode reviewer, and `· 1 tab` counts the open tabs on it. Beside it, the
+`F8` opens one dialog for providers, MCP servers and agent types. The Roles block at the top picks the
+default instance and the auto-mode reviewer. The rail lists every instance, its second line saying its
+role (`default`, `reviewer`), the open tabs on it (`1 tab`) and its model. Beside it, the
 selected one's fields: the endpoint, the model (`Change…` lists what the endpoint serves), the key —
 `set · …ocal`, its last four characters, never the key — and the thinking level new sessions start at.
 Advanced, folded, holds the rest.

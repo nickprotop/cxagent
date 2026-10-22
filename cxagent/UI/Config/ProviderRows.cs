@@ -36,4 +36,18 @@ public static class ProviderRows
     public static string PresetLabel(ProviderInstanceConfig cfg) =>
         ProviderKindCatalog.Presets.FirstOrDefault(p => p.Kind == cfg.Kind && p.BaseUrl == cfg.BaseUrl)?.DisplayName
         ?? cfg.Kind;
+
+    /// <summary>
+    /// The row's second line: its roles in words, then how many tabs use it, then its model. Words, not
+    /// ★ and ◆: a mark needs a legend nobody has, and the Roles block above names the same two roles.
+    /// </summary>
+    public static string Describe(ProviderRow row)
+    {
+        var parts = new List<string>();
+        if (row.IsDefault) parts.Add("default");
+        if (row.IsReviewer) parts.Add("reviewer");
+        if (row.Tabs > 0) parts.Add($"{row.Tabs} tab{(row.Tabs == 1 ? "" : "s")}");
+        parts.Add(row.Model);
+        return string.Join(" · ", parts);
+    }
 }

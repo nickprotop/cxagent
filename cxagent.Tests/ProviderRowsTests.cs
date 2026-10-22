@@ -30,4 +30,15 @@ public class ProviderRowsTests
     public void TheUnsavedRow_IsMarked() =>
         Assert.True(ProviderRows.For(Settings(), new Dictionary<string, int>(), "claude")
             .Single(r => r.Name == "claude").Unsaved);
+
+    [Fact]
+    public void TheSecondLine_SaysTheRolesInWords_ThenTabs_ThenTheModel()
+    {
+        Assert.Equal("default · 2 tabs · qwen",
+            ProviderRows.Describe(new ProviderRow("local", "qwen", "Ollama", true, false, 2, false)));
+        Assert.Equal("reviewer · claude-opus-5-5",
+            ProviderRows.Describe(new ProviderRow("claude", "claude-opus-5-5", "Anthropic", false, true, 0, false)));
+        Assert.Equal("1 tab · m",
+            ProviderRows.Describe(new ProviderRow("x", "m", "k", false, false, 1, false)));
+    }
 }

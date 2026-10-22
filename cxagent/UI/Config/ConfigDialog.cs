@@ -100,35 +100,56 @@ public static class ConfigDialog
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Fill,
         };
+        // THE FILE THIS EDITS, on a line of its own under the tabs: a path is long, and sharing a row with
+        // the hints cut it mid-way, which reads as a different path.
+        var configPath = Path.Combine(host.Apply.Paths.ConfigDir, "config.json");
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var pathLines = new List<MarkupControl>();
+
         _providers = new ProvidersTab(host, () => _window);
-        _tabs.AddTab("Providers", _providers.Content);
+        _tabs.AddTab("Providers", WithPath(_providers.Content));
         _mcp = new McpTab(host, () => _window);
-        _tabs.AddTab("MCP servers", _mcp.Content);
+        _tabs.AddTab("MCP servers", WithPath(_mcp.Content));
         _agents = new AgentsTab(host, () => _window);
-        _tabs.AddTab("Agents", _agents.Content);
+        _tabs.AddTab("Agents", WithPath(_agents.Content));
         window.AddControl(_tabs);
 
-        window.AddControl(new RuleControl
+        // ONE FOOTER FOR THE DIALOG, HOSTING THE TAB IN FRONT: its own Revert and Save — their text, their
+        // state — then Close. Esc is named and Close is clickable: the key is the fast path, the button
+        // the discoverable one.
+        var close = Controls.Button(" Close ").OnClick((_, _) => CloseIfOpen()).Build();
+        var footer = DialogLook.Footer("Saved changes apply at once · Esc closes");
+        window.AddControl(footer.Rule);
+        window.AddControl(footer.Row);
+        void HostActions()
         {
-            StickyPosition = StickyPosition.Bottom,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-        });
+            footer.Buttons.Clear();
+            foreach (var b in ActiveActions()) footer.Buttons.AddItem(b);
+            footer.Buttons.AddItem(close);
+            MarkActiveSave();
+        }
+        _tabs.TabChanged += (_, _) => HostActions();
 
-        // THE STATUS BAR: what this edits, and how to leave. Esc is named and Close is clickable — the
-        // key is the fast path, the button the discoverable one.
-        var status = new MarkupControl([
-            // THE PATH LAST: it is the long part, and the end of the line is what a narrow window cuts.
-            $"[{ColorScheme.MutedMarkup}]Saved changes apply at once · Esc closes · {MarkupParser.Escape(Path.Combine(host.Apply.Paths.ConfigDir, "config.json"))}[/]",
-        ]) { Wrap = false };
-        var statusBar = new HorizontalGridControl { HorizontalAlignment = HorizontalAlignment.Stretch };
-        var statusColumn = new ColumnContainer(statusBar) { Width = width - 14 };
-        statusColumn.AddContent(status);
-        statusBar.AddColumn(statusColumn);
-        var closeColumn = new ColumnContainer(statusBar);
-        closeColumn.AddContent(Controls.Button("  Close  ").OnClick((_, _) => CloseIfOpen()).Build());
-        statusBar.AddColumn(closeColumn);
-        statusBar.StickyPosition = StickyPosition.Bottom;
-        window.AddControl(statusBar);
+        void FitPath()
+        {
+            var room = Math.Max(8, window.Width - 2 - 4);
+            foreach (var line in pathLines)
+                line.SetContent([$"[{DialogLook.Palette.Muted.ToMarkup()}]{MarkupParser.Escape(ListDetail.ElidePath(configPath, home, room))}[/]"]);
+        }
+        window.OnResize += (_, _) => FitPath();
+
+        IWindowControl WithPath(IWindowControl content)
+        {
+            var wrap = new GridControl { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Fill };
+            wrap.ColumnDefinitions.Add(GridLength.Star(1));
+            wrap.RowDefinitions.Add(GridLength.Cells(1));
+            wrap.RowDefinitions.Add(GridLength.Star(1));
+            var line = new MarkupControl([""]) { Wrap = false, HorizontalAlignment = HorizontalAlignment.Right };
+            pathLines.Add(line);
+            wrap.Place(line, 0, 0);
+            wrap.Place(content, 1, 0);
+            return wrap;
+        }
 
         if (_placement is { } seen) { window.Left = seen.Left; window.Top = seen.Top; }
 
@@ -136,6 +157,8 @@ public static class ConfigDialog
         // this dialog is up, so the key reaches this window.
         window.KeyPressed += (_, e) =>
         {
+            // AFTER THE KEY HAS LANDED, so an edit it made is what Save's colour reflects.
+            ws.EnqueueOnUIThread(MarkActiveSave, "configDialog.MarkSave");
             if (e.KeyInfo.Key != ConsoleKey.S || e.KeyInfo.Modifiers != ConsoleModifiers.Control) return;
             switch (_tabs?.ActiveTabIndex)
             {
@@ -165,6 +188,8 @@ public static class ConfigDialog
         _window = window;
         ws.AddWindow(window);
         SwitchTo(firstRun ? ConfigTab.Providers : tab ?? _lastTab);
+        HostActions();
+        FitPath();
         ws.SetActiveWindow(window);
         // FIRST RUN OPENS ON THE CARDS, focused: there is nothing to select yet, and choosing where the
         // model runs is the one thing to do. Shown once the window is up, so a card can take focus.
@@ -202,6 +227,23 @@ public static class ConfigDialog
         var answer = await ConfirmDialog.AskAsync(host.System, $"Unsaved changes to '{name}'",
             ["Closing drops what you changed and did not save."], ["Keep editing", "Discard and close"]);
         if (answer == "Discard and close") window.Close();
+    }
+
+    private static IReadOnlyList<ButtonControl> ActiveActions() => _tabs?.ActiveTabIndex switch
+    {
+        1 => _mcp?.Actions ?? [],
+        2 => _agents?.Actions ?? [],
+        _ => _providers?.Actions ?? [],
+    };
+
+    private static void MarkActiveSave()
+    {
+        switch (_tabs?.ActiveTabIndex)
+        {
+            case 1: _mcp?.MarkSave(); break;
+            case 2: _agents?.MarkSave(); break;
+            default: _providers?.MarkSave(); break;
+        }
     }
 
     private static void SwitchTo(ConfigTab tab)

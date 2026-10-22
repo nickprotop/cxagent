@@ -79,8 +79,11 @@ public static class ListDetail
     {
         var p = DialogLook.Palette;
         var grid = new GridControl { HorizontalAlignment = HorizontalAlignment.Stretch };
-        grid.ColumnDefinitions.Add(GridLength.Star(1));
-        grid.ColumnDefinitions.Add(GridLength.Auto());
+        // THE ACTIONS TAKE WHAT THEY NEED, THE NAME THE REST. Sized from the labels, because the grid
+        // measures a toolbar as the whole row in an Auto track and leaves the name a column of nothing;
+        // in two equal tracks a long action list is cut instead.
+        grid.ColumnDefinitions.Add(GridLength.Star(1, min: Math.Min(name.Length, 12)));
+        grid.ColumnDefinitions.Add(GridLength.Cells(actions.Sum(a => a.Text.Length + 2) + actions.Length));
         grid.RowDefinitions.Add(GridLength.Cells(1));
         grid.RowDefinitions.Add(GridLength.Cells(1));
         grid.RowDefinitions.Add(GridLength.Cells(1));

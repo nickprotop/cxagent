@@ -377,9 +377,10 @@ masked, never shown again — only `set · …` and its last four characters), t
 the endpoint serves with each one's window and, on OpenRouter, its price, and the thinking level new
 sessions start at. Advanced holds the context window, sub-agent limit, prompt caching, the OpenAI
 reasoning switch, thinking display and extra headers. Save first asks the endpoint for its models — no
-tokens spent — and offers *Save anyway* when it does not answer. The toolbar sets the default (★) and the
-auto-mode reviewer (◆), renames an instance — every reference follows — and removes one, which is
-refused while a tab is on it.
+tokens spent — and offers *Save anyway* when it does not answer. The **Roles** block at the top of the tab
+picks the default instance (where new sessions and sub-agents start) and the auto-mode reviewer; choosing
+*none* for the reviewer turns auto mode off. Both save at once. Rename and Remove sit beside the selected
+instance's name: a rename carries every reference with it, and a removal is refused while a tab is on it.
 
 **What a save does to open tabs.** Anything the model cannot see — a new key, new headers, a
 rename, the reviewer, the default — applies in place and keeps every tab's prompt cache. A change to the

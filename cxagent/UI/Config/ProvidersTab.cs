@@ -50,45 +50,129 @@ public sealed class ProvidersTab
         _root = new GridControl { VerticalAlignment = VerticalAlignment.Fill, HorizontalAlignment = HorizontalAlignment.Stretch };
         _root.ColumnDefinitions.Add(GridLength.Cells(RailCells, min: 22));
         _root.ColumnDefinitions.Add(GridLength.Star(1));
+        _root.RowDefinitions.Add(GridLength.Cells(4));   // Roles: two rows and the panel's border
         _root.RowDefinitions.Add(GridLength.Cells(1));   // the toolbar
+        _root.RowDefinitions.Add(GridLength.Cells(1));   // a rule closing the toolbar off from the list
         _root.RowDefinitions.Add(GridLength.Star(1));    // rail | detail
-        _root.RowDefinitions.Add(GridLength.Cells(1));   // a rule over the pinned actions
         _root.RowDefinitions.Add(GridLength.Cells(2));   // status — two lines, so a long one is not cut
-        _root.RowDefinitions.Add(GridLength.Cells(1));   // Revert · Save
 
+        _root.Place(BuildRoles(), 0, 0, colSpan: 2);
+
+        // ONLY WHAT DOES NOT ACT ON THE SELECTION. Rename and Remove sit in the detail's header, beside
+        // the instance they act on; the roles are chosen in the block above.
         Toolbar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         Toolbar.AddItem(Controls.Button(" + Add ").OnClick((_, _) => ShowGallery()).Build());
-        Toolbar.AddItem(Controls.Button(" ★ Default ").OnClick((_, _) => _ = MakeDefaultAsync()).Build());
-        Toolbar.AddItem(Controls.Button(" ◆ Reviewer ").OnClick((_, _) => _ = ToggleReviewerAsync()).Build());
-        Toolbar.AddItem(Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build());
-        Toolbar.AddItem(Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build());
-        _root.Place(Toolbar, 0, 0, colSpan: 2);
+        _root.Place(Toolbar, 1, 0, colSpan: 2);
+        _root.Place(DialogLook.Rule(), 2, 0, colSpan: 2);
 
         _rail = new ListControl { VerticalAlignment = VerticalAlignment.Fill, HorizontalAlignment = HorizontalAlignment.Stretch };
         _rail.SelectedIndexChanged += OnRailSelectionChanged;
-        _root.Place(_rail, 1, 0, rowSpan: 4);
-        _root.AddColumnSplitterAfter(0);
+        ListDetail.StyleRail(_rail);
+        _root.Place(_rail, 3, 0, rowSpan: 2);
+        ListDetail.Divider(_root);
 
-        _detail = new ScrollablePanelControl { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Fill };
-        _root.Place(_detail, 1, 1);
+        _detail = new ScrollablePanelControl { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Fill, Margin = ListDetail.DetailInset };
+        _root.Place(_detail, 3, 1);
 
-        // PINNED UNDER THE SCROLL: a long Advanced section must never push Save out of sight.
-        _root.Place(new RuleControl { Color = ColorScheme.MutedRgb }, 2, 1);
-        _status = new MarkupControl([""]) { Wrap = true };
-        _root.Place(_status, 3, 1);
+        _status = new MarkupControl([""]) { Wrap = true, Margin = ListDetail.DetailInset };
+        _root.Place(_status, 4, 1);
 
+        // REVERT AND SAVE BELONG TO THE TAB, SHOWN IN THE DIALOG'S FOOTER: the footer hosts whichever tab
+        // is in front, so the button a person presses is this tab's own — its "Save anyway", its state.
         _revert = Controls.Button(" Revert ").OnClick((_, _) => Revert()).Build();
-        _save = Controls.Button("  Save  ").OnClick((_, _) => _ = SaveAsync()).Build();
-        var actions = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Right };
-        actions.AddItem(_revert);
-        actions.AddItem(_save);
-        _root.Place(actions, 4, 1);
+        _save = DialogLook.Main(Controls.Button(" Save ").OnClick((_, _) => _ = SaveAsync()).Build(), main: false);
 
         Reload(select: null);
     }
 
+    // ---- the Roles block ---------------------------------------------------------------------------
+
+    private DropdownControl? _defaultPick;
+    private DropdownControl? _reviewerPick;
+
+    // SET WHILE THE DROPDOWNS ARE FILLED FROM THE FILE, so filling them is not read as a person choosing.
+    private bool _fillingRoles;
+
+    /// <summary>
+    /// Which instance new sessions start on, and which reviews actions in auto mode — both in view at
+    /// once, each a list to choose from. Choosing saves at once, through the same edits and with the same
+    /// effect on open sessions as any other save of the file.
+    /// </summary>
+    private IWindowControl BuildRoles()
+    {
+        var p = DialogLook.Palette;
+        var panel = new PanelControl
+        {
+            BorderStyle = BorderStyle.Rounded,
+            Header = " Roles ",
+            BorderColor = p.Rule,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Padding = new Padding(1, 0, 1, 0),
+        };
+        var grid = new GridControl { HorizontalAlignment = HorizontalAlignment.Stretch };
+        grid.ColumnDefinitions.Add(GridLength.Cells(10));
+        grid.ColumnDefinitions.Add(GridLength.Cells(30));
+        grid.ColumnDefinitions.Add(GridLength.Cells(2));
+        // THE HINT IS THE STAR TRACK: a narrow window cuts the explanation, never the dropdown.
+        grid.ColumnDefinitions.Add(GridLength.Star(1));
+        grid.RowDefinitions.Add(GridLength.Cells(1));
+        grid.RowDefinitions.Add(GridLength.Cells(1));
+
+        _defaultPick = new DropdownControl("") { HorizontalAlignment = HorizontalAlignment.Stretch };
+        _reviewerPick = new DropdownControl("") { HorizontalAlignment = HorizontalAlignment.Stretch };
+        _defaultPick.SelectedValueChanged += (_, value) =>
+        {
+            if (_fillingRoles || value is null || _settings is null || value == _settings.DefaultProvider) return;
+            _ = CommitAsync(root => ProviderEdits.SetDefault(root, value),
+                new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true, $"{value} is now the default"),
+                KeepSelection(value), keepDraft: true);
+        };
+        _reviewerPick.SelectedValueChanged += (_, value) =>
+        {
+            if (_fillingRoles || value is null || _settings is null) return;
+            var name = ProviderRoles.ReviewerFrom(value);
+            if (name == _settings.Classifier) return;
+            _ = CommitAsync(root => ProviderEdits.SetReviewer(root, name),
+                new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true,
+                    name is null ? "auto-mode reviewer cleared" : $"{name} now reviews auto mode"),
+                KeepSelection(name ?? ""), keepDraft: true);
+        };
+
+        var muted = p.Muted.ToMarkup();
+        grid.Place(new MarkupControl(["[bold]Default[/]"]), 0, 0);
+        grid.Place(_defaultPick, 0, 1);
+        grid.Place(new MarkupControl([$"[{muted}]New sessions and sub-agents start here.[/]"]) { Wrap = false }, 0, 3);
+        grid.Place(new MarkupControl(["[bold]Reviewer[/]"]), 1, 0);
+        grid.Place(_reviewerPick, 1, 1);
+        grid.Place(new MarkupControl([$"[{muted}]Reviews actions in /mode edits auto. None: auto mode is not offered.[/]"]) { Wrap = false }, 1, 3);
+        panel.AddControl(grid);
+        return panel;
+    }
+
+    // THE ROW BEING EDITED STAYS SELECTED: choosing a role is not a reason to jump the rail elsewhere.
+    private string KeepSelection(string fallback) => _draft is { IsNew: false } d ? d.Name : fallback;
+
+    private void FillRoles()
+    {
+        if (_defaultPick is null || _reviewerPick is null || _settings is null) return;
+        _fillingRoles = true;
+        try
+        {
+            _defaultPick.ClearItems();
+            foreach (var n in ProviderRoles.DefaultChoices(_settings)) _defaultPick.AddItem(n);
+            _defaultPick.SelectedIndex = ProviderRoles.DefaultIndex(_settings);
+            _reviewerPick.ClearItems();
+            foreach (var n in ProviderRoles.ReviewerChoices(_settings)) _reviewerPick.AddItem(n);
+            _reviewerPick.SelectedIndex = ProviderRoles.ReviewerIndex(_settings);
+        }
+        finally { _fillingRoles = false; }
+    }
+
     /// <summary>The tab's content.</summary>
     public IWindowControl Content => _root;
+
+    /// <summary>Revert and Save, for the dialog's footer to host while this tab is in front.</summary>
+    public IReadOnlyList<ButtonControl> Actions => [_revert, _save];
 
     /// <summary>The actions on the selected instance; the dialog's other parts add to it.</summary>
     public ToolbarControl Toolbar { get; }
@@ -135,6 +219,7 @@ public sealed class ProvidersTab
 
         _save.IsEnabled = true;
         _revert.IsEnabled = true;
+        FillRoles();
         FillRail(select ?? _draft?.Name);
     }
 
@@ -167,23 +252,20 @@ public sealed class ProvidersTab
         else
         {
             _draft = null;
-            ShowLines([$"[{ColorScheme.MutedMarkup}]No providers yet. + Add picks where your model runs.[/]"]);
+            _detail.ClearContents();
+            _detail.AddControl(ListDetail.Empty("No providers yet", "+ Add picks where your model runs"));
+            MarkSave();
         }
+        ListDetail.Mark(_rail);
     }
 
     /// <summary>
-    /// Two lines: the name and its markers, then the model. ★ default, ◆ reviews auto mode, ● unsaved,
-    /// and the open tabs on it — the facts that decide what a save or a removal will touch.
+    /// Two lines: the name, with ● when it has unsaved edits, then <see cref="ProviderRows.Describe"/> —
+    /// its roles in words, the open tabs on it, its model: the facts that decide what a save or a removal
+    /// will touch.
     /// </summary>
-    private static string RowText(ProviderRow row)
-    {
-        var marks = string.Concat(
-            row.Unsaved ? $" [{ColorScheme.CautionMarkup}]●[/]" : "",
-            row.IsDefault ? " ★" : "",
-            row.IsReviewer ? " ◆" : "",
-            row.Tabs > 0 ? $" [{ColorScheme.MutedMarkup}]· {row.Tabs} tab{(row.Tabs == 1 ? "" : "s")}[/]" : "");
-        return $"[bold]{MarkupParser.Escape(row.Name)}[/]{marks}\n[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(row.Model)}[/]";
-    }
+    private static string RowText(ProviderRow row) =>
+        $"[bold]{MarkupParser.Escape(row.Name)}[/]{(row.Unsaved ? $" [{ColorScheme.CautionMarkup}]●[/]" : "")}\n[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(ProviderRows.Describe(row))}[/]";
 
     private static string NewRowText(ProviderRow row) =>
         $"[bold]{MarkupParser.Escape(row.Name)}[/] [{ColorScheme.CautionMarkup}]new[/]\n[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(row.Model.Length > 0 ? row.Model : "no model yet")}[/]";
@@ -234,8 +316,9 @@ public sealed class ProvidersTab
         if (_settings is null || !_settings.Providers.TryGetValue(name, out var cfg)) return;
         if (_draft?.Name != name) _draft = new InstanceDraft(name, cfg);
         _saveAnyway = false;
-        _save.Text = "  Save  ";
+        _save.Text = " Save ";
         BuildDetail(_draft);
+        MarkSave();
         SetStatus(TabsLine(name));
     }
 
@@ -249,17 +332,21 @@ public sealed class ProvidersTab
     {
         _detail.ClearContents();
         var preset = draft.IsNew ? _addingFrom?.DisplayName ?? draft.Original.Kind : ProviderRows.PresetLabel(draft.Original);
-        _detail.AddControl(new MarkupControl([
-            $"[bold]{MarkupParser.Escape(draft.IsNew ? "New provider" : draft.Name)}[/]  [{ColorScheme.MutedMarkup}]{MarkupParser.Escape(preset == draft.Original.Kind ? preset : $"{preset} · {draft.Original.Kind}")}[/]",
-            "",
-        ]));
+        var subtitle = preset == draft.Original.Kind ? preset : $"{preset} · {draft.Original.Kind}";
+        // RENAME AND REMOVE BESIDE WHAT THEY ACT ON. A provider not yet saved has neither: it has no name
+        // to move yet, and leaving it is Revert.
+        _detail.AddControl(draft.IsNew
+            ? ListDetail.Header("New provider", subtitle)
+            : ListDetail.Header(draft.Name, subtitle,
+                DialogLook.Main(Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build()),
+                Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build()));
 
         var fields = new FieldGrid();
 
         // THE NAME IS SET ONCE, HERE. After this it is renamed with Rename, which moves every reference.
         if (draft.IsNew)
         {
-            var nameBox = new PromptControl { Input = draft.Name, HorizontalAlignment = HorizontalAlignment.Stretch };
+            var nameBox = ListDetail.Input(new PromptControl { Input = draft.Name, HorizontalAlignment = HorizontalAlignment.Stretch });
             _firstField = nameBox;
             nameBox.InputChanged += (_, text) => { draft.Name = text.Trim(); Changed(); };
             fields.Add("Name", "What /model, the rail and agent types call it. Letters, digits, - and _.", nameBox);
@@ -273,7 +360,7 @@ public sealed class ProvidersTab
         if (_addingFrom?.Id == "llamacpp")
             _detail.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]Thinking on/off is read from the server's chat template once it answers.[/]", ""]) { Wrap = true });
 
-        var url = new PromptControl { Input = draft.BaseUrl ?? "", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var url = ListDetail.Input(new PromptControl { Input = draft.BaseUrl ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
         url.InputChanged += (_, text) => { draft.BaseUrl = text; Changed(); };
         fields.Add("Endpoint", draft.Original.Kind == "anthropic"
             ? "Anthropic's own unless set — a gateway in front of it goes here."
@@ -281,7 +368,7 @@ public sealed class ProvidersTab
 
         fields.Add("Model", "The model id this instance sends requests to.", ModelEditor(draft));
 
-        var description = new PromptControl { Input = draft.Description ?? "", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var description = ListDetail.Input(new PromptControl { Input = draft.Description ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
         description.InputChanged += (_, text) => { draft.Description = text; Changed(); };
         fields.Add("Description", "One line: what this entry is for, and whether it is free or paid. The model reads it when choosing where a sub-agent runs.", description);
         fields.Add("API key", "Stored in config.json, readable only by you. Never shown again once saved.", KeyEditor(draft));
@@ -316,8 +403,7 @@ public sealed class ProvidersTab
         var stack = new FieldGrid();
         var line = new MarkupControl([MarkupParser.Escape(draft.Model)]);
         var change = Controls.Button(" Change… ").OnClick((_, _) => _ = PickModelAsync()).Build();
-        stack.AddBare(line);
-        stack.AddBare(change);
+        stack.AddBare(Inline(line, change));
         return stack.Control;
 
         async Task PickModelAsync()
@@ -337,7 +423,7 @@ public sealed class ProvidersTab
     {
         var stack = new FieldGrid();
         var line = new MarkupControl([SecretLine(draft)]);
-        var entry = new PromptControl { MaskCharacter = '•', Visible = false, HorizontalAlignment = HorizontalAlignment.Stretch, Prompt = "New key: " };
+        var entry = ListDetail.Input(new PromptControl { MaskCharacter = '•', Visible = false, HorizontalAlignment = HorizontalAlignment.Stretch, Prompt = "New key: " });
         entry.InputChanged += (_, text) => { draft.NewApiKey = text; draft.ClearApiKey = false; line.SetContent([SecretLine(draft)]); Changed(); };
 
         var set = Controls.Button(" Set… ").OnClick((_, _) => { entry.Visible = true; entry.Input = ""; }).Build();
@@ -349,14 +435,18 @@ public sealed class ProvidersTab
             line.SetContent([SecretLine(draft)]);
             Changed();
         }).Build();
-        var buttons = new ToolbarControl { ItemSpacing = 1 };
-        buttons.AddItem(set);
-        buttons.AddItem(clear);
-
-        stack.AddBare(line);
-        stack.AddBare(buttons);
+        stack.AddBare(Inline(line, set, clear));
         stack.AddBare(entry);
         return stack.Control;
+    }
+
+    /// <summary>A value with its buttons on its own row: the button is read as acting on that value.</summary>
+    private static IWindowControl Inline(MarkupControl value, params ButtonControl[] buttons)
+    {
+        var row = new ToolbarControl { ItemSpacing = 3, HorizontalAlignment = HorizontalAlignment.Left };
+        row.AddItem(value);
+        foreach (var b in buttons) row.AddItem(b);
+        return row;
     }
 
     private static string SecretLine(InstanceDraft draft) =>
@@ -418,7 +508,7 @@ public sealed class ProvidersTab
 
     private IWindowControl NumberEditor(int? value, Action<int?> set)
     {
-        var prompt = new PromptControl { Input = value?.ToString() ?? "", InputWidth = 12 };
+        var prompt = ListDetail.Input(new PromptControl { Input = value?.ToString() ?? "", InputWidth = 12 });
         prompt.InputChanged += (_, text) =>
         {
             set(int.TryParse(text.Trim(), out var n) && n > 0 ? n : null);
@@ -453,14 +543,19 @@ public sealed class ProvidersTab
     /// <summary>A field changed: the rail's dot, and a "Save anyway" that no longer applies.</summary>
     private void Changed()
     {
-        if (_saveAnyway) { _saveAnyway = false; _save.Text = "  Save  "; }
+        if (_saveAnyway) { _saveAnyway = false; _save.Text = " Save "; }
         if (_settings is not null && _draft is not null)
         {
             var rows = ProviderRows.For(_settings, TabsByInstance(), _draft.IsDirty ? _draft.Name : null);
             var i = rows.ToList().FindIndex(r => r.Name == _draft.Name);
-            if (i >= 0 && _rail.Items.ElementAtOrDefault(i) is { } item) item.Text = RowText(rows[i]);
+            if (i >= 0 && _rail.Items.ElementAtOrDefault(i) is { } item) { item.Text = RowText(rows[i]); ListDetail.Mark(_rail); }
         }
+        MarkSave();
     }
+
+    // THE ACCENT ONLY WHEN THERE IS SOMETHING TO SAVE: an accent Save on an untouched instance points
+    // at a button that does nothing.
+    public void MarkSave() => DialogLook.Main(_save, _draft?.IsDirty == true);
 
     private void SetStatus(string markup) => _status.SetContent([markup]);
 
@@ -487,38 +582,12 @@ public sealed class ProvidersTab
         return _draft.Name;
     }
 
-    /// <summary>
-    /// Every session refreshes what the default decides — the sub-agent limit — in place; nobody moves,
-    /// because a running tab is on its own instance, not on "the default".
-    /// </summary>
-    private async Task MakeDefaultAsync()
-    {
-        if (Selected() is not { } name) return;
-        if (_settings!.DefaultProvider == name) { SetStatus($"[{ColorScheme.MutedMarkup}]'{MarkupParser.Escape(name)}' is already the default.[/]"); return; }
-        await CommitAsync(root => ProviderEdits.SetDefault(root, name),
-            new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true, $"{name} is now the default"), name);
-    }
-
-    /// <summary>
-    /// On the reviewer it clears (auto mode is then not offered); on any other instance it makes that one
-    /// the reviewer. Set on each session's policy in place — the reviewer's requests are its own, so no
-    /// tab's cache is touched.
-    /// </summary>
-    private async Task ToggleReviewerAsync()
-    {
-        if (Selected() is not { } name) return;
-        var clearing = _settings!.Classifier == name;
-        await CommitAsync(root => ProviderEdits.SetReviewer(root, clearing ? null : name),
-            new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true,
-                clearing ? "auto-mode reviewer cleared" : $"{name} now reviews auto mode"), name);
-    }
-
     /// <summary>The new name, asked in the pane; Enter renames, a clash is said beside it.</summary>
     private void ShowRename()
     {
         if (Selected() is not { } from) return;
         _detail.ClearContents();
-        var box = new PromptControl { Prompt = "New name: ", Input = from, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var box = ListDetail.Input(new PromptControl { Prompt = "New name: ", Input = from, HorizontalAlignment = HorizontalAlignment.Stretch });
         _detail.AddControl(new MarkupControl([
             $"[bold]Rename '{MarkupParser.Escape(from)}'[/]",
             $"[{ColorScheme.MutedMarkup}]Every reference moves with it — the default, the reviewer, agent types — and tabs on it follow the new name.[/]",
@@ -697,7 +766,7 @@ public sealed class ProvidersTab
     /// Writes the edit off the UI thread, asks how to treat the tabs whose cache it would break, then makes
     /// it live — the one path every save on this tab takes.
     /// </summary>
-    internal async Task CommitAsync(Action<System.Text.Json.Nodes.JsonObject> edit, ConfigChange change, string select)
+    internal async Task CommitAsync(Action<System.Text.Json.Nodes.JsonObject> edit, ConfigChange change, string select, bool keepDraft = false)
     {
         var prepared = await Task.Run(() => ConfigApply.Prepare(_host.Apply, edit));
         var done = new TaskCompletionSource();
@@ -715,7 +784,7 @@ public sealed class ProvidersTab
                 // whether that session is still unwired and this tab does not.
                 if (prepared.Fresh is { } wired && _host.WireFirst is { } wireFirst)
                     wireFirst(wired);
-                Saved(prepared.Write, select, change);
+                Saved(prepared.Write, select, change, keepDraft);
                 // A SIDE EFFECT THE USER SHOULD SEE: an agent type this save disabled — a provider's new
                 // model no longer matching a type's pin, say — said with the save itself.
                 if (prepared.NewlyDisabled.Count > 0)
@@ -727,7 +796,7 @@ public sealed class ProvidersTab
     }
 
     /// <summary>After a write: the errors beside the field, or the rail rebuilt from the new file.</summary>
-    internal void Saved(ConfigWrite result, string select, ConfigChange change)
+    internal void Saved(ConfigWrite result, string select, ConfigChange change, bool keepDraft = false)
     {
         if (!result.Saved)
         {
@@ -735,7 +804,10 @@ public sealed class ProvidersTab
             return;
         }
 
-        _draft = null;
+        // A ROLE IS NOT THE INSTANCE BEING EDITED. Choosing a default or a reviewer writes the file, but
+        // the fields typed into the instance on screen are still unsaved, and dropping them would lose
+        // them for a choice made somewhere else on the screen.
+        if (!keepDraft) _draft = null;
         Reload(select);
         FocusRail();
         // WHAT HAPPENED TO THE OPEN TABS, in the terms that cost something: a change no model sees is
