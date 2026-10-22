@@ -502,4 +502,59 @@ public class PluginInstallerTests : IDisposable
 
         Assert.IsType<InstallResult.Refused>(result);
     }
+
+    /// <summary>
+    /// AN OFFICIAL PLUGIN NAMED LIKE A STORE would be installed into that store's folder, and an install
+    /// replaces its destination recursively — every plugin installed from the store would go with it.
+    /// </summary>
+    [Fact]
+    public async Task AnOfficialInstall_IntoAStoresFolder_IsRefused_AndDeletesNothing()
+    {
+        var (zip, sha) = MakeZip();
+        var storePlugin = Path.Combine(_dir, "demo", "jira", "jira.plugin.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(storePlugin)!);
+        File.WriteAllText(storePlugin, "{}");
+        File.WriteAllText(Path.Combine(_dir, "demo", CxAgent.Core.Plugins.PluginStores.Marker), "");
+
+        var result = await new PluginInstaller(new HttpClient(new Serves(zip))).InstallAsync(Entry(sha), _dir, default);
+
+        var reason = Assert.IsType<InstallResult.Refused>(result).Reason;
+        Assert.Contains("store 'demo'", reason);
+        Assert.Contains("would delete", reason);
+        Assert.True(File.Exists(storePlugin));
+    }
+
+    /// <summary>
+    /// A STORE NAMED LIKE AN INSTALLED PLUGIN would mark that plugin's folder as the store's, and from
+    /// then on the plugin is never found by its name: the search skips a store's folder.
+    /// </summary>
+    [Fact]
+    public async Task AStoreInstall_IntoAnUnmarkedPluginFolder_IsRefused_AndMarksNothing()
+    {
+        var (zip, sha) = MakeZip();
+        Directory.CreateDirectory(Path.Combine(_dir, "acme"));
+        File.WriteAllText(Path.Combine(_dir, "acme", "acme.plugin.json"), "{}");
+
+        var result = await new PluginInstaller(new HttpClient(new Serves(zip)))
+            .InstallAsync(Entry(sha) with { Store = "acme" }, _dir, default);
+
+        var reason = Assert.IsType<InstallResult.Refused>(result).Reason;
+        Assert.Contains("store 'acme'", reason);
+        Assert.Contains("Uninstall", reason);
+        Assert.False(File.Exists(Path.Combine(_dir, "acme", CxAgent.Core.Plugins.PluginStores.Marker)));
+        Assert.False(Directory.Exists(Path.Combine(_dir, "acme", "demo")));
+    }
+
+    /// <summary>A folder of the store's name holding no plugin hides nothing, so the store's install goes ahead.</summary>
+    [Fact]
+    public async Task AStoreInstall_IntoAnUnmarkedFolderWithNoPlugin_Installs()
+    {
+        var (zip, sha) = MakeZip();
+        Directory.CreateDirectory(Path.Combine(_dir, "acme"));
+
+        var result = await new PluginInstaller(new HttpClient(new Serves(zip)))
+            .InstallAsync(Entry(sha) with { Store = "acme" }, _dir, default);
+
+        Assert.IsType<InstallResult.Installed>(result);
+    }
 }

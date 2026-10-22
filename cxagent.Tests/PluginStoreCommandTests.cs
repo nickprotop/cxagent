@@ -82,4 +82,59 @@ public sealed class PluginStoreCommandTests : IDisposable
         Assert.Contains("acme — https://a/c.json — 1 plugin, read ", list);
         Assert.Contains("beta — https://b/c.json — not read yet", list);
     }
+
+    /// <summary>
+    /// A STORE'S PLUGINS GO INTO plugins/&lt;store&gt;/, the folder an official plugin of that name has,
+    /// so a name already taken there — by an installed plugin's folder, in either plugins folder, or by
+    /// a plugin the official catalog lists — is refused before anything is read or written.
+    /// </summary>
+    [Theory]
+    [InlineData("global")]
+    [InlineData("project")]
+    public async Task Add_RefusesANameAnInstalledPluginsFolderHas(string scope)
+    {
+        var project = Path.Combine(_dir, "repo");
+        var plugins = scope == "global" ? PluginResolver.GlobalFolder(_dir) : PluginResolver.ProjectFolder(project);
+        Directory.CreateDirectory(Path.Combine(plugins, "repo-map"));
+        File.WriteAllText(Path.Combine(plugins, "repo-map", "repo-map.plugin.json"), "{}");
+
+        var reply = await PluginStoreCommand.RunAsync(new StoreCommandRequest(
+            "store add repo-map https://a/c.json", Config, _dir,
+            Http(("https://a/c.json", CatalogSetTests.Catalog("jira-search")))) { ProjectDirectory = project }, default);
+
+        Assert.StartsWith("store 'repo-map' was not added: ", reply);
+        Assert.Contains(Path.Combine(plugins, "repo-map"), reply);
+        Assert.Contains("another name", reply);
+        Assert.Empty(PluginStores.ReadFile(Config));
+    }
+
+    /// <summary>A store folder already marked is that store's own, from an earlier add: adding it again is fine.</summary>
+    [Fact]
+    public async Task Add_AcceptsANameWhoseFolderIsAlreadyThatStores()
+    {
+        var store = Path.Combine(PluginResolver.GlobalFolder(_dir), "acme");
+        Directory.CreateDirectory(Path.Combine(store, "jira-search"));
+        File.WriteAllText(Path.Combine(store, PluginStores.Marker), "");
+        File.WriteAllText(Path.Combine(store, "jira-search", "jira-search.plugin.json"), "{}");
+
+        var reply = await Run("store add acme https://a/c.json",
+            Http(("https://a/c.json", CatalogSetTests.Catalog("jira-search"))));
+
+        Assert.StartsWith("store 'acme' added", reply);
+    }
+
+    /// <summary>The official catalog's last good copy is what is asked: no second request just to check a name.</summary>
+    [Fact]
+    public async Task Add_RefusesANameTheOfficialCatalogLists()
+    {
+        File.WriteAllText(CatalogSources.OfficialCache(_dir), CatalogSetTests.Catalog("repo-map"));
+
+        var reply = await Run("store add repo-map https://a/c.json",
+            Http(("https://a/c.json", CatalogSetTests.Catalog("jira-search"))));
+
+        Assert.StartsWith("store 'repo-map' was not added: ", reply);
+        Assert.Contains("official catalog", reply);
+        Assert.Contains("another name", reply);
+        Assert.Empty(PluginStores.ReadFile(Config));
+    }
 }

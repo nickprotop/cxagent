@@ -41,6 +41,20 @@ public sealed partial class PluginInstaller(HttpClient? client = null)
     private static readonly HttpClient Shared = new();
     private readonly HttpClient _client = client ?? Shared;
 
+    /// <summary>
+    /// Whether <paramref name="folder"/> is a plugin's own folder — it holds a sidecar at its top level
+    /// and is not marked as a store's — which a store of the same name must not take over. One
+    /// definition, so <c>/plugin store add</c> refuses the name the installer would refuse to install into.
+    ///
+    /// <para>THE TOP LEVEL ONLY, because that is where an installed plugin's sidecar is and the only level
+    /// the plain search reads in a plugin's folder. A folder of the store's name holding no plugin hides
+    /// nothing, so a store may still use it.</para>
+    /// </summary>
+    public static bool HoldsUnmarkedPlugin(string folder) =>
+        Directory.Exists(folder)
+        && !PluginStores.IsStoreFolder(folder)
+        && Directory.EnumerateFiles(folder, "*.plugin.json").Any();
+
     public async Task<InstallResult> InstallAsync(
         CatalogEntry entry, string pluginsFolder, CancellationToken ct)
     {
@@ -76,6 +90,21 @@ public sealed partial class PluginInstaller(HttpClient? client = null)
         if (string.IsNullOrWhiteSpace(download.Sha256))
             return new InstallResult.Refused(
                 $"the catalog carries no checksum for '{entry.Name}', so what arrives cannot be verified.");
+
+        // plugins/<name>/ IS ONE NAMESPACE FOR BOTH KINDS OF FOLDER: an official plugin's own, and a store's
+        // holding that store's plugins. Neither may land on the other. An official install replaces its
+        // destination recursively, so into a store's folder it would delete every plugin installed from
+        // that store; a store install marks its folder, so into a plugin's folder it would hide that
+        // plugin from every search by name, which skips a store's folder.
+        if (entry.Store is null && PluginStores.IsStoreFolder(Path.Combine(pluginsFolder, entry.Name)))
+            return new InstallResult.Refused(
+                $"{Path.Combine(pluginsFolder, entry.Name)} is store '{entry.Name}''s folder, and installing the "
+              + $"official '{entry.Name}' there would delete that store's plugins. Uninstall store "
+              + $"'{entry.Name}''s plugins first to install this one.");
+        if (entry.Store is { } owner && HoldsUnmarkedPlugin(pluginsFolder))
+            return new InstallResult.Refused(
+                $"{pluginsFolder} holds an installed plugin, and installing store '{owner}''s plugins into it "
+              + $"would hide that plugin. Uninstall it first, or remove store '{owner}' and add it under another name.");
 
         // A LOOSE COPY SHADOWS A NESTED ONE, because a plugins folder is searched before its
         // subdirectories. Installing beside it would leave the user running the old copy while the

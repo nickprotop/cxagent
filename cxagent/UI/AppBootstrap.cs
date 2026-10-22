@@ -849,9 +849,9 @@ public static class AppBootstrap
             manager.Commands.RegisterVerb("/plugin",
                 new CommandArgument("store add|remove|list", "manage plugin stores — other catalogs beside the official one",
                     Completes: false),
-                (_, arguments) =>
+                (s, arguments) =>
                 {
-                    FireAndForget.Run(pluginStore.HandleAsync(arguments), "store", mainWindow, system);
+                    FireAndForget.Run(pluginStore.HandleAsync(arguments, s.WorkingDirectory), "store", mainWindow, system);
                     return true;
                 });
         }
