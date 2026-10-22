@@ -85,9 +85,6 @@ public static class CxAgentTheme
                 t.ModalBackgroundColor = dialog.Surface;
                 t.ModalBorderForegroundColor = dialog.ActiveBorder;
                 t.ModalTitleForegroundColor = dialog.Title;
-                // SINGLE, as every cxagent dialog is: a double line only on the library's own would mark
-                // them as from somewhere else.
-                t.UseDoubleLineBorderForModal = false;
                 t.TabHeaderActiveBackgroundColor = dialog.Surface;
                 t.TabHeaderActiveFocusedBackgroundColor = dialog.Surface;
                 t.TabHeaderActiveForegroundColor = dialog.Title;

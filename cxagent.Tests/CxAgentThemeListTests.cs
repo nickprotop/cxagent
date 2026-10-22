@@ -112,10 +112,4 @@ public class CxAgentThemeListTests
             .ToList();
         Assert.True(cyan.Count == 0, string.Join(", ", cyan));
     }
-
-    /// <summary>ONE BORDER STYLE: the library's own modals (Flow questions, pickers) draw single, as every
-    /// cxagent dialog does, not ModernGray's double line.</summary>
-    [Fact]
-    public void LibraryModals_UseTheSingleBorder() =>
-        Assert.False(Installed().UseDoubleLineBorderForModal);
 }
