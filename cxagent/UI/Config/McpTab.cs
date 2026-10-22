@@ -215,12 +215,14 @@ public sealed class McpTab
         else if (row.State == McpState.NeedsLogin)
             _detail.AddControl(new MarkupControl([$"[{ColorScheme.CautionMarkup}]◌ this server needs you to log in — Log in, at the top[/]", ""]));
 
-        var fields = new FieldGrid();
+        // GROUPED: where it connects, the secrets it is given, and what is set once, if ever, folded.
+        var connection = new FieldGrid();
+        var secrets = new FieldGrid();
         if (draft.IsNew)
         {
             var nameBox = ListDetail.Input(new PromptControl { Input = draft.Name, HorizontalAlignment = HorizontalAlignment.Stretch });
             nameBox.InputChanged += (_, text) => { draft.Name = text.Trim(); Changed(); };
-            fields.Add("Name", "What /mcp and the tool names call it.", nameBox);
+            connection.Add("Name", "What /mcp and the tool names call it.", nameBox);
             _firstField = nameBox;
         }
 
@@ -228,20 +230,19 @@ public sealed class McpTab
         {
             var url = ListDetail.Input(new PromptControl { Input = draft.Url ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
             url.InputChanged += (_, text) => { draft.Url = text; Changed(); };
-            fields.Add("URL", "The server's MCP endpoint.", url);
-            fields.Add("Headers", "Sent with every request — where a token usually goes. Values are never shown again.",
+            connection.Add("URL", "The server's MCP endpoint.", url);
+            secrets.Add("Headers", "Sent with every request — where a token usually goes. Values are never shown again.",
                 SecretsEditor(draft.Original.Headers, () => draft.NewHeaders, v => draft.NewHeaders = v));
         }
         else
         {
             var command = ListDetail.Input(new PromptControl { Input = draft.CommandLine, HorizontalAlignment = HorizontalAlignment.Stretch });
             command.InputChanged += (_, text) => { draft.CommandLine = text; Changed(); };
-            fields.Add("Command", "One line, as you would type it — quotes group a word with spaces.", command);
-            fields.Add("Environment", "Set for the server's process — where a token usually goes. Values are never shown again.",
+            connection.Add("Command", "One line, as you would type it — quotes group a word with spaces.", command);
+            secrets.Add("Environment", "Set for the server's process — where a token usually goes. Values are never shown again.",
                 SecretsEditor(draft.Original.Environment, () => draft.NewEnv, v => draft.NewEnv = v));
         }
 
-        var advanced = new CollapsiblePanel { Title = "Advanced", IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch };
         var more = new FieldGrid();
         var cwd = ListDetail.Input(new PromptControl { Input = draft.Cwd ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
         cwd.InputChanged += (_, text) => { draft.Cwd = text; Changed(); };
@@ -249,10 +250,12 @@ public sealed class McpTab
         var timeout = ListDetail.Input(new PromptControl { Input = draft.TimeoutMs?.ToString() ?? "", InputWidth = 12 });
         timeout.InputChanged += (_, text) => { draft.TimeoutMs = int.TryParse(text.Trim(), out var n) && n > 0 ? n : null; Changed(); };
         more.Add("Timeout", "Milliseconds a call may take; empty is the default.", timeout);
-        advanced.AddControl(more.Control);
 
-        _detail.AddControl(fields.Control);
-        _detail.AddControl(advanced);
+        _detail.AddControl(ListDetail.Section("Connection", connection.Control));
+        _detail.AddControl(ListDetail.Gap());
+        _detail.AddControl(ListDetail.Section("Secrets", secrets.Control));
+        _detail.AddControl(ListDetail.Gap());
+        _detail.AddControl(ListDetail.Folded("Advanced", more.Control));
         SetStatus(draft.IsNew ? $"[{ColorScheme.MutedMarkup}]Not saved yet — Save adds it to config.json.[/]" : "");
     }
 

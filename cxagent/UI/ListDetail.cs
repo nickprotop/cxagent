@@ -144,6 +144,52 @@ public static class ListDetail
     private static int Cells(ButtonControl b) => b.Text.Length + 2;
 
     /// <summary>
+    /// A group of fields in a rounded panel, its title on the border. THE TITLE IN THE NORMAL TEXT: in
+    /// the border's own colour it sinks into the line it sits on, and muted it is lost on a dark accent.
+    /// </summary>
+    public static PanelControl Section(string title, IWindowControl body)
+    {
+        var panel = new PanelControl
+        {
+            BorderStyle = BorderStyle.Rounded,
+            Header = $" [{DialogLook.Palette.Foreground.ToMarkup()}]{MarkupParser.Escape(title)}[/] ",
+            BorderColor = DialogLook.Palette.Rule,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Padding = new Padding(1, 0, 1, 0),
+        };
+        panel.AddControl(body);
+        return panel;
+    }
+
+    /// <summary>
+    /// A folded group — the same rounded border once opened, its title the handle. For what is set once,
+    /// if ever, so an open group of it does not push the fields people do change out of sight.
+    ///
+    /// <para>THE DIALOG'S SURFACE WHEN FOCUSED: the panel's own focus fill is the theme's accent, which
+    /// under an opened group is a solid block of it behind every field.</para>
+    /// </summary>
+    public static CollapsiblePanel Folded(string title, IWindowControl body)
+    {
+        var p = DialogLook.Palette;
+        var panel = new CollapsiblePanel
+        {
+            Title = $"[{p.Foreground.ToMarkup()}]{MarkupParser.Escape(title)}[/]",
+            HeaderStyle = CollapsibleHeaderStyle.Rounded,
+            BorderColor = p.Rule,
+            FocusedBackgroundColor = p.Surface,
+            FocusedForegroundColor = p.Foreground,
+            IsExpanded = false,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Padding = new Padding(1, 0, 1, 0),
+        };
+        panel.AddControl(body);
+        return panel;
+    }
+
+    /// <summary>The blank line between two panels.</summary>
+    public static IWindowControl Gap() => new MarkupControl([""]);
+
+    /// <summary>
     /// An empty pane: what is missing in the normal foreground, what to do about it muted under it,
     /// centred — one muted line in a corner reads as a pane that failed to load.
     /// </summary>

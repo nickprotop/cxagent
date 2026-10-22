@@ -32,9 +32,11 @@ namespace CxAgent.Core.Llm;
 /// <param name="CacheControl">
 /// Ask this endpoint to cache the system prompt, by sending a cache_control breakpoint.
 ///
-/// <para>OPT-IN BECAUSE WRITES ARE BILLED. Anthropic charges 1.25x normal input to write a
-/// five-minute cache entry and 2x for an hour; Gemini charges input plus storage. It repays only
-/// when the prefix is reused before expiry, so it must be a decision rather than a default.</para>
+/// <para>ON BY DEFAULT ONLY WHERE IT PAYS (<see cref="DefaultCacheControl"/>). Writes are billed —
+/// Anthropic charges 1.25x normal input for a five-minute entry, reads 0.1x — and in a tool loop the
+/// prefix is reused from the second request, so the write repays at once on the endpoints that cache
+/// nothing unless asked. Elsewhere it is off: a local server caches on its own, and a plain endpoint
+/// ignores the marker or refuses it.</para>
 ///
 /// <para>Needed at all because those providers cache NOTHING without it — measured through
 /// OpenRouter: the same 7,002-token prefix twice gave 0 cached without a breakpoint and 7,002
@@ -70,6 +72,14 @@ public record ProviderInstanceConfig(
     /// transposition compiles cleanly.
     /// </summary>
     public string? Description { get; init; }
+
+    /// <summary>
+    /// Whether an instance that does not say caches its prompt: Anthropic, and OpenRouter — which reaches
+    /// Anthropic and Google models that cache nothing without the marker. Everything else, no.
+    /// </summary>
+    public static bool DefaultCacheControl(string kind, string? baseUrl) =>
+        kind == "anthropic"
+        || (baseUrl?.Contains("openrouter.ai", StringComparison.OrdinalIgnoreCase) ?? false);
 }
 
 public record RoutingTarget(string Provider, string Model);
@@ -828,10 +838,11 @@ public static class ProviderConfigLoader
                         && mca.ValueKind == JsonValueKind.Number && mca.GetInt32() > 0
                         ? mca.GetInt32() : null;
 
-                    // ABSENT IS FALSE, and deliberately: a provider that bills for cache writes must
-                    // not be opted in by a config that never mentioned caching.
+                    // ABSENT IS THE KIND'S DEFAULT, an explicit value always wins: see DefaultCacheControl.
                     var cacheControl = o.TryGetProperty("cacheControl", out var cc)
-                        && cc.ValueKind == JsonValueKind.True;
+                                       && cc.ValueKind is JsonValueKind.True or JsonValueKind.False
+                        ? cc.ValueKind == JsonValueKind.True
+                        : ProviderInstanceConfig.DefaultCacheControl(kind, baseUrl);
 
                     // INVALID IS AN ERROR, unlike cacheControl's lenient read: a misspelt level silently
                     // ignored is a session that thinks at a level nobody chose, and the user has no way

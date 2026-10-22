@@ -45,4 +45,25 @@ public class PresetGalleryTests
         Assert.Equal("anthropic/claude-sonnet-5-5", fields.Model);
         Assert.NotNull(fields.ExtraHeaders);
     }
+
+    /// <summary>
+    /// A NEW PROVIDER STARTS WHERE ITS KIND DEFAULTS, so the box shows what will happen, and unticking it is
+    /// written: absent would load as the default, which is on for Anthropic and OpenRouter.
+    /// </summary>
+    [Theory]
+    [InlineData("anthropic", true)]
+    [InlineData("openrouter", true)]
+    [InlineData("ollama", false)]
+    [InlineData("llamacpp", false)]
+    public void ANewProvider_StartsWithItsKindsCacheDefault(string id, bool expected) =>
+        Assert.Equal(expected, PresetGallery.DraftFor(ProviderKindCatalog.PresetFor(id), id).CacheControl);
+
+    [Fact]
+    public void UntickingCachingOnANewAnthropic_IsWritten()
+    {
+        var draft = PresetGallery.DraftFor(ProviderKindCatalog.PresetFor("anthropic"), "claude");
+        Assert.Null(draft.ToFields().CacheControl);
+        draft.CacheControl = false;
+        Assert.Equal(false, draft.ToFields().CacheControl);
+    }
 }

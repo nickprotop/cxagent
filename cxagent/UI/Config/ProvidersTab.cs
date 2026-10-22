@@ -107,8 +107,8 @@ public sealed class ProvidersTab
         var panel = new PanelControl
         {
             BorderStyle = compact ? BorderStyle.None : BorderStyle.Rounded,
-            // THE TITLE IN MUTED TEXT, not the border's colour, which all but hides it on its own line.
-            Header = compact ? null : $" [{p.Muted.ToMarkup()}]Roles[/] ",
+            // THE TITLE IN THE NORMAL TEXT, as every panel's is: the border's colour all but hides it.
+            Header = compact ? null : $" [{p.Foreground.ToMarkup()}]Roles[/] ",
             BorderColor = p.Rule,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Padding = new Padding(1, 0, 1, 0),
@@ -349,57 +349,61 @@ public sealed class ProvidersTab
                 DialogLook.Main(Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build()),
                 Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build())).Control);
 
-        var fields = new FieldGrid();
+        // GROUPED BY WHAT THEY ARE ABOUT — where it connects, what it runs, what it is for — each a panel,
+        // with what is set once, if ever, folded below.
+        if (_addingFrom?.Id == "llamacpp")
+            _detail.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]Thinking on/off is read from the server's chat template once it answers.[/]", ""]) { Wrap = true });
 
-        // THE NAME IS SET ONCE, HERE. After this it is renamed with Rename, which moves every reference.
+        var connection = new FieldGrid();
         if (draft.IsNew)
         {
             var nameBox = ListDetail.Input(new PromptControl { Input = draft.Name, HorizontalAlignment = HorizontalAlignment.Stretch });
             _firstField = nameBox;
             nameBox.InputChanged += (_, text) => { draft.Name = text.Trim(); Changed(); };
-            fields.Add("Name", "What /model, the rail and agent types call it. Letters, digits, - and _.", nameBox);
+            connection.Add("Name", "What /model, the rail and agent types call it. Letters, digits, - and _.", nameBox);
         }
-
-        // WHAT THIS PRESET IS TREATED AS, said where it matters: OpenAI cannot be asked whether a model
-        // reasons, and llama.cpp's thinking switch is read from the server's chat template.
-        if (_addingFrom?.Id == "openai" || (!draft.IsNew && draft.BaseUrl?.Contains("api.openai.com") == true))
-            fields.Add("Reasoning", "OpenAI cannot say which models reason — tick this for one that does (the o-series, GPT-5).",
-                Check("this model reasons", draft.Reasoning, v => draft.Reasoning = v));
-        if (_addingFrom?.Id == "llamacpp")
-            _detail.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]Thinking on/off is read from the server's chat template once it answers.[/]", ""]) { Wrap = true });
-
         var url = ListDetail.Input(new PromptControl { Input = draft.BaseUrl ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
         url.InputChanged += (_, text) => { draft.BaseUrl = text; Changed(); };
-        fields.Add("Endpoint", draft.Original.Kind == "anthropic"
+        connection.Add("Endpoint", draft.Original.Kind == "anthropic"
             ? "Anthropic's own unless set — a gateway in front of it goes here."
             : "The server's base URL, usually ending in /v1.", url);
+        connection.Add("API key", "Stored in config.json, readable only by you. Never shown again once saved.", KeyEditor(draft));
 
-        fields.Add("Model", "The model id this instance sends requests to.", ModelEditor(draft));
+        var model = new FieldGrid();
+        model.Add("Model", "The model id this instance sends requests to.", ModelEditor(draft));
+        model.Add("Thinking", "The level new sessions start at; /think and F10 change it per session.", ThinkingEditor(draft));
+        // PROMPT CACHING BESIDE THE MODEL, and only where it does something: on by default for Anthropic
+        // and OpenRouter, which cache nothing unless asked. Anywhere else it is shown only once set, so
+        // that it can be turned back off.
+        if (ProviderInstanceConfig.DefaultCacheControl(draft.Original.Kind, draft.BaseUrl) || draft.CacheControl)
+            model.Add("Prompt caching", "On by default here: writes cost 1.25x input, reads 0.1x, and a tool loop rereads the prompt from its second request.",
+                Check("cache the prompt", draft.CacheControl, v => draft.CacheControl = v));
+        if (_addingFrom?.Id == "openai" || (!draft.IsNew && draft.BaseUrl?.Contains("api.openai.com") == true))
+            model.Add("Reasoning", "OpenAI cannot say which models reason — tick this for one that does (the o-series, GPT-5).",
+                Check("this model reasons", draft.Reasoning, v => draft.Reasoning = v));
 
+        var about = new FieldGrid();
         var description = ListDetail.Input(new PromptControl { Input = draft.Description ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
         description.InputChanged += (_, text) => { draft.Description = text; Changed(); };
-        fields.Add("Description", "One line: what this entry is for, and whether it is free or paid. The model reads it when choosing where a sub-agent runs.", description);
-        fields.Add("API key", "Stored in config.json, readable only by you. Never shown again once saved.", KeyEditor(draft));
-        fields.Add("Thinking", "The level new sessions start at; /think and F10 change it per session.", ThinkingEditor(draft));
+        about.Add("Description", "One line: what this entry is for, and whether it is free or paid. The model reads it when choosing where a sub-agent runs.", description);
 
-        // FOLDED: these are set once, if ever, and an open section of them would push the fields people
-        // actually change below the fold.
-        var advanced = new CollapsiblePanel { Title = "Advanced", IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch };
         var more = new FieldGrid();
         more.Add("Context window", "Tokens; empty asks the endpoint on first use.",
             NumberEditor(draft.ContextWindow, v => draft.ContextWindow = v));
         more.Add("Max concurrent agents", "Sub-agents this instance runs at once when it is the default; empty for no limit.",
             NumberEditor(draft.MaxConcurrentAgents, v => draft.MaxConcurrentAgents = v));
-        more.Add("Prompt caching", "Mark the prompt for caching — Anthropic, and OpenRouter in front of it.",
-            Check("cache the prompt", draft.CacheControl, v => draft.CacheControl = v));
         more.Add("Reasoning", "OpenAI cannot say which models reason; tick this for one that does.",
             Check("this model reasons", draft.Reasoning, v => draft.Reasoning = v));
         more.Add("Thinking display", "Anthropic: summarized shows the thinking, omitted hides its text.", DisplayEditor(draft));
         more.Add("Extra headers", "One per line, Name: value — for gateways that route or bill by header. Enter to type, Esc when done.", HeadersEditor(draft));
-        advanced.AddControl(more.Control);
 
-        _detail.AddControl(fields.Control);
-        _detail.AddControl(advanced);
+        _detail.AddControl(ListDetail.Section("Connection", connection.Control));
+        _detail.AddControl(ListDetail.Gap());
+        _detail.AddControl(ListDetail.Section("Model", model.Control));
+        _detail.AddControl(ListDetail.Gap());
+        _detail.AddControl(ListDetail.Section("About", about.Control));
+        _detail.AddControl(ListDetail.Gap());
+        _detail.AddControl(ListDetail.Folded("Advanced", more.Control));
     }
 
     /// <summary>
@@ -834,7 +838,7 @@ public sealed class ProvidersTab
 
 /// <summary>
 /// One column of fields, read downward: a bold label, a muted line saying what it is for, the editor,
-/// then a blank line. Hand-placed rather than generated, because a generated form cannot give the
+/// and a blank line between one field and the next. Hand-placed rather than generated, because a generated form cannot give the
 /// spacing this needs.
 /// </summary>
 internal sealed class FieldGrid
@@ -847,12 +851,19 @@ internal sealed class FieldGrid
 
     public void Add(string label, string what, IWindowControl editor)
     {
+        // A BLANK LINE BETWEEN FIELDS, NOT AFTER THE LAST: inside a panel a trailing one is an empty row
+        // above the panel's foot.
+        if (_fields++ > 0)
+        {
+            Control.RowDefinitions.Add(GridLength.Cells(1));
+            _row++;
+        }
         AddBare(new MarkupControl([$"[bold]{MarkupParser.Escape(label)}[/]"]));
         AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(what)}[/]"]) { Wrap = true });
         AddBare(editor);
-        Control.RowDefinitions.Add(GridLength.Cells(1));
-        _row++;
     }
+
+    private int _fields;
 
     /// <summary>Empties the grid, for a list that is rebuilt in place.</summary>
     public void Clear()
@@ -860,6 +871,7 @@ internal sealed class FieldGrid
         foreach (var child in Control.Children.ToList()) Control.RemoveControl(child);
         Control.RowDefinitions.Clear();
         _row = 0;
+        _fields = 0;
     }
 
     public void AddBare(IWindowControl control)

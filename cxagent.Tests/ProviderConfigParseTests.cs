@@ -49,4 +49,27 @@ public class ProviderConfigParseTests
         Assert.Equal(9, settings.AgentTypes["general"].MaxTurns);
         Assert.DoesNotContain(settings.Warnings, w => w.Contains("general"));
     }
+
+    /// <summary>
+    /// PROMPT CACHING DEFAULTS TO WHERE IT PAYS: on for Anthropic and OpenRouter, which cache nothing unless
+    /// asked and repay the write from the second request; off everywhere else, where a local server caches
+    /// on its own and a plain endpoint ignores the marker or refuses it. An explicit value always wins.
+    /// </summary>
+    [Theory]
+    [InlineData("anthropic", null, null, true)]
+    [InlineData("openai-compatible", "https://openrouter.ai/api/v1", null, true)]
+    [InlineData("openai-compatible", "http://localhost:8080/v1", null, false)]
+    [InlineData("ollama", null, null, false)]
+    [InlineData("anthropic", null, "false", false)]
+    [InlineData("ollama", null, "true", true)]
+    public void PromptCaching_DefaultsToWhereItPays_AndAnExplicitValueWins(string kind, string? baseUrl, string? written, bool expected)
+    {
+        var url = baseUrl is null ? "" : $", \"baseUrl\": \"{baseUrl}\"";
+        var cache = written is null ? "" : $", \"cacheControl\": {written}";
+        var settings = ProviderConfigLoader.Parse(
+            $$"""{ "providers": { "p": { "kind": "{{kind}}", "model": "m", "apiKey": "k"{{url}}{{cache}} } }, "defaultProvider": "p" }""",
+            NoEnv);
+
+        Assert.Equal(expected, settings.Providers["p"].CacheControl);
+    }
 }

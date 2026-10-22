@@ -21,7 +21,10 @@ public static class PresetGallery
     /// </summary>
     public static InstanceDraft DraftFor(ProviderPreset preset, string name)
     {
-        var empty = new ProviderInstanceConfig(preset.Kind, "", null, null, null);
+        // CACHING STARTS AT ITS DEFAULT, as an absent key loads: then the box shows what will happen, and
+        // unticking it differs from the start and is written, rather than loading back as on.
+        var empty = new ProviderInstanceConfig(preset.Kind, "", null, null, null,
+            CacheControl: ProviderInstanceConfig.DefaultCacheControl(preset.Kind, preset.BaseUrl));
         return new InstanceDraft(name, empty)
         {
             IsNew = true,

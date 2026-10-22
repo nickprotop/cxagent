@@ -197,19 +197,19 @@ public sealed class AgentsTab
                 Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build(),
                 Controls.Button(" Remove / Reset to shipped ").OnClick((_, _) => _ = RemoveOrResetAsync()).Build())).Control);
 
-        var fields = new FieldGrid();
+        // GROUPED: what the type is, where it runs, its limits and its tools — each a panel.
+        var about = new FieldGrid();
         if (draft.IsGeneral)
         {
             _detail.AddControl(new MarkupControl([
                 "What a spawn that names no type gets: a plain child with the session's tools and no briefing of its own.",
                 "",
-                $"[{ColorScheme.MutedMarkup}]Set where it runs, how long, and with which tools. A briefing here is optional — a standing instruction every such child is given.[/]",
-                "",
             ]) { Wrap = true });
             var standing = new MultilineEditControl(viewportHeight: 4) { HorizontalAlignment = HorizontalAlignment.Stretch };
             standing.SetContent(draft.Briefing ?? "");
             standing.ContentChanged += (_, _) => draft.Briefing = standing.GetContent();
-            fields.Add("Standing briefing", "Optional. Given to every child spawned without a type. Enter to type, Esc when done.", standing);
+            about.Add("Standing briefing", "Optional. Given to every child spawned without a type. Enter to type, Esc when done.", standing);
+            _detail.AddControl(ListDetail.Section("About", about.Control));
         }
         else if (draft.IsBuiltin && draft.Shipped is { } shipped)
         {
@@ -218,11 +218,8 @@ public sealed class AgentsTab
                 $"[{ColorScheme.MutedMarkup}]Its briefing ships with cxagent: the code around this type depends on it. Where it runs, how long, and with which tools are yours to set.[/]",
                 "",
             ]) { Wrap = true });
-            var briefing = new CollapsiblePanel { Title = "Briefing (read-only)", IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch };
-            briefing.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(shipped.Briefing)}[/]"]) { Wrap = true });
-            _detail.AddControl(briefing);
-            // A BLANK LINE UNDER THE BRIEFING, as between any two fields: the panel below is not part of it.
-            _detail.AddControl(new MarkupControl([""]));
+            _detail.AddControl(ListDetail.Folded("Briefing (read-only)",
+                new MarkupControl([$"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(shipped.Briefing)}[/]"]) { Wrap = true }));
         }
         else
         {
@@ -230,27 +227,36 @@ public sealed class AgentsTab
             {
                 var name = ListDetail.Input(new PromptControl { Input = draft.Name, HorizontalAlignment = HorizontalAlignment.Stretch });
                 name.InputChanged += (_, t) => { draft.Name = t.Trim(); };
-                fields.Add("Name", "What the model names when it spawns one.", name);
+                about.Add("Name", "What the model names when it spawns one.", name);
                 _firstField = name;
             }
             var description = ListDetail.Input(new PromptControl { Input = draft.Description ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
             description.InputChanged += (_, t) => draft.Description = t;
-            fields.Add("Description", "When to reach for it — what the model reads when choosing.", description);
+            about.Add("Description", "When to reach for it — what the model reads when choosing.", description);
             var briefing = new MultilineEditControl(viewportHeight: 6) { HorizontalAlignment = HorizontalAlignment.Stretch };
             briefing.SetContent(draft.Briefing ?? "");
             briefing.ContentChanged += (_, _) => draft.Briefing = briefing.GetContent();
-            fields.Add("Briefing", "What the agent is told it is, and how to work. Required. Enter to type, Esc when done.", briefing);
+            about.Add("Briefing", "What the agent is told it is, and how to work. Required. Enter to type, Esc when done.", briefing);
+            _detail.AddControl(ListDetail.Section("About", about.Control));
         }
 
-        fields.AddBare(ProviderEditor(draft));
-        fields.AddBare(new MarkupControl([""]));
+        _detail.AddControl(ListDetail.Gap());
+        _detail.AddControl(ProviderEditor(draft));
+        _detail.AddControl(ListDetail.Gap());
+
+        var limits = new FieldGrid();
         var turns = ListDetail.Input(new PromptControl { Input = draft.MaxTurns?.ToString() ?? "", InputWidth = 8 });
         turns.InputChanged += (_, t) => draft.MaxTurns = int.TryParse(t.Trim(), out var n) && n >= 0 ? n : null;
-        fields.Add("Max turns", draft.IsBuiltin && draft.Shipped?.DefaultMaxTurns is { } d
+        limits.Add("Max turns", draft.IsBuiltin && draft.Shipped?.DefaultMaxTurns is { } d
             ? $"Empty is its shipped {d}; 0 is no limit."
             : "Empty inherits the session's limit; 0 is no limit.", turns);
-        fields.Add("Tools", "What it may use: a base, and the tools taken from it.", ToolsEditor(draft));
-        _detail.AddControl(fields.Control);
+        _detail.AddControl(ListDetail.Section("Limits", limits.Control));
+        _detail.AddControl(ListDetail.Gap());
+
+        var tools = new FieldGrid();
+        tools.AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]What it may use: a base, and the tools taken from it.[/]"]) { Wrap = true });
+        tools.AddBare(ToolsEditor(draft));
+        _detail.AddControl(ListDetail.Section("Tools", tools.Control));
         SetStatus(draft.IsNew ? $"[{ColorScheme.MutedMarkup}]Not saved yet — Save adds it to config.json.[/]" : "");
     }
 
@@ -390,18 +396,7 @@ public sealed class AgentsTab
         }
 
         Rebuild();
-        var panel = new PanelControl
-        {
-            BorderStyle = BorderStyle.Rounded,
-            // THE TITLE IN MUTED TEXT, not the border's colour: drawn in the rule colour it all but
-            // vanished into the line it sits on.
-            Header = $" [{muted}]Runs on[/] ",
-            BorderColor = DialogLook.Palette.Rule,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Padding = new Padding(1, 0, 1, 0),
-        };
-        panel.AddControl(stack.Control);
-        return panel;
+        return ListDetail.Section("Runs on", stack.Control);
     }
 
     /// <summary>A base — inherited or all — and the sixteen tools as boxes: unticked is taken away.</summary>

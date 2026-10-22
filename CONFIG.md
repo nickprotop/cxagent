@@ -51,12 +51,13 @@ falls back to a fixed constant that may be far from your model's real headroom. 
 asked of the endpoint: a llama.cpp server's `n_ctx`, or Anthropic's Models API for an `anthropic`
 instance.
 
-**`cacheControl: true` turns on prompt caching** for endpoints that cache nothing without being asked:
-Anthropic, and Anthropic or Google models behind an OpenAI-compatible gateway. An `anthropic` instance
-caches the tools and system prompt and the growing conversation, so each turn reads what the last one
-wrote. Off by default because cache writes are billed (1.25x input for a five-minute entry); in a
-tool loop the reads (0.1x) repay that from the second request. A local server caches on its own and
-needs nothing.
+**`cacheControl` is prompt caching**, for endpoints that cache nothing without being asked: Anthropic,
+and Anthropic or Google models behind an OpenAI-compatible gateway. An `anthropic` instance caches the
+tools and system prompt and the growing conversation, so each turn reads what the last one wrote.
+**On by default for `anthropic` and for an OpenRouter endpoint**, off for every other: cache writes are
+billed (1.25x input for a five-minute entry), but in a tool loop the reads (0.1x) repay that from the
+second request. `cacheControl: false` turns it off where it defaults on; `true` turns it on elsewhere.
+A local server caches on its own and needs nothing.
 
 **`thinking` sets how hard the model thinks** in a new session — `/think` and F10 change it for one
 session ([COMMANDS.md](COMMANDS.md#think)). Which values work is the model's own answer, not a list
