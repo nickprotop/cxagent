@@ -34,7 +34,7 @@ public static class FlowDialogs
             var withCancel = appendCancel ? choices.Concat(new[] { CancelChoice }).ToList() : choices.ToList();
             var chosen = await ctx.Show(
                 new ChoiceStepContent(title, withCancel),
-                title,
+                TitleOf(title),
                 FlowButtons.None);
 
             if (chosen is null || chosen == CancelChoice)
@@ -45,4 +45,10 @@ public static class FlowDialogs
 
         return result.Completed ? result.Value : null;
     }
+
+    /// <summary>
+    /// The window's title: the prompt's first line, which is its question. The lines after it are detail
+    /// the dialog body shows in full; flattened into a one-row title they only crowd it.
+    /// </summary>
+    internal static string TitleOf(string prompt) => prompt.Replace("\r\n", "\n").Split('\n')[0];
 }

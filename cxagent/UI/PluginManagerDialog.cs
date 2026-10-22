@@ -1712,7 +1712,7 @@ public static class PluginManagerDialog
 
         var removable = (RemovalPlan.Removable)plan;
         var confirmed = await FlowDialogs.ChooseAsync(_ws!, _window,
-            ConfirmationText(removable), ["Remove"], CancellationToken.None);
+            PluginRemover.Confirmation(removable), ["Remove"], CancellationToken.None);
         if (confirmed is null) return;
 
         var failed = PluginRemover.Remove(removable);
@@ -1781,27 +1781,6 @@ public static class PluginManagerDialog
             Rebuild();
         }, "pluginManagerDialog.RefuseIfHeld");
         return true;
-    }
-
-    /// <summary>The confirmation carries what the plan resolved: each deletion named — a long tail
-    /// collapsed to a count, recoverable from the directory the first line already names — and what
-    /// stays behind said plainly.</summary>
-    private static string ConfirmationText(RemovalPlan.Removable plan)
-    {
-        var lines = new List<string> { plan.Description };
-
-        lines.AddRange(plan.Files.Take(8).Select(f => $"  {f}"));
-        if (plan.Files.Count > 8) lines.Add($"  … and {plan.Files.Count - 8} more");
-
-        if (plan.LeftBehind.Count > 0)
-        {
-            lines.Add("");
-            lines.Add("left behind, because nothing attributes them to this plugin:");
-            lines.AddRange(plan.LeftBehind.Take(4).Select(f => $"  {f}"));
-            if (plan.LeftBehind.Count > 4) lines.Add($"  … and {plan.LeftBehind.Count - 4} more");
-        }
-
-        return string.Join("\n", lines);
     }
 
     /// <summary>Removes a config entry and persists — mutate then persist, the app's half of the

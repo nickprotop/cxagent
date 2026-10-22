@@ -12,10 +12,13 @@ public abstract record RemovalPlan
     /// <param name="Files">Every file that would be deleted, resolved and absolute.</param>
     /// <param name="LeftBehind">Files in the same folder that cannot be attributed to this plugin,
     /// so a confirmation can say what stays.</param>
+    /// <param name="Folder">The folder the description names, which a confirmation lists the files
+    /// relative to.</param>
     public sealed record Removable(
         string Description,
         IReadOnlyList<string> Files,
-        IReadOnlyList<string> LeftBehind) : RemovalPlan;
+        IReadOnlyList<string> LeftBehind,
+        string Folder) : RemovalPlan;
 
     /// <param name="Reason">Why nothing can be removed, in words a user can act on.</param>
     public sealed record Blocked(string Reason) : RemovalPlan;
@@ -99,7 +102,8 @@ public static class PluginRemover
         // A HOME THAT IS ITSELF A LINK — a dev build linked into the plugins folder — is removed as a link. What it
         // points at is the build's own output, not something this install put there.
         if (nested && new DirectoryInfo(home).LinkTarget is { } target)
-            return new RemovalPlan.Removable($"Remove the link {home} (its files, in {target}, stay).", [home], []);
+            return new RemovalPlan.Removable($"Remove the link {home} (its files, in {target}, stay).", [home], [],
+                Path.GetDirectoryName(home)!);
 
         if (nested)
         {
@@ -113,7 +117,7 @@ public static class PluginRemover
                 .ToList();
 
             return new RemovalPlan.Removable(
-                $"Remove {home} and its {all.Count} file{(all.Count == 1 ? "" : "s")}.", all, []);
+                $"Remove {home} and its {all.Count} file{(all.Count == 1 ? "" : "s")}.", all, [], home);
         }
 
         // A LOOSE PLUGIN HAS NO DIRECTORY OF ITS OWN, so only what can be attributed goes: the
@@ -134,7 +138,35 @@ public static class PluginRemover
             .ToList();
 
         return new RemovalPlan.Removable(
-            $"Remove {mine.Count} file{(mine.Count == 1 ? "" : "s")} from {home}.", mine, others);
+            $"Remove {mine.Count} file{(mine.Count == 1 ? "" : "s")} from {home}.", mine, others, home);
+    }
+
+    /// <summary>
+    /// The question a confirmation asks: what the plan resolved, each deletion named — a long tail
+    /// collapsed to a count — and what stays behind said plainly.
+    ///
+    /// <para>EACH FILE RELATIVE TO THE FOLDER THE FIRST LINE NAMES. The folder is said once; repeated
+    /// as an absolute path on every line, it wrapped over several rows of a narrow dialog and pushed
+    /// the Remove choice out of sight.</para>
+    /// </summary>
+    public static string Confirmation(RemovalPlan.Removable plan)
+    {
+        string Show(string file) => $"  {Path.GetRelativePath(plan.Folder, file)}";
+
+        var lines = new List<string> { plan.Description };
+
+        lines.AddRange(plan.Files.Take(8).Select(Show));
+        if (plan.Files.Count > 8) lines.Add($"  … and {plan.Files.Count - 8} more");
+
+        if (plan.LeftBehind.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("left behind, because nothing attributes them to this plugin:");
+            lines.AddRange(plan.LeftBehind.Take(4).Select(Show));
+            if (plan.LeftBehind.Count > 4) lines.Add($"  … and {plan.LeftBehind.Count - 4} more");
+        }
+
+        return string.Join("\n", lines);
     }
 
     /// <summary>

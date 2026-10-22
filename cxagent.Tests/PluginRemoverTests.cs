@@ -169,4 +169,45 @@ public class PluginRemoverTests : IDisposable
         Assert.Empty(failures);
         Assert.False(Directory.Exists(home));
     }
+
+    /// <summary>
+    /// THE CONFIRMATION NAMES THE FOLDER ONCE and each file within it. Every file as an absolute path
+    /// wrapped over several lines of a narrow dialog and pushed its Remove choice out of sight.
+    /// </summary>
+    [Fact]
+    public void TheConfirmation_ListsFilesRelativeToTheFolderItNames()
+    {
+        var home = Place(Path.Combine(_root, "demo"), "demo", "Jace.dll");
+        var plan = Assert.IsType<RemovalPlan.Removable>(
+            PluginRemover.Plan("demo", "demo.dll", home, [_root], Configured(("demo", "demo.dll"))));
+
+        var lines = PluginRemover.Confirmation(plan).Split('\n');
+
+        Assert.Contains(home, lines[0]);
+        Assert.Equal(["  Jace.dll", "  demo.dll", "  demo.plugin.json"], lines.Skip(1).ToArray());
+    }
+
+    [Fact]
+    public void ALoosePlugin_ListsItsFilesByName_AndWhatStays()
+    {
+        Place(_root, "loose", "notes.txt");
+        var plan = Assert.IsType<RemovalPlan.Removable>(
+            PluginRemover.Plan("loose", "loose.dll", _root, [_root], Configured(("loose", "loose.dll"))));
+
+        var text = PluginRemover.Confirmation(plan);
+
+        Assert.Contains("  loose.dll", text);
+        Assert.Contains("  notes.txt", text);
+        Assert.DoesNotContain(Path.Combine(_root, "loose.dll"), text);
+    }
+}
+
+/// <summary>A choice dialog's window title is the question, not the whole prompt beneath it.</summary>
+public class FlowDialogTitleTests
+{
+    [Theory]
+    [InlineData("Remove /x and its 2 files.\n  a.dll\n  b.dll", "Remove /x and its 2 files.")]
+    [InlineData("Install where?", "Install where?")]
+    public void TheTitle_IsThePromptsFirstLine(string prompt, string title) =>
+        Assert.Equal(title, FlowDialogs.TitleOf(prompt));
 }
