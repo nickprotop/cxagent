@@ -65,4 +65,38 @@ public class PluginStoresTests
               "stores": [ { "name": "cxagent", "url": "https://a/c.json" } ] }
             """, new Dictionary<string, string>()));
     }
+
+    /// <summary>
+    /// A CONFIG KEY WITH A '/' IS A store/name OR NOTHING. <c>Acme/repo-map</c> and <c>a/b/c</c> were
+    /// searched by their bare file and loaded the official copy under a key that looks like a store's;
+    /// <c>cxagent/repo-map</c> is a second spelling of <c>repo-map</c>, refused rather than read as it
+    /// because every writer of config (F2's enable, remove, add) keys on the plain name and would miss it.
+    /// </summary>
+    [Theory]
+    [InlineData("Acme/repo-map", "plugins.Acme/repo-map: a plugin name is 'name' or 'store/name'.")]
+    [InlineData("a/b/c", "plugins.a/b/c: a plugin name is 'name' or 'store/name'.")]
+    [InlineData("acme/", "plugins.acme/: a plugin name is 'name' or 'store/name'.")]
+    [InlineData("cxagent/repo-map", "plugins.cxagent/repo-map: an official plugin is configured by its plain name — write 'repo-map'.")]
+    public void ProviderConfig_RefusesAPluginKeyThatIsNeitherANameNorAStoreName(string key, string error)
+    {
+        var thrown = Assert.Throws<CxAgent.Core.Llm.ProviderConfigException>(() => CxAgent.Core.Llm.ProviderConfigLoader.Parse($$"""
+            { "providers": { "local": { "kind": "ollama", "model": "llama3.1" } },
+              "defaultProvider": "local",
+              "plugins": { "{{key}}": { "file": "repo-map.dll" } } }
+            """, new Dictionary<string, string>()));
+        Assert.Contains(error, thrown.Errors);
+    }
+
+    [Theory]
+    [InlineData("repo-map")]
+    [InlineData("acme/repo-map")]
+    public void ProviderConfig_AcceptsANameOrAStoreName(string key)
+    {
+        var ok = CxAgent.Core.Llm.ProviderConfigLoader.Parse($$"""
+            { "providers": { "local": { "kind": "ollama", "model": "llama3.1" } },
+              "defaultProvider": "local",
+              "plugins": { "{{key}}": { "file": "repo-map.dll" } } }
+            """, new Dictionary<string, string>());
+        Assert.True(ok.Plugins.ContainsKey(key));
+    }
 }

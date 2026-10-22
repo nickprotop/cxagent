@@ -95,9 +95,14 @@ public static class PluginResolver
         if (configured.TryGetValue(target, out var config))
         {
             // A STORE PLUGIN IS LOOKED FOR UNDER ITS STORE ONLY: its bare file name must never reach a
-            // same-named official plugin, nor the official one reach a store's.
-            var directory = PluginStores.TrySplit(target, out var configuredStore, out var configuredName)
-                ? FindStoreLoadSet(configuredStore, configuredName, config.File, searchFolders)
+            // same-named official plugin, nor the official one reach a store's. A KEY WITH A '/' THAT IS
+            // NOT A store/name is neither kind, and searched by its bare file it would load the official
+            // copy under a key that looks like a store's; config.json refuses one, and an embedder's
+            // config that carries one finds nothing here.
+            if (target.Contains('/') && !PluginStores.TryParse(target, out _))
+                return new ResolveResult.NotFound($"'{target}' is not a plugin name: a plugin name is 'name' or 'store/name'.");
+            var directory = PluginStores.TryParse(target, out var configuredStorePlugin)
+                ? FindStoreLoadSet(configuredStorePlugin, config.File, searchFolders)
                 : FindLoadSetDirectory(config.File, searchFolders);
             return directory is null
                 ? new ResolveResult.NotFound(
@@ -152,16 +157,16 @@ public static class PluginResolver
     }
 
     /// <summary>
-    /// Where store <paramref name="store"/>'s plugin <paramref name="name"/> is installed: the first
-    /// search folder holding <c>&lt;store&gt;/&lt;name&gt;/&lt;file&gt;</c> under a folder marked as a
-    /// store's. That folder is the load set — the plugin's own files, never its neighbours'.
+    /// Where <paramref name="plugin"/> is installed: the first search folder holding
+    /// <c>&lt;store&gt;/&lt;name&gt;/&lt;file&gt;</c> under a folder marked as a store's. That folder is
+    /// the load set — the plugin's own files, never its neighbours'.
     /// </summary>
-    public static string? FindStoreLoadSet(string store, string name, string file, IReadOnlyList<string> searchFolders)
+    public static string? FindStoreLoadSet(StorePlugin plugin, string file, IReadOnlyList<string> searchFolders)
     {
         foreach (var folder in searchFolders)
         {
-            var storeFolder = Path.Combine(folder, store);
-            var home = Path.Combine(storeFolder, name);
+            var storeFolder = Path.Combine(folder, plugin.Store);
+            var home = Path.Combine(storeFolder, plugin.Name);
             if (File.Exists(Path.Combine(storeFolder, PluginStores.Marker)) && File.Exists(Path.Combine(home, file)))
                 return home;
         }

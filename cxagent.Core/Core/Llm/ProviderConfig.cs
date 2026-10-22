@@ -690,6 +690,14 @@ public static class ProviderConfigLoader
         return null;
     }
 
+    /// <summary>Why a <c>plugins</c> key cannot name a plugin, or null: a key with no '/' is a name, and
+    /// one with a '/' must be a <c>store/name</c> of a store other than the official catalog's.</summary>
+    internal static string? PluginKeyProblem(string key) =>
+        !key.Contains('/') ? null
+        : !Plugins.PluginStores.TrySplit(key, out var store, out var name) ? "a plugin name is 'name' or 'store/name'."
+        : store == Plugins.PluginStores.Official ? $"an official plugin is configured by its plain name — write '{name}'."
+        : null;
+
     /// <summary>
     /// Refuses a STATICALLY CERTAIN plugin tool-name collision: two plugins whose sidecars declare
     /// the same tool name, or a plugin whose sidecar claims a built-in's name. Both sides of either
@@ -1236,6 +1244,16 @@ public static class ProviderConfigLoader
                     if (entry.Value.ValueKind != JsonValueKind.Object)
                     {
                         errors.Add($"plugins.{entry.Name} is not an object.");
+                        continue;
+                    }
+
+                    // A KEY IS A NAME OR A store/name, NOTHING ELSE WITH A '/'. `Acme/repo-map` or `a/b/c`
+                    // reaches no store, and `cxagent/repo-map` is a second spelling of `repo-map` that
+                    // F2's enable, remove and add — which all key on the plain name — would never find.
+                    // Refused here, with the spelling to use, rather than resolved some way at startup.
+                    if (PluginKeyProblem(entry.Name) is { } keyProblem)
+                    {
+                        errors.Add($"plugins.{entry.Name}: {keyProblem}");
                         continue;
                     }
 

@@ -7,6 +7,16 @@ namespace CxAgent.Core.Plugins;
 public sealed record PluginStore(string Name, string Url);
 
 /// <summary>
+/// A store's plugin as <c>store/name</c> names it, both halves already checked by
+/// <see cref="PluginStores.TryParse"/>. ONE VALUE, NOT TWO STRINGS, where it travels beside a file name:
+/// three strings in a row compile in any order, and a store passed as the plugin looks in the wrong folder.
+/// </summary>
+public sealed record StorePlugin(string Store, string Name)
+{
+    public override string ToString() => $"{Store}/{Name}";
+}
+
+/// <summary>
 /// Stores — other people's plugin catalogs, beside the official one — as config declares them, and
 /// the one spelling of a plugin that comes from one: <c>store/name</c>.
 ///
@@ -118,6 +128,13 @@ public static partial class PluginStores
     /// become folder names under a plugins folder: <c>acme/..</c> or <c>../x</c> would otherwise name a
     /// path outside the store, and a typed name is not trusted to be a folder.
     /// </summary>
+    /// <summary><see cref="TrySplit"/> as one <see cref="StorePlugin"/>; null for anything that is not a <c>store/name</c>.</summary>
+    public static bool TryParse(string qualified, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out StorePlugin? plugin)
+    {
+        plugin = TrySplit(qualified, out var store, out var name) ? new StorePlugin(store, name) : null;
+        return plugin is not null;
+    }
+
     public static bool TrySplit(string qualified, out string store, out string name)
     {
         var parts = qualified.Split('/');

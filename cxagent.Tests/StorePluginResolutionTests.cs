@@ -27,7 +27,7 @@ public sealed class StorePluginResolutionTests : IDisposable
     public void AStorePlugin_IsFoundByItsQualifiedName_AndItsLoadSetIsItsOwnFolder()
     {
         var home = Place("acme/repo-map"); MarkStore("acme");
-        Assert.Equal(home, PluginResolver.FindStoreLoadSet("acme", "repo-map", "repo-map.dll", [_root]));
+        Assert.Equal(home, PluginResolver.FindStoreLoadSet(new StorePlugin("acme", "repo-map"), "repo-map.dll", [_root]));
         var result = PluginResolver.Resolve("acme/repo-map", new Dictionary<string, PluginConfig>(), [_root], _root);
         var found = Assert.IsType<ResolveResult.Found>(result);
         Assert.Equal(home, found.LoadSetDirectory);
@@ -123,6 +123,22 @@ public sealed class StorePluginResolutionTests : IDisposable
         Assert.IsNotType<ResolveResult.Found>(
             PluginResolver.Resolve("acme/repo-map", new Dictionary<string, PluginConfig>(), [_root], _root));
         Assert.Empty(PluginDiscovery.FindUnconfigured(new Dictionary<string, PluginConfig>(), [_root]));
+    }
+
+    /// <summary>
+    /// A NAME WITH A '/' THAT IS NOT A store/name NEVER FALLS BACK TO THE BARE SEARCH, which would find
+    /// the official copy and run it under a key that looks like a store's. Config refuses such a key;
+    /// this holds for one that arrives some other way (an embedder's own config).
+    /// </summary>
+    [Theory]
+    [InlineData("Acme/repo-map")]
+    [InlineData("a/b/c")]
+    public void AMalformedSlashName_FindsNothing_NotTheOfficialCopy(string key)
+    {
+        Place("repo-map");
+        var configured = new Dictionary<string, PluginConfig> { [key] = new("repo-map.dll") };
+        Assert.Null(PluginDiscovery.HomeOf(key, configured[key], [_root]));
+        Assert.IsNotType<ResolveResult.Found>(PluginResolver.Resolve(key, configured, [_root], _root));
     }
 
     [Fact]

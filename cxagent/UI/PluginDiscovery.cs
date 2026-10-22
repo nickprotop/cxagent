@@ -33,10 +33,15 @@ public static class PluginDiscovery
     /// Where a configured plugin is installed: a store plugin (<c>acme/repo-map</c>) under its store's
     /// folder only; any other by its file, one level deep. One function, so startup, F2 and the
     /// collision checks cannot disagree about which copy a name means.
+    ///
+    /// <para>A NAME WITH A '/' THAT IS NOT A store/name FINDS NOTHING, as in <c>PluginResolver.Resolve</c>:
+    /// searched by its bare file, <c>Acme/repo-map</c> would load the official <c>repo-map</c> under a
+    /// name that looks like a store's.</para>
     /// </summary>
     public static string? HomeOf(string configuredName, PluginConfig config, IReadOnlyList<string> searchFolders) =>
-        PluginStores.TrySplit(configuredName, out var store, out var name)
-            ? PluginResolver.FindStoreLoadSet(store, name, config.File, searchFolders)
+        PluginStores.TryParse(configuredName, out var plugin)
+            ? PluginResolver.FindStoreLoadSet(plugin, config.File, searchFolders)
+            : configuredName.Contains('/') ? null
             : FindLoadSetDirectory(config.File, searchFolders);
 
     /// <summary>
