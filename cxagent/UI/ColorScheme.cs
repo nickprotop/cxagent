@@ -48,6 +48,9 @@ public static class ColorScheme
     {
         _theme = theme;
 
+        // THE DIALOG COLOURS MOVE WITH EVERYTHING ELSE, from the same theme in the same call.
+        DialogLook.Palette = DialogPalette.For(theme);
+
         // THE CHAT SURFACE IS THE BASIS, not one derivation among several: every other surface here
         // is a step away from it, so taking it from the theme moves the whole palette together and
         // keeps the relationships between surfaces fixed across themes.
