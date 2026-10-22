@@ -144,4 +144,38 @@ public class PluginNoticeTests
              i = text.IndexOf(needle, i + needle.Length, StringComparison.Ordinal)) n++;
         return n;
     }
+
+    /// <summary>
+    /// A STORE'S PLUGIN IS TRIED BY ITS store/name: its file alone never reaches into a store's folder, so
+    /// "/plugin load calculator.dll" would load the official copy, or nothing.
+    /// </summary>
+    [Fact]
+    public void AStorePluginsNotice_NamesItsStoreName()
+    {
+        var notice = PluginDiscovery.FormatUnconfiguredNotice(
+            [new("acme/calculator", "calculator.dll", "/home/me/.config/cxagent/plugins/acme/calculator", 1)])!;
+
+        Assert.Contains("`/plugin load acme/calculator`", notice);
+        Assert.Contains("\"acme/calculator\": { \"file\": \"calculator.dll\" }", notice);
+        Assert.DoesNotContain("/plugin load calculator.dll", notice);
+    }
+
+    /// <summary>A find no name reaches says why, rather than advice that cannot work.</summary>
+    [Fact]
+    public void AnUnreachableFind_SaysItsProblem_NotHowToAddIt()
+    {
+        var notice = PluginDiscovery.FormatUnconfiguredNotice(
+            [new("calculator", "calculator.dll", "/p/Acme/calculator", 1, "'Acme/calculator' is not a store/name any command takes")])!;
+
+        Assert.Contains("is not a store/name any command takes", notice);
+        Assert.DoesNotContain("/plugin load", notice);
+        Assert.DoesNotContain("config.json", notice);
+    }
+
+    [Fact]
+    public void SeveralFinds_SayHowAStorePluginIsLoaded()
+    {
+        var notice = PluginDiscovery.FormatUnconfiguredNotice([Plugin("a"), Plugin("b")])!;
+        Assert.Contains("<store>/<name>", notice);
+    }
 }

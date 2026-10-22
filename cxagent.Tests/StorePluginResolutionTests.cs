@@ -83,24 +83,27 @@ public sealed class StorePluginResolutionTests : IDisposable
     }
 
     /// <summary>
-    /// A STORE FOLDER WHOSE NAMES ARE NOT store/name IS LISTED UNDER ITS MANIFEST NAME, the name a session
-    /// registers it by (PluginStores.RegisteredName), rather than dropped: it is installed, and a plugin
-    /// nobody is told about is one nobody can remove. Its load target is its path, the one spelling that
-    /// reaches into a store's folder without a store/name.
+    /// A STORE FOLDER WHOSE NAMES ARE NOT store/name IS LISTED, AS NEEDING ATTENTION — never dropped, and
+    /// never offered "Add to config": no config key can reach it (a bare name never looks inside a store's
+    /// folder, and its folders are not a store/name), so an entry written for it would be one startup
+    /// reports missing. The reason says which rename makes it reachable; Uninstall still removes it.
     /// </summary>
     [Theory]
     [InlineData("Acme", "repo-map")]
     [InlineData("acme", "repo.map")]
-    public void AStorePluginWhoseFoldersAreNotAName_IsListedUnderItsManifestName(string store, string folder)
+    public void AStorePluginWhoseFoldersAreNotAName_NeedsAttention_WithTheRename(string store, string folder)
     {
         var home = Place($"{store}/{folder}"); MarkStore(store);
         var found = Assert.Single(PluginDiscovery.FindUnconfigured(new Dictionary<string, PluginConfig>(), [_root]));
-        Assert.Equal("repo-map", found.Name);
         Assert.Equal(home, found.Folder);
-        Assert.Equal(Path.Combine(home, "repo-map.dll"), PluginManagerRows.LoadTarget(found.Name, found.File, found.Folder));
-        var loaded = Assert.IsType<ResolveResult.Found>(PluginResolver.Resolve(
-            PluginManagerRows.LoadTarget(found.Name, found.File, found.Folder), new Dictionary<string, PluginConfig>(), [_root], _root));
-        Assert.Equal(home, loaded.LoadSetDirectory);
+        Assert.NotNull(found.Problem);
+
+        var rows = PluginManagerRows.Build(PluginManagerState.Gather(new GatherInputs(
+            new Dictionary<string, PluginConfig>(), [], [_root], [], _root, _root)));
+        var row = Assert.Single(rows);
+        Assert.Equal(PluginRowSection.NeedsAttention, row.Section);
+        Assert.Contains("rename", row.State);
+        Assert.Contains($"{store}/{folder}", row.State);
     }
 
     [Fact]

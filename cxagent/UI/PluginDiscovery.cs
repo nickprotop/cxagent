@@ -87,7 +87,9 @@ public static class PluginDiscovery
     /// <param name="Folder">Where it was found, so the report can say which of several folders.</param>
     /// <param name="ToolCount">How many tools it declares — enough for a user to tell a real find
     /// from a stale file without loading anything.</param>
-    public sealed record UnconfiguredPlugin(string Name, string File, string Folder, int ToolCount);
+    /// <param name="Problem">Why no name reaches it, or null when one does: a plugin inside a store's
+    /// folder whose folders are not a <c>store/name</c> — hand-made, since the installer never writes one.</param>
+    public sealed record UnconfiguredPlugin(string Name, string File, string Folder, int ToolCount, string? Problem = null);
 
     /// <summary>
     /// The one startup notice for everything <see cref="FindUnconfigured"/> found, or null for none.
@@ -116,6 +118,11 @@ public static class PluginDiscovery
         if (found.Count == 1)
         {
             var only = found[0];
+
+            // NO NAME REACHES IT, so neither a config entry nor /plugin load would: the problem is the news.
+            if (only.Problem is { } problem)
+                return $"plugin '{only.Name}' found in {only.Folder}, but {problem}.";
+
             // WHAT IS LOST RATHER THAN WHAT IS MISSING — "not configured" reads as misconfigured,
             // which this plugin is not: it is installed and fine, and what it lacks is automatic
             // loading. Same wording as the manager's row.
@@ -123,8 +130,9 @@ public static class PluginDiscovery
                 + "Add it under \"plugins\" in config.json:\n"
                 + $"    \"{only.Name}\": {{ \"file\": \"{only.File}\" }}\n"
                 // THE FILENAME, NOT THE MANIFEST NAME: PluginResolver.Resolve looks a target up in
-                // config first and otherwise treats it as a FILE.
-                + $"    Or `/plugin load {only.File}` to try it for this session — {Caveat}";
+                // config first and otherwise treats it as a FILE. A STORE'S PLUGIN BY ITS store/name,
+                // which is the only spelling that reaches into a store's folder.
+                + $"    Or `/plugin load {PluginManagerRows.LoadTarget(only.Name, only.File, only.Folder)}` to try it for this session — {Caveat}";
         }
 
         const int Shown = 6;
@@ -133,11 +141,13 @@ public static class PluginDiscovery
             $"{found.Count} plugins found, not in config (no auto load):",
         };
         foreach (var plugin in found.Take(Shown))
-            lines.Add($"    {plugin.Name} — {plugin.ToolCount} tool(s), {plugin.Folder}");
+            lines.Add(plugin.Problem is { } problem
+                ? $"    {plugin.Name} — {plugin.Folder}: {problem}"
+                : $"    {plugin.Name} — {plugin.ToolCount} tool(s), {plugin.Folder}");
         if (found.Count > Shown) lines.Add($"    … and {found.Count - Shown} more (F2 lists them all)");
 
         lines.Add("Add one under \"plugins\" in config.json: \"<name>\": { \"file\": \"<file>\" }");
-        lines.Add($"Or `/plugin load <file>` to try one for this session — {Caveat}");
+        lines.Add($"Or `/plugin load <file>` (`<store>/<name>` for a store's plugin) to try one for this session — {Caveat}");
         return string.Join("\n", lines);
     }
 
@@ -188,9 +198,11 @@ public static class PluginDiscovery
             // <folder>/<store>/<plugin> is a store's plugin, reported as `store/<folder name>` — the
             // spelling Resolve and HomeOf look it up by, whatever its manifest calls itself. A FOLDER WHOSE
             // NAMES ARE NOT A store/name (a hand-made `Acme/` or `calc.v2/`) is reported under its manifest
-            // name instead, which is what PluginStores.RegisteredName registers it as: no store/name can
-            // reach it, but it is installed, and a plugin left out of every listing is one nobody removes.
+            // name instead, which is what PluginStores.RegisteredName registers it as, and carries the
+            // Problem that says so: no name reaches it, but it is installed, and a plugin left out of every
+            // listing is one nobody removes.
             var storeOf = new Dictionary<string, string>(StringComparer.Ordinal);
+            var unreachable = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var storeFolder in subdirectories.Where(d => File.Exists(Path.Combine(d, PluginStores.Marker))))
             foreach (var home in Directory.EnumerateDirectories(storeFolder)
                          .Where(d => !Path.GetFileName(d).StartsWith('.'))
@@ -199,6 +211,7 @@ public static class PluginDiscovery
                 scanned.Add(home);
                 var qualified = $"{Path.GetFileName(storeFolder)}/{Path.GetFileName(home)}";
                 if (PluginStores.TrySplit(qualified, out _, out _)) storeOf[home] = qualified;
+                else unreachable[home] = qualified;
             }
 
             foreach (var scan in scanned)
@@ -237,8 +250,15 @@ public static class PluginDiscovery
                                           || f.EndsWith(".so", StringComparison.OrdinalIgnoreCase));
                 if (file is null) continue;
 
+                // LISTED WITH WHY NOTHING REACHES IT, not dropped and not offered as an ordinary find: a bare
+                // name never looks inside a store's folder and these folders are no store/name, so a config
+                // entry written for it would be one startup reports missing. The rename is the remedy.
                 found.Add(new UnconfiguredPlugin(
-                    reportedName, Path.GetFileName(file), scan, manifest.Tools.Count));
+                    reportedName, Path.GetFileName(file), scan, manifest.Tools.Count,
+                    unreachable.TryGetValue(scan, out var spelled)
+                        ? $"'{spelled}' is not a store/name any command takes — rename the store folder to lowercase "
+                          + "letters, digits and '-', and the plugin folder to letters, digits, '-' and '_'"
+                        : null));
             }
         }
 

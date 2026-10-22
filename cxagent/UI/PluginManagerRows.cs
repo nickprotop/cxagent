@@ -131,7 +131,9 @@ public static class PluginManagerRows
                 : "not in config";
 
             // A CONTRACT PROBLEM OUTRANKS THIS: adding a config entry would not make it load.
-            rows.Add(Mismatch(contract) is { } why
+            // NO NAME REACHES IT, so "Add to config" would write an entry startup reports missing: the row
+            // says which rename fixes that, and offers only what still works on it, Uninstall.
+            rows.Add((found.Problem ?? Mismatch(contract)) is { } why
                 ? new PluginRow(found.Name, PluginRowSection.NeedsAttention, why, Catalog: entry, Folder: Folder(found.Name, inputs))
                 : new PluginRow(found.Name, PluginRowSection.Installed, state,
                                 Catalog: entry, Folder: Folder(found.Name, inputs)));

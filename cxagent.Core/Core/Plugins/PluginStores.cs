@@ -123,11 +123,6 @@ public static partial class PluginStores
         return IsStoreFolder(store) && TrySplit(qualified, out _, out _) ? qualified : manifestName;
     }
 
-    /// <summary>
-    /// <c>store/name</c> split in two; false for anything else. BOTH SEGMENTS ARE CHECKED, because they
-    /// become folder names under a plugins folder: <c>acme/..</c> or <c>../x</c> would otherwise name a
-    /// path outside the store, and a typed name is not trusted to be a folder.
-    /// </summary>
     /// <summary><see cref="TrySplit"/> as one <see cref="StorePlugin"/>; null for anything that is not a <c>store/name</c>.</summary>
     public static bool TryParse(string qualified, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out StorePlugin? plugin)
     {
@@ -135,6 +130,11 @@ public static partial class PluginStores
         return plugin is not null;
     }
 
+    /// <summary>
+    /// <c>store/name</c> split in two; false for anything else. BOTH SEGMENTS ARE CHECKED, because they
+    /// become folder names under a plugins folder: <c>acme/..</c> or <c>../x</c> would otherwise name a
+    /// path outside the store, and a typed name is not trusted to be a folder.
+    /// </summary>
     public static bool TrySplit(string qualified, out string store, out string name)
     {
         var parts = qualified.Split('/');
