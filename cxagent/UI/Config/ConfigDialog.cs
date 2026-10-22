@@ -80,19 +80,20 @@ public static class ConfigDialog
         _host = host;
 
         // 90% OF THE TERMINAL, CAPPED — the plugin manager's sizing, which is what this shape is proven at.
-        var width = Math.Min((int)(Console.WindowWidth * 0.9), 150);
-        var height = Math.Min((int)(Console.WindowHeight * 0.9), 40);
+        var width = DialogLook.Width(DialogSize.L, Console.WindowWidth);
+        var height = DialogLook.LargeHeight(Console.WindowHeight);
 
         var window = new WindowBuilder(ws)
             .WithTitle("Configuration")
             .WithSize(_size?.Width ?? width, _size?.Height ?? height)
             .Centered()
             .AsModal()
-            .WithBorderStyle(BorderStyle.Single)
+            .Styled()
             .Resizable(true)
             .Movable(true)
             .Minimizable(false)
             .Build();
+        DialogLook.Titled(window);
 
         _tabs = new TabControl
         {

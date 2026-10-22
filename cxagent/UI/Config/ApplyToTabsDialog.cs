@@ -5,6 +5,7 @@ using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
+using SharpConsoleUI.Themes;
 
 namespace CxAgent.UI.Config;
 
@@ -57,13 +58,14 @@ public static class ApplyToTabsDialog
         var total = tabs.Sum(t => t.ContextUsed ?? 0);
         var window = new WindowBuilder(system)
             .WithTitle("Apply to open tabs?")
-            .WithSize(Math.Min(86, Console.WindowWidth - 4), Math.Min(14 + tabs.Count + Options.Length * 2, Console.WindowHeight - 2))
+            .WithSize(DialogLook.Width(DialogSize.M, Console.WindowWidth), Math.Min(16 + tabs.Count + Options.Length * 2, Console.WindowHeight - 2))
             .Centered()
             .AsModal()
-            .WithBorderStyle(BorderStyle.Single)
+            .Styled()
             .Movable(true)
             .Minimizable(false)
             .Build();
+        DialogLook.Titled(window);
 
         var lines = new List<string>
         {
@@ -73,9 +75,12 @@ public static class ApplyToTabsDialog
         foreach (var tab in tabs)
             lines.Add($"  [bold]{MarkupParser.Escape(TabName(tab))}[/]  [{ColorScheme.MutedMarkup}]· {MarkupParser.Escape(tab.InstanceName ?? "")} · {Tokens(tab.ContextUsed)} in context[/]");
         lines.Add("");
+        lines.Add($"[{ColorScheme.MutedMarkup}]The file is saved either way. New tabs always get the change.[/]");
+        lines.Add("");
         window.AddControl(new MarkupControl(lines) { Wrap = true });
 
-        var list = new ListControl { HorizontalAlignment = HorizontalAlignment.Stretch };
+        // THE PRIMARY ROLE, as Confirm and Quit have it: the answer Enter will take is the most vivid row.
+        var list = new ListControl { HorizontalAlignment = HorizontalAlignment.Stretch, ColorRole = ColorRole.Primary };
         foreach (var (choice, label, whatItDoes) in Options)
         {
             // THE COST ONLY WHEN IT IS KNOWN: a tab that has not taken a turn has no measured context, and
@@ -90,11 +95,8 @@ public static class ApplyToTabsDialog
             window.Close();
         };
         window.AddControl(list);
-        window.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]The file is saved either way. New tabs always get the change. Enter chooses · Esc = only new tabs[/]"])
-        {
-            StickyPosition = StickyPosition.Bottom,
-            Wrap = true,
-        });
+        // ESC IS AN ANSWER HERE, not a cancel: the file is already saved, so leaving means "only new tabs".
+        DialogLook.AddFooter(window, "Enter chooses · Esc = only new tabs");
 
         window.OnClosed += (_, _) =>
         {

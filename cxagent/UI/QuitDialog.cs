@@ -87,13 +87,14 @@ public static class QuitDialog
 
         var window = new WindowBuilder(system)
             .WithTitle("Quit cxagent?")
-            .WithSize(56, 9)
+            .WithSize(DialogLook.Width(DialogSize.S, Console.WindowWidth), 10)
             .Centered()
             .AsModal()
-            .WithBorderStyle(BorderStyle.Single)
+            .Styled()
             .Movable(true)
             .Minimizable(false)
             .Build();
+        DialogLook.Titled(window);
 
         // THE PRIMARY ROLE, as ConfirmDialog has it: a full-strength bar, so the answer Enter will choose
         // is the most vivid thing in the list in every theme.
@@ -111,8 +112,7 @@ public static class QuitDialog
         window.AddControl(list);
         window.AddControl(new MarkupControl([""]));
         window.AddControl(box);
-        window.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]Enter chooses · Tab reaches the box · Esc cancels[/]"])
-            { StickyPosition = StickyPosition.Bottom });
+        DialogLook.AddFooter(window, "Enter chooses · Tab reaches the box · Esc cancels");
 
         window.OnClosed += (_, _) =>
         {

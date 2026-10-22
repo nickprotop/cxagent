@@ -46,30 +46,37 @@ public static class ModelPickerOverlay
         var result = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         _result = result;
 
-        var width = Math.Min((int)(Console.WindowWidth * 0.7), 100);
+        // M WIDE, NOT L: it opens over Configuration, and a picker as wide as its parent would hide which
+        // dialog it belongs to.
+        var width = DialogLook.Width(DialogSize.M, Console.WindowWidth);
         var height = Math.Min((int)(Console.WindowHeight * 0.7), 28);
         var window = new WindowBuilder(system)
             .WithTitle($"Pick a model — {name}")
             .WithSize(width, height)
             .Centered()
             .AsModal()
-            .WithBorderStyle(BorderStyle.Single)
+            .Styled()
             .Resizable(true)
             .Movable(true)
             .Minimizable(false)
             .Build();
+        DialogLook.Titled(window);
 
         var filter = new PromptControl { Prompt = "Filter or id: ", HorizontalAlignment = HorizontalAlignment.Stretch };
         filter.StickyPosition = StickyPosition.Top;
         window.AddControl(filter);
-        window.AddControl(new RuleControl { StickyPosition = StickyPosition.Top, HorizontalAlignment = HorizontalAlignment.Stretch });
+        var top = DialogLook.Rule();
+        top.StickyPosition = StickyPosition.Top;
+        window.AddControl(top);
 
         var list = new ListControl { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Fill };
         window.AddControl(list);
 
-        var status = new MarkupControl([$"[{ColorScheme.MutedMarkup}]Asking the endpoint…[/]"]) { Wrap = false };
-        status.StickyPosition = StickyPosition.Bottom;
-        window.AddControl(status);
+        // THE FOOTER'S HINT IS THE STATUS: what the endpoint answered is what this dialog has to say.
+        var footer = DialogLook.Footer("Asking the endpoint…");
+        window.AddControl(footer.Rule);
+        window.AddControl(footer.Row);
+        var status = footer.Hints;
 
         IReadOnlyList<ModelInfo> all = [];
         IReadOnlyList<ModelInfo> shown = [];

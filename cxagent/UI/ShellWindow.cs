@@ -269,51 +269,40 @@ internal static class ShellWindow
         // ESCAPED: the command is the user's own text in a markup-rendered control, and a bracket
         // in it would be eaten as a colour tag.
         var body = Controls.Markup()
+            .AddLine($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(what)}[/] is still running.")
             .AddEmptyLine()
-            .AddLine($"  [{ColorScheme.CautionMarkup}]{MarkupParser.Escape(what)}[/] is still running.")
-            .AddEmptyLine()
-            .AddLine($"  [{ColorScheme.MutedMarkup}]Stopping it ends the command and closes the terminal.[/]")
-            .AddEmptyLine()
+            .AddLine($"[{ColorScheme.MutedMarkup}]Stopping it ends the command and closes the terminal.[/]")
             .Build();
 
-        var rule = Controls.RuleBuilder()
-            .WithColorRole(ColorScheme.Caution)
-            .WithBorderStyle(BorderStyle.Single)
-            .StickyBottom()
+        var stop = new ButtonBuilder()
+            .WithText(" Stop it ")
+            .WithColorRole(ColorScheme.Destructive)
+            .OnClick((_, _) => { Close(); Kill(terminal); window.Close(force: true); })
+            .Build();
+        var keep = new ButtonBuilder()
+            .WithText(" Keep running ")
+            // AFFIRMATIVE. This is the safe answer — the command keeps working — so it reads
+            // as the good outcome beside a red Stop rather than as inert chrome.
+            .WithColorRole(ColorScheme.Affirmative)
+            // BACK TO TYPING. Dismissing returns focus to the window, not to the control the
+            // user was working in — so a password prompt they nearly abandoned would sit there
+            // ignoring the keyboard.
+            .OnClick((_, _) =>
+            {
+                Close();
+                window.FocusManager.SetFocus(terminal, FocusReason.Programmatic);
+            })
             .Build();
 
-        var toolbar = Controls.Toolbar()
-            .WithSpacing(2)
-            .WithAlignment(HorizontalAlignment.Center)
-            .AddButton(new ButtonBuilder()
-                .WithText("Stop it")
-                .WithColorRole(ColorScheme.Destructive)
-                .OnClick((_, _) => { Close(); Kill(terminal); window.Close(force: true); }))
-            .AddButton(new ButtonBuilder()
-                .WithText("Keep running")
-                // AFFIRMATIVE. This is the safe answer — the command keeps working — so it reads
-                // as the good outcome beside a red Stop rather than as inert chrome.
-                .WithColorRole(ColorScheme.Affirmative)
-                // BACK TO TYPING. Dismissing returns focus to the window, not to the control the
-                // user was working in — so a password prompt they nearly abandoned would sit there
-                // ignoring the keyboard.
-                .OnClick((_, _) =>
-                {
-                    Close();
-                    window.FocusManager.SetFocus(terminal, FocusReason.Programmatic);
-                }));
-
+        // CAUTION TONE: the main answer here ends a process, so the border says so before the buttons do.
         dialog = new WindowBuilder(system)
-            .WithTitle(" Still running ")
-            .WithSize(64, 11)
+            .WithTitle("Still running")
+            .WithSize(DialogLook.Width(DialogSize.S, Console.WindowWidth), 9)
             .Centered()
             .AsModal()
-            .WithBackgroundColor(ColorScheme.ChatSurface)
-            .WithBorderStyle(BorderStyle.Rounded)
-            .WithBorderColor(ColorScheme.AccentRgb)
+            .Styled(DialogTone.Caution)
             .Resizable(false)
             .Minimizable(false)
-            .Maximizable(false)
             // ESCAPE CANCELS, never stops. The safe answer is the one a reflex reaches, so a key
             // pressed to dismiss a surprise cannot kill a running install.
             .OnKeyPressed((_, e) =>
@@ -325,9 +314,9 @@ internal static class ShellWindow
                 e.Handled = true;
             })
             .AddControl(body)
-            .AddControl(rule)
-            .AddControl(toolbar.StickyBottom().Build())
             .Build();
+        DialogLook.Titled(dialog);
+        DialogLook.AddFooter(dialog, "Esc keeps it running", stop, keep);
 
         _asking = dialog;
         system.AddWindow(dialog);

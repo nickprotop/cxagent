@@ -865,39 +865,33 @@ public static class FileTab
         For(host.Main).OpenQuestion = (title, choices, Dismiss);
 
         var body = Controls.Markup()
+            .AddLine($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(headline)}[/]")
             .AddEmptyLine()
-            .AddLine($"  [{ColorScheme.CautionMarkup}]{MarkupParser.Escape(headline)}[/]")
-            .AddEmptyLine()
-            .AddLine($"  [{ColorScheme.MutedMarkup}]{MarkupParser.Escape(detail)}[/]")
-            .AddEmptyLine()
+            .AddLine($"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(detail)}[/]")
             .Build();
 
-        var buttons = Controls.Toolbar()
-            .WithSpacing(2)
-            .WithAlignment(HorizontalAlignment.Center);
-
+        var buttons = new List<ButtonControl>();
         foreach (var choice in choices)
         {
             var take = choice.Take;
-            buttons = buttons.AddButton(new ButtonBuilder()
-                .WithText(choice.Label)
+            buttons.Add(new ButtonBuilder()
+                .WithText($" {choice.Label} ")
                 .WithColorRole(choice.Role)
                 // THE DIALOG GOES FIRST, then the work: acting on a tab while its modal is up leaves
                 // the modal on screen with nothing able to dismiss it.
-                .OnClick((_, _) => { Dismiss(); take(); }));
+                .OnClick((_, _) => { Dismiss(); take(); })
+                .Build());
         }
 
+        // CAUTION TONE: every one of these questions has an answer that discards edits or a file.
         dialog = new WindowBuilder(host.System)
-            .WithTitle($" {title} ")
-            .WithSize(64, 11)
+            .WithTitle(title)
+            .WithSize(DialogLook.Width(DialogSize.S, Console.WindowWidth), 9)
             .Centered()
             .AsModal()
-            .WithBackgroundColor(ColorScheme.ChatSurface)
-            .WithBorderStyle(BorderStyle.Rounded)
-            .WithBorderColor(ColorScheme.AccentRgb)
+            .Styled(DialogTone.Caution)
             .Resizable(false)
             .Minimizable(false)
-            .Maximizable(false)
             // ESCAPE CANCELS. The safe answer is the one a reflex reaches, and every one of these
             // questions has "leave everything as it was" among its answers.
             .OnKeyPressed((_, e) =>
@@ -908,8 +902,9 @@ public static class FileTab
                 e.Handled = true;
             })
             .AddControl(body)
-            .AddControl(buttons.StickyBottom().Build())
             .Build();
+        DialogLook.Titled(dialog);
+        DialogLook.AddFooter(dialog, "Esc cancels", [.. buttons]);
 
         host.System.AddWindow(dialog);
     }

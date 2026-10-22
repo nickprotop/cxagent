@@ -56,16 +56,18 @@ public static class ConfirmDialog
         var answer = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         _answer = answer;
 
-        var width = Math.Min(Math.Max(48, lines.Concat([title]).Max(l => l.Length) + 6), Console.WindowWidth - 4);
+        // S, or wider when a line needs it: a fact cut by the border is a fact the answer is chosen without.
+        var width = Math.Min(Math.Max(DialogLook.Width(DialogSize.S, Console.WindowWidth), lines.Concat([title]).Max(l => l.Length) + 6), Console.WindowWidth - 4);
         var window = new WindowBuilder(system)
             .WithTitle(title)
-            .WithSize(width, Math.Min(lines.Count + answers.Count + 7, Console.WindowHeight - 2))
+            .WithSize(width, Math.Min(lines.Count + answers.Count + 9, Console.WindowHeight - 2))
             .Centered()
             .AsModal()
-            .WithBorderStyle(BorderStyle.Single)
+            .Styled()
             .Movable(true)
             .Minimizable(false)
             .Build();
+        DialogLook.Titled(window);
 
         window.AddControl(new MarkupControl([.. lines.Select(MarkupParser.Escape), ""]) { Wrap = true });
         // THE PRIMARY ROLE, so the highlighted answer is a full-strength bar in the theme's accent with text
@@ -80,7 +82,7 @@ public static class ConfirmDialog
             window.Close();
         };
         window.AddControl(list);
-        window.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]Enter chooses · Esc cancels[/]"]) { StickyPosition = StickyPosition.Bottom });
+        DialogLook.AddFooter(window, "Enter chooses · Esc cancels");
 
         window.OnClosed += (_, _) =>
         {

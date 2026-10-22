@@ -153,19 +153,20 @@ public static class PluginManagerDialog
         // 90% OF THE TERMINAL, CAPPED. The same sizing MarketplaceBrowserDialog uses (:63-67) —
         // Console.WindowWidth, not a window-system property, because it is what that shipping
         // dialog is proven against.
-        var width = Math.Min((int)(Console.WindowWidth * 0.9), 150);
-        var height = Math.Min((int)(Console.WindowHeight * 0.9), 40);
+        var width = DialogLook.Width(DialogSize.L, Console.WindowWidth);
+        var height = DialogLook.LargeHeight(Console.WindowHeight);
 
         var window = new WindowBuilder(ws)
             .WithTitle("Plugins")
             .WithSize(_size?.Width ?? width, _size?.Height ?? height)
             .Centered()
             .AsModal()
-            .WithBorderStyle(BorderStyle.Single)
+            .Styled()
             .Resizable(true)
             .Movable(true)
             .Minimizable(false)
             .Build();
+        DialogLook.Titled(window);
 
         // STICKY FOR WHAT MUST NOT SCROLL, a grid for what must split. StickyPosition
         // (IWindowControl.cs:18-26) pins a control to the visible area while the rest scrolls, which

@@ -140,9 +140,11 @@ public sealed class ThemePortalContent : PortalContentBase
         _bounds = bounds;
 
         BorderStyle = BoxChars.Rounded;
-        BorderColor = ColorScheme.AccentRgb;
-        BorderBackgroundColor = ColorScheme.PanelSurface;
-        BackgroundColor = ColorScheme.PanelSurface;
+        // THE DIALOG SURFACE AND BORDER, so the theme picker reads as one of the app's dialogs; rounded,
+        // because it is a popup over the status bar rather than a window.
+        BorderColor = DialogLook.Palette.ActiveBorder;
+        BorderBackgroundColor = DialogLook.Palette.Surface;
+        BackgroundColor = DialogLook.Palette.Surface;
         ForegroundColor = ColorScheme.Heading;
         Content = content;
 

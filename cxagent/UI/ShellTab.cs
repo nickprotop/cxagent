@@ -170,18 +170,13 @@ internal static class ShellTab
         }
 
         var body = Controls.Markup()
+            .AddLine($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(title)} is still running.[/]")
             .AddEmptyLine()
-            .AddLine($"  [{ColorScheme.CautionMarkup}]{MarkupParser.Escape(title)} is still running.[/]")
-            .AddEmptyLine()
-            .AddLine($"  [{ColorScheme.MutedMarkup}]Closing it ends the shell and anything it started.[/]")
-            .AddEmptyLine()
+            .AddLine($"[{ColorScheme.MutedMarkup}]Closing it ends the shell and anything it started.[/]")
             .Build();
 
-        var buttons = Controls.Toolbar()
-            .WithSpacing(2)
-            .WithAlignment(HorizontalAlignment.Center)
-            .AddButton(new ButtonBuilder()
-                .WithText("Close it")
+        var close = new ButtonBuilder()
+                .WithText(" Close it ")
                 .WithColorRole(ColorScheme.Destructive)
                 // THE DIALOG GOES FIRST, then the work — closing the tab while its modal is up
                 // leaves the modal on screen with nothing able to dismiss it.
@@ -197,23 +192,23 @@ internal static class ShellTab
 
                     Kill(terminal);
                     Close(main, title);
-                }))
-            .AddButton(new ButtonBuilder()
-                .WithText("Keep running")
-                .WithColorRole(ColorScheme.Affirmative)
-                .OnClick((_, _) => { Dismiss(); Focus(main, terminal); }));
+                })
+                .Build();
+        var keep = new ButtonBuilder()
+            .WithText(" Keep running ")
+            .WithColorRole(ColorScheme.Affirmative)
+            .OnClick((_, _) => { Dismiss(); Focus(main, terminal); })
+            .Build();
 
+        // CAUTION TONE: the main answer here ends the shell, so the border says so before the buttons do.
         dialog = new WindowBuilder(system)
-            .WithTitle(" Still running ")
-            .WithSize(60, 11)
+            .WithTitle("Still running")
+            .WithSize(DialogLook.Width(DialogSize.S, Console.WindowWidth), 9)
             .Centered()
             .AsModal()
-            .WithBackgroundColor(ColorScheme.ChatSurface)
-            .WithBorderStyle(BorderStyle.Rounded)
-            .WithBorderColor(ColorScheme.AccentRgb)
+            .Styled(DialogTone.Caution)
             .Resizable(false)
             .Minimizable(false)
-            .Maximizable(false)
             // ESCAPE KEEPS IT RUNNING. The safe answer is the one a reflex reaches.
             .OnKeyPressed((_, e) =>
             {
@@ -224,8 +219,9 @@ internal static class ShellTab
                 e.Handled = true;
             })
             .AddControl(body)
-            .AddControl(buttons.StickyBottom().Build())
             .Build();
+        DialogLook.Titled(dialog);
+        DialogLook.AddFooter(dialog, "Esc keeps it running", close, keep);
 
         system.AddWindow(dialog);
     }

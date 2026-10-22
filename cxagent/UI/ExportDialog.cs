@@ -156,13 +156,14 @@ public static class ExportDialog
             _request = request;
             Window = new WindowBuilder(host.System)
                 .WithTitle("Export session")
-                .WithSize(Math.Min(78, Math.Max(62, Console.WindowWidth - 4)), Math.Min(17, Math.Max(16, Console.WindowHeight - 2)))
+                .WithSize(DialogLook.Width(DialogSize.M, Console.WindowWidth), Math.Min(18, Math.Max(16, Console.WindowHeight - 2)))
                 .Centered()
                 .AsModal()
-                .WithBorderStyle(BorderStyle.Single)
+                .Styled()
                 .Movable(true)
                 .Minimizable(false)
                 .Build();
+            DialogLook.Titled(Window);
 
             WholeRadio = new RadioControl<ExportScope>(_scope, ExportScope.Whole, "Whole session");
             LastRadio = new RadioControl<ExportScope>(_scope, ExportScope.LastTurn, "Last turn");
@@ -255,7 +256,7 @@ public static class ExportDialog
 
         private void Layout()
         {
-            Window.AddControl(new MarkupControl([_request.SessionLine]) { Margin = new Margin(1, 0, 1, 0) });
+            Window.AddControl(new MarkupControl([_request.SessionLine]));
             Window.AddControl(Rule());
 
             Window.AddControl(Row("Scope", WholeRadio, LastRadio, LastNRadio, _turns, Muted("turns")));
@@ -267,7 +268,7 @@ public static class ExportDialog
                 Title = "Advanced",
                 IsExpanded = false,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                Margin = new Margin(LabelWidth + 1, 0, 1, 0),
+                Margin = new Margin(LabelWidth, 0, 0, 0),
             };
             var boxes = Boxes.Values.ToList();
             var grid = Controls.Grid().Columns(GridLength.Star(1), GridLength.Star(1))
@@ -279,7 +280,7 @@ public static class ExportDialog
             Window.AddControl(advanced);
             Window.AddControl(new MarkupControl([""]));
 
-            _path.InputWidth = Math.Max(20, Window.Width - LabelWidth - 18);
+            _path.InputWidth = Math.Max(20, Window.Width - LabelWidth - 20);
             Window.AddControl(Row("Save to", FileRadio, ClipboardRadio));
             Window.AddControl(Row("", _path, new ButtonBuilder().WithText(" Browse… ").OnClick((_, _) => _ = BrowseAsync()).Build()));
             Window.AddControl(Row("", _open));
@@ -288,29 +289,17 @@ public static class ExportDialog
 
             // THE ANSWER AT THE BOTTOM: what will be written, then the buttons at the right edge, where a dialog's
             // buttons are looked for.
-            _size.Margin = new Margin(1, 0, 1, 0);
             _size.StickyPosition = StickyPosition.Bottom;
             Window.AddControl(_size);
-            var rule = Rule();
-            rule.StickyPosition = StickyPosition.Bottom;
-            Window.AddControl(rule);
-            var buttons = new ToolbarControl
-            {
-                ItemSpacing = 2,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                StickyPosition = StickyPosition.Bottom,
-                Margin = new Margin(1, 0, 1, 0),
-            };
-            buttons.AddItem(ExportButton);
-            buttons.AddItem(new ButtonBuilder().WithText(" Cancel ").OnClick((_, _) => CloseIfOpen()).Build());
-            Window.AddControl(buttons);
+            DialogLook.AddFooter(Window, "Tab moves · Esc cancels",
+                ExportButton, new ButtonBuilder().WithText(" Cancel ").OnClick((_, _) => CloseIfOpen()).Build());
         }
 
-        private static RuleControl Rule() => new() { Color = ColorScheme.MutedRgb, Margin = new Margin(1, 0, 1, 0) };
+        private static RuleControl Rule() => DialogLook.Rule();
 
         private static ToolbarControl Row(string label, params IWindowControl[] items)
         {
-            var row = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Margin(1, 0, 1, 0) };
+            var row = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Stretch };
             row.AddItem(new MarkupControl([$"[{ColorScheme.MutedMarkup}]{label.PadRight(LabelWidth - 2)}[/]"]));
             foreach (var item in items) row.AddItem(item);
             return row;
@@ -318,7 +307,7 @@ public static class ExportDialog
 
         private static IWindowControl Indented(MarkupControl line)
         {
-            line.Margin = new Margin(LabelWidth + 1, 0, 1, 0);
+            line.Margin = new Margin(LabelWidth, 0, 0, 0);
             return line;
         }
 
