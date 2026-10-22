@@ -177,7 +177,7 @@ public class MapTests
         var map = await Map(tree, tokens: RepoMap.Map.MinTokens);
 
         Assert.Contains("Next by rank, declarations not shown:", map);
-        Assert.Contains("more files.", map);
+        Assert.Contains("more files rank lower", map);
         Assert.InRange(map.Length, 1, RepoMap.Map.MinTokens * 4 + 600);
     }
 
@@ -226,4 +226,35 @@ public class MapTests
         using var tree = new TempTree().Write("README.md", "# hi");
         Assert.Equal("No source files under . in a language repo_map reads.", await Map(tree));
     }
+
+    /// <summary>
+    /// THE CLOSING LINE READS AS THE END OF A RANKED MAP, not as a cut-off: a model that read "…and 649
+    /// more files" as truncation raised max_tokens, got the same line, and re-mapped subfolders one by one.
+    /// </summary>
+    [Fact]
+    public void TheClosingLine_SaysTheRestRankLower_AndHowToSeeThem()
+    {
+        var line = RepoMap.Map.ClosingLine(unnamed: 649, maxTokens: 2048);
+        Assert.StartsWith("The map ends here: 649 more files rank lower.", line);
+        Assert.Contains("pass focus", line);
+        Assert.Contains("raise max_tokens (now 2048", line);
+    }
+
+    /// <summary>AT THE MOST, RAISING IT IS NOT ADVICE: it cannot help, and a model follows it anyway.</summary>
+    [Fact]
+    public void AtTheMostTokens_TheClosingLineNeverSaysToRaiseThem()
+    {
+        var named = RepoMap.Map.ClosingLine(unnamed: 649, maxTokens: RepoMap.Map.MaxTokens);
+        var declarations = RepoMap.Map.ClosingLine(unnamed: 0, maxTokens: RepoMap.Map.MaxTokens);
+        foreach (var line in new[] { named, declarations })
+        {
+            Assert.DoesNotContain("raise max_tokens", line, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("at its most", line);
+            Assert.Contains("focus", line);
+        }
+    }
+
+    [Fact]
+    public void WhenEveryFileIsNamed_TheClosingLineIsAboutTheirDeclarations() =>
+        Assert.Contains("declarations", RepoMap.Map.ClosingLine(unnamed: 0, maxTokens: 2048));
 }

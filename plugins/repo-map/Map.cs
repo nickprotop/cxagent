@@ -115,12 +115,33 @@ public static class Map
             output.Append("Next by rank, declarations not shown:\n");
             output.Append(names);
         }
-        var unnamed = rest.Count - listed;
-        output.Append(unnamed > 0
-            ? $"…and {unnamed} more files. Pass focus, map a subfolder, or raise max_tokens (now {request.MaxTokens}) to see them.\n"
-            : $"Raise max_tokens (now {request.MaxTokens}) to see their declarations.\n");
+        output.Append(ClosingLine(rest.Count - listed, request.MaxTokens)).Append('\n');
 
         return output.ToString();
+    }
+
+    /// <summary>
+    /// The map's last line, when files did not fit: what the rest are, and how to see them.
+    ///
+    /// <para>THE END OF A RANKED MAP, NOT A CUT-OFF. "…and 649 more files" read as truncation: a model
+    /// raised max_tokens, got the same line back, and re-mapped subfolders one by one. Saying the rest
+    /// rank lower says the map is whole as a map — what follows is the less-used part.</para>
+    ///
+    /// <para>NO "RAISE max_tokens" AT THE MOST. It cannot help there, and a model follows the advice
+    /// it is given; focus and a subfolder are what still can.</para>
+    /// </summary>
+    /// <param name="unnamed">Files neither shown nor listed by path; 0 when every file is at least named.</param>
+    /// <param name="maxTokens">The budget this map was drawn to.</param>
+    public static string ClosingLine(int unnamed, int maxTokens)
+    {
+        var atMost = maxTokens >= MaxTokens;
+        if (unnamed > 0)
+            return $"The map ends here: {unnamed} more files rank lower. " + (atMost
+                ? $"max_tokens is at its most ({MaxTokens}); to see them, pass focus or map a subfolder."
+                : $"To see them, pass focus, map a subfolder, or raise max_tokens (now {maxTokens}, at most {MaxTokens}).");
+        return atMost
+            ? $"max_tokens is at its most ({MaxTokens}); for the listed files' declarations, pass focus or map a subfolder."
+            : $"For the listed files' declarations, raise max_tokens (now {maxTokens}, at most {MaxTokens}), pass focus, or map a subfolder.";
     }
 
     private static string FileBlock(FileOutline file, IReadOnlyDictionary<string, int> usedBy)

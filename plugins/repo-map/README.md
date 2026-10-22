@@ -25,15 +25,15 @@ cxagent.Core/Core/Jobs/JobRegistry.cs
 Next by rank, declarations not shown:
   cxagent.Core/Core/Sessions/Session.cs
   ...
-…and 271 more files. Pass focus, map a subfolder, or raise max_tokens (now 2048) to see them.
+The map ends here: 271 more files rank lower. To see them, pass focus, map a subfolder, or raise max_tokens (now 2048, at most 16384).
 ```
 
 - **`path`**: the folder to map, relative to the caller's own folder. The default is the whole folder.
 - **`focus`**: file paths, folders or symbol names, comma-separated (`src/Agent.cs,RunTurn`). What
   they use and what uses them come first.
 - **`max_tokens`**: roughly how large the map may be. The default is 2048 and the most is 16384. What
-  does not fit is still listed by path while the budget lasts, and the map always says how much it
-  left out.
+  does not fit is still listed by path while the budget lasts, and the map always ends by saying how
+  many files rank lower and how to see them.
 
 ## How files are ranked
 
