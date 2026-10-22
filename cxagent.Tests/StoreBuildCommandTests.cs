@@ -77,7 +77,7 @@ public class StoreBuildCommandTests
 
     private string[] Snapshot() => Directory.Exists(_out)
         ? [.. Directory.GetFileSystemEntries(_out, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
-            .Select(f => f + (File.Exists(f) ? ":" + Convert.ToHexString(File.ReadAllBytes(f)).GetHashCode() : ""))]
+            .Select(f => f + (File.Exists(f) ? ":" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(f))) : ""))]
         : [];
 
     [Fact]
@@ -124,8 +124,10 @@ public class StoreBuildCommandTests
         var builds = StoreBuildCommand.NativeBuildsOf(dir);
 
         Assert.Contains(builds, b => b.Rid == "osx-arm64" && b.Library.EndsWith("weather.dylib"));
-        Assert.Contains(builds, b => b.Rid == System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier
-                                     && b.Library == Path.Combine(dir, "weather.so"));
+        // THE SAME CHOICE THE CODE MAKES: a host whose platform the catalog has no name for gets no entry.
+        var thisMachine = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+        if (PluginPackCommand.Rids.Contains(thisMachine))
+            Assert.Contains(builds, b => b.Rid == thisMachine && b.Library == Path.Combine(dir, "weather.so"));
     }
 
     [Fact]
@@ -136,6 +138,42 @@ public class StoreBuildCommandTests
         File.Copy(Path.Combine(_plugins, "calc", "fixture.dll"), Path.Combine(stray, "fixture.dll"), overwrite: true);
         Assert.Empty(StoreBuildCommand.NativeBuildsOf(Path.Combine(_plugins, "calc")));
         Assert.Equal(0, await StoreBuildCommand.RunAsync(Args, _stdout, _stderr, default));
+    }
+
+    [Fact]
+    public async Task AFolderWithNoPlugins_IsNothingToBuild_ExitTwo()
+    {
+        var empty = Folders.NewFolder("store-empty-");
+        Assert.Equal(2, await StoreBuildCommand.RunAsync([empty, "--url", "https://t/cx", "--out", _out], _stdout, _stderr, default));
+        Assert.False(File.Exists(Path.Combine(_out, "catalog.json")));
+    }
+
+    [Fact]
+    public async Task APluginNameThatCannotBeInstalledFromAStore_IsRefused()
+    {
+        var sidecar = Path.Combine(_plugins, "calc", "fixture.plugin.json");
+        File.WriteAllText(sidecar, File.ReadAllText(sidecar).Replace("\"well-formed\"", "\"well.formed\""));
+        var code = await StoreBuildCommand.RunAsync(Args, _stdout, _stderr, default);
+        Assert.Equal(1, code);
+        Assert.False(File.Exists(Path.Combine(_out, "catalog.json")));
+        Assert.Contains("calc", _stderr.ToString());
+        Assert.Contains("letters, digits, '-' and '_'", _stderr.ToString());
+    }
+
+    [Fact]
+    public async Task APackInfoFile_IsNotInTheZip()
+    {
+        await StoreBuildCommand.RunAsync(Args, _stdout, _stderr, default);
+        using var zip = System.IO.Compression.ZipFile.OpenRead(Path.Combine(_out, "harness.zip"));
+        Assert.DoesNotContain(zip.Entries, e => e.Name.StartsWith("pack-info", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TheJsonOutput_NamesPathsAsOutWasGiven()
+    {
+        var given = Path.GetRelativePath(Environment.CurrentDirectory, _out);
+        await StoreBuildCommand.RunAsync([_plugins, "--url", "https://t/cx", "--out", given, "--json"], _stdout, _stderr, default);
+        Assert.Contains(Path.Combine(given, "catalog.json").Replace("\\", "\\\\"), _stdout.ToString());
     }
 
     // ONE STRING PER CASE, split on spaces: an array is not a constant, so it cannot sit in an attribute.

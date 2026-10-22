@@ -210,10 +210,10 @@ with each download addressed `https://tools.example/cx/<zip>`, beside one zip pe
 for a native one). It prints each zip's hash, then the line to give your users.
 
 Each plugin's catalog text comes from the `pack-info.json` (or `.yaml`) in its folder, else its project.
-If a plugin does not load, a field is still unfilled, two plugins share a name, or the catalog would
+If a plugin does not load, a field is still unfilled, two plugins share a name, a name cannot be installed from a store (letters, digits, `-` and `_`), or the catalog would
 fail `plugin verify`'s shape rules, nothing is written and each problem is listed under its folder's name.
 
-Exit codes: 0 built, 1 a plugin or the folder is at fault, 2 usage.
+Exit codes: 0 built, 1 a plugin is at fault, 2 usage or nothing to build.
 
 Upload `site` so `catalog.json` is at `<base-url>/catalog.json`. Users then run
 `/plugin store add <name> <base-url>/catalog.json`, and the store's plugins appear in the plugin manager

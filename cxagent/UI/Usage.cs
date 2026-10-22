@@ -101,7 +101,7 @@ public static class Usage
             "A folder of built plugins, one per subfolder, becomes the catalog and zips a web server serves as a plugin store. "
             + "Users then run /plugin store add <name> <base-url>/catalog.json.",
             [
-                new("store build FOLDER --url BASE --out DIR [--json]", "Write DIR/catalog.json and one zip per plugin, with downloads addressed under BASE (https, or http://localhost). Writes nothing on any problem. Exit: 0 built, 1 a plugin or the folder is at fault, 2 usage."),
+                new("store build FOLDER --url BASE --out DIR [--json]", "Write DIR/catalog.json and one zip per plugin, with downloads addressed under BASE (https, or http://localhost). Writes nothing on any problem. Exit: 0 built, 1 a plugin is at fault, 2 usage or nothing to build."),
             ]),
         new("CONFIGURATION",
             "Providers, agent types, MCP servers and permissions live in config.json under your config directory. "

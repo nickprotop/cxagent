@@ -26,7 +26,7 @@ internal static class StoreBuildCommand
         pack-info.json (or .yaml) for the catalog text. A native plugin's other platforms sit in
         <subfolder>/<rid>/<sidecar-name>.so|.dylib|.dll.
 
-        exit: 0 built, 1 a plugin or the folder is at fault, 2 usage
+        exit: 0 built, 1 a plugin is at fault, 2 usage or nothing to build
         """;
 
     private static readonly JsonSerializerOptions Indented = new()
@@ -34,6 +34,9 @@ internal static class StoreBuildCommand
         WriteIndented = true,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
+
+    /// <summary>What one run works with: the request, its staging folder and where it reports.</summary>
+    private sealed record BuildRun(Build Build, string Staging, TextWriter Stdout, TextWriter Stderr);
 
     /// <summary>What the command line asked for.</summary>
     /// <paramref name="OutShown"/> is --out as typed, which the printed paths use so a person can paste them.
@@ -49,9 +52,17 @@ internal static class StoreBuildCommand
         // carries. The folder goes on every exit, a refusal and an IO failure included.
         var staging = Path.Combine(build.OutDir, $".build-{Guid.NewGuid():N}");
         var outExisted = Directory.Exists(build.OutDir);
+        var keepStaging = false;
         try
         {
-            return await BuildAsync(build, staging, stdout, stderr, ct).ConfigureAwait(false);
+            return await BuildAsync(new BuildRun(build, staging, stdout, stderr), ct).ConfigureAwait(false);
+        }
+        catch (RollbackFailed ex)
+        {
+            // THE PREVIOUS FILES ARE IN STAGING: deleting it would delete the only copy of the store
+            // that was there.
+            keepStaging = true;
+            return Refuse(stderr, $"{ex.Message} The previous files are in '{Path.Combine(staging, "previous")}'.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -59,28 +70,49 @@ internal static class StoreBuildCommand
         }
         finally
         {
-            try { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            if (!keepStaging)
+            {
+                // A STAGING FOLDER THAT WILL NOT GO IS SAID, WITH ITS PATH: it holds a whole build's zips,
+                // and a folder nobody is told about is one that sits inside the served --out for good.
+                try { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    stderr.WriteLine($"cxagent store: could not remove '{staging}': {ex.Message}");
+                }
+            }
 
             // AN --out THIS RUN MADE AND FILLED WITH NOTHING is a folder a refused build left behind.
             try { if (!outExisted && Directory.Exists(build.OutDir) && !Directory.EnumerateFileSystemEntries(build.OutDir).Any()) Directory.Delete(build.OutDir); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                stderr.WriteLine($"cxagent store: could not remove '{build.OutDir}': {ex.Message}");
+            }
         }
     }
 
-    private static async Task<int> BuildAsync(Build build, string staging, TextWriter stdout, TextWriter stderr, CancellationToken ct)
+    private static async Task<int> BuildAsync(BuildRun run, CancellationToken ct)
     {
+        var (build, staging, stdout, stderr) = (run.Build, run.Staging, run.Stdout, run.Stderr);
         var subfolders = Directory.GetDirectories(build.Folder)
             .Where(d => Directory.GetFiles(d, "*.plugin.json").Length > 0)
             .Order(StringComparer.Ordinal)
             .ToList();
-        if (subfolders.Count == 0) return Refuse(stderr, $"no plugin in '{build.Folder}': each plugin is a subfolder holding a *.plugin.json.");
+        if (subfolders.Count == 0) return Fail(stderr, $"no plugin in '{build.Folder}': each plugin is a subfolder holding a *.plugin.json.");
 
         var problems = new List<string>();
         var packed = new List<(string Folder, PluginPackCommand.PackOutcome Outcome)>();
         foreach (var sub in subfolders)
         {
             var label = Path.GetFileName(sub);
+
+            // A NAME `/plugin get <store>/<name>` CANNOT TYPE is a plugin nobody could install from this
+            // store, and a user finds that out only after adding it. Asked of the store's own rule.
+            if (SidecarName(sub) is { } sidecarName && !PluginStores.TrySplit($"store/{sidecarName}", out _, out _))
+            {
+                problems.Add($"{label}: the plugin name '{sidecarName}' cannot be installed from a store; a name is letters, digits, '-' and '_'.");
+                continue;
+            }
+
             var request = RequestFor(sub, staging, out var infoError);
             if (infoError is not null)
             {
@@ -122,13 +154,9 @@ internal static class StoreBuildCommand
         if (readError is not null || shape.Count > 0)
             return Refuse(stderr, readError is null ? shape : [readError]);
 
-        // ZIPS FIRST, THE CATALOG LAST: the catalog is what makes a download reachable, so it never
-        // names a zip that is not yet in place.
         var zips = packed.SelectMany(p => p.Outcome.Packed!.Zips).ToList();
-        foreach (var z in zips)
-            File.Move(z.Zip, Path.Combine(build.OutDir, Path.GetFileName(z.Zip)), overwrite: true);
         var catalogPath = Path.Combine(build.OutDir, "catalog.json");
-        File.Move(staged, catalogPath, overwrite: true);
+        Install([.. zips.Select(z => z.Zip), staged], build.OutDir, Path.Combine(staging, "previous"));
 
         // PATHS AS THE PERSON TYPED --out, not made relative to the working directory: an --out
         // elsewhere would otherwise print as ../../../…, which is not what they gave.
@@ -137,10 +165,10 @@ internal static class StoreBuildCommand
         {
             stdout.WriteLine(JsonSerializer.Serialize(new
             {
-                catalog = catalogPath,
+                catalog = Shown("catalog.json"),
                 url = $"{build.BaseUrl}/catalog.json",
                 plugins = packed.Select(p => p.Outcome.Packed!.Sidecar.Name),
-                zips = zips.Select(z => new { file = Path.Combine(build.OutDir, Path.GetFileName(z.Zip)), sha256 = z.Hash, platform = z.Rid }),
+                zips = zips.Select(z => new { file = Shown(Path.GetFileName(z.Zip)), sha256 = z.Hash, platform = z.Rid }),
             }, Indented));
             return 0;
         }
@@ -150,6 +178,60 @@ internal static class StoreBuildCommand
         stdout.WriteLine($"serve {build.OutShown} at {build.BaseUrl}, then users run: /plugin store add <name> {build.BaseUrl}/catalog.json");
         return 0;
     }
+
+    /// <summary>
+    /// Moves the staged files into <paramref name="outDir"/>, the catalog last (it is what makes a
+    /// download reachable, so it never names a zip not yet in place). Each file it replaces is first
+    /// moved into <paramref name="previous"/>; if any move fails, the new files already in place are
+    /// removed and the old ones put back, so the store is the one that was there or the new one.
+    ///
+    /// <para>THE GUARANTEE IS BEST EFFORT: the rollback moves can fail as the forward ones did (a
+    /// full or read-only volume), and <see cref="RollbackFailed"/> is thrown, which keeps the staging folder with
+    /// the old files in <paramref name="previous"/>.</para>
+    /// </summary>
+    private static void Install(IReadOnlyList<string> staged, string outDir, string previous)
+    {
+        Directory.CreateDirectory(previous);
+        var done = new List<(string Placed, string? Saved)>();
+        try
+        {
+            foreach (var file in staged)
+            {
+                var target = Path.Combine(outDir, Path.GetFileName(file));
+                string? saved = null;
+                if (File.Exists(target))
+                {
+                    saved = Path.Combine(previous, Path.GetFileName(file));
+                    File.Move(target, saved, overwrite: true);
+                }
+
+                done.Add((target, saved));
+                File.Move(file, target, overwrite: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            foreach (var (placed, saved) in Enumerable.Reverse(done))
+            {
+                try
+                {
+                    if (File.Exists(placed)) File.Delete(placed);
+                    if (saved is not null) File.Move(saved, placed, overwrite: true);
+                }
+                catch (Exception undo) when (undo is IOException or UnauthorizedAccessException)
+                {
+                    throw new RollbackFailed($"{ex.Message} — and the previous store could not be put back: {undo.Message}", ex);
+                }
+            }
+
+            throw;
+        }
+    }
+
+    private sealed class RollbackFailed(string message, Exception inner) : IOException(message, inner);
+
+    private static string? SidecarName(string sub) =>
+        PluginManifest.Parse(File.ReadAllText(Directory.GetFiles(sub, "*.plugin.json").Order(StringComparer.Ordinal).First())).Manifest?.Name;
 
     // THE PLUGIN'S OWN FILES DECIDE ITS REQUEST: a pack-info beside it for the catalog text, and a
     // <rid>/<library> folder for each platform it was built for. Without the latter a native plugin

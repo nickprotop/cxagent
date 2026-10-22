@@ -31,6 +31,21 @@ public class PluginPackTests
             zip.Entries.Select(e => e.FullName).Order(StringComparer.Ordinal));
     }
 
+    /// <summary>The info file feeds the entry's text; a user installing the plugin has no use for it.</summary>
+    [Fact]
+    public async Task APackInfoFile_IsNotInTheZip()
+    {
+        var dir = Folders.Harness();
+        File.WriteAllText(Path.Combine(dir, "pack-info.json"), "{}");
+        File.WriteAllText(Path.Combine(dir, "pack-info.yaml"), "");
+        var outDir = Folders.NewFolder("pack-out-");
+
+        await Run("pack", dir, "--out", outDir);
+
+        using var zip = System.IO.Compression.ZipFile.OpenRead(Path.Combine(outDir, "harness.zip"));
+        Assert.DoesNotContain(zip.Entries, e => e.Name.StartsWith("pack-info", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task TheEntry_MatchesTheSidecar_AndHashesTheZip()
     {

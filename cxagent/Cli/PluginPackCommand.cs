@@ -240,6 +240,10 @@ internal static class PluginPackCommand
             || name.EndsWith(".runtimeconfig.json", StringComparison.OrdinalIgnoreCase)
             || name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
             || name.EndsWith(".catalog.json", StringComparison.OrdinalIgnoreCase)
+
+            // THE CATALOG'S TEXT, FOR THE PERSON PACKING: a user installing the plugin has no use for it,
+            // and it is one more file in the hash they approve.
+            || name is "pack-info.json" or "pack-info.yaml" or "pack-info.yml"
             // AN ASSEMBLY'S XML DOCS — foo.xml beside foo.dll — are for an IDE; any other .xml is data.
             || (name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
                 && File.Exists(Path.Combine(folder, Path.ChangeExtension(name, ".dll"))));
