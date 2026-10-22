@@ -13,7 +13,10 @@ public sealed record StoreCommandRequest(string Arguments, string ConfigPath, st
     public string? ProjectDirectory { get; init; }
 }
 
-/// <summary>The replies that are fixed text, so a caller can tell a refusal from a result.</summary>
+/// <summary>What <c>/plugin store</c> answered, and whether that answer is a refusal.</summary>
+public sealed record StoreReply(string Text, bool Refused);
+
+/// <summary>The replies that are fixed text, named once for the command and its tests.</summary>
 public static class StoreCommandText
 {
     public const string Usage = "usage: /plugin store add <name> <url> | remove <name> | list";
@@ -38,18 +41,23 @@ public sealed class PluginStoreCommand(ConsoleWindowSystem system, MainWindow wi
             arguments, Path.Combine(paths.ConfigDir, "config.json"), paths.ConfigDir)
             { ProjectDirectory = projectDirectory }, CancellationToken.None);
 
-        var refused = reply.StartsWith("usage:", StringComparison.Ordinal)
-                   || reply.StartsWith("no store", StringComparison.Ordinal)
-                   || reply.Contains(" was not added", StringComparison.Ordinal)
-                   || reply.Contains(" is already added", StringComparison.Ordinal);
         system.EnqueueOnUIThread(() => ChatTranscriptSink.Post(window.Chat, ChatTranscriptSink.Row(
-            new CxAgent.Core.Commands.Message(reply, refused ? CxAgent.Core.Commands.Severity.Warning : CxAgent.Core.Commands.Severity.Info))),
+            new CxAgent.Core.Commands.Message(reply.Text, reply.Refused ? CxAgent.Core.Commands.Severity.Warning : CxAgent.Core.Commands.Severity.Info))),
             "pluginStoreCommand.HandleAsync");
     }
 
-    /// <summary>Runs the command and returns its reply; the only effects are config.json and a store's cache.</summary>
-    public static async Task<string> RunAsync(StoreCommandRequest request, CancellationToken ct)
+    /// <summary>
+    /// Runs the command and returns its reply; the only effects are config.json and a store's cache.
+    ///
+    /// <para>EACH REPLY SAYS WHETHER IT IS A REFUSAL, at the line that decides it. Read back from the
+    /// text, "no stores — /plugin store add …" begins like the refusal "no store named …", and a plain
+    /// answer would show as a warning.</para>
+    /// </summary>
+    public static async Task<StoreReply> RunAsync(StoreCommandRequest request, CancellationToken ct)
     {
+        static StoreReply Ok(string text) => new(text, Refused: false);
+        static StoreReply No(string text) => new(text, Refused: true);
+
         var words = request.Arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var stores = PluginStores.ReadFile(request.ConfigPath);
 
@@ -57,34 +65,34 @@ public sealed class PluginStoreCommand(ConsoleWindowSystem system, MainWindow wi
         {
             case ["store", "add", var name, var url]:
             {
-                if (PluginStores.Problem(name, url) is { } problem) return $"store '{name}' was not added: {problem}.";
+                if (PluginStores.Problem(name, url) is { } problem) return No($"store '{name}' was not added: {problem}.");
                 if (stores.FirstOrDefault(s => s.Name == name) is { } existing)
-                    return $"store '{name}' is already added ({existing.Url}).";
-                if (NameClash(request, name) is { } clash) return $"store '{name}' was not added: {clash}";
+                    return No($"store '{name}' is already added ({existing.Url}).");
+                if (NameClash(request, name) is { } clash) return No($"store '{name}' was not added: {clash}");
 
                 // INTO THE STORE'S OWN CACHE, so the plugin manager opened next lists it without a
                 // second request, and offline later from this copy.
                 var catalog = await new CatalogReader(request.Client, CatalogSources.StoreCache(request.ConfigDir, name), url)
                     .ReadAsync(ct).ConfigureAwait(false);
-                if (catalog.Error is { } error) return $"store '{name}' was not added: {error}";
+                if (catalog.Error is { } error) return No($"store '{name}' was not added: {error}");
 
                 PluginConfigWriter.SetStores(request.ConfigPath, [.. stores, new PluginStore(name, url)]);
-                return catalog.Plugins.Count == 0
+                return Ok(catalog.Plugins.Count == 0
                     ? $"store '{name}' added — it lists no plugins yet."
-                    : $"store '{name}' added — {Count(catalog.Plugins.Count)}: {Names(catalog.Plugins)}.";
+                    : $"store '{name}' added — {Count(catalog.Plugins.Count)}: {Names(catalog.Plugins)}.");
             }
 
             case ["store", "remove", var name]:
-                if (!stores.Any(s => s.Name == name)) return $"no store named '{name}'.";
+                if (!stores.Any(s => s.Name == name)) return No($"no store named '{name}'.");
                 PluginConfigWriter.SetStores(request.ConfigPath, [.. stores.Where(s => s.Name != name)]);
-                return $"store '{name}' removed. Its installed plugins stay installed and stop getting updates.";
+                return Ok($"store '{name}' removed. Its installed plugins stay installed and stop getting updates.");
 
             case ["store", "list"]:
-                if (stores.Count == 0) return "no stores — /plugin store add <name> <url> adds one.";
-                return string.Join("\n", stores.Select(s => $"{s.Name} — {s.Url} — {LastRead(request, s)}"));
+                if (stores.Count == 0) return Ok("no stores — /plugin store add <name> <url> adds one.");
+                return Ok(string.Join("\n", stores.Select(s => $"{s.Name} — {s.Url} — {LastRead(request, s)}")));
 
             default:
-                return StoreCommandText.Usage;
+                return No(StoreCommandText.Usage);
         }
     }
 

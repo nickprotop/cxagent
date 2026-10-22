@@ -23,8 +23,51 @@ public sealed class PluginStoreCommandTests : IDisposable
         return new HttpClient(handler);
     }
 
-    private Task<string> Run(string args, HttpClient? http = null) =>
+    private async Task<string> Run(string args, HttpClient? http = null) =>
+        (await Reply(args, http)).Text;
+
+    private Task<StoreReply> Reply(string args, HttpClient? http = null) =>
         PluginStoreCommand.RunAsync(new StoreCommandRequest(args, Config, _dir, http ?? Http()), default);
+
+    /// <summary>
+    /// A REFUSAL IS SAID BY THE COMMAND, NOT GUESSED FROM ITS WORDS: "no stores — /plugin store add …" is
+    /// a plain answer that begins like the refusal "no store named …", and matching on text showed it as
+    /// a warning.
+    /// </summary>
+    [Fact]
+    public async Task EachReply_SaysWhetherItIsARefusal()
+    {
+        Assert.False((await Reply("store list")).Refused);
+        Assert.True((await Reply("store remove acme")).Refused);
+        Assert.True((await Reply("store frob")).Refused);
+        Assert.True((await Reply("store add cxagent https://a/c.json")).Refused);
+        Assert.True((await Reply("store add acme https://a/c.json")).Refused);
+        Assert.False((await Reply("store add acme https://a/c.json", Http(("https://a/c.json", CatalogSetTests.Catalog("jira"))))).Refused);
+        Assert.True((await Reply("store add acme https://a/c.json")).Refused);
+        Assert.False((await Reply("store remove acme")).Refused);
+    }
+
+    /// <summary>
+    /// A FIELD cxagent DOES NOT KNOW ON A STORE SURVIVES AN EDIT OF THE LIST: config.json is hand-edited,
+    /// and the store record keeps room for more than a name and a URL.
+    /// </summary>
+    [Fact]
+    public async Task AddingAndRemovingAStore_KeepsTheOtherStoresOwnFields()
+    {
+        File.WriteAllText(Config, """
+            { "stores": [ { "name": "acme", "url": "https://a/c.json", "token": "keep-me-too" },
+                          { "name": "beta", "url": "https://b/c.json" } ] }
+            """);
+
+        await Run("store add gamma https://g/c.json", Http(("https://g/c.json", CatalogSetTests.Catalog("jira"))));
+        Assert.Contains("keep-me-too", File.ReadAllText(Config));
+        await Run("store remove beta");
+
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Config));
+        var acme = doc.RootElement.GetProperty("stores")[0];
+        Assert.Equal("keep-me-too", acme.GetProperty("token").GetString());
+        Assert.Equal(["acme", "gamma"], PluginStores.ReadFile(Config).Select(s => s.Name));
+    }
 
     [Fact]
     public async Task Add_ReadsTheCatalogOnce_ThenWritesTheStore()
@@ -98,9 +141,9 @@ public sealed class PluginStoreCommandTests : IDisposable
         Directory.CreateDirectory(Path.Combine(plugins, "repo-map"));
         File.WriteAllText(Path.Combine(plugins, "repo-map", "repo-map.plugin.json"), "{}");
 
-        var reply = await PluginStoreCommand.RunAsync(new StoreCommandRequest(
+        var reply = (await PluginStoreCommand.RunAsync(new StoreCommandRequest(
             "store add repo-map https://a/c.json", Config, _dir,
-            Http(("https://a/c.json", CatalogSetTests.Catalog("jira-search")))) { ProjectDirectory = project }, default);
+            Http(("https://a/c.json", CatalogSetTests.Catalog("jira-search")))) { ProjectDirectory = project }, default)).Text;
 
         Assert.StartsWith("store 'repo-map' was not added: ", reply);
         Assert.Contains(Path.Combine(plugins, "repo-map"), reply);

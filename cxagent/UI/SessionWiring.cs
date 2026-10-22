@@ -293,8 +293,8 @@ public static class SessionWiring
         // AND THE CONFIGURATION IT WAS OPENED WITH, so its mode line names its own model from the
         // first frame rather than after the first /model switch. THROUGH SetResolution, which repaints:
         // the mode line was drawn earlier in the wire, before the tab knew this, and on first run the
-        // window's own configuration is the one with no provider — a silent assignment left the
-        // composer saying "no provider" under a session that had one.
+        // window's own configuration is the one with no provider — an assignment alone would leave the
+        // composer saying "no provider" under a session that has one.
         main.SetResolution(session, w.Resolution);
     }
 

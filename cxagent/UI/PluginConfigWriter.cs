@@ -61,13 +61,29 @@ public static class PluginConfigWriter
     /// <summary>
     /// Replaces the <c>stores</c> list — removed when it is empty, so a config that never had stores
     /// does not gain an empty one by adding and removing a store.
+    ///
+    /// <para>A STORE ALREADY THERE KEEPS ITS OWN OBJECT, so a field cxagent does not model survives the
+    /// edit: the file is hand-edited, and the store record keeps room for more than a name and a URL
+    /// (a token, one day). Only a new store is written fresh, as <c>{name, url}</c>.</para>
     /// </summary>
     public static void SetStores(string configPath, IReadOnlyList<PluginStore> stores)
         => MutateRoot(configPath, root =>
         {
             if (stores.Count == 0) { root.Remove("stores"); return; }
+            var existing = (root["stores"] as JsonArray ?? [])
+                .OfType<JsonObject>()
+                .Where(o => o["name"] is JsonValue v && v.TryGetValue<string>(out _))
+                .GroupBy(o => o["name"]!.GetValue<string>())
+                .ToDictionary(g => g.Key, g => g.First());
             root["stores"] = new JsonArray(stores
-                .Select(s => (JsonNode)new JsonObject { ["name"] = s.Name, ["url"] = s.Url })
+                .Select(s =>
+                {
+                    var entry = existing.TryGetValue(s.Name, out var kept)
+                        ? (JsonObject)kept.DeepClone()
+                        : new JsonObject { ["name"] = s.Name };
+                    entry["url"] = s.Url;
+                    return (JsonNode)entry;
+                })
                 .ToArray());
         });
 
