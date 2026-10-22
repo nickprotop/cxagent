@@ -155,7 +155,8 @@ public static class ListDetail
             Header = $" [{DialogLook.Palette.Foreground.ToMarkup()}]{MarkupParser.Escape(title)}[/] ",
             BorderColor = DialogLook.Palette.Rule,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            Padding = new Padding(1, 0, 1, 0),
+            // AN EMPTY LINE AT THE TOP, so the first field does not sit against the title's border.
+            Padding = new Padding(1, 1, 1, 0),
         };
         panel.AddControl(body);
         return panel;
@@ -180,7 +181,8 @@ public static class ListDetail
             FocusedForegroundColor = p.Foreground,
             IsExpanded = false,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            Padding = new Padding(1, 0, 1, 0),
+            // AN EMPTY LINE AT THE TOP, so the first field does not sit against the title's border.
+            Padding = new Padding(1, 1, 1, 0),
         };
         panel.AddControl(body);
         return panel;

@@ -42,4 +42,12 @@ public class DetailPanelTests
         Assert.Equal(CollapsibleHeaderStyle.Rounded, fold.HeaderStyle);
         Assert.False(fold.IsExpanded);
     }
+
+    /// <summary>AN EMPTY LINE UNDER A PANEL'S TITLE: its first field does not sit against the border.</summary>
+    [Fact]
+    public void EveryPanel_StartsWithAnEmptyLine()
+    {
+        Assert.Equal(1, ListDetail.Section("Connection", Line("x")).Padding.Top);
+        Assert.Equal(1, ListDetail.Folded("Advanced", Line("x")).Padding.Top);
+    }
 }
