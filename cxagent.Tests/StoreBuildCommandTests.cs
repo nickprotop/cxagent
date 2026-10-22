@@ -73,6 +73,71 @@ public class StoreBuildCommandTests
         Assert.Contains("two plugins are named 'harness'", _stderr.ToString());
     }
 
+    private string[] Args => [_plugins, "--url", "https://t/cx", "--out", _out];
+
+    private string[] Snapshot() => Directory.Exists(_out)
+        ? [.. Directory.GetFileSystemEntries(_out, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
+            .Select(f => f + (File.Exists(f) ? ":" + Convert.ToHexString(File.ReadAllBytes(f)).GetHashCode() : ""))]
+        : [];
+
+    [Fact]
+    public async Task AFailedBuild_LeavesTheStoreThatWasThere_Untouched()
+    {
+        Assert.Equal(0, await StoreBuildCommand.RunAsync(Args, _stdout, _stderr, default));
+        var before = Snapshot();
+
+        // A's zip would differ if it were rewritten; B cannot be built.
+        File.WriteAllText(Path.Combine(_plugins, "harness", "extra.txt"), "new");
+        File.Delete(Path.Combine(_plugins, "calc", "pack-info.json"));
+        Assert.Equal(1, await StoreBuildCommand.RunAsync(Args, _stdout, _stderr, default));
+
+        Assert.Equal(before, Snapshot());
+    }
+
+    [Fact]
+    public async Task AnOutFolderThatCannotBeMade_IsAFailure_NotACrash()
+    {
+        var file = Path.Combine(Folders.NewFolder("store-blocker-"), "file");
+        File.WriteAllText(file, "x");
+        var code = await StoreBuildCommand.RunAsync([_plugins, "--url", "https://t/cx", "--out", Path.Combine(file, "site")], _stdout, _stderr, default);
+        Assert.Equal(1, code);
+        Assert.NotEmpty(_stderr.ToString());
+    }
+
+    [Fact]
+    public async Task PrintedPaths_AreTheOutFolderAsGiven()
+    {
+        await StoreBuildCommand.RunAsync(Args, _stdout, _stderr, default);
+        Assert.Contains($"wrote {Path.Combine(_out, "catalog.json")}", _stdout.ToString());
+        Assert.Contains($"  {Path.Combine(_out, "harness.zip")}", _stdout.ToString());
+    }
+
+    [Fact]
+    public void ANativePlugin_KeepsItsOwnPlatform_BesideThePlatformFolders()
+    {
+        var dir = Folders.NewFolder("store-native-");
+        File.WriteAllText(Path.Combine(dir, "weather.plugin.json"), """{"kind":"native","name":"weather","version":"1.0.0"}""");
+        File.WriteAllText(Path.Combine(dir, "weather.so"), "");
+        Directory.CreateDirectory(Path.Combine(dir, "osx-arm64"));
+        File.WriteAllText(Path.Combine(dir, "osx-arm64", "weather.dylib"), "");
+
+        var builds = StoreBuildCommand.NativeBuildsOf(dir);
+
+        Assert.Contains(builds, b => b.Rid == "osx-arm64" && b.Library.EndsWith("weather.dylib"));
+        Assert.Contains(builds, b => b.Rid == System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier
+                                     && b.Library == Path.Combine(dir, "weather.so"));
+    }
+
+    [Fact]
+    public async Task AManagedPlugin_IgnoresAStrayPlatformFolder()
+    {
+        var stray = Path.Combine(_plugins, "calc", "linux-x64");
+        Directory.CreateDirectory(stray);
+        File.Copy(Path.Combine(_plugins, "calc", "fixture.dll"), Path.Combine(stray, "fixture.dll"), overwrite: true);
+        Assert.Empty(StoreBuildCommand.NativeBuildsOf(Path.Combine(_plugins, "calc")));
+        Assert.Equal(0, await StoreBuildCommand.RunAsync(Args, _stdout, _stderr, default));
+    }
+
     // ONE STRING PER CASE, split on spaces: an array is not a constant, so it cannot sit in an attribute.
     [Theory]
     [InlineData("")]

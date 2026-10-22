@@ -24,9 +24,9 @@ internal static class StoreBuildCommand
 
         <folder> holds one built plugin per subfolder, each with its *.plugin.json and optionally a
         pack-info.json (or .yaml) for the catalog text. A native plugin's other platforms sit in
-        <subfolder>/<rid>/<library>.
+        <subfolder>/<rid>/<sidecar-name>.so|.dylib|.dll.
 
-        exit: 0 built, 1 a plugin is at fault, 2 usage
+        exit: 0 built, 1 a plugin or the folder is at fault, 2 usage
         """;
 
     private static readonly JsonSerializerOptions Indented = new()
@@ -36,12 +36,40 @@ internal static class StoreBuildCommand
     };
 
     /// <summary>What the command line asked for.</summary>
-    private sealed record Build(string Folder, string BaseUrl, string OutDir, bool Json);
+    /// <paramref name="OutShown"/> is --out as typed, which the printed paths use so a person can paste them.
+    private sealed record Build(string Folder, string BaseUrl, string OutDir, string OutShown, bool Json);
 
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         if (Parse(args, out var error) is not { } build) return Fail(stderr, error!);
 
+        // EVERYTHING IS MADE IN A STAGING FOLDER INSIDE --out (same volume, so the final moves are
+        // renames) AND MOVED IN ONLY WHEN ALL OF IT PASSED: --out may already be a working store, and a
+        // zip written straight into it would replace a download whose hash the old catalog.json still
+        // carries. The folder goes on every exit, a refusal and an IO failure included.
+        var staging = Path.Combine(build.OutDir, $".build-{Guid.NewGuid():N}");
+        var outExisted = Directory.Exists(build.OutDir);
+        try
+        {
+            return await BuildAsync(build, staging, stdout, stderr, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Refuse(stderr, $"{ex.Message}");
+        }
+        finally
+        {
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+
+            // AN --out THIS RUN MADE AND FILLED WITH NOTHING is a folder a refused build left behind.
+            try { if (!outExisted && Directory.Exists(build.OutDir) && !Directory.EnumerateFileSystemEntries(build.OutDir).Any()) Directory.Delete(build.OutDir); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+    }
+
+    private static async Task<int> BuildAsync(Build build, string staging, TextWriter stdout, TextWriter stderr, CancellationToken ct)
+    {
         var subfolders = Directory.GetDirectories(build.Folder)
             .Where(d => Directory.GetFiles(d, "*.plugin.json").Length > 0)
             .Order(StringComparer.Ordinal)
@@ -53,14 +81,16 @@ internal static class StoreBuildCommand
         foreach (var sub in subfolders)
         {
             var label = Path.GetFileName(sub);
-            var request = RequestFor(sub, build.OutDir, out var infoError);
+            var request = RequestFor(sub, staging, out var infoError);
             if (infoError is not null)
             {
                 problems.Add($"{label}: {infoError}");
                 continue;
             }
 
-            var outcome = await PluginPackCommand.PackAsync(request, zip => $"{build.BaseUrl}/{zip}", ct).ConfigureAwait(false);
+            // ESCAPED: a zip's name goes into a URL, and the address a client fetches must be the one
+            // the server has the file under.
+            var outcome = await PluginPackCommand.PackAsync(request, zip => $"{build.BaseUrl}/{Uri.EscapeDataString(zip)}", ct).ConfigureAwait(false);
             if (outcome.Packed is null)
             {
                 problems.AddRange(outcome.Problems.Select(p => $"{label}: {p}"));
@@ -83,22 +113,26 @@ internal static class StoreBuildCommand
             ["plugins"] = new JsonArray([.. packed.Select(p => (JsonNode)p.Outcome.Entry!)]),
         };
 
-        // READ BACK THROUGH VERIFY'S OWN READER, from a file beside the real one: the catalog a user's
+        // READ BACK THROUGH VERIFY'S OWN READER, before anything leaves staging: the catalog a user's
         // client fetches is held to the shape rules before it exists under its served name.
-        var catalogPath = Path.Combine(build.OutDir, "catalog.json");
-        var staged = catalogPath + ".tmp";
+        var staged = Path.Combine(staging, "catalog.json");
         File.WriteAllText(staged, catalog.ToJsonString(Indented) + Environment.NewLine);
         var claims = CatalogClaims.Read(File.ReadAllText(staged), out var readError);
         var shape = claims?.SelectMany(c => c.Shape.Select(s => $"{c.Name}: {s.Field} {s.Message}")).ToList() ?? [];
         if (readError is not null || shape.Count > 0)
-        {
-            File.Delete(staged);
             return Refuse(stderr, readError is null ? shape : [readError]);
-        }
 
+        // ZIPS FIRST, THE CATALOG LAST: the catalog is what makes a download reachable, so it never
+        // names a zip that is not yet in place.
+        var zips = packed.SelectMany(p => p.Outcome.Packed!.Zips).ToList();
+        foreach (var z in zips)
+            File.Move(z.Zip, Path.Combine(build.OutDir, Path.GetFileName(z.Zip)), overwrite: true);
+        var catalogPath = Path.Combine(build.OutDir, "catalog.json");
         File.Move(staged, catalogPath, overwrite: true);
 
-        var zips = packed.SelectMany(p => p.Outcome.Packed!.Zips).ToList();
+        // PATHS AS THE PERSON TYPED --out, not made relative to the working directory: an --out
+        // elsewhere would otherwise print as ../../../…, which is not what they gave.
+        string Shown(string file) => Path.Combine(build.OutShown, file);
         if (build.Json)
         {
             stdout.WriteLine(JsonSerializer.Serialize(new
@@ -106,14 +140,14 @@ internal static class StoreBuildCommand
                 catalog = catalogPath,
                 url = $"{build.BaseUrl}/catalog.json",
                 plugins = packed.Select(p => p.Outcome.Packed!.Sidecar.Name),
-                zips = zips.Select(z => new { file = z.Zip, sha256 = z.Hash, platform = z.Rid }),
+                zips = zips.Select(z => new { file = Path.Combine(build.OutDir, Path.GetFileName(z.Zip)), sha256 = z.Hash, platform = z.Rid }),
             }, Indented));
             return 0;
         }
 
-        foreach (var z in zips) stdout.WriteLine($"{z.Hash}  {PluginPackCommand.Shown(z.Zip)}");
-        stdout.WriteLine($"wrote {PluginPackCommand.Shown(catalogPath)} — {packed.Count} plugins");
-        stdout.WriteLine($"serve {PluginPackCommand.Shown(build.OutDir)} at {build.BaseUrl}, then users run: /plugin store add <name> {build.BaseUrl}/catalog.json");
+        foreach (var z in zips) stdout.WriteLine($"{z.Hash}  {Shown(Path.GetFileName(z.Zip))}");
+        stdout.WriteLine($"wrote {Shown("catalog.json")} — {packed.Count} plugins");
+        stdout.WriteLine($"serve {build.OutShown} at {build.BaseUrl}, then users run: /plugin store add <name> {build.BaseUrl}/catalog.json");
         return 0;
     }
 
@@ -128,13 +162,39 @@ internal static class StoreBuildCommand
             .Select(n => Path.Combine(sub, n)).FirstOrDefault(File.Exists);
         if (infoFile is not null) info = PackInfoFile.Read(infoFile, out error) ?? info;
 
-        var stem = Path.GetFileName(Directory.GetFiles(sub, "*.plugin.json").Order(StringComparer.Ordinal).First())[..^".plugin.json".Length];
-        var native = new List<NativeBuild>();
-        foreach (var rid in PluginPackCommand.Rids)
-            if (new[] { ".so", ".dylib", ".dll" }.Select(e => Path.Combine(sub, rid, stem + e)).FirstOrDefault(File.Exists) is { } library)
-                native.Add(new NativeBuild(Path.GetFullPath(library), rid));
+        var native = NativeBuildsOf(sub);
 
         return new PackRequest(Path.GetFullPath(sub), native, outDir, new CatalogText(null, null, null, null), info, Json: false);
+    }
+
+    /// <summary>
+    /// The platforms a native plugin's folder holds builds for: each <c>&lt;rid&gt;/&lt;sidecar-name&gt;.so|.dylib|.dll</c>,
+    /// plus the library beside the sidecar as this machine's platform. Empty for a managed plugin and
+    /// for a native one with no platform folders, where pack's own default applies.
+    ///
+    /// <para>MANAGED PLUGINS ARE NEVER PROBED: <c>dotnet build -r</c> leaves a <c>&lt;rid&gt;/&lt;name&gt;.dll</c> that
+    /// is a .NET assembly, and reading it as a native build would pack something else than the plugin.
+    /// The top-level library is kept because pack checks the folder it is given, and that library is the
+    /// one this machine runs; leaving it out would drop a platform the author built.</para>
+    /// </summary>
+    internal static IReadOnlyList<NativeBuild> NativeBuildsOf(string sub)
+    {
+        var sidecar = Directory.GetFiles(sub, "*.plugin.json").Order(StringComparer.Ordinal).First();
+        var stem = Path.GetFileName(sidecar)[..^".plugin.json".Length];
+        string[] extensions = [".so", ".dylib", ".dll"];
+        var binary = extensions.Select(e => Path.Combine(sub, stem + e)).FirstOrDefault(File.Exists);
+        if (binary is null || !PluginResolver.IsNative(binary)) return [];
+
+        var native = new List<NativeBuild>();
+        foreach (var rid in PluginPackCommand.Rids)
+            if (extensions.Select(e => Path.Combine(sub, rid, stem + e)).FirstOrDefault(File.Exists) is { } library)
+                native.Add(new NativeBuild(Path.GetFullPath(library), rid));
+        if (native.Count == 0) return [];
+
+        var thisMachine = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+        if (PluginPackCommand.Rids.Contains(thisMachine) && native.All(n => n.Rid != thisMachine))
+            native.Add(new NativeBuild(Path.GetFullPath(binary), thisMachine));
+        return native;
     }
 
     private static Build? Parse(string[] args, out string? error)
@@ -170,7 +230,7 @@ internal static class StoreBuildCommand
             : !Directory.Exists(folder) ? $"no folder '{folder}'."
             : null;
         return error is null
-            ? new Build(Path.GetFullPath(folder!), url!.TrimEnd('/'), Path.GetFullPath(outDir!), json)
+            ? new Build(Path.GetFullPath(folder!), url!.TrimEnd('/'), Path.GetFullPath(outDir!), outDir!, json)
             : null;
     }
 

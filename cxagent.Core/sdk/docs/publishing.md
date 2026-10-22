@@ -195,15 +195,16 @@ plugins/
     pack-info.json        description, publisher, license, repository
   grep-tool/
     grep-tool.plugin.json
-    libgrep-tool.so
-    linux-arm64/grep-tool.so   a native plugin's other platforms: <rid>/<library>
+    grep-tool.so            built for the machine that runs the command
+    linux-arm64/grep-tool.so   other platforms: <rid>/<sidecar-name>.so|.dylib|.dll
 ```
 
 ```
 cxagent store build plugins --url https://tools.example/cx --out site
 ```
 
-`--url` is the address `site` is served from: https, or `http://localhost` for testing. The command
+`--url` is the address `site` is served from: https, or `http://localhost` for testing. A localhost
+catalog works with `/plugin store add`, but `plugin verify` refuses plain http, so it does not pass verify. The command
 checks every plugin as `plugin check` does, packs it as `plugin pack` does, and writes `site/catalog.json`
 with each download addressed `https://tools.example/cx/<zip>`, beside one zip per plugin (per platform,
 for a native one). It prints each zip's hash, then the line to give your users.
