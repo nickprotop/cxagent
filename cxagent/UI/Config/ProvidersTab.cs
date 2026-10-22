@@ -50,13 +50,16 @@ public sealed class ProvidersTab
         _root = new GridControl { VerticalAlignment = VerticalAlignment.Fill, HorizontalAlignment = HorizontalAlignment.Stretch };
         _root.ColumnDefinitions.Add(GridLength.Cells(RailCells, min: 22));
         _root.ColumnDefinitions.Add(GridLength.Star(1));
-        _root.RowDefinitions.Add(GridLength.Cells(4));   // Roles: two rows and the panel's border
+        // A SHORT TERMINAL DROPS THE ROLES BORDER: at 24 rows its two border lines are two rows the
+        // list and the fields cannot spare.
+        var compact = Console.WindowHeight < 30;
+        _root.RowDefinitions.Add(GridLength.Cells(compact ? 2 : 4));   // Roles: two rows, and the panel's border
         _root.RowDefinitions.Add(GridLength.Cells(1));   // the toolbar
         _root.RowDefinitions.Add(GridLength.Cells(1));   // a rule closing the toolbar off from the list
         _root.RowDefinitions.Add(GridLength.Star(1));    // rail | detail
         _root.RowDefinitions.Add(GridLength.Cells(2));   // status — two lines, so a long one is not cut
 
-        _root.Place(BuildRoles(), 0, 0, colSpan: 2);
+        _root.Place(BuildRoles(compact), 0, 0, colSpan: 2);
 
         // ONLY WHAT DOES NOT ACT ON THE SELECTION. Rename and Remove sit in the detail's header, beside
         // the instance they act on; the roles are chosen in the block above.
@@ -98,13 +101,13 @@ public sealed class ProvidersTab
     /// once, each a list to choose from. Choosing saves at once, through the same edits and with the same
     /// effect on open sessions as any other save of the file.
     /// </summary>
-    private IWindowControl BuildRoles()
+    private IWindowControl BuildRoles(bool compact)
     {
         var p = DialogLook.Palette;
         var panel = new PanelControl
         {
-            BorderStyle = BorderStyle.Rounded,
-            Header = " Roles ",
+            BorderStyle = compact ? BorderStyle.None : BorderStyle.Rounded,
+            Header = compact ? null : " Roles ",
             BorderColor = p.Rule,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Padding = new Padding(1, 0, 1, 0),
@@ -125,7 +128,7 @@ public sealed class ProvidersTab
             if (_fillingRoles || value is null || _settings is null || value == _settings.DefaultProvider) return;
             _ = CommitAsync(root => ProviderEdits.SetDefault(root, value),
                 new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true, $"{value} is now the default"),
-                KeepSelection(value), keepDraft: true);
+                KeepSelection(value), fromRoles: true);
         };
         _reviewerPick.SelectedValueChanged += (_, value) =>
         {
@@ -135,7 +138,7 @@ public sealed class ProvidersTab
             _ = CommitAsync(root => ProviderEdits.SetReviewer(root, name),
                 new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true,
                     name is null ? "auto-mode reviewer cleared" : $"{name} now reviews auto mode"),
-                KeepSelection(name ?? ""), keepDraft: true);
+                KeepSelection(name ?? ""), fromRoles: true);
         };
 
         var muted = p.Muted.ToMarkup();
@@ -149,8 +152,9 @@ public sealed class ProvidersTab
         return panel;
     }
 
-    // THE ROW BEING EDITED STAYS SELECTED: choosing a role is not a reason to jump the rail elsewhere.
-    private string KeepSelection(string fallback) => _draft is { IsNew: false } d ? d.Name : fallback;
+    // THE ROW BEING EDITED STAYS SELECTED, a new one not yet saved included: choosing a role is not a
+    // reason to jump the rail elsewhere, and leaving a new provider's row would drop what was typed into it.
+    private string KeepSelection(string fallback) => _draft?.Name ?? fallback;
 
     private void FillRoles()
     {
@@ -167,6 +171,9 @@ public sealed class ProvidersTab
         }
         finally { _fillingRoles = false; }
     }
+
+    // THE DETAIL PANE'S WIDTH NOW, so a header whose actions do not fit beside the name wraps them.
+    private int PaneWidth() => ListDetail.PaneWidth(_window()?.Width ?? Console.WindowWidth, RailCells);
 
     /// <summary>The tab's content.</summary>
     public IWindowControl Content => _root;
@@ -335,11 +342,11 @@ public sealed class ProvidersTab
         var subtitle = preset == draft.Original.Kind ? preset : $"{preset} · {draft.Original.Kind}";
         // RENAME AND REMOVE BESIDE WHAT THEY ACT ON. A provider not yet saved has neither: it has no name
         // to move yet, and leaving it is Revert.
-        _detail.AddControl(draft.IsNew
-            ? ListDetail.Header("New provider", subtitle)
-            : ListDetail.Header(draft.Name, subtitle,
+        _detail.AddControl((draft.IsNew
+            ? ListDetail.Header("New provider", subtitle, PaneWidth())
+            : ListDetail.Header(draft.Name, subtitle, PaneWidth(),
                 DialogLook.Main(Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build()),
-                Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build()));
+                Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build())).Control);
 
         var fields = new FieldGrid();
 
@@ -766,7 +773,7 @@ public sealed class ProvidersTab
     /// Writes the edit off the UI thread, asks how to treat the tabs whose cache it would break, then makes
     /// it live — the one path every save on this tab takes.
     /// </summary>
-    internal async Task CommitAsync(Action<System.Text.Json.Nodes.JsonObject> edit, ConfigChange change, string select, bool keepDraft = false)
+    internal async Task CommitAsync(Action<System.Text.Json.Nodes.JsonObject> edit, ConfigChange change, string select, bool fromRoles = false)
     {
         var prepared = await Task.Run(() => ConfigApply.Prepare(_host.Apply, edit));
         var done = new TaskCompletionSource();
@@ -784,7 +791,7 @@ public sealed class ProvidersTab
                 // whether that session is still unwired and this tab does not.
                 if (prepared.Fresh is { } wired && _host.WireFirst is { } wireFirst)
                     wireFirst(wired);
-                Saved(prepared.Write, select, change, keepDraft);
+                Saved(prepared.Write, select, change, fromRoles);
                 // A SIDE EFFECT THE USER SHOULD SEE: an agent type this save disabled — a provider's new
                 // model no longer matching a type's pin, say — said with the save itself.
                 if (prepared.NewlyDisabled.Count > 0)
@@ -796,20 +803,23 @@ public sealed class ProvidersTab
     }
 
     /// <summary>After a write: the errors beside the field, or the rail rebuilt from the new file.</summary>
-    internal void Saved(ConfigWrite result, string select, ConfigChange change, bool keepDraft = false)
+    internal void Saved(ConfigWrite result, string select, ConfigChange change, bool fromRoles = false)
     {
         if (!result.Saved)
         {
             SetStatus(string.Join("\n", result.Errors.Select(e => $"[{ColorScheme.DangerMarkup}]✖ {MarkupParser.Escape(e)}[/]")));
+            // THE DROPDOWNS SAY WHAT THE FILE SAYS: a role that did not save must not show as chosen.
+            FillRoles();
             return;
         }
 
         // A ROLE IS NOT THE INSTANCE BEING EDITED. Choosing a default or a reviewer writes the file, but
         // the fields typed into the instance on screen are still unsaved, and dropping them would lose
         // them for a choice made somewhere else on the screen.
-        if (!keepDraft) _draft = null;
+        if (!fromRoles) _draft = null;
         Reload(select);
-        FocusRail();
+        // FOCUS STAYS ON THE ROLES after a role change: the next thing chosen there is the other role.
+        if (!fromRoles) FocusRail();
         // WHAT HAPPENED TO THE OPEN TABS, in the terms that cost something: a change no model sees is
         // applied in place, and only one that breaks a tab's cache is a move.
         var moved = _host.Apply.Manager.Sessions.Count(s => s.InstanceName is { } n && change.ModelChanged.Contains(n));

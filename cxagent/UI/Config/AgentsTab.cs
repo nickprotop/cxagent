@@ -76,6 +76,9 @@ public sealed class AgentsTab
         Reload(null);
     }
 
+    // THE DETAIL PANE'S WIDTH NOW, so a header whose actions do not fit beside the name wraps them.
+    private int PaneWidth() => ListDetail.PaneWidth(_window()?.Width ?? Console.WindowWidth, RailCells);
+
     public IWindowControl Content => _root;
 
     /// <summary>Revert and Save, for the dialog's footer to host while this tab is in front.</summary>
@@ -188,11 +191,11 @@ public sealed class AgentsTab
         _firstField = null;
         var subtitle = draft.IsGeneral ? "the default" : draft.IsBuiltin ? "ships with cxagent" : "yours";
         // THE ACTIONS ON THIS TYPE, beside its name. A type not yet saved has none: leaving it is Revert.
-        _detail.AddControl(draft.IsNew
-            ? ListDetail.Header("New agent type", subtitle)
-            : ListDetail.Header(draft.Name, subtitle,
+        _detail.AddControl((draft.IsNew
+            ? ListDetail.Header("New agent type", subtitle, PaneWidth())
+            : ListDetail.Header(draft.Name, subtitle, PaneWidth(),
                 Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build(),
-                Controls.Button(" Remove / Reset to shipped ").OnClick((_, _) => _ = RemoveOrResetAsync()).Build()));
+                Controls.Button(" Remove / Reset to shipped ").OnClick((_, _) => _ = RemoveOrResetAsync()).Build())).Control);
 
         var fields = new FieldGrid();
         if (draft.IsGeneral)

@@ -77,6 +77,9 @@ public sealed class McpTab
         Reload(select: null);
     }
 
+    // THE DETAIL PANE'S WIDTH NOW, so a header whose actions do not fit beside the name wraps them.
+    private int PaneWidth() => ListDetail.PaneWidth(_window()?.Width ?? Console.WindowWidth, RailCells);
+
     /// <summary>The tab's content.</summary>
     public IWindowControl Content => _root;
 
@@ -196,13 +199,13 @@ public sealed class McpTab
         _detail.ClearContents();
         var subtitle = draft.IsRemote ? "remote (HTTP)" : "local command (stdio)";
         // THE ACTIONS ON THIS SERVER, beside its name. A server not yet saved has none: leaving it is Revert.
-        _detail.AddControl(draft.IsNew
-            ? ListDetail.Header("New MCP server", subtitle)
-            : ListDetail.Header(draft.Name, subtitle,
+        _detail.AddControl((draft.IsNew
+            ? ListDetail.Header("New MCP server", subtitle, PaneWidth())
+            : ListDetail.Header(draft.Name, subtitle, PaneWidth(),
                 Controls.Button(" Enable / Disable ").OnClick((_, _) => _ = ToggleAsync()).Build(),
                 Controls.Button(" Log in ").OnClick((_, _) => _ = LogInAsync()).Build(),
                 Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build(),
-                Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build()));
+                Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build())).Control);
 
         // WHY IT FAILED, FIRST: that is what the user opened this server to fix, and Save retries it.
         if (row.State == McpState.Failed && row.Reason is { } reason)

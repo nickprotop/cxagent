@@ -13,6 +13,7 @@ namespace CxAgent.Tests;
 /// fresh per theme here) rather than from fixed hues, separated from each other by luminance so a
 /// document's structure stays legible before it is read.
 /// </summary>
+[Collection("palette")]
 public class ColorSchemeTests
 {
     /// <summary>A dark theme with a crimson accent — the theme named in the observed defect:

@@ -11,6 +11,7 @@ namespace CxAgent.Tests;
 /// theme's is flush with it. Borders, rules and inputs are steps from that surface, so any theme gets
 /// the same relationships.
 /// </summary>
+[Collection("palette")]
 public class DialogPaletteTests
 {
     private static ITheme Dark() => Theme.From(new ModernGrayTheme()).WithName("t-dark")
@@ -81,10 +82,15 @@ public class DialogPaletteTests
     [Fact]
     public void SwitchingTheme_MovesThePalette()
     {
-        ColorScheme.DeriveFrom(Dark());
-        var before = DialogLook.Palette.Surface;
-        ColorScheme.DeriveFrom(Light());
-        Assert.NotEqual(before, DialogLook.Palette.Surface);
-        Assert.Equal(DialogPalette.For(Light()), DialogLook.Palette);
+        var original = DialogLook.Palette;
+        try
+        {
+            ColorScheme.DeriveFrom(Dark());
+            var before = DialogLook.Palette.Surface;
+            ColorScheme.DeriveFrom(Light());
+            Assert.NotEqual(before, DialogLook.Palette.Surface);
+            Assert.Equal(DialogPalette.For(Light()), DialogLook.Palette);
+        }
+        finally { DialogLook.Palette = original; }
     }
 }

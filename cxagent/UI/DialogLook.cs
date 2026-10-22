@@ -99,7 +99,10 @@ public static class DialogLook
     /// </summary>
     public static ButtonControl Main(ButtonControl b, bool main = true)
     {
-        b.ColorRole = main ? ColorRole.Primary : ColorRole.Default;
+        // ONLY ON A CHANGE: the Configuration dialog asks after every key, and a setter that invalidates
+        // would repaint the button each time for nothing.
+        var role = main ? ColorRole.Primary : ColorRole.Default;
+        if (b.ColorRole != role) b.ColorRole = role;
         return b;
     }
 }

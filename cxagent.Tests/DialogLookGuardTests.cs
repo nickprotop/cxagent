@@ -23,10 +23,14 @@ public class DialogLookGuardTests
     public void EveryModalWindow_IsStyledByDialogLook()
     {
         var ui = Path.Combine(RepoRoot(), "cxagent", "UI");
+        // COUNTED PER FILE, not merely present: a file with two dialogs and one Styled is a file with an
+        // unstyled dialog in it.
+        static int Count(string text, string needle) =>
+            (text.Length - text.Replace(needle, "", StringComparison.Ordinal).Length) / needle.Length;
         var offenders = Directory.EnumerateFiles(ui, "*.cs", SearchOption.AllDirectories)
-            .Where(f => File.ReadAllText(f).Contains(".AsModal()", StringComparison.Ordinal))
-            .Where(f => !File.ReadAllText(f).Contains(".Styled(", StringComparison.Ordinal))
-            .Select(f => Path.GetRelativePath(ui, f))
+            .Select(f => (File: f, Text: File.ReadAllText(f)))
+            .Where(x => Count(x.Text, ".AsModal()") > Count(x.Text, ".Styled("))
+            .Select(x => Path.GetRelativePath(ui, x.File))
             .ToList();
         Assert.Empty(offenders);
     }

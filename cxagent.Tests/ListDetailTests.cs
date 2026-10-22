@@ -74,4 +74,38 @@ public class ListDetailTests
         for (var w = 1; w < 40; w++)
             Assert.True(ListDetail.ElidePath("/home/me/a/very/long/path/to/config.json", "/home/me", w).Length <= w);
     }
+
+    /// <summary>
+    /// THE ACTIONS SHARE THE NAME'S LINE ONLY WHEN BOTH FIT. On a narrow pane they move under the name
+    /// and wrap, so every action stays visible and clickable instead of running off the pane's edge.
+    /// </summary>
+    [Fact]
+    public void ActionsThatFitBesideTheName_StayOnItsLine() =>
+        Assert.Equal(0, ListDetail.ActionRows(nameLength: 8, actionWidths: [8, 8], paneWidth: 80));
+
+    [Fact]
+    public void ActionsThatDoNotFit_GoUnderTheName_OnAsManyRowsAsTheyNeed()
+    {
+        // 53 cells of actions in a 34-cell pane: two rows under the name.
+        Assert.Equal(2, ListDetail.ActionRows(nameLength: 8, actionWidths: [19, 8, 8, 8], paneWidth: 34));
+        // Each fits on its own when even two do not share a row.
+        Assert.Equal(3, ListDetail.ActionRows(nameLength: 8, actionWidths: [12, 12, 12], paneWidth: 14));
+    }
+
+    [Fact]
+    public void NoActions_NeedNoRow() =>
+        Assert.Equal(0, ListDetail.ActionRows(nameLength: 8, actionWidths: [], paneWidth: 10));
+
+    /// <summary>The head's height counts every row its wrapped actions take, so a host's fixed track
+    /// holds it without a scrollbar.</summary>
+    [Fact]
+    public void AHeadersHeight_CountsItsWrappedActionRows()
+    {
+        var a = SharpConsoleUI.Builders.Controls.Button(" Activate ").Build();
+        var b = SharpConsoleUI.Builders.Controls.Button(" Disable auto-load ").Build();
+        var c = SharpConsoleUI.Builders.Controls.Button(" Uninstall ").Build();
+        Assert.Equal(4, ListDetail.Header("Calculator", "calculator · 0.9.40", 200, a, b, c).Height);
+        Assert.Equal(4 + ListDetail.ActionRows(10, [12, 21, 13], 30),
+            ListDetail.Header("Calculator", "calculator · 0.9.40", 30, a, b, c).Height);
+    }
 }

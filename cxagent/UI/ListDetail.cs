@@ -71,34 +71,77 @@ public static class ListDetail
     }
 
     /// <summary>
-    /// The detail's head: the item's name in the title colour, the actions on THIS item at the right of
-    /// the same line — beside what they act on, not in a toolbar over the list — the subtitle muted under
-    /// it, then a rule.
+    /// The detail's head: the item's name in the title colour, the actions on THIS item beside it —
+    /// beside what they act on, not in a toolbar over the list — the subtitle muted under it, then a
+    /// rule. <paramref name="paneWidth"/> decides whether the actions fit beside the name; when they do
+    /// not, they wrap on rows of their own under it, so none runs off the pane's edge.
     /// </summary>
-    public static IWindowControl Header(string name, string subtitle, params ButtonControl[] actions)
+    public static DetailHeader Header(string name, string subtitle, int paneWidth, params ButtonControl[] actions)
     {
         var p = DialogLook.Palette;
+        var widths = actions.Select(Cells).ToArray();
+        var under = ActionRows(name.Length, widths, paneWidth);
+
         var grid = new GridControl { HorizontalAlignment = HorizontalAlignment.Stretch };
         // THE ACTIONS TAKE WHAT THEY NEED, THE NAME THE REST. Sized from the labels, because the grid
-        // measures a toolbar as the whole row in an Auto track and leaves the name a column of nothing;
-        // in two equal tracks a long action list is cut instead.
-        grid.ColumnDefinitions.Add(GridLength.Star(1, min: Math.Min(name.Length, 12)));
-        grid.ColumnDefinitions.Add(GridLength.Cells(actions.Sum(a => a.Text.Length + 2) + actions.Length));
-        grid.RowDefinitions.Add(GridLength.Cells(1));
-        grid.RowDefinitions.Add(GridLength.Cells(1));
-        grid.RowDefinitions.Add(GridLength.Cells(1));
+        // measures a toolbar as the whole row in an Auto track and leaves the name a column of nothing.
+        grid.ColumnDefinitions.Add(GridLength.Star(1));
+        if (under == 0 && actions.Length > 0)
+            grid.ColumnDefinitions.Add(GridLength.Cells(widths.Sum() + widths.Length - 1));
+        var span = grid.ColumnDefinitions.Count;
+
         grid.RowDefinitions.Add(GridLength.Cells(1));
         grid.Place(new MarkupControl([$"[bold {p.Title.ToMarkup()}]{MarkupParser.Escape(name)}[/]"]) { Wrap = false }, 0, 0);
+        var row = 1;
         if (actions.Length > 0)
         {
-            var bar = new ToolbarControl { ItemSpacing = 1, HorizontalAlignment = HorizontalAlignment.Right };
+            var bar = new ToolbarControl { ItemSpacing = 1, Wrap = under > 0, HorizontalAlignment = under > 0 ? HorizontalAlignment.Left : HorizontalAlignment.Right };
             foreach (var a in actions) bar.AddItem(a);
-            grid.Place(bar, 0, 1);
+            if (under == 0) grid.Place(bar, 0, 1);
+            else
+            {
+                grid.RowDefinitions.Add(GridLength.Cells(under));
+                grid.Place(bar, row++, 0);
+            }
         }
-        grid.Place(new MarkupControl([$"[{p.Muted.ToMarkup()}]{MarkupParser.Escape(subtitle)}[/]"]) { Wrap = false }, 1, 0, colSpan: 2);
-        grid.Place(DialogLook.Rule(), 2, 0, colSpan: 2);
-        return grid;
+        grid.RowDefinitions.Add(GridLength.Cells(1));
+        grid.Place(new MarkupControl([$"[{p.Muted.ToMarkup()}]{MarkupParser.Escape(subtitle)}[/]"]) { Wrap = false }, row++, 0, colSpan: span);
+        grid.RowDefinitions.Add(GridLength.Cells(1));
+        grid.Place(DialogLook.Rule(), row++, 0, colSpan: span);
+        // A BLANK ROW UNDER THE RULE, so the first field does not sit against it.
+        grid.RowDefinitions.Add(GridLength.Cells(1));
+        // NAME, SUBTITLE, RULE AND BLANK, plus every row the wrapped actions take.
+        return new DetailHeader(grid, 4 + under);
     }
+
+    /// <summary>
+    /// How many rows the actions need UNDER the name: none when they fit beside it, otherwise as many as
+    /// they wrap onto at <paramref name="paneWidth"/>, one cell apart.
+    /// </summary>
+    public static int ActionRows(int nameLength, IReadOnlyList<int> actionWidths, int paneWidth)
+    {
+        if (actionWidths.Count == 0) return 0;
+        var total = actionWidths.Sum() + actionWidths.Count - 1;
+        if (nameLength + 2 + total <= paneWidth) return 0;
+        var rows = 1;
+        var used = 0;
+        foreach (var w in actionWidths)
+        {
+            var need = used == 0 ? w : used + 1 + w;
+            if (need > paneWidth && used > 0) { rows++; used = w; }
+            else used = need;
+        }
+        return rows;
+    }
+
+    /// <summary>
+    /// The detail pane's width in a list/detail dialog <paramref name="windowWidth"/> wide: less the
+    /// border, the window's side padding, the list, the divider, the pane's inset and its scrollbar.
+    /// </summary>
+    public static int PaneWidth(int windowWidth, int railCells) => windowWidth - 2 - 4 - railCells - 1 - 1 - 1;
+
+    // A button is its label and a cell either side.
+    private static int Cells(ButtonControl b) => b.Text.Length + 2;
 
     /// <summary>
     /// An empty pane: what is missing in the normal foreground, what to do about it muted under it,
@@ -144,3 +187,6 @@ public static class ListDetail
         return path.Length <= width ? path : "…" + path[^(width - 1)..];
     }
 }
+
+/// <summary>A detail header, and how many rows it takes, for a host that gives it a fixed track.</summary>
+public sealed record DetailHeader(IWindowControl Control, int Height);

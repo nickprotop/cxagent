@@ -7,6 +7,7 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>The shared dialog chrome: sizes that fit the terminal, one footer layout, one rule colour.</summary>
+[Collection("palette")]
 public class DialogLookTests
 {
     [Theory]

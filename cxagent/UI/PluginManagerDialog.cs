@@ -66,6 +66,11 @@ public static class PluginManagerDialog
     private static MarkupControl? _detailHeader;
     private static MarkupControl? _detailBody;
     private static ScrollablePanelControl? _head;
+    // THE GRID THE HEAD SITS IN, so the head's track can grow when its actions wrap under the name.
+    private static GridControl? _layout;
+
+    // ONE LABEL, so the button and the rule that keeps it from being the main action cannot drift apart.
+    private const string UninstallLabel = " Uninstall ";
     /// <summary>
     /// The rail's starting width in cells. Wide enough for the longest plugin name plus its commonest
     /// state on one line ("csharp-lsp-omnisharp" is 20, "disabled" 8) — the long NEEDS ATTENTION
@@ -193,6 +198,7 @@ public static class PluginManagerDialog
         // TWO COLUMNS, ONE ROW. The rail is a fixed width with a floor so it stays readable when the
         // window is dragged narrow; the panel takes what is left.
         var grid = new GridControl { VerticalAlignment = VerticalAlignment.Fill };
+        _layout = grid;
         grid.ColumnDefinitions.Add(GridLength.Cells(RailCells, min: 24));
         grid.ColumnDefinitions.Add(GridLength.Star(1));
         grid.RowDefinitions.Add(GridLength.Cells(4));   // the selected plugin's name, actions, identity, rule
@@ -1136,13 +1142,16 @@ public static class PluginManagerDialog
         // THE MAIN ACTION IN THE ACCENT — the first one, unless it is Uninstall, which is never the
         // thing a reflex should land on.
         var buttons = RowButtons(row).ToArray();
-        if (buttons.Length > 0 && buttons[0].Text.Trim() != "Uninstall") DialogLook.Main(buttons[0]);
+        if (buttons.Length > 0 && buttons[0].Text != UninstallLabel) DialogLook.Main(buttons[0]);
 
         var identity = row.Catalog is { } entry
             ? string.Join(" · ", new[] { entry.QualifiedName, entry.Version, entry.License, entry.Publisher, StoreIdentity(entry) }
                 .Where(part => part.Length > 0))
             : row.Name;
-        _head.AddControl(ListDetail.Header(row.Catalog?.DisplayName ?? row.Name, identity, buttons));
+        var head = ListDetail.Header(row.Catalog?.DisplayName ?? row.Name, identity,
+            ListDetail.PaneWidth(_window?.Width ?? Console.WindowWidth, RailCells), buttons);
+        _head.AddControl(head.Control);
+        if (_layout is { } layout) layout.RowDefinitions[0] = GridLength.Cells(head.Height);
     }
 
     /// <summary>
@@ -1251,7 +1260,7 @@ public static class PluginManagerDialog
                         .Build();
 
                 if (row.Folder is not null)
-                    yield return Controls.Button(" Uninstall ")
+                    yield return Controls.Button(UninstallLabel)
                         .OnClick((_, _) => _ = UninstallFlowAsync(row)).Build();
                 break;
 
@@ -1264,7 +1273,7 @@ public static class PluginManagerDialog
                 //
                 // It is still last among the buttons, so it is not the first thing a hand lands on.
                 if (row.Folder is not null || row.Configured is not null)
-                    yield return Controls.Button(" Uninstall ")
+                    yield return Controls.Button(UninstallLabel)
                         .OnClick((_, _) => _ = UninstallFlowAsync(row)).Build();
                 break;
         }
