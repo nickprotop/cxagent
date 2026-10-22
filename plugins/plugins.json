@@ -218,7 +218,7 @@
     {
       "name": "repo-map",
       "displayName": "Repo Map",
-      "version": "0.9.46",
+      "version": "0.9.47",
       "description": "A map of a codebase for a model that has not read it. One tool returns the most-used files' declarations \u2014 types, functions, methods, each with its line number \u2014 ranked by how much the rest of the code uses them and cut to a token budget. No language server: a dozen languages are read as text.",
       "publisher": "nickprotop",
       "license": "MIT",
