@@ -1,7 +1,7 @@
 {
   "pluginContract": 2,
   "name": "repo-map",
-  "version": "0.9.44",
+  "version": "0.9.46",
   "spawns": true,
   "instructions": "Before your first grep, glob or directory listing in a codebase you have not mapped in this conversation, call repo_map. One call, about 2,000 tokens, returns the declarations that matter most \u2014 types, functions, methods \u2014 each with its file and line number, ranked by how much the rest of the code uses them. That is usually enough to open the right file directly instead of searching for it, and it is cheaper than the searches it replaces.\n\nPass focus to centre the map on what you are looking for: a file path, a folder, or a symbol name, comma-separated.\n\nAfter the map, grep for exact strings as usual. The map is an outline, not the code: read a file before you change anything in it.",
   "tools": [
