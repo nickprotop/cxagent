@@ -221,6 +221,8 @@ public sealed class AgentsTab
             var briefing = new CollapsiblePanel { Title = "Briefing (read-only)", IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch };
             briefing.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(shipped.Briefing)}[/]"]) { Wrap = true });
             _detail.AddControl(briefing);
+            // A BLANK LINE UNDER THE BRIEFING, as between any two fields: the panel below is not part of it.
+            _detail.AddControl(new MarkupControl([""]));
         }
         else
         {
@@ -240,7 +242,8 @@ public sealed class AgentsTab
             fields.Add("Briefing", "What the agent is told it is, and how to work. Required. Enter to type, Esc when done.", briefing);
         }
 
-        fields.Add("Provider", "Where it runs. The first is the default; a spawn may choose another listed one.", ProviderEditor(draft));
+        fields.AddBare(ProviderEditor(draft));
+        fields.AddBare(new MarkupControl([""]));
         var turns = ListDetail.Input(new PromptControl { Input = draft.MaxTurns?.ToString() ?? "", InputWidth = 8 });
         turns.InputChanged += (_, t) => draft.MaxTurns = int.TryParse(t.Trim(), out var n) && n >= 0 ? n : null;
         fields.Add("Max turns", draft.IsBuiltin && draft.Shipped?.DefaultMaxTurns is { } d
@@ -252,15 +255,21 @@ public sealed class AgentsTab
     }
 
     /// <summary>
-    /// The type's providers, in order: one row per entry with its name:model — "default" on the first —
-    /// and ↑ ↓ Remove; then the providers not yet listed and + Add. Rebuilt in place on every change, as
-    /// the MCP secrets editor is, so the rows always show the draft. An entry config does not know is
-    /// shown as such, so a disabled type's bad entry can be seen and removed.
+    /// "Runs on": the three forms a type's <c>provider</c> takes, as three choices in a panel, with only
+    /// the chosen one's detail open — the session's model; a list of providers, the first the default;
+    /// or any provider. Rebuilt in place on every change, as the MCP secrets editor is, so the rows
+    /// always show the draft. An entry config does not know is shown as such, so a disabled type's bad
+    /// entry can be seen and removed.
+    ///
+    /// <para>THREE CHOICES, NOT A CHECKBOX AND AN IMPLIED EMPTY LIST. An empty list meaning "the session's
+    /// model" puts the add-picker's provider right under that sentence, where it reads as the provider the
+    /// type runs on; a choice of its own says it outright, and only the chosen option's detail is open.</para>
     /// </summary>
     private IWindowControl ProviderEditor(AgentDraft draft)
     {
         var stack = new FieldGrid();
         var providers = _settings!.Providers;
+        var muted = ColorScheme.MutedMarkup;
 
         // AN ENTRY AS IT WILL RUN, and what is wrong with it: not configured, or pinned to a model the
         // entry no longer runs — the two ways a list disables its type.
@@ -274,78 +283,101 @@ public sealed class AgentsTab
             return MarkupParser.Escape($"{name}:{c.Model}");
         }
 
-        // FOCUS FOLLOWS THE EDIT: Rebuild replaces every button, so the one pressed is gone — focus lands
-        // on the same button of the row that moved, or on + Add, rather than nowhere.
+        // AN INDENTED RULE, under the option it belongs to.
+        RuleControl Rule()
+        {
+            var rule = DialogLook.Rule();
+            rule.Margin = new Margin(4, 0, 0, 0);
+            return rule;
+        }
+
+        // FOCUS FOLLOWS THE EDIT: Rebuild replaces every control, so the one pressed is gone — focus lands
+        // on the same button of the row that moved, on + Add, or on the option just chosen.
         void Rebuild(int? focusRow = null, string focusOn = "")
         {
             stack.Clear();
             IWindowControl? focus = null;
             if (draft.Original?.Disabled is { } why)
-                stack.AddBare(new MarkupControl([$"[{ColorScheme.CautionMarkup}]Disabled: {MarkupParser.Escape(why)}.[/]"]));
+                stack.AddBare(new MarkupControl([$"[{ColorScheme.CautionMarkup}]Disabled: {MarkupParser.Escape(why)}.[/]", ""]));
 
-            // ANY PROVIDER, OR A LIST: ticked, the rows give way to the providers it may choose from; a
-            // spawn must name one, so there is no default to mark. The list stays underneath, so an
-            // untick puts it back: the draft ignores it while ticked, and a mistaken tick must not save
-            // a type with no provider at all.
-            var any = new CheckboxControl("Any provider — a spawn must name one", draft.AnyProvider);
-            any.CheckedChanged += (_, on) =>
+            var group = new RadioGroup<RunsOn>();
+            RadioControl<RunsOn> Option(RunsOn value, string label, string help)
             {
-                draft.AnyProvider = on;
-                Rebuild(null, "any");
+                var radio = new RadioControl<RunsOn>(group, value, label);
+                stack.AddBare(radio);
+                stack.AddBare(new MarkupControl([$"[{muted}]    {MarkupParser.Escape(help)}[/]"]) { Wrap = true });
+                return radio;
+            }
+
+            var session = Option(RunsOn.Session, "The session's model", "Whatever the parent runs on. A spawn cannot choose.");
+            // A VALUE THAT IS NOT A NAME OR A LIST has no entries to remove, so it gets a way out.
+            if (draft.Mode == RunsOn.Session && draft.Original?.Disabled is not null && draft.Original.Written is null && !draft.ClearBadProvider)
+                stack.AddBare(Controls.Button(" Clear the bad value ").OnClick((_, _) => { draft.ClearBadProvider = true; Rebuild(); }).Build());
+            stack.AddBare(new MarkupControl([""]));
+
+            var list = Option(RunsOn.List, "These providers", "The first is the default; a spawn may pick another from the list.");
+            if (draft.Mode == RunsOn.List)
+            {
+                if (draft.ProviderProblem is { } problem)
+                    stack.AddBare(new MarkupControl([$"    [{ColorScheme.CautionMarkup}]{MarkupParser.Escape(problem)}[/]"]));
+                if (draft.Providers.Count > 0) stack.AddBare(Rule());
+                for (var i = 0; i < draft.Providers.Count; i++)
+                {
+                    var at = i;
+                    // BUTTONS FIRST, IN FIXED SLOTS: every row has ↑ ↓ Remove in the same columns, the ones
+                    // that cannot act disabled rather than missing, so the names line up down the list.
+                    var row = new ToolbarControl { ItemSpacing = 1, Margin = new Margin(4, 0, 0, 0) };
+                    var up = Controls.Button(" ↑ ").OnClick((_, _) => Swap(at, at - 1, "up")).Build();
+                    up.IsEnabled = at > 0;
+                    var down = Controls.Button(" ↓ ").OnClick((_, _) => Swap(at, at + 1, "down")).Build();
+                    down.IsEnabled = at < draft.Providers.Count - 1;
+                    var remove = Controls.Button(" Remove ").OnClick((_, _) =>
+                    {
+                        draft.Providers.RemoveAt(at);
+                        Rebuild(Math.Min(at, draft.Providers.Count - 1), "remove");
+                    }).Build();
+                    row.AddItem(up);
+                    row.AddItem(down);
+                    row.AddItem(remove);
+                    row.AddItem(new MarkupControl([$" [{muted}]{at + 1}[/]  {Label(draft.Providers[at])}"
+                        + (at == 0 ? $"  [{muted}]default[/]" : "")]));
+                    stack.AddBare(row);
+                    if (focusRow == at)
+                        focus = focusOn switch { "up" when up.IsEnabled => up, "down" when down.IsEnabled => down, _ => remove };
+                }
+
+                var left = providers.Keys.Where(n => !draft.ListsProvider(n)).Order(StringComparer.Ordinal).ToList();
+                if (left.Count > 0)
+                {
+                    // A RULE BETWEEN WHAT IS LISTED AND WHAT CAN BE ADDED, so the picker is not read as a row.
+                    if (draft.Providers.Count > 0) stack.AddBare(Rule());
+                    var add = new ToolbarControl { ItemSpacing = 1, Margin = new Margin(4, 0, 0, 0) };
+                    var pick = new DropdownControl("", left) { HorizontalAlignment = HorizontalAlignment.Left };
+                    pick.SelectedIndex = 0;
+                    add.AddItem(pick);
+                    var addButton = Controls.Button(" + Add ").OnClick((_, _) =>
+                    {
+                        if (pick.SelectedIndex is var p and >= 0 && p < left.Count) { draft.AddProvider(left[p], providers[left[p]].Model); Rebuild(null, "add"); }
+                    }).Build();
+                    add.AddItem(addButton);
+                    stack.AddBare(add);
+                    if (focusOn == "add" || (focusOn == "remove" && focus is null)) focus = addButton;
+                }
+            }
+            stack.AddBare(new MarkupControl([""]));
+
+            var any = Option(RunsOn.Any, "Any provider", "No default — a spawn must name one of every configured provider.");
+            if (draft.Mode == RunsOn.Any)
+                stack.AddBare(new MarkupControl([$"    [{muted}]{MarkupParser.Escape(string.Join(", ", providers.Keys.Order(StringComparer.Ordinal)))}[/]"]) { Wrap = true });
+
+            group.SelectedValue = draft.Mode;
+            group.SelectionChanged += (_, chosen) =>
+            {
+                if (chosen == draft.Mode) return;
+                draft.Choose(chosen);
+                Rebuild(null, chosen.ToString());
             };
-            stack.AddBare(any);
-            if (focusOn == "any") focus = any;
-            if (draft.AnyProvider)
-            {
-                stack.AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(string.Join(", ", providers.Select(p => $"{p.Key}:{p.Value.Model}")))}[/]"]));
-                if (focus is IFocusableControl ticked) _window()?.FocusManager.SetFocus(ticked, FocusReason.Programmatic);
-                return;
-            }
-            if (draft.Providers.Count == 0)
-            {
-                stack.AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]runs on the session's model[/]"]));
-                // A VALUE THAT IS NOT A NAME OR A LIST has no entries to remove, so it gets a way out.
-                if (draft.Original?.Disabled is not null && draft.Original.Written is null && !draft.ClearBadProvider)
-                    stack.AddBare(Controls.Button(" Clear the bad value ").OnClick((_, _) => { draft.ClearBadProvider = true; Rebuild(); }).Build());
-            }
-            for (var i = 0; i < draft.Providers.Count; i++)
-            {
-                var at = i;
-                var row = new ToolbarControl { ItemSpacing = 1 };
-                row.AddItem(new MarkupControl([Label(draft.Providers[at])
-                    + (at == 0 ? $" [{ColorScheme.MutedMarkup}]default[/]" : "")]));
-                IWindowControl? up = null, down = null;
-                if (at > 0)
-                    row.AddItem(up = Controls.Button(" ↑ ").OnClick((_, _) => Swap(at, at - 1, "up")).Build());
-                if (at < draft.Providers.Count - 1)
-                    row.AddItem(down = Controls.Button(" ↓ ").OnClick((_, _) => Swap(at, at + 1, "down")).Build());
-                var remove = Controls.Button(" Remove ").OnClick((_, _) =>
-                {
-                    draft.Providers.RemoveAt(at);
-                    Rebuild(Math.Min(at, draft.Providers.Count - 1), "remove");
-                }).Build();
-                row.AddItem(remove);
-                stack.AddBare(row);
-                if (focusRow == at)
-                    focus = focusOn switch { "up" => up ?? down ?? remove, "down" => down ?? up ?? remove, _ => remove };
-            }
-
-            var left = providers.Keys.Where(n => !draft.ListsProvider(n)).Order(StringComparer.Ordinal).ToList();
-            if (left.Count > 0)
-            {
-                var add = new ToolbarControl { ItemSpacing = 1 };
-                var pick = new DropdownControl("", left) { HorizontalAlignment = HorizontalAlignment.Left };
-                pick.SelectedIndex = 0;
-                add.AddItem(pick);
-                var addButton = Controls.Button(" + Add ").OnClick((_, _) =>
-                {
-                    if (pick.SelectedIndex is var p and >= 0 && p < left.Count) { draft.AddProvider(left[p], providers[left[p]].Model); Rebuild(null, "add"); }
-                }).Build();
-                add.AddItem(addButton);
-                stack.AddBare(add);
-                if (focusOn == "add" || (focusOn == "remove" && focus is null)) focus = addButton;
-            }
-
+            focus ??= focusOn switch { nameof(RunsOn.Session) => session, nameof(RunsOn.List) => list, nameof(RunsOn.Any) => any, _ => null };
             if (focus is IFocusableControl target) _window()?.FocusManager.SetFocus(target, FocusReason.Programmatic);
         }
 
@@ -356,7 +388,18 @@ public sealed class AgentsTab
         }
 
         Rebuild();
-        return stack.Control;
+        var panel = new PanelControl
+        {
+            BorderStyle = BorderStyle.Rounded,
+            // THE TITLE IN MUTED TEXT, not the border's colour: drawn in the rule colour it all but
+            // vanished into the line it sits on.
+            Header = $" [{muted}]Runs on[/] ",
+            BorderColor = DialogLook.Palette.Rule,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Padding = new Padding(1, 0, 1, 0),
+        };
+        panel.AddControl(stack.Control);
+        return panel;
     }
 
     /// <summary>A base — inherited or all — and the sixteen tools as boxes: unticked is taken away.</summary>
@@ -451,6 +494,7 @@ public sealed class AgentsTab
         if (_saving || _draft is not { } draft || _settings is null) return;
         if (!draft.IsDirty) { SetStatus($"[{ColorScheme.MutedMarkup}]Nothing to save.[/]"); return; }
         if (!draft.IsBuiltin && !draft.IsGeneral && string.IsNullOrWhiteSpace(draft.Briefing)) { SetStatus($"[{ColorScheme.CautionMarkup}]A type of your own needs a briefing.[/]"); return; }
+        if (draft.ProviderProblem is { } problem) { SetStatus($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(problem)}[/]"); return; }
         var name = draft.Name;
         var fields = draft.ToFields();
         _saving = true;

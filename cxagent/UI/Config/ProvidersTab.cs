@@ -107,7 +107,8 @@ public sealed class ProvidersTab
         var panel = new PanelControl
         {
             BorderStyle = compact ? BorderStyle.None : BorderStyle.Rounded,
-            Header = compact ? null : " Roles ",
+            // THE TITLE IN MUTED TEXT, not the border's colour, which all but hides it on its own line.
+            Header = compact ? null : $" [{p.Muted.ToMarkup()}]Roles[/] ",
             BorderColor = p.Rule,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Padding = new Padding(1, 0, 1, 0),

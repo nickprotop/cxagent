@@ -222,4 +222,55 @@ public class AgentDraftTests
         Assert.Equal(["local", $"{name}:m1"], draft.Providers);
         Assert.True(draft.ListsProvider(name));
     }
+
+    // ---- Runs on: the session's model, a list, or any provider ----------------------------------
+
+    [Fact]
+    public void RunsOn_StartsWhereConfigLeftIt()
+    {
+        Assert.Equal(RunsOn.Session, AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, null).Mode);
+        Assert.Equal(RunsOn.List, AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, new AgentTypeConfig(Provider: "local")).Mode);
+        Assert.Equal(RunsOn.Any, AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, new AgentTypeConfig(Provider: "all") { AnyProvider = true }).Mode);
+    }
+
+    [Fact]
+    public void ChoosingTheSessionsModel_ClearsTheProviderKey()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, new AgentTypeConfig(Provider: "local"));
+        draft.Choose(RunsOn.Session);
+        Assert.Empty(draft.Providers);
+        Assert.Contains("provider", draft.ToFields().Clear);
+        Assert.Null(draft.ProviderProblem);
+    }
+
+    [Fact]
+    public void BackToTheList_RestoresWhatItHeld()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, new AgentTypeConfig(Provider: "local"));
+        draft.Choose(RunsOn.Session);
+        draft.Choose(RunsOn.List);
+        Assert.Equal(["local"], draft.Providers);
+        Assert.False(draft.IsDirty);
+    }
+
+    [Fact]
+    public void AnyProvider_WritesAll()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, null);
+        draft.Choose(RunsOn.Any);
+        Assert.True(draft.AnyProvider);
+        Assert.Equal(AgentTypeConfig.AnyProviderWord, draft.ToFields().Provider);
+    }
+
+    /// <summary>AN EMPTY LIST IS NOT A CHOICE: it would save as the session's model, which is a different
+    /// option the user did not pick.</summary>
+    [Fact]
+    public void AnEmptyList_IsAProblem_UntilAProviderIsAdded()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, null);
+        draft.Choose(RunsOn.List);
+        Assert.NotNull(draft.ProviderProblem);
+        draft.AddProvider("local", "qwen");
+        Assert.Null(draft.ProviderProblem);
+    }
 }

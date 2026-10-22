@@ -28,6 +28,8 @@ public sealed class AgentDraft
         _originalProviders = (AnyProvider ? [] : original?.Written ?? original?.Providers ?? (original?.Provider is { } p ? [p] : []))
             .Select(w => w.Trim()).DistinctBy(AgentTypeConfig.NameOf, StringComparer.Ordinal).ToList();
         Providers = [.. _originalProviders];
+        Mode = AnyProvider ? RunsOn.Any : Providers.Count > 0 ? RunsOn.List : RunsOn.Session;
+        _remembered = [.. Providers];
         MaxTurns = original?.MaxTurns;
         var terms = ToolTerms.Read(original?.Tools?.Terms);
         Base = terms.Base;
@@ -76,6 +78,35 @@ public sealed class AgentDraft
     public bool AnyProvider { get; set; }
 
     private bool AnyProviderChanged => AnyProvider != (Original?.AnyProvider ?? false);
+
+    /// <summary>Where a spawn of this type runs: the three forms config's <c>provider</c> takes.</summary>
+    public RunsOn Mode { get; private set; }
+
+    // THE LIST AS IT WAS before the session's model was chosen, so choosing the list again gives it back
+    // rather than an empty one to rebuild by hand.
+    private List<string> _remembered;
+
+    /// <summary>
+    /// Chooses where it runs. The session's model empties the list (no <c>provider</c> key); the list
+    /// brings back the entries it last held; any provider leaves the list untouched underneath, since
+    /// the draft ignores it while any provider is chosen.
+    /// </summary>
+    public void Choose(RunsOn mode)
+    {
+        if (mode == Mode) return;
+        if (Providers.Count > 0) _remembered = [.. Providers];
+        Mode = mode;
+        AnyProvider = mode == RunsOn.Any;
+        if (mode == RunsOn.Session) Providers.Clear();
+        else if (mode == RunsOn.List && Providers.Count == 0) Providers.AddRange(_remembered);
+    }
+
+    /// <summary>
+    /// Why this cannot be saved as it stands, or null. A list with nothing in it would save as the
+    /// session's model — the other option, which the user did not pick.
+    /// </summary>
+    public string? ProviderProblem =>
+        Mode == RunsOn.List && Providers.Count == 0 ? "Add a provider, or choose the session's model." : null;
 
     /// <summary>Whether <paramref name="name"/> is already listed, in any form.</summary>
     public bool ListsProvider(string name) =>
@@ -138,4 +169,17 @@ public sealed class AgentDraft
     }
 
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+}
+
+/// <summary>Where an agent type's spawns run — config's <c>provider</c>: absent, a list, or <c>"all"</c>.</summary>
+public enum RunsOn
+{
+    /// <summary>No <c>provider</c>: the parent's model; a spawn cannot choose.</summary>
+    Session,
+
+    /// <summary>A list: the first is the default, a spawn may pick another from it.</summary>
+    List,
+
+    /// <summary><c>"all"</c>: every configured provider, no default; a spawn must name one.</summary>
+    Any,
 }
