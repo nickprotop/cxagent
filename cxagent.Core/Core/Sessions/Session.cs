@@ -600,11 +600,16 @@ public sealed partial class Session
             return false;
         }
 
+        // THE NAME IT WILL BE REGISTERED UNDER, which is what the question names: a store's plugin is
+        // `acme/calculator` everywhere the user meets it, and a prompt saying only "calculator" would not
+        // tell them which of two same-named plugins they are approving. See PluginStores.RegisteredName.
+        var name = CxAgent.Core.Plugins.PluginStores.RegisteredName(manifest.Name, loadSetDirectory);
+
         // A NAME ALREADY LOADED IS REFUSED BEFORE THE QUESTION, which would otherwise ask about a load the
         // registry then turns away — a question whose answer cannot matter.
-        if (Plugins.LoadedPluginNames.Contains(manifest.Name, StringComparer.Ordinal))
+        if (Plugins.LoadedPluginNames.Contains(name, StringComparer.Ordinal))
         {
-            Say(new Message($"plugin '{manifest.Name}' is already loaded.", Severity.Warning));
+            Say(new Message($"plugin '{name}' is already loaded.", Severity.Warning));
             return false;
         }
 
@@ -667,14 +672,14 @@ public sealed partial class Session
 
             var request = new Permissions.PermissionRequest(
                 Permissions.PermissionKind.Plugin,
-                $"{manifest.Name} wants to {capability}.\n{contributes}\n{loadSetDirectory}",
+                $"{name} wants to {capability}.\n{contributes}\n{loadSetDirectory}",
                 AlwaysRule: hash)
             { Policy = Policy };
 
         var outcome = await gate.RequestAsync(request, ct);
         if (!outcome.Allowed)
         {
-            Say(new Message($"plugin '{manifest.Name}' was not loaded — the user declined it.", Severity.Warning));
+            Say(new Message($"plugin '{name}' was not loaded — the user declined it.", Severity.Warning));
             return false;
         }
 
@@ -704,10 +709,12 @@ public sealed partial class Session
     /// nothing to enforce with, matching every other "no gate, no prompt" path this session has.</para>
     /// </summary>
     /// <param name="plugin">The running instance, past its own Load call.</param>
-    /// <param name="manifest">What it declared it contributes.</param>
+    /// <param name="manifest">What it declared it contributes. Its name is the manifest's own; the
+    /// session registers it under <see cref="Plugins.PluginStores.RegisteredName"/>'s answer, which
+    /// differs only for a store's plugin.</param>
     /// <param name="loadSetDirectory">The directory holding everything this plugin loads — hashed
-    /// whole for identity (see <see cref="Plugins.PluginIdentity.HashLoadSet"/>) and shown to the
-    /// user as where the plugin came from.</param>
+    /// whole for identity (see <see cref="Plugins.PluginIdentity.HashLoadSet"/>), shown to the
+    /// user as where the plugin came from, and what decides whether it is a store's.</param>
     /// <param name="ct">Observed while the plugin starts — it is already past its own Load call by the time
     /// this method is reached.</param>
     /// <param name="context">
@@ -723,6 +730,17 @@ public sealed partial class Session
         string loadSetDirectory, CancellationToken ct = default, IDisposable? context = null,
         Plugins.SessionPluginClient? client = null, bool announce = true)
     {
+        // REGISTERED UNDER THE NAME THE USER REACHES IT BY — `store/name` for a store's plugin, its
+        // manifest name otherwise (PluginStores.RegisteredName). Renamed HERE, before anything reads the
+        // name, so the already-loaded check, the registry's key, unwire, reaping, the plugin's commands
+        // and every line said below all use the one name; a refusal that discarded under the manifest
+        // name would ask whether the OFFICIAL copy is loaded before deciding to reap. THE PLUGIN'S OWN
+        // MANIFEST IS UNTOUCHED: this is the session's copy, and nothing the plugin is handed carries it.
+        manifest = manifest with
+        {
+            Name = CxAgent.Core.Plugins.PluginStores.RegisteredName(manifest.Name, loadSetDirectory),
+        };
+
         // EVERY REFUSAL BELOW RETIRES THE PLUGIN: its Load has already run, so nothing else would
         // stop it, end its Lifetime or sever its client — see PluginRegistry.DiscardAsync.
         if (RefusedWhileBusy())
@@ -1131,6 +1149,11 @@ public sealed partial class Session
         if (!await ApproveLoadAsync(load.AssemblyPath, load.LoadSetDirectory, ct)) return CommandStatus.Reported;
 
         var (target, assemblyPath, loadSetDirectory, declaredName, settings, configDir) = load;
+
+        // THE CLIENT AND THE CHILD RECORDS CARRY THE NAME LoadPlugin REGISTERS — `store/name` for a
+        // store's plugin — so a turn the plugin starts is its own to cancel at unwire, and reaping finds
+        // the processes it recorded during Load rather than the official same-named plugin's.
+        var registeredName = CxAgent.Core.Plugins.PluginStores.RegisteredName(declaredName, loadSetDirectory);
         var sidecarManifest = CxAgent.Core.Plugins.PluginResolver.DeclaredManifest(assemblyPath);
         // CONSTRUCTED ONLY WHEN THE SIDECAR DECLARES IT — see PluginResolver.PluginRuntime's own doc.
         // The declaration is what the load prompt disclosed and the user approved; a plugin that
@@ -1141,7 +1164,7 @@ public sealed partial class Session
         // the guard here is defence for that invariant, not a live case, and "no declaration read"
         // has to mean "no client" regardless, so the null-safe read is also the correct one.
         var client = sidecarManifest?.Client == true
-            ? new CxAgent.Core.Plugins.SessionPluginClient(this, declaredName, Plugins.SubmitQueue)
+            ? new CxAgent.Core.Plugins.SessionPluginClient(this, registeredName, Plugins.SubmitQueue)
             : null;
 
         // WorkingDirectory IS THIS SESSION'S FOLDER, not loadSetDirectory — see that member's own
@@ -1150,7 +1173,7 @@ public sealed partial class Session
         // folder containing the plugin binary and nothing else, so every lookup answers empty.
         var context = new CxAgent.Core.Plugins.PluginResolver.RuntimeContext(
             new CxAgent.Core.Plugins.PluginResolver.PluginRuntime(WorkingDirectory, settings,
-                SayPluginLifecycle, new CxAgent.Core.Plugins.ChildProcessStore(configDir), declaredName,
+                SayPluginLifecycle, new CxAgent.Core.Plugins.ChildProcessStore(configDir), registeredName,
                 // WHOSE PLUGIN THIS IS, so unwiring it here reaps only what THIS session spawned.
                 SessionId: Id, Client: client));
 

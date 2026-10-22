@@ -76,7 +76,7 @@ public sealed record PluginManagerInputs(
 public static class PluginManagerRows
 {
     /// <summary>
-    /// Every row, ordered by section then name.
+    /// Every row, ordered by section, then official before store rows, then name.
     ///
     /// <para>PRECEDENCE: NeedsAttention &gt; Updates &gt; Installed &gt; Available, and a plugin has
     /// exactly one row. A plugin you have AND the catalog lists appears once — two rows for one
@@ -166,7 +166,12 @@ public static class PluginManagerRows
                 Catalog: entry));
         }
 
-        return [.. rows.OrderBy(r => r.Section).ThenBy(r => r.Name, StringComparer.Ordinal)];
+        // OFFICIAL FIRST, THEN EACH STORE'S, in every section: the official catalog is the one every
+        // user has, and an ordinal sort puts `acme/…` ahead of `calculator` because 'a' < 'c'. Within the
+        // stores the qualified name sorts them, which groups each store's plugins together under it.
+        return [.. rows.OrderBy(r => r.Section)
+                       .ThenBy(r => PluginStores.TrySplit(r.Name, out _, out _))
+                       .ThenBy(r => r.Name, StringComparer.Ordinal)];
     }
 
     /// <summary>

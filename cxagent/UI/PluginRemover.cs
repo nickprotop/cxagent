@@ -60,7 +60,7 @@ public static class PluginRemover
                 // marker, so an arbitrary grandchild of a plugins folder is still not deletable.
                 // The plan removes the plugin's own folder; the store folder and its marker stay.
                 || (string.Equals(Path.GetDirectoryName(Path.GetDirectoryName(home)), root, StringComparison.Ordinal)
-                    && PluginDiscovery.IsStoreFolder(Path.GetDirectoryName(home)));
+                    && PluginStores.IsStoreFolder(Path.GetDirectoryName(home)));
         });
 
         if (!inside)
@@ -87,7 +87,7 @@ public static class PluginRemover
         // being a link is handled further down, as a link removal.
         if (Path.GetDirectoryName(home) is { } storeDir
             && !pluginsFolders.Any(f => string.Equals(home, Path.TrimEndingDirectorySeparator(Path.GetFullPath(f)), StringComparison.Ordinal))
-            && PluginDiscovery.IsStoreFolder(storeDir)
+            && PluginStores.IsStoreFolder(storeDir)
             && new DirectoryInfo(storeDir).LinkTarget is { } storeTarget)
             return new RemovalPlan.Blocked(
                 $"'{name}' sits in the store folder {storeDir}, which is a link to {storeTarget}. Nothing was removed.");

@@ -22,11 +22,6 @@ namespace CxAgent.UI;
 /// </summary>
 public static class PluginDiscovery
 {
-    /// <summary>Whether a directory is a store's folder: the one that holds the store marker, which
-    /// is what tells it apart from an ordinary plugin folder that happens to hold subfolders.</summary>
-    public static bool IsStoreFolder(string? directory) =>
-        directory is not null && File.Exists(Path.Combine(directory, PluginStores.Marker));
-
     /// <summary>The folders searched for a configured plugin's file, in the order searched — Core's
     /// <see cref="PluginResolver.SearchFolders"/>, which says why the global folder comes before the
     /// project's. One copy, so startup and <c>/plugin load</c> cannot find different files.</summary>
@@ -275,7 +270,8 @@ public static class PluginDiscovery
         var notLoaded = new List<PluginNotLoaded>();
 
         // SAID ONCE, AT THE END — see Session.AnnouncePluginsLoaded. Each load runs with
-        // announce: false and adds its manifest here instead of writing a block of its own.
+        // announce: false and adds its manifest here instead of writing a block of its own, under the
+        // name the session registered it by, so a store's plugin is announced as `store/name`.
         var loadedManifests = new List<PluginManifest>();
 
         foreach (var (name, config) in plugins.OrderBy(p => p.Key, StringComparer.Ordinal))
@@ -297,7 +293,7 @@ public static class PluginDiscovery
 
             // THE SIDECAR'S OWN NAME, READ BEFORE Load() — a child process the plugin registers
             // DURING its own Load() must be recorded under the name ChildProcessStore.ReapPlugin and
-            // PluginRegistry.UnwireAsync key on later (the manifest name), and Load() has not
+            // PluginRegistry.UnwireAsync key on later (the name registered from it), and Load() has not
             // returned yet to confirm it. ManagedPluginLoader.Load already refuses a mismatch between
             // this and what Load() returns, so reading it here is reading the same name early rather
             // than risking a second, different one.
@@ -312,6 +308,11 @@ public static class PluginDiscovery
                 notLoaded.Add(new(name, "no usable sidecar manifest"));
                 continue;
             }
+
+            // AND THE NAME THE SESSION WILL REGISTER IT UNDER — `store/name` for a store's plugin, the
+            // sidecar's name otherwise — because that, not the sidecar's, is what the client and the
+            // child records must carry: Session.LoadPlugin keys the registry, unwire and reaping on it.
+            var registeredName = PluginStores.RegisteredName(declaredName, loadSetDirectory);
 
             // ASKED BEFORE ANY OF ITS CODE RUNS — the loader below constructs the plugin and runs its Load, so a
             // question after it would be about code already run. See Session.ApproveLoadAsync.
@@ -347,13 +348,13 @@ public static class PluginDiscovery
             // NO CLIENT IN A HEADLESS RUN (allowClients false): the run is exactly the user's goal, and
             // a plugin starting work of its own would be a second goal nobody asked for.
             var client = allowClients && sidecarManifest?.Client == true
-                ? new SessionPluginClient(session, declaredName, session.Plugins.SubmitQueue)
+                ? new SessionPluginClient(session, registeredName, session.Plugins.SubmitQueue)
                 : null;
 
             var context = new PluginResolver.RuntimeContext(new PluginResolver.PluginRuntime(
                 session.WorkingDirectory,
                 config.Settings ?? JsonDocument.Parse("{}").RootElement,
-                report, children, declaredName,
+                report, children, registeredName,
                 // WHOSE PLUGIN THIS IS, so an unwire here reaps only what THIS session spawned.
                 SessionId: session.Id, Client: client));
 
@@ -379,7 +380,7 @@ public static class PluginDiscovery
                     != CommandStatus.Changed)
                     notLoaded.Add(new(name, "not loaded — see warnings"));
                 else
-                    loadedManifests.Add(abiLoaded.Manifest);
+                    loadedManifests.Add(abiLoaded.Manifest with { Name = registeredName });
                 continue;
             }
 
@@ -399,7 +400,7 @@ public static class PluginDiscovery
                 != CommandStatus.Changed)
                 notLoaded.Add(new(name, "not loaded — see warnings"));
             else
-                loadedManifests.Add(loaded.Manifest);
+                loadedManifests.Add(loaded.Manifest with { Name = registeredName });
         }
 
         session.AnnouncePluginsLoaded(loadedManifests);

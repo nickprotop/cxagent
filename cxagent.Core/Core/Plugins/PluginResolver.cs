@@ -216,7 +216,8 @@ public static class PluginResolver
     /// The sidecar-declared name beside <paramref name="assemblyPath"/>, read before
     /// <see cref="ManagedPluginLoader.Load"/> — the same early read <c>PluginDiscovery</c> does, and
     /// for the same reason: a child process the plugin registers DURING its own <c>Load()</c> must be
-    /// recorded under the name the registry and <see cref="ChildProcessStore"/> key on later, and
+    /// recorded under the name the registry and <see cref="ChildProcessStore"/> key on later — this one,
+    /// or <c>store/name</c> for a store's plugin (<see cref="PluginStores.RegisteredName"/>) — and
     /// <c>Load()</c> has not returned yet to confirm it.
     /// </summary>
     public static string? DeclaredName(string assemblyPath) => DeclaredManifest(assemblyPath)?.Name;

@@ -77,6 +77,38 @@ public static partial class PluginStores
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return []; }
     }
 
+    /// <summary>Whether a directory is a store's folder: the one that holds <see cref="Marker"/>, which
+    /// is what tells it apart from an ordinary plugin folder that happens to hold subfolders. One
+    /// definition, so resolving, listing, uninstalling and registering agree on what a store is.</summary>
+    public static bool IsStoreFolder(string? directory) =>
+        directory is not null && File.Exists(Path.Combine(directory, Marker));
+
+    /// <summary>
+    /// The name a session registers a loaded plugin under: <c>store/folder</c> when its load set sits
+    /// directly in a store's folder, its manifest name otherwise.
+    ///
+    /// <para>THE NAME THE USER REACHES IT BY. A store plugin is spelled <c>acme/calculator</c> in config,
+    /// in F2 and in <c>/plugin load</c>; registered as its manifest's <c>calculator</c>, the session would
+    /// list a plugin nobody named, call the one they did name inactive, and let <c>/plugin unwire
+    /// calculator</c> stop the store's copy rather than the official one.</para>
+    ///
+    /// <para>DECIDED FROM THE LOAD SET, NOT FROM HOW IT WAS ASKED FOR, so a path typed into
+    /// <c>plugins/acme/calculator/</c> registers the same name as <c>acme/calculator</c> does: it is the
+    /// same copy either way, and two spellings of one copy would be two names for one plugin.</para>
+    ///
+    /// <para>FOLDER NAMES, NOT THE MANIFEST'S, because the folders are what <c>store/name</c> resolves
+    /// through and what F2 lists — a store whose folder and manifest disagree is still reached by its
+    /// folder.</para>
+    /// </summary>
+    public static string RegisteredName(string manifestName, string loadSetDirectory)
+    {
+        var home = Path.TrimEndingDirectorySeparator(Path.GetFullPath(loadSetDirectory));
+        var store = Path.GetDirectoryName(home);
+        return IsStoreFolder(store)
+            ? $"{Path.GetFileName(store)}/{Path.GetFileName(home)}"
+            : manifestName;
+    }
+
     /// <summary>
     /// <c>store/name</c> split in two; false for anything else. BOTH SEGMENTS ARE CHECKED, because they
     /// become folder names under a plugins folder: <c>acme/..</c> or <c>../x</c> would otherwise name a

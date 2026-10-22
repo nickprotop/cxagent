@@ -12,7 +12,9 @@ namespace CxAgent.Core.Plugins;
 /// plugin from the registry's own list.
 /// </summary>
 /// <param name="instance">The plugin itself — what <see cref="PluginRegistry.UnwireAsync"/> stops.</param>
-/// <param name="manifest">What it declared: its tools, its commands, and the name everything keys on.</param>
+/// <param name="manifest">What it declared: its tools, its commands, and the name everything keys on —
+/// the session's registered name, which is <c>store/name</c> for a store's plugin (see
+/// <see cref="PluginStores.RegisteredName"/>) and the manifest's own otherwise.</param>
 /// <param name="context">
 /// The context THIS plugin was loaded with, retained so <see cref="PluginRegistry.UnwireAsync"/> can
 /// dispose it — without the reference, a runtime-loaded plugin's context is unreachable past its own

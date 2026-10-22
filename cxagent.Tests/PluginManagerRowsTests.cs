@@ -43,6 +43,51 @@ public class PluginManagerRowsTests
         Assert.Equal(["acme/repo-map", "repo-map"], rows.Where(r => r.Section == PluginRowSection.Available).Select(r => r.Name).Order());
     }
 
+    /// <summary>A LOADED STORE PLUGIN IS ONE ROW, ACTIVE, and claims nothing of the official one's:
+    /// the session reports it as <c>acme/calculator</c>, the name its row already carries.</summary>
+    [Fact]
+    public void ALoadedStorePlugin_IsOneActiveRow_AndTheOfficialOneStaysAvailable()
+    {
+        var catalog = new[] { Entry("calculator"), Entry("calculator") with { Store = "acme" } };
+
+        var configured = PluginManagerRows.Build(Inputs(
+            configured: new Dictionary<string, PluginConfig> { ["acme/calculator"] = new("calculator.dll") },
+            loaded: ["acme/calculator"], catalog: catalog));
+        var unconfigured = PluginManagerRows.Build(Inputs(
+            unconfigured: [new PluginDiscovery.UnconfiguredPlugin("acme/calculator", "calculator.dll", "/p/acme/calculator", 1)],
+            loaded: ["acme/calculator"], catalog: catalog));
+
+        foreach (var rows in new[] { configured, unconfigured })
+        {
+            var store = Assert.Single(rows, r => r.Name.Contains("calculator") && r.Section != PluginRowSection.Available);
+            Assert.Equal("acme/calculator", store.Name);
+            Assert.StartsWith("active", store.State);
+            Assert.Contains(rows, r => r.Name == "calculator" && r.Section == PluginRowSection.Available);
+        }
+    }
+
+    /// <summary>OFFICIAL FIRST, THEN EACH STORE'S, in every section — the spec's "F2 lists official
+    /// plugins as today, then each store's under its name". An ordinal sort puts <c>acme/…</c> ahead of
+    /// <c>calculator</c>, which buries the catalog the user installed cxagent for under a third party's.</summary>
+    [Fact]
+    public void OfficialRowsComeFirst_ThenStoreRows_GroupedByStore_InEverySection()
+    {
+        var rows = PluginManagerRows.Build(Inputs(
+            configured: new Dictionary<string, PluginConfig>
+            {
+                ["zeta/a"] = new("a.dll"),
+                ["calculator"] = new("calculator.dll"),
+                ["acme/b"] = new("b.dll"),
+                ["acme/a"] = new("a.dll"),
+            },
+            catalog: [Entry("x"), Entry("y") with { Store = "acme" }, Entry("w")]));
+
+        Assert.Equal(["calculator", "acme/a", "acme/b", "zeta/a"],
+            rows.Where(r => r.Section == PluginRowSection.Installed).Select(r => r.Name));
+        Assert.Equal(["w", "x", "acme/y"],
+            rows.Where(r => r.Section == PluginRowSection.Available).Select(r => r.Name));
+    }
+
     [Fact]
     public void AStorePluginsUpdate_ComesFromItsOwnStoreOnly()
     {
