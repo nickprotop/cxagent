@@ -420,11 +420,19 @@ loaded**, or **disabled**.
 | | |
 |---|---|
 | `/plugin browse` | opens the plugin manager (also **F2**): the catalog, what is installed, and updates. It installs into the global plugins folder or this project's |
-| `/plugin get <name>` | downloads a plugin from the catalog into the global plugins folder, checking its hash. It loads nothing and writes nothing to `config.json`: the reply names the commands that take it further |
-| `/plugin load <name\|path> [{ settings }]` | loads a configured plugin — disabled or not — or a plugin file config never declared, for this session. A JSON block after it is the plugin's settings for this load |
+| `/plugin get <name>` | downloads a plugin from the catalog into the global plugins folder, checking its hash: `name` from the official catalog into `plugins/<name>/`, `store/name` from that store's catalog into `plugins/<store>/<name>/`. It loads nothing and writes nothing to `config.json`: the reply names the commands that take it further |
+| `/plugin load <name\|path> [{ settings }]` | loads a configured plugin — disabled or not — or a plugin file config never declared, for this session. A store's plugin is loaded by its `store/name`. A JSON block after it is the plugin's settings for this load |
 | `/plugin unwire <name>` | stops a loaded plugin and removes its tools |
 | `/plugin enable <name>` | loads it at startup from now on — written to `config.json` |
 | `/plugin disable <name>` | stops loading it at startup, and unloads it now |
+| `/plugin store add <name> <url>` | adds a store — another publisher's plugin catalog — to `config.json`, after reading its catalog once to show it is reachable. The name is lowercase letters, digits and `-`; it cannot be `cxagent`, a store already added, or the name of an installed plugin or an official one, since a store's plugins install into the folder that name has. The URL is https, or `http://localhost` for testing |
+| `/plugin store remove <name>` | removes a store from `config.json`. Plugins installed from it stay installed and loadable, and stop getting updates |
+| `/plugin store list` | each store, its URL, and how many plugins its catalog listed when it was last read |
+
+**A plugin name is `name` or `store/name`.** A plain name is always the official catalog's, and
+`cxagent/name` is the same plugin written out; a store's plugins are always `store/name` — in `get`,
+`load`, the plugin manager and the `plugins` keys of `config.json`, which configure an official plugin
+by its plain name.
 
 **Every load asks first.** The prompt shows what the plugin is about to run and a hash of everything
 it would load, and nothing in `config.json` can pre-approve it; a plugin asks again when a byte of that
