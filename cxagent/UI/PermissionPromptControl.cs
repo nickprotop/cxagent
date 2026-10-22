@@ -14,9 +14,8 @@ namespace CxAgent.UI;
 /// <summary>
 /// A permission prompt presented as a kind-specific heading, the request's <see cref="PermissionRequest.Display"/>
 /// verbatim (markup-escaped), and a row of self-resolving buttons whose labels disclose their
-/// scope. Follows <see cref="ChoiceStepContent"/>'s proven shape (markup header + buttons +
-/// <see cref="TaskCompletionSource{T}"/>), but is a plain <see cref="IWindowControl"/> factory
-/// rather than an <c>IFlowStepContent</c> — this is not a wizard step, it rides the
+/// scope: a markup header, buttons, and a <see cref="TaskCompletionSource{T}"/> the buttons resolve.
+/// A plain <see cref="IWindowControl"/> factory, not a window — it rides the
 /// <see cref="MainWindow.ShowPermissionPrompt"/> composer-swap seam instead.
 ///
 /// <para>Only the control and the swap are built here (Task 3). Nothing wires this to the gate or
@@ -198,8 +197,8 @@ public sealed class PermissionPromptControl
                                   + (_request.RequesterRoot is { Length: > 0 } folder ? $" in {folder}" : "") + ")"
                                 : ""))
                          + "[/]");
-        // One AddLine per source line, same reasoning as ChoiceStepContent: a multi-line Display
-        // (e.g. a shell command plus its working_dir) would otherwise paint its "\n" literally.
+        // One AddLine per source line: a multi-line Display (e.g. a shell command plus its
+        // working_dir) would otherwise paint its "\n" literally.
         foreach (var line in displayed.Replace("\r\n", "\n").Split('\n'))
             markup.AddLine(SharpConsoleUI.Parsing.MarkupParser.Escape(line));
 

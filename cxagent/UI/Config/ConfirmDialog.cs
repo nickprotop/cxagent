@@ -33,6 +33,10 @@ public static class ConfirmDialog
     /// <summary>Whether the answers hold the keyboard focus, so the highlight is drawn at full strength.</summary>
     public static bool AnswersFocused => _list?.HasFocus ?? false;
 
+    /// <summary>The answers as listed, in order, or null when no question is up — for a test.</summary>
+    internal static IReadOnlyList<string>? AnswersForTest =>
+        _list?.Items.Select(i => i.Tag as string ?? "").ToList();
+
     /// <summary>Whether a question is up — Escape answers it before anything under it.</summary>
     public static bool IsOpen => _window is not null;
 
@@ -44,6 +48,41 @@ public static class ConfirmDialog
         window.Close();
         return true;
     }
+
+    private const string CancelChoice = "Cancel";
+
+    /// <summary>
+    /// Asks a multi-line <paramref name="prompt"/> — its first line the question, the rest its detail —
+    /// with <paramref name="choices"/> as the answers, and returns the one chosen, or null for Cancel or
+    /// Esc. Safe from any thread: the dialog is opened on the UI thread.
+    /// </summary>
+    /// <param name="appendCancel">
+    /// When true, Cancel is the last answer. False for a caller whose own last answer ends the question
+    /// differently — "done" after an install keeps what was installed, which Cancel would not say.
+    /// Esc still answers null either way.
+    /// </param>
+    public static async Task<string?> ChooseAsync(ConsoleWindowSystem system, string prompt,
+        IReadOnlyList<string> choices, bool appendCancel = true)
+    {
+        var asked = await system.InvokeAsync(() => Choose(system, prompt, choices, appendCancel), "confirmDialog.Choose");
+        return await asked;
+    }
+
+    /// <summary><see cref="ChooseAsync"/>'s work, on the UI thread already.</summary>
+    internal static async Task<string?> Choose(ConsoleWindowSystem system, string prompt,
+        IReadOnlyList<string> choices, bool appendCancel)
+    {
+        var answer = await AskAsync(system, TitleOf(prompt), DetailOf(prompt),
+            appendCancel ? [.. choices, CancelChoice] : choices);
+        return appendCancel && answer == CancelChoice ? null : answer;
+    }
+
+    /// <summary>A prompt's question: its first line, which is the dialog's title.</summary>
+    internal static string TitleOf(string prompt) => prompt.Replace("\r\n", "\n").Split('\n')[0];
+
+    /// <summary>A prompt's detail: the lines after its question, without the blank line that separates them.</summary>
+    internal static IReadOnlyList<string> DetailOf(string prompt) =>
+        [.. prompt.Replace("\r\n", "\n").Split('\n').Skip(1).SkipWhile(string.IsNullOrWhiteSpace)];
 
     /// <summary>Asks, and returns the chosen answer, or null for Esc.</summary>
     /// <param name="system">The window system.</param>
@@ -57,7 +96,7 @@ public static class ConfirmDialog
         _answer = answer;
 
         // S, or wider when a line needs it: a fact cut by the border is a fact the answer is chosen without.
-        var width = Math.Min(Math.Max(DialogLook.Width(DialogSize.S, Console.WindowWidth), lines.Concat([title]).Max(l => l.Length) + 6), Console.WindowWidth - 4);
+        var width = Math.Min(Math.Max(DialogLook.Width(DialogSize.S, Console.WindowWidth), lines.Concat([title]).Concat(answers).Max(l => l.Length) + 6), Console.WindowWidth - 4);
         var window = new WindowBuilder(system)
             .WithTitle(title)
             .WithSize(width, Math.Min(lines.Count + answers.Count + 9, Console.WindowHeight - 2))

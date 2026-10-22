@@ -197,8 +197,8 @@ public class PermissionPromptControlTests
     [Fact]
     public void ACommandContainingBrackets_StillRendersItsButtons()
     {
-        // Unescaped '[' renders a button as an EMPTY ROW (ChoiceStepContent.cs:54-64, found live
-        // on the F8 provider list). A shell command with brackets is a WHEN, not an IF.
+        // Unescaped '[' renders a button as an EMPTY ROW (found live on the F8 provider list). A shell
+        // command with brackets is a WHEN, not an IF.
         var prompt = new PermissionPromptControl(ShellRequest("echo [test] && ls [a-z]*"));
         var rendered = RenderToString(prompt.BuildContent());
         Assert.Contains("Deny", rendered);

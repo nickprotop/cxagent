@@ -1424,9 +1424,9 @@ public static class PluginManagerDialog
         if (row.Catalog is not { } entry) return;
 
         var destinations = InstallDestinations();
-        var label = await FlowDialogs.ChooseAsync(_ws!, _window,
+        var label = await Config.ConfirmDialog.ChooseAsync(_ws!,
             $"Install '{entry.QualifiedName}' {entry.Version} where?",
-            destinations.Select(d => d.Label).ToList(), CancellationToken.None);
+            destinations.Select(d => d.Label).ToList());
         if (label is null) return;
         var folder = destinations.First(d => d.Label == label).Folder;
 
@@ -1440,11 +1440,11 @@ public static class PluginManagerDialog
 
             // "done" is this menu's own terminal choice — a synthetic Cancel beside it would offer
             // two names for the same outcome.
-            var next = await FlowDialogs.ChooseAsync(_ws, _window,
+            var next = await Config.ConfirmDialog.ChooseAsync(_ws,
                 $"'{entry.QualifiedName}' installed — {files.Count} file(s) in {directory}\n"
               + "Load it now (asks for approval first), add it to config.json so it loads at every "
               + "start, or neither.",
-                ["load now", "add to config", "done"], CancellationToken.None, appendCancel: false);
+                ["load now", "add to config", "done"], appendCancel: false);
 
             if (next == "load now")
                 await LoadAsync($"load {PluginManagerRows.LoadTarget(entry.QualifiedName, entry.File)}", $"'{entry.QualifiedName}' loaded");
@@ -1621,9 +1621,9 @@ public static class PluginManagerDialog
         {
             if (row.Configured is null) return;
 
-            var sure = await FlowDialogs.ChooseAsync(_ws!, _window,
+            var sure = await Config.ConfirmDialog.ChooseAsync(_ws!,
                 $"'{row.Name}': no file resolves for it — remove the config entry?",
-                ["Remove entry"], CancellationToken.None);
+                ["Remove entry"]);
             if (sure is null) return;
 
             _ws!.EnqueueOnUIThread(() =>
@@ -1650,8 +1650,8 @@ public static class PluginManagerDialog
         }
 
         var removable = (RemovalPlan.Removable)plan;
-        var confirmed = await FlowDialogs.ChooseAsync(_ws!, _window,
-            PluginRemover.Confirmation(removable), ["Remove"], CancellationToken.None);
+        var confirmed = await Config.ConfirmDialog.ChooseAsync(_ws!,
+            PluginRemover.Confirmation(removable), ["Remove"]);
         if (confirmed is null) return;
 
         var failed = PluginRemover.Remove(removable);

@@ -209,5 +209,5 @@ public class FlowDialogTitleTests
     [InlineData("Remove /x and its 2 files.\n  a.dll\n  b.dll", "Remove /x and its 2 files.")]
     [InlineData("Install where?", "Install where?")]
     public void TheTitle_IsThePromptsFirstLine(string prompt, string title) =>
-        Assert.Equal(title, FlowDialogs.TitleOf(prompt));
+        Assert.Equal(title, CxAgent.UI.Config.ConfirmDialog.TitleOf(prompt));
 }

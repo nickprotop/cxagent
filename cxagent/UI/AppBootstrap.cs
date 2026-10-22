@@ -2072,13 +2072,7 @@ public static class AppBootstrap
                 // (InputCoordinator.cs:130-134), so without this the plugin manager could not be
                 // dismissed with Escape at all — and worse, the key would reach the branches below and
                 // cancel a running turn, which is not remotely what the user asked for.
-                if (PluginManagerDialog.CloseIfOpen()) return true;
-                if (ConfirmDialog.CloseIfOpen()) return true;
-                if (ExportDialog.CloseIfOpen()) return true;
-                if (QuitDialog.CloseIfOpen()) return true;
-                if (ApplyToTabsDialog.CloseIfOpen()) return true;
-                if (ModelPickerOverlay.CloseIfOpen()) return true;
-                if (ConfigDialog.CloseIfOpen()) return true;
+                if (DialogEscape.CloseTopmost()) return true;
 
                 // AND A FILE TAB'S QUESTION, for the same reason and with the same shape. Every one
                 // of them has "leave everything as it was" among its answers, so dismissing is the
