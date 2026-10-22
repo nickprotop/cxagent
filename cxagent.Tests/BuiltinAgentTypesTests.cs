@@ -148,6 +148,23 @@ public class BuiltinAgentTypesTests : IDisposable
         Assert.Equal(40, catalog.Resolve("planner")!.MaxTurns);
     }
 
+    // NO SHIPPED TURN LIMIT: every built-in inherits the session's ceiling unless config sets one. A
+    // limit of its own capped explore at 30 and planner at 40 under a session allowed far more.
+    [Fact]
+    public void EveryBuiltin_InheritsTheSessionCeiling_UnlessConfigSetsOne()
+    {
+        var settings = Load("""
+        {
+          "providers": { "p": { "kind": "ollama", "model": "m" } },
+          "defaultProvider": "p"
+        }
+        """);
+        var catalog = new AgentTypeCatalog(settings.AgentTypes, null);
+
+        foreach (var name in new[] { "explore", "planner", "review", "test", "builder" })
+            Assert.Null(catalog.Resolve(name)!.MaxTurns);
+    }
+
     // A NAME NOBODY SHIPPED IS ENTIRELY THE USER'S, briefing required, exactly as before.
     [Fact]
     public void ACustomTypeKeepsItsOwnBriefing()

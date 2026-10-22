@@ -66,7 +66,7 @@ public static class BuiltinAgentTypes
                 + "If the thing asked for does not appear to exist, say so and say where you looked — a "
                 + "confident negative is an answer, and is worth more than more searching. Before you report a "
                 + "path, check it against what you actually opened.",
-            DefaultMaxTurns: 30),
+            DefaultMaxTurns: null),
         new AgentTypeDefinition(
             Name: "review",
             Description:
@@ -145,7 +145,7 @@ public static class BuiltinAgentTypes
                 + "change is, the steps in order with the file each one touches, what is most likely to be "
                 + "wrong, and what you found that changes the work. A path with no explanation is not an "
                 + "answer. You change nothing except the plan file.",
-            DefaultMaxTurns: 40,
+            DefaultMaxTurns: null,
             WritesAPlanFile: true),
         new AgentTypeDefinition(
             Name: "builder",
