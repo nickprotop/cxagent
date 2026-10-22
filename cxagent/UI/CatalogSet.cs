@@ -5,7 +5,11 @@ namespace CxAgent.UI;
 /// <summary>What to read: the user's stores, where the caches live, and the official catalog's URL.</summary>
 /// <param name="Client">Null for the shared client; a test passes its own.</param>
 public sealed record CatalogSetRequest(
-    IReadOnlyList<PluginStore> Stores, string ConfigDir, string OfficialUrl, HttpClient? Client = null);
+    IReadOnlyList<PluginStore> Stores, string ConfigDir, string OfficialUrl, HttpClient? Client = null)
+{
+    /// <summary>How long each catalog's read may take; null for <see cref="CatalogReader.ReadTimeout"/>. A test shortens it.</summary>
+    public TimeSpan? Timeout { get; init; }
+}
 
 /// <summary>
 /// Every catalog's plugins in one list — the official catalog's first, then each store's in config
@@ -39,11 +43,14 @@ public static class CatalogSources
 
     public static async Task<CatalogSet> ReadAllAsync(CatalogSetRequest request, CancellationToken ct)
     {
-        // CONCURRENTLY: each is one request, and a slow store must not hold up the official list by
-        // its own timeout. Gathered back in config order, so the listing does not reorder by latency.
-        var official = new CatalogReader(request.Client, OfficialCache(request.ConfigDir), request.OfficialUrl).ReadAsync(ct);
+        // CONCURRENTLY, AND EACH UNDER ITS OWN TIMEOUT: the listing waits for every catalog, so it can be
+        // held up only as long as one read may take — CatalogReader.ReadTimeout, not HttpClient's hundred
+        // seconds — and a store that does not answer then shows its cache and a note like any other
+        // failure. Gathered back in config order, so the listing does not reorder by latency.
+        var official = new CatalogReader(request.Client, OfficialCache(request.ConfigDir), request.OfficialUrl)
+            .ReadAsync(ct, request.Timeout);
         var stores = request.Stores
-            .Select(s => new CatalogReader(request.Client, StoreCache(request.ConfigDir, s.Name), s.Url).ReadAsync(ct))
+            .Select(s => new CatalogReader(request.Client, StoreCache(request.ConfigDir, s.Name), s.Url).ReadAsync(ct, request.Timeout))
             .ToList();
         await Task.WhenAll(stores.Prepend(official)).ConfigureAwait(false);
 

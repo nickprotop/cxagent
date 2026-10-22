@@ -237,11 +237,20 @@ public static class PluginManagerRows
     /// <see cref="Mismatch"/> sentence. And NO SOURCE FOR THIS MACHINE is a reason too: an ABI plugin
     /// ships one artifact per runtime identifier (<see cref="CatalogEntry.Sources"/>), and offering a
     /// download that cannot load is worse than saying the plugin is not available here.</para>
+    ///
+    /// <para>THEN A STORE'S OWN RULE: every download it lists carries its sha256, and none is a
+    /// <c>release</c> source, which means cxagent's own release and nothing a store hosts. The installer
+    /// refuses both as well, but only after the user has been asked to allow the download; said here,
+    /// the row lists the reason and <c>/plugin get</c> refuses before the question.</para>
     /// </summary>
     public static string? WhyItCannotRunHere(CatalogEntry entry) =>
         Mismatch(entry.PluginContract)
         ?? (entry.Sources.Count > 0 && !entry.Sources.ContainsKey(RuntimeIdentifier)
-            ? "not available for this machine" : null);
+            ? "not available for this machine" : null)
+        ?? (entry.Store is null ? null
+            : entry.FromRelease ? "a store's plugin must be a url download, not a release"
+            : entry.DownloadFor(RuntimeIdentifier) is { } download && string.IsNullOrWhiteSpace(download.Sha256)
+                ? "the store's catalog carries no sha256 for it" : null);
 
     /// <summary>Which folder holds it, in one word, or null when it is not installed.</summary>
     private static string? Folder(string name, PluginManagerInputs inputs) =>

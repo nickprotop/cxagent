@@ -70,6 +70,40 @@ public sealed class CatalogSetTests : IDisposable
         Assert.Contains("acme/jira", set.Plugins.Select(p => p.QualifiedName));
         Assert.Single(set.Notes);
     }
+
+    /// <summary>Answers one URL never — a store's host that takes the connection and says nothing — and the rest from <c>Others</c>.</summary>
+    private sealed class HangsAt(string url, ByUrl others) : DelegatingHandler(others)
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.RequestUri!.ToString() != url) return await base.SendAsync(request, ct);
+            await Task.Delay(Timeout.Infinite, ct);
+            throw new InvalidOperationException("unreachable");
+        }
+    }
+
+    /// <summary>
+    /// A STORE THAT NEVER ANSWERS COSTS ITS OWN TIMEOUT, NOT THE CLIENT'S: the official list arrives when
+    /// the store's read gives up, with the store's note, rather than after HttpClient's hundred seconds.
+    /// </summary>
+    [Fact]
+    public async Task AStoreThatNeverAnswers_GivesUpAtItsTimeout_AndTheOfficialListArrives()
+    {
+        var handler = new HangsAt("https://slow/c.json", new ByUrl { ["https://o/c.json"] = Catalog("repo-map") });
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var set = await CatalogSources.ReadAllAsync(new CatalogSetRequest(
+            [new PluginStore("slow", "https://slow/c.json")], _dir, "https://o/c.json", new HttpClient(handler))
+            { Timeout = TimeSpan.FromMilliseconds(300) }, default);
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), $"took {clock.Elapsed}");
+        Assert.Equal(["repo-map"], set.Plugins.Select(p => p.QualifiedName));
+        Assert.Equal("store slow: no answer within 0.3 s.", Assert.Single(set.Notes));
+    }
+
+    /// <summary>The wait is a named constant, short enough that a store off the VPN does not stall F2 for long.</summary>
+    [Fact]
+    public void EachRead_WaitsTenSeconds() => Assert.Equal(TimeSpan.FromSeconds(10), CatalogReader.ReadTimeout);
 }
 
 /// <summary>Whether an entry's download is cxagent's own release rather than a file hosted with its hash.</summary>

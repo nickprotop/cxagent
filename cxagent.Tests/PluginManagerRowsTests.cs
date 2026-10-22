@@ -279,6 +279,28 @@ public class PluginManagerRowsTests
             Entry("p") with { Sources = new Dictionary<string, CatalogDownload> { ["plan9-x64"] = new("https://x/p.zip", new string('a', 64)) } }));
     }
 
+    /// <summary>
+    /// A STORE ENTRY WITH NO HASH, OR A RELEASE SOURCE, CANNOT BE INSTALLED, so it is said here — the one
+    /// answer the Available row and <c>/plugin get</c> give before any download is asked about — rather
+    /// than by the installer after the user has allowed the request.
+    /// </summary>
+    [Fact]
+    public void WhyItCannotRunHere_NamesAStoreEntryWithoutAHashOrFromARelease()
+    {
+        var store = Entry("p") with { Store = "acme" };
+        Assert.Null(PluginManagerRows.WhyItCannotRunHere(store));
+        Assert.Equal("the store's catalog carries no sha256 for it",
+            PluginManagerRows.WhyItCannotRunHere(store with { Sha256 = null }));
+        Assert.Equal("the store's catalog carries no sha256 for it",
+            PluginManagerRows.WhyItCannotRunHere(store with { Sha256 = " " }));
+        Assert.Equal("a store's plugin must be a url download, not a release",
+            PluginManagerRows.WhyItCannotRunHere(store with { FromRelease = true }));
+
+        var row = PluginManagerRows.Build(Inputs(catalog: [store with { Sha256 = null }]))
+            .Single(r => r.Name == "acme/p");
+        Assert.Equal("the store's catalog carries no sha256 for it", row.State);
+    }
+
     /// <summary>A disabled plugin with an update stays disabled in the words, and moves to
     /// UPDATES — the section is about the update; the state still shows.</summary>
     [Fact]
