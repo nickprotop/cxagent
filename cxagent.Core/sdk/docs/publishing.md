@@ -212,10 +212,15 @@ for a native one). It prints each zip's hash, then the line to give your users.
 Each plugin's catalog text comes from the `pack-info.json` (or `.yaml`) in its folder, else its project.
 If a plugin does not load, a field is still unfilled, two plugins share a name, a name cannot be installed from a store (letters, digits, `-` and `_`), or the catalog would
 fail `plugin verify`'s shape rules, nothing is written and each problem is listed under its folder's name.
+A subfolder with no `*.plugin.json` is not a plugin: it is named on stderr (`skipped docs/: no *.plugin.json`)
+and the build goes on without it.
 
 Exit codes: 0 built, 1 a plugin is at fault, 2 usage or nothing to build.
 
-Upload `site` so `catalog.json` is at `<base-url>/catalog.json`. Users then run
+Upload the whole of `site` each time, so `catalog.json` is at `<base-url>/catalog.json`, with the zips
+before the catalog: a client that reads the old catalog while the new zips arrive gets a hash mismatch
+and installs nothing, while a catalog uploaded first names zips that are not there yet. A zip for a
+plugin you removed stays in `site` until you delete it; no catalog points to it. Users then run
 `/plugin store add <name> <base-url>/catalog.json`, and the store's plugins appear in the plugin manager
 and install with `/plugin get <name>/<plugin>`.
 

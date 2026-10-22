@@ -93,10 +93,15 @@ internal static class StoreBuildCommand
     private static async Task<int> BuildAsync(BuildRun run, CancellationToken ct)
     {
         var (build, staging, stdout, stderr) = (run.Build, run.Staging, run.Stdout, run.Stderr);
-        var subfolders = Directory.GetDirectories(build.Folder)
-            .Where(d => Directory.GetFiles(d, "*.plugin.json").Length > 0)
-            .Order(StringComparer.Ordinal)
-            .ToList();
+        var all = Directory.GetDirectories(build.Folder).Order(StringComparer.Ordinal).ToList();
+        var subfolders = all.Where(d => Directory.GetFiles(d, "*.plugin.json").Length > 0).ToList();
+
+        // A SUBFOLDER THAT IS NOT A PLUGIN IS NAMED, NOT REFUSED: a docs folder, or --out itself, inside
+        // the plugins folder is an ordinary layout, so it does not fail the build — but a plugin whose
+        // sidecar was not copied is one too, and without this line it would drop out of the regenerated
+        // catalog with nothing said. On stderr, so --json's stdout stays one document.
+        foreach (var skipped in all.Except(subfolders))
+            stderr.WriteLine($"cxagent store: skipped {Path.GetFileName(skipped)}{Path.DirectorySeparatorChar}: no *.plugin.json");
         if (subfolders.Count == 0) return Fail(stderr, $"no plugin in '{build.Folder}': each plugin is a subfolder holding a *.plugin.json.");
 
         var problems = new List<string>();
@@ -181,7 +186,13 @@ internal static class StoreBuildCommand
 
     /// <summary>
     /// Moves the staged files into <paramref name="outDir"/>, the catalog last (it is what makes a
-    /// download reachable, so it never names a zip not yet in place). Each file it replaces is first
+    /// download reachable, so it never names a zip not yet in place).
+    ///
+    /// <para>ZIPS FIRST IS THE ORDER THAT FAILS SAFE. Catalog first would name hashes of zips not yet
+    /// there; zips first means a client reading the old catalog mid-move may fetch a new zip against the
+    /// old hash, which the installer refuses as a mismatch — nothing unverified is installed, and the
+    /// next read sees the new catalog. A server the folder is uploaded to has the same window, which
+    /// publishing.md covers.</para> Each file it replaces is first
     /// moved into <paramref name="previous"/>; if any move fails, the new files already in place are
     /// removed and the old ones put back, so the store is the one that was there or the new one.
     ///
@@ -189,8 +200,10 @@ internal static class StoreBuildCommand
     /// full or read-only volume), and <see cref="RollbackFailed"/> is thrown, which keeps the staging folder with
     /// the old files in <paramref name="previous"/>.</para>
     /// </summary>
-    private static void Install(IReadOnlyList<string> staged, string outDir, string previous)
+    /// <param name="move">The file move, replacing its target; a test passes one that fails on cue.</param>
+    internal static void Install(IReadOnlyList<string> staged, string outDir, string previous, Action<string, string>? move = null)
     {
+        move ??= (from, to) => File.Move(from, to, overwrite: true);
         Directory.CreateDirectory(previous);
         var done = new List<(string Placed, string? Saved)>();
         try
@@ -202,33 +215,40 @@ internal static class StoreBuildCommand
                 if (File.Exists(target))
                 {
                     saved = Path.Combine(previous, Path.GetFileName(file));
-                    File.Move(target, saved, overwrite: true);
+                    move(target, saved);
                 }
 
                 done.Add((target, saved));
-                File.Move(file, target, overwrite: true);
+                move(file, target);
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            // EVERY FILE IS UNDONE, EVEN AFTER ONE UNDO FAILS: stopping there would leave every file
+            // earlier in the list as the new build's, against an old catalog — more of the store broken
+            // than the one file that could not be put back. The failures are reported together after.
+            var failed = new List<string>();
             foreach (var (placed, saved) in Enumerable.Reverse(done))
             {
                 try
                 {
                     if (File.Exists(placed)) File.Delete(placed);
-                    if (saved is not null) File.Move(saved, placed, overwrite: true);
+                    if (saved is not null) move(saved, placed);
                 }
                 catch (Exception undo) when (undo is IOException or UnauthorizedAccessException)
                 {
-                    throw new RollbackFailed($"{ex.Message} — and the previous store could not be put back: {undo.Message}", ex);
+                    failed.Add($"{Path.GetFileName(placed)} ({undo.Message})");
                 }
             }
 
+            if (failed.Count > 0)
+                throw new RollbackFailed(
+                    $"{ex.Message} — and these previous files could not be put back: {string.Join(", ", failed)}.", ex);
             throw;
         }
     }
 
-    private sealed class RollbackFailed(string message, Exception inner) : IOException(message, inner);
+    internal sealed class RollbackFailed(string message, Exception inner) : IOException(message, inner);
 
     private static string? SidecarName(string sub) =>
         PluginManifest.Parse(File.ReadAllText(Directory.GetFiles(sub, "*.plugin.json").Order(StringComparer.Ordinal).First())).Manifest?.Name;

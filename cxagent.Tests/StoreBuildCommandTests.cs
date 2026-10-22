@@ -176,6 +176,87 @@ public class StoreBuildCommandTests
         Assert.Contains(Path.Combine(given, "catalog.json").Replace("\\", "\\\\"), _stdout.ToString());
     }
 
+    /// <summary>
+    /// A SUBFOLDER THAT IS NOT A PLUGIN IS NAMED, AND THE BUILD GOES ON: a docs folder inside the plugins
+    /// folder is an ordinary layout, but a plugin whose sidecar was not copied would otherwise vanish from
+    /// the regenerated catalog without a word.
+    /// </summary>
+    [Fact]
+    public async Task ASubfolderWithNoSidecar_IsNamedAsSkipped_AndTheRestBuilds()
+    {
+        Directory.CreateDirectory(Path.Combine(_plugins, "docs"));
+        File.WriteAllText(Path.Combine(_plugins, "docs", "README.md"), "hello");
+
+        Assert.Equal(0, await StoreBuildCommand.RunAsync(Args, _stdout, _stderr, default));
+
+        Assert.Contains($"skipped docs{Path.DirectorySeparatorChar}: no *.plugin.json", _stderr.ToString());
+        Assert.Equal(2, CatalogClaims.Read(File.ReadAllText(Path.Combine(_out, "catalog.json")), out _)!.Count);
+    }
+
+    /// <summary>A folder whose every subfolder is skipped still has nothing to build: exit 2, each one named.</summary>
+    [Fact]
+    public async Task OnlySkippedSubfolders_IsNothingToBuild_ExitTwo()
+    {
+        var folder = Folders.NewFolder("store-docs-only-");
+        Directory.CreateDirectory(Path.Combine(folder, "docs"));
+
+        Assert.Equal(2, await StoreBuildCommand.RunAsync([folder, "--url", "https://t/cx", "--out", _out], _stdout, _stderr, default));
+        Assert.Contains($"skipped docs{Path.DirectorySeparatorChar}: no *.plugin.json", _stderr.ToString());
+    }
+
+    /// <summary>
+    /// THE LAST MOVE FAILING PUTS THE PREVIOUS STORE BACK: catalog.json as a directory cannot be replaced
+    /// by a file, so the zips already moved in are taken out again and the old ones restored.
+    /// </summary>
+    [Fact]
+    public async Task ACatalogThatCannotBeMovedIn_PutsThePreviousZipsBack()
+    {
+        Assert.Equal(0, await StoreBuildCommand.RunAsync(Args, _stdout, _stderr, default));
+        foreach (var zip in Directory.GetFiles(_out, "*.zip")) File.WriteAllText(zip, "previous " + Path.GetFileName(zip));
+        File.Delete(Path.Combine(_out, "catalog.json"));
+        Directory.CreateDirectory(Path.Combine(_out, "catalog.json"));
+
+        Assert.Equal(1, await StoreBuildCommand.RunAsync(Args, _stdout, _stderr, default));
+
+        Assert.All(Directory.GetFiles(_out, "*.zip"), zip => Assert.Equal("previous " + Path.GetFileName(zip), File.ReadAllText(zip)));
+        Assert.Equal(2, Directory.GetFiles(_out, "*.zip").Length);
+    }
+
+    /// <summary>
+    /// AN UNDO THAT FAILS DOES NOT STOP THE REST: every other file is still put back, and the failure —
+    /// each one, if several — is reported together once the undoing is done.
+    /// </summary>
+    [Fact]
+    public void AnUndoThatFails_StillUndoesTheRest_AndNamesEachFailure()
+    {
+        var root = Folders.NewFolder("store-rollback-");
+        var (staged, outDir, previous) = (Path.Combine(root, "staged"), Path.Combine(root, "out"), Path.Combine(root, "previous"));
+        Directory.CreateDirectory(staged);
+        Directory.CreateDirectory(outDir);
+        foreach (var name in new[] { "a.zip", "b.zip", "catalog.json" })
+        {
+            File.WriteAllText(Path.Combine(staged, name), "new " + name);
+            File.WriteAllText(Path.Combine(outDir, name), "old " + name);
+        }
+
+        // The catalog's forward move fails, then putting b.zip back fails.
+        void Move(string from, string to)
+        {
+            if (from == Path.Combine(staged, "catalog.json") || from == Path.Combine(previous, "b.zip"))
+                throw new IOException($"cannot move {Path.GetFileName(from)}");
+            File.Move(from, to, overwrite: true);
+        }
+
+        var thrown = Assert.ThrowsAny<IOException>(() => StoreBuildCommand.Install(
+            [Path.Combine(staged, "a.zip"), Path.Combine(staged, "b.zip"), Path.Combine(staged, "catalog.json")],
+            outDir, previous, Move));
+
+        Assert.Contains("b.zip", thrown.Message);
+        Assert.Equal("old a.zip", File.ReadAllText(Path.Combine(outDir, "a.zip")));
+        Assert.Equal("old catalog.json", File.ReadAllText(Path.Combine(outDir, "catalog.json")));
+        Assert.Equal("old b.zip", File.ReadAllText(Path.Combine(previous, "b.zip")));
+    }
+
     // ONE STRING PER CASE, split on spaces: an array is not a constant, so it cannot sit in an attribute.
     [Theory]
     [InlineData("")]
