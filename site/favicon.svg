@@ -1,8 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- A terminal, which is what cxagent is: a prompt and a caret. Drawn rather than lettered
-       because two glyphs at 16px are a smudge. -->
+  <!-- The logo's honeycomb, drawn larger within the tile so the gaps still read at 16px. -->
   <rect width="32" height="32" rx="6" fill="#0d1117"/>
-  <path d="M7 10.5 L13 16 L7 21.5" fill="none" stroke="#3ddc84" stroke-width="2.6"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="16" y="19.4" width="9" height="2.4" rx="1.2" fill="#3ddc84"/>
+  <path d="M16.00 5.53 L20.98 8.40 L20.98 14.15 L16.00 17.02 L11.02 14.15 L11.02 8.40 Z" fill="#fcd34d" stroke="#fcd34d" stroke-width="0.8" stroke-linejoin="round"/><path d="M10.54 14.98 L15.52 17.85 L15.52 23.60 L10.54 26.48 L5.56 23.60 L5.56 17.85 Z" fill="#f59e0b" stroke="#f59e0b" stroke-width="0.8" stroke-linejoin="round"/><path d="M21.46 14.98 L26.44 17.85 L26.44 23.60 L21.46 26.48 L16.48 23.60 L16.48 17.85 Z" fill="#f59e0b" stroke="#f59e0b" stroke-width="0.8" stroke-linejoin="round"/>
 </svg>
