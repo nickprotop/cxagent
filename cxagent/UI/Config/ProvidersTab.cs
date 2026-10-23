@@ -83,7 +83,7 @@ public sealed class ProvidersTab
         // REVERT AND SAVE BELONG TO THE TAB, SHOWN IN THE DIALOG'S FOOTER: the footer hosts whichever tab
         // is in front, so the button a person presses is this tab's own — its "Save anyway", its state.
         _revert = Controls.Button(" Revert ").OnClick((_, _) => Revert()).Build();
-        _save = DialogLook.Main(Controls.Button(" Save ").OnClick((_, _) => _ = SaveAsync()).Build(), main: false);
+        _save = DialogLook.MainButton(Controls.Button(" Save ").OnClick((_, _) => _ = SaveAsync()).Build(), main: false);
 
         Reload(select: null);
     }
@@ -346,7 +346,7 @@ public sealed class ProvidersTab
         _detail.AddControl((draft.IsNew
             ? ListDetail.Header("New provider", subtitle, PaneWidth())
             : ListDetail.Header(draft.Name, subtitle, PaneWidth(),
-                DialogLook.Main(Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build()),
+                DialogLook.MainButton(Controls.Button(" Rename ").OnClick((_, _) => ShowRename()).Build()),
                 Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveAsync()).Build())).Control);
 
         // GROUPED BY WHAT THEY ARE ABOUT — where it connects, what it runs, what it is for — each a panel,
@@ -567,7 +567,7 @@ public sealed class ProvidersTab
 
     // THE ACCENT ONLY WHEN THERE IS SOMETHING TO SAVE: an accent Save on an untouched instance points
     // at a button that does nothing.
-    public void MarkSave() => DialogLook.Main(_save, _draft?.IsDirty == true);
+    public void MarkSave() => DialogLook.MainButton(_save, _draft?.IsDirty == true);
 
     private void SetStatus(string markup) => _status.SetContent([markup]);
 

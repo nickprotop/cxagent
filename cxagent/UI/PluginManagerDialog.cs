@@ -1142,7 +1142,7 @@ public static class PluginManagerDialog
         // THE MAIN ACTION IN THE ACCENT — the first one, unless it is Uninstall, which is never the
         // thing a reflex should land on.
         var buttons = RowButtons(row).ToArray();
-        if (buttons.Length > 0 && buttons[0].Text != UninstallLabel) DialogLook.Main(buttons[0]);
+        if (buttons.Length > 0 && buttons[0].Text != UninstallLabel) DialogLook.MainButton(buttons[0]);
 
         var identity = row.Catalog is { } entry
             ? string.Join(" · ", new[] { entry.QualifiedName, entry.Version, entry.License, entry.Publisher, StoreIdentity(entry) }

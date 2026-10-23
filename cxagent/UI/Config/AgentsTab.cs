@@ -71,7 +71,7 @@ public sealed class AgentsTab
 
         // REVERT AND SAVE BELONG TO THE TAB, SHOWN IN THE DIALOG'S FOOTER while this tab is in front.
         _revert = Controls.Button(" Revert ").OnClick((_, _) => Revert()).Build();
-        _save = DialogLook.Main(Controls.Button(" Save ").OnClick((_, _) => _ = SaveAsync()).Build(), main: false);
+        _save = DialogLook.MainButton(Controls.Button(" Save ").OnClick((_, _) => _ = SaveAsync()).Build(), main: false);
 
         Reload(null);
     }
@@ -88,7 +88,7 @@ public sealed class AgentsTab
     /// The accent on Save only when there is something to save. The dialog calls this after each key:
     /// this tab's editors write straight into the draft, with no change event of their own to hang it on.
     /// </summary>
-    public void MarkSave() => DialogLook.Main(_save, _draft?.IsDirty == true);
+    public void MarkSave() => DialogLook.MainButton(_save, _draft?.IsDirty == true);
     public ListControl Rail => _rail;
     public bool HasUnsaved => _draft?.IsDirty == true;
     public string? SelectedName => _draft?.Name;

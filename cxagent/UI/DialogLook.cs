@@ -97,7 +97,7 @@ public static class DialogLook
     /// The main button takes the accent; any other the default role. Toggled, not just set, so a Save
     /// that has nothing to save can step back down.
     /// </summary>
-    public static ButtonControl Main(ButtonControl b, bool main = true)
+    public static ButtonControl MainButton(ButtonControl b, bool main = true)
     {
         // ONLY ON A CHANGE: the Configuration dialog asks after every key, and a setter that invalidates
         // would repaint the button each time for nothing.

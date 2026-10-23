@@ -57,8 +57,8 @@ public class DialogLookTests
     public void Main_TogglesThePrimaryRole()
     {
         var save = Controls.Button(" Save ").Build();
-        Assert.Equal(ColorRole.Primary, DialogLook.Main(save).ColorRole);
-        Assert.Equal(ColorRole.Default, DialogLook.Main(save, main: false).ColorRole);
+        Assert.Equal(ColorRole.Primary, DialogLook.MainButton(save).ColorRole);
+        Assert.Equal(ColorRole.Default, DialogLook.MainButton(save, main: false).ColorRole);
     }
 
     [Fact]

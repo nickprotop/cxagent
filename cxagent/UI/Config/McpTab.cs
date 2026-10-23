@@ -72,7 +72,7 @@ public sealed class McpTab
 
         // REVERT AND SAVE BELONG TO THE TAB, SHOWN IN THE DIALOG'S FOOTER while this tab is in front.
         _revert = Controls.Button(" Revert ").OnClick((_, _) => Revert()).Build();
-        _save = DialogLook.Main(Controls.Button(" Save ").OnClick((_, _) => _ = SaveAsync()).Build(), main: false);
+        _save = DialogLook.MainButton(Controls.Button(" Save ").OnClick((_, _) => _ = SaveAsync()).Build(), main: false);
 
         Reload(select: null);
     }
@@ -325,7 +325,7 @@ public sealed class McpTab
     }
 
     // THE ACCENT ONLY WHEN THERE IS SOMETHING TO SAVE.
-    public void MarkSave() => DialogLook.Main(_save, _draft?.IsDirty == true);
+    public void MarkSave() => DialogLook.MainButton(_save, _draft?.IsDirty == true);
 
     private void SetStatus(string markup) => _status.SetContent([markup]);
 
