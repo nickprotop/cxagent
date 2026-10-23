@@ -88,6 +88,17 @@ public static class PluginConfigWriter
         });
 
     /// <summary>
+    /// The folders searched before the two built-in ones, in order — the order is the search order. None
+    /// removes the key: absent and empty search the same folders.
+    /// </summary>
+    public static void SetPluginPaths(string configPath, IReadOnlyList<string> folders)
+        => MutateRoot(configPath, root =>
+        {
+            if (folders.Count == 0) { root.Remove("pluginPaths"); return; }
+            root["pluginPaths"] = new JsonArray([.. folders.Select(f => (JsonNode)JsonValue.Create(f))]);
+        });
+
+    /// <summary>
     /// One read-modify-write over the whole plugins block.
     ///
     /// <para>INTERNAL, NOT PRIVATE, so a caller syncing MANY entries does it in one write.

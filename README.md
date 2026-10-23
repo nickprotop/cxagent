@@ -67,8 +67,9 @@ that names a working provider — the configuration dialog opens on a choice of 
 (Anthropic, OpenRouter, OpenAI, Ollama, llama.cpp, or any OpenAI-compatible endpoint), lists the
 models that endpoint serves, and writes the file for you. It is never stored in the repository.
 
-**After that, `F8` opens the same dialog** — providers, MCP servers and sub-agent types — and a saved
-change applies at once, with no restart. Changes the model cannot see (a rotated key, the auto-mode
+**After that, `F8` opens the same dialog** — general settings, providers, MCP servers and sub-agent
+types — and a saved change applies with no restart: the general settings to tabs opened after it, the
+rest at once. Changes the model cannot see (a rotated key, the auto-mode
 reviewer, where an agent type runs) apply in place and keep every tab's prompt cache; one that would
 re-send a conversation (a tab's model changing) asks first whether to apply it now, after compressing,
 at that tab's next clear or compaction, or only to new tabs.
@@ -490,7 +491,7 @@ one run before it was written down — and the full reference for options, outpu
 | `F6` | Focus the tab strip — then `←` `→` to change session, `F6` back to the composer |
 | `Ctrl+B` | Move what the turn is waiting on to the background — every foreground sub-agent and command (twice in tmux) |
 | `F7` | Tasks panel — background commands and sub-agents in the right-hand column; `↑` `↓` choose, `Enter` opens, `x` stops a running one and deletes a finished one. `F7` again hides it |
-| `F8` | Configuration — providers, MCP servers, agent types |
+| `F8` | Configuration — general settings, providers, MCP servers, agent types |
 | `F12` | Export this conversation as markdown — readable or full, to a file or the clipboard; in an agent's tab, that agent. See [`/export`](COMMANDS.md#export) |
 | `F10` | Next thinking level this model offers — see `/think`. (gnome-terminal opens its own menu on F10 unless that is turned off in its preferences) |
 | `F9` | Theme |

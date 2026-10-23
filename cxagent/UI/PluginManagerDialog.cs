@@ -66,6 +66,37 @@ public static class PluginManagerDialog
     private static MarkupControl? _detailHeader;
     private static MarkupControl? _detailBody;
     private static ScrollablePanelControl? _head;
+
+    // THE SOURCES VIEW: where plugins come from — the stores listed beside the official catalog, and the folders
+    // searched before the built-in two. Shown in the tabs' cell, instead of them, while its rail row is selected.
+    private static ScrollablePanelControl? _sources;
+    private static readonly object SourcesTag = new();
+
+    // THE SOURCES PANELS ARE BUILT ONCE, WITH THE WINDOW, and only their list rows are refilled. Every field and Add
+    // button stays the control it was: replacing the field that has focus — Enter in it is what adds — leaves the
+    // new field out of the Tab order, so the next folder could not be typed without the mouse. Kept, the field is
+    // emptied after an add and keeps the keyboard, ready for the next one.
+    private static Config.FieldGrid? _storeRows;
+    private static Config.FieldGrid? _folderRows;
+    private static PromptControl? _storeName;
+    private static PromptControl? _storeUrl;
+    private static PromptControl? _folderInput;
+    private static ButtonControl? _addStore;
+    private static ButtonControl? _addFolder;
+    private static MarkupControl? _storesNote;
+    private static MarkupControl? _foldersNote;
+
+    // THE NAME _lastDetailName HOLDS WHILE SOURCES IS SHOWN — no plugin can be called it — so a refresh, or a
+    // close and reopen, lands back on Sources rather than on the first plugin.
+    private const string SourcesKey = "\0sources";
+
+    // SOURCES WAS SHOWN ONLY BECAUSE NO PLUGIN ROW EXISTED YET — the catalog is still on its way at open — and
+    // not because anyone chose it. The refill the catalog brings then picks the first plugin, as F2 always has,
+    // instead of keeping a place nobody went to.
+    private static bool _sourcesByDefault;
+
+    // WHAT THE LAST SOURCES ACTION SAID, under the panel it was done in, until the next one.
+    private static (string Panel, string Markup)? _sourcesNote;
     // THE GRID THE HEAD SITS IN, so the head's track can grow when its actions wrap under the name.
     private static GridControl? _layout;
 
@@ -129,6 +160,10 @@ public static class PluginManagerDialog
     // row does not re-read config.json for the identity line.
     private static IReadOnlyDictionary<string, string> _storeUrls = new Dictionary<string, string>();
     private static bool _fetching;
+
+    // WHICH FETCH IS THE NEWEST. Fetches overlap — one starts as F2 opens, another when a store is added or removed —
+    // and a slow one finishing last would put back the catalog of a store just removed. Only the newest applies.
+    private static int _fetchGeneration;
     private static DateTimeOffset? _fetchedAt;
 
     public static void Show(
@@ -149,6 +184,7 @@ public static class PluginManagerDialog
         _session = session;
         _paths = paths;
         _projectDirectory = projectDirectory;
+        _sourcesNote = null;
         _parent = parent;
 
         // An open is a fresh read of everything — a standing note earned against the last read is
@@ -245,6 +281,16 @@ public static class PluginManagerDialog
         _tabs.Margin = ListDetail.DetailInset;
         grid.Place(_head, 0, 1);
         grid.Place(_tabs, 1, 1);
+        // CREATED VISIBLE, and hidden only once a plugin is shown: a scrollable panel created hidden never gains
+        // its own Tab stops when it is shown later, so its buttons and fields could not be reached from the
+        // keyboard. It is empty until Sources is selected, and the first plugin shown hides it before any draw.
+        _sources = new ScrollablePanelControl
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Fill,
+            Margin = ListDetail.DetailInset,
+        };
+        grid.Place(_sources, 1, 1);
+        BuildSources(_sources);
 
         ListDetail.Divider(grid);
 
@@ -377,6 +423,7 @@ public static class PluginManagerDialog
 
     private static async Task FetchCatalogAsync()
     {
+        var generation = Interlocked.Increment(ref _fetchGeneration);
         _fetching = true;
         UpdateAgeLine();
 
@@ -403,6 +450,9 @@ public static class PluginManagerDialog
         // and everything below mutates controls the render loop is painting.
         _ws!.EnqueueOnUIThread(() =>
         {
+            // A NEWER FETCH IS ON ITS WAY, and it read the stores as they are now — this one may have read a store
+            // since removed. Dropped, and still fetching until that one lands.
+            if (generation != Volatile.Read(ref _fetchGeneration)) return;
             _catalog = read;
             _catalogNotes = set.Notes;
             _storeUrls = stores.ToDictionary(x => x.Name, x => x.Url);
@@ -486,17 +536,27 @@ public static class PluginManagerDialog
         // _lastDetailName SURVIVES BECAUSE IT IS STATIC and is cleared only when there is no row to
         // show at all, so it still names whatever was selected when the window went away.
         var keep = _rail.SelectedIndex >= 0 && _rail.SelectedIndex < _rail.Items.Count
-            ? (_rail.Items[_rail.SelectedIndex].Tag as PluginRow)?.Name
+            ? _rail.Items[_rail.SelectedIndex].Tag == SourcesTag ? SourcesKey : (_rail.Items[_rail.SelectedIndex].Tag as PluginRow)?.Name
             : _lastDetailName;
+        if (keep == SourcesKey && _sourcesByDefault) keep = null;
 
         FillRail(_rail, PluginManagerRows.Filter(_rows, _filter?.Input));
 
         _lastRailIndex = 0;
-        var index = _rail.Items.FindIndex(i => i.Tag is PluginRow row && row.Name == keep);
-        if (index < 0) index = _rail.Items.FindIndex(i => i.Tag is not null);
+        var index = keep == SourcesKey
+            ? _rail.Items.FindIndex(i => i.Tag == SourcesTag)
+            : _rail.Items.FindIndex(i => i.Tag is PluginRow row && row.Name == keep);
+        // THE FIRST PLUGIN, NOT SOURCES, when nothing was chosen: F2 is opened to see plugins, and opening on
+        // where they come from every time would put a step in front of the reason it was opened.
+        if (index < 0) index = _rail.Items.FindIndex(i => i.Tag is PluginRow);
+        // SOURCES ONLY WHEN NOTHING IS FILTERED: a filter that matches no plugin says so — "No plugins to show" —
+        // rather than turning to where plugins come from, which is not what was searched for.
+        if (index < 0 && string.IsNullOrEmpty(_filter?.Input)) index = _rail.Items.FindIndex(i => i.Tag is not null);
 
         if (index >= 0) _rail.SelectedIndex = index;
         else ShowDetail(null);
+        // AFTER THE SELECTION, whose own handler clears this for a row someone moved to.
+        _sourcesByDefault = index >= 0 && _rail.Items[index].Tag == SourcesTag && keep != SourcesKey;
 
         UpdateStatus();
     }
@@ -535,6 +595,12 @@ public static class PluginManagerDialog
     {
         rail.ClearItems();
         var loaded = _session?.Plugins.LoadedPluginNames ?? [];
+
+        // SOURCES FIRST: every plugin below comes from one of them. One row, whatever the filter — the filter is
+        // about plugins, and where they come from is still there to look at.
+        rail.AddItem(new ListItem($"[{ColorScheme.MutedMarkup}]SOURCES[/]") { IsEnabled = false });
+        rail.AddItem(new ListItem("Stores and folders") { Tag = SourcesTag });
+        rail.AddItem(new ListItem("") { IsEnabled = false });
 
         // INSTALLED IS ALWAYS THERE, unfiltered: an empty section says "nothing installed yet" where a
         // missing one says nothing, and the first thing a new user wonders is whether they have any.
@@ -599,7 +665,265 @@ public static class PluginManagerDialog
         }
 
         _lastRailIndex = index;
+        _sourcesByDefault = false;
+        if (_rail.Items[index].Tag == SourcesTag) { ShowSources(); return; }
         ShowDetail(_rail.Items[index].Tag as PluginRow);
+    }
+
+    /// <summary>Swaps the detail column between a plugin's tabs and the Sources panels.</summary>
+    private static void ShowSourcesView(bool sources)
+    {
+        if (_tabs is not null) _tabs.Visible = !sources;
+        if (_sources is not null) _sources.Visible = sources;
+    }
+
+    /// <summary>
+    /// The Sources panels, once: the stores listed beside the official catalog, and the folders searched for plugins —
+    /// each in the Configuration dialog's shape, every action applied at once, as the commands that do the same
+    /// (<c>/plugin store add</c>, <c>remove</c>) apply it. <see cref="ShowSources"/> fills the rows.
+    /// </summary>
+    private static void BuildSources(ScrollablePanelControl into)
+    {
+        var muted = ColorScheme.MutedMarkup;
+
+        var stores = new Config.FieldGrid();
+        stores.AddBare(new MarkupControl([$"[{muted}]Other people's plugin catalogs, listed beside the official one. A store's plugins are named store/name.[/]"]) { Wrap = true });
+        stores.AddBare(new MarkupControl([""]));
+        // THE ROWS BETWEEN TWO RULES, as a provider list is: what is listed, then what can be added.
+        stores.AddBare(DialogLook.Rule());
+        _storeRows = new Config.FieldGrid();
+        stores.AddBare(_storeRows.Control);
+        stores.AddBare(DialogLook.Rule());
+        var addStore = new ToolbarControl { ItemSpacing = 1 };
+        _storeName = ListDetail.Input(new PromptControl { Prompt = "Name ", Input = "", InputWidth = 12 });
+        // KEEPS THE KEYBOARD ON ENTER: Enter here adds, and the next store is typed where this one was.
+        _storeUrl = ListDetail.Input(new PromptControl { Prompt = "URL ", Input = "", InputWidth = 44, UnfocusOnEnter = false });
+        _addStore = Controls.Button(" + Add ").OnClick((_, _) => _ = AddStoreAsync()).Build();
+        // ENTER IN THE URL ADDS, as Enter in a prompt does elsewhere: the URL is the last thing typed.
+        _storeUrl.Entered += (_, _) => _ = AddStoreAsync();
+        addStore.AddItem(_storeName);
+        addStore.AddItem(_storeUrl);
+        addStore.AddItem(_addStore);
+        stores.AddBare(addStore);
+        stores.AddBare(new MarkupControl([$"[{muted}]Add reads the catalog first, and saves nothing if it cannot.[/]"]) { Wrap = true });
+        _storesNote = new MarkupControl([""]) { Wrap = true };
+        stores.AddBare(_storesNote);
+        into.AddControl(ListDetail.Section("Stores", stores.Control));
+        into.AddControl(ListDetail.Gap());
+
+        var folders = new Config.FieldGrid();
+        folders.AddBare(new MarkupControl([$"[{muted}]Searched in order, before the two folders cxagent always searches: the plugins folder beside config.json, then the project's own. A relative path resolves against the project.[/]"]) { Wrap = true });
+        folders.AddBare(new MarkupControl([""]));
+        folders.AddBare(DialogLook.Rule());
+        _folderRows = new Config.FieldGrid();
+        folders.AddBare(_folderRows.Control);
+        folders.AddBare(DialogLook.Rule());
+        var addFolder = new ToolbarControl { ItemSpacing = 1 };
+        _folderInput = ListDetail.Input(new PromptControl { Prompt = "Folder ", Input = "", InputWidth = 44, UnfocusOnEnter = false });
+        _addFolder = Controls.Button(" + Add ").OnClick((_, _) => AddFolder()).Build();
+        _folderInput.Entered += (_, _) => AddFolder();
+        addFolder.AddItem(_folderInput);
+        addFolder.AddItem(_addFolder);
+        folders.AddBare(addFolder);
+        _foldersNote = new MarkupControl([""]) { Wrap = true };
+        folders.AddBare(_foldersNote);
+        into.AddControl(ListDetail.Section("Plugin folders", folders.Control));
+    }
+
+    /// <summary>
+    /// Shows Sources, its rows read from the file again. A row's own button is gone after it is pressed — the rows
+    /// are rebuilt — so <paramref name="focus"/> names where the keyboard lands then: that panel's Add.
+    /// </summary>
+    private static void ShowSources(string? focus = null)
+    {
+        if (_head is null || _storeRows is not { } stores || _folderRows is not { } folders || _paths is null || _manager is null) return;
+        ShowSourcesView(true);
+        _lastDetailName = SourcesKey;
+        var muted = ColorScheme.MutedMarkup;
+
+        _head.ClearContents();
+        var head = ListDetail.Header("Sources", "Where plugins come from: catalogs to install from, folders to load from",
+            ListDetail.PaneWidth(_window?.Width ?? Console.WindowWidth, RailCells));
+        _head.AddControl(head.Control);
+        if (_layout is { } layout) layout.RowDefinitions[0] = GridLength.Cells(head.Height);
+
+        stores.Clear();
+        // THE OFFICIAL CATALOG IS A ROW TOO, its Remove disabled rather than missing: it is a source like the
+        // others, always there, and the names line up with the rows that can go.
+        var official = new ToolbarControl { ItemSpacing = 1 };
+        var fixedRemove = Controls.Button(" Remove ").Build();
+        fixedRemove.IsEnabled = false;
+        official.AddItem(fixedRemove);
+        official.AddItem(new MarkupControl([$"{MarkupParser.Escape(PluginStores.Official)}  [{muted}]the official catalog · always listed[/]"]));
+        stores.AddBare(official);
+        foreach (var store in PluginStores.ReadFile(ConfigPath()))
+        {
+            var row = new ToolbarControl { ItemSpacing = 1 };
+            var name = store.Name;
+            row.AddItem(Controls.Button(" Remove ").OnClick((_, _) => _ = RemoveStoreAsync(name)).Build());
+            row.AddItem(new MarkupControl([$"{MarkupParser.Escape(store.Name)}  [{muted}]{MarkupParser.Escape(store.Url)} · {MarkupParser.Escape(StoreHolds(store))}[/]"]));
+            stores.AddBare(row);
+        }
+
+        folders.Clear();
+        var listed = _manager.Config.PluginPaths;
+        // RESOLVED THE WAY THE LOADER RESOLVES THEM, so "not found" means what a load would find.
+        var resolved = PluginResolver.SearchFolders(listed, _projectDirectory ?? "", _paths.ConfigDir);
+        if (listed.Count == 0)
+            folders.AddBare(new MarkupControl([$"[{muted}]No folders of your own — only the two above are searched.[/]"]));
+        for (var i = 0; i < listed.Count; i++)
+        {
+            var at = i;
+            // BUTTONS FIRST, IN FIXED SLOTS, as a provider list's: the ones that cannot act disabled rather than
+            // missing, so the paths line up down the list.
+            var row = new ToolbarControl { ItemSpacing = 1 };
+            var up = Controls.Button(" ↑ ").OnClick((_, _) => MoveFolder(at, at - 1)).Build();
+            up.IsEnabled = at > 0;
+            var down = Controls.Button(" ↓ ").OnClick((_, _) => MoveFolder(at, at + 1)).Build();
+            down.IsEnabled = at < listed.Count - 1;
+            row.AddItem(up);
+            row.AddItem(down);
+            row.AddItem(Controls.Button(" Remove ").OnClick((_, _) => SetFolders([.. listed.Where((_, j) => j != at)], "folders")).Build());
+            var found = Directory.Exists(resolved[at]);
+            var missing = found ? "" : $"  [{ColorScheme.CautionMarkup}](not found here)[/]";
+            // ITS END KEPT WHEN IT DOES NOT FIT, as a path is everywhere here: the folder's own name is what tells
+            // two entries apart. The room is the pane less the buttons, the number and the flag.
+            var room = ListDetail.PaneWidth(_window?.Width ?? Console.WindowWidth, RailCells) - 32 - (found ? 0 : 18);
+            var shown = ListDetail.ElidePath(listed[at], Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), room);
+            row.AddItem(new MarkupControl([$" [{muted}]{at + 1}[/]  {MarkupParser.Escape(shown)}{missing}"]));
+            folders.AddBare(row);
+        }
+
+        _storesNote?.SetContent([_sourcesNote is ("stores", var storesNote) ? storesNote : ""]);
+        _foldersNote?.SetContent([_sourcesNote is ("folders", var foldersNote) ? foldersNote : ""]);
+
+        IWindowControl? landOn = focus switch { "stores" => _addStore, "folders" => _addFolder, _ => null };
+        if (landOn is IFocusableControl target) _window?.FocusManager.SetFocus(target, FocusReason.Programmatic);
+
+        void MoveFolder(int from, int to)
+        {
+            var next = listed.ToList();
+            (next[from], next[to]) = (next[to], next[from]);
+            SetFolders(next, "folders");
+        }
+    }
+
+    /// <summary>What a store's last good copy held, from its cache — no request, so the view opens offline too.</summary>
+    private static string StoreHolds(PluginStore store)
+    {
+        var cached = new CatalogReader(null, CatalogSources.StoreCache(_paths!.ConfigDir, store.Name), store.Url).ReadCached();
+        return cached.CachedAt is null ? "not read yet" : cached.Plugins.Count == 1 ? "1 plugin" : $"{cached.Plugins.Count} plugins";
+    }
+
+    // AN ADD IS READING A CATALOG. The command reads the stores, waits on the network, then writes the list it read
+    // plus the new one — so a second add started meanwhile would write over the first. One at a time.
+    private static bool _addingStore;
+
+    /// <summary>Adds a store through the same command that adds one by name — its checks, its catalog read, its words.</summary>
+    private static async Task AddStoreAsync()
+    {
+        if (_addingStore) return;
+        var name = (_storeName?.Input ?? "").Trim();
+        var url = (_storeUrl?.Input ?? "").Trim();
+        StoreReply reply;
+        // ONE WORD EACH: the command reads its arguments by spaces, and a space inside either would be read as a
+        // different command rather than refused for what it is.
+        if (name.Length == 0 || url.Length == 0) reply = new StoreReply("Type the store's name and its catalog URL.", Refused: true);
+        else if (name.Any(char.IsWhiteSpace) || url.Any(char.IsWhiteSpace)) reply = new StoreReply("A store's name and URL have no spaces.", Refused: true);
+        else
+        {
+            // SAID WHILE IT HAPPENS: a catalog can take seconds, and an Enter that shows nothing reads as one that did nothing.
+            _addingStore = true;
+            _storesNote?.SetContent([$"[{ColorScheme.MutedMarkup}]Reading {MarkupParser.Escape(name)}'s catalog…[/]"]);
+            try { reply = await RunStoreCommand($"store add {name} {url}"); }
+            finally { _ws!.EnqueueOnUIThread(() => _addingStore = false, "pluginManagerDialog.AddStoreDone"); }
+        }
+        _ws!.EnqueueOnUIThread(() =>
+        {
+            // EMPTIED ONLY ONCE ADDED: a refusal leaves what was typed, to be corrected rather than retyped.
+            if (!reply.Refused) { if (_storeName is { } n) n.Input = ""; if (_storeUrl is { } u) u.Input = ""; }
+            AfterStoreChange(reply, focus: null);
+        }, "pluginManagerDialog.AddStore");
+    }
+
+    /// <summary>
+    /// Removes a store, once asked: its installed plugins stay, and stop getting updates — the one thing about
+    /// removing it that is not obvious from the button.
+    /// </summary>
+    private static async Task RemoveStoreAsync(string name)
+    {
+        var answer = await Config.ConfirmDialog.AskAsync(_ws!, $"Remove the store '{name}'?",
+            ["Its installed plugins stay installed, and stop getting updates.", "Its other plugins leave the Available list."],
+            ["Keep it", "Remove"]);
+        if (answer != "Remove") return;
+        var reply = await RunStoreCommand($"store remove {name}");
+        _ws!.EnqueueOnUIThread(() => AfterStoreChange(reply, focus: "stores"), "pluginManagerDialog.RemoveStore");
+    }
+
+    /// <summary>
+    /// The store command, its write failures answered as refusals. It writes config.json, which can be read-only or
+    /// hand-broken; thrown into a task nobody awaits, the press would do nothing and say nothing.
+    /// </summary>
+    private static async Task<StoreReply> RunStoreCommand(string arguments)
+    {
+        try
+        {
+            return await PluginStoreCommand.RunAsync(new StoreCommandRequest(arguments, ConfigPath(), _paths!.ConfigDir)
+                { ProjectDirectory = _projectDirectory }, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return new StoreReply($"config.json could not be written: {ex.Message}", Refused: true);
+        }
+    }
+
+    /// <summary>The command's own reply under the Stores panel, then the catalogs read again so the list matches.</summary>
+    /// <param name="reply">The command's answer.</param>
+    /// <param name="focus">Where the keyboard goes — the panel's Add after a row's own button went with its row;
+    /// null to leave it in the field it is in.</param>
+    private static void AfterStoreChange(StoreReply reply, string? focus)
+    {
+        if (_window is null) return;
+        var color = reply.Refused ? ColorScheme.CautionMarkup : ColorScheme.AffirmativeMarkup;
+        _sourcesNote = ("stores", $"[{color}]{MarkupParser.Escape(reply.Text)}[/]");
+        if (!reply.Refused) Refresh();
+        ShowSources(focus);
+    }
+
+    private static void AddFolder()
+    {
+        var typed = _folderInput?.Input ?? "";
+        var listed = _manager!.Config.PluginPaths;
+        if (PluginFolders.Problem(typed, listed) is { } problem)
+        {
+            _sourcesNote = ("folders", $"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(problem)}[/]");
+            ShowSources();
+            return;
+        }
+        if (SetFolders([.. listed, PluginFolders.Clean(typed)], focus: null) && _folderInput is { } input) input.Input = "";
+    }
+
+    /// <summary>
+    /// The folders written to config and made live for the manager and every open tab, then the rail rebuilt — a
+    /// folder added lists its plugins at once, one removed stops listing them.
+    /// </summary>
+    /// <param name="folders">The whole list, in order.</param>
+    /// <param name="focus">Where the keyboard goes afterwards — see <see cref="AfterStoreChange"/>.</param>
+    /// <returns>Whether it was written.</returns>
+    private static bool SetFolders(IReadOnlyList<string> folders, string? focus)
+    {
+        try { PluginConfigWriter.SetPluginPaths(ConfigPath(), folders); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            _sourcesNote = ("folders", $"[{ColorScheme.DangerMarkup}]✖ config.json could not be written: {MarkupParser.Escape(ex.Message)}[/]");
+            ShowSources();
+            return false;
+        }
+        _manager!.SetPluginPaths(folders);
+        _sourcesNote = null;
+        Rebuild();
+        ShowSources(focus);
+        return true;
     }
 
     /// <summary>The right-hand panel: the selected row, said plainly — identity, the facts that
@@ -607,6 +931,7 @@ public static class PluginManagerDialog
     private static void ShowDetail(PluginRow? row)
     {
         if (_detailHeader is null || _detailBody is null || _tabs is null) return;
+        ShowSourcesView(false);
 
         if (row is null)
         {

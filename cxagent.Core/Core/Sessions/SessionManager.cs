@@ -117,6 +117,23 @@ public sealed class SessionManager : IDisposable
     public Action<Action>? Post { get; set; }
 
     /// <summary>
+    /// The folders searched for plugins before the two built-in ones, as just written to config — for the manager
+    /// and every open tab at once.
+    ///
+    /// <para>BOTH, BECAUSE BOTH SEARCH. The plugin manager lists from the manager's folders; <c>/plugin load</c> and a
+    /// new tab search the session's. A folder only one of them knew would list a plugin that then could not be
+    /// loaded. Through <see cref="ApplyConfig"/>, whose catalog adoption is how every open tab learns of it; the
+    /// change names no instance, so no tab is moved.</para>
+    /// </summary>
+    public void SetPluginPaths(IReadOnlyList<string> folders)
+    {
+        ResolvedConfig current;
+        lock (_gate) current = Config;
+        ApplyConfig(current with { Catalog = current.Catalog with { PluginPaths = folders } },
+            new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), false, "plugin folders changed"));
+    }
+
+    /// <summary>
     /// A saved config, live, without spending the prompt cache it does not have to.
     ///
     /// <para>EVERY SESSION adopts the new catalog, so <c>/model</c> and new tabs see the file as it now is.

@@ -7,8 +7,11 @@ using SharpConsoleUI.Parsing;
 
 namespace CxAgent.UI.Config;
 
-/// <summary>Which half of the configuration dialog is in front.</summary>
-public enum ConfigTab { Providers, Mcp, Agents }
+/// <summary>
+/// The dialog's tabs, IN THEIR ORDER: a tab's index is its value, so the tabs are added in this order and nothing
+/// maps one to the other by hand. General first — the settings that shape every tab.
+/// </summary>
+public enum ConfigTab { General, Providers, Mcp, Agents }
 
 /// <summary>What the dialog needs from the app: where to draw, how a save becomes live, and who is in front.</summary>
 /// <param name="System">The window system.</param>
@@ -29,7 +32,8 @@ public sealed record ConfigDialogHost(
 }
 
 /// <summary>
-/// The configuration dialog: providers and MCP servers, edited in the app and applied live.
+/// The configuration dialog: the general settings, providers, MCP servers and agent types, edited in the app —
+/// applied live, except the general settings, which a tab reads as it opens.
 ///
 /// <para>THE PLUGIN MANAGER'S SHAPE, ON PURPOSE — a rail of named things beside the selected one's
 /// detail, a toolbar over them and a status bar under them — so the app has one dialog idiom rather
@@ -46,9 +50,10 @@ public static class ConfigDialog
     // repeatedly in one session and a window that will not stay put is one the user moves every time.
     private static (int Left, int Top)? _placement;
     private static (int Width, int Height)? _size;
-    private static ConfigTab _lastTab = ConfigTab.Providers;
+    private static ConfigTab _lastTab = ConfigTab.General;
 
     private static TabControl? _tabs;
+    private static GeneralTab? _general;
     private static ProvidersTab? _providers;
     private static McpTab? _mcp;
     private static AgentsTab? _agents;
@@ -106,6 +111,9 @@ public static class ConfigDialog
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var pathLines = new List<MarkupControl>();
 
+        // IN ConfigTab'S ORDER, which is what makes a tab's index its value.
+        _general = new GeneralTab(host, () => _window);
+        _tabs.AddTab("General", WithPath(_general.Content));
         _providers = new ProvidersTab(host, () => _window);
         _tabs.AddTab("Providers", WithPath(_providers.Content));
         _mcp = new McpTab(host, () => _window);
@@ -118,13 +126,16 @@ public static class ConfigDialog
         // state — then Close. Esc is named and Close is clickable: the key is the fast path, the button
         // the discoverable one.
         var close = Controls.Button(" Close ").OnClick((_, _) => CloseIfOpen()).Build();
-        var footer = DialogLook.Footer("Saved changes apply at once · Esc closes");
+        var footer = DialogLook.Footer("");
         window.AddControl(footer.Rule);
         window.AddControl(footer.Row);
         void HostActions()
         {
             footer.Buttons.Clear();
             foreach (var b in ActiveActions()) footer.Buttons.AddItem(b);
+            // WHEN A SAVE TAKES EFFECT, which differs by tab: General's settings are read as a tab opens, the
+            // rest reach running tabs at once.
+            footer.Hints.SetContent([$"[{DialogLook.Palette.Muted.ToMarkup()}]{(Active == ConfigTab.General ? "Saved changes apply to tabs opened after saving" : "Saved changes apply at once")} · Esc closes[/]"]);
             footer.Buttons.AddItem(close);
             MarkActiveSave();
         }
@@ -160,10 +171,11 @@ public static class ConfigDialog
             // AFTER THE KEY HAS LANDED, so an edit it made is what Save's colour reflects.
             ws.EnqueueOnUIThread(MarkActiveSave, "configDialog.MarkSave");
             if (e.KeyInfo.Key != ConsoleKey.S || e.KeyInfo.Modifiers != ConsoleModifiers.Control) return;
-            switch (_tabs?.ActiveTabIndex)
+            switch (Active)
             {
-                case 1: _mcp?.SaveFromKey(); break;
-                case 2: _agents?.SaveFromKey(); break;
+                case ConfigTab.General: _general?.SaveFromKey(); break;
+                case ConfigTab.Mcp: _mcp?.SaveFromKey(); break;
+                case ConfigTab.Agents: _agents?.SaveFromKey(); break;
                 default: _providers?.SaveFromKey(); break;
             }
             e.Handled = true;
@@ -174,9 +186,10 @@ public static class ConfigDialog
             // REMEMBERED ON CLOSE, not as it moves: only the final resting place matters.
             _placement = (window.Left, window.Top);
             _size = (window.Width, window.Height);
-            if (_tabs is { } tabs) _lastTab = tabs.ActiveTabIndex switch { 1 => ConfigTab.Mcp, 2 => ConfigTab.Agents, _ => ConfigTab.Providers };
+            if (_tabs is not null) _lastTab = Active;
             _window = null;
             _tabs = null;
+            _general = null;
             _providers = null;
             _mcp = null;
             _agents = null;
@@ -194,7 +207,9 @@ public static class ConfigDialog
         // FIRST RUN OPENS ON THE CARDS, focused: there is nothing to select yet, and choosing where the
         // model runs is the one thing to do. Shown once the window is up, so a card can take focus.
         if (firstRun) _providers.ShowGallery("cxagent needs one provider to start. Pick where your model runs.");
-        else window.FocusManager.SetFocus(_tabs.ActiveTabIndex switch { 1 => _mcp.Rail, 2 => _agents.Rail, _ => _providers.Rail }, FocusReason.Programmatic);
+        // GENERAL HAS NO LIST TO FOCUS: its first choice takes the keyboard as Tab reaches it.
+        else if (Active != ConfigTab.General)
+            window.FocusManager.SetFocus(Active switch { ConfigTab.Mcp => _mcp.Rail, ConfigTab.Agents => _agents.Rail, _ => _providers.Rail }, FocusReason.Programmatic);
     }
 
     /// <summary>
@@ -214,6 +229,7 @@ public static class ConfigDialog
         }
         if (_host is { } host)
         {
+            if (_general?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, "General"); return true; }
             if (_providers?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _providers.SelectedName!); return true; }
             if (_mcp?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _mcp.SelectedName!); return true; }
             if (_agents?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _agents.SelectedName!); return true; }
@@ -229,19 +245,24 @@ public static class ConfigDialog
         if (answer == "Discard and close") window.Close();
     }
 
-    private static IReadOnlyList<ButtonControl> ActiveActions() => _tabs?.ActiveTabIndex switch
+    /// <summary>The tab in front — its index is its value; see <see cref="ConfigTab"/>.</summary>
+    private static ConfigTab Active => (ConfigTab)(_tabs?.ActiveTabIndex ?? 0);
+
+    private static IReadOnlyList<ButtonControl> ActiveActions() => Active switch
     {
-        1 => _mcp?.Actions ?? [],
-        2 => _agents?.Actions ?? [],
+        ConfigTab.General => _general?.Actions ?? [],
+        ConfigTab.Mcp => _mcp?.Actions ?? [],
+        ConfigTab.Agents => _agents?.Actions ?? [],
         _ => _providers?.Actions ?? [],
     };
 
     private static void MarkActiveSave()
     {
-        switch (_tabs?.ActiveTabIndex)
+        switch (Active)
         {
-            case 1: _mcp?.MarkSave(); break;
-            case 2: _agents?.MarkSave(); break;
+            case ConfigTab.General: _general?.MarkSave(); break;
+            case ConfigTab.Mcp: _mcp?.MarkSave(); break;
+            case ConfigTab.Agents: _agents?.MarkSave(); break;
             default: _providers?.MarkSave(); break;
         }
     }
@@ -249,7 +270,7 @@ public static class ConfigDialog
     private static void SwitchTo(ConfigTab tab)
     {
         if (_tabs is null) return;
-        _tabs.ActiveTabIndex = tab switch { ConfigTab.Mcp => 1, ConfigTab.Agents => 2, _ => 0 };
+        _tabs.ActiveTabIndex = (int)tab;
     }
 
 }

@@ -158,4 +158,28 @@ public class PluginConfigWriterTests : IDisposable
         var mode = File.GetUnixFileMode(Path_);
         Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, mode);
     }
+
+    /// <summary>THE FOLDERS AS GIVEN, IN ORDER — the order is the search order — and everything else in the file kept.</summary>
+    [Fact]
+    public void SetPluginPaths_WritesTheListInOrder_AndKeepsTheRest()
+    {
+        Write("""{ "defaultProvider": "local", "pluginPaths": ["~/old"] }""");
+
+        PluginConfigWriter.SetPluginPaths(Path_, ["~/src/b", "tools/plugins"]);
+
+        var root = Read();
+        Assert.Equal(["~/src/b", "tools/plugins"], root.GetProperty("pluginPaths").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal("local", root.GetProperty("defaultProvider").GetString());
+    }
+
+    /// <summary>NONE LEFT REMOVES THE KEY: absent and empty search the same folders, and the file says nothing it need not.</summary>
+    [Fact]
+    public void SetPluginPaths_WithNone_RemovesTheKey()
+    {
+        Write("""{ "pluginPaths": ["~/old"] }""");
+
+        PluginConfigWriter.SetPluginPaths(Path_, []);
+
+        Assert.False(Read().TryGetProperty("pluginPaths", out _));
+    }
 }

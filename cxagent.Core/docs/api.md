@@ -380,6 +380,7 @@ ProviderSettings ProviderConfigLoader.Parse(string json, env, string? configDir 
 // Live: every session adopts the new catalog; the ones a change touches move.
 manager.ApplyConfig(ResolvedConfig fresh, ConfigChange change, CacheChoice choice = ApplyNow)
 IReadOnlyList<Session> manager.BreaksCache(fresh, change)   // the tabs to ask about
+manager.SetPluginPaths(IReadOnlyList<string> folders)      // pluginPaths, live for the manager and every tab
 manager.Post      = run => ui.Enqueue(run);                 // where a rebind runs
 manager.RebindOne = (session, config) => { Rewire(session, config); return true; };
 ```

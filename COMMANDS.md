@@ -368,9 +368,17 @@ is left alone; it is your record, not the model's memory.
 
 ## Configuration
 
-`F8`, `/providers`, `/mcp edit` and `/agents edit` open one dialog with three tabs — **Providers**, **MCP
-servers** and **Agents** — each a list on the left and the selected entry's fields beside it. Save writes
-`config.json` (only what you changed; every other key stays) and applies it at once.
+`F8`, `/providers`, `/mcp edit` and `/agents edit` open one dialog with four tabs — **General**,
+**Providers**, **MCP servers** and **Agents**. Save writes `config.json` (only what you changed; every other
+key stays). The last three are each a list on the left and the selected entry's fields beside it, and a save
+applies at once.
+
+**General.** The settings every tab is opened with: what a command past its timeout gets (handed to the
+background, or killed), the turn cap per request (the default — none for you, 300 for sub-agents — no cap, or
+a number for both), the token count a conversation compacts above (empty is 80% of the model's window; the
+hint shows the number), and which tools the session's agent is offered. A tab reads these as it opens, so a
+save reaches the tabs opened after it — and a running tab when another change re-wires it, such as a move to
+a new model.
 
 **Providers.** `+ Add` opens a card per kind of endpoint, then the fields: the endpoint, the key (typed
 masked, never shown again — only `set · …` and its last four characters), the model, picked from what
@@ -420,7 +428,7 @@ loaded**, or **disabled**.
 
 | | |
 |---|---|
-| `/plugin browse` | opens the plugin manager (also **F2**): the catalog, what is installed, and updates. It installs into the global plugins folder or this project's |
+| `/plugin browse` | opens the plugin manager (also **F2**): the catalog, what is installed, and updates. It installs into the global plugins folder or this project's. Its **Sources** row lists the stores and the plugin folders: adding a store reads its catalog first, removing one asks first, and a folder added is searched at once |
 | `/plugin get <name>` | downloads a plugin from the catalog into the global plugins folder, checking its hash: `name` from the official catalog into `plugins/<name>/`, `store/name` from that store's catalog into `plugins/<store>/<name>/`. It loads nothing and writes nothing to `config.json`: the reply names the commands that take it further |
 | `/plugin load <name\|path> [{ settings }]` | loads a configured plugin — disabled or not — or a plugin file config never declared, for this session. A store's plugin is loaded by its `store/name`. A JSON block after it is the plugin's settings for this load |
 | `/plugin unwire <name>` | stops a loaded plugin and removes its tools |

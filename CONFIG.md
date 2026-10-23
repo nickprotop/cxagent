@@ -340,6 +340,9 @@ saying which it should have:
 That is a session that reads and searches but never writes or shells out. Absent, nothing is
 narrowed — the default is unchanged and this key is one you can ignore entirely.
 
+F8's **General** tab edits `llmAgent.tools` — the session's agent — as a base and the sixteen tools as
+boxes; the **Agents** tab does the same for each type's `tools`.
+
 ### The terms
 
 | Term | Means |
@@ -472,6 +475,9 @@ never in the config file.
 }
 ```
 
+The plugin manager's **Sources** row (F2) edits `pluginPaths`: add, remove and reorder, each searched at
+once without a restart.
+
 The plugin manager (F2, `/plugin browse`) writes these for you when it installs a plugin; this is what
 it writes.
 
@@ -513,6 +519,9 @@ and leaves the build.
   { "name": "acme", "url": "https://tools.acme.example/cxagent/catalog.json" }
 ]
 ```
+
+The plugin manager's **Sources** row (F2) adds and removes stores too, with the same checks; removing one
+asks first.
 
 A store is somebody else's plugin catalog, listed beside the official one in the plugin manager and
 reachable by `/plugin get`. `/plugin store add <name> <url>`, `remove` and `list` edit this list for you;
@@ -561,6 +570,8 @@ Run `cxagent --help` to see what is installed; `--theme <name>` overrides this k
 "shellDetachOnTimeout": false
 ```
 
+F8's **General** tab sets it too: *Hand it to the background* or *Kill it at the timeout*.
+
 What happens to a `run_shell` command still running when its `timeout_seconds` passes. **Absent means
 `true`**: the command is handed over alive — the call stops waiting and comes back with the pid and the
 file its output is going to, and the agent is told the exit code when it arrives. `false` kills it
@@ -583,6 +594,9 @@ behaviour switch.
 ```json
 "orchestrator": { "maxTurns": 300 }
 ```
+
+F8's **General** tab sets both: the turn cap as *Default*, *No cap* or *Cap at* a number, and the
+compaction threshold, whose hint shows the default's number for the model you are on.
 
 `maxTurns` is how many turns one request may take before the agent stops and summarises what it
 got. A number applies to the session agent *and* to sub-agents: a child inherits it unless its own
