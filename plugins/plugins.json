@@ -54,7 +54,7 @@
     {
       "name": "csharp-lsp",
       "displayName": "C# Language Server",
-      "version": "0.9.40",
+      "version": "0.9.49",
       "description": "Go-to-definition, find-references and diagnostics for C#, backed by a language server. Crosses project boundaries: a reference in a test project resolves into the project under test.",
       "publisher": "nickprotop",
       "license": "MIT",
