@@ -73,11 +73,35 @@ public static class SessionCompressor
         foreach (var m in conversation) total += m.Content?.Length ?? 0;
         var tail = 0;
         for (var i = cut; i < conversation.Count; i++) tail += conversation[i].Content?.Length ?? 0;
-        while (cut < conversation.Count - 1 && tail > total / 2)
+        var limit = Math.Min(conversation.Count - 1, UnansweredFrom(conversation) ?? int.MaxValue);
+        while (cut < limit && tail > total / 2)
             tail -= conversation[cut++].Content?.Length ?? 0;
 
+        // A MIDPOINT ALREADY PAST THE LIMIT comes back to it: the last step is the newer half by count.
+        cut = Math.Min(cut, limit);
         while (cut > 0 && conversation[cut].ToolCallId is not null) cut--;
         return cut;
+    }
+
+    /// <summary>
+    /// Where what the model has not answered yet begins — its last request for tools, which every message after it
+    /// answers or follows — or null when its last reply asked for nothing.
+    ///
+    /// <para>NOTHING FROM HERE IS EVER CUT. The step's results are what the model is about to read, and a message
+    /// after them — a correction the user typed mid-turn, a nudge — is no reason to read a summary of them instead:
+    /// that left the size walk stopping on the short message and summarising a file the model asked for and never
+    /// saw. THE COST: a large unanswered step frees nothing until it is answered, which it already did whenever the
+    /// step was the last thing in the conversation.</para>
+    ///
+    /// <para>NOT A FINISHED ANSWER. A reply with no tool calls has answered everything before it, and the user's
+    /// next message is a new question; holding the answer would stop a long one from ever compacting.</para>
+    /// </summary>
+    private static int? UnansweredFrom(IReadOnlyList<ChatMessage> conversation)
+    {
+        for (var i = conversation.Count - 1; i >= 0; i--)
+            if (conversation[i].Role == "assistant")
+                return conversation[i].ToolCalls is { Count: > 0 } ? i : null;
+        return null;
     }
 
     /// <summary>
@@ -283,6 +307,12 @@ public static class SessionCompressor
             start++;
             removeCount++;
         }
+
+        // AND NEVER INTO WHAT THE MODEL HAS NOT ANSWERED — see UnansweredFrom. The walk above stops at the first
+        // message that is not a result, so it never passes the last request; a midpoint that starts beyond it,
+        // in the step's own results or a message after them, comes back to it. That may leave nothing to drop.
+        if (UnansweredFrom(conversation) is { } unanswered && start > unanswered)
+            removeCount = Math.Max(0, unanswered - pinnedHead);
 
         conversation.RemoveRange(pinnedHead, removeCount);
     }

@@ -88,6 +88,107 @@ public class AgentContextTests
         Assert.Equal("b", kept[1].ToolCallId);
     }
 
+    /// <summary>
+    /// WHAT THE MODEL HAS NOT ANSWERED IS NEVER CUT, even when something follows it. A correction the user typed
+    /// mid-turn, or a nudge, lands after the step's results; the size walk then stopped on that short message, and
+    /// the results — a file the model asked for and never read — were summarised away.
+    /// </summary>
+    [Theory]
+    [InlineData("also check the loader")]                                    // the user steering mid-turn
+    [InlineData("Your last reply hit the output limit.")]                    // a nudge
+    public void SafeCut_KeepsTheLastCallsResults_WhenAMessageFollowsThem(string after)
+    {
+        var messages = new List<ChatMessage>
+        {
+            User("goal"),
+            Call("a"), Result("a"),
+            Call("b"), Result("b", new string('x', 65_000)),
+            User(after),
+        };
+
+        var kept = messages.Skip(SessionCompressor.SafeCut(messages)).ToList();
+
+        Assert.Equal(new[] { "b", "b" }, kept.Take(2).Select(m => m.ToolCallId ?? m.ToolCalls![0].Id));
+        Assert.Equal(after, kept[^1].Content);
+    }
+
+    /// <summary>EVERY RESULT OF THE LAST STEP, not only the first: a step that read three files read all three.</summary>
+    [Fact]
+    public void SafeCut_KeepsEveryResultOfTheLastStep_WhenAMessageFollowsThem()
+    {
+        var call = new ChatMessage
+        {
+            Role = "assistant", Content = "",
+            ToolCalls = [new ToolCall { Name = "read_file", Id = "b1" }, new ToolCall { Name = "read_file", Id = "b2" }],
+        };
+        var messages = new List<ChatMessage>
+        {
+            // THE LAST RESULT THE LARGE ONE, so the size walk runs all the way to the trailing message.
+            User("goal"), Call("a"), Result("a"),
+            call, Result("b1", new string('x', 10_000)), Result("b2", new string('y', 65_000)), User("and the tests"),
+        };
+
+        var kept = messages.Skip(SessionCompressor.SafeCut(messages)).ToList();
+
+        Assert.Same(call, kept[0]);
+        Assert.Equal(new[] { "b1", "b2" }, kept.Where(m => m.ToolCallId is not null).Select(m => m.ToolCallId));
+    }
+
+    /// <summary>
+    /// AN ANSWERED STEP IS NOT HELD. The model's last reply is a plain answer, the user has asked something new, and
+    /// nothing is waiting to be read: the cut moves past the answer as it always has, so a long answer still compacts.
+    /// </summary>
+    [Fact]
+    public void SafeCut_MovesPastAFinishedAnswer_AsBefore()
+    {
+        var messages = new List<ChatMessage>
+        {
+            User("goal"), Call("a"), Result("a"),
+            new() { Role = "assistant", Content = new string('r', 65_000) },
+            User("now the next thing"),
+        };
+
+        var kept = messages.Skip(SessionCompressor.SafeCut(messages)).ToList();
+
+        Assert.Equal(new[] { "now the next thing" }, kept.Select(m => m.Content));
+    }
+
+    /// <summary>
+    /// THE FALLBACK HOLDS THE SAME LINE. Truncation runs when the summary call fails, and drops the oldest half
+    /// outright — so the last step's results, followed by a message, must survive it as they survive a summary.
+    /// </summary>
+    [Fact]
+    public void Truncate_KeepsTheLastCallsResults_WhenAMessageFollowsThem()
+    {
+        var messages = new List<ChatMessage>
+        {
+            User("goal"),
+            Call("b"), Result("b", new string('x', 65_000)),
+            User("also check the loader"),
+        };
+
+        SessionCompressor.Truncate(messages);
+
+        Assert.Equal(new[] { "b", "b" }, messages.Take(2).Select(m => m.ToolCallId ?? m.ToolCalls![0].Id));
+        Assert.Equal("also check the loader", messages[^1].Content);
+    }
+
+    /// <summary>Truncation still drops what was answered: the older steps go, the unanswered one stays.</summary>
+    [Fact]
+    public void Truncate_StillDropsTheAnsweredSteps()
+    {
+        var messages = new List<ChatMessage>
+        {
+            User("goal"), Call("a"), Result("a"), Call("c"), Result("c"),
+            Call("b"), Result("b"), User("also check the loader"),
+        };
+
+        SessionCompressor.Truncate(messages);
+
+        Assert.DoesNotContain(messages, m => m.ToolCallId == "a");
+        Assert.Contains(messages, m => m.ToolCallId == "b");
+    }
+
     /// <summary>The cut still has to make progress, or compression would never free anything.</summary>
     [Fact]
     public void SafeCut_StillCutsSomething()
