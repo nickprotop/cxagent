@@ -194,6 +194,35 @@ public class PluginMutatorTests : IDisposable
         new() { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() };
 
     /// <summary>
+    /// ADDING ONE SEARCHES WHERE IT WILL LOAD FROM. The caller's project is known here, so a relative entry is read
+    /// against it, as the loader reads it — a clash in the project's folder is refused before it is ever loaded.
+    /// </summary>
+    [Fact]
+    public void AddingAPlugin_FindsAClash_InTheCallersProjectFolder()
+    {
+        var project = Path.Combine(_dir, "project");
+        var tools = Path.Combine(project, "tools");
+        Directory.CreateDirectory(tools);
+        foreach (var name in new[] { "lsp-rust", "lsp-go" })
+        {
+            File.WriteAllText(Path.Combine(tools, name + ".dll"), "not a real assembly");
+            File.WriteAllText(Path.Combine(tools, name + ".plugin.json"), $$"""
+            { "name": "{{name}}", "version": "1.0.0", "spawns": false, "tools": [ { "name": "lsp_rename", "description": "d", "inputSchema": { "type": "object" } } ] }
+            """);
+        }
+        var resolution = ResolvedConfig.ForTesting(new MockLlmProvider())
+            .WithPlugins(new Dictionary<string, PluginConfig>(StringComparer.Ordinal) { ["lsp-rust"] = new("lsp-rust.dll") });
+        resolution = resolution with { Catalog = resolution.Catalog with { PluginPaths = ["tools"] } };
+        _manager = SessionManager.Create(new AppPaths(_dir), config: resolution);
+        var caller = _manager.Open(project, Ports());
+
+        var result = _manager.AddPlugin(caller, "lsp-go", new PluginConfig("lsp-go.dll"));
+
+        var refused = Assert.IsType<PluginChangeResult.Refused>(result);
+        Assert.Contains("lsp_rename", refused.Reason);
+    }
+
+    /// <summary>
     /// A manager SEEDED with the named plugins, and two sessions opened on its own config.
     ///
     /// <para>THE NO-CONFIG OVERLOAD, DELIBERATELY. A session handed an explicit resolution — the

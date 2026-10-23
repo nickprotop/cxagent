@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 using Xunit;
@@ -43,7 +44,10 @@ public class PluginConfigTests : IDisposable
         """);
     }
 
-    private const string PluginPathsBlock = """ "pluginPaths": ["plugins"], """;
+    // THE FIXTURE FOLDER BY ITS FULL PATH: a relative entry names a folder in the project, which config read
+    // cannot see, so only an absolute one is searched for sidecars there.
+    private string PluginPathsBlock => $$""" "pluginPaths": [{{JsonSerializer.Serialize(PluginsDir)}}], """;
+    private string PluginsDir => Path.Combine(_dir, "plugins");
 
     // A MINIMAL VALID PROVIDER BLOCK, since LoadAndValidate refuses a config with none — every test
     // below is about the plugins block, not providers, so this is boilerplate rather than content.
@@ -91,7 +95,7 @@ public class PluginConfigTests : IDisposable
         Assert.True(resolved.Plugins.ContainsKey("lsp-rust"),
             "the plugin parsed but never reached ResolvedConfig — AppBootstrap gates on this and would load nothing.");
         Assert.Equal("lsp-rust.dll", resolved.Plugins["lsp-rust"].File);
-        Assert.Equal(["plugins"], resolved.PluginPaths);
+        Assert.Equal([PluginsDir], resolved.PluginPaths);
     }
 
     // ---- Shape: plugins keyed by name, pluginPaths a sibling ---------------------------------
@@ -115,7 +119,7 @@ public class PluginConfigTests : IDisposable
         Assert.Single(s.Plugins);
         Assert.Equal("lsp-rust.dll", s.Plugins["lsp-rust"].File);
         Assert.True(s.Plugins["lsp-rust"].Enabled);
-        Assert.Equal(["plugins"], s.PluginPaths);
+        Assert.Equal([PluginsDir], s.PluginPaths);
     }
 
     [Fact]
@@ -135,6 +139,68 @@ public class PluginConfigTests : IDisposable
         var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
 
         Assert.False(s.Plugins["lsp-rust"].Enabled);
+    }
+
+    // ---- Which folders config read searches ------------------------------------------------------
+
+    private string CollidingPair(string folder)
+    {
+        var dir = Path.Combine(_dir, folder);
+        Directory.CreateDirectory(dir);
+        foreach (var name in new[] { "lsp-rust", "lsp-go" })
+        {
+            File.WriteAllText(Path.Combine(dir, name + ".dll"), "not a real assembly");
+            File.WriteAllText(Path.Combine(dir, name + ".plugin.json"), $$"""
+            { "name": "{{name}}", "version": "1.0.0", "spawns": false, "tools": [ { "name": "lsp_rename", "description": "d", "inputSchema": { "type": "object" } } ] }
+            """);
+        }
+        return $$"""
+        {
+          {{ProviderBlock}},
+          PATHS
+          "plugins": { "lsp-rust": { "file": "lsp-rust.dll" }, "lsp-go": { "file": "lsp-go.dll" } }
+        }
+        """;
+    }
+
+    /// <summary>
+    /// A RELATIVE ENTRY IS THE PROJECT'S FOLDER, NOT THE CONFIG'S: the loader reads it against the project, so a
+    /// pair under the config folder by that name is not what loads — refusing to start over it would be wrong.
+    /// </summary>
+    [Fact]
+    public void ARelativeEntry_IsNotSearchedUnderTheConfigFolder()
+    {
+        WriteConfig(CollidingPair("tools").Replace("PATHS", """ "pluginPaths": ["tools"], """));
+
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Equal(2, s.Plugins.Count);
+    }
+
+    /// <summary>THE GLOBAL PLUGINS FOLDER IS SEARCHED WITH NO pluginPaths AT ALL — the loader always searches it.</summary>
+    [Fact]
+    public void TheGlobalFolder_IsSearched_WithNoPluginPaths()
+    {
+        WriteConfig(CollidingPair("plugins").Replace("PATHS", ""));
+
+        var ex = Assert.Throws<ProviderConfigException>(() => ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv));
+
+        Assert.Contains(ex.Errors, e => e.Contains("lsp_rename"));
+    }
+
+    /// <summary>
+    /// A RELATIVE ENTRY ENDS THE SEARCH. It comes before the global folder, and the project's folder it names may
+    /// hold the copy that loads instead — so the global folder's pair proves nothing about what runs, and the
+    /// load checks it then.
+    /// </summary>
+    [Fact]
+    public void ARelativeEntry_EndsTheSearch_BeforeTheGlobalFolder()
+    {
+        WriteConfig(CollidingPair("plugins").Replace("PATHS", """ "pluginPaths": ["tools"], """));
+
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Equal(2, s.Plugins.Count);
     }
 
     // ---- Row 2: plugin x plugin, config read -----------------------------------------------------

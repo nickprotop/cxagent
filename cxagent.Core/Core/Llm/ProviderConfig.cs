@@ -652,41 +652,18 @@ public static class ProviderConfigLoader
     }
 
     /// <summary>
-    /// Finds the sidecar manifest for a plugin's <c>file</c>, searching <paramref name="pluginPaths"/>
-    /// in order — first match wins, the same precedence a search list always carries. Null when no
-    /// search folder holds it, which is not an error here: this feeds only the config-time collision
-    /// check, and a plugin this cannot find yet is still checked properly at its runtime load
-    /// (<see cref="Plugins.ManagedPluginLoader.Load"/>), which has the project directory this method
-    /// does not.
-    ///
-    /// <para>RELATIVE ENTRIES RESOLVE AGAINST <paramref name="configDir"/>, the only anchor available
-    /// at config-read time — <c>LoadAndValidate</c>'s three callers (both <c>ResolvedConfig</c> resolve
-    /// paths and <c>McpCommand</c>) all pass only an <c>AppPaths</c>, not a project directory, so
-    /// threading one through here would be a signature change to all three in service of
-    /// a check that is deliberately the EARLY half of a two-layer defence. A <c>pluginPaths</c> entry
-    /// meant to be resolved against a project (e.g. <c>.cxagent/plugins</c>) is simply not found here.</para>
-    ///
-    /// <para>THAT IS THE RIGHT TRADE, NOT A GAP, because this check proves a STATIC collision — one
-    /// that does not depend on which copy eventually loads. Two plugins declaring <c>lsp_definition</c>
-    /// collide whether the winning binary comes from the global directory or the project's; project-vs-
-    /// global precedence decides WHICH FILE loads, not WHETHER two declared names clash. So a plugin
-    /// only resolvable via a project-local folder does not need this earlier check to see it — it is
-    /// still caught, later, at its runtime load (<see cref="Plugins.ManagedPluginLoader.Load"/> via
-    /// <c>PluginDiscovery</c>'s project-aware search), just without this layer's file-and-key message.
-    /// Erroring here instead would be a false alarm about a perfectly valid configuration Core simply
-    /// cannot see from where it stands.</para>
+    /// Finds the sidecar manifest for a plugin's <c>file</c> in <paramref name="folders"/>, in order — first match
+    /// wins, the same precedence the loader's search carries. Null when no folder holds it, which is not an error
+    /// here: this feeds only the collision check, and a plugin it cannot see is still checked at its runtime load
+    /// (<see cref="Plugins.ManagedPluginLoader.Load"/>).
     /// </summary>
-    internal static string? FindSidecar(
-        string file, IReadOnlyList<string> pluginPaths, string? configDir)
+    /// <param name="file">The plugin's entry-point filename, as config gives it.</param>
+    /// <param name="folders">Absolute folders whose copy of a file is the one that loads — see
+    /// <see cref="ConfigReadFolders"/> and <see cref="Plugins.PluginResolver.SearchFolders"/>.</param>
+    internal static string? FindSidecar(string file, IReadOnlyList<string> folders)
     {
-        foreach (var raw in pluginPaths)
+        foreach (var dir in folders)
         {
-            var expanded = ConfigVariable.Expand(raw);
-            // A RELATIVE ENTRY NEEDS THE CONFIG FOLDER to mean anything; without one it is skipped
-            // rather than resolved against whatever the working directory happens to be.
-            if (!Path.IsPathRooted(expanded) && configDir is null) continue;
-            var dir = Path.IsPathRooted(expanded) ? expanded : Path.Combine(configDir!, expanded);
-
             var assemblyPath = Path.Combine(dir, file);
             if (!File.Exists(assemblyPath)) continue;
 
@@ -698,6 +675,31 @@ public static class ProviderConfigLoader
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The folders config read can search and be sure of: the loader's own order
+    /// (<see cref="Plugins.PluginResolver.SearchFolders"/>) up to the first folder it cannot see.
+    ///
+    /// <para>A RELATIVE ENTRY ENDS THE LIST. The loader reads it against the project being worked in, which config
+    /// read does not have — and reading it against the config folder instead would check a file that never loads,
+    /// refusing a valid config or passing a real clash. Nor can anything after it be searched: the project's folder
+    /// it names comes first, and may hold the copy that loads. A plugin past that point is checked at its load.</para>
+    ///
+    /// <para>THE GLOBAL FOLDER WHEN EVERY ENTRY IS ABSOLUTE, since the loader always searches it next. The project's
+    /// own <c>.cxagent/plugins</c> after it is never known here, so the list stops there.</para>
+    /// </summary>
+    internal static IReadOnlyList<string> ConfigReadFolders(IReadOnlyList<string> pluginPaths, string? configDir)
+    {
+        var folders = new List<string>();
+        foreach (var raw in pluginPaths)
+        {
+            var expanded = ConfigVariable.Expand(raw);
+            if (!Path.IsPathRooted(expanded)) return folders;
+            folders.Add(expanded);
+        }
+        if (configDir is not null) folders.Add(Plugins.PluginResolver.GlobalFolder(configDir));
+        return folders;
     }
 
     /// <summary>Why a <c>plugins</c> key cannot name a plugin, or null: a key with no '/' is a name, and
@@ -739,15 +741,14 @@ public static class ProviderConfigLoader
             if (!config.Enabled) continue;
 
             // A STORE PLUGIN (`acme/repo-map`) IS NOT FOUND BY ITS FILE ALONE. FindSidecar looks for a bare
-            // file in pluginPaths' top level, which would answer with a different plugin's sidecar when
+            // file at the top of each search folder, which would answer with a different plugin's sidecar when
             // one shares the filename — and a store's plugin lives under its store's folder, which
             // config-read time cannot tell apart from a stray one without the marker check. Its tool
             // names are still checked, at load, by the same collision rules.
             if (pluginName.Contains('/')) continue;
 
             // UNRESOLVED IS "CANNOT CHECK THIS ONE", NOT AN ERROR — most often a plugin only
-            // reachable through a project-local search folder this method was not handed (see
-            // FindSidecar's own doc for why threading one through is the wrong trade). Config
+            // reachable through a project folder config read cannot see (see ConfigReadFolders). Config
             // validation refusing to start over a file the user may not even have installed the
             // project-relative copy of yet would be a worse outcome than the collision it guards.
             var sidecarPath = findSidecar(config);
@@ -806,8 +807,8 @@ public static class ProviderConfigLoader
     /// </summary>
     /// <param name="json">The whole config.json text.</param>
     /// <param name="env">The environment, for the per-instance API-key overrides.</param>
-    /// <param name="configDir">The folder the file lives in, where a plugin's sidecar manifest is looked
-    /// for; null looks only beside the plugin itself.</param>
+    /// <param name="configDir">The folder the file lives in, whose <c>plugins</c> folder is searched for a plugin's
+    /// sidecar manifest after the absolute <c>pluginPaths</c>; null searches those alone.</param>
     public static ProviderSettings Parse(string json, IReadOnlyDictionary<string, string> env, string? configDir = null)
     {
         var errors = new List<string>();
@@ -1289,8 +1290,8 @@ public static class ProviderConfigLoader
 
             var stores = Plugins.PluginStores.Read(root, errors);
 
-            ValidatePluginCollisions(plugins,
-                config => FindSidecar(config.File, pluginPaths, configDir), errors);
+            var searched = ConfigReadFolders(pluginPaths, configDir);
+            ValidatePluginCollisions(plugins, config => FindSidecar(config.File, searched), errors);
 
             if (errors.Count > 0)
                 throw new ProviderConfigException(errors);

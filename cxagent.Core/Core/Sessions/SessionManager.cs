@@ -797,11 +797,13 @@ public sealed class SessionManager : IDisposable
         {
             [name] = entry,
         };
+        // THE FOLDERS IT WILL LOAD FROM: the caller's project is known here, so a relative entry is read against it
+        // as the loader reads it, and the project's own plugins folder is searched too.
+        var searched = _configDir is { } dir
+            ? Plugins.PluginResolver.SearchFolders(Config.Catalog.PluginPaths, caller.WorkingDirectory, dir)
+            : [];
         ProviderConfigLoader.ValidatePluginCollisions(candidate,
-            c => _configDir is { } dir
-                ? ProviderConfigLoader.FindSidecar(c.File, Config.Catalog.PluginPaths, dir)
-                : null,
-            errors);
+            c => ProviderConfigLoader.FindSidecar(c.File, searched), errors);
 
         if (errors.Count > 0) return new PluginChangeResult.Refused(string.Join(" ", errors));
 
