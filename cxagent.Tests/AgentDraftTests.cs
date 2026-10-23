@@ -273,4 +273,38 @@ public class AgentDraftTests
         draft.AddProvider("local", "qwen");
         Assert.Null(draft.ProviderProblem);
     }
+    private static AgentTypeConfig WithTools(params string[] terms) =>
+        new() { Tools = new CxAgent.Core.Jobs.ToolSelection(terms) };
+
+    /// <summary>AN EMPTY LIST IS NO TOOLS: every box unticked, the truth — and clean, so closing asks nothing.</summary>
+    [Fact]
+    public void NoTools_ReadsAsEveryBoxUnticked_AndIsClean()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, WithTools());
+
+        Assert.Equal(CxAgent.Core.Jobs.Tool.KnownNames.Count(), draft.Removed.Count);
+        Assert.False(draft.IsDirty);
+    }
+
+    /// <summary>Every box unticked is written as the empty list — no tools — not as sixteen removals.</summary>
+    [Fact]
+    public void EveryBoxUnticked_IsWrittenAsNoTools()
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, null);
+        draft.Removed.AddRange(CxAgent.Core.Jobs.Tool.KnownNames);
+
+        Assert.Empty(draft.ToFields().Tools!);
+    }
+
+    /// <summary>A LIST WRITTEN ANOTHER WAY IS NOT A CHANGE: with no base, or the base alone, it says what the boxes show.</summary>
+    [Theory]
+    [InlineData("-run_shell")]
+    [InlineData("inherited")]
+    [InlineData("inherited", "+agent")]
+    public void AListWrittenAnotherWay_OpensClean(params string[] terms)
+    {
+        var draft = AgentDraft.ForBuiltin(BuiltinAgentTypes.Find("explore")!, WithTools(terms));
+
+        Assert.False(draft.IsDirty);
+    }
 }

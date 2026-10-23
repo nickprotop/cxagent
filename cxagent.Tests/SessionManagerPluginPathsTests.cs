@@ -36,4 +36,19 @@ public class SessionManagerPluginPathsTests : IDisposable
         Assert.Same(entries, manager.Config.Entries);
         Assert.Same(host, session.Host);
     }
+    /// <summary>
+    /// THE APP'S OWN COPY HEARS OF IT TOO. A re-wire and a resume build from the process's config, not the
+    /// manager's, so a folder list only the manager had would vanish from a tab the next time it is re-wired.
+    /// </summary>
+    [Fact]
+    public void NewFolders_AreHandedToTheHook()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        IReadOnlyList<string>? heard = null;
+        manager.PluginPathsChanged = folders => heard = folders;
+
+        manager.SetPluginPaths(["tools"]);
+
+        Assert.Equal(["tools"], heard);
+    }
 }

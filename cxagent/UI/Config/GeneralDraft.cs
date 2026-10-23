@@ -1,6 +1,5 @@
 using System.Text.Json.Nodes;
 using CxAgent.Core.Config;
-using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
 
 namespace CxAgent.UI.Config;
@@ -45,10 +44,7 @@ public sealed class GeneralDraft
     public static GeneralDraft From(ProviderSettings settings)
     {
         var turns = settings.Orchestrator.MaxTurns;
-        var terms = ToolTerms.Read(settings.Tools?.Terms);
-        // NO TOOLS IS EVERY BOX UNTICKED. An empty list reads as the inherited base with nothing taken away, which
-        // would tick every box over a session that has none.
-        if (settings.Tools?.Terms is { Count: 0 }) terms = terms with { Removed = [.. Tool.KnownNames] };
+        var terms = ToolBoxes.Read(settings.Tools?.Terms);
         var draft = new GeneralDraft
         {
             DetachOnTimeout = settings.ShellDetachOnTimeout ?? true,
@@ -65,7 +61,7 @@ public sealed class GeneralDraft
         draft._originalCap = draft.Cap;
         draft._originalCapNumber = turns;
         draft._originalCompact = settings.Orchestrator.ContextCompressThreshold;
-        draft._originalTools = Canonical(settings.Tools?.Terms);
+        draft._originalTools = ToolBoxes.Canonical(settings.Tools?.Terms);
         return draft;
     }
 
@@ -97,31 +93,12 @@ public sealed class GeneralDraft
     private int? Compact => CompactText.Trim().Length == 0 ? null : Positive(CompactText);
 
     /// <summary>The tools as they would be written, or null for no key — every tool offered.</summary>
-    private IReadOnlyList<string>? Tools =>
-        Base == "inherited" && Removed.Count == 0 && Added.Count == 0
-            ? null
-            : Canonical(ToolTerms.Write(new ToolTerms(Base, Removed, Added)));
-
-    /// <summary>
-    /// A selection in the one form the tab writes, so two that say the same are equal: what the file said is
-    /// compared in this form too, and a list written another way — no base, the base alone — is not a change.
-    /// Every tool taken from the inherited base, with none added back, is the empty list: no tools.
-    /// </summary>
-    private static IReadOnlyList<string>? Canonical(IReadOnlyList<string>? terms)
-    {
-        if (terms is null) return null;
-        if (terms.Count == 0) return [];
-        var read = ToolTerms.Read(terms);
-        if (read.Base == "inherited" && read.Added.Count == 0 && Tool.KnownNames.All(read.Removed.Contains)) return [];
-        return read.Base == "inherited" && read.Removed.Count == 0 && read.Added.Count == 0 ? null : ToolTerms.Write(read);
-    }
+    private IReadOnlyList<string>? Tools => ToolBoxes.Written(Base, Removed, Added);
 
     private bool DetachChanged => DetachOnTimeout != _originalDetach;
     private bool CapChanged => Cap != _originalCap || (Cap == TurnCap.Number && CapNumber != _originalCapNumber);
     private bool CompactChanged => Compact != _originalCompact || (Compact is null && CompactText.Trim().Length > 0);
-    // NULL AND EMPTY DIFFER: no key offers every tool, an empty list none.
-    private bool ToolsChanged => (Tools is null) != (_originalTools is null)
-        || !(Tools ?? []).SequenceEqual(_originalTools ?? [], StringComparer.Ordinal);
+    private bool ToolsChanged => !ToolBoxes.Same(Tools, _originalTools);
 
     public bool IsDirty => DetachChanged || CapChanged || CompactChanged || ToolsChanged;
 

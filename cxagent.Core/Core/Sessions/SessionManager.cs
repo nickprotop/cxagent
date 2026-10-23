@@ -131,7 +131,16 @@ public sealed class SessionManager : IDisposable
         lock (_gate) current = Config;
         ApplyConfig(current with { Catalog = current.Catalog with { PluginPaths = folders } },
             new ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), false, "plugin folders changed"));
+        PluginPathsChanged?.Invoke(folders);
     }
+
+    /// <summary>
+    /// Told the folders <see cref="SetPluginPaths"/> just set, for a host that keeps its own copy of the config.
+    ///
+    /// <para>A HOST'S COPY IS WHAT A RE-WIRE BUILDS FROM — <see cref="Rewire"/> is handed none — so a copy left with the
+    /// old folders would take the new ones away from a tab the next time it is re-wired.</para>
+    /// </summary>
+    public Action<IReadOnlyList<string>>? PluginPathsChanged { get; set; }
 
     /// <summary>
     /// A saved config, live, without spending the prompt cache it does not have to.

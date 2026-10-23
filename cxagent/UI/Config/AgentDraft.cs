@@ -31,11 +31,11 @@ public sealed class AgentDraft
         Mode = AnyProvider ? RunsOn.Any : Providers.Count > 0 ? RunsOn.List : RunsOn.Session;
         _remembered = [.. Providers];
         MaxTurns = original?.MaxTurns;
-        var terms = ToolTerms.Read(original?.Tools?.Terms);
+        var terms = ToolBoxes.Read(original?.Tools?.Terms);
         Base = terms.Base;
         Removed = [.. terms.Removed];
         Added = [.. terms.Added];
-        _originalTools = original?.Tools?.Terms;
+        _originalTools = ToolBoxes.Canonical(original?.Tools?.Terms);
     }
 
     /// <summary>A shipped type, and its override in config if there is one.</summary>
@@ -131,13 +131,9 @@ public sealed class AgentDraft
     private readonly IReadOnlyList<string>? _originalTools;
 
     /// <summary>The tools as they would be written, or null for no <c>tools</c> key — the parent's set.</summary>
-    private IReadOnlyList<string>? Tools =>
-        Base == "inherited" && Removed.Count == 0 && Added.Count == 0
-            ? null
-            : ToolTerms.Write(new ToolTerms(Base, Removed, Added));
+    private IReadOnlyList<string>? Tools => ToolBoxes.Written(Base, Removed, Added);
 
-    private bool ToolsChanged =>
-        !(Tools ?? []).SequenceEqual(_originalTools ?? [], StringComparer.Ordinal);
+    private bool ToolsChanged => !ToolBoxes.Same(Tools, _originalTools);
 
     public bool IsDirty =>
         IsNew || AnyProviderChanged || (!AnyProvider && ProvidersChanged) || ClearBadProvider || MaxTurns != Original?.MaxTurns || ToolsChanged

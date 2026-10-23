@@ -50,7 +50,9 @@ public static class ConfigDialog
     // repeatedly in one session and a window that will not stay put is one the user moves every time.
     private static (int Left, int Top)? _placement;
     private static (int Width, int Height)? _size;
-    private static ConfigTab _lastTab = ConfigTab.General;
+    // PROVIDERS UNTIL ONE IS LEFT: General is the first tab, but where the model runs is what F8 is opened for
+    // most, so a run's first F8 lands there.
+    private static ConfigTab _lastTab = ConfigTab.Providers;
 
     private static TabControl? _tabs;
     private static GeneralTab? _general;

@@ -1259,6 +1259,11 @@ public static class AppBootstrap
         // SET BEFORE THE FIRST WIRE, so a resume arriving on the first render pump finds it.
         manager.Rewire = () => WireRunner(configNow.Value);
 
+        // F2'S FOLDERS, KEPT IN THE PROCESS'S CONFIG TOO: a re-wire builds from `configNow`, which only an F8 save
+        // replaces, so without this a folder added in Sources would drop out of a tab re-wired before that save.
+        manager.PluginPathsChanged = folders =>
+            configNow.Replace(configNow.Value with { Catalog = configNow.Value.Catalog with { PluginPaths = folders } });
+
         // AND THE PER-SESSION HOOK, WHICH IS WHAT RESUME USES. WireRunner closes over the startup
         // session and assigns four window properties that resolve to the ACTIVE tab, so re-wiring
         // through it from a second session would discard the FIRST session's conversation — under

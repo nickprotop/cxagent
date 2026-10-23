@@ -521,6 +521,13 @@ public sealed class AgentsTab
             _draft = null;
             Reload(select);
             _window()?.FocusManager.SetFocus(_rail, FocusReason.Programmatic);
+            // WRITTEN BUT NOT LIVE when the file resolves to no usable provider: Commit moved nothing, so no
+            // running tab has it, and saying so is the truth "running tabs have it now" would not be.
+            if (prepared.Fresh is null)
+            {
+                SetStatus(string.Join("\n", prepared.Write.Errors.Select(e => $"[{ColorScheme.CautionMarkup}]Saved, not live: {MarkupParser.Escape(e)}[/]")));
+                return;
+            }
             SetStatus($"[{ColorScheme.AffirmativeMarkup}]✔ {MarkupParser.Escape(what)}.[/] [{ColorScheme.MutedMarkup}]Running tabs have it now, in place.[/]");
             // A SIDE EFFECT THE USER SHOULD SEE: a type this save disabled, said with the save itself.
             if (prepared.NewlyDisabled.Count > 0)
