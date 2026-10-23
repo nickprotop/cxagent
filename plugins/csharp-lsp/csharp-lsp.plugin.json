@@ -3,11 +3,11 @@
   "name": "csharp-lsp",
   "version": "0.9.40",
   "spawns": true,
-  "instructions": "csharp_definition, csharp_references and csharp_diagnostics answer questions about C# and Razor source (.cs, .csx, .razor, .cshtml). Any other file type is refused. A file outside the working directory asks the user's permission first, so prefer paths inside it.\n\nPositions are 1-based \u2014 line 1 is the first line, character 1 the first column \u2014 and must land inside the symbol's name.\n\ncsharp_diagnostics reports what has already been analysed. Immediately after a file is first touched it may return nothing; calling csharp_definition or csharp_references on that file first gives the analysis time to happen.\n\nRazor files may return no results if the environment lacks Razor analysis. An empty result means nothing was found, not that the call failed.",
+  "instructions": "csharp_definition, csharp_references and csharp_diagnostics answer questions about C# and Razor source (.cs, .csx, .razor, .cshtml). Any other file type is refused. A file outside the working directory asks the user's permission first, so prefer paths inside it.\n\nName the symbol: give `line` and `symbol` \u2014 the identifier's name, e.g. \"UpdateStatusAsync\" \u2014 and the column is found for you. A line a few off is forgiven, and the answer says which line it used. Lines are 1-based. `character` (1-based) is only needed to pick between two of the same name on one line.\n\ncsharp_diagnostics reports what has already been analysed. Immediately after a file is first touched it may return nothing; calling csharp_definition or csharp_references on that file first gives the analysis time to happen.\n\nRazor files may return no results if the environment lacks Razor analysis. An empty result means nothing was found, not that the call failed.",
   "tools": [
     {
       "name": "csharp_definition",
-      "description": "Finds where the symbol at a C# or Razor file position is DECLARED. Crosses project boundaries: a reference in a test project resolves to a declaration in the project under test, if the server has indexed both.",
+      "description": "Finds where a symbol in a C# or Razor file is DECLARED. Give the line it is on and its name in `symbol`. Crosses project boundaries: a reference in a test project resolves to a declaration in the project under test, if the server has indexed both.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -17,24 +17,27 @@
           },
           "line": {
             "type": "integer",
-            "description": "1-based line number of the reference."
+            "description": "1-based line number the symbol is on. A few lines off is forgiven when `symbol` is given."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "The symbol's name as written in the code, e.g. \"UpdateStatusAsync\" \u2014 the column is found from it. A qualified name is looked up by its last part."
           },
           "character": {
             "type": "integer",
-            "description": "1-based column, landing inside the symbol's name."
+            "description": "Optional 1-based column; picks between two of the same name on the line, or stands in for `symbol`."
           }
         },
         "required": [
           "file",
-          "line",
-          "character"
+          "line"
         ]
       },
       "gated": "dynamic"
     },
     {
       "name": "csharp_references",
-      "description": "Finds every place the symbol at a C# or Razor file position is USED, across every project the server has indexed.",
+      "description": "Finds every place a symbol in a C# or Razor file is USED, across every project the server has indexed. Give the line it is on and its name in `symbol`.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -44,17 +47,20 @@
           },
           "line": {
             "type": "integer",
-            "description": "1-based line number of the symbol."
+            "description": "1-based line number the symbol is on. A few lines off is forgiven when `symbol` is given."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "The symbol's name as written in the code, e.g. \"UpdateStatusAsync\" \u2014 the column is found from it. A qualified name is looked up by its last part."
           },
           "character": {
             "type": "integer",
-            "description": "1-based column, landing inside the symbol's name."
+            "description": "Optional 1-based column; picks between two of the same name on the line, or stands in for `symbol`."
           }
         },
         "required": [
           "file",
-          "line",
-          "character"
+          "line"
         ]
       },
       "gated": "dynamic"

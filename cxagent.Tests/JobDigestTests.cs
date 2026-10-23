@@ -271,4 +271,30 @@ public class JobDigestTests
 
         Assert.Contains("read_x", JobDigest.From(job).Render(bulkOutputAsPlaceholder: true));
     }
+    /// <summary>
+    /// A LIST OR AN OBJECT IS SHOWN AS ITS CONTENTS. <c>ToString()</c> on a list is its type name, so a plugin
+    /// answering in structure reached the model as <c>System.Collections.Generic.List`1[...]</c> — text that looks
+    /// like an answer and says nothing.
+    /// </summary>
+    [Fact]
+    public void RenderOutput_ShowsAListAsItsContents_NotItsTypeName()
+    {
+        var rendered = JobDigest.RenderOutput(new Dictionary<string, object?>
+        {
+            ["locations"] = new List<Dictionary<string, object?>> { new() { ["file"] = "a.cs", ["line"] = 3 } },
+        });
+
+        Assert.DoesNotContain("System.Collections", rendered);
+        Assert.Contains("\"file\":\"a.cs\"", rendered);
+        Assert.Contains("\"line\":3", rendered);
+    }
+
+    /// <summary>A NUMBER OR A FLAG STAYS AS IT READS — JSON only for what has no text of its own.</summary>
+    [Fact]
+    public void RenderOutput_KeepsScalarsAsTheyRead()
+    {
+        var rendered = JobDigest.RenderOutput(new Dictionary<string, object?> { ["exit_code"] = 2, ["timed_out"] = true, ["content"] = "out" });
+
+        Assert.Equal("out\nexit_code: 2\ntimed_out: True", rendered);
+    }
 }

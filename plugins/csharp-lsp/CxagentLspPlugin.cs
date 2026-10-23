@@ -193,16 +193,16 @@ public sealed class CxagentLspPlugin : IPlugin, IPluginGateSource
 
     private async Task<JobResult> HandleDefinitionAsync(JobParameters call, string toolName, CancellationToken ct)
     {
-        var (path, position) = OpenAndResolvePosition(call, toolName);
-        var locations = await _client!.DefinitionAsync(path, position, ct).ConfigureAwait(false);
-        return LocationsResult(locations);
+        var (path, at) = OpenAndResolvePosition(call, toolName);
+        var locations = await _client!.DefinitionAsync(path, new LspPosition(at.Line, at.Character), ct).ConfigureAwait(false);
+        return LocationsResult(locations, at.Note, Miss("definition", call, at));
     }
 
     private async Task<JobResult> HandleReferencesAsync(JobParameters call, string toolName, CancellationToken ct)
     {
-        var (path, position) = OpenAndResolvePosition(call, toolName);
-        var locations = await _client!.ReferencesAsync(path, position, ct).ConfigureAwait(false);
-        return LocationsResult(locations);
+        var (path, at) = OpenAndResolvePosition(call, toolName);
+        var locations = await _client!.ReferencesAsync(path, new LspPosition(at.Line, at.Character), ct).ConfigureAwait(false);
+        return LocationsResult(locations, at.Note, Miss("references", call, at));
     }
 
     private JobResult HandleDiagnostics(JobParameters call, string toolName)
@@ -216,22 +216,11 @@ public sealed class CxagentLspPlugin : IPlugin, IPluginGateSource
             Success = true,
             Output =
             {
-                // See LocationsResult's own doc: Agent renders Output["content"] and nothing else,
-                // so a diagnostics result without it reaches the model blank.
+                // THE TEXT ALONE — see LocationsResult's own doc.
                 ["content"] = diagnostics.Count == 0
                     ? "No diagnostics for that file."
                     : string.Join("\n", diagnostics.Select(d =>
                         $"{d.Line + 1}:{d.Character + 1} {d.Severity}: {d.Message}")),
-                ["diagnostics"] = diagnostics.Select(d => new Dictionary<string, object?>
-                {
-                    // +1: THE SERVER'S 0-BASED POSITION BECOMES THE 1-BASED ONE THE TOOL SCHEMA
-                    // PROMISES — see csharp-lsp.plugin.json's own description. Every position this
-                    // plugin hands back to the model crosses this same conversion exactly once.
-                    ["line"] = d.Line + 1,
-                    ["character"] = d.Character + 1,
-                    ["severity"] = d.Severity,
-                    ["message"] = d.Message,
-                }).ToList(),
             },
         };
     }
@@ -239,15 +228,26 @@ public sealed class CxagentLspPlugin : IPlugin, IPluginGateSource
     /// <summary>Resolves the file, opens it with the server, and converts the 1-based tool position
     /// to the server's 0-based one — the one place this conversion happens for the two position-taking
     /// tools, so csharp_definition and csharp_references cannot drift apart on it.</summary>
-    private (string Path, LspPosition Position) OpenAndResolvePosition(JobParameters call, string toolName)
+    private (string Path, ResolvedPosition At) OpenAndResolvePosition(JobParameters call, string toolName)
     {
         var path = ResolvePath(call.Get<string>("file"), toolName);
-        _client!.EnsureOpen(path);
 
-        var line = call.Get<int>("line");
-        var character = call.Get<int>("character");
-        return (path, new LspPosition(line - 1, character - 1));
+        // FOUND BEFORE THE SERVER IS ASKED: a position that cannot be resolved is refused with the reason, rather
+        // than sent and answered with an empty result the model reads as "nothing here".
+        var character = call.Get("character", 0);
+        var at = SymbolPosition.Resolve(File.ReadAllLines(path), call.Get<int>("line"),
+            character > 0 ? character : null, call.Get<string?>("symbol", null));
+        if (at.Problem is { } problem) throw new ToolRefusal($"{toolName}: {problem}");
+
+        _client!.EnsureOpen(path);
+        return (path, at);
     }
+
+    /// <summary>What an empty answer says — named for the tool that gave it, and for the symbol when one was named.</summary>
+    private static string Miss(string what, JobParameters call, ResolvedPosition at) =>
+        call.Get<string?>("symbol", null) is { Length: > 0 } symbol
+            ? $"No {what} found for '{symbol}' at line {at.Line + 1}."
+            : $"No {what} found at line {at.Line + 1}, character {at.Character + 1}.";
 
     /// <summary>What these tools answer for. Anything else is refused — see <see cref="ResolvePath"/>.</summary>
     /// <summary>
@@ -360,42 +360,24 @@ public sealed class CxagentLspPlugin : IPlugin, IPluginGateSource
     private sealed class ToolRefusal(string message) : Exception(message);
 
     /// <summary>
-    /// A tool result carrying BOTH a <c>content</c> string and the structured <c>locations</c>.
+    /// A tool result as the model reads it: a note when the position was moved, then the locations — or the miss,
+    /// named for the tool that had it.
     ///
-    /// <para><c>content</c> IS WHAT THE MODEL ACTUALLY READS — <c>Agent</c> renders a tool result by
-    /// taking <c>Output["content"]</c> and nothing else, the convention every built-in follows
-    /// (FileJobExecutor writes it for read, grep and glob alike). A result carrying only structured
-    /// keys reaches the model as an EMPTY STRING: it does not see "no locations", it sees nothing at
-    /// all, and answers by inventing a reason the lookup failed. Observed live — the model reported
-    /// the language server was not indexed while the server was running and answering correctly.</para>
-    ///
-    /// <para>The structured key stays beside it: it costs nothing, it is what a non-model consumer
-    /// of JobResult would want, and dropping it to satisfy the renderer would throw away the typed
-    /// answer to keep the printed one.</para>
+    /// <para>EVERYTHING IN <c>content</c>, NOTHING BESIDE IT. The host renders every key of a result, so a
+    /// structured copy of the same locations would reach the model twice; a miss is named rather than left blank,
+    /// because an empty string reads as a broken tool and the model invents a reason for it.</para>
     /// </summary>
-    private JobResult LocationsResult(IReadOnlyList<LspLocation> locations)
+    private JobResult LocationsResult(IReadOnlyList<LspLocation> locations, string? note, string miss)
     {
         var rendered = locations
             .Select(l => $"{UriToPath(l.UriOrPath)}:{l.Start.Line + 1}:{l.Start.Character + 1}")
             .ToList();
+        var answer = rendered.Count == 0 ? miss : string.Join("\n", rendered);
 
         return new JobResult
         {
             Success = true,
-            Output =
-            {
-                // NAMED AS A MISS RATHER THAN LEFT BLANK. "No definition found" is an answer the
-                // model can act on; an empty string is one it has to guess about.
-                ["content"] = rendered.Count == 0
-                    ? "No definition found at that position."
-                    : string.Join("\n", rendered),
-                ["locations"] = locations.Select(l => new Dictionary<string, object?>
-                {
-                    ["file"] = UriToPath(l.UriOrPath),
-                    ["line"] = l.Start.Line + 1,
-                    ["character"] = l.Start.Character + 1,
-                }).ToList(),
-            },
+            Output = { ["content"] = note is null ? answer : note + "\n" + answer },
         };
     }
 

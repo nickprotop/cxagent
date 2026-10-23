@@ -372,6 +372,115 @@ public class CxagentLspPluginTests
         return ((System.Collections.IEnumerable)method.Invoke(null, [node])!).Cast<object>().ToList();
     }
 
+    // ---- Where a call lands: SymbolPosition.Resolve ---------------------------------------------
+
+    private const string Ingest = "\tpublic interface IMedpracticeIngest\n\t{\n\t\t/// </summary>\n\t\tTask UpdateStatusAsync(Device device);\n\t}";
+
+    /// <summary>
+    /// The position a call resolves to, 0-based as the server takes it, or why it cannot be answered.
+    /// Through reflection, like <see cref="InvokeParseLocations"/>: the plugin is loaded as an artifact, not referenced.
+    /// </summary>
+    private static (int Line, int Character, string? Note, string? Problem) Resolve(string text, int line, int? character, string? symbol)
+    {
+        var assembly = System.Reflection.Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "csharp-lsp.dll"));
+        var type = assembly.GetType("CxAgent.Plugins.Lsp.SymbolPosition")
+                   ?? throw new InvalidOperationException("SymbolPosition not found in the plugin assembly.");
+        var method = type.GetMethod("Resolve", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
+        var found = method.Invoke(null, [text.Split('\n'), line, character, symbol])!;
+        return ((int)Read(found, "Line")!, (int)Read(found, "Character")!, (string?)Read(found, "Note"), (string?)Read(found, "Problem"));
+    }
+
+    /// <summary>A NAME ON ITS LINE LANDS ON ITS FIRST CHARACTER — tabs counted as one, as the server counts them.</summary>
+    [Fact]
+    public void ASymbolOnItsLine_LandsOnItsFirstCharacter()
+    {
+        var at = Resolve(Ingest, 4, null, "UpdateStatusAsync");
+
+        Assert.Equal((3, 7), (at.Line, at.Character));
+        Assert.Null(at.Note);
+        Assert.Null(at.Problem);
+    }
+
+    /// <summary>
+    /// A LINE COUNTED WRONG IS FORGIVEN NEARBY, and said: the model counts lines itself, and a lookup one line
+    /// off answered "nothing here" over and over in a live session.
+    /// </summary>
+    [Fact]
+    public void ASymbolALineAway_IsFound_AndTheNoteSaysWhere()
+    {
+        var at = Resolve(Ingest, 3, null, "UpdateStatusAsync");
+
+        Assert.Equal((3, 7), (at.Line, at.Character));
+        Assert.Contains("line 4", at.Note);
+    }
+
+    /// <summary>THE LINE BELOW FIRST on a tie: a doc comment sits above what it documents, and is where a miscount lands.</summary>
+    [Fact]
+    public void ATie_TakesTheLineBelow()
+    {
+        var at = Resolve("Foo a;\n// here\nFoo b;", 2, null, "Foo");
+
+        Assert.Equal(2, at.Line);
+    }
+
+    [Fact]
+    public void ASymbolNowhereNear_IsAProblem_NamingGrep()
+    {
+        var at = Resolve(Ingest + new string('\n', 10) + "\tclass Far { }", 1, null, "Far");
+
+        Assert.Contains("grep", at.Problem);
+    }
+
+    /// <summary>A WHOLE NAME ONLY: <c>Task</c> inside <c>TaskList</c> is a different symbol.</summary>
+    [Fact]
+    public void ASymbol_MatchesWholeNamesOnly()
+    {
+        Assert.Equal(9, Resolve("TaskList Task;", 1, null, "Task").Character);
+    }
+
+    /// <summary>TWICE ON A LINE, the column picks which; without one, the first.</summary>
+    [Theory]
+    [InlineData(null, 0)]
+    [InlineData(10, 8)]
+    public void ASymbolTwiceOnALine_TheColumnPicks(int? character, int expected)
+    {
+        Assert.Equal(expected, Resolve("Foo x = Foo.Make();", 1, character, "Foo").Character);
+    }
+
+    /// <summary>A QUALIFIED NAME IS LOOKED UP BY ITS LAST PART — the part that names the symbol.</summary>
+    [Fact]
+    public void AQualifiedSymbol_IsFoundByItsLastPart()
+    {
+        Assert.Equal(10, Resolve("var a = d.Id;", 1, null, "Device.Id").Character);
+    }
+
+    /// <summary>
+    /// A COLUMN PAST THE END STAYS ON ITS LINE. OmniSharp carries it on into the next line and answers for a
+    /// symbol there — `Task` for a column past the end of a comment, in a live session.
+    /// </summary>
+    [Fact]
+    public void AColumnPastTheEnd_StaysOnItsLine_AndTheNoteSaysSo()
+    {
+        var at = Resolve(Ingest, 3, 20, null);
+
+        Assert.Equal((2, 16), (at.Line, at.Character));
+        Assert.Contains("past the end", at.Note);
+    }
+
+    [Fact]
+    public void NeitherSymbolNorColumn_IsAProblem()
+    {
+        Assert.Contains("symbol", Resolve(Ingest, 4, null, null).Problem);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(99)]
+    public void ALineOutsideTheFile_IsAProblem(int line)
+    {
+        Assert.Contains("5 lines", Resolve(Ingest, line, null, "Task").Problem);
+    }
+
     private static class Fake
     {
         public static IJobContext Job() => new FakeJobContext();

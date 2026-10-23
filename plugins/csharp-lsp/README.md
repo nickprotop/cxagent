@@ -111,8 +111,12 @@ load gate: you approved this binary, against a hash of its contents, before it r
 
 ## Notes
 
-**Positions are 1-based** — line 1 is the first line, character 1 the first column — matching how a
-human reads a file. The plugin converts to the server's own convention internally.
+**A lookup names its symbol.** `csharp_definition` and `csharp_references` take a `line` and the symbol's name in
+`symbol`, and the plugin finds the column. Counting columns by hand fails: `read_file` shows no line
+numbers and `grep` strips indentation, so a counted position is routinely a line off and lands on a comment.
+A name a few lines from the given one is still found, and the answer says which line was used.
+`character` is optional — it picks between two of the same name on a line. Lines and columns are
+1-based, as a person reads a file.
 
 **The server takes seconds to index** on first use. A definition lookup immediately after startup may
 find nothing while a later one succeeds; that is the server warming up, not the plugin failing.

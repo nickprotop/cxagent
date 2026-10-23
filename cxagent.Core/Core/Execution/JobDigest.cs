@@ -177,7 +177,7 @@ public record JobDigest(
         var parts = new List<string>();
         foreach (var (key, value) in output.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
-            var text = value?.ToString();
+            var text = Text(value);
             if (string.IsNullOrEmpty(text)) continue;
 
             // A PROPOSAL, not an output blob. Rendered as raw JSON under a bare key it reads as
@@ -194,6 +194,23 @@ public record JobDigest(
             parts.Add(key == "content" ? text : $"{key}: {text}");
         }
         return string.Join("\n", parts);
+    }
+
+    /// <summary>
+    /// One value as the model reads it: its own text where it has one, its contents as JSON where it does not.
+    ///
+    /// <para>A TYPE THAT KEEPS object's ToString HAS NO TEXT OF ITS OWN — a list or a dictionary prints its type
+    /// name, <c>System.Collections.Generic.List`1[...]</c>, which reads like an answer and says nothing. Strings,
+    /// numbers, flags, records and JSON nodes all write their own, and keep it.</para>
+    /// </summary>
+    private static string? Text(object? value)
+    {
+        if (value is null) return null;
+        var own = value.GetType().GetMethod(nameof(ToString), Type.EmptyTypes)?.DeclaringType != typeof(object);
+        if (own) return value.ToString();
+        try { return System.Text.Json.JsonSerializer.Serialize(value); }
+        // A VALUE JSON CANNOT WRITE (a cycle, a type it refuses) falls back to what it always printed.
+        catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException or System.Text.Json.JsonException) { return value.ToString(); }
     }
 
     /// <summary>
