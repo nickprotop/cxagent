@@ -529,7 +529,9 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
                 text += $" Its output is in:\n{report.Job.OutputPath}\nRead it with read_file.";
 
             report.Handoff.Complete(text,
-                t => Agents.DeliveryOutcomes.Delivered(report.Delivery.Tell(report.Job.AgentId, t)));
+                t => Agents.DeliveryOutcomes.Delivered(report.Delivery.Tell(report.Job.AgentId, t)),
+                // FROM THE AGENT IT WAS SENT TO, and no one else: see ResultHandoff.Reclaim.
+                withdraw: t => report.Delivery.Withdraw(report.Job.AgentId, t));
         }
         catch (Exception)
         {

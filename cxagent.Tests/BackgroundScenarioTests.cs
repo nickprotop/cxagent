@@ -227,6 +227,165 @@ public class BackgroundScenarioTests : IDisposable
     }
 
     /// <summary>
+    /// A REPORT THAT LANDS WHILE task_output IS BEING ASKED FOR IS READ ONCE. It arrives as a message during the
+    /// request whose answer is the task_output call, so the call finds it sent but still in the mailbox: the call
+    /// returns it and takes the message back, and the next request carries one copy, not two.
+    ///
+    /// <para>Guards TaskTools.OutputAsync's reclaim through to the session's mailbox — measured live: a 14.8K
+    /// report read twice in one step.</para>
+    /// </summary>
+    [Fact]
+    public async Task AReportLandingAsTaskOutputIsAsked_IsReadOnce()
+    {
+        var hold = new TaskCompletionSource();
+        var parent = new ScriptedProvider(Use(Calls.Spawn(id: "s1")))
+            .Then(Use(Calls.Named(Tool.TaskOutput, new { id = "find-thing" }, id: "o1")), hold.Task)
+            .Then(Answer("read it"));
+        var child = new HeldProvider("found it");
+        var s = Open(parent, child);
+
+        var turn = Assert.IsType<Session.SubmitOutcome.Started>(s.Session.Submit("go")).Turn;
+        Assert.True(await Poll.Until(() => parent.Calls == 2));
+        child.Release();
+        Assert.True(await Poll.Until(() => s.Sink.Notices.Any(n => n.Contains("background agent 'find-thing' finished"))));
+
+        hold.SetResult();
+        await turn;
+        await Idle(s.Session);
+
+        Assert.Equal(3, parent.Calls);
+        var result = parent.ResultOf(2, "o1");
+        Assert.Contains("found it", result);
+        Assert.DoesNotContain("also sent", result);
+        Assert.Equal(1, parent.Last.Split("The background agent 'find-thing'").Length - 1);
+    }
+
+    /// <summary>
+    /// ESCAPE AFTER task_output TOOK A REPORT BACK LOSES NOTHING. The call returned the report, but a sibling
+    /// call in the same lap was still waiting when the user pressed Escape, and the cancel answers every held
+    /// call "cancelled" — so the copy the call held is put back as a note, and the next turn reads it.
+    ///
+    /// <para>Guards Agent's cancel backfill calling TaskTools.Dropped: without it the withdrawn message was the
+    /// only other copy, and the report reached the model zero times.</para>
+    /// </summary>
+    [Fact]
+    public async Task EscapeAfterTaskOutputTookAReportBack_LeavesItForTheNextTurn()
+    {
+        var hold = new TaskCompletionSource();
+        var parent = new ScriptedProvider(Use(Calls.Spawn(id: "s1"),
+                Calls.Named(Tool.Agent, new { description = "check it", prompt = "check the thing", type = "explore", background = true }, id: "s2")))
+            // THE WAIT FIRST: held calls are recorded in order after the walk, so o1 is still unrecorded when the
+            // cancel ends o2's wait. In the other order o1 is recorded before o2 throws and keeps its result.
+            .Then(Use(Calls.Named(Tool.TaskOutput, new { id = "check-it", wait = true, timeout = 30 }, id: "o2"),
+                Calls.Named(Tool.TaskOutput, new { id = "find-thing" }, id: "o1")), hold.Task)
+            .Then(Answer("next turn"));
+        var child = new HeldProvider("found it");
+        var other = new HeldProvider("checked it");
+        var s = Open(parent, new SceneSetup { Child = child, Explore = other });
+
+        var turn = Assert.IsType<Session.SubmitOutcome.Started>(s.Session.Submit("go")).Turn;
+        Assert.True(await Poll.Until(() => parent.Calls == 2));
+        child.Release();
+        Assert.True(await Poll.Until(() => s.Sink.Notices.Any(n => n.Contains("background agent 'find-thing' finished"))));
+
+        try
+        {
+            // QUEUED, THEN TAKEN: the report waits in the mailbox until o1 runs, and o1 taking it back is what
+            // empties it — the moment to press Escape, with o2 still waiting.
+            Assert.True(s.Session.Host!.HasWakingMail, "the report was not waiting in the mailbox");
+            hold.SetResult();
+            Assert.True(await Poll.Until(() => !s.Session.Host!.HasWakingMail), "o1 never took the report back");
+            Assert.True(s.Session.CancelTurn());
+            try { await turn; }
+            catch (OperationCanceledException) { }
+            await Idle(s.Session);
+
+            await Turn(s.Session, "what did it find?");
+            Assert.Equal(3, parent.Calls);
+            Assert.Contains("cancelled: the user stopped this turn", parent.ResultOf(2, "o1"));
+            Assert.Contains("found it", parent.Last);
+        }
+        finally { other.Release(); }
+    }
+
+    /// <summary>
+    /// A FAULT AFTER task_output TOOK A REPORT BACK LOSES NOTHING EITHER. A subscriber to the finished call throws,
+    /// the walk ends without recording the call, and the report it took is left for the next turn — the same as a
+    /// cancel, for the same reason: the call's copy never reached the conversation.
+    /// </summary>
+    [Fact]
+    public async Task AFaultAfterTaskOutputTookAReportBack_LeavesItForTheNextTurn()
+    {
+        var hold = new TaskCompletionSource();
+        var parent = new ScriptedProvider(Use(Calls.Spawn(id: "s1")))
+            .Then(Use(Calls.Named(Tool.TaskOutput, new { id = "find-thing" }, id: "o1")), hold.Task)
+            .Then(Answer("next turn"));
+        var child = new HeldProvider("found it");
+        var s = Open(parent, child);
+        var thrown = 0;
+        s.Session.ToolCallFinished += r =>
+        {
+            if (r.ToolName == Tool.TaskOutput && Interlocked.Exchange(ref thrown, 1) == 0)
+                throw new InvalidOperationException("a subscriber failed");
+        };
+
+        var turn = Assert.IsType<Session.SubmitOutcome.Started>(s.Session.Submit("go")).Turn;
+        Assert.True(await Poll.Until(() => parent.Calls == 2));
+        child.Release();
+        Assert.True(await Poll.Until(() => s.Sink.Notices.Any(n => n.Contains("background agent 'find-thing' finished"))));
+        Assert.True(s.Session.Host!.HasWakingMail, "the report was not waiting in the mailbox");
+
+        hold.SetResult();
+        try { await turn; }
+        catch (Exception) { }
+        await Idle(s.Session);
+        Assert.Equal(1, thrown);
+
+        await Turn(s.Session, "what did it find?");
+        Assert.Contains("found it", parent.Last);
+    }
+
+    /// <summary>
+    /// THE SAME ESCAPE WHEN THE CALL'S ID WAS USED BEFORE. The cancel backfill skips an id already answered anywhere
+    /// in the conversation — a provider without ids gives every task_output the same one — so the call that took the
+    /// report back is not backfilled at all, and must still give it back.
+    /// </summary>
+    [Fact]
+    public async Task EscapeAfterTaskOutputTookAReportBack_UnderAnIdUsedBefore_LeavesItForTheNextTurn()
+    {
+        var hold = new TaskCompletionSource();
+        var parent = new ScriptedProvider(Use(Calls.Spawn(id: "s1"),
+                Calls.Named(Tool.Agent, new { description = "check it", prompt = "check the thing", type = "explore", background = true }, id: "s2"),
+                Calls.Named(Tool.TaskList, new { }, id: "o1")))
+            .Then(Use(Calls.Named(Tool.TaskOutput, new { id = "check-it", wait = true, timeout = 30 }, id: "o2"),
+                Calls.Named(Tool.TaskOutput, new { id = "find-thing" }, id: "o1")), hold.Task)
+            .Then(Answer("next turn"));
+        var child = new HeldProvider("found it");
+        var other = new HeldProvider("checked it");
+        var s = Open(parent, new SceneSetup { Child = child, Explore = other });
+
+        var turn = Assert.IsType<Session.SubmitOutcome.Started>(s.Session.Submit("go")).Turn;
+        Assert.True(await Poll.Until(() => parent.Calls == 2));
+        child.Release();
+        Assert.True(await Poll.Until(() => s.Sink.Notices.Any(n => n.Contains("background agent 'find-thing' finished"))));
+
+        try
+        {
+            Assert.True(s.Session.Host!.HasWakingMail, "the report was not waiting in the mailbox");
+            hold.SetResult();
+            Assert.True(await Poll.Until(() => !s.Session.Host!.HasWakingMail), "o1 never took the report back");
+            Assert.True(s.Session.CancelTurn());
+            try { await turn; }
+            catch (OperationCanceledException) { }
+            await Idle(s.Session);
+
+            await Turn(s.Session, "what did it find?");
+            Assert.Contains("found it", parent.Last);
+        }
+        finally { other.Release(); }
+    }
+
+    /// <summary>
     /// S5. A REPORT ARRIVING WHILE THE PARENT WAITS ON A FOREGROUND CHILD is read after that child
     /// answers — the barrier is not broken, and no second loop starts for it.
     ///

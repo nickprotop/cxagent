@@ -57,6 +57,125 @@ public class ResultHandoffTests
         Assert.Equal(new HandoffRead("r", true, true), h.Read());
     }
 
+    /// <summary>
+    /// A RESULT LEFT FOR A CANCELLED WAITER IS RECLAIMED TOO: the leave puts it in the same mailbox a send does,
+    /// unread until the next answer, so a later task_output that returns it must take that note back as well.
+    ///
+    /// <para>BOTH ORDERS OF THE RACE, as the cancel-at-the-end test above takes them: the waiter may receive the
+    /// result before the cancel lands (nothing is left, so nothing is reclaimed) or be cancelled holding it (a note
+    /// is left, and the reclaim takes it).</para>
+    /// </summary>
+    [Fact]
+    public async Task Reclaim_TakesBackTheNoteAnAbandonedWaitLeft()
+    {
+        for (var round = 0; round < 50; round++)
+        {
+            var c = new Counter(); var h = new ResultHandoff(c.Leave);
+            using var cts = new CancellationTokenSource();
+            var wait = h.WaitAsync(TimeSpan.FromSeconds(10), cts.Token);
+            h.Complete("r", c.Send, withdraw: _ => true);
+            cts.Cancel();
+            var answered = false;
+            try { answered = (await wait).Result == "r"; }
+            catch (OperationCanceledException) { }
+
+            Assert.Equal(1, (answered ? 1 : 0) + c.Left);
+            Assert.Equal(c.Left == 1, h.Reclaim());
+        }
+    }
+
+    /// <summary>
+    /// A RECLAIMED RESULT WHOSE CALL WAS NEVER RECORDED IS LEFT AGAIN, once — the cancelled turn threw the
+    /// reader's copy away, and the withdrawn message was the only other one.
+    /// </summary>
+    [Fact]
+    public void Restore_LeavesAReclaimedResult_Once()
+    {
+        var c = new Counter(); var h = new ResultHandoff(c.Leave);
+        h.Complete("r", c.Send, withdraw: _ => true);
+        Assert.True(h.Reclaim());
+
+        h.Restore();
+        h.Restore();
+
+        Assert.Equal(1, c.Left);
+        Assert.Equal(new HandoffRead("r", true, true), h.Read());
+    }
+
+    [Fact]
+    public void Restore_AfterSettle_LeavesNothing()
+    {
+        var c = new Counter(); var h = new ResultHandoff(c.Leave);
+        h.Complete("r", c.Send, withdraw: _ => true);
+        Assert.True(h.Reclaim());
+
+        h.Settle();
+        h.Restore();
+
+        Assert.Equal(0, c.Left);
+    }
+
+    /// <summary>A REFUSED RESTORE IS UNDELIVERED, so the next read takes it rather than calling it sent.</summary>
+    [Fact]
+    public void ARefusedRestore_IsUndelivered_AndReadTakesIt()
+    {
+        var c = new Counter { LeaveAnswer = false }; var h = new ResultHandoff(c.Leave);
+        h.Complete("r", c.Send, withdraw: _ => true);
+        Assert.True(h.Reclaim());
+
+        h.Restore();
+
+        Assert.True(h.Undelivered);
+        Assert.Equal(new HandoffRead("r", true, false), h.Read());
+    }
+
+    /// <summary>A RECLAIMED RESULT IN A CLOSING CONVERSATION IS KEPT FOR READ, never left into it.</summary>
+    [Fact]
+    public void Silenced_AfterAReclaim_RestoresNothing_ButReadReturnsIt()
+    {
+        var c = new Counter(); var h = new ResultHandoff(c.Leave);
+        h.Complete("r", c.Send, withdraw: _ => true);
+        Assert.True(h.Reclaim());
+
+        h.Silence();
+        h.Restore();
+
+        Assert.Equal(0, c.Left);
+        Assert.Equal(new HandoffRead("r", true, false), h.Read());
+    }
+
+    /// <summary>
+    /// A SILENCE BEFORE THE RECLAIM, OR DURING ITS WITHDRAWAL, STILL HOLDS: Silence leaves a sent result as it is,
+    /// but the reclaim that follows lands in Silenced, so no restore leaves a note in the closing conversation.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ASilenceBeforeOrDuringTheReclaim_RestoresNothing(bool duringTheWithdrawal)
+    {
+        var c = new Counter(); var h = new ResultHandoff(c.Leave);
+        h.Complete("r", c.Send, withdraw: _ => { if (duringTheWithdrawal) h.Silence(); return true; });
+        if (!duringTheWithdrawal) h.Silence();
+
+        Assert.True(h.Reclaim());
+        h.Restore();
+
+        Assert.Equal(0, c.Left);
+        Assert.Equal(new HandoffRead("r", true, false), h.Read());
+    }
+
+    [Fact]
+    public void Restore_WithoutAReclaim_DoesNothing()
+    {
+        var c = new Counter(); var h = new ResultHandoff(c.Leave);
+        h.Complete("r", c.Send, withdraw: _ => false);
+        Assert.False(h.Reclaim());
+
+        h.Restore();
+
+        Assert.Equal(0, c.Left);
+    }
+
     [Fact]
     public void Reclaim_WithNoWithdrawal_OrBeforeTheEnd_TakesNothing()
     {
@@ -328,11 +447,28 @@ public class ResultHandoffTests
                     catch (OperationCanceledException) { }
                 }));
             }
-            actors.Add(Task.Run(async () => { await Task.Delay(rng.Next(0, 3)); h.Complete("r", c.Send); }));
+            // A WITHDRAWAL FINDS THE MESSAGE UNREAD OR NOT, AT RANDOM — and a reclaimer races everything else.
+            var unread = rng.Next(2) == 0;
+            var withdrawn = 0;
+            bool Withdraw(string _) { Interlocked.Increment(ref withdrawn); return unread; }
+            var reclaimed = 0;
+            actors.Add(Task.Run(async () => { await Task.Delay(rng.Next(0, 3)); h.Complete("r", c.Send, Withdraw); }));
+            actors.Add(Task.Run(async () =>
+            {
+                await Task.Delay(rng.Next(0, 4));
+                if (h.Reclaim()) Interlocked.Increment(ref reclaimed);
+            }));
             await Task.WhenAll(actors);
             var viaRead = h.Read() is { Ended: true, AlreadySent: false } ? 1 : 0;
 
-            Assert.Equal(1, Math.Max(viaWaiters, viaRead) + c.Sent + c.Left);
+            // A RECLAIM TAKES BACK A MESSAGE THAT WENT OUT, AND ONLY ONE: it is never asked of a result the
+            // waiters or a read took, never twice, and succeeds only when the withdrawal did. Each copy the model
+            // could read is counted once: a reclaimed message is gone, and the reclaimer's copy replaces it.
+            Assert.True(withdrawn <= c.Sent + c.Left, "withdrew a message that was never sent");
+            Assert.True(withdrawn <= 1, "withdrew twice");
+            Assert.True(reclaimed <= (unread ? withdrawn : 0), "reclaimed without a withdrawal that took it");
+            var messages = c.Sent + c.Left - reclaimed;
+            Assert.Equal(1, Math.Max(viaWaiters, viaRead) + messages + reclaimed);
         }
     }
 }

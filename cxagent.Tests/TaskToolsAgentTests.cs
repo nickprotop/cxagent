@@ -252,6 +252,57 @@ public class TaskToolsAgentTests
     }
 
     /// <summary>
+    /// A TAKEN-BACK REPORT WHOSE CALL IS DROPPED IS LEFT AGAIN — the very text — and one whose call was recorded
+    /// is not: the agent says which, and only the dropped one has lost its copy.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ATakenBackReport_IsLeftAgain_OnlyWhenItsCallIsDropped(bool recorded)
+    {
+        var (r, sent) = await SentAndWaiting();
+        var call = Calls.Named(Tool.TaskOutput, new { id = "find-thing" });
+        await r.Tools.InvokeAsync("session", call, CancellationToken.None);
+
+        if (recorded) r.Tools.Recorded(call);
+        r.Tools.Dropped(call);
+
+        var left = r.Delivery.Got.Where(d => d.Left).ToList();
+        if (recorded) Assert.Empty(left);
+        else Assert.Same(sent.Notice.ForModel, Assert.Single(left).Notice.ForModel);
+    }
+
+    /// <summary>
+    /// ANOTHER CALL WITH THE SAME ID SETTLES NOTHING. A provider that sends no ids, or reuses them, gives two calls
+    /// one id; recording the other one must not count as recording this one, whose report would then be lost if
+    /// this call is dropped.
+    /// </summary>
+    [Fact]
+    public async Task ACallSharingTheId_DoesNotSettleTheReport()
+    {
+        var (r, sent) = await SentAndWaiting();
+        var call = Calls.Named(Tool.TaskOutput, new { id = "find-thing" }, id: "same");
+        await r.Tools.InvokeAsync("session", call, CancellationToken.None);
+
+        r.Tools.Recorded(Calls.Named(Tool.TaskOutput, new { id = "find-thing" }, id: "same"));
+        r.Tools.Dropped(call);
+
+        Assert.Same(sent.Notice.ForModel, Assert.Single(r.Delivery.Got, d => d.Left).Notice.ForModel);
+    }
+
+    /// <summary>A report that finished and was sent, still waiting in the mailbox — what a reclaim takes.</summary>
+    private static async Task<(Rig Rig, Delivered Sent)> SentAndWaiting()
+    {
+        var held = new HeldProvider("found it");
+        var r = Wired(held);
+        r.Delivery.Answer = DeliveryOutcome.Injected;
+        r.Delivery.Withdrawable = true;
+        await Spawn(r);
+        held.Release();
+        return (r, await r.Delivery.Next());
+    }
+
+    /// <summary>
     /// A REPORT SENT TO A SUB-AGENT IS NEVER TAKEN FROM IT. The session agent may read the task, but the message
     /// is in the child's mailbox, addressed to the child — withdrawing it would hand the session agent a report
     /// and leave the child that asked for it with nothing.

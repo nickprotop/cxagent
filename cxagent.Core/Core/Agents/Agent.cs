@@ -2059,6 +2059,9 @@ public sealed class Agent
                         ToolCallId = call.Id ?? call.Name,
                         Content = result,
                     });
+
+                    // IN THE CONVERSATION NOW, so a report this call took back from the mailbox stays taken.
+                    _tasks.Recorded(call);
                 }
 
                 // THE WALK — in EMITTED ORDER, always.
@@ -2200,6 +2203,11 @@ public sealed class Agent
                 // Matched by id against what is already there rather than by counting, because the
                 // interrupted call may or may not have appended before it threw, and appending a
                 // second result for one id would be its own malformation.
+                // EVERY CALL OF THIS LAP gives back what it took from a mailbox — before the answered-id skip below,
+                // which matches ids across the whole conversation and would pass over a call whose id an earlier
+                // lap already used. A call that was recorded has nothing tracked, so this is a no-op for it.
+                foreach (var call in response.ToolCalls) _tasks.Dropped(call);
+
                 var answered = messages
                     .Where(m => m.Role == "tool" && m.ToolCallId is not null)
                     .Select(m => m.ToolCallId!)
@@ -2220,6 +2228,14 @@ public sealed class Agent
                     });
                 }
 
+                throw;
+            }
+            catch (Exception)
+            {
+                // A FAULT GIVES BACK WHAT ITS CALLS TOOK, as a cancel does. Whatever escaped the walk — a tool row's
+                // subscriber throwing after the result was made — the results it was carrying never reached the
+                // conversation, and a report one of them took from a mailbox would otherwise have no copy at all.
+                foreach (var call in response.ToolCalls) _tasks.Dropped(call);
                 throw;
             }
 

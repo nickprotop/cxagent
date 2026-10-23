@@ -445,6 +445,15 @@ public class ShellJobExecutorTests
             return DeliveryOutcome.Woke;
         }
 
+        private readonly List<(string AgentId, string Text)> _withdrawn = [];
+        public IReadOnlyList<(string AgentId, string Text)> Withdrawn { get { lock (_withdrawn) return [.. _withdrawn]; } }
+
+        public bool Withdraw(string agentId, string text)
+        {
+            lock (_withdrawn) _withdrawn.Add((agentId, text));
+            return true;
+        }
+
         /// <summary>How many deliveries have arrived.</summary>
         public int Count { get { lock (_told) return _told.Count; } }
 
@@ -589,6 +598,27 @@ public class ShellJobExecutorTests
         Assert.Contains("exit code 0", read.Result);
         await Task.Delay(300);
         Assert.Equal(0, fx.Told.Count);
+    }
+
+    /// <summary>
+    /// AN EXIT NOTICE IS TAKEN BACK FROM THE AGENT IT WAS SENT TO, the very text it was sent: a task_output
+    /// that returns the exit itself reclaims it, so the agent does not read the exit twice.
+    /// </summary>
+    [Fact]
+    public async Task Background_AnExitNotice_IsWithdrawnFromTheAgentItWasSentTo()
+    {
+        using var fx = new BackgroundFixture();
+
+        var r = await fx.Executor.ExecuteAsync(
+            P(("command", "exit 0"), ("background", true)), fx.Context, CancellationToken.None);
+        var pid = Convert.ToInt32(r.Output["pid"]);
+        var told = await fx.Told.Next();
+        var handoff = fx.Finished.HandoffFor(pid)!;
+
+        Assert.True(await Poll.Until(handoff.Reclaim));
+        var withdrawn = Assert.Single(fx.Told.Withdrawn);
+        Assert.Equal("agent-bg", withdrawn.AgentId);
+        Assert.Same(told.Text, withdrawn.Text);
     }
 
     [Fact]

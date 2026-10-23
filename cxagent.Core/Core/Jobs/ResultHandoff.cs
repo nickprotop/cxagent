@@ -32,7 +32,10 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
     // SilencedToWaiters IS ITS OWN STATE, not ToWaiters plus a flag, because the two differ in exactly
     // the place that matters: when every waiter is cancelled, ToWaiters leaves the result as a note,
     // and a silenced handoff must not — its conversation is closing, and nothing goes into one.
-    private enum State { Pending, ToWaiters, Sending, Sent, Undelivered, Silenced, SilencedToWaiters, Taken }
+    //
+    // RECLAIMED IS TAKEN WITH A WAY BACK: the reader returned the result, but its call is not yet part of the
+    // conversation, and a turn cancelled before it is recorded throws that copy away — see Restore.
+    private enum State { Pending, ToWaiters, Sending, Sent, Undelivered, Silenced, SilencedToWaiters, Taken, Reclaimed }
 
     // A PLAIN object, matching the rest of Core, which does not use System.Threading.Lock.
     private readonly object _lock = new();
@@ -50,6 +53,12 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
     // TAKES A SENT RESULT BACK OUT OF WHERE IT WAS SENT, when that is still possible — see Reclaim. Null for
     // work whose delivery cannot, which then never reclaims.
     private Func<string, bool>? _withdraw;
+
+    // SILENCED AT ANY POINT, whatever the state was then. Silence changes only the states that have not sent yet —
+    // a send or a leave already made stands — but a reclaim after it, or one whose withdrawal was running when it
+    // came, would land in Reclaimed, and a restore from there leaves a note in the conversation that is closing.
+    // A reclaim lands in Silenced instead, kept for Read as every silenced result is.
+    private bool _silenced;
 
     // HOW MANY WAITERS MAY STILL RECEIVE THE RESULT. A waiter that returns the result does not
     // decrement it, and that is the point: once the result has gone to waiters, a cancelled waiter
@@ -151,12 +160,17 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
             // leave that would follow is a note into the closing conversation.
             if (_state == State.Pending) _state = State.Silenced;
             else if (_state == State.ToWaiters) _state = State.SilencedToWaiters;
+            // RECLAIMED TOO: a restore would leave the result as a note in the closing conversation. Kept for
+            // Read instead, as any silenced result is.
+            else if (_state == State.Reclaimed) _state = State.Silenced;
+            _silenced = true;
         }
     }
 
     /// <summary>
     /// Takes a SENT result back from where it was sent, for a reader about to return it itself — true when it was
-    /// still waiting there unread and the reader now holds the only copy.
+    /// still waiting there unread and the reader now holds the only copy — until <see cref="Settle"/> says it
+    /// reached the conversation, or <see cref="Restore"/> puts it back because it did not.
     ///
     /// <para>WHY: a result that ends between two task_output calls is sent as a message, and a running turn reads
     /// that message only at its next lap — after the second call has already returned the result. Without this
@@ -185,8 +199,40 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
         try { taken = withdraw(result); }
         catch (Exception) { taken = false; }
 
-        lock (_lock) _state = taken ? State.Taken : State.Sent;
+        lock (_lock) _state = !taken ? State.Sent : _silenced ? State.Silenced : State.Reclaimed;
         return taken;
+    }
+
+    /// <summary>
+    /// The reclaimed result reached the conversation: the reader's copy is the one the model has, and nothing is
+    /// left to put back.
+    /// </summary>
+    public void Settle()
+    {
+        lock (_lock) if (_state == State.Reclaimed) _state = State.Taken;
+    }
+
+    /// <summary>
+    /// The reclaimed result never reached the conversation — the turn was cancelled before its call was recorded,
+    /// and the call is answered "cancelled" instead — so it is left as a note, as an abandoned wait's result is.
+    ///
+    /// <para>WITHOUT THIS THE RECLAIM WOULD LOSE IT. The message it withdrew was the only other copy, and Escape
+    /// during a sibling's wait discards every held result of that lap. Left rather than sent, for the reason
+    /// <c>leaveIfAbandoned</c> is: the user has just stopped the turn, and a wake would start another.</para>
+    ///
+    /// <para>ONCE: the state leaves Reclaimed under the lock before the leave runs. A refused leave makes it
+    /// Undelivered, where <see cref="Read"/> takes it and task_list says it is waiting.</para>
+    /// </summary>
+    public void Restore()
+    {
+        string result;
+        lock (_lock)
+        {
+            if (_state != State.Reclaimed) return;
+            _state = State.Sending;
+            result = _result!;
+        }
+        Deliver(leaveIfAbandoned, result);
     }
 
     /// <summary>

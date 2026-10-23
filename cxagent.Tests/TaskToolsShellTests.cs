@@ -222,6 +222,30 @@ public class TaskToolsShellTests
         finally { Directory.Delete(dir, true); }
     }
 
+    /// <summary>
+    /// AN EXIT ALREADY SENT BUT NOT YET READ COMES BACK ONCE — to the agent it was sent to, whether that is the
+    /// session's or the child that started it. The session reading a child's command takes nothing back: the
+    /// notice is the child's, and withdrawing it would leave the child without the exit it is waiting for.
+    /// </summary>
+    [Theory]
+    [InlineData("SESSION", "SESSION", true)]
+    [InlineData("CHILD_A", "CHILD_A", true)]
+    [InlineData("CHILD_A", "SESSION", false)]
+    public void TaskOutput_TakesBackAnExitNotice_OnlyFromItsOwnAgent(string owner, string caller, bool takesBack)
+    {
+        var finished = new FinishedShells();
+        var handoff = finished.Track(Job(4247, owner), _ => true);
+        finished.Finished(4247, exitCode: 0, killed: false);
+        var withdrawn = new List<string>();
+        handoff.Complete("finished with exit code 0", _ => true, withdraw: t => { withdrawn.Add(t); return true; });
+
+        var output = Call(Tools(new DetachedProcessRegistry(), finished), caller, Tool.TaskOutput, new { id = 4247 });
+
+        Assert.Contains("exit code 0", output);
+        Assert.Equal(!takesBack, output.Contains("also sent"));
+        Assert.Equal(takesBack ? 1 : 0, withdrawn.Count);
+    }
+
     [Fact]
     public async Task TaskOutput_WaitOnAShell_ReturnsWhenItEnds()
     {

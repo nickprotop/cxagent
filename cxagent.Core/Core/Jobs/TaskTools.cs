@@ -53,6 +53,50 @@ internal sealed class TaskTools(TaskSources sources)
 
     public bool Claims(string name) => name is Tool.TaskList or Tool.TaskStop or Tool.TaskOutput;
 
+    // REPORTS A CALL TOOK BACK FROM ITS MAILBOX, until the call is recorded. Between the two the reader's copy is
+    // the only one, and a cancelled turn discards it — Dropped puts it back.
+    //
+    // KEYED BY THE CALL ITSELF, NOT ITS ID. A provider that sends no ids leaves every task_output under the name
+    // "task_output", and some local servers reuse ids — so one call's Recorded would settle another call's report,
+    // and the cancel backfill, which skips an id already answered anywhere in the conversation, would never drop
+    // it. The agent hands the same ToolCall instance to the tool, to Record and to the backfill.
+    private readonly Dictionary<ToolCall, List<ResultHandoff>> _unrecorded = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// The call's result is in the conversation: whatever it took back stays taken. Called for every recorded call;
+    /// one that took nothing back is a no-op.
+    /// </summary>
+    public void Recorded(ToolCall call)
+    {
+        foreach (var handoff in Untrack(call)) handoff.Settle();
+    }
+
+    /// <summary>
+    /// The call's result was thrown away — its turn was cancelled first, and the call is answered "cancelled" — so
+    /// whatever it took back is left for the agent again. See <see cref="ResultHandoff.Restore"/>.
+    /// </summary>
+    public void Dropped(ToolCall call)
+    {
+        foreach (var handoff in Untrack(call)) handoff.Restore();
+    }
+
+    private bool Reclaim(ResultHandoff handoff, ToolCall call)
+    {
+        // TRACKED BEFORE THE RECLAIM, so no moment exists where the copy was withdrawn and nothing would put it
+        // back. A reclaim that takes nothing leaves an entry whose Settle and Restore are both no-ops.
+        lock (_unrecorded)
+        {
+            if (!_unrecorded.TryGetValue(call, out var list)) _unrecorded[call] = list = [];
+            list.Add(handoff);
+        }
+        return handoff.Reclaim();
+    }
+
+    private List<ResultHandoff> Untrack(ToolCall call)
+    {
+        lock (_unrecorded) return _unrecorded.Remove(call, out var list) ? list : [];
+    }
+
     /// <summary>
     /// The wait, clamped. A model that asks for an hour would otherwise hold its turn for an hour,
     /// and zero or a negative number would return before anything could have happened.
@@ -77,14 +121,14 @@ internal sealed class TaskTools(TaskSources sources)
         if (id.Pid is { } pid)
             return call.Name == Tool.TaskStop
                 ? StopShell(callerAgentId, pid)
-                : await ShellOutputAsync(new ShellRead(callerAgentId, pid, wait, timeout), ct);
+                : await ShellOutputAsync(new ShellRead(callerAgentId, pid, wait, timeout, call), ct);
 
         var handle = sources.Agents?.HandleFor(id.Handle!) ?? id.Handle!;
         if (call.Name == Tool.TaskStop) return Stop(callerAgentId, handle);
 
         if (!sources.IsSessionAgent(callerAgentId))
             return "error: only the session agent can read a sub-agent's task.";
-        return await OutputAsync(handle, wait, timeout, ct);
+        return await OutputAsync(new AgentRead(handle, wait, timeout, call), ct);
     }
 
     /// <summary>What <c>/tasks</c> shows for one task: never waits and never takes a result, because
@@ -206,8 +250,16 @@ internal sealed class TaskTools(TaskSources sources)
         return $"'{handle}' has completed its work and is reporting; {Tool.TaskOutput} shows its result.";
     }
 
-    private async Task<string> OutputAsync(string handle, bool wait, int? timeout, CancellationToken ct)
+    /// <summary>A sub-agent's task_output, as the session agent asks for it.</summary>
+    /// <param name="Handle">The agent.</param>
+    /// <param name="Wait">Block until it ends or the timeout passes.</param>
+    /// <param name="Timeout">Seconds, before clamping.</param>
+    /// <param name="Call">The call asking — what a report taken back is tracked under until it is recorded.</param>
+    private sealed record AgentRead(string Handle, bool Wait, int? Timeout, ToolCall Call);
+
+    private async Task<string> OutputAsync(AgentRead request, CancellationToken ct)
     {
+        var (handle, wait, timeout) = (request.Handle, request.Wait, request.Timeout);
         var agents = sources.Agents;
         if (agents?.WasForgotten(handle) == true) return Agents.SubAgentStore.DismissedForModel(handle);
         if (agents?.Find(handle) is null) return $"no task '{handle}' — {Tool.TaskList} shows what exists.";
@@ -242,7 +294,7 @@ internal sealed class TaskTools(TaskSources sources)
         // SESSION'S AGENT WAS THE ONE SENT IT — a report sent to a sub-agent is the sub-agent's, and withdrawing
         // it would leave that agent without the answer it asked for. Not taken back, it was read already, maybe
         // long ago and since compacted away, so it is repeated with a note saying so.
-        if (sources.IsSessionAgent(run.Start.ParentAgentId) && run.Handoff.Reclaim()) return report;
+        if (sources.IsSessionAgent(run.Start.ParentAgentId) && Reclaim(run.Handoff, request.Call)) return report;
         return report + "\n(You were also sent this as a message.)";
     }
 
@@ -251,7 +303,8 @@ internal sealed class TaskTools(TaskSources sources)
     /// <param name="Pid">The command.</param>
     /// <param name="Wait">Block until it ends or the timeout passes.</param>
     /// <param name="Timeout">Seconds, before clamping.</param>
-    private sealed record ShellRead(string Caller, int Pid, bool Wait, int? Timeout);
+    /// <param name="Call">The call asking — what an exit taken back is tracked under until it is recorded.</param>
+    private sealed record ShellRead(string Caller, int Pid, bool Wait, int? Timeout, ToolCall Call);
 
     /// <summary>
     /// Whether a finished command belongs in this caller's view: the session sees its own and its
@@ -337,8 +390,21 @@ internal sealed class TaskTools(TaskSources sources)
         var text = result?.Result ?? DescribeEnded(read.Pid);
         text += Tail(job?.OutputPath);
         if (waited is { UserSpoke: true }) return text + UserSpokeNote;
-        return result is { AlreadySent: true } ? text + "\n(You were also sent this as a message.)" : text;
+        if (result is not { AlreadySent: true }) return text;
+
+        // TAKEN BACK WHEN STILL UNREAD, as an agent's report is — see OutputAsync. ONLY BY THE AGENT IT WAS SENT
+        // TO: the session reading a child's command must not withdraw the exit the child is waiting for.
+        if (job is not null && SentTo(read.Caller, job.AgentId) && Reclaim(handoff!, read.Call)) return text;
+        return text + "\n(You were also sent this as a message.)";
     }
+
+    /// <summary>
+    /// Whether a message sent to <paramref name="recipient"/> is the <paramref name="caller"/>'s to take back: the
+    /// same agent, or the session's own agent under either of its ids — a re-wire mints a new one, and a report
+    /// sent under the old id sits in the same session's mailbox.
+    /// </summary>
+    private bool SentTo(string caller, string recipient) =>
+        caller == recipient || (sources.IsSessionAgent(caller) && sources.IsSessionAgent(recipient));
 
     /// <summary>What a wait found, and whether it ended because the user spoke rather than because the task did.</summary>
     /// <param name="Read">The handoff as the wait left it — read again after an interrupt.</param>
