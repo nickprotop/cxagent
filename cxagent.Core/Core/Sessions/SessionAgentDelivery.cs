@@ -148,6 +148,17 @@ internal sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore
     }
 
     /// <summary>
+    /// Takes back a delivery not yet read — see IAgentDelivery.Withdraw. The session's own agent holds it in its
+    /// host's mailbox, a kept child in its own; either drains at the top of its next lap, so a withdrawal made
+    /// during the current one is still in time.
+    /// </summary>
+    public bool Withdraw(string agentId, string text)
+    {
+        if (session.IsSessionAgent(agentId)) return session.WithdrawDelivery(text);
+        return store.FindByAgentId(agentId) is { } kept && kept.Agent.Agent.Mailbox.TryWithdraw(text);
+    }
+
+    /// <summary>
     /// Leaves the notice for the agent's next answer without starting or extending a turn — see
     /// IAgentDelivery.Leave.
     ///

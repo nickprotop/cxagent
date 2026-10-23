@@ -144,7 +144,9 @@ internal static class BackgroundRunner
             var shown = Shown(run, state, stopped);
             run.Handoff.Complete(ReportFor(work, envelope, stoppedAsItFinished: overtaken is not null), text => DeliveryOutcomes.Delivered(stopped
                 ? work.Delivery.Leave(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))
-                : work.Delivery.Tell(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))));
+                : work.Delivery.Tell(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))),
+                // FROM THE PARENT IT WAS SENT TO, and no one else: see ResultHandoff.Reclaim.
+                withdraw: text => work.Delivery.Withdraw(run.Start.ParentAgentId, text));
         }
     }
 

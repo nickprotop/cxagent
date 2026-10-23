@@ -56,4 +56,42 @@ public class AgentMailboxTests
 
         Assert.True(box.TryEnqueue("room now", out _));
     }
+
+    /// <summary>
+    /// A WITHDRAWAL TAKES THE ONE MESSAGE IT NAMES, by the very string that was sent: an equal text from
+    /// somebody else is a different message, and taking it would lose that sender's words.
+    /// </summary>
+    [Fact]
+    public void Withdrawing_takes_only_that_message_and_keeps_the_rest_in_order()
+    {
+        var box = new AgentMailbox();
+        var report = string.Concat("the ", "report");
+        box.TryEnqueue("before", out _);
+        box.TryEnqueue(report, out _);
+        box.TryEnqueue("after", out _);
+
+        Assert.True(box.TryWithdraw(report));
+        Assert.Equal(new[] { "before", "after" }, box.Drain().ToArray());
+    }
+
+    [Fact]
+    public void An_equal_text_that_was_not_the_one_sent_is_not_withdrawn()
+    {
+        var box = new AgentMailbox();
+        box.TryEnqueue(string.Concat("the ", "report"), out _);
+
+        Assert.False(box.TryWithdraw(string.Concat("the ", "report")));
+        Assert.Single(box.Drain());
+    }
+
+    [Fact]
+    public void Withdrawing_what_was_already_drained_says_so()
+    {
+        var box = new AgentMailbox();
+        var report = string.Concat("the ", "report");
+        box.TryEnqueue(report, out _);
+        box.Drain();
+
+        Assert.False(box.TryWithdraw(report));
+    }
 }

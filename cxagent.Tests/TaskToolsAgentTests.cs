@@ -222,6 +222,56 @@ public class TaskToolsAgentTests
         Assert.Contains("also sent this as a message", await Call(r, Tool.TaskOutput, new { id = "find-thing" }));
     }
 
+    /// <summary>
+    /// A REPORT SENT BUT NOT YET READ COMES BACK ONCE. It finished between two task_output calls and waits in the
+    /// parent's mailbox; this read returns it and takes the message back, so the model does not get the same
+    /// report as the tool result and again as a message in the same step.
+    /// </summary>
+    [Fact]
+    public async Task TaskOutput_TakesBackAReportStillWaitingAsAMessage()
+    {
+        var held = new HeldProvider("found it");
+        var r = Wired(held);
+        r.Delivery.Answer = DeliveryOutcome.Injected;
+        r.Delivery.Withdrawable = true;
+        await Spawn(r);
+        held.Release();
+        var sent = await r.Delivery.Next();
+
+        var output = await Call(r, Tool.TaskOutput, new { id = "find-thing" });
+
+        Assert.Contains("found it", output);
+        Assert.DoesNotContain("also sent", output);
+        var withdrawn = Assert.Single(r.Delivery.Withdrawn);
+        Assert.Equal("session", withdrawn.To);
+        Assert.Same(sent.Notice.ForModel, withdrawn.Text);
+
+        // TAKEN, SO A SECOND READ IS THE REPEAT IT ALWAYS WAS — and asks for no second withdrawal.
+        Assert.Contains("also sent this as a message", await Call(r, Tool.TaskOutput, new { id = "find-thing" }));
+        Assert.Single(r.Delivery.Withdrawn);
+    }
+
+    /// <summary>
+    /// A REPORT SENT TO A SUB-AGENT IS NEVER TAKEN FROM IT. The session agent may read the task, but the message
+    /// is in the child's mailbox, addressed to the child — withdrawing it would hand the session agent a report
+    /// and leave the child that asked for it with nothing.
+    /// </summary>
+    [Fact]
+    public async Task TaskOutput_LeavesAReportSentToAnotherAgent()
+    {
+        var held = new HeldProvider("found it");
+        var r = Wired(held);
+        r.Delivery.Answer = DeliveryOutcome.Injected;
+        r.Delivery.Withdrawable = true;
+        await r.Spawner.TryInvokeAsync(Calls.Spawn(description: "find thing", background: true), null,
+            CancellationToken.None, parentAgentId: "some-child");
+        held.Release();
+        await r.Delivery.Next();
+
+        Assert.Contains("also sent this as a message", await Call(r, Tool.TaskOutput, new { id = "find-thing" }));
+        Assert.Empty(r.Delivery.Withdrawn);
+    }
+
     [Fact]
     public async Task AnUndeliveredReport_IsShownByTaskList_AndReturnedByTaskOutput()
     {

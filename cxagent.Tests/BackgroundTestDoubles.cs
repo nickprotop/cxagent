@@ -167,6 +167,17 @@ internal sealed class RecordingDelivery : IAgentDelivery
         return Answer == DeliveryOutcome.Woke ? DeliveryOutcome.Queued : Answer;
     }
 
+    /// <summary>Whether a withdrawal finds the text still waiting; false is a message already read.</summary>
+    public bool Withdrawable { get; set; }
+    private readonly List<(string To, string Text)> _withdrawn = [];
+    public IReadOnlyList<(string To, string Text)> Withdrawn { get { lock (_withdrawn) return [.. _withdrawn]; } }
+
+    public bool Withdraw(string agentId, string text)
+    {
+        lock (_withdrawn) _withdrawn.Add((agentId, text));
+        return Withdrawable;
+    }
+
     public async Task<Delivered> Next(int index = 0)
     {
         for (var i = 0; i < 250; i++)

@@ -472,6 +472,42 @@ public class AgentDeliveryTests : IDisposable
     }
 
     /// <summary>
+    /// A DELIVERY WITHDRAWN BEFORE THE NEXT LAP IS NEVER READ. task_output returned the report itself, so the
+    /// running turn must not also drain it — and with nothing left waiting, no further request is made for it.
+    /// </summary>
+    [Fact]
+    public async Task AWithdrawnDelivery_IsNotReadByTheRunningTurn()
+    {
+        var gated = new GatedProvider();
+        var (delivery, _, sessionAgentId) = WiredOn(gated);
+        delivery.Tell(sessionAgentId, "start something");
+        for (var attempt = 0; attempt < 200 && gated.Calls == 0; attempt++) await Task.Delay(20);
+
+        var report = string.Concat("the report ", "arrived");
+        Assert.Equal(DeliveryOutcome.Injected, delivery.Tell(sessionAgentId, report));
+        Assert.True(delivery.Withdraw(sessionAgentId, report));
+        gated.Release();
+        await Settled();
+
+        Assert.Equal(1, gated.Calls);
+        Assert.False(delivery.Withdraw(sessionAgentId, report));
+    }
+
+    [Fact]
+    public void AWithdrawal_ReachesARunningSubAgentsMailbox()
+    {
+        var (delivery, store, child) = Wired();
+        var name = store.Keep(child, "find thing");
+        Assert.True(store.ClaimAndAnnounce(name));
+        var report = string.Concat("the report ", "arrived");
+        delivery.Tell(child.Agent.Id, report);
+        delivery.Tell(child.Agent.Id, "and a correction");
+
+        Assert.True(delivery.Withdraw(child.Agent.Id, report));
+        Assert.Equal(["and a correction"], child.Agent.Mailbox.Drain());
+    }
+
+    /// <summary>
     /// A DELIVERY THAT STARTED NO TURN IS REPORTED AS REFUSED rather than reported as delivered.
     ///
     /// <para>TEXT BEGINNING WITH A SLASH IS THE REACHABLE CASE. <c>Session.Submit</c> runs it as a

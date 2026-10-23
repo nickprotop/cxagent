@@ -61,6 +61,12 @@ public sealed partial class Session
     /// </summary>
     public bool LeaveNote(string text) => Host?.TryLeave(text) ?? false;
 
+    /// <summary>
+    /// Takes back a delivery the agent has not read yet, answering whether it was still waiting — for a reader
+    /// that is about to hand the model the same text itself.
+    /// </summary>
+    internal bool WithdrawDelivery(string text) => Host?.TryWithdraw(text) ?? false;
+
     /// <summary>Draws one System line in this session's transcript.</summary>
     public void Notify(string line) => Say(new Message(line, Severity.Info));
 

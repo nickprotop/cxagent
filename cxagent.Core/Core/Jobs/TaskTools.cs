@@ -235,7 +235,15 @@ internal sealed class TaskTools(TaskSources sources)
 
         if (!read.Ended) return Progress(handle, run) + $"\nStill running after {seconds}s.";
         var report = read.Result ?? run.Handoff.Result ?? $"'{handle}' ended without a report.";
-        return read.AlreadySent ? report + "\n(You were also sent this as a message.)" : report;
+        if (!read.AlreadySent) return report;
+
+        // SENT BUT MAYBE NOT YET READ: a report that ended between two calls waits in the mailbox until the
+        // turn's next lap, which comes after this result. Taken back, this copy is the only one. ONLY WHEN THE
+        // SESSION'S AGENT WAS THE ONE SENT IT — a report sent to a sub-agent is the sub-agent's, and withdrawing
+        // it would leave that agent without the answer it asked for. Not taken back, it was read already, maybe
+        // long ago and since compacted away, so it is repeated with a note saying so.
+        if (sources.IsSessionAgent(run.Start.ParentAgentId) && run.Handoff.Reclaim()) return report;
+        return report + "\n(You were also sent this as a message.)";
     }
 
     /// <summary>A pid's task_output, as one caller asks for it.</summary>

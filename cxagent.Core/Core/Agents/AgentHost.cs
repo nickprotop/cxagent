@@ -646,6 +646,9 @@ public sealed class AgentHost : IDisposable
     internal bool TryDeliver(string text, Sessions.TurnOriginator origin) =>
         _agent.Mailbox.TryEnqueue(text, origin, out _);
 
+    /// <summary>Takes back a delivery the agent has not read yet — see <see cref="AgentMailbox.TryWithdraw"/>.</summary>
+    internal bool TryWithdraw(string text) => _agent.Mailbox.TryWithdraw(text);
+
     /// <summary>Leaves text the agent reads before its next answer, without asking for a turn.</summary>
     public bool TryLeave(string text) => _agent.Mailbox.TryEnqueue(text, out _, wakes: false);
 

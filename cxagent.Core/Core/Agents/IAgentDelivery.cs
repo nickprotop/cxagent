@@ -98,6 +98,19 @@ public interface IAgentDelivery
     /// <para>REFUSED BY DEFAULT: an implementation that cannot hold a note must not claim it left one.</para>
     /// </summary>
     DeliveryOutcome Leave(string agentId, AgentNotice notice) => DeliveryOutcome.Refused;
+
+    /// <summary>
+    /// Takes back <paramref name="text"/> — the exact string a <see cref="Tell(string, string)"/> or
+    /// <see cref="Leave"/> handed over — if the agent has not read it yet. True when it was still waiting and
+    /// is now gone; false when it was read already, was never queued (it started a turn instead), or the agent
+    /// is unknown.
+    ///
+    /// <para>FOR A READER THAT RETURNS THE SAME TEXT ITSELF — task_output finding a report that is still on its
+    /// way. Without this the model reads it twice in one step; with a false answer the reader still has it to
+    /// give, so a refusal costs a duplicate and never a lost report. A delivery that cannot withdraw answers
+    /// false, which is that same safe case.</para>
+    /// </summary>
+    bool Withdraw(string agentId, string text) => false;
 }
 
 /// <summary>What a <see cref="DeliveryOutcome"/> means to a caller that only needs to know whether it landed.</summary>

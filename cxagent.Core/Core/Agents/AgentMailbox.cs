@@ -118,6 +118,30 @@ public sealed class AgentMailbox
         }
     }
 
+    /// <summary>
+    /// Takes back one message that has not been read yet, answering whether it was still here.
+    ///
+    /// <para>BY THE STRING SENT, NOT ITS TEXT. The sender holds the very instance it enqueued, and that is the
+    /// ticket: an equal text queued by somebody else is a different message, and taking it would lose their
+    /// words. False is a message the agent has already drained, or one never put here.</para>
+    /// </summary>
+    /// <param name="message">The exact string that was enqueued.</param>
+    public bool TryWithdraw(string message)
+    {
+        lock (_lock)
+        {
+            // ONE TICKET, ONE MESSAGE: the same instance enqueued twice is two sends, and only the first goes.
+            var entries = _pending.ToList();
+            var at = entries.FindIndex(e => ReferenceEquals(e.Text, message));
+            if (at < 0) return false;
+
+            entries.RemoveAt(at);
+            _pending.Clear();
+            foreach (var e in entries) _pending.Enqueue(e);
+            return true;
+        }
+    }
+
     private static Sessions.TurnOriginator DrainedOrigin(IEnumerable<Entry> entries)
     {
         var origins = entries.Select(e => e.Origin ?? Sessions.TurnOriginator.User).Distinct().ToArray();

@@ -47,6 +47,10 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
     // continuation run inline there would run the parent's code while holding it.
     private TaskCompletionSource<string>? _waiting;
 
+    // TAKES A SENT RESULT BACK OUT OF WHERE IT WAS SENT, when that is still possible — see Reclaim. Null for
+    // work whose delivery cannot, which then never reclaims.
+    private Func<string, bool>? _withdraw;
+
     // HOW MANY WAITERS MAY STILL RECEIVE THE RESULT. A waiter that returns the result does not
     // decrement it, and that is the point: once the result has gone to waiters, a cancelled waiter
     // that brings this to zero proves none of them received it, and only then is it left. A waiter
@@ -100,13 +104,18 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
     /// </summary>
     /// <param name="result">What the work produced.</param>
     /// <param name="send">Delivers it to the parent; false when the parent would not take it.</param>
-    public void Complete(string result, Func<string, bool> send)
+    /// <param name="withdraw">
+    /// Takes the sent result back if the parent has not read it yet — what <see cref="Reclaim"/> calls. Null when
+    /// the delivery cannot.
+    /// </param>
+    public void Complete(string result, Func<string, bool> send, Func<string, bool>? withdraw = null)
     {
         lock (_lock)
         {
             if (_ended) return;
             _result = result;
             _ended = true;
+            _withdraw = withdraw;
             // SILENCED keeps the result for Read but sends nothing: the conversation it would go to
             // is closing. A task_output already waiting is still answered — it asked, and making it
             // sit out its timeout only to be told "not ended" would be a wrong answer, not a quiet one.
@@ -143,6 +152,41 @@ public sealed class ResultHandoff(Func<string, bool> leaveIfAbandoned)
             if (_state == State.Pending) _state = State.Silenced;
             else if (_state == State.ToWaiters) _state = State.SilencedToWaiters;
         }
+    }
+
+    /// <summary>
+    /// Takes a SENT result back from where it was sent, for a reader about to return it itself — true when it was
+    /// still waiting there unread and the reader now holds the only copy.
+    ///
+    /// <para>WHY: a result that ends between two task_output calls is sent as a message, and a running turn reads
+    /// that message only at its next lap — after the second call has already returned the result. Without this
+    /// the model reads one report twice in one step. With it, the reader's copy is the one that arrives.</para>
+    ///
+    /// <para>ONLY FROM SENT. An undelivered result is <see cref="Read"/>'s to take, one handed to waiters was
+    /// never sent, and one in Sending is still on its way — withdrawing any of them would pull a message that is
+    /// not there. A withdrawal that fails, or throws, leaves the state Sent: the message was read already, and the
+    /// reader repeats the result as it would have anyway. The worst case is the duplicate, never a lost report.</para>
+    ///
+    /// <para>THE CALLBACK RUNS OUTSIDE THE LOCK, under Sending, as every delivery here does — anyone looking
+    /// meanwhile sees the result as already on its way, which it is, one way or the other.</para>
+    /// </summary>
+    public bool Reclaim()
+    {
+        Func<string, bool> withdraw;
+        string result;
+        lock (_lock)
+        {
+            if (_state != State.Sent || _withdraw is null) return false;
+            _state = State.Sending;
+            (withdraw, result) = (_withdraw, _result!);
+        }
+
+        bool taken;
+        try { taken = withdraw(result); }
+        catch (Exception) { taken = false; }
+
+        lock (_lock) _state = taken ? State.Taken : State.Sent;
+        return taken;
     }
 
     /// <summary>

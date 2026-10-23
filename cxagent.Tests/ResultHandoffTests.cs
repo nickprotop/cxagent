@@ -23,6 +23,66 @@ public class ResultHandoffTests
         Assert.Equal(new HandoffRead("r", true, true), h.Read());
     }
 
+    /// <summary>
+    /// A SENT RESULT STILL WAITING TO BE READ IS TAKEN BACK BY A RECLAIM, once: the reader returns it, so the
+    /// message must not arrive as well — and a second reclaim has nothing left to take.
+    /// </summary>
+    [Fact]
+    public void Reclaim_TakesBackASentResult_Once()
+    {
+        var c = new Counter(); var h = new ResultHandoff(c.Leave);
+        var withdrawn = new List<string>();
+        h.Complete("r", c.Send, withdraw: text => { withdrawn.Add(text); return true; });
+
+        Assert.True(h.Reclaim());
+        Assert.Equal(["r"], withdrawn);
+        Assert.False(h.Reclaim());
+        Assert.Single(withdrawn);
+    }
+
+    /// <summary>
+    /// A WITHDRAWAL THAT FAILS LEAVES THE RESULT SENT: it was read already, or never queued where the
+    /// withdrawal looks. The reader then repeats it as it always has — the worst case is a duplicate, never a
+    /// report nobody gets.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AFailedWithdrawal_LeavesTheResultSent(bool throws)
+    {
+        var c = new Counter(); var h = new ResultHandoff(c.Leave);
+        h.Complete("r", c.Send, withdraw: _ => throws ? throw new InvalidOperationException() : false);
+
+        Assert.False(h.Reclaim());
+        Assert.Equal(new HandoffRead("r", true, true), h.Read());
+    }
+
+    [Fact]
+    public void Reclaim_WithNoWithdrawal_OrBeforeTheEnd_TakesNothing()
+    {
+        var c = new Counter(); var h = new ResultHandoff(c.Leave);
+        Assert.False(h.Reclaim());
+        h.Complete("r", c.Send);
+        Assert.False(h.Reclaim());
+        Assert.Equal(new HandoffRead("r", true, true), h.Read());
+    }
+
+    /// <summary>
+    /// ONLY A SENT RESULT IS RECLAIMED. An undelivered one is Read's to take, and one handed to a waiter
+    /// was never sent — withdrawing either would pull a message that does not exist.
+    /// </summary>
+    [Fact]
+    public void Reclaim_LeavesAnUndeliveredResult_ToRead()
+    {
+        var c = new Counter { SendAnswer = false }; var h = new ResultHandoff(c.Leave);
+        var asked = 0;
+        h.Complete("r", c.Send, withdraw: _ => { asked++; return true; });
+
+        Assert.False(h.Reclaim());
+        Assert.Equal(0, asked);
+        Assert.Equal(new HandoffRead("r", true, false), h.Read());
+    }
+
     [Fact]
     public void Read_BeforeTheEnd_SaysNotEnded() =>
         Assert.Equal(new HandoffRead(null, false, false), new ResultHandoff(_ => true).Read());
