@@ -652,29 +652,31 @@ public static class ProviderConfigLoader
     }
 
     /// <summary>
-    /// Finds the sidecar manifest for a plugin's <c>file</c> in <paramref name="folders"/>, in order — first match
-    /// wins, the same precedence the loader's search carries. Null when no folder holds it, which is not an error
-    /// here: this feeds only the collision check, and a plugin it cannot see is still checked at its runtime load
+    /// The sidecar manifest of the copy of a plugin that would load from <paramref name="folders"/>, found the way
+    /// the loader finds it: a store's plugin (<c>acme/repo-map</c>) under its store's marked folder only, any other
+    /// by its file in each folder and then one level down — so a clash is judged on the file that runs, never on
+    /// a stray copy beside it. Null when no folder holds it, which is not an error here: this feeds only the
+    /// collision check, and a plugin it cannot see is still checked at its runtime load
     /// (<see cref="Plugins.ManagedPluginLoader.Load"/>).
     /// </summary>
+    /// <param name="name">The plugin's key in config: a name, or <c>store/name</c>.</param>
     /// <param name="file">The plugin's entry-point filename, as config gives it.</param>
-    /// <param name="folders">Absolute folders whose copy of a file is the one that loads — see
+    /// <param name="folders">Folders whose copy of a file is the one that loads — see
     /// <see cref="ConfigReadFolders"/> and <see cref="Plugins.PluginResolver.SearchFolders"/>.</param>
-    internal static string? FindSidecar(string file, IReadOnlyList<string> folders)
+    internal static string? FindSidecar(string name, string file, IReadOnlyList<string> folders)
     {
-        foreach (var dir in folders)
-        {
-            var assemblyPath = Path.Combine(dir, file);
-            if (!File.Exists(assemblyPath)) continue;
+        // A '/' THAT IS NOT A store/name FINDS NOTHING, as at load: searched by its bare file, it would answer with
+        // the official plugin of that file under a name that looks like a store's.
+        var home = Plugins.PluginStores.TryParse(name, out var plugin)
+            ? Plugins.PluginResolver.FindStoreLoadSet(plugin, file, folders)
+            : name.Contains('/') ? null
+            : Plugins.PluginResolver.FindLoadSetDirectory(file, folders);
+        if (home is null) return null;
 
-            // SAME STEM PAIRING ManagedPluginLoader USES: '<plugin>.dll' pairs with
-            // '<plugin>.plugin.json'. Read here rather than sharing the private constant, since this
-            // check must never load the assembly ManagedPluginLoader pairs the sidecar against.
-            var sidecarPath = Path.ChangeExtension(assemblyPath, null) + ".plugin.json";
-            if (File.Exists(sidecarPath)) return sidecarPath;
-        }
-
-        return null;
+        // SAME STEM PAIRING ManagedPluginLoader USES: '<plugin>.dll' pairs with '<plugin>.plugin.json'. Read here
+        // rather than sharing the private constant, since this check must never load the assembly it pairs with.
+        var sidecarPath = Path.Combine(home, Path.GetFileNameWithoutExtension(file) + ".plugin.json");
+        return File.Exists(sidecarPath) ? sidecarPath : null;
     }
 
     /// <summary>
@@ -721,7 +723,7 @@ public static class ProviderConfigLoader
     /// </summary>
     /// <param name="plugins">Every configured plugin, by name.</param>
     /// <param name="findSidecar">
-    /// Resolves one plugin's sidecar manifest path, or null when it cannot be found from here — not
+    /// Resolves one plugin's sidecar manifest path, given its key and entry, or null when it cannot be found from here — not
     /// an error, because this check proves a STATIC collision independent of which copy eventually
     /// loads: a plugin only resolvable via a project-local search folder Core does not know at
     /// config-read time still has its collisions caught, just at its runtime load instead.
@@ -729,7 +731,7 @@ public static class ProviderConfigLoader
     /// <param name="errors">Appended to — never cleared, so a caller can validate plugins alongside
     /// its own errors in one list.</param>
     internal static void ValidatePluginCollisions(IReadOnlyDictionary<string, PluginConfig> plugins,
-        Func<PluginConfig, string?> findSidecar, List<string> errors)
+        Func<string, PluginConfig, string?> findSidecar, List<string> errors)
     {
         // A DISABLED PLUGIN CONTRIBUTES NO NAMES TO CHECK — row 5: "not a collision — the name is
         // free". SIDECARS ONLY, NEVER ASSEMBLIES: knowing a plugin's tool names before any binary
@@ -740,18 +742,11 @@ public static class ProviderConfigLoader
         {
             if (!config.Enabled) continue;
 
-            // A STORE PLUGIN (`acme/repo-map`) IS NOT FOUND BY ITS FILE ALONE. FindSidecar looks for a bare
-            // file at the top of each search folder, which would answer with a different plugin's sidecar when
-            // one shares the filename — and a store's plugin lives under its store's folder, which
-            // config-read time cannot tell apart from a stray one without the marker check. Its tool
-            // names are still checked, at load, by the same collision rules.
-            if (pluginName.Contains('/')) continue;
-
             // UNRESOLVED IS "CANNOT CHECK THIS ONE", NOT AN ERROR — most often a plugin only
             // reachable through a project folder config read cannot see (see ConfigReadFolders). Config
             // validation refusing to start over a file the user may not even have installed the
             // project-relative copy of yet would be a worse outcome than the collision it guards.
-            var sidecarPath = findSidecar(config);
+            var sidecarPath = findSidecar(pluginName, config);
             if (sidecarPath is null) continue;
 
             // SAME "CANNOT CHECK THIS ONE" FOR AN UNREADABLE OR MALFORMED SIDECAR. This method's job
@@ -1291,7 +1286,7 @@ public static class ProviderConfigLoader
             var stores = Plugins.PluginStores.Read(root, errors);
 
             var searched = ConfigReadFolders(pluginPaths, configDir);
-            ValidatePluginCollisions(plugins, config => FindSidecar(config.File, searched), errors);
+            ValidatePluginCollisions(plugins, (name, config) => FindSidecar(name, config.File, searched), errors);
 
             if (errors.Count > 0)
                 throw new ProviderConfigException(errors);

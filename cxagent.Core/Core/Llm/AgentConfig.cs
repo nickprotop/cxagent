@@ -181,10 +181,12 @@ public sealed record AgentConfig
         if (Classifier is { } classifier && !Models.ContainsKey(classifier))
             errors.Add($"classifier '{classifier}' is not among the configured models.");
 
-        // SAME CHECK config.json GETS — see ProviderConfigLoader.ValidatePluginCollisions. An
-        // embedder's PluginPaths entries are searched directly, with no config directory to fall
-        // back to for a relative one: code-configured plugins have no such anchor.
-        ProviderConfigLoader.ValidatePluginCollisions(Plugins, config => FindPluginSidecar(config), errors);
+        // SAME CHECK config.json GETS — see ProviderConfigLoader.ValidatePluginCollisions — and the same lookup,
+        // so a plugin in its own folder or a store's is checked here too. An embedder's PluginPaths are searched
+        // as given: code-configured plugins have no config folder to anchor a relative one, so it means the
+        // current directory, as any relative path in code does.
+        ProviderConfigLoader.ValidatePluginCollisions(Plugins,
+            (name, config) => ProviderConfigLoader.FindSidecar(name, config.File, PluginPaths), errors);
 
         // THE SAME ENDPOINT RULES config.json GETS. An embedder writing an openai-compatible model
         // with no baseUrl otherwise gets a provider that fails at first use, far from the mistake.
@@ -238,26 +240,6 @@ public sealed record AgentConfig
             [],
             Warnings: warnings,
             Entries: new PluginEntries(Plugins));
-    }
-
-    /// <summary>
-    /// Finds one plugin's sidecar manifest by searching <see cref="PluginPaths"/> directly, in
-    /// order — the code-config counterpart of <c>ProviderConfigLoader.FindSidecar</c>. A
-    /// relative entry here resolves against the CURRENT DIRECTORY rather than a config directory:
-    /// code-configured plugins have no config.json beside them to anchor a relative path against.
-    /// </summary>
-    private string? FindPluginSidecar(PluginConfig config)
-    {
-        foreach (var raw in PluginPaths)
-        {
-            var assemblyPath = Path.Combine(raw, config.File);
-            if (!File.Exists(assemblyPath)) continue;
-
-            var sidecarPath = Path.ChangeExtension(assemblyPath, null) + ".plugin.json";
-            if (File.Exists(sidecarPath)) return sidecarPath;
-        }
-
-        return null;
     }
 
     // THROUGH ProviderRegistry.Construct, THE ONE config.json USES. A second construction here

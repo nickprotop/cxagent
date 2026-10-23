@@ -185,12 +185,15 @@ public static class PluginResolver
     /// the same answer on every run and every machine, and <c>Directory.EnumerateDirectories</c>
     /// returns filesystem order, which the BCL documents as unspecified.</para>
     ///
+    /// <para>ALSO WHAT config read's collision check finds a plugin with
+    /// (<c>ProviderConfigLoader.FindSidecar</c>), so the copy it checks is the copy that loads.</para>
+    ///
     /// <para>DUPLICATED IN <c>PluginDiscovery.FindLoadSetDirectory</c>, deliberately — see this
     /// type's own doc. The two must change together: that one is what loads configured plugins at
     /// startup, and a nested plugin found by only one of them is loadable by <c>/plugin load</c>
     /// and invisible when cxagent starts.</para>
     /// </summary>
-    private static string? FindLoadSetDirectory(string file, IReadOnlyList<string> searchFolders)
+    internal static string? FindLoadSetDirectory(string file, IReadOnlyList<string> searchFolders)
     {
         foreach (var folder in searchFolders)
         {

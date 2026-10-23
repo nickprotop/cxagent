@@ -803,7 +803,7 @@ public sealed class SessionManager : IDisposable
             ? Plugins.PluginResolver.SearchFolders(Config.Catalog.PluginPaths, caller.WorkingDirectory, dir)
             : [];
         ProviderConfigLoader.ValidatePluginCollisions(candidate,
-            c => ProviderConfigLoader.FindSidecar(c.File, searched), errors);
+            (n, c) => ProviderConfigLoader.FindSidecar(n, c.File, searched), errors);
 
         if (errors.Count > 0) return new PluginChangeResult.Refused(string.Join(" ", errors));
 

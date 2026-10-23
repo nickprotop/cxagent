@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
 using Xunit;
 
@@ -201,6 +202,91 @@ public class PluginConfigTests : IDisposable
         var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
 
         Assert.Equal(2, s.Plugins.Count);
+    }
+
+    // ---- Which copy of a file config read checks: the loader's ------------------------------------
+
+    /// <summary>A plugin at <paramref name="relative"/> under the global folder, declaring <paramref name="tool"/>.</summary>
+    private void Place(string relative, string tool)
+    {
+        var path = Path.Combine(PluginsDir, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "not a real assembly");
+        var stem = Path.GetFileNameWithoutExtension(path);
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(path)!, stem + ".plugin.json"), $$"""
+        { "name": "{{stem}}", "version": "1.0.0", "spawns": false, "tools": [ { "name": "{{tool}}", "description": "d", "inputSchema": { "type": "object" } } ] }
+        """);
+    }
+
+    private ProviderSettings LoadWith(string plugins)
+    {
+        WriteConfig($$"""{ {{ProviderBlock}}, "plugins": { {{plugins}} } }""");
+        return ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+    }
+
+    private const string RustAndGo = """ "lsp-rust": { "file": "lsp-rust.dll" }, "lsp-go": { "file": "lsp-go.dll" } """;
+
+    /// <summary>
+    /// A PLUGIN IN ITS OWN FOLDER IS CHECKED like a loose one: the loader finds it one level down, so a clash there
+    /// is as certain — and the layout CONFIG.md recommends must not be the one a clash slips past.
+    /// </summary>
+    [Fact]
+    public void PluginsInTheirOwnFolders_AreChecked()
+    {
+        Place("lsp-rust/lsp-rust.dll", "lsp_rename");
+        Place("lsp-go/lsp-go.dll", "lsp_rename");
+
+        var ex = Assert.Throws<ProviderConfigException>(() => LoadWith(RustAndGo));
+
+        Assert.Contains(ex.Errors, e => e.Contains("plugins.lsp-go") && e.Contains("lsp_rename"));
+    }
+
+    /// <summary>A DOT FOLDER IS AN INSTALL IN PROGRESS, which the loader never loads from — so neither is it checked.</summary>
+    [Fact]
+    public void AStagingFolder_IsNotChecked()
+    {
+        Place("lsp-rust.dll", "lsp_rename");
+        Place(".staging/lsp-go.dll", "lsp_rename");
+
+        Assert.Equal(2, LoadWith(RustAndGo).Plugins.Count);
+    }
+
+    /// <summary>THE LOOSE COPY WINS over a nested one of the same file, as it does at load: the nested one never runs.</summary>
+    [Fact]
+    public void ALooseCopy_IsTheOneChecked_OverANestedOne()
+    {
+        Place("lsp-rust.dll", "lsp_rename");
+        Place("lsp-go.dll", "go_rename");
+        Place("lsp-go/lsp-go.dll", "lsp_rename");
+
+        Assert.Equal(2, LoadWith(RustAndGo).Plugins.Count);
+    }
+
+    /// <summary>
+    /// A STORE'S PLUGIN IS CHECKED under its store's marked folder — the only place the loader looks for it, so the
+    /// copy found is the one that runs.
+    /// </summary>
+    [Fact]
+    public void AStorePlugin_IsChecked_UnderItsStoresFolder()
+    {
+        Place("lsp-rust.dll", "lsp_rename");
+        Place("acme/repo-map/repo-map.dll", "lsp_rename");
+        File.WriteAllText(Path.Combine(PluginsDir, "acme", PluginStores.Marker), "");
+
+        var ex = Assert.Throws<ProviderConfigException>(() => LoadWith(
+            """ "lsp-rust": { "file": "lsp-rust.dll" }, "acme/repo-map": { "file": "repo-map.dll" } """));
+
+        Assert.Contains(ex.Errors, e => e.Contains("acme/repo-map") && e.Contains("lsp_rename"));
+    }
+
+    /// <summary>NOT UNDER AN UNMARKED FOLDER: without the marker it is not a store's, and the loader would not load it.</summary>
+    [Fact]
+    public void AStorePlugin_IsNotChecked_WithoutTheMarker()
+    {
+        Place("lsp-rust.dll", "lsp_rename");
+        Place("acme/repo-map/repo-map.dll", "lsp_rename");
+
+        Assert.Equal(2, LoadWith(""" "lsp-rust": { "file": "lsp-rust.dll" }, "acme/repo-map": { "file": "repo-map.dll" } """).Plugins.Count);
     }
 
     // ---- Row 2: plugin x plugin, config read -----------------------------------------------------
