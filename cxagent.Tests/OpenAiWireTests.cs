@@ -116,4 +116,55 @@ public class OpenAiWireTests
         Assert.Equal("42", r.Text);
         Assert.Equal("6*7", r.Thinking);
     }
+
+    private static List<ChatMessage> AfterAToolResult() =>
+    [
+        new() { Role = "system", Content = "You are cxagent." },
+        new() { Role = "user", Content = "fix the build" },
+        new()
+        {
+            Role = "assistant", Content = "",
+            ToolCalls = [new ToolCall { Id = "c1", Name = "read_file", Arguments = JsonDocument.Parse("{}").RootElement }],
+        },
+        new() { Role = "tool", ToolCallId = "c1", Content = "file text" },
+        new() { Role = "user", Content = "# Your task list\n- [>] edit it", IsTaskList = true },
+    ];
+
+    /// <summary>
+    /// A TASK LIST AFTER A TOOL RESULT RIDES THAT RESULT. Sent as a user message, a local model read
+    /// each copy as the user prodding it — "The user is reminding me of my task list" opened half its
+    /// turns — and narrated "let me continue" instead of working.
+    /// </summary>
+    [Fact]
+    public void ATaskListAfterAToolResult_IsSentInsideIt()
+    {
+        var msgs = OpenAiWire.BuildRequestBody("m", AfterAToolResult(), null, stream: false)["messages"]!.AsArray();
+
+        Assert.Equal(4, msgs.Count);
+        var tool = msgs[^1]!;
+        Assert.Equal("tool", tool["role"]!.GetValue<string>());
+        Assert.Equal("file text\n\n# Your task list\n- [>] edit it", tool["content"]!.GetValue<string>());
+    }
+
+    /// <summary>
+    /// ANYWHERE ELSE IT STAYS A USER MESSAGE: after the model's own reply there is no tool result to
+    /// carry it, and folding it into what the user typed would put words in their mouth.
+    /// </summary>
+    [Fact]
+    public void ATaskListAfterAReply_StaysItsOwnMessage()
+    {
+        List<ChatMessage> conversation =
+        [
+            new() { Role = "system", Content = "You are cxagent." },
+            new() { Role = "user", Content = "plan it" },
+            new() { Role = "assistant", Content = "planned" },
+            new() { Role = "user", Content = "# Your task list", IsTaskList = true },
+        ];
+
+        var msgs = OpenAiWire.BuildRequestBody("m", conversation, null, stream: false)["messages"]!.AsArray();
+
+        Assert.Equal(4, msgs.Count);
+        Assert.Equal("user", msgs[^1]!["role"]!.GetValue<string>());
+        Assert.Equal("planned", msgs[^2]!["content"]!.GetValue<string>());
+    }
 }

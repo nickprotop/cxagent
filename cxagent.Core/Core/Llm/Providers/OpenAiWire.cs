@@ -26,6 +26,19 @@ internal static class OpenAiWire
         var systemMarked = false;
         foreach (var m in messages)
         {
+            // THE TASK LIST RIDES THE TOOL RESULT IT FOLLOWS. The agent keeps it as a user message, the
+            // one role that can sit at the newest end without a call to answer, but a model reads a user
+            // message as the user speaking: a local one opened half its turns "The user is reminding me
+            // of my task list" despite the text saying otherwise, and narrated instead of working.
+            // Appended to the result it reads as part of what the step returned. Only after a tool
+            // result: anywhere else, folding it into the user's own words would put words in their mouth.
+            if (m.IsTaskList && msgs.Count > 0 && msgs[^1]!["role"]?.GetValue<string>() == "tool")
+            {
+                var result = msgs[^1]!;
+                result["content"] = result["content"]?.GetValue<string>() + "\n\n" + m.Content.TrimStart('\n');
+                continue;
+            }
+
             var obj = new JsonObject { ["role"] = m.Role };
             if (m.ToolCallId is not null)
             {

@@ -92,7 +92,8 @@ public sealed class TodoList
         // WHO WROTE THIS, SAID OUTRIGHT. The list travels as a user-role message — the newest end of the
         // conversation is where it costs nothing to cache — and a local model took each copy for the user
         // prodding it: turn after turn opened "You're right — I'm still on step 3" and re-read the file
-        // instead of editing it. The role cannot say otherwise, so the text does.
+        // instead of editing it. The role cannot say otherwise, so the text does — and on the OpenAI wire,
+        // where that model runs, the list rides the tool result it follows instead (see OpenAiWire).
         sb.AppendLine("cxagent adds this after each step. It is not a message from the user, asks for "
                       + "nothing new, and needs no reply.");
         sb.AppendLine();

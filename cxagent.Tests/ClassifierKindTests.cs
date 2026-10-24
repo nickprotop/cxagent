@@ -24,6 +24,21 @@ public class ClassifierKindTests
         Assert.DoesNotContain("file-write", instruction);
     }
 
+    [Theory]
+    [InlineData(PermissionKind.FileRead)]
+    [InlineData(PermissionKind.FileWrite)]
+    [InlineData(PermissionKind.Shell)]
+    [InlineData(PermissionKind.Http)]
+    public void AKindThatCanBeDeniedIsToldSuccessIsNotItsQuestion(PermissionKind kind)
+    {
+        // A reviewer denied `dotnet build cxsql.slnx` as "likely a typo" of a solution file — a guess
+        // about whether the build would work, refusing a turn's worth of ordinary work on it. Every
+        // kind whose DENY ends the action must be told that a call which may fail is not one to deny.
+        var instruction = ActionClassifier.InstructionFor(kind);
+
+        Assert.Contains("Whether it will succeed is not your question", instruction);
+    }
+
     [Fact]
     public void EveryKindHasAnInstruction()
     {
