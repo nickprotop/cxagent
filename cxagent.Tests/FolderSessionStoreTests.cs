@@ -201,6 +201,36 @@ public class FolderSessionStoreTests : IDisposable
         Assert.True(Directory.Exists(orphan));
     }
 
+    /// <summary>
+    /// A session keeps the title its first turn gave it. Compaction drops that first message, and the title was
+    /// re-derived every turn from what was left — a session ended up named "You have called task_list with the
+    /// same arguments 3 times…", the first user-role message the summary had not swallowed.
+    /// </summary>
+    [Fact]
+    public void TheTitle_SurvivesTheFirstMessageLeavingTheContext()
+    {
+        _store.SaveTurn(new FolderSessionStore.ResumeTurn("a", Talk("add schema previews"), 1, 1));
+        _store.SaveTurn(new FolderSessionStore.ResumeTurn("a", Talk("You have called read_file with the same arguments"), 2, 2));
+
+        Assert.Equal("add schema previews", _store.List(all: true).Single(s => s.Uid == "a").Title);
+    }
+
+    /// <summary>
+    /// A session that continues another is titled as that one was: its context starts from the earlier one's,
+    /// already compacted, so its own first user-role message is whatever survived — not what the user asked.
+    /// </summary>
+    [Fact]
+    public void AContinuedSession_KeepsTheTitleOfTheOneItContinues()
+    {
+        _store.SaveTurn(new FolderSessionStore.ResumeTurn("a", Talk("add schema previews"), 1, 1));
+        new CxAgent.Core.Storage.HistoryRecorder(Path.Combine(_paths.LogsDir, "b", "history.jsonl"))
+            .ContinuesFrom("a", []);
+
+        _store.SaveTurn(new FolderSessionStore.ResumeTurn("b", Talk("You have called task_list with the same arguments"), 1, 1));
+
+        Assert.Equal("add schema previews", _store.List(all: true).Single(s => s.Uid == "b").Title);
+    }
+
     /// <summary>A message the transcript showed differently — a typed command — is titled as shown.</summary>
     [Fact]
     public void TheTitle_IsWhatWasShown_WhenItDiffers() =>

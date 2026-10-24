@@ -59,7 +59,7 @@ public sealed class FolderSessionStore(AppPaths paths)
             SessionFolder.WriteAtomic(folder.ContextPath,
                 JsonSerializer.Serialize(turn.Context, Json));
             SessionHeader.Write(folder, new SessionHeader(
-                turn.AgentId, TitleOf(turn.Context), turn.WorkingDir,
+                turn.AgentId, KeptTitle(folder) ?? TitleOf(turn.Context), turn.WorkingDir,
                 turn.InputTokens, turn.OutputTokens,
                 SessionEndState.Running, DateTimeOffset.UtcNow, turn.Edits, turn.Thinking));
         }
@@ -249,6 +249,25 @@ public sealed class FolderSessionStore(AppPaths paths)
     private static bool PathsMatch(string? a, string? b) =>
         string.Equals(a?.TrimEnd(Path.DirectorySeparatorChar),
                       b?.TrimEnd(Path.DirectorySeparatorChar), StringComparison.Ordinal);
+
+    /// <summary>
+    /// The title this session already has, or the one of the session it continues — null for a session titled by
+    /// nothing yet.
+    ///
+    /// <para>A TITLE IS SET ONCE. Taken afresh from each turn's context, it followed compaction: the summary drops the
+    /// first message the user typed, and the first user-role message left was a repeat warning, so the session was
+    /// named "You have called task_list with the same arguments 3 times…". A continued session is the same case one
+    /// step on — its context starts from the compacted one it continues — so it takes that session's title.</para>
+    /// </summary>
+    private string? KeptTitle(SessionFolder folder)
+    {
+        if (SessionHeader.Read(folder)?.Title is { } own) return own;
+
+        return HistoryRecorder.First(Path.Combine(folder.Dir, "history.jsonl"))
+            is { Kind: HistoryLine.Kinds.Continues, Previous: { } previous }
+            ? SessionHeader.Read(new SessionFolder(paths, previous))?.Title
+            : null;
+    }
 
     /// <summary>
     /// The first real user message, shortened — what a listing shows instead of a ULID.

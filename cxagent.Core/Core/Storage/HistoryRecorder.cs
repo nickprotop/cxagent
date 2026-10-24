@@ -139,6 +139,24 @@ public sealed class HistoryRecorder
         }
     }
 
+    /// <summary>
+    /// A history file's first line, or null — all a caller asking "does this continue another session?" needs, read
+    /// without the rest: a long session's file runs to megabytes.
+    /// </summary>
+    public static HistoryLine? First(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var text = File.ReadLines(path).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t));
+            return text is null ? null : JsonSerializer.Deserialize<HistoryLine>(text, Json);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Every line of a history file, in order. An unreadable line — a crash mid-append — is skipped.</summary>
     public static IReadOnlyList<HistoryLine> Read(string path)
     {
