@@ -196,7 +196,7 @@ public static partial class ExportMarkdown
             if (IsSummary(m))
             {
                 if (Has(ExportParts.Compaction))
-                    Paragraph(Quote(m.Content[Sessions.SessionCompressor.SummaryMarker.Length..].TrimEnd(']')));
+                    Paragraph(Quote(Sessions.SessionCompressor.SummaryOf(m.Content)!));
                 return;
             }
 

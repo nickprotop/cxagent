@@ -114,9 +114,9 @@ internal static class CompressionRun
         // caller. NOT THE FIRST MESSAGE: the system prompt is pinned ahead of the summary, and read as the
         // summary it put the whole prompt in the transcript under the compaction's row.
         var summary = work.Context.Messages
-            .FirstOrDefault(m => m.Role == "assistant"
-                && m.Content.StartsWith(SessionCompressor.SummaryMarker, StringComparison.Ordinal))
-            ?.Content[SessionCompressor.SummaryMarker.Length..].TrimEnd(']').Trim() ?? "";
+            .Where(m => m.Role == "assistant")
+            .Select(m => SessionCompressor.SummaryOf(m.Content))
+            .FirstOrDefault(s => s is not null) ?? "";
 
         // TRUNCATION IS A FAILURE, and shows red. It means the summarising call did not answer and
         // the oldest half was dropped unread — recoverable, but the user should see that it happened

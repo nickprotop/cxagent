@@ -206,6 +206,63 @@ public class SessionCompressorTests
     }
 
     /// <summary>
+    /// THE NEWER HALF FOLLOWS THE SUMMARY, and the model is told so in a line no summariser writes. What the
+    /// summary says was in progress, or was next, was true at the cut; the messages kept below it may have
+    /// done it since. A cxsql session's summary said to start an audit that the 218 messages under it had
+    /// already finished, and the model went back to it.
+    /// </summary>
+    [Fact]
+    public async Task Compress_SaysTheMessagesAfterTheSummaryAreNewer()
+    {
+        var provider = new RecordingProvider(Usage(new LlmResponse { Text = SummaryText }));
+        var context = new AgentContext();
+        var conversation = context.Messages;
+        for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
+
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+
+        var summary = conversation.First(m => m.Content.StartsWith(SessionCompressor.SummaryMarker, StringComparison.Ordinal));
+        var closing = summary.Content.IndexOf(']');
+        var note = summary.Content.IndexOf(SessionCompressor.NewerNote, StringComparison.Ordinal);
+
+        Assert.True(note > closing,
+            "the note must follow the closing bracket, or the next compaction feeds it to the summariser");
+    }
+
+    /// <summary>
+    /// THE NEXT COMPACTION MERGES THE SUMMARY AND NOTHING AFTER IT. Both the newer-messages note and the skill
+    /// notice sit outside the bracket so that no model rewrites them; handed back as part of the previous
+    /// summary, they would be merged into the new one and repeated inside it on every pass.
+    /// </summary>
+    [Fact]
+    public async Task Compress_ASecondPass_MergesOnlyTheSummary_NotTheNotesAfterIt()
+    {
+        var provider = new RecordingProvider(
+            Usage(new LlmResponse { Text = SummaryText }), Usage(new LlmResponse { Text = SummaryText }));
+        var context = new AgentContext();
+        var conversation = context.Messages;
+        conversation.Add(SkillBody("deployment", "t1"));
+        for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+        for (int i = 12; i < 24; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
+
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+
+        var second = provider.Prompts[1];
+        var start = second.IndexOf("<previous-summary>", StringComparison.Ordinal) + "<previous-summary>".Length;
+        var end = second.IndexOf("</previous-summary>", StringComparison.Ordinal);
+        Assert.Equal(SummaryText, second[start..end].Trim());
+    }
+
+    /// <summary>The summary is read back out of a message that carries the notes after it, and of one written
+    /// before they existed — a resumed session holds the older shape.</summary>
+    [Theory]
+    [InlineData("]\n\n" + SessionCompressor.NewerNote + "\n\nSkill instructions removed by compaction: x.")]
+    [InlineData("]")]
+    public void SummaryOf_ReadsTheSummaryAlone(string after) =>
+        Assert.Equal("fixed [the] parser", SessionCompressor.SummaryOf(SessionCompressor.SummaryMarker + "fixed [the] parser" + after));
+
+    /// <summary>
     /// THE FALLBACK PATH NEEDS ITS OWN NOTICE. It inserts no summary at all, so without this the loss
     /// goes unannounced on exactly the path taken when things are ALREADY going wrong — a provider
     /// blip during compaction.
@@ -427,13 +484,29 @@ public class SessionCompressorTests
 
         foreach (var section in new[]
                  { "## Objective", "## Important Details", "## Work State",
-                   "### Completed", "### Active", "### Blocked",
-                   "## Next Move", "## Relevant Files" })
+                   "### Completed", "### In progress at this point", "### Blocked",
+                   "## Open at this point", "## Relevant Files" })
             Assert.Contains(section, prompt, StringComparison.Ordinal);
 
         // And the rule that makes an empty section a recorded fact rather than an omission.
         Assert.Contains("(none)", prompt, StringComparison.Ordinal);
         Assert.Contains("Keep every section", prompt, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE SUMMARISER IS TOLD IT SEES THE OLDER PART ONLY. Told that its note would replace everything and be
+    /// worked from, it wrote "Active" and "Next Move" as the present — and the newer half, kept verbatim below
+    /// the note, had moved on.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("OLD-SUMMARY-BODY")]
+    public void BuildPrompt_SaysNewerMessagesStayAfterTheNote(string? previous)
+    {
+        var prompt = SessionCompressor.BuildPrompt("history", previous);
+
+        Assert.Contains("kept word for word after your note", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("you will keep working from it", prompt, StringComparison.Ordinal);
     }
 
     /// <summary>The transcript is what is being summarised, so it has to be in there.</summary>

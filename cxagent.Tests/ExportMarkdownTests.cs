@@ -125,6 +125,22 @@ public class ExportMarkdownTests : IDisposable
         Assert.DoesNotContain("- [ ] step", md);
     }
 
+    /// <summary>The note compaction leaves after the summary is for the model, not part of what it summarised.</summary>
+    [Fact]
+    public void ACompactionSummary_IsExportedWithoutTheNoteAfterIt()
+    {
+        var summary = Assistant(CxAgent.Core.Sessions.SessionCompressor.SummaryMarker + "they fixed the redirect]\n\n"
+            + CxAgent.Core.Sessions.SessionCompressor.NewerNote, 5);
+
+        var md = Render(Source(
+            E(User("go"), Incoming.You),
+            new ExportEntry(At(5), HistoryLine.Kinds.Compacted, null, null, null, _dir),
+            E(summary)), Full);
+
+        Assert.Contains("they fixed the redirect", md);
+        Assert.DoesNotContain(CxAgent.Core.Sessions.SessionCompressor.NewerNote, md);
+    }
+
     [Fact]
     public void Compaction_IsAlwaysMarked_ItsSummaryOnlyWhenAsked()
     {

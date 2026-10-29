@@ -326,8 +326,11 @@ public static class SessionCompressor
     /// blocked" from "it forgot to say". Named sections with an explicit "(none)" make the absence
     /// itself a recorded fact.</para>
     ///
-    /// <para><c>Next Move</c> is the section we most lacked. We asked for "anything not yet done" — a
-    /// list — where what a resumed agent actually needs is an ORDERED first action.</para>
+    /// <para><c>Open at this point</c> is ordered: what is left to do needs a first action, not a list.</para>
+    ///
+    /// <para>NAMED FOR THE CUT, NOT FOR NOW. The summary covers only the older part, and the messages kept
+    /// after it are newer, so its unfinished work may be finished below it. A section titled as the present
+    /// ("Active", "Next Move") is read as the present, and a model obeys it over the newer messages.</para>
     /// </summary>
     public const string SummaryTemplate = """
         Output exactly the Markdown structure shown inside <template> and keep the section order
@@ -345,16 +348,16 @@ public static class SessionCompressor
         - [finished work and verified facts: files changed by exact path, commands run with their
           outcome, builds and tests with exact pass/fail counts; otherwise "(none)"]
 
-        ### Active
-        - [current work, partial changes, or investigation state; otherwise "(none)"]
+        ### In progress at this point
+        - [work under way where this part ends, partial changes, or investigation state; otherwise "(none)"]
 
         ### Blocked
         - [blockers, failing commands with their error text, unknowns, and anything tried that did
           NOT work so it is not attempted again; otherwise "(none)"]
 
-        ## Next Move
-        1. [immediate concrete action, or "(none)"]
-        2. [next action if known, or "(none)"]
+        ## Open at this point
+        1. [what was still to be done where this part ends, first action first, or "(none)"]
+        2. [the action after it if known, or "(none)"]
 
         ## Relevant Files
         - [file or directory path: why it matters, or "(none)"]
@@ -386,14 +389,21 @@ public static class SessionCompressor
     /// <param name="transcript">The conversation text being summarised.</param>
     public static string BuildPrompt(string transcript, string? previousSummary = null)
     {
+        // THE OLDER PART, AND SAID SO. The newest messages are kept word for word after the note; a
+        // summariser that believes its note replaces everything writes the state at the cut as the
+        // present — see NewerNote for what that costs.
+        const string olderPart =
+            " This is the OLDER part of the conversation only: the newest messages are kept word for word "
+            + "after your note and are more recent than anything here. So record what happened and what "
+            + "was established; anything here about what to do next may already be done in what follows.";
         var framing = string.IsNullOrWhiteSpace(previousSummary)
-            ? "You are compacting your own working memory. Everything below is about to be REPLACED "
-              + "by what you write, and you will keep working from it — so write what you would need "
-              + "to continue, not what you would tell someone about the past."
+            ? "You are compacting your own working memory. What is below is about to be REPLACED by "
+              + "what you write — so write what you would need to continue, not what you would tell "
+              + "someone about the past." + olderPart
             : "You are compacting your own working memory. Below is the summary you wrote earlier "
               + "and the history since. UPDATE the summary: keep what is still true, drop what has "
-              + "been superseded, and merge in the new facts. Everything below is about to be "
-              + "REPLACED by what you write, and you will keep working from it.";
+              + "been superseded, and merge in the new facts. What is below is about to be REPLACED "
+              + "by what you write." + olderPart;
 
         var previous = string.IsNullOrWhiteSpace(previousSummary)
             ? ""
@@ -509,7 +519,7 @@ public static class SessionCompressor
     private static bool IsUsableSummary(string? text) => !string.IsNullOrWhiteSpace(text);
 
     private static string FormatSummary(string? text) =>
-        $"{SummaryMarker}{text}]";
+        $"{SummaryMarker}{text}{SummaryEnd}";
 
     /// <summary>
     /// Names the skills whose bodies are being removed, or "" when none are.
@@ -547,6 +557,43 @@ public static class SessionCompressor
     internal const string SummaryMarker = "[earlier conversation, summarised: ";
 
     /// <summary>
+    /// Follows every summary, outside its bracket: the summary describes only the older part of the
+    /// conversation, and the messages kept after it are newer.
+    ///
+    /// <para>WHY IT IS NEEDED. What the summary records as in progress, or as next, was true at the cut, and
+    /// the messages kept verbatim below it may have done it since. A cxsql session's summary named an audit as
+    /// the next move while the 218 messages under it had already finished that audit, and the model went
+    /// back to it. The summariser is told the same thing, but its wording is a model's; this line is fixed.</para>
+    ///
+    /// <para>OUTSIDE THE BRACKET for the reason the skill notice is: <see cref="SummaryOf"/> hands only the
+    /// bracket back to the next compaction, so no summariser ever rewrites or repeats this line.</para>
+    /// </summary>
+    internal const string NewerNote =
+        "The messages after this note are newer than it; where they disagree, they are right.";
+
+    /// <summary>The bracket's closing and the note, which together end the summary text.</summary>
+    private const string SummaryEnd = "]\n\n" + NewerNote;
+
+    /// <summary>
+    /// The summary a compaction message carries, without the marker or anything after its bracket, or null
+    /// when the message is not a summary.
+    ///
+    /// <para>FOUND BY THE NOTE, not by the last <c>]</c>: the skill notice follows the note, and a summary's
+    /// own text may hold brackets. A summary saved before the note existed ends at its bracket, and a resumed
+    /// session still holds those.</para>
+    /// </summary>
+    internal static string? SummaryOf(string content)
+    {
+        if (!content.StartsWith(SummaryMarker, StringComparison.Ordinal)) return null;
+
+        var inner = content[SummaryMarker.Length..];
+        var end = inner.LastIndexOf(SummaryEnd, StringComparison.Ordinal);
+        if (end >= 0) inner = inner[..end];
+        else if (inner.EndsWith(']')) inner = inner[..^1];
+        return inner.Trim();
+    }
+
+    /// <summary>
     /// The summary a previous compaction left in the head, or null on the first pass.
     ///
     /// <para>Matched on the marker this class writes rather than on position: the head's shape
@@ -557,15 +604,8 @@ public static class SessionCompressor
     {
         // LAST, not first: if several ever accumulate, the newest is the one still true.
         for (var i = oldTurns.Count - 1; i >= 0; i--)
-        {
-            var content = oldTurns[i].Content;
-            if (content is null || !content.StartsWith(SummaryMarker, StringComparison.Ordinal))
-                continue;
-
-            var inner = content[SummaryMarker.Length..];
-            if (inner.EndsWith(']')) inner = inner[..^1];
-            return inner.Trim();
-        }
+            if (oldTurns[i].Content is { } content && SummaryOf(content) is { } summary)
+                return summary;
         return null;
     }
 }
