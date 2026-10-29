@@ -174,7 +174,17 @@ internal static class BackgroundRunner
         // stopped — which, for the user's stop, still means it is not to be redone.
         const string doNotRedo = " Do not redo its work unless the user asks for it again; tell them it was stopped.";
         var by = run.StoppedByUser ? " by the user" : "";
-        var ended = run.State != BackgroundState.Stopped ? "has finished."
+
+        // NOR IS "FINISHED" TRUE OF WORK LEFT UNDONE. A child stopped as stuck, or at its turn limit, ended on
+        // its own with the work half done, and the parent reads this line before the envelope's state: told
+        // "has finished", it spawned an identical second agent. The child is still kept with what it did, so
+        // the remedy is a follow-up to it, not a new one starting from nothing.
+        var unfinished = SubAgentEnvelope.StateOf(envelope) is "stuck" or "capped";
+        var ended = run.State != BackgroundState.Stopped
+            ? unfinished
+                ? $"ended without finishing its work. It is still kept with what it has done: to go on, send it "
+                  + $"a follow-up with {Jobs.Tool.AgentSend} rather than starting a new agent for the same work."
+                : "has finished."
             : stoppedAsItFinished
                 ? $"was stopped{by} just as it finished; its answer is below, but the work was stopped."
                   + (run.StoppedByUser ? doNotRedo : "")

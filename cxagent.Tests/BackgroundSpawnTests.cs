@@ -357,6 +357,36 @@ public class BackgroundSpawnTests
     }
 
     /// <summary>
+    /// A RUN THAT ENDED WITHOUT FINISHING DOES NOT SAY "FINISHED". A child stopped as stuck was announced as
+    /// "has finished" above an envelope saying state="stuck", and the parent read the headline: it spawned an
+    /// identical second agent while the first, still kept and half done, could have been sent a follow-up.
+    /// </summary>
+    [Fact]
+    public async Task AStuckRunsReport_SaysItEndedUnfinished_AndToSendAFollowUp()
+    {
+        var provider = new MockLlmProvider();
+        for (var i = 0; i < 12; i++)
+            provider.EnqueueResponse(new LlmResponse
+            {
+                Text = "checking again", StopReason = "tool_use",
+                ToolCalls = [new ToolCall
+                {
+                    Id = $"c{i}", Name = "read_file",
+                    Arguments = System.Text.Json.JsonDocument.Parse("""{"path":"does-not-exist.txt"}""").RootElement,
+                }],
+            });
+        var (spawner, _, delivery, _) = Wired(provider);
+        await Spawn(spawner);
+
+        var d = await delivery.Next();
+
+        Assert.Contains("state=\"stuck\"", d.Notice.ForModel);
+        Assert.DoesNotContain("has finished", d.Notice.ForModel);
+        Assert.Contains("ended without finishing", d.Notice.ForModel);
+        Assert.Contains("agent_send", d.Notice.ForModel);
+    }
+
+    /// <summary>
     /// A STOP SAYS WHO STOPPED IT. "Finished" over a stopped run is false, and a model not told the user
     /// ended the work redoes it by hand.
     /// </summary>
