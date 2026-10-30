@@ -126,7 +126,7 @@
          The cost is real and worth naming: this pin no longer follows SharpConsoleUI automatically,
          so a bump there needs one here. That is what a library pinning what it tested against
          means. -->
-    <PackageReference Include="AngleSharp" Version="1.7.1" />
+    <PackageReference Include="AngleSharp" Version="1.8.6" />
   </ItemGroup>
 
 </Project>
