@@ -55,6 +55,43 @@ Confirm the test count, not just the exit code. `dotnet test --filter` against a
 when the filter matches nothing, and a build that compiled nothing exits 0 too. Both have been
 mistaken for a pass in this repo.
 
+## Driving the UI
+
+Look at the running app with **cxdbg** (`dotnet tool install -g cxdbg`) rather than guessing from tmux
+captures. It talks to SharpConsoleUI's diagnostics socket and answers what tmux cannot: which control has
+focus, what layout gave a control its size, what is under a point, what the app logged. Clicks land on named
+controls, not on coordinates guessed from a screenshot. Docs: `~/source/ConsoleEx/docs/DEBUGGING.md` (the
+protocol) and `~/source/ConsoleEx/tools/cxdbg/README.md`.
+
+The app asks for consent on its terminal before it paints, and nothing else can answer that. So start it in
+tmux, answer `y` there, and then drive it from both:
+
+    S=<scratch folder>/cxa.sock
+    tmux new-session -d -s drive -x 160 -y 45 -c <scratch folder> \
+      "SHARPCONSOLEUI_DIAGNOSTICS_SOCKET=$S cxagent/bin/Debug/net10.0/cxagent --config-dir <scratch config>"
+    tmux send-keys -t drive y Enter
+
+    cxdbg settled -s $S                      # finished reacting? names what is still busy
+    cxdbg focus -s $S                        # where a key will go, and the chain to it
+    cxdbg show tree -s $S                    # what layout believes
+    cxdbg send key Tab -s $S                 # input, the way a user gives it
+    cxdbg invoke --name <name or id> -s $S   # activate a control; ids come from tree/focus
+    cxdbg logs --count 50 -s $S              # the log a TUI cannot print
+    cxdbg image --path <scratch folder>/shot.png -s $S   # a colour screenshot to look at or send
+
+Input is asynchronous: a verb returns once the event is queued. Ask `settled` before reading the screen, or
+you will read the frame from before the key.
+
+`settled` means the UI has nothing left to do, not that the agent has finished. It reports settled during a
+`/compress` and while a permission prompt waits for an answer. To know when a turn has ended, read the session's
+`history.jsonl` under `<config-dir>/logs/<session id>/` or look for the reply on screen. `context.json` is written
+only when a turn ends. Typed text goes in with `cxdbg seq --text "..."`. A `/command` needs Enter twice: the first
+one picks it from the completion list.
+
+`--config-dir` keeps a drive out of the real `~/.config/cxagent`: its sessions, history and permissions.
+Stop the drive with `tmux kill-session -t drive`, then check that its pid is gone. A drive left running
+holds its socket and keeps a process alive for days.
+
 ## Style
 
 - Target framework `net10.0`. The build must end with `0 Error(s)`.
