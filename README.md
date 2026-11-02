@@ -11,86 +11,151 @@
 
 </div>
 
-**[nickprotop.github.io/cxagent](https://nickprotop.github.io/cxagent/)** — install instructions, the plugin marketplace, and docs.
+**[nickprotop.github.io/cxagent](https://nickprotop.github.io/cxagent/)**: install instructions, the plugin marketplace, and docs.
 
-**A terminal AI coding agent built on [SharpConsoleUI](https://github.com/nickprotop/ConsoleEx).**
+**A multi-agent workbench for coding, in the terminal, built on [SharpConsoleUI](https://github.com/nickprotop/ConsoleEx).**
 
-Give it a goal in plain language. It reads your files, works out what to change, and changes them —
-in one context, with the real bytes in front of it. Anything outside your working folder asks first.
+It is not one chat loop. Several agents are alive at once, each in its own tab with its own transcript
+and prompt, and sub-agents work in the background while you watch them and steer them.
+
+Give any of them a goal in plain language. It reads your files, works out what to change, and changes
+them, in one context, with the real bytes in front of it. Anything outside your working folder asks
+first.
 
 Bring your own model: Ollama, any OpenAI-compatible endpoint, or Anthropic.
 
 <div align="center">
   <img src="docs/images/cxagent.png" alt="cxagent analysing a repository, with a sub-agent's report and the live session panel" width="900">
   <br>
-  <sub>A worker agent explored the repo and reported back — 214,073 of the session's tokens spent
+  <sub>A worker agent explored the repo and reported back: 214,073 of the session's tokens spent
   inside the child, and 4% of the parent's context used.</sub>
 </div>
 
+## What is in it
+
+**Several agents at once, each in its own tab.** `/sessions new [folder]` opens another conversation
+in its own tab, on the same project or a different one, with its own history, model, working
+directory, plugins and permissions. A sub-agent gets a tab too: `View transcript ›` on its card opens
+its whole conversation, live, and the composer under it talks to that agent, not the session.
+[Sessions](#sessions) has the detail.
+
+<div align="center">
+  <img src="docs/screenshots/36-agent-tab.png" alt="An agent's own tab while it runs: Stop in its toolbar, its brief and clock, each step's thinking folded between its tool calls, and a composer that sends it a message" width="800">
+</div>
+
+**Sub-agents in the background, with a panel to watch and steer them.** A spawn returns at once; the
+parent carries on, and each report arrives as a message when it is done. `F7` turns the right-hand
+column into the tasks panel: what is running first, then a Finished section. `Enter` on one opens it
+in a tab, and `x` stops a running one or deletes a finished one. `Ctrl+B` moves what the turn is
+waiting on to the background mid-run. A finished sub-agent is kept, and `agent_send` asks it more on
+the same conversation. [Sub-agents](#sub-agents) has the detail.
+
+<div align="center">
+  <img src="docs/screenshots/37-background-agents.png" alt="The conversation with background agents: a finished agent's report as a table, a worker still running, and the tasks panel listing it above three finished ones" width="800">
+</div>
+
+**A model per tab, and per sub-agent.** A `providers` entry is an instance: a name bound to one
+endpoint and one model. Each tab runs on its own, and switching mid-conversation carries the
+conversation across, along with a context window that follows the new model and spend that keeps
+accumulating. A sub-agent type can run on a different instance than the session, and a type given a
+list of them lets the spawn choose among them at the call. See [CONFIG.md](CONFIG.md) for the
+`agents` block.
+
+<div align="center">
+  <img src="docs/screenshots/13-model-switch.png" alt="Switching model mid-conversation: a 32k model answers a question given to a 212k model, with the status bar showing the new window" width="800">
+</div>
+
+**Plugins, from a catalog.** `F2` opens the plugin manager. It lists what a catalog published on the
+web offers, and downloads, verifies and unpacks a plugin into your plugins folder. Among the four in
+the catalog is **triggers**: work that starts without anybody typing, where a turn schedules a prompt
+to arrive later in the same session. [Plugins](#plugins) has the rest.
+
+<div align="center">
+  <img src="docs/screenshots/18-plugin-marketplace.png" alt="The plugin manager, listing what the catalog offers" width="800">
+</div>
+
+**An editor, in a tab beside the conversation.** `/open` puts a file in a tab: line numbers, the
+language's own highlighter (TextMate grammars), no wrapping. Saving keeps the file's BOM and line
+endings, and tells the model you edited it. A modified buffer is marked `•`. When the agent writes a
+file you have open, a clean buffer reloads and a modified one keeps your edits and says so, with
+`Reload` and `See theirs`.
+
+<div align="center">
+  <img src="docs/screenshots/26-editor-changed.png" alt="A file changed by the agent underneath unsaved edits, showing the warning and its three buttons" width="800">
+</div>
+
+**A question on the side, while the agent works.** `/btw <question>` asks without interrupting the
+running turn and without adding to the conversation. A side agent that starts from what the main
+agent knows answers in its own block, headed `aside · not in the agent's memory`, under the session's
+permissions, and can only read. A follow-up continues its thread; the first `Esc` stops an answer, the
+next one leaves.
+
+<div align="center">
+  <img src="docs/screenshots/29-btw-aside.png" alt="An aside answering in its own block while the main agent is still working through the source files" width="800">
+</div>
+
+**A real terminal, for what a tool cannot do.** `/shell` opens a PTY in a window over the session,
+for a `sudo` password, `gcloud auth login` or `git rebase -i`, while the session keeps running
+behind it. Whether its transcript goes back to the model is a toggle in its own toolbar, off by
+default; when it does go, it is queued and arrives with whatever you say next.
+
+<div align="center">
+  <img src="docs/screenshots/23-shell-terminal.png" alt="A shell running inside the session, with its own toolbar" width="800">
+</div>
+
+**A live session panel.** The right-hand column (`F3`) shows the session as it runs: the context
+window, turns and tool calls, limits, MCP servers and their tools, agent types, permissions granted,
+tokens by model and by agent, and the git branch and its state. The picture at the top shows it.
+
 ## [See it working →](https://nickprotop.github.io/cxagent/)
 
-One session closing three features in another repo, with the mistakes left in — the full walkthrough
+One session closing three features in another repo, with the mistakes left in. The full walkthrough
 is on the site; [`docs/screenshots/`](docs/screenshots/) has the raw captures if you'd rather read
 them here.
 
 ## Quick Start
 
-**Option 1: One-line install** (Linux/macOS, no .NET required)
+Linux and macOS, no .NET required:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/install.sh | bash
 cxagent
 ```
+
+<details>
+<summary>Windows, the .NET tool, or building from source</summary>
 
 **Windows** (PowerShell)
 ```powershell
 irm https://raw.githubusercontent.com/nickprotop/cxagent/master/install.ps1 | iex
 ```
 
-**Option 2: As a .NET tool** (requires the .NET 10 SDK or runtime)
+**As a .NET tool** (requires the .NET 10 SDK or runtime)
 ```bash
 dotnet tool install -g cxagent
 cxagent
 ```
 
 Updates with `dotnet tool update -g cxagent`. Unlike the binaries above this one is
-framework-dependent — it uses the .NET you already have rather than carrying its own.
+framework-dependent: it uses the .NET you already have rather than carrying its own.
 
-**Option 3: Build from source** (requires .NET 10 SDK)
+**Build from source** (requires .NET 10 SDK)
 ```bash
 git clone https://github.com/nickprotop/cxagent.git
 cd cxagent
 ./build-and-install.sh
 ```
 
-**You do not need to write any configuration to start.** On first run — with no config file, or none
-that names a working provider — the configuration dialog opens on a choice of where your model runs
+</details>
+
+**You do not need to write any configuration to start.** On first run (with no config file, or none
+that names a working provider) the configuration dialog opens on a choice of where your model runs
 (Anthropic, OpenRouter, OpenAI, Ollama, llama.cpp, or any OpenAI-compatible endpoint), lists the
 models that endpoint serves, and writes the file for you. It is never stored in the repository.
+`F8` opens the same dialog afterwards; [Configuration](#configuration) says what a change does and
+where the file lives.
 
-**After that, `F8` opens the same dialog** — general settings, providers, MCP servers and sub-agent
-types — and a saved change applies with no restart: the general settings to tabs opened after it, the
-rest at once. Changes the model cannot see (a rotated key, the auto-mode
-reviewer, where an agent type runs) apply in place and keep every tab's prompt cache; one that would
-re-send a conversation (a tab's model changing) asks first whether to apply it now, after compressing,
-at that tab's next clear or compaction, or only to new tabs.
-
-It lands in `~/.config/cxagent/config.json` on Linux (`$XDG_CONFIG_HOME` when set),
-`%APPDATA%\cxagent\config.json` on Windows, and
-`~/Library/Application Support/cxagent/config.json` on macOS. The same directory holds your session
-history and logs.
-
-## Building your own?
-
-Everything under the terminal ships as [**`CxAgent.Core`**](cxagent.Core/README.md) — sessions,
-agents, tools, sub-agent delegation, permissions and MCP, with no UI dependency. cxagent is one
-consumer of it; [a Spectre.Console front end](cxagent.Core/examples/SpectreAgent) is another, in a
-hundred lines.
-
-```
-dotnet add package CxAgent.Core
-```
-
-## What it does
+## Working in a folder
 
 Run it in the folder you want to work in, and type what you want:
 
@@ -98,7 +163,7 @@ Run it in the folder you want to work in, and type what you want:
 add an overflow guard to EstimateOutputLength in HexEncoder.cs
 ```
 
-It reads the file, finds the method, and edits it in place — matching the surrounding indentation
+It reads the file, finds the method, and edits it in place, matching the surrounding indentation
 and style, because it is looking at the actual text rather than reconstructing it from memory.
 
 ### Tools
@@ -115,34 +180,34 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `web_fetch` | Read a web page as text, markup stripped |
 | `skill` | Load a skill's instructions on demand |
 | `todowrite` | Keep a task list across a long job |
-| `ask_user` | Ask the user questions — options with descriptions, several per call |
-| `agent` | Delegate a job to a sub-agent (fan-out mode) — in the background by default (`background`) |
-| `agent_send` | Ask a sub-agent you already spawned for more — it still has its own context |
+| `ask_user` | Ask the user questions: options with descriptions, several per call |
+| `agent` | Delegate a job to a sub-agent (fan-out mode), in the background by default (`background`) |
+| `agent_send` | Ask a sub-agent you already spawned for more; it still has its own context |
 | `task_list` | Everything running in the background: sub-agents by handle, shell commands by pid, and what finished |
-| `task_stop` | Stop a background sub-agent or command — any of them if you are the session agent, otherwise your own commands |
+| `task_stop` | Stop a background sub-agent or command: any of them if you are the session agent, otherwise your own commands |
 | `task_output` | How far a background task has got, or what it left; `wait: true` waits for it |
 
 **A long command does not have to hold the turn.** `run_shell` with `background: true` starts the
-command and returns at once with its pid and the path its output is going to — no `stdout`, because
-nothing has been printed yet — and the agent is told separately when it exits, with the exit code. A
+command and returns at once with its pid and the path its output is going to (no `stdout`, because
+nothing has been printed yet), and the agent is told separately when it exits, with the exit code. A
 command that is *still* running at its `timeout_seconds` (120 by default) is handed over the same way
 rather than killed, so the work is not thrown away and re-run; `shellDetachOnTimeout: false` in
 config kills it at the deadline instead. Sixteen background commands may run at once, and past that
-`background: true` is refused rather than queued — the refusal names `task_list` and `task_stop`, since
+`background: true` is refused rather than queued. The refusal names `task_list` and `task_stop`, since
 ending one is what frees a slot.
 
-**`F7` shows this session's background commands and sub-agents in the right-hand column — running first, then a Finished section; `Enter` on one opens it in a tab, and `x` stops a running one or deletes a finished one.** **`/tasks` lists every background command and sub-agent, `/tasks stop` stops one, and `/tasks output` shows how far it has got** — the handle or pid
+**`F7` shows this session's background commands and sub-agents in the right-hand column: running first, then a Finished section; `Enter` on one opens it in a tab, and `x` stops a running one or deletes a finished one.** **`/tasks` lists every background command and sub-agent, `/tasks stop` stops one, and `/tasks output` shows how far it has got.** The handle or pid
 completes in the palette, so nothing has to be retyped from a row you just read. The model has the
 same reach through `task_list`, `task_stop` and `task_output`, with one restriction a user does not
 have: the session agent may stop anything, but a sub-agent may stop only its own commands, and the
 refusal names who owns it.
-There is no permission prompt on a kill — the command was already approved when it was backgrounded.
+There is no permission prompt on a kill: the command was already approved when it was backgrounded.
 A detached command is killed when cxagent exits, and one left behind by a crash is killed by the next
 launch.
 
 **A long output arrives as its tail.** Above 8,192 characters `run_shell` returns the END of the
-stream, plus `stdout_spill` — a file in the job's log directory holding everything the call captured,
-head included — and `stdout_bytes`, the true size. The end is where a command's answer is: a failing
+stream, plus `stdout_spill` (a file in the job's log directory holding everything the call captured,
+head included) and `stdout_bytes`, the true size. The end is where a command's answer is: a failing
 build's error and its summary are last, while a head would show the compiler banner. A command that
 was then handed over at its deadline keeps printing to `background.out` in the same directory, so
 reading all of one takes both files.
@@ -150,42 +215,42 @@ reading all of one takes both files.
 `run_shell` also takes `env`, a set of environment variables added to the command's own.
 
 **A sub-agent runs in the background by default.** The spawn returns at once with a receipt naming
-the agent; the parent carries on, and the agent's report reaches it as a message when it is done —
+the agent; the parent carries on, and the agent's report reaches it as a message when it is done:
 later in the same turn if the parent is still working, or as a new turn if it is not. A result is
 delivered exactly once: if the parent asked for it with `task_output` and `wait: true`, no message
 follows. `background: false` makes the spawn wait for its answer, for work the next step cannot start
-without — and **Ctrl+B** (twice in tmux) moves what the turn is waiting on to the background mid-run: every
+without. **Ctrl+B** (twice in tmux) moves what the turn is waiting on to the background mid-run: every
 foreground sub-agent and command at once, its call answered with a receipt and its report arriving later as
-a background one's does. One foreground agent can be stopped alone, too — its call is answered "stopped by
+a background one's does. One foreground agent can be stopped alone, too: its call is answered "stopped by
 the user" and the turn carries on. Escape never stops a background agent; `task_stop`, `/tasks stop`, `x` on its card in `F7`,
-closing its session's tab and quitting do — closing the agent's own tab does not, and closing or quitting asks first while one is running. A tab closes as a whole: its
-background commands — its own and its sub-agents' — end with it too, unless you choose "keep N commands
+closing its session's tab and quitting do. Closing the agent's own tab does not, and closing or quitting asks first while one is running. A tab closes as a whole: its
+background commands (its own and its sub-agents') end with it too, unless you choose "keep N commands
 running" when it asks, for a server or a watcher meant to outlive the tab. An agent the user stopped reports
-that it was stopped, and the model is refused if it tries to restart it — the user's own `/agents send`,
+that it was stopped, and the model is refused if it tries to restart it; the user's own `/agents send`,
 or a line typed in the agent's tab, is the way back. Once it has finished, `x` on its card deletes it:
 gone from the panel, `/tasks`, `/agents open` and the model's reach, after any report it still owed the
 model has been handed over. If commands it started are still running, it asks first whether to stop them
 or keep them running. Headless runs (`-p`) spawn in the foreground, since a run with one answer has to wait
 for the work that answer needs.
 
-**A sub-agent is kept, not thrown away.** When one finishes, its context — everything it read, ran
-and concluded — stays for the life of the session, and `agent_send` asks it more on that same
+**A sub-agent is kept, not thrown away.** When one finishes, its context (everything it read, ran
+and concluded) stays for the life of the session, and `agent_send` asks it more on that same
 conversation. That is far cheaper than spawning a second agent to cover the ground the first already
 covered, which would have to redo the work to get back to where the first one already was. `agent`
 and `agent_send` are offered only to an agent that can spawn, so a sub-agent cannot reach a sibling.
 
-**One name per tool, and no aliases.** Several of these have been renamed — `glob` was
+**One name per tool, and no aliases.** Several of these have been renamed: `glob` was
 `list_files`, `grep` was `search_files`, `agent` was `spawn_agent` then `task`, `ask_user` was
 `question`. Each old name was accepted for a short window afterwards so a conversation resumed across
 the change would not fail on a name it had seen in its own history. Those windows are closed: a call
 under an old name gets `no such tool`, with the current names listed beside it.
 
-`todowrite` keeps its unusual spelling deliberately — it is what Claude Code calls it, and models
+`todowrite` keeps its unusual spelling deliberately: it is what Claude Code calls it, and models
 distilled from it recognise the exact string.
 
 ### Sessions
 
-**One window holds several conversations.** `/sessions new [folder]` opens another in its own tab —
+**One window holds several conversations.** `/sessions new [folder]` opens another in its own tab,
 on the same project or a different one. Each is a whole session end to end: its own history, model,
 working directory, plugins and permissions.
 
@@ -203,25 +268,25 @@ starts from what the main agent knows answers in its own block, under this sessi
 can only read. Enter keeps the side thread going; `Esc` stops an answer, then leaves. See
 [COMMANDS.md](COMMANDS.md#btw).
 
-**Any conversation exports as markdown.** `F12` or `/export` writes this one — readable for a person, or full
-for another agent to continue from — to a file or the clipboard, as a timeline with each sub-agent's work where it
+**Any conversation exports as markdown.** `F12` or `/export` writes this one (readable for a person, or full
+for another agent to continue from) to a file or the clipboard, as a timeline with each sub-agent's work where it
 happened. `/sessions export` does the same for an earlier session from any folder, without resuming it. See
 [COMMANDS.md](COMMANDS.md#export).
 
 **You see what the model thinks, and choose how hard.** Each step's thinking is its own block, folded
-from the start — `◆ Thought for 9s · 412 words` once it is done — from a local
+from the start (`◆ Thought for 9s · 412 words` once it is done), from a local
 llama.cpp model or from Claude. `Ctrl+O` opens or folds the latest; any other opens with a click. `/think` and `F10` set the level the
-model offers — `off`/`on` on llama.cpp, `low` to `max` on Claude, a model's own efforts on OpenRouter — for this session, kept on resume.
+model offers (`off`/`on` on llama.cpp, `low` to `max` on Claude, a model's own efforts on OpenRouter) for this session, kept on resume.
 See [COMMANDS.md](COMMANDS.md#think) and [CONFIG.md](CONFIG.md#providers--required).
 
 ### Permissions
 
-Reading and writing inside the working folder is free, and so are commands that can only look —
+Reading and writing inside the working folder is free, and so are commands that can only look:
 `ls`, `cat`, `grep`, and `cd` into the folder before one. Anything that can write, and anything
 outside the folder, stops and asks with **Allow once**, **Always allow**, or **Deny**.
 
 **"Always" grants the command's NAME, not the exact string.** Approving `git status` stores
-`git status*`, so the next `git status --short` runs — while `git push` still asks, because a
+`git status*`, so the next `git status --short` runs, while `git push` still asks, because a
 subcommand is part of what names a command. The prompt shows the rule it would write before you
 grant it.
 
@@ -229,14 +294,14 @@ Grants are remembered per folder, and a folder is identified by more than its pa
 and recreate it, and its old grants do not apply to the new one.
 
 **`auto` lets a model decide some of what would otherwise ask.** In a trusted folder, a shell command
-the static check refused is no longer a guaranteed prompt — it goes to the classifier first, and an
+the static check refused is no longer a guaranteed prompt: it goes to the classifier first, and an
 *allow* runs it silently. This is only for commands already confined: every path in the command
 (including a `cd` target) has to resolve inside the working folder, the command has to be fully
 parseable with no `$(...)` or backticks, and neither an egress verb like `curl` or `scp` nor a
-recursive delete like `rm -rf` is ever eligible —
-those stay outside what a verdict can silence, no matter what the model says about them. The
-classifier can also **deny** an action outright, with a reason you're shown. Every failure —
-timeout, transport error, an answer it can't parse — means ask, same as if there were no classifier.
+recursive delete like `rm -rf` is ever eligible.
+Those stay outside what a verdict can silence, no matter what the model says about them. The
+classifier can also **deny** an action outright, with a reason you're shown. Every failure
+(timeout, transport error, an answer it can't parse) means ask, same as if there were no classifier.
 Auto-decided rows are marked `auto-approved` / `auto-denied` so you can tell a model's call from a
 stored rule or a silent boundary pass.
 
@@ -246,7 +311,7 @@ stored rule or a silent boundary pass.
 context, its own conversation, and its own compaction. It runs, returns one message, and stops.
 
 What that buys is room. A search that reads thirty files to answer one question fills a context with
-material nobody needs afterwards — delegated, the parent keeps the conclusion and not the file dumps.
+material nobody needs afterwards. Delegated, the parent keeps the conclusion and not the file dumps.
 Measured on a real repo: 23k characters in the parent instead of 213k, for the same answer.
 
 A sub-agent's work is not shown in the transcript. It gets one row, showing live turns, context
@@ -254,22 +319,22 @@ occupancy and elapsed time; expand it to see what the child is doing, or its rep
 finished.
 
 `/mode agent single` turns delegation off for a session, `/mode agent fan-out` turns it back on, and
-`--mode single` starts that way. Single mode's prompt is what shipped before sub-agents existed —
+`--mode single` starts that way. Single mode's prompt is what shipped before sub-agents existed:
 turning it off really does turn it off.
 
 The axis is named because there is more than one, and `/mode` on its own reports every axis rather
 than guessing which one you meant.
 
-**`/mode edits`** decides when a file write happens without asking. `accept-edits` — the default —
+**`/mode edits`** decides when a file write happens without asking. `accept-edits`, the default,
 keeps writes inside the working directory silent and asks everywhere else; `always-ask` prompts for
 every one. **Shift+Tab cycles it** from the composer. It names what cxagent already did rather than
 granting anything new, and it cannot widen past your trust decision: on a folder you did not trust,
 `accept-edits` still asks for everything, and the listing says so. Writes to `.git/`, `.vscode/`,
-`.claude/`, `.idea/`, `.github/`, `.husky/`, `.devcontainer/`, `.cxagent/` and an `.envrc` keep asking regardless — a
+`.claude/`, `.idea/`, `.github/`, `.husky/`, `.devcontainer/`, `.cxagent/` and an `.envrc` keep asking regardless. A
 hook that runs on your next git command is not what anyone means by "accept edits".
 
 **Named types** say how a delegated job should be done. **Five ship with cxagent** and need no
-configuration — including a **planner** that writes a plan to `./plans/` and reports what it decided,
+configuration, including a **planner** that writes a plan to `./plans/` and reports what it decided,
 and a **builder** that implements one and refuses to start without it. Their briefings live in the
 program rather than in your config file, because a briefing is the contract a type keeps with the code
 around it: cxagent names the file a planner must write, checks afterwards whether it is there, and the
@@ -281,13 +346,13 @@ See [CONFIG.md](CONFIG.md) for the `agents` block, and [COMMANDS.md](COMMANDS.md
 **Honest about the limits**, because they are the sort you would otherwise find out the hard way:
 
 - **Delegation depends on your model, and what we measured is one model.** On a local
-  `qwen3.6-35b-a3b`, it delegates readily when asked — say "use a sub-agent to…" and it will — and
+  `qwen3.6-35b-a3b`, it delegates readily when asked (say "use a sub-agent to…" and it will) and
   rarely on its own judgement, usually doing the work inline instead. A stronger model may well
   choose to delegate unprompted; we have not measured one. Treat the guidance as a starting point
   rather than a property of the tool.
 - **Sub-agents in one message run concurrently.** In the background each reports on its own as it
   finishes; with `background: false` the parent waits for all of them before it answers.
-- A sub-agent cannot spawn its own — not a rule it is asked to follow, a tool it is never given.
+- A sub-agent cannot spawn its own: not a rule it is asked to follow, a tool it is never given.
 - **A briefing is a request, not a permission.** "Never edit files" in a type's briefing asks the
   agent not to; it does not remove the tool. Permissions are the mechanism that constrains an agent,
   and they apply to sub-agents exactly as they apply to the main one.
@@ -298,7 +363,7 @@ Instructions the model loads **when it needs them**, instead of carrying them on
 
 Put a `SKILL.md` in `.cxagent/skills/<name>/` with a `description` saying *when* it applies. Only the
 name and description ride in the prompt; the body is fetched by a tool when the model decides a task
-matches — so twenty skills cost a few hundred characters instead of sixty thousand.
+matches, so twenty skills cost a few hundred characters instead of sixty thousand.
 
 ```markdown
 ---
@@ -311,19 +376,19 @@ Every posting must sum to exactly zero. Reject unbalanced transactions with
 ERR-UNBALANCED in the message.
 ```
 
-`/skills` lists what was found — and, more usefully, every `SKILL.md` that was **skipped and why**,
+`/skills` lists what was found and, more usefully, every `SKILL.md` that was **skipped and why**,
 because a file with broken frontmatter is otherwise invisible: you wrote it, nothing happened, and
 there was no error anywhere. The session panel shows which skills are currently in force.
 
 Skills from every folder are offered together; for a name that appears twice, the nearest wins.
-Type a skill's name — `/double-entry-posting` — to run it yourself. Claude Code's `.claude/skills/`
+Type a skill's name (`/double-entry-posting`) to run it yourself. Claude Code's `.claude/skills/`
 are not read: they are written for that tool's tools. One that suits cxagent too can be copied or
 linked into `.cxagent/skills/`, where cxagent's own permission gate still governs every tool call
 and no `allowed-tools` grant comes with it.
 
 **Same caveat as delegation: whether a model reaches for a skill is a property of the model.** On a
-local `qwen3.6-35b-a3b` it does — it announced *"this is a double-entry bookkeeping task, so let me
-load that skill first"* and loaded it unprompted — but only after the prompt was changed to say
+local `qwen3.6-35b-a3b` it does (it announced *"this is a double-entry bookkeeping task, so let me
+load that skill first"* and loaded it unprompted), but only after the prompt was changed to say
 explicitly that reading the file directly is not the same thing. Before that, the model found the
 `SKILL.md` with the file-listing tool and read it: the instructions arrived, and nothing else in
 the session knew a skill was in force.
@@ -343,9 +408,9 @@ argument-hint: [pr-number]
 Review PR $1 against the house style. The diff: !`gh pr diff $1`
 ```
 
-`/review 42` sends that, with the PR's diff in place of the shell line — which asks first, like any
+`/review 42` sends that, with the PR's diff in place of the shell line, which asks first, like any
 shell command the model runs. A Claude Code command copied into `.cxagent/commands/` works
-unchanged — `.claude/commands/` itself is not read; its `allowed-tools` is ignored, and `/commands`
+unchanged; `.claude/commands/` itself is not read. Its `allowed-tools` is ignored, and `/commands`
 says so, along with every file that was shadowed or skipped. A command typed while a turn runs waits and runs next. `cxagent -p "/review 42"` runs it
 headlessly. See [CONFIG.md](CONFIG.md#custom-commands).
 
@@ -355,12 +420,12 @@ Tools from a DLL you drop in a folder, without rebuilding cxagent.
 
 Four are in the catalog:
 
-- **csharp-lsp** — go-to-definition, find-references and diagnostics for C#, backed by a language
+- **csharp-lsp**: go-to-definition, find-references and diagnostics for C#, backed by a language
   server, crossing project boundaries as grep cannot.
-- **calculator** — evaluates a whole arithmetic expression exactly, in one call.
-- **triggers** — work that starts without anybody typing: a turn schedules a prompt to arrive later
+- **calculator**: evaluates a whole arithmetic expression exactly, in one call.
+- **triggers**: work that starts without anybody typing: a turn schedules a prompt to arrive later
   in the same session.
-- **clone-finder** — duplicated code found without reading the repository: locations ranked by size,
+- **clone-finder**: duplicated code found without reading the repository: locations ranked by size,
   in one call.
 
 None is bundled with the installer. Each arrives through the plugin manager (**F2**), which
@@ -383,11 +448,11 @@ or keep it, in `config.json`:
 "plugins": { "csharp-lsp": { "file": "csharp-lsp.dll" } }
 ```
 
-Either way it asks once whether to trust the binary, showing a hash of its contents — **installing a
+Either way it asks once whether to trust the binary, showing a hash of its contents. **Installing a
 plugin is not approving it**, and nothing in config can pre-approve one. It needs a C# language
 server on PATH: `dotnet tool install -g csharp-ls`.
 
-Its lookups run unasked inside the folder you started in, and ask before reading a file outside it —
+Its lookups run unasked inside the folder you started in, and ask before reading a file outside it:
 a plugin decides that per call, from the arguments, rather than being on or off for every call.
 
 Browse plugins at [https://nickprotop.github.io/cxagent/plugins.html](https://nickprotop.github.io/cxagent/plugins.html). Writing one starts at
@@ -396,7 +461,19 @@ Browse plugins at [https://nickprotop.github.io/cxagent/plugins.html](https://ni
 
 ## Configuration
 
-`~/.config/cxagent/config.json`:
+**`F8` opens the configuration dialog** (general settings, providers, MCP servers and sub-agent
+types), and a saved change applies with no restart: the general settings to tabs opened after it, the
+rest at once. Changes the model cannot see (a rotated key, the auto-mode
+reviewer, where an agent type runs) apply in place and keep every tab's prompt cache; one that would
+re-send a conversation (a tab's model changing) asks first whether to apply it now, after compressing,
+at that tab's next clear or compaction, or only to new tabs.
+
+The file lands in `~/.config/cxagent/config.json` on Linux (`$XDG_CONFIG_HOME` when set),
+`%APPDATA%\cxagent\config.json` on Windows, and
+`~/Library/Application Support/cxagent/config.json` on macOS. The same directory holds your session
+history and logs.
+
+Written by hand, `~/.config/cxagent/config.json`:
 
 ```json
 {
@@ -409,13 +486,13 @@ Browse plugins at [https://nickprotop.github.io/cxagent/plugins.html](https://ni
 
 Provider kinds: `ollama`, `openai-compatible` (requires `baseUrl`), `anthropic`.
 
-Set `contextWindow` on a provider when you know it — it is the denominator for the occupancy
+Set `contextWindow` on a provider when you know it: it is the denominator for the occupancy
 readout and the trigger for compaction. Left unset, cxagent asks the endpoint at startup.
 
 Optional blocks: `agents` for sub-agent types, `mcp` for MCP servers, `plugins` for tools loaded from
 disk, `orchestrator` for caps.
 
-**[CONFIG.md](CONFIG.md) is the full reference** — every block, where the file lives on each OS, what
+**[CONFIG.md](CONFIG.md) is the full reference**: every block, where the file lives on each OS, what
 else cxagent keeps in that directory, and how `AGENTS.md` / `CXAGENT.md` / `CLAUDE.md` are resolved.
 [`config.sample.json`](config.sample.json) documents every key inline, including what each one's
 absence means.
@@ -435,7 +512,7 @@ cxagent --mode <single|fan-out>  # start in that mode
 cxagent --config-dir <dir>       # use this directory instead of the usual one
 cxagent --theme <name>           # start in a named theme
 cxagent --mock                   # a fake provider, to try the UI
-cxagent -p "<goal>"              # run one goal without the TUI — see SCRIPTING.md
+cxagent -p "<goal>"              # run one goal without the TUI; see SCRIPTING.md
 cxagent -v, --version
 cxagent -h, --help               # the options, also shown when an argument is wrong
 ```
@@ -443,7 +520,7 @@ cxagent -h, --help               # the options, also shown when an argument is w
 The options follow Claude Code's names where it has one, so a script written for `claude -p` runs
 with `cxagent` swapped in.
 
-**`--config-dir`** points cxagent at a different config directory — the one holding `config.json`,
+**`--config-dir`** points cxagent at a different config directory: the one holding `config.json`,
 the session database and the logs. The path is used AS the directory, with no `cxagent` folder
 appended, unlike `XDG_CONFIG_HOME`. It is the quickest way to try something against a clean setup
 without touching your own:
@@ -453,13 +530,13 @@ cxagent --config-dir /tmp/scratch
 ```
 
 **`--theme`** starts in a named theme. Names are case-insensitive, and one that matches nothing falls
-back to cxagent's own rather than refusing to start — a colour scheme is not worth failing over.
+back to cxagent's own rather than refusing to start: a colour scheme is not worth failing over.
 `--help` lists what is installed. A `theme` key in `config.json` does the same thing for every run;
 the argument wins when both are present.
 
 ### Headless
 
-`-p` runs one goal, prints the result and exits — for scripts and pipes, for CI, and for another
+`-p` runs one goal, prints the result and exits: for scripts and pipes, for CI, and for another
 program driving cxagent:
 
 ```bash
@@ -469,55 +546,55 @@ cxagent -p "list the TODOs" --output-format json | jq -r .result
 cxagent -c -p "now fix the first one"                       # continue the run before
 ```
 
-The options are Claude Code's — `--output-format text|json|stream-json`, `-c`, `-r`,
-`--permission-mode`, `--max-turns` — so a script written for `claude -p` runs with `cxagent` swapped
+The options are Claude Code's (`--output-format text|json|stream-json`, `-c`, `-r`,
+`--permission-mode`, `--max-turns`), so a script written for `claude -p` runs with `cxagent` swapped
 in. **Nobody is there to answer a prompt**, so anything that would ask is refused and listed in the
 result; `--trust` and the permission modes decide what runs without asking. Every run is an ordinary
 session: the next line of a script continues it with `-c`, and the TUI opens it afterwards.
 
 **[SCRIPTING.md](SCRIPTING.md)** is the guide: a review gate in CI, a pre-push hook, a step-by-step
-chain, batch runs over files, live progress from `stream-json`, release notes from `git log` — each
-one run before it was written down — and the full reference for options, output and exit codes.
+chain, batch runs over files, live progress from `stream-json`, release notes from `git log` (each
+one run before it was written down), and the full reference for options, output and exit codes.
 
 ## Keys
 
 | Key | Action |
 |-----|--------|
-| `Enter` | Send. During a running turn, queues instead — several queued messages go as one prompt |
+| `Enter` | Send. During a running turn, queues instead; several queued messages go as one prompt |
 | `Esc` | Stop the running turn. Anything queued goes back into the composer rather than being lost. In btw mode: stop the aside's answer, then leave btw mode |
 | `F1` | Help |
 | `F3` | Session panel (show / hide / automatic) |
 | `F4` | Put the cursor back in the composer |
-| `F6` | Focus the tab strip — then `←` `→` to change session, `F6` back to the composer |
-| `Ctrl+B` | Move what the turn is waiting on to the background — every foreground sub-agent and command (twice in tmux) |
-| `F7` | Tasks panel — background commands and sub-agents in the right-hand column; `↑` `↓` choose, `Enter` opens, `x` stops a running one and deletes a finished one. `F7` again hides it |
-| `F8` | Configuration — general settings, providers, MCP servers, agent types |
-| `F12` | Export this conversation as markdown — readable or full, to a file or the clipboard; in an agent's tab, that agent. See [`/export`](COMMANDS.md#export) |
-| `F10` | Next thinking level this model offers — see `/think`. (gnome-terminal opens its own menu on F10 unless that is turned off in its preferences) |
+| `F6` | Focus the tab strip, then `←` `→` to change session, `F6` back to the composer |
+| `Ctrl+B` | Move what the turn is waiting on to the background: every foreground sub-agent and command (twice in tmux) |
+| `F7` | Tasks panel: background commands and sub-agents in the right-hand column; `↑` `↓` choose, `Enter` opens, `x` stops a running one and deletes a finished one. `F7` again hides it |
+| `F8` | Configuration: general settings, providers, MCP servers, agent types |
+| `F12` | Export this conversation as markdown, readable or full, to a file or the clipboard; in an agent's tab, that agent. See [`/export`](COMMANDS.md#export) |
+| `F10` | Next thinking level this model offers; see `/think`. (gnome-terminal opens its own menu on F10 unless that is turned off in its preferences) |
 | `F9` | Theme |
 | `Ctrl+O` | Open or fold the latest thinking block |
-| `Shift+Tab` | Cycle the edit mode — see [COMMANDS.md](COMMANDS.md) |
+| `Shift+Tab` | Cycle the edit mode; see [COMMANDS.md](COMMANDS.md) |
 | `Ctrl+Q` | Quit |
 
-Commands are typed in the composer — see [COMMANDS.md](COMMANDS.md).
+Commands are typed in the composer; see [COMMANDS.md](COMMANDS.md).
 
 ## What this thing actually does to your machine
 
 Read this once. It is short, and every line of it is something the software genuinely does.
 
-**It edits your files.** Inside the working folder it writes without asking — that is the point of
+**It edits your files.** Inside the working folder it writes without asking. That is the point of
 it, and it is why you should run it in a git repository with your work committed. `git diff` is the
 review step. There is no undo inside cxagent.
 
-**It runs shell commands.** Anything outside the working folder, and every shell command, asks first
-— **Allow once**, **Always allow**, or **Deny**. "Always" is remembered per folder. Read what you are
+**It runs shell commands.** Anything outside the working folder, and every shell command, asks first:
+**Allow once**, **Always allow**, or **Deny**. "Always" is remembered per folder. Read what you are
 approving: the command is shown in full, and *"always allow"* means the next one like it will not
 ask. A model can propose a command that deletes things, and if you approve it, it runs.
 
-**In `auto` mode, a model can run a shell command without asking you first.** This is bounded — the
+**In `auto` mode, a model can run a shell command without asking you first.** This is bounded (the
 folder has to be trusted, the command has to resolve entirely inside it, and things like `$(...)`
 substitution, `curl`/`scp`-style egress and `rm -rf`-style recursive deletes are never eligible,
-whatever the model decides — but the decision to skip the prompt is still made by a language model,
+whatever the model decides), but the decision to skip the prompt is still made by a language model,
 and language models are wrong sometimes. That trade is the point of the mode: fewer interruptions on the commands most likely to be
 fine, at the cost of trusting a model's judgment on the ones it approves without you seeing them
 first. If you want every shell command to ask, don't use `auto`.
@@ -526,7 +603,7 @@ first. If you want every shell command to ask, don't use `auto`.
 sub-agent is a whole second run of turns. A single delegated search can cost several hundred thousand
 tokens. The session panel shows the running total and the parent/worker split, `/stats` shows what
 past sessions cost and which tools fill the context, and `orchestrator.maxTurns` stops a request
-after a set number of turns. **A turn cap bounds iterations, not spend** — one turn that reads a
+after a set number of turns. **A turn cap bounds iterations, not spend**: one turn that reads a
 large file costs more than ten that do not, so it is a backstop against a runaway, not a budget. If you point cxagent at a paid API, **you are paying for what
 it does**, including work that turns out to be wrong.
 
@@ -540,19 +617,19 @@ your chosen model provider, and to any MCP server you have enabled. What they do
 you and them.
 
 **A plugin is code you chose to run.** A plugin is a DLL loaded into cxagent's own process, so it can
-do anything cxagent can — it is not sandboxed, and no permission gate constrains what it does
+do anything cxagent can. It is not sandboxed, and no permission gate constrains what it does
 internally. What cxagent can enforce is the decision to load it at all: it asks once, showing a hash
 of the plugin's whole contents, and asks again if a single byte of it changes. Nothing in config can
 pre-approve one. Past that, a plugin gates its own operations, or does not; **trusting a plugin is
 trusting its author**, exactly as installing any other software is.
 
 **A sub-agent is an agent.** It inherits its parent's tools and the same permission gate. A type's
-briefing — "never edit files" — is a request written into its prompt, not a sandbox. Models do not
+briefing ("never edit files") is a request written into its prompt, not a sandbox. Models do not
 reliably follow instructions they are given. **Permissions and tool selection are the mechanisms
 that constrain an agent; prose is not.**
 
 A [tool selection](CONFIG.md#tools--what-an-agent-is-offered) narrows what an agent is offered, and a withheld tool is
-refused if called by name rather than merely hidden — so it constrains rather than suggests. It is
+refused if called by name rather than merely hidden, so it constrains rather than suggests. It is
 not a security boundary on its own: it decides what this deployment offers, while the permission
 gate decides what any offered tool may do.
 
@@ -560,6 +637,17 @@ gate decides what any offered tool may do.
 with no warranty of any kind. The authors are not liable for lost work, deleted files, broken builds,
 leaked secrets, provider bills, or anything an agent does with the access you granted it. Review the
 diff. Keep backups. Do not run it against anything you cannot afford to have changed.
+
+## Building your own?
+
+Everything under the terminal ships as [**`CxAgent.Core`**](cxagent.Core/README.md): sessions,
+agents, tools, sub-agent delegation, permissions and MCP, with no UI dependency. cxagent is one
+consumer of it; [a Spectre.Console front end](cxagent.Core/examples/SpectreAgent) is another, in a
+hundred lines.
+
+```
+dotnet add package CxAgent.Core
+```
 
 ## Uninstall
 
@@ -577,7 +665,7 @@ dotnet tool uninstall -g cxagent
 irm https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.ps1 | iex
 ```
 
-Your configuration and session history are left alone — they live in
+Your configuration and session history are left alone. They live in
 `$XDG_CONFIG_HOME/cxagent` (`%APPDATA%\cxagent` on Windows, `~/Library/Application Support/cxagent`
 on macOS). Delete that directory to remove them too.
 
@@ -594,4 +682,4 @@ find it.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
