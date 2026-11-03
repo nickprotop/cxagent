@@ -79,6 +79,25 @@ public class SessionAsideTests : IDisposable
         Assert.Equal(["why?"], aside.Asked.ToArray());
     }
 
+    /// <summary>
+    /// /btw with a pasted block on the same line: the aside's block shows the question as typed, the
+    /// aside reads the text.
+    /// </summary>
+    [Fact]
+    public async Task Btw_WithAShownQuestion_ShowsIt_AndAsksTheText()
+    {
+        var (manager, session, _, model, aside) = Wired();
+        using var _m = manager;
+        await Spoke(session, model, "hello");
+        model.EnqueueResponse(new LlmResponse { Text = "side", StopReason = "end_turn" });
+
+        session.Btw("which? a\nb\nc", "which? [Pasted text #1 +3 lines]");
+
+        Assert.Equal(AsideEnd.Answered, await aside.Done.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(["which? [Pasted text #1 +3 lines]"], aside.Asked.ToArray());
+        Assert.Contains(model.LastMessages!, m => m.Role == "user" && m.Content.EndsWith("which? a\nb\nc"));
+    }
+
     [Fact]
     public async Task BareBtw_EntersTheMode_AndWaitsForTheQuestion()
     {

@@ -100,6 +100,37 @@ public class ComposerTokenTests
         Assert.Equal([new CxAgent.Core.Models.PastedText("[Pasted text #1 +18 lines]", Pasted)], line.Pastes);
     }
 
+    /// <summary>
+    /// A /btw line with a token is recognised, so the UI can hand the aside the question as typed; the
+    /// command registry would pass only the text.
+    /// </summary>
+    [Fact]
+    public void ABtwLineWithAToken_GivesItsQuestionBothWays()
+    {
+        var composer = MainWindow.NewPrompt();
+        composer.Input = "/btw which? ";
+        composer.Paste(Pasted);
+
+        Assert.True(ComposerLine.Of(composer).IsBtw(out var question, out var shown));
+        Assert.Equal("which? " + Pasted, question);
+        Assert.Equal("which? [Pasted text #1 +18 lines]", shown);
+    }
+
+    /// <summary>Without a token, or for another command, the registry runs the line as it always has.</summary>
+    [Theory]
+    [InlineData("/btw which line?", false)]
+    [InlineData("/btwx ", true)]
+    [InlineData("/mode ", true)]
+    [InlineData("tell me /btw ", true)]
+    public void OtherLines_AreNotTakenAsBtw(string typed, bool paste)
+    {
+        var composer = MainWindow.NewPrompt();
+        composer.Input = typed;
+        if (paste) composer.Paste(Pasted);
+
+        Assert.False(ComposerLine.Of(composer).IsBtw(out _, out _));
+    }
+
     /// <summary>Without a token there is nothing to echo differently, so nothing changes.</summary>
     [Fact]
     public void ALineWithoutTokens_HasNoEcho()

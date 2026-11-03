@@ -101,6 +101,31 @@ internal sealed record ComposerLine(string Text, string? Echo, IReadOnlyList<Pro
     /// The pasted blocks in the line, label and text, kept with the message so a readable export can
     /// show what each label stood for.
     /// </summary>
+    /// <summary>
+    /// Whether this is a <c>/btw</c> line with a pasted token, and its question both ways: as the aside
+    /// reads it and as its block shows it.
+    ///
+    /// <para>THE ONE COMMAND THAT SHOWS ITS ARGUMENTS. The command registry hands a handler only the text,
+    /// so a /btw question run through it shows a pasted block in full; every other command takes a name, a
+    /// number or a choice, and nothing of it is drawn back. So this one is recognised here, beside the
+    /// tokens, rather than every handler being given the line as typed for one of them to read.</para>
+    ///
+    /// <para>ONLY WITH A TOKEN. A line without one is the same both ways, and the registry runs it as it
+    /// always has.</para>
+    /// </summary>
+    internal bool IsBtw(out string question, out string shown)
+    {
+        question = shown = "";
+        if (Echo is null || !Text.StartsWith("/btw", StringComparison.Ordinal)) return false;
+
+        var typed = CxAgent.Core.Skills.CommandText.SplitLine(Text);
+        if (typed.Name != "btw") return false;
+
+        question = typed.Arguments;
+        shown = CxAgent.Core.Skills.CommandText.SplitLine(Echo).Arguments;
+        return true;
+    }
+
     internal IReadOnlyList<PastedText> Pastes =>
         [.. Segments.Where(s => s.Token?.Tag == PasteTokens.Tag).Select(s => new PastedText(s.Token!.Label, s.Token.Value))];
 }

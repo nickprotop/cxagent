@@ -1705,6 +1705,14 @@ public static class AppBootstrap
             // NOT IN BTW MODE. Everything typed there is the aside's, a leading slash included, and
             // Session.Submit routes it there before its own command dispatch — which this line would
             // otherwise pre-empt, running "/clear what does this do?" as a /clear.
+            // /btw WITH A PASTED TOKEN, asked here rather than through the registry, which would pass the aside
+            // only the text and draw the paste in full in its block — see ComposerLine.IsBtw.
+            if (!target.InAside && line.IsBtw(out var question, out var shownQuestion))
+            {
+                target.Btw(question, shownQuestion);
+                return;
+            }
+
             if (!target.InAside && manager.Commands.TryRun(target, goalText)) return;
 
             var disposition = target.Submit(goalText, line.Echo, pastes: line.Pastes);

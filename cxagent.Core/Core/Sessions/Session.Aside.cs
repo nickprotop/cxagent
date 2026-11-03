@@ -26,7 +26,12 @@ public sealed partial class Session
     /// <c>/btw</c>: forks what the agent last sent and enters btw mode, asking at once when there is
     /// a question.
     /// </summary>
-    public CommandStatus Btw(string question)
+    /// <param name="question">What the aside reads.</param>
+    /// <param name="shown">
+    /// The question as its block shows it, when that differs — a pasted block as its label. The command
+    /// registry passes only the text, so a front end that has the line as typed calls this itself.
+    /// </param>
+    public CommandStatus Btw(string question, string? shown = null)
     {
         if (Host is not { } host)
         {
@@ -54,7 +59,7 @@ public sealed partial class Session
         Volatile.Write(ref _inAside, true);
         Announce(SessionChangeKind.Aside);
 
-        if (!string.IsNullOrWhiteSpace(question)) runner.Ask(question.Trim());
+        if (!string.IsNullOrWhiteSpace(question)) runner.Ask(question.Trim(), shown?.Trim());
         return CommandStatus.Reported;
     }
 
