@@ -1953,9 +1953,13 @@ public class InlineJobSinkTests
         Assert.Equal(Digits(invariant!), Digits(french!));
     }
 
-    /// <summary>Replaces every digit with '0', leaving the separators a culture would change.</summary>
+    /// <summary>
+    /// Replaces every digit with '0', leaving the separators a culture would change — and every spinner
+    /// frame with one frame. The spinner moves with the clock too, so two renders a frame apart differ
+    /// there just as their elapsed figures do, and that is not what culture changes.
+    /// </summary>
     private static string Digits(string text) =>
-        new(text.Select(c => char.IsDigit(c) ? '0' : c).ToArray());
+        new(text.Select(c => char.IsDigit(c) ? '0' : c is >= '\u2800' and <= '\u28FF' ? '\u28FF' : c).ToArray());
 
     [Fact]
     public void TheInFlightRow_EscapesItsTargetButNotItsToolName()
