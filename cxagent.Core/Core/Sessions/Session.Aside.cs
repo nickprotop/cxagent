@@ -59,12 +59,14 @@ public sealed partial class Session
     }
 
     /// <summary>Sends what the user typed in btw mode to the aside.</summary>
-    public SubmitOutcome SendAside(string text)
+    /// <param name="text">What the aside reads.</param>
+    /// <param name="echo">What the aside's block shows, when that differs — a pasted block as its label.</param>
+    public SubmitOutcome SendAside(string text, string? echo = null)
     {
         var runner = Volatile.Read(ref _aside);
         if (runner is null) return new SubmitOutcome.Refused("not in btw mode");
 
-        var answering = runner.Ask(text);
+        var answering = runner.Ask(text, echo);
         if (answering is null)
             Say(new Message("the aside is still answering — wait for it, or Esc to stop it", Severity.Warning));
         return new SubmitOutcome.Aside(answering);

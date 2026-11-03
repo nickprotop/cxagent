@@ -2167,10 +2167,14 @@ public sealed class Agent
                 // summarised away in the same turn it arrived, and PlaceTaskList runs after it.
                 if (TakePendingSteer?.Invoke() is { } steer)
                 {
+                    // THE LINE AS TYPED AND ITS PASTES GO WITH IT, as with a message sent between turns:
+                    // the session list and a readable export read them, never the model.
                     messages.Add(new ChatMessage
                     {
                         Role = "user",
                         Content = steer.ForModel,
+                        Shown = steer.Shown != steer.ForModel ? steer.Shown : null,
+                        Pastes = steer.Pastes is { Count: > 0 } ? steer.Pastes : null,
                         Timestamp = DateTimeOffset.UtcNow,
                     });
 

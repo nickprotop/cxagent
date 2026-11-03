@@ -35,6 +35,16 @@ public sealed partial class Session
     private readonly object _pendingGate = new();
 
     /// <summary>
+    /// <see cref="_pending"/> as the user typed it, a pasted block as its label — what the queued block
+    /// draws and the message's row shows — and the blocks pasted into it.
+    ///
+    /// <para>BESIDE THE TEXT, NOT INSTEAD OF IT: the model reads the text, and the two are appended
+    /// together under the same gate so they always describe the same lines.</para>
+    /// </summary>
+    private string? _pendingShown;
+    private List<Models.PastedText>? _pendingPastes;
+
+    /// <summary>
     /// Whose <see cref="_pending"/> is: one plugin's when only that plugin queued it, and the user's
     /// otherwise. Read only when the tail starts a turn from the queue — see ResumeIfPending.
     ///
@@ -92,20 +102,31 @@ public sealed partial class Session
     /// </summary>
     public void Steer(string text) => SteerAs(text, TurnOriginator.User);
 
+    /// <summary>What is waiting, as the model will read it, as the user typed it, and the pastes in it.</summary>
+    private sealed record Waiting(string Text, string Shown, IReadOnlyList<Models.PastedText>? Pastes, TurnOriginator Origin);
+
     /// <summary>
     /// <see cref="Steer"/> on someone's behalf.
     ///
     /// <para>MIXED TEXT IS THE USER'S. A plugin's name on a turn is a licence for unwire to cancel it,
     /// so a queue holding anyone else's words beside the plugin's must not carry the name.</para>
     /// </summary>
-    private void SteerAs(string text, TurnOriginator origin)
+    /// <param name="text">What the model reads.</param>
+    /// <param name="origin">Whose words they are.</param>
+    /// <param name="shown">The line as typed, when it differs — a pasted block as its label.</param>
+    /// <param name="pastes">The blocks pasted into it.</param>
+    private void SteerAs(string text, TurnOriginator origin, string? shown = null,
+        IReadOnlyList<Models.PastedText>? pastes = null)
     {
         string whole;
+        var added = shown ?? text;
         CancellationTokenSource? spoke;
         lock (_pendingGate)
         {
             _pendingOrigin = string.IsNullOrEmpty(_pending) || _pendingOrigin == origin ? origin : TurnOriginator.User;
-            whole = _pending = string.IsNullOrEmpty(_pending) ? text : _pending + "\n" + text;
+            _pending = string.IsNullOrEmpty(_pending) ? text : _pending + "\n" + text;
+            whole = _pendingShown = string.IsNullOrEmpty(_pendingShown) ? added : _pendingShown + "\n" + added;
+            if (pastes is { Count: > 0 }) (_pendingPastes ??= []).AddRange(pastes);
             spoke = _userSpoke;
             _userSpoke = null;
         }
@@ -118,7 +139,7 @@ public sealed partial class Session
         // back, or blocking on the UI thread while the UI thread waits here — deadlocks if this is
         // raised while holding _pendingGate. It compiles, it passes every test, and it hangs only in
         // the app: the same failure shape as a permission test that awaits a prompt nobody answers.
-        Pending?.Invoke(whole, text);
+        Pending?.Invoke(whole, added);
     }
 
     /// <summary>
@@ -146,10 +167,10 @@ public sealed partial class Session
     /// </param>
     public void CancelPending(string? by = null)
     {
-        string? taken;
-        lock (_pendingGate) { taken = _pending; _pending = null; _pendingOrigin = TurnOriginator.User; }
-
-        if (taken is { Length: > 0 }) Cancelled?.Invoke(taken, by);
+        // THE TEXT GOES BACK, as the model would have read it: a front end that kept the line as typed —
+        // its pasted tokens — puts that back instead, since only it can rebuild a token.
+        var taken = TakeWaiting();
+        if (taken is not null) Cancelled?.Invoke(taken.Text, by);
     }
 
     /// <summary>
@@ -223,8 +244,12 @@ public sealed partial class Session
     /// part of the queued block drawn as the user's and of what Escape returns to their composer; kept
     /// apart until now, only the model ever sees the two together.</para>
     /// </summary>
-    public Agents.SteerDelivery? TakeSteer() =>
-        TakePendingSteer() is { Length: > 0 } shown ? WithInjected(shown) : null;
+    public Agents.SteerDelivery? TakeSteer()
+    {
+        if (TakeWaiting() is not { } waiting) return null;
+        Drained?.Invoke(waiting.Shown);
+        return WithInjected(waiting);
+    }
 
     /// <summary>
     /// <see cref="TakeSteer"/> WITHOUT RAISING <see cref="Drained"/>, also answering whose the steer was —
@@ -234,8 +259,12 @@ public sealed partial class Session
     /// the steer exists only in what this returns, so a Drained handler failing inside the take would throw
     /// away the user's words with the return value — see ResumeIfPending.</para>
     /// </summary>
-    private Agents.SteerDelivery? TakeSteerUnannounced(out TurnOriginator origin) =>
-        TakePendingUnannounced(out origin) is { Length: > 0 } shown ? WithInjected(shown) : null;
+    private Agents.SteerDelivery? TakeSteerUnannounced(out TurnOriginator origin)
+    {
+        var waiting = TakeWaiting();
+        origin = waiting?.Origin ?? TurnOriginator.User;
+        return waiting is null ? null : WithInjected(waiting);
+    }
 
     /// <summary>
     /// <see cref="TakeSteer"/> for the running turn — its tool barrier and its loop's check between laps —
@@ -269,10 +298,10 @@ public sealed partial class Session
     /// </summary>
     private ExceptionDispatchInfo? _drainedFault;
 
-    private Agents.SteerDelivery WithInjected(string shown) =>
+    private Agents.SteerDelivery WithInjected(Waiting waiting) =>
         TakeInjected() is { Length: > 0 } injected
-            ? new Agents.SteerDelivery(shown, injected + "\n\n" + shown)
-            : new Agents.SteerDelivery(shown, shown);
+            ? new Agents.SteerDelivery(waiting.Shown, injected + "\n\n" + waiting.Text, waiting.Pastes)
+            : new Agents.SteerDelivery(waiting.Shown, waiting.Text, waiting.Pastes);
 
     /// <summary>
     /// The source <see cref="UserSpokeToken"/> hands out while nothing is waiting; <see cref="Steer"/>
@@ -322,24 +351,26 @@ public sealed partial class Session
     /// </summary>
     public string? TakePendingSteer()
     {
-        var taken = TakePendingUnannounced(out _);
+        var taken = TakeWaiting();
 
         // OUTSIDE THE LOCK — see Steer. This one is raised from the agent's own flow while Steer
         // comes from the render loop, which is the two-thread pair the lock exists for and the pair
         // a subscriber would deadlock between.
-        if (taken is { Length: > 0 }) Drained?.Invoke(taken);
+        if (taken is not null) Drained?.Invoke(taken.Shown);
 
-        return taken;
+        return taken?.Text;
     }
 
-    private string? TakePendingUnannounced(out TurnOriginator origin)
+    /// <summary>Empties the queue and returns what was in it, or null when nothing was.</summary>
+    private Waiting? TakeWaiting()
     {
         lock (_pendingGate)
         {
-            var taken = _pending;
-            origin = _pendingOrigin;
-            (_pending, _pendingOrigin) = (null, TurnOriginator.User);
-            return taken;
+            var waiting = string.IsNullOrEmpty(_pending)
+                ? null
+                : new Waiting(_pending, _pendingShown ?? _pending, _pendingPastes, _pendingOrigin);
+            (_pending, _pendingShown, _pendingPastes, _pendingOrigin) = (null, null, null, TurnOriginator.User);
+            return waiting;
         }
     }
 }

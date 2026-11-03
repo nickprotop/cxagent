@@ -97,6 +97,27 @@ public class SteeringTests
 
     // TAKEN ONCE. The hook clears as it reads, and a turn with several barriers must not deliver the
     // same correction at each of them.
+    /// <summary>
+    /// A steer with a pasted block, taken at the barrier: the model reads the text, and the message keeps
+    /// the line as typed and the paste, as a message sent between turns does.
+    /// </summary>
+    [Fact]
+    public async Task ASteerWithAPaste_KeepsTheLineAsTyped_AndThePaste()
+    {
+        var provider = ProviderThatCallsATool();
+        var sink = new RecordingSink();
+        var agent = NewAgent(provider, sink);
+        var paste = new PastedText("[Pasted text #1 +3 lines]", "a\nb\nc");
+        SteerDelivery? pending = new("check [Pasted text #1 +3 lines]", "check a\nb\nc", [paste]);
+        agent.TakePendingSteer = () => { var p = pending; pending = null; return p; };
+
+        await agent.SendAsync("do the thing", CancellationToken.None);
+
+        var steer = Assert.Single(provider.LastMessages!, m => m.Role == "user" && m.Content == "check a\nb\nc");
+        Assert.Equal("check [Pasted text #1 +3 lines]", steer.Shown);
+        Assert.Equal([paste], steer.Pastes!);
+    }
+
     [Fact]
     public async Task ASteerIsDeliveredExactlyOnce()
     {

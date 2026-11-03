@@ -100,7 +100,7 @@ public sealed class AgentTab : IDisposable
         MainWindow.TitleComposerRule(ComposerRule, inAside: false);
 
         // ON ENTER, NOT ON EVERY KEYSTROKE — the question prompt's lesson.
-        _input.Entered += (_, text) => _ = Submit(text);
+        _input.Entered += (_, _) => _ = SubmitComposer();
 
         // THE HEADER PINNED ABOVE THE TRANSCRIPT, as the job tab's: following a long run must not carry the state
         // and the clock off the top. Cells for the composer, not Auto — see SessionTab.ComposerRows for the
@@ -194,17 +194,25 @@ public sealed class AgentTab : IDisposable
     public bool CanType => _now is not { Foreground: true, Running: true } && !Session.SubAgents.Ended;
 
     /// <summary>
-    /// Sends what was typed, clears the composer, and shows the tab whatever the send says for itself.
+    /// Sends what the composer holds, clears it, and shows the tab whatever the send says for itself: a pasted
+    /// token as its text, and the line as typed — the label in its place — for the tab's row and the parent's
+    /// trail, as the session's own composer sends it.
     ///
     /// <para>THE ANSWER IS NOT WRITTEN HERE: the tab is attached to the child, and its answer arrives as it is
     /// written, with the user's own turn above it. A refusal or a delivery note goes through the tab's own transcript
     /// sink, which knows how to reach the UI thread.</para>
     /// </summary>
-    public async Task Submit(string text)
+    public Task SubmitComposer()
+    {
+        var line = ComposerLine.Of(_input);
+        return Send(line.Text, line.Echo, line.Pastes);
+    }
+
+    private async Task Send(string text, string? echo, IReadOnlyList<Core.Models.PastedText>? pastes)
     {
         if (!CanType || string.IsNullOrWhiteSpace(text)) return;
         _input.Input = "";
-        if (await Session.SendFromAgentTab(Kept.Name, text) is { } line)
+        if (await Session.SendFromAgentTab(Kept.Name, text, echo, pastes) is { } line)
             _views.Transcript.Said(new Message(line, Severity.Info));
     }
 

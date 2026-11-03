@@ -88,6 +88,24 @@ public class AsideRunnerTests : IDisposable
 
     private static LlmResponse Says(string text) => new() { Text = text, StopReason = "end_turn" };
 
+    /// <summary>
+    /// A question with a pasted block: the aside's block shows it as typed, with the label, and the
+    /// model reads the pasted text.
+    /// </summary>
+    [Fact]
+    public async Task APastedQuestion_ShowsAsTyped_AndSendsTheText()
+    {
+        var mock = new MockLlmProvider();
+        mock.EnqueueResponse(Says("line two"));
+        var seen = new Seen();
+        var runner = Runner(mock, seen);
+
+        await runner.Ask("which line? a\nb\nc", shown: "which line? [Pasted text #1 +3 lines]")!;
+
+        Assert.Contains("asked:which line? [Pasted text #1 +3 lines]", seen.Events);
+        Assert.EndsWith("which line? a\nb\nc", runner.Messages.Last(m => m.Role == "user").Content);
+    }
+
     [Fact]
     public async Task TheFork_IsTheMainConversation_ThenOneUserMessage_WithTheNoteAndTheQuestion()
     {

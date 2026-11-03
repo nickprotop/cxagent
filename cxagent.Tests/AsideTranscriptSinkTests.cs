@@ -8,6 +8,22 @@ namespace CxAgent.Tests;
 public class AsideTranscriptSinkTests
 {
     /// <summary>
+    /// A question is escaped for the block it lands in, which is markdown: a bracket — a pasted token's
+    /// label, a list index — shows as one bracket. The markup escape doubled it, and the bold around the
+    /// question kept the double.
+    /// </summary>
+    [Fact]
+    public void AQuestionWithABracket_IsEscapedForMarkdown()
+    {
+        var sink = AsideTranscriptSink.ForTest(new ChatTranscriptControl());
+
+        sink.Asked(1, "which? [Pasted text #1 +3 lines]");
+
+        Assert.Contains(@"**› which? \[Pasted text #1 +3 lines\]**", sink.ThreadTextForTest(1));
+        Assert.DoesNotContain("[[", sink.ThreadTextForTest(1));
+    }
+
+    /// <summary>
     /// /clear wipes the transcript while an aside may still be finishing. Its late writes have no
     /// block to land in, and are dropped rather than thrown on the UI thread or re-created.
     /// </summary>

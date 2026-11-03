@@ -208,10 +208,27 @@ public sealed class AgentTabTests : IDisposable
         var chat = new ChatTranscriptControl();
         using var tab = new AgentTab(_front, _front.SubAgents.Find("finder")!, Inline(chat));
 
-        await tab.Submit("look again");
+        tab.Input.Input = "look again";
+        await tab.SubmitComposer();
 
         Assert.Contains(_parent.Notices, n => n.Contains("(from its tab): look again", StringComparison.Ordinal));
         Assert.Contains(ChatRole.User, Roles(chat));
+    }
+
+    /// <summary>What the tab's composer holds is what is sent: a pasted token as its text, shown as its label.</summary>
+    [Fact]
+    public async Task APasteInTheComposer_IsSentAsText_AndShownAsItsLabel()
+    {
+        _front.SubAgents.Keep(Child(Says("ok")), "finder");
+        using var tab = new AgentTab(_front, _front.SubAgents.Find("finder")!, Inline(new ChatTranscriptControl()));
+        tab.Input.Input = "count ";
+        tab.Input.Paste("a\nb\nc");
+
+        await tab.SubmitComposer();
+
+        Assert.Contains(_parent.Notices, n => n.Contains("(from its tab): count [Pasted text #1 +3 lines]", StringComparison.Ordinal));
+        Assert.Contains(_front.SubAgents.Find("finder")!.Agent.Agent.Context.Messages, m => m.Content == "count a\nb\nc");
+        Assert.Equal("", tab.Input.Input);
     }
 
     [Fact]

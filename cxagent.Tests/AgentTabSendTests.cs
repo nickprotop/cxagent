@@ -1,3 +1,4 @@
+using CxAgent.Core.Models;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
@@ -42,6 +43,24 @@ public sealed class AgentTabSendTests : IDisposable
         Assert.Single(_parent!.Notices, n => n.Contains("you → 'finder' (from its tab): look again", StringComparison.Ordinal));
         Assert.DoesNotContain(_parent.Notices, n => n.Contains("looked again", StringComparison.Ordinal));
         Assert.Equal(before, s.Host.Context.Messages.Count);
+    }
+
+    /// <summary>
+    /// A follow-up with a pasted block: the child is sent the text, and its message keeps the line as typed
+    /// and the paste, as the main conversation's does. The parent's trail shows the label.
+    /// </summary>
+    [Fact]
+    public async Task APastedFollowUp_SendsTheText_AndKeepsTheLineAsTyped()
+    {
+        var s = Open("counted");
+        var paste = new PastedText("[Pasted text #1 +3 lines]", "a\nb\nc");
+
+        await s.SendFromAgentTab("finder", "count a\nb\nc", "count [Pasted text #1 +3 lines]", [paste]);
+
+        var sent = Assert.Single(s.SubAgents.Find("finder")!.Agent.Agent.Context.Messages, m => m.Content == "count a\nb\nc");
+        Assert.Equal("count [Pasted text #1 +3 lines]", sent.Shown);
+        Assert.Equal([paste], sent.Pastes!);
+        Assert.Single(_parent!.Notices, n => n.Contains("(from its tab): count [Pasted text #1 +3 lines]", StringComparison.Ordinal));
     }
 
     [Fact]

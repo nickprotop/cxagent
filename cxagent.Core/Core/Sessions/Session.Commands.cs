@@ -534,7 +534,8 @@ public sealed partial class Session
     /// <para>ONE LINE FOR THE PARENT, AS A TRAIL. Its transcript should still say that its child was asked something
     /// and by whom; the model is not told (core decision 25), and a System row reaches no context.</para>
     /// </summary>
-    public Task<string?> SendFromAgentTab(string name, string prompt)
+    public Task<string?> SendFromAgentTab(string name, string prompt, string? echo = null,
+        IReadOnlyList<Models.PastedText>? pastes = null)
     {
         var text = prompt.Trim();
         if (text.Length == 0) return Task.FromResult<string?>(null);
@@ -545,7 +546,10 @@ public sealed partial class Session
 
         // READ BEFORE THE SEND, as /agents send reads it: by the time the send returns, the state has changed.
         var busy = SubAgents.IsBusy(name);
-        var shown = Jobs.OutputTail.OneLine(text);
+        // THE LINE AS TYPED, for the trail and the tab: a pasted block shows as its label, as it does in
+        // the main conversation.
+        var typed = echo?.Trim() is { Length: > 0 } e && e != text ? e : null;
+        var shown = Jobs.OutputTail.OneLine(typed ?? text);
         Say(new Message($"you → '{name}' (from its tab): {(shown.Length <= 80 ? shown : shown[..79] + "…")}", Severity.Info));
 
         return Task.Run<string?>(async () =>
@@ -555,7 +559,7 @@ public sealed partial class Session
             {
                 var reach = new Agents.AgentReachTools(SubAgents, _spawner?.ConcurrencySlot);
                 var answer = await reach.SendAsync(new Agents.SendRequest(To: name, Prompt: text,
-                    Background: false, ParentAgentId: null, FromUser: true), token);
+                    Background: false, ParentAgentId: null, FromUser: true) { Shown = typed, Pastes = pastes }, token);
 
                 // A REFUSAL IS THE TAB'S TO SHOW; SO IS A DELIVERY, in the tab's own words — the reach's reply says
                 // the answer goes elsewhere, and from the tab the child's further work is right there.

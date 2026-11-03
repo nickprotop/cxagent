@@ -358,7 +358,7 @@ public sealed partial class Session
         //
         // ONLY THE USER'S. A delivery or a plugin's goal arriving meanwhile is the main conversation's
         // business, and sending it to the aside would lose it.
-        if (InAside && IsTheUser(source, origin)) return SendAside(text);
+        if (InAside && IsTheUser(source, origin)) return SendAside(text, echo);
 
         return Route(new TurnRequest(text, echo, tools, origin, source) { Pastes = pastes });
     }
@@ -548,7 +548,7 @@ public sealed partial class Session
 
             // Steer raises Pending, so a watcher draws its own queued block. Nothing is said here:
             // the block IS the report, and a line saying "queued" beside it would say it twice.
-            SteerAs(text, origin ?? TurnOriginator.User);
+            SteerAs(text, origin ?? TurnOriginator.User, echo, request.Pastes);
             ResumeIfReleasedMeanwhile();
 
             // A QUEUED MESSAGE IS NOT A SECOND REQUEST. It joins the running turn — taken at its
@@ -796,7 +796,7 @@ public sealed partial class Session
                 finally
                 {
                     StartOwnedTurn(new TurnRequest(steer.ForModel, steer.Shown, _turnTools, steerOrigin,
-                        SubmitSource.User));
+                        SubmitSource.User) { Pastes = steer.Pastes });
                 }
                 return true;
             }
@@ -867,6 +867,7 @@ public sealed partial class Session
     {
         var text = request.Text;
         var echo = request.Echo;
+        var pastes = request.Pastes;
         var tools = request.Tools;
         var origin = request.Origin;
         var expand = request.Expand;
@@ -988,7 +989,7 @@ public sealed partial class Session
                     // WHAT THE TRANSCRIPT SHOWED goes with the message when it differs from what is
                     // sent, so the session list can name the session by it — see ChatMessage.Shown.
                     sent = await Host!.RunAsync(text, scope.Token, tools,
-                        echo is not null && echo != text ? echo : null, request.Pastes);
+                        echo is not null && echo != text ? echo : null, pastes);
                 }
             }
             catch (OperationCanceledException)
@@ -1082,6 +1083,7 @@ public sealed partial class Session
 
             text = queued.ForModel;
             echo = queued.Shown;
+            pastes = queued.Pastes;
             announceAsNote = false;
             firstLap = false;
         }

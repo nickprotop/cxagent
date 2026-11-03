@@ -64,6 +64,35 @@ public class DrainLoopTests : IDisposable
             AgentMode.Single);
     }
 
+    /// <summary>
+    /// A message with a pasted block, typed while a turn runs: the queued block shows it as typed, with the
+    /// label, and the message it becomes keeps the line as typed and the paste. The model reads the text.
+    /// </summary>
+    [Fact]
+    public async Task APastedMessageTypedDuringATurn_IsQueuedAsTyped_AndKeepsItsPaste()
+    {
+        var provider = new RecordingProvider();
+        var session = Wired(provider, out var manager);
+        using var _ = manager;
+        var paste = new PastedText("[Pasted text #1 +3 lines]", "a\nb\nc");
+        var drawn = new List<string>();
+        session.Pending += (whole, _) => drawn.Add(whole);
+
+        provider.OnCall = () =>
+        {
+            provider.OnCall = null;
+            session.Submit("check a\nb\nc", "check [Pasted text #1 +3 lines]", pastes: [paste]);
+        };
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("the first"));
+        await started.Turn;
+
+        Assert.Equal(["check [Pasted text #1 +3 lines]"], drawn);
+        Assert.Equal(["the first", "check a\nb\nc"], provider.Prompts);
+        var sent = Assert.Single(session.Host!.Context.Messages, m => m.Role == "user" && m.Content == "check a\nb\nc");
+        Assert.Equal("check [Pasted text #1 +3 lines]", sent.Shown);
+        Assert.Equal([paste], sent.Pastes!);
+    }
+
     // THE CORE CLAIM: text queued during the turn goes out as a second turn, from the same Send.
     [Fact]
     public async Task TextQueuedDuringATurn_IsSentWhenItEnds()

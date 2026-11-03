@@ -8,7 +8,10 @@ namespace CxAgent.Core.Agents;
 /// it, and drawing it in their message bar puts a log in their mouth. An idle submit already makes
 /// this split with its echo; a steer needs the same.</para>
 /// </summary>
-/// <param name="Shown">What the user typed — the transcript's account of their message.</param>
+/// <param name="Shown">What the user typed — the transcript's account of their message, a pasted block
+/// as its label.</param>
 /// <param name="ForModel">What the model receives: anything queued for this message, then the
-/// user's words.</param>
-public sealed record SteerDelivery(string Shown, string ForModel);
+/// user's words, each pasted block as its text.</param>
+/// <param name="Pastes">The blocks pasted into the message, each shown in <paramref name="Shown"/> as its
+/// label — kept with the message for a readable export.</param>
+public sealed record SteerDelivery(string Shown, string ForModel, IReadOnlyList<Models.PastedText>? Pastes = null);

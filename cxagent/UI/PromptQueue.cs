@@ -43,6 +43,33 @@ public static class PromptQueue
     /// is still writing with survives the queue coming back: restored through the text, it would turn
     /// into the paste it stands for.
     /// </summary>
+    /// <summary>
+    /// <see cref="Restore(string?, IReadOnlyList{SharpConsoleUI.Controls.PromptSegment})"/> with the lines as
+    /// this composer queued them, so a pasted token comes back as a token rather than its text.
+    ///
+    /// <para>ONLY WHEN THEY ARE ALL OF IT. The queue hands back text, and that text is the queued lines
+    /// joined by newlines; if it is anything else, something besides this composer's typing joined the
+    /// queue, and putting back only the typed lines would drop the rest. Then the text goes back as text.</para>
+    /// </summary>
+    /// <param name="pending">What the queue handed back.</param>
+    /// <param name="typed">The lines this composer queued, in order, as their segments.</param>
+    /// <param name="composer">What the composer holds now.</param>
+    public static IReadOnlyList<SharpConsoleUI.Controls.PromptSegment> Restore(string? pending,
+        IReadOnlyList<IReadOnlyList<SharpConsoleUI.Controls.PromptSegment>> typed,
+        IReadOnlyList<SharpConsoleUI.Controls.PromptSegment> composer)
+    {
+        static string ValueOf(IReadOnlyList<SharpConsoleUI.Controls.PromptSegment> line) =>
+            string.Concat(line.Select(s => s.Token?.Value ?? s.Text));
+
+        if (string.IsNullOrEmpty(pending) || typed.Count == 0
+            || string.Join("\n", typed.Select(ValueOf)) != pending)
+            return Restore(pending, composer);
+
+        var newline = SharpConsoleUI.Controls.PromptSegment.FromText("\n");
+        var lines = typed.SelectMany((line, i) => i == 0 ? line : [newline, .. line]);
+        return composer.Count == 0 ? [.. lines] : [.. lines, newline, .. composer];
+    }
+
     public static IReadOnlyList<SharpConsoleUI.Controls.PromptSegment> Restore(string? pending,
         IReadOnlyList<SharpConsoleUI.Controls.PromptSegment> composer)
     {

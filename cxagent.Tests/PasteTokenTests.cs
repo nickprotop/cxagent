@@ -200,6 +200,48 @@ public class ComposerRewriteKeepsTokensTests
         Assert.Equal(composer, PromptQueue.Restore(null, composer));
     }
 
+    /// <summary>
+    /// A cancelled queue comes back as it was typed — its tokens still tokens — above what is in the
+    /// composer now.
+    /// </summary>
+    [Fact]
+    public void RestoringTheQueueAsTyped_KeepsItsTokens()
+    {
+        IReadOnlyList<PromptSegment> typed = [PromptSegment.FromText("check "), PromptSegment.FromToken(Token)];
+
+        var restored = PromptQueue.Restore("check a\nb\nc", [typed], [PromptSegment.FromText("now")]);
+
+        Assert.Equal(
+            [PromptSegment.FromText("check "), PromptSegment.FromToken(Token), PromptSegment.FromText("\n"), PromptSegment.FromText("now")],
+            restored);
+    }
+
+    /// <summary>Two lines queued in a burst come back as two lines, in the order they were typed.</summary>
+    [Fact]
+    public void TwoQueuedLines_ComeBackInOrder()
+    {
+        IReadOnlyList<PromptSegment> first = [PromptSegment.FromToken(Token)];
+        IReadOnlyList<PromptSegment> second = [PromptSegment.FromText("and this")];
+
+        var restored = PromptQueue.Restore("a\nb\nc\nand this", [first, second], []);
+
+        Assert.Equal([PromptSegment.FromToken(Token), PromptSegment.FromText("\n"), PromptSegment.FromText("and this")], restored);
+    }
+
+    /// <summary>
+    /// When what comes back is not what this composer queued — something else joined the queue — the
+    /// text is put back as text, rather than tokens that would leave the other words out.
+    /// </summary>
+    [Fact]
+    public void AQueueThatIsNotWhatWasTyped_ComesBackAsText()
+    {
+        IReadOnlyList<PromptSegment> typed = [PromptSegment.FromToken(Token)];
+
+        var restored = PromptQueue.Restore("a\nb\nc\nsomeone else's line", [typed], []);
+
+        Assert.Equal([PromptSegment.FromText("a\nb\nc\nsomeone else's line")], restored);
+    }
+
     [Fact]
     public void RestoringIntoAnEmptyComposer_IsJustTheQueue()
     {

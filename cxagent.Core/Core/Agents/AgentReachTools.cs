@@ -14,7 +14,17 @@ namespace CxAgent.Core.Agents;
 /// <param name="FromUser">Typed by the user rather than called by the model — the one sender a user's
 /// stop does not refuse.</param>
 internal sealed record SendRequest(string To, string Prompt, bool Background, string? ParentAgentId,
-    bool FromUser);
+    bool FromUser)
+{
+    /// <summary>
+    /// The prompt as its tab shows it, when that differs: a block the user pasted shows as its label. Null
+    /// shows the prompt itself — always so for the model's own sends.
+    /// </summary>
+    public string? Shown { get; init; }
+
+    /// <summary>The blocks pasted into the prompt, each shown in <see cref="Shown"/> as its label.</summary>
+    public IReadOnlyList<Models.PastedText>? Pastes { get; init; }
+}
 
 /// <summary>
 /// Reaching a sub-agent this session already spawned.
@@ -209,7 +219,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
                 // idle is this path, which empties it before appending. The state that would lose a
                 // message is the state that delivers it.
                 stored.Agent.Agent.ReceiveMail(stored.Agent.Agent.Context.Messages);
-                stored.Agent.Agent.EchoPrompt(prompt, request.FromUser);
+                stored.Agent.Agent.EchoPrompt(request.Shown ?? prompt, request.FromUser);
                 stored.Agent.Agent.History?.NoteIncoming(request.FromUser ? Incoming.You : Incoming.Parent);
 
                 // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child
@@ -224,7 +234,8 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
                 SendResult result;
                 try
                 {
-                    var send = stored.Agent.Agent.SendAsync(prompt, foreground?.Token ?? ct);
+                    var send = stored.Agent.Agent.SendAsync(prompt, foreground?.Token ?? ct,
+                        shown: request.Shown, pastes: request.Pastes);
                     // AN ANSWER THAT WON THE RACE IS CLAIMED, as the spawner claims it — see ForegroundRun.
                     var released = foreground is null
                         || (await Task.WhenAny(send, foreground.Released) == send && foreground.TryAnswer())
@@ -319,7 +330,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
 
         // SHOWN WHEN DELIVERED, the moment the sender pressed Enter — the mailbox keeps only the text, so whose it
         // was is known here and nowhere later.
-        stored.Agent.Agent.EchoPrompt(request.Prompt, request.FromUser);
+        stored.Agent.Agent.EchoPrompt(request.Shown ?? request.Prompt, request.FromUser);
 
         // NAMES WHERE THE ANSWER IS NOT. Without that clause the obvious next move is to call this again
         // expecting a reply, which is the loop this exists to prevent.

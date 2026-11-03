@@ -140,6 +140,13 @@ public sealed class SessionTab
     public SharpConsoleUI.Controls.ChatMessageId? QueuedBlock { get; set; }
 
     /// <summary>
+    /// The lines this tab's composer queued into the running turn, as typed — pasted tokens and all — so
+    /// a cancel can put them back as they were rather than as the text the queue keeps. Emptied when the
+    /// queue drains or is cancelled.
+    /// </summary>
+    public List<IReadOnlyList<SharpConsoleUI.Controls.PromptSegment>> QueuedLines { get; } = [];
+
+    /// <summary>
     /// The row standing for this conversation's held command, or null when none is held.
     ///
     /// <para>APART FROM <see cref="QueuedBlock"/>: queued text joins the running turn, a held command

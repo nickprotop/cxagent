@@ -64,7 +64,12 @@ public sealed class AsideRunner
     public IReadOnlyList<ChatMessage> Messages => _messages;
 
     /// <summary>Starts answering, or returns null while an answer is still running.</summary>
-    public Task? Ask(string question)
+    /// <param name="question">What the aside reads.</param>
+    /// <param name="shown">
+    /// The question as its block shows it, when that differs: a pasted block shows as its label, as it
+    /// does in the main conversation. Null shows the question itself.
+    /// </param>
+    public Task? Ask(string question, string? shown = null)
     {
         var cts = new CancellationTokenSource();
         if (Interlocked.CompareExchange(ref _answering, cts, null) is not null)
@@ -76,7 +81,7 @@ public sealed class AsideRunner
         var text = _asked ? question : Note + question;
         _asked = true;
         _messages.Add(new ChatMessage { Role = "user", Content = text, Timestamp = DateTimeOffset.UtcNow });
-        _runtime.Observer.Asked(Number, question);
+        _runtime.Observer.Asked(Number, shown ?? question);
 
         return Task.Run(() => AnswerAsync(cts));
     }

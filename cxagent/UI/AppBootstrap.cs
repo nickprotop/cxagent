@@ -547,15 +547,24 @@ public static class AppBootstrap
             session.Cancelled += (text, _) => system.EnqueueOnUIThread(() =>
             {
                 // INTO THE COMPOSER OF THE SESSION THAT CANCELLED, not the one on screen.
+                // AS TYPED, when what came back is what this composer queued: a pasted token returns as
+                // a token. See PromptQueue.Restore.
                 if (mainWindow.TabForSession(session) is { } tab)
-                    tab.Input.SetInputSegments(PromptQueue.Restore(text, tab.Input.InputSegments));
+                {
+                    tab.Input.SetInputSegments(PromptQueue.Restore(text, tab.QueuedLines, tab.Input.InputSegments));
+                    tab.QueuedLines.Clear();
+                }
                 RemoveQueuedBlock();
             }, "appBootstrap.DrainQueuedToComposer");
 
             // AND WHEN THE TURN TAKES IT, the stand-in has no referent. This was called from three
             // places that each had to remember; it is one subscription now, and the send path can no
             // longer leave the block above the real message.
-            session.Drained += _ => system.EnqueueOnUIThread(RemoveQueuedBlock, "appBootstrap.DrainQueuedToComposer");
+            session.Drained += _ => system.EnqueueOnUIThread(() =>
+            {
+                mainWindow.TabForSession(session)?.QueuedLines.Clear();
+                RemoveQueuedBlock();
+            }, "appBootstrap.DrainQueuedToComposer");
 
             // MARSHALLED HERE, NOT RAISED THERE. Core has no dispatcher and a headless subscriber
             // should not pay for one — the same division Session.Changed already uses.
@@ -1699,6 +1708,12 @@ public static class AppBootstrap
             if (!target.InAside && manager.Commands.TryRun(target, goalText)) return;
 
             var disposition = target.Submit(goalText, line.Echo, pastes: line.Pastes);
+
+            // A LINE THAT JOINED THE RUNNING TURN IS KEPT AS TYPED, so a cancel can hand it back with its
+            // tokens — see SessionTab.QueuedLines. Added here, on the UI thread, before the Drained that
+            // empties the list can run: that is marshalled here too, behind this.
+            if (disposition is Session.SubmitOutcome.Queued && mainWindow.TabForSession(target) is { } queuedIn)
+                queuedIn.QueuedLines.Add(line.Segments);
             if (disposition is not Session.SubmitOutcome.Started started) return;
 
             // Fire-and-forget on the UI-initiated flow; sync-context resumes continuations on the UI thread.

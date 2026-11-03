@@ -103,7 +103,9 @@ public sealed class AsideTranscriptSink : IAsideObserver
                 id = Place(aside, _threads[aside].ToString());
             }
 
-            Append(aside, id, $"\n\n**› {ChatTranscriptSink.Escape(question)}**\n\n");
+            // MARKDOWN, NOT MARKUP: the block renders markdown, and inside the bold a markup escape
+            // (a doubled bracket) shows as the two brackets it is. Md.Escape is the dialect it is read in.
+            Append(aside, id, $"\n\n**› {Core.Commands.Md.Escape(question)}**\n\n");
         }, "asideSink.Asked");
 
     public void Waiting(int aside, bool waiting) =>
