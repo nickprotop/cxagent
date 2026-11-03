@@ -220,9 +220,33 @@ public sealed class CommandMenu
     /// rule <see cref="SessionCommands.Match"/> applies to dispatch, so the menu cannot offer
     /// something the dispatcher would refuse.</para>
     /// </remarks>
+    /// <summary>
+    /// Told each key the composer is about to get while the menu is shut, so <see cref="Sync"/> knows
+    /// whether the change it is about to see was typed or recalled.
+    ///
+    /// <para>A RECALLED LINE DOES NOT OPEN THE MENU. ↑ and ↓ in the composer walk history, and an
+    /// open menu takes both for its own rows: a recalled <c>/mode</c> that opened it ended history
+    /// there, every further ↑ moving the menu's selection instead. The composer's own change event
+    /// cannot say where a change came from, so the key that caused it has to.</para>
+    /// </summary>
+    internal void NoteKey(ConsoleKeyInfo key) =>
+        _recalling = key.Modifiers == 0 && key.Key is ConsoleKey.UpArrow or ConsoleKey.DownArrow;
+
+    /// <summary>The last key was ↑ or ↓, so a change now is a history entry. See <see cref="NoteKey"/>.</summary>
+    private bool _recalling;
+
     public void Sync(string? composerText)
     {
         var text = composerText ?? string.Empty;
+
+        // ONE CHANGE PER ARROW, then typing decides again: editing a recalled command is asking for
+        // the menu, and the next key clears this anyway.
+        if (_recalling)
+        {
+            _recalling = false;
+            Close();
+            return;
+        }
 
         // A just-chosen command does not reopen its own menu — see the Enter case. Cleared as soon as
         // the text changes to something else, so editing after a choice offers the list again.

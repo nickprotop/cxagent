@@ -40,6 +40,67 @@ public class CommandMenuBtwTests : IDisposable
 }
 
 /// <summary>
+/// A line recalled from history does not open the palette, so ↑ keeps walking history past it.
+///
+/// <para>An open palette takes ↑ and ↓ for its own rows, so a recalled <c>/mode</c> that opened it
+/// ended history there: every further ↑ moved the palette's selection instead.</para>
+/// </summary>
+public class CommandMenuHistoryTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    private CommandMenu Menu() =>
+        new(_fixture.Host.System, _fixture.Host.Main.Window!, _fixture.Host.Main.Input)
+        {
+            Registry = _fixture.Host.Session.Manager!.Commands,
+        };
+
+    private static ConsoleKeyInfo Key(ConsoleKey key, char ch = '\0') => new(ch, key, false, false, false);
+
+    [Theory]
+    [InlineData(ConsoleKey.UpArrow)]
+    [InlineData(ConsoleKey.DownArrow)]
+    public void ACommandRecalledFromHistory_LeavesThePaletteShut(ConsoleKey arrow)
+    {
+        var menu = Menu();
+
+        menu.NoteKey(Key(arrow));
+        menu.Sync("/mode");
+
+        Assert.False(menu.IsOpen);
+    }
+
+    /// <summary>Typing into a recalled command is asking for the palette again.</summary>
+    [Fact]
+    public void TypingAfterARecall_OpensThePalette()
+    {
+        var menu = Menu();
+        menu.NoteKey(Key(ConsoleKey.UpArrow));
+        menu.Sync("/mode");
+
+        menu.NoteKey(Key(ConsoleKey.Backspace));
+        menu.Sync("/mod");
+
+        Assert.True(menu.IsOpen);
+        menu.Sync("");
+    }
+
+    /// <summary>The control: a typed slash still opens it.</summary>
+    [Fact]
+    public void ATypedSlash_OpensThePalette()
+    {
+        var menu = Menu();
+
+        menu.NoteKey(Key(ConsoleKey.Oem2, '/'));
+        menu.Sync("/");
+
+        Assert.True(menu.IsOpen);
+        menu.Sync("");
+    }
+}
+
+/// <summary>
 /// The palette's geometry: wide enough for what it lists, and opaque across its whole width.
 /// </summary>
 public class CommandMenuLayoutTests : IDisposable

@@ -1470,6 +1470,11 @@ public static class AppBootstrap
                 return;
             }
 
+            // THE MENU HEARS EVERY KEY THE COMPOSER IS ABOUT TO GET, so it can tell a history recall from
+            // typing — see CommandMenu.NoteKey. Only looked at, never claimed: the composer still walks
+            // its history. While the menu is open it has the keyboard and this is not reached.
+            if (mainWindow.Input.HasFocus) commandMenu.NoteKey(e.KeyInfo);
+
             // A COPY SAYS SO. The framework copies the selection right after this preview, if it is left
             // unhandled — so the key is only looked at, never claimed, and the copy itself stays the
             // framework's. Nothing below handles Ctrl+C, which is what makes the toast true.
