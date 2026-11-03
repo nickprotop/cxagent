@@ -65,6 +65,13 @@ list of them lets the spawn choose among them at the call. See [CONFIG.md](CONFI
   <img src="docs/screenshots/13-model-switch.png" alt="Switching model mid-conversation: a 32k model answers a question given to a 212k model, with the status bar showing the new window" width="800">
 </div>
 
+The Agents tab of the configuration dialog (`F8`) sets this per type: the session's model, a list of
+providers whose first is the default, or any provider.
+
+<div align="center">
+  <img src="docs/screenshots/39-agent-types.png" alt="The Agents tab of the configuration dialog: a researcher type of the user's own, its description and briefing, and Runs on set to two providers with the first as default" width="800">
+</div>
+
 **Plugins, from a catalog.** `F2` opens the plugin manager. It lists what a catalog published on the
 web offers, and downloads, verifies and unpacks a plugin into your plugins folder. Among the four in
 the catalog is **triggers**: work that starts without anybody typing, where a turn schedules a prompt
@@ -94,13 +101,13 @@ next one leaves.
   <img src="docs/screenshots/29-btw-aside.png" alt="An aside answering in its own block while the main agent is still working through the source files" width="800">
 </div>
 
-**A real terminal, for what a tool cannot do.** `/shell` opens a PTY in a window over the session,
-for a `sudo` password, `gcloud auth login` or `git rebase -i`, while the session keeps running
-behind it. Whether its transcript goes back to the model is a toggle in its own toolbar, off by
-default; when it does go, it is queued and arrives with whatever you say next.
+**A real terminal, for what a tool cannot do.** `/shell` opens a PTY in a tab beside the
+conversation, for a `sudo` password, `gcloud auth login` or `git rebase -i`, while the session keeps
+running. Its toolbar has `copy back on exit`, off by default, and `Copy now`, which sends what the
+shell has shown so far; either way it is queued and arrives with whatever you say next.
 
 <div align="center">
-  <img src="docs/screenshots/23-shell-terminal.png" alt="A shell running inside the session, with its own toolbar" width="800">
+  <img src="docs/screenshots/23-shell-terminal.png" alt="A shell in its own tab beside the Chat tab, with copy back on exit and Copy now in its toolbar" width="800">
 </div>
 
 **A live session panel.** The right-hand column (`F3`) shows the session as it runs: the context

@@ -264,19 +264,19 @@ the parent's own, which is the number that says whether the delegation paid.
 
 ## A terminal, for the things a tool cannot do
 
-![A shell running inside the session, with its own toolbar](23-shell-terminal.png)
+![A shell in its own tab beside the Chat tab, with copy back on exit and Copy now in its toolbar](23-shell-terminal.png)
 
 `run_shell` runs a command and reads what it printed. That covers most of what an agent needs and
 none of what needs a person: a `sudo` password, `gcloud auth login`, `git rebase -i`. There is
 nothing to type into behind a captured stream.
 
-`/shell` opens a real PTY in a window over the session. The colours are the giveaway — `ls` emits
-them only when it believes it is talking to a terminal, so this is a child process that called
-`isatty()` and got the truth. The session is still running behind it.
+A bare `/shell` opens a real PTY in a tab of its own, beside `Chat`. The colours are the giveaway —
+`ls` and `git` emit them only when they believe they are talking to a terminal, so this is a child
+process that called `isatty()` and got the truth. The session is still running in the other tab.
 
-The toolbar is the window's own: whether the output goes back to the model, the status, and an
-explicit Close. A bare `/shell` defaults to **not** sending anything, because a shell you opened for
-yourself is a convenience rather than a channel to the agent.
+The toolbar is the tab's own: `copy back on exit`, and `Copy now` to send what the shell has shown so
+far without leaving. The checkbox is **off** by default, because a shell you opened for yourself is a
+convenience rather than a channel to the agent. `exit` closes the tab.
 
 ![The model answering from a transcript of the terminal](24-shell-transcript.png)
 
@@ -439,9 +439,9 @@ levels instead — `low` to `max` — and shows its thinking the same way.
 
 ## Configuration, in the app
 
-![The configuration dialog on its Providers tab: the Roles block above the instances, each saying its role and open tabs, the selected one's endpoint, model, masked key and thinking level beside it](34-configuration.png)
+![The configuration dialog on its Providers tab: the Roles block above the instances, each saying its role and open tabs, the selected one's endpoint, key and model beside it](34-configuration.png)
 
-`F8` opens one dialog for providers, MCP servers and agent types. The Roles block at the top picks the
+`F8` opens one dialog, in four tabs: General, Providers, MCP servers and Agents. The Roles block at the top of Providers picks the
 default instance and the auto-mode reviewer. The rail lists every instance, its second line saying its
 role (`default`, `reviewer`), the open tabs on it (`1 tab`) and its model. Beside it, the
 selected one's fields: the endpoint, the model (`Change…` lists what the endpoint serves), the key —
@@ -451,6 +451,18 @@ Advanced, folded, holds the rest.
 A save applies at once. The line above Save says what that means for the tab on it: a new key reaches it
 in place and keeps its prompt cache; a new model or endpoint would re-send the conversation, so Save asks
 first — now, after compressing, at the tab's next clear or compaction, or only for new tabs.
+
+![The Agents tab: a researcher type of the user's own, its description and briefing, and Runs on set to two providers with the first as default](39-agent-types.png)
+
+The Agents tab lists every sub-agent type: `general`, the default child, then the ones that ship with
+cxagent, marked `built-in` (and `overridden` where config changes where one runs or what it may
+spend), then your own, marked `yours`. This one is the `researcher` from [CONFIG.md](../../CONFIG.md):
+a description saying when the model should reach for it, and a briefing saying how it works.
+
+**Runs on** is the per-sub-agent model. The session's model is what the parent runs on, and a spawn
+cannot choose. A list of providers makes the first the default, and a spawn may pick another from the
+list. Any provider has no default, so a spawn must name one. A shipped type's briefing is read-only
+here, since the code around it depends on it; where it runs and what it may spend are yours to set.
 
 ---
 
