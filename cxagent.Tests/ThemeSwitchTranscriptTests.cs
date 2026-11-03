@@ -72,4 +72,32 @@ public class ThemeSwitchTranscriptTests : IDisposable
         Assert.NotSame(first, main.Chat);
         Assert.Equal(ColorScheme.AssistantSurface, LastBackground(first));
     }
+
+    /// <summary>
+    /// The composer of a tab not being looked at takes the new theme too: its surface, and the colour
+    /// of a pasted token waiting in it. Only the active one was reapplied, so going back to a tab
+    /// found its composer still in the theme before.
+    /// </summary>
+    [Fact]
+    public void AComposerNotBeingLookedAt_IsRecolouredToo()
+    {
+        var main = _fixture.Host.Main;
+        SwitchToDark(main);
+        var firstTab = main.ActiveTab;
+        var first = main.Input;
+        main.AddSessionTab(_fixture.Host.Session);   // the new tab becomes the active one
+
+        SwitchToPale(main);
+
+        Assert.NotSame(first, main.Input);
+        Assert.Equal(ColorScheme.ComposerSurface, first.InputBackgroundColor);
+        Assert.Equal(ColorScheme.ComposerSurface, first.InputFocusedBackgroundColor);
+        Assert.Equal(ColorScheme.AccentRgb, first.TokenForegroundColor);
+
+        // AND THE BOX AROUND IT: its surface, the grip down its left edge, and the mode line under it.
+        var grip = ColorScheme.Grip;
+        Assert.Equal(ColorScheme.ComposerSurface, firstTab.PromptBox!.BackgroundColor);
+        Assert.Contains($"#{grip.R:x2}{grip.G:x2}{grip.B:x2}", firstTab.Grip!.Text);
+        Assert.Equal(ColorScheme.ComposerSurface, firstTab.ModeLine!.BackgroundColor);
+    }
 }

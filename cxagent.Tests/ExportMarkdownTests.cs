@@ -126,6 +126,42 @@ public class ExportMarkdownTests : IDisposable
     }
 
     /// <summary>The note compaction leaves after the summary is for the model, not part of what it summarised.</summary>
+    private static readonly PastedText Trace = new("[Pasted text #1 +3 lines]", "at A()\nat B()\nat C()");
+
+    private static ChatMessage Pasted(int minute = 0) => new()
+    {
+        Role = "user",
+        Content = "fix this: at A()\nat B()\nat C() please",
+        Shown = "fix this: [Pasted text #1 +3 lines] please",
+        Pastes = [Trace],
+        Timestamp = At(minute),
+    };
+
+    /// <summary>
+    /// A readable export shows the line as it was typed, then each pasted block under its label, so
+    /// nothing pasted is lost from what a person reads.
+    /// </summary>
+    [Fact]
+    public void Readable_ShowsThePastedLineAsTyped_ThenEachPaste()
+    {
+        var md = Render(Source(E(Pasted(), Incoming.You)), Readable);
+
+        Assert.Contains("fix this: [Pasted text #1 +3 lines] please", md);
+        Assert.Contains("**Pasted text #1 +3 lines**", md);
+        Assert.Contains("at A()\nat B()\nat C()", md);
+        Assert.True(md.IndexOf("please", StringComparison.Ordinal) < md.IndexOf("at A()", StringComparison.Ordinal));
+    }
+
+    /// <summary>A full export is the message as the model got it, the pastes already in place.</summary>
+    [Fact]
+    public void Full_ShowsThePastedMessageAsSent_Once()
+    {
+        var md = Render(Source(E(Pasted(), Incoming.You)), Full);
+
+        Assert.Contains("fix this: at A()\nat B()\nat C() please", md);
+        Assert.DoesNotContain("**Pasted text #1", md);
+    }
+
     [Fact]
     public void ACompactionSummary_IsExportedWithoutTheNoteAfterIt()
     {

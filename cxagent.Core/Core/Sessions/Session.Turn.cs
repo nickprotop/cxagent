@@ -1,6 +1,7 @@
 using CxAgent.Core.Agents;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Models;
 
 namespace CxAgent.Core.Sessions;
 
@@ -343,9 +344,13 @@ public sealed partial class Session
     ///
     /// <para>NO MANAGER, NO DISPATCH. A session built outside SessionManager.Open has no registry
     /// to consult and behaves exactly as <see cref="SubmitRaw"/>.</para>
+    ///
+    /// <para><c>pastes</c> are the blocks pasted into the text, each shown in <c>echo</c> as its label —
+    /// kept with the message so a readable export can show them (ChatMessage.Pastes).</para>
     /// </summary>
     public SubmitOutcome Submit(string text, string? echo = null, Jobs.ToolSelection? tools = null,
-        TurnOriginator? origin = null, SubmitSource source = SubmitSource.User)
+        TurnOriginator? origin = null, SubmitSource source = SubmitSource.User,
+        IReadOnlyList<PastedText>? pastes = null)
     {
         // BTW MODE TAKES WHAT THE USER TYPES, ALL OF IT, and before commands: the mode is a
         // conversation with the aside and nothing else, so "/clear what does this do?" is a question
@@ -355,7 +360,7 @@ public sealed partial class Session
         // business, and sending it to the aside would lose it.
         if (InAside && IsTheUser(source, origin)) return SendAside(text);
 
-        return Route(new TurnRequest(text, echo, tools, origin, source));
+        return Route(new TurnRequest(text, echo, tools, origin, source) { Pastes = pastes });
     }
 
     /// <summary>
@@ -403,7 +408,7 @@ public sealed partial class Session
                 // wins — and ONLY FOR THE USER'S OWN TYPING: a delivery or a plugin's goal that
                 // happens to start with /deploy must never run a file's shell lines.
                 if (IsTheUser(source, origin) && FindTyped(text) is { } entry)
-                    return RunCommand(new TypedCommand(text, entry));
+                    return RunCommand(new TypedCommand(text, entry) { Shown = echo, Pastes = request.Pastes });
 
                 Say(new Message($"Unknown command '{text.TrimStart().Split(' ')[0]}'. Available: "
                     + string.Join(", ", manager.Commands.All.Select(c => c.Name)) + ".",
@@ -983,7 +988,7 @@ public sealed partial class Session
                     // WHAT THE TRANSCRIPT SHOWED goes with the message when it differs from what is
                     // sent, so the session list can name the session by it — see ChatMessage.Shown.
                     sent = await Host!.RunAsync(text, scope.Token, tools,
-                        echo is not null && echo != text ? echo : null);
+                        echo is not null && echo != text ? echo : null, request.Pastes);
                 }
             }
             catch (OperationCanceledException)
@@ -1100,6 +1105,9 @@ public sealed partial class Session
         /// turn.</para>
         /// </summary>
         public Func<CancellationToken, Task<string?>>? Expand { get; init; }
+
+        /// <summary>The blocks pasted into the text, each shown in <see cref="Echo"/> as its label.</summary>
+        public IReadOnlyList<PastedText>? Pastes { get; init; }
 
         /// <summary>
         /// A first lap that draws nothing on the transcript.

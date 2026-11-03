@@ -45,6 +45,9 @@ public sealed class AgentTab : IDisposable
         .WithBackgroundColor(ColorScheme.ComposerSurface).Build();
     /// <summary>The follow-up field — the session composer's own kind, from the same factory.</summary>
     private readonly PromptControl _input = MainWindow.NewPrompt();
+
+    /// <summary>The tab's input box, for the window to recolour on a theme switch.</summary>
+    internal PromptControl Input => _input;
     private readonly ButtonControl _stop;
     private readonly ButtonControl _move;
     private string _headerText = "";

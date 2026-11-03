@@ -801,7 +801,7 @@ public sealed class Agent
     /// <summary>
     /// This agent's conversation, for its whole life — the thing that makes it self-contained.
     ///
-    /// <para>A field rather than a local inside <see cref="SendAsync(string, CancellationToken, Jobs.ToolSelection?, string?)"/> because a context that
+    /// <para>A field rather than a local inside <see cref="SendAsync(string, CancellationToken, Jobs.ToolSelection?, string?, IReadOnlyList{PastedText}?)"/> because a context that
     /// exists only for the duration of one method cannot be owned by anything: not by a readout that
     /// wants to report real occupancy, not by a <c>/compress</c> that wants a single meaningful
     /// target, and not by an agent that is supposed to carry what it learned into its next task. A
@@ -1329,13 +1329,23 @@ public sealed class Agent
     /// trigger in a mode that has no task boundaries; a <c>finally</c> here would run on
     /// <see cref="CancellationToken.None"/> so a cancelled session still paid for it; and the pre-send
     /// check at the top of the turn loop already guarantees nothing over the threshold is ever sent.</para>
+    ///
+    /// <para><c>shown</c> is the prompt as the transcript showed it, when that differs, and <c>pastes</c>
+    /// the blocks pasted into it, each shown there as its label. Both are stored with the message and
+    /// never sent.</para>
     /// </remarks>
     public Task<SendResult> SendAsync(string prompt, CancellationToken ct,
-        Jobs.ToolSelection? turnTools = null, string? shown = null) =>
-        RecordedAfter(SendCoreAsync(prompt, ct, turnTools, shown, mailFirst: true));
+        Jobs.ToolSelection? turnTools = null, string? shown = null, IReadOnlyList<PastedText>? pastes = null) =>
+        RecordedAfter(SendCoreAsync(prompt, ct, turnTools, new AsTyped(shown, pastes), mailFirst: true));
 
     /// <summary>
-    /// <see cref="SendAsync(string, CancellationToken, Jobs.ToolSelection?, string?)"/>, choosing where
+    /// How the user's prompt looked as typed, when that differs from what is sent: the line with its
+    /// labels, and the pastes behind them. One value because they are one fact about one message.
+    /// </summary>
+    private readonly record struct AsTyped(string? Shown, IReadOnlyList<PastedText>? Pastes);
+
+    /// <summary>
+    /// <see cref="SendAsync(string, CancellationToken, Jobs.ToolSelection?, string?, IReadOnlyList{PastedText}?)"/>, choosing where
     /// mail already waiting goes relative to the prompt.
     /// </summary>
     /// <param name="prompt">What the agent is asked.</param>
@@ -1349,7 +1359,7 @@ public sealed class Agent
     /// the first request.</para>
     /// </param>
     internal Task<SendResult> SendAsync(string prompt, CancellationToken ct, bool mailFirst) =>
-        RecordedAfter(SendCoreAsync(prompt, ct, turnTools: null, shown: null, mailFirst));
+        RecordedAfter(SendCoreAsync(prompt, ct, turnTools: null, typed: default, mailFirst));
 
     /// <summary>
     /// The run, then whatever it added since its last request into the history — however it ended. A cancelled
@@ -1363,7 +1373,7 @@ public sealed class Agent
     }
 
     private async Task<SendResult> SendCoreAsync(string prompt, CancellationToken ct,
-        Jobs.ToolSelection? turnTools, string? shown, bool mailFirst)
+        Jobs.ToolSelection? turnTools, AsTyped typed, bool mailFirst)
     {
         // A NEW RUN, SO NO EMPTY REPLY YET: the reason describes the run that had one, never a later one.
         LastEmptyReply = null;
@@ -1405,7 +1415,8 @@ public sealed class Agent
         {
             Role = "user",
             Content = prompt,
-            Shown = shown,
+            Shown = typed.Shown,
+            Pastes = typed.Pastes is { Count: > 0 } ? typed.Pastes : null,
             Timestamp = DateTimeOffset.UtcNow,
         });
 

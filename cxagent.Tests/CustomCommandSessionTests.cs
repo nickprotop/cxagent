@@ -1,6 +1,7 @@
 using CxAgent.Core.Agents;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
@@ -65,6 +66,76 @@ public class CustomCommandSessionTests : IDisposable
         await started.Turn;
 
         Assert.Equal("/review 42", new CxAgent.Core.Storage.FolderSessionStore(new AppPaths(_dir)).List(_dir)[0].Title);
+    }
+
+    /// <summary>
+    /// An argument may run over several lines — a pasted stack trace is the common case — and the command
+    /// still runs with all of it. A newline in the line used to make it "Unknown command".
+    /// </summary>
+    [Fact]
+    public async Task AMultilineArgument_IsPassedWhole()
+    {
+        CommandFile("look", "Look at this: $ARGUMENTS");
+        var w = Open();
+        using var _ = w.Manager;
+
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(w.Session.Submit("/look first\nsecond\nthird"));
+        await started.Turn;
+
+        Assert.Contains(w.Model.LastMessages!, m => m.Role == "user" && m.Content == "Look at this: first\nsecond\nthird");
+    }
+
+    /// <summary>
+    /// A command whose argument is a pasted token: the model gets the text, the row and the session title
+    /// show the line as typed, and the paste is kept with the message for a readable export.
+    /// </summary>
+    [Fact]
+    public async Task ACommandWithAPaste_EchoesTheLabel_AndKeepsThePaste()
+    {
+        CommandFile("look", "Look at this: $ARGUMENTS");
+        var w = Open();
+        using var _ = w.Manager;
+        var paste = new PastedText("[Pasted text #1 +3 lines]", "a\nb\nc");
+
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(
+            w.Session.Submit("/look a\nb\nc", "/look [Pasted text #1 +3 lines]", pastes: [paste]));
+        await started.Turn;
+
+        Assert.Contains("> /look [Pasted text #1 +3 lines]", w.Observer.Transcript);
+        var sent = Assert.Single(w.Model.LastMessages!, m => m.Role == "user" && m.Content == "Look at this: a\nb\nc");
+        Assert.Equal("/look [Pasted text #1 +3 lines]", sent.Shown);
+        Assert.Equal([paste], sent.Pastes!);
+    }
+
+    /// <summary>A plain message with a paste keeps it the same way.</summary>
+    [Fact]
+    public async Task AMessageWithAPaste_KeepsThePasteWithTheMessage()
+    {
+        var w = Open();
+        using var _ = w.Manager;
+        var paste = new PastedText("[Pasted text #1 +3 lines]", "a\nb\nc");
+
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(
+            w.Session.Submit("fix a\nb\nc", "fix [Pasted text #1 +3 lines]", pastes: [paste]));
+        await started.Turn;
+
+        var sent = Assert.Single(w.Model.LastMessages!, m => m.Role == "user" && m.Content == "fix a\nb\nc");
+        Assert.Equal("fix [Pasted text #1 +3 lines]", sent.Shown);
+        Assert.Equal([paste], sent.Pastes!);
+    }
+
+    /// <summary>A newline straight after the name separates it from the arguments, as a space does.</summary>
+    [Fact]
+    public async Task ANewline_SeparatesTheNameFromItsArguments()
+    {
+        CommandFile("look", "Look at this: $ARGUMENTS");
+        var w = Open();
+        using var _ = w.Manager;
+
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(w.Session.Submit("/look\nfirst\nsecond"));
+        await started.Turn;
+
+        Assert.Contains(w.Model.LastMessages!, m => m.Role == "user" && m.Content == "Look at this: first\nsecond");
     }
 
     /// <summary>A tab after the name separates it from the arguments, as a space does.</summary>

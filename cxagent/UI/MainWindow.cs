@@ -92,6 +92,7 @@ public sealed class MainWindow : IDisposable
     internal static PromptControl NewPrompt()
     {
         var prompt = NewPromptControl();
+        ColourComposer(prompt);
 
         // A LONG PASTE BECOMES ONE TOKEN — see PasteTokens. One rule per composer, so its numbers
         // count within the conversation it belongs to.
@@ -105,9 +106,6 @@ public sealed class MainWindow : IDisposable
 
     private static PromptControl NewPromptControl() => new()
     {
-        // THE ACCENT, so a token reads as a chip and not as text the user typed. Re-applied with the
-        // other composer colours in ReapplyTheme.
-        TokenForegroundColor = ColorScheme.AccentRgb,
 
         // NO MARGIN. The cell already carries the composer's inset (_composer.Cell(0,0).Padding), and
         // the mode line beside it has none — so a margin here pushed the prompt one column right of
@@ -133,11 +131,6 @@ public sealed class MainWindow : IDisposable
 
         HistoryEnabled = true,
 
-        // BOTH states, so the composer does not change colour when focus enters it. Set only one and
-        // unfocused falls through to the app background while focused takes the framework's own grey
-        // — two surfaces for one control, and neither matches the mode line below it.
-        InputBackgroundColor = ColorScheme.ComposerSurface,
-        InputFocusedBackgroundColor = ColorScheme.ComposerSurface,
     };
 
     private readonly PromptControl _firstInput = NewPrompt();
@@ -643,20 +636,8 @@ public sealed class MainWindow : IDisposable
         return new ComposerParts(composer, promptBox, grip, composerRule);
     }
 
-    /// <summary>
-    /// The active tab's prompt box — what a permission prompt replaces and a restore puts back.
-    ///
-    /// <para>A PROPERTY OVER THE ACTIVE TAB rather than a field, for the reason every other one here
-    /// became one: with several conversations there are several prompt boxes, and the one a prompt
-    /// swaps out has to be the one belonging to the tab that asked.</para>
-    /// </summary>
-    private GridControl _promptBox => ActiveSessionTab.PromptBox!;
-
     /// <summary>The active tab's mode line.</summary>
     private MarkupControl? _modeLine => ActiveSessionTab.ModeLine;
-
-    /// <summary>The active tab's composer grip.</summary>
-    private MarkupControl? _promptGrip => ActiveSessionTab.Grip;
 
     /// <summary>
     /// The session behind the active tab, or null before one is wired.
@@ -3707,6 +3688,22 @@ public sealed class MainWindow : IDisposable
     }
 
     /// <summary>
+    /// The composer's own colours, from the current scheme — at construction and on every theme switch.
+    ///
+    /// <para>BOTH background states, so the composer does not change colour when focus enters it. Set
+    /// only one and unfocused falls through to the app background while focused takes the framework's
+    /// own grey — two surfaces for one control, and neither matches the mode line below it.</para>
+    ///
+    /// <para>THE ACCENT FOR A TOKEN, so a pasted block reads as a chip and not as text the user typed.</para>
+    /// </summary>
+    private static void ColourComposer(PromptControl composer)
+    {
+        composer.InputBackgroundColor = ColorScheme.ComposerSurface;
+        composer.InputFocusedBackgroundColor = ColorScheme.ComposerSurface;
+        composer.TokenForegroundColor = ColorScheme.AccentRgb;
+    }
+
+    /// <summary>
     /// Re-applies every surface this window captured at construction, after a theme change.
     ///
     /// <para>THE FIELD INITIALISERS ARE THE PROBLEM THIS SOLVES. Controls here take their colours
@@ -3720,26 +3717,33 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public void ReapplyTheme()
     {
-        Input.InputBackgroundColor = ColorScheme.ComposerSurface;
-        Input.InputFocusedBackgroundColor = ColorScheme.ComposerSurface;
-        Input.TokenForegroundColor = ColorScheme.AccentRgb;
+        // EVERY COMPOSER, not the active one: each tab has its own, and one left out keeps the old theme
+        // until the user goes back to it and finds a box in colours nothing else on screen has.
+        foreach (var composer in _sessionTabs.Select(t => t.Input).Concat(_agentTabs.Values.Select(s => s.Tab.Input)))
+            ColourComposer(composer);
         StatusBar.BackgroundColor = ColorScheme.ChatSurface;
         // NULL UNTIL BuildWindow RUNS, and a config-named theme switches before that.
         if (Window is not null) Window.BackgroundColor = ColorScheme.ChatSurface;
         // NULL BEFORE THE COMPOSER IS BUILT — a theme switch during startup is possible (config names
         // one) and must not fault on a control that does not exist yet.
-        if (_promptBox is not null) _promptBox.BackgroundColor = ColorScheme.ComposerSurface;
-
         // THE MODE LINE CARRIES ITS BACKGROUND IN ITS MARKUP, not on the control — see where it is
         // built. So it cannot be re-coloured by setting a property; the text has to be regenerated.
         // BOTH PLACES, as the comment where this control is built explains: MarkupControl takes its
         // main fill from Container?.BackgroundColor and its right-hand fill from its OWN, so setting
         // only the container leaves the strip past the text in the old colour. Reported live — the
         // composer's mode line kept the dark surface under a light theme.
-        if (_modeLine is not null)
+        //
+        // EVERY TAB'S BOX, like every tab's composer above: each tab builds its own, and one left out
+        // shows the outgoing theme the moment the user goes back to it. Each mode line from its OWN
+        // tab's mode and model, which is what the tab shows when it is in front.
+        foreach (var tab in _sessionTabs)
         {
-            _modeLine.BackgroundColor = ColorScheme.ComposerSurface;
-            _modeLine.SetContent([ModeLineText(_mode, _resolution, ActiveSessionTab.Session)]);
+            if (tab.PromptBox is { } box) box.BackgroundColor = ColorScheme.ComposerSurface;
+            if (tab.ModeLine is { } line)
+            {
+                line.BackgroundColor = ColorScheme.ComposerSurface;
+                line.SetContent([ModeLineText(tab.Mode, tab.Resolution ?? _resolution, tab.Session)]);
+            }
         }
 
         // THE TWO GRIPS, which are the accent rather than a surface. Both captured ColorScheme.Grip
@@ -3750,12 +3754,13 @@ public sealed class MainWindow : IDisposable
         // THE RAIL IS A PROPERTY, THE COMPOSER'S IS MARKUP. The rail takes a Color and re-colours by
         // assignment; the grip's colour is baked into the text of each row, so like the mode line
         // above it the content has to be regenerated rather than re-coloured.
-        if (_promptGrip is not null)
-            _promptGrip.SetContent([.. GripRows(GripColour(ActiveSessionTab.InAside))]);
-
-        // AND EVERY TAB'S BTW TITLE, coloured into its markup the same way.
+        //
+        // EVERY TAB'S GRIP, and its btw title, coloured into their markup the same way.
         foreach (var tab in _sessionTabs)
+        {
+            tab.Grip?.SetContent([.. GripRows(GripColour(tab.InAside))]);
             if (tab.ComposerRule is { } rule) TitleComposerRule(rule, tab.InAside);
+        }
 
         // EVERY SESSION TAB, NOT THE ONE ON SCREEN. Each tab has its own transcript with its own
         // role styles, so restyling only the active one leaves the others drawing new messages in the

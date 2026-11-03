@@ -11,6 +11,15 @@ public sealed record TypedCommand(string Line, Invocable Entry)
     /// <summary>Text to put under the expansion — headless piped input — never into
     /// <c>$ARGUMENTS</c>.</summary>
     public string? Attachment { get; init; }
+
+    /// <summary>
+    /// The line as the transcript shows it, when that is not <see cref="Line"/>: a pasted block in the
+    /// arguments shows as its label. Null shows the line itself.
+    /// </summary>
+    public string? Shown { get; init; }
+
+    /// <summary>The blocks pasted into the arguments, each shown in <see cref="Shown"/> as its label.</summary>
+    public IReadOnlyList<CxAgent.Core.Models.PastedText>? Pastes { get; init; }
 }
 
 public sealed partial class Session
@@ -35,8 +44,10 @@ public sealed partial class Session
     /// </summary>
     public Invocable? FindTyped(string line)
     {
+        // A NEWLINE IS PART OF THE ARGUMENTS, not a reason to refuse the line: a pasted stack trace after
+        // /review is the command's input, and refusing it would report a command /commands lists as unknown.
         var trimmed = line.TrimStart();
-        if (!trimmed.StartsWith('/') || trimmed.Contains('\n')) return null;
+        if (!trimmed.StartsWith('/')) return null;
         if (Manager is { } manager && SessionCommands.Match(trimmed, manager.Commands) is not null) return null;
 
         var name = CommandText.SplitLine(trimmed).Name;
@@ -55,8 +66,9 @@ public sealed partial class Session
         var line = command.Line.Trim();
         var arguments = CommandText.SplitLine(line).Arguments;
 
-        return Send(new TurnRequest(line, line, null, null, SubmitSource.User)
+        return Send(new TurnRequest(line, command.Shown?.Trim() ?? line, null, null, SubmitSource.User)
         {
+            Pastes = command.Pastes,
             Expand = async ct =>
             {
                 Volatile.Write(ref _expanding, line);

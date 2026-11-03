@@ -186,7 +186,18 @@ public static partial class ExportMarkdown
                     return;
                 }
                 Heading(hashes, Speaker(entry.From, inChild), entry.At);
-                Paragraph(Has(ExportParts.SystemAndInjected) ? m.Content : m.Shown ?? m.Content);
+                var full = Has(ExportParts.SystemAndInjected);
+                Paragraph(full ? m.Content : m.Shown ?? m.Content);
+
+                // THE PASTES UNDER THE LINE, in a readable export: the line shows each as its label, and
+                // a person reading the export needs what the label stood for. A full export has them
+                // already, in place, in the content it prints.
+                if (!full && m.Pastes is { } pastes)
+                    foreach (var paste in pastes)
+                    {
+                        Paragraph($"**{paste.Label.Trim('[', ']')}**");
+                        Paragraph(Md.Fence(paste.Text));
+                    }
                 _messages++;
                 return;
             }

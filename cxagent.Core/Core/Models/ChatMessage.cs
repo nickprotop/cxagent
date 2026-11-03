@@ -24,6 +24,17 @@ public record ChatMessage
     public string? Shown { get; init; }
 
     /// <summary>
+    /// The blocks pasted into this message, each shown in <see cref="Shown"/> as its label.
+    ///
+    /// <para>KEPT FOR A READABLE EXPORT, which prints the line as it was typed and then each paste under
+    /// its label: <see cref="Shown"/> alone would leave a person reading the export with "[Pasted text #1
+    /// +18 lines]" and not the stack trace it stood for. <see cref="Content"/> already holds the text in
+    /// place, so this repeats it, which a paste's size makes worth paying once per message for. Never
+    /// sent to a provider, for the same reason as <see cref="Shown"/>.</para>
+    /// </summary>
+    public IReadOnlyList<PastedText>? Pastes { get; init; }
+
+    /// <summary>
     /// True for the ONE regenerated message carrying the model's task list.
     ///
     /// <para>A PROPERTY, NOT A TEXT MATCH. The list is rewritten every turn, so the previous copy has

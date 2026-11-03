@@ -130,12 +130,13 @@ public static partial class CommandText
 
     /// <summary>
     /// A typed line split into the command's name and what follows it. ANY WHITESPACE ends the name —
-    /// a tab is a separator in a terminal as much as a space is.
+    /// a tab is a separator in a terminal as much as a space is, and a newline starts arguments that run
+    /// over several lines, a pasted block's.
     /// </summary>
     public static (string Name, string Arguments) SplitLine(string line)
     {
         var text = line.Trim().TrimStart('/');
-        var end = text.IndexOfAny([' ', '\t']);
+        var end = text.IndexOfAny([' ', '\t', '\n', '\r']);
         return end < 0 ? (text, "") : (text[..end], text[(end + 1)..].Trim());
     }
 

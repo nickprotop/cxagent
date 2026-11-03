@@ -1,4 +1,5 @@
 using System.Globalization;
+using CxAgent.Core.Models;
 using SharpConsoleUI.Controls;
 
 namespace CxAgent.UI;
@@ -95,4 +96,11 @@ internal sealed record ComposerLine(string Text, string? Echo, IReadOnlyList<Pro
         var shown = composer.InputLabelText;
         return new(text, shown == text ? null : shown, composer.InputSegments);
     }
+
+    /// <summary>
+    /// The pasted blocks in the line, label and text, kept with the message so a readable export can
+    /// show what each label stood for.
+    /// </summary>
+    internal IReadOnlyList<PastedText> Pastes =>
+        [.. Segments.Where(s => s.Token?.Tag == PasteTokens.Tag).Select(s => new PastedText(s.Token!.Label, s.Token.Value))];
 }

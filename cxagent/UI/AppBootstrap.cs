@@ -1698,7 +1698,7 @@ public static class AppBootstrap
             // otherwise pre-empt, running "/clear what does this do?" as a /clear.
             if (!target.InAside && manager.Commands.TryRun(target, goalText)) return;
 
-            var disposition = target.Submit(goalText, line.Echo);
+            var disposition = target.Submit(goalText, line.Echo, pastes: line.Pastes);
             if (disposition is not Session.SubmitOutcome.Started started) return;
 
             // Fire-and-forget on the UI-initiated flow; sync-context resumes continuations on the UI thread.

@@ -97,6 +97,7 @@ public class ComposerTokenTests
 
         Assert.Equal("fix this: " + Pasted, line.Text);
         Assert.Equal("fix this: [Pasted text #1 +18 lines]", line.Echo);
+        Assert.Equal([new CxAgent.Core.Models.PastedText("[Pasted text #1 +18 lines]", Pasted)], line.Pastes);
     }
 
     /// <summary>Without a token there is nothing to echo differently, so nothing changes.</summary>

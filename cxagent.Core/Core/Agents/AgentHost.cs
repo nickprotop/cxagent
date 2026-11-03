@@ -560,6 +560,8 @@ public sealed class AgentHost : IDisposable
     /// <param name="ct">Cancels the goal mid-run.</param>
     /// <param name="shown">What the transcript showed for this prompt when it differs — a typed
     /// command for its expansion — kept on the message for the session list. Null otherwise.</param>
+    /// <param name="pastes">The blocks pasted into the prompt, each shown in <paramref name="shown"/> as its
+    /// label — kept on the message for a readable export. Null when nothing was pasted.</param>
     /// <returns>
     /// The agent's own <see cref="SendResult"/> rather than a bare <c>Task</c> — Session.Turn.cs needs
     /// the final assistant text to back <c>SubmitOutcome.Started.Result</c>, and the answer already
@@ -575,11 +577,11 @@ public sealed class AgentHost : IDisposable
     /// message", not every lap concatenated.</para>
     /// </returns>
     public async Task<SendResult> RunAsync(string prompt, CancellationToken ct,
-        Jobs.ToolSelection? turnTools = null, string? shown = null)
+        Jobs.ToolSelection? turnTools = null, string? shown = null, IReadOnlyList<PastedText>? pastes = null)
     {
         try
         {
-            return await _agent.SendAsync(prompt, ct, turnTools, shown);
+            return await _agent.SendAsync(prompt, ct, turnTools, shown, pastes);
         }
         finally
         {
