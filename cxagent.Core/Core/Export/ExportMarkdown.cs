@@ -198,6 +198,13 @@ public static partial class ExportMarkdown
                         Paragraph($"**{paste.Label.Trim('[', ']')}**");
                         Paragraph(Md.Fence(paste.Text));
                     }
+
+                // THE IMAGES AS LINKS, in either export: an image has no text to print, so the export
+                // stays one file and points at the PNG the model was sent, in the folder of the agent
+                // that recorded the message — the folder the session keeps that image in.
+                if (m.Images is { } images)
+                    foreach (var image in images)
+                        Paragraph($"![{image.Label.Trim('[', ']')}]({new Uri(Path.Combine(entry.Dir, "images", image.Hash + ".png")).AbsoluteUri})");
                 _messages++;
                 return;
             }

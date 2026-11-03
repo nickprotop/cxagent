@@ -580,7 +580,8 @@ one run before it was written down), and the full reference for options, output 
 | `F10` | Next thinking level this model offers; see `/think`. (gnome-terminal opens its own menu on F10 unless that is turned off in its preferences) |
 | `F9` | Theme |
 | `Ctrl+O` | Open or fold the latest thinking block |
-| `Ctrl+G` | Expand the pasted text beside the caret. A paste of three lines or more, or 800 characters, sits in the composer as one token, `[Pasted text #1 +18 lines]`; the model is sent the text, and a click on the token expands it too |
+| `Ctrl+G` | Expand the pasted text beside the caret, or show the image. A paste of three lines or more, or 800 characters, sits in the composer as one token, `[Pasted text #1 +18 lines]`; the model is sent the text, and a click on the token expands it too |
+| `Ctrl+V` | Paste an image from the clipboard as a token, `[Image #1 1568×882]` (`Alt+V` on Windows); with no image there it pastes text as before. Dropping an image file on the terminal does the same. The model is sent the image, shrunk to 1568 pixels on its long edge, and a model that cannot see images is told so instead |
 | `Shift+Tab` | Cycle the edit mode; see [COMMANDS.md](COMMANDS.md) |
 | `Ctrl+Q` | Quit |
 

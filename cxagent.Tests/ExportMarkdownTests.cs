@@ -152,6 +152,30 @@ public class ExportMarkdownTests : IDisposable
         Assert.True(md.IndexOf("please", StringComparison.Ordinal) < md.IndexOf("at A()", StringComparison.Ordinal));
     }
 
+    private static ChatMessage Imaged(int minute = 0) => new()
+    {
+        Role = "user",
+        Content = "what is [Image #1 4×2]?",
+        Images = [new AttachedImage("[Image #1 4×2]", "abc123", 4, 2)],
+        Timestamp = At(minute),
+    };
+
+    /// <summary>
+    /// An image has no text to print, so both kinds of export link the file the session keeps it in, under
+    /// the line that named it.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AnExport_LinksEachImageToItsFile(bool full)
+    {
+        var md = Render(Source(E(Imaged(), Incoming.You)), full ? Full : Readable);
+
+        var file = new Uri(Path.Combine(_dir, "images", "abc123.png")).AbsoluteUri;
+        Assert.Contains($"![Image #1 4×2]({file})", md);
+        Assert.True(md.IndexOf("what is", StringComparison.Ordinal) < md.IndexOf("![Image", StringComparison.Ordinal));
+    }
+
     /// <summary>A full export is the message as the model got it, the pastes already in place.</summary>
     [Fact]
     public void Full_ShowsThePastedMessageAsSent_Once()

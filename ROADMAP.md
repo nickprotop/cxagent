@@ -7,8 +7,6 @@ What is next. See [README](README.md) for what cxagent does and
 
 - **Checkpoints and rewind** — roll the working tree back to before a turn. Today there is no undo
   inside cxagent; git is the safety net, and an edit the model made has to be reverted by hand.
-- **Image input** — paste or drop a screenshot into the composer and have the model see it. The
-  system clipboard reaches the app on every desktop now, which is half of it.
 - **Web search** — a tool that finds pages. `web_fetch` reads a URL the model already has; nothing
   finds one it does not.
 - **Hooks** — commands run on events the user chooses: before or after a tool call, when a turn
