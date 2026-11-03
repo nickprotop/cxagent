@@ -1,0 +1,158 @@
+using System.Net;
+using System.Text;
+using CxAgent.Core.Llm;
+using CxAgent.Core.Llm.Providers;
+using CxAgent.Core.Models;
+using Xunit;
+
+namespace CxAgent.Tests;
+
+/// <summary>
+/// Whether a model sees images: the configuration's word first, then what the endpoint says, else
+/// unknown, which lets the image go and the endpoint answer for itself.
+/// </summary>
+public class ImageCapabilityTests
+{
+    [Theory]
+    [InlineData("""{"modalities":{"vision":true,"audio":false}}""", true)]
+    [InlineData("""{"modalities":{"vision":false,"audio":false}}""", false)]
+    [InlineData("""{"chat_template":"x"}""", null)]
+    [InlineData("not json", null)]
+    public void LlamaProps_SayWhetherTheServerLoadedAVisionProjector(string json, bool? sees)
+    {
+        Assert.Equal(sees, ImageCapability.ParseLlamaProps(json));
+    }
+
+    [Theory]
+    [InlineData("""{"capabilities":["completion","vision"]}""", true)]
+    [InlineData("""{"capabilities":["completion","tools"]}""", false)]
+    [InlineData("""{"details":{}}""", null)]
+    public void OllamaShow_ListsVisionAmongItsCapabilities(string json, bool? sees)
+    {
+        Assert.Equal(sees, ImageCapability.ParseOllamaShow(json));
+    }
+
+    [Theory]
+    [InlineData("""{"data":[{"id":"m","architecture":{"input_modalities":["text","image"]}}]}""", true)]
+    [InlineData("""{"data":[{"id":"m","architecture":{"input_modalities":["text"]}}]}""", false)]
+    [InlineData("""{"data":[{"id":"other","architecture":{"input_modalities":["image"]}}]}""", null)]
+    public void OpenRouterModels_ListImageAmongTheModelsInputs(string json, bool? sees)
+    {
+        Assert.Equal(sees, ImageCapability.ParseOpenRouterModels(json, "m"));
+    }
+
+    private sealed class Serves(Func<HttpRequestMessage, string> answer) : HttpMessageHandler
+    {
+        public List<string> Asked { get; } = [];
+        public List<string> Bodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Asked.Add(request.RequestUri!.AbsolutePath);
+            if (request.Content is not null) Bodies.Add(await request.Content.ReadAsStringAsync(ct));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(answer(request), Encoding.UTF8, "application/json"),
+            };
+        }
+    }
+
+    private const string Reply = """{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}""";
+
+    private static OpenAiCompatibleProvider Llama(Serves serves, bool? pin = null) => new(new OpenAiProviderOptions
+    {
+        ProviderId = "local", DisplayName = "local", Model = "m", BaseUrl = "http://h/v1",
+        Client = new HttpClient(serves), Images = pin,
+    });
+
+    private static List<ChatMessage> WithAnImage() =>
+    [
+        new() { Role = "user", Content = "what is [Image #1 4×2]?",
+            Images = [new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1, 2, 3] }] },
+    ];
+
+    [Fact]
+    public async Task ThePin_OverridesTheProbe()
+    {
+        var serves = new Serves(_ => """{"modalities":{"vision":false}}""");
+
+        Assert.True(await Llama(serves, pin: true).CanSeeImagesAsync());
+        Assert.DoesNotContain("/props", serves.Asked);
+    }
+
+    [Fact]
+    public async Task Anthropic_IsYesWithoutAsking()
+    {
+        var provider = new AnthropicProvider("a", "a", "claude", "key");
+
+        Assert.True(provider.KnownCanSeeImages);
+        Assert.True(await provider.CanSeeImagesAsync());
+    }
+
+    /// <summary>
+    /// Measured on the user's local Qwen: llama.cpp without a vision projector refuses a request with an
+    /// image, 500, and every later turn too, since the image stays in the context. Asked first, it gets
+    /// the placeholder and the conversation carries on.
+    /// </summary>
+    [Fact]
+    public async Task ATextOnlyModel_GetsThePlaceholderInsteadOfTheImage()
+    {
+        var serves = new Serves(r => r.RequestUri!.AbsolutePath == "/props" ? """{"modalities":{"vision":false}}""" : Reply);
+
+        await Llama(serves).ChatAsync(WithAnImage(), null, CancellationToken.None);
+
+        var sent = Assert.Single(serves.Bodies);
+        var content = System.Text.Json.Nodes.JsonNode.Parse(sent)!["messages"]![0]!["content"]!.GetValue<string>();
+        Assert.Equal("what is [Image #1 4×2]?\n[image: Image #1, 4×2]", content);
+        Assert.DoesNotContain("image_url", sent);
+    }
+
+    [Fact]
+    public async Task AMessageWithoutImages_NeverAsks()
+    {
+        var serves = new Serves(_ => Reply);
+
+        await Llama(serves).ChatAsync([new ChatMessage { Role = "user", Content = "hi" }], null, CancellationToken.None);
+
+        Assert.DoesNotContain("/props", serves.Asked);
+    }
+
+    [Fact]
+    public async Task Ollama_AsksItsShowRoute_ForTheModel()
+    {
+        var serves = new Serves(r => r.RequestUri!.AbsolutePath == "/api/show" ? """{"capabilities":["completion","vision"]}""" : Reply);
+        var provider = new OllamaProvider("o", "o", "llava", "http://h:11434/v1", client: new HttpClient(serves));
+
+        Assert.True(await provider.CanSeeImagesAsync());
+        Assert.Contains("\"model\":\"llava\"", serves.Bodies.Single());
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> NoEnv = new Dictionary<string, string>();
+
+    private static string Config(string images) =>
+        """{"providers":{"p":{"kind":"openai-compatible","model":"m","baseUrl":"http://h/v1","images":""" + images + """}},"defaultProvider":"p"}""";
+
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    public void TheConfig_ReadsImages(string value, bool images)
+    {
+        Assert.Equal(images, ProviderConfigLoader.Parse(Config(value), NoEnv).Providers["p"].Images);
+    }
+
+    [Fact]
+    public void TheConfig_WithoutImages_AsksTheServer()
+    {
+        var json = """{"providers":{"p":{"kind":"openai-compatible","model":"m","baseUrl":"http://h/v1"}},"defaultProvider":"p"}""";
+
+        Assert.Null(ProviderConfigLoader.Parse(json, NoEnv).Providers["p"].Images);
+    }
+
+    [Fact]
+    public void TheConfig_RefusesImagesThatIsNotABoolean()
+    {
+        var ex = Assert.Throws<ProviderConfigException>(() => ProviderConfigLoader.Parse(Config("\"yes\""), NoEnv));
+
+        Assert.Contains("provider 'p': 'images' must be true or false.", ex.Errors);
+    }
+}

@@ -12,7 +12,7 @@ namespace CxAgent.Core.Llm.Providers;
 /// Together, vLLM, llama.cpp, LM Studio and any other OpenAI-compatible endpoint. Normalizes
 /// StopReason/Usage at this boundary; the core never sees a raw vendor value.
 /// </summary>
-internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCatalogDetail, IThinkingProvider
+internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCatalogDetail, IThinkingProvider, IImageCapability
 {
     private readonly HttpClient _client;
     private readonly string _model;
@@ -27,6 +27,7 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
     private readonly OpenAiProviderOptions _options;
     /// <summary>Shared with every clone: the server's answer does not depend on the level.</summary>
     private readonly CapabilityCache _caps;
+    private readonly ImageCapability _images;
 
     public string ProviderId { get; }
     public string DisplayName { get; }
@@ -60,12 +61,13 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
     /// Clones re-pass the original argument so a clone never silently swaps out a test's fake handler.
     /// </summary>
 
-    public OpenAiCompatibleProvider(OpenAiProviderOptions options) : this(options, new CapabilityCache()) { }
+    public OpenAiCompatibleProvider(OpenAiProviderOptions options) : this(options, new CapabilityCache(), new ImageCapability()) { }
 
-    private OpenAiCompatibleProvider(OpenAiProviderOptions options, CapabilityCache caps)
+    private OpenAiCompatibleProvider(OpenAiProviderOptions options, CapabilityCache caps, ImageCapability images)
     {
         _options = options;
         _caps = caps;
+        _images = images;
         ProviderId = options.ProviderId;
         DisplayName = options.DisplayName;
         _model = options.Model;
@@ -89,13 +91,52 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
     /// <summary>A copy of <paramref name="other"/> at <paramref name="level"/>, for a subclass's own
     /// <see cref="WithThinking"/>.</summary>
     protected OpenAiCompatibleProvider(OpenAiCompatibleProvider other, string? level)
-        : this(other._options with { Thinking = level }, other._caps) { }
+        : this(other._options with { Thinking = level }, other._caps, other._images) { }
 
     /// <summary>
     /// What this model offers, asked in the endpoint's own way: llama.cpp's <c>/props</c>,
     /// OpenRouter's model list, or — for OpenAI, which cannot be asked — the configuration's word.
     /// </summary>
     /// <param name="ct">Cancels the probe.</param>
+    public bool? KnownCanSeeImages => _options.Images ?? _images.Known;
+
+    public Task<bool?> CanSeeImagesAsync(CancellationToken ct = default) =>
+        _options.Images is { } pinned ? Task.FromResult<bool?>(pinned) : _images.GetAsync(AskImagesAsync, ct);
+
+    /// <summary>
+    /// Asks the endpoint whether the model sees images, in its own way: llama.cpp's <c>/props</c>,
+    /// OpenRouter's model list. OpenAI has no route that says, and is left to the configuration.
+    /// </summary>
+    /// <param name="ct">Cancels the probe.</param>
+    protected virtual async Task<bool?> AskImagesAsync(CancellationToken ct) => _options.Dialect switch
+    {
+        ReasoningDialect.OpenAi => null,
+        ReasoningDialect.OpenRouter => await GetAsync("/models", ct) is { } list ? ImageCapability.ParseOpenRouterModels(list, _model) : null,
+        _ => await GetAsync("/props", ct) is { } props ? ImageCapability.ParseLlamaProps(props) : null,
+    };
+
+    /// <summary>
+    /// One GET for a capability, or null when the endpoint has no such route. A temporary refusal — a
+    /// llama.cpp server still loading its model — throws, so the answer is asked again rather than kept.
+    /// </summary>
+    private async Task<string?> GetAsync(string path, CancellationToken ct)
+    {
+        var root = path == "/props" && _baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? _baseUrl[..^3] : _baseUrl;
+        using var req = new HttpRequestMessage(HttpMethod.Get, $"{root}{path}");
+        Authorize(req);
+        using var resp = await _client.SendAsync(req, ct).ConfigureAwait(false);
+        if (ThinkingCapabilities.IsTemporary(resp.StatusCode)) throw new HttpRequestException($"{path} answered {(int)resp.StatusCode}");
+        return resp.IsSuccessStatusCode ? await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false) : null;
+    }
+
+    /// <summary>
+    /// Whether this request's images go as images: always when there are none to send, and otherwise
+    /// unless the model is known not to see them. Asked only here, so a conversation without images
+    /// never probes.
+    /// </summary>
+    private async Task<bool> SendImagesAsync(List<ChatMessage> messages, CancellationToken ct) =>
+        !ImageCapability.AnyImages(messages) || await CanSeeImagesAsync(ct).ConfigureAwait(false) != false;
+
     public Task<ThinkingOptions> GetThinkingOptionsAsync(CancellationToken ct = default) =>
         _options.Dialect switch
         {
@@ -198,7 +239,8 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
         List<ToolDefinition>? tools, CancellationToken ct)
     {
         var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: false,
-            cacheSystemPrompt: _cacheControl, thinking: await ThinkingFieldsAsync(ct)).ToJsonString();
+            cacheSystemPrompt: _cacheControl, thinking: await ThinkingFieldsAsync(ct),
+            sendImages: await SendImagesAsync(messages, ct)).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         var json = await resp.Content.ReadAsStringAsync(ct);
@@ -210,7 +252,8 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
         List<ToolDefinition>? tools, [EnumeratorCancellation] CancellationToken ct)
     {
         var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: true,
-            cacheSystemPrompt: _cacheControl, thinking: await ThinkingFieldsAsync(ct)).ToJsonString();
+            cacheSystemPrompt: _cacheControl, thinking: await ThinkingFieldsAsync(ct),
+            sendImages: await SendImagesAsync(messages, ct)).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         using var stream = await resp.Content.ReadAsStreamAsync(ct);

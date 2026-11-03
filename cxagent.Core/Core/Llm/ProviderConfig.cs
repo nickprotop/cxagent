@@ -74,6 +74,12 @@ public record ProviderInstanceConfig(
     public string? Description { get; init; }
 
     /// <summary>
+    /// Whether the model sees images, when the configuration says; null asks the endpoint — see
+    /// <see cref="IImageCapability"/>. A NAMED MEMBER, for the reason <see cref="Description"/> gives.
+    /// </summary>
+    public bool? Images { get; init; }
+
+    /// <summary>
     /// Whether an instance that does not say caches its prompt: Anthropic, and OpenRouter — which reaches
     /// Anthropic and Google models that cache nothing without the marker. Everything else, no.
     /// </summary>
@@ -852,6 +858,13 @@ public static class ProviderConfigLoader
                             default: errors.Add($"provider '{name}': 'thinkingDisplay' must be \"summarized\" or \"omitted\"."); break;
                         }
 
+                    bool? images = null;
+                    if (o.TryGetProperty("images", out var im))
+                    {
+                        if (im.ValueKind is JsonValueKind.True or JsonValueKind.False) images = im.GetBoolean();
+                        else errors.Add($"provider '{name}': 'images' must be true or false.");
+                    }
+
                     bool reasoning = false;
                     if (o.TryGetProperty("reasoning", out var rs))
                     {
@@ -897,7 +910,7 @@ public static class ProviderConfigLoader
                     }
 
                     providers[name] = new ProviderInstanceConfig(kind, model, apiKey, baseUrl, extra, contextWindow,
-                        maxConcurrentAgents, cacheControl, thinkingDisplay, thinking, reasoning) { Description = description };
+                        maxConcurrentAgents, cacheControl, thinkingDisplay, thinking, reasoning) { Description = description, Images = images };
                 }
             else
                 errors.Add("config.json has no 'providers' object.");

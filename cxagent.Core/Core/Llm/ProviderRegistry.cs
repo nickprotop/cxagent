@@ -250,7 +250,8 @@ public sealed class ProviderRegistry
             // Null keeps the provider's own default endpoint.
             "anthropic" => new AnthropicProvider(
                 name, display, cfg.Model, cfg.ApiKey ?? "", baseUrl: cfg.BaseUrl, client: client,
-                cacheControl: cfg.CacheControl, thinkingDisplay: cfg.ThinkingDisplay, thinking: cfg.Thinking),
+                cacheControl: cfg.CacheControl, thinkingDisplay: cfg.ThinkingDisplay, thinking: cfg.Thinking,
+                images: cfg.Images),
             "openai-compatible" => new OpenAiCompatibleProvider(new OpenAiProviderOptions
             {
                 ProviderId = name,
@@ -265,9 +266,10 @@ public sealed class ProviderRegistry
                 Dialect = ReasoningDialects.For(cfg.BaseUrl),
                 Reasoning = cfg.Reasoning,
                 Thinking = cfg.Thinking,
+                Images = cfg.Images,
             }),
             "ollama" => new OllamaProvider(
-                name, display, cfg.Model, cfg.BaseUrl, client: client),
+                name, display, cfg.Model, cfg.BaseUrl, client: client, images: cfg.Images),
             _ => throw new InvalidOperationException(
                 $"provider '{name}': unknown kind '{cfg.Kind}' reached the factory (should have failed validation).")
         };

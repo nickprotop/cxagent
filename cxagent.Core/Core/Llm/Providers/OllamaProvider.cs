@@ -11,11 +11,13 @@ internal sealed class OllamaProvider : OpenAiCompatibleProvider
 {
     private readonly HttpClient _client;
     private readonly string _tagsUrl;
+    private readonly string _showUrl;
 
     public OllamaProvider(string providerId, string displayName, string model,
-        string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null)
+        string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null, bool? images = null)
         : base(new OpenAiProviderOptions
         {
+            Images = images,
             ProviderId = providerId,
             DisplayName = displayName,
             Model = model,
@@ -32,6 +34,7 @@ internal sealed class OllamaProvider : OpenAiCompatibleProvider
         if (effectiveBaseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
             effectiveBaseUrl = effectiveBaseUrl[..^"/v1".Length];
         _tagsUrl = $"{effectiveBaseUrl}/api/tags";
+        _showUrl = $"{effectiveBaseUrl}/api/show";
         _client = client ?? Shared;
     }
 
@@ -39,6 +42,18 @@ internal sealed class OllamaProvider : OpenAiCompatibleProvider
     {
         _client = other._client;
         _tagsUrl = other._tagsUrl;
+        _showUrl = other._showUrl;
+    }
+
+    /// <summary>Ollama's native <c>/api/show</c>, which lists <c>"vision"</c> among a model's capabilities.</summary>
+    protected override async Task<bool?> AskImagesAsync(CancellationToken ct)
+    {
+        using var body = new StringContent(
+            System.Text.Json.JsonSerializer.Serialize(new { model = ModelId }), System.Text.Encoding.UTF8, "application/json");
+        using var resp = await _client.PostAsync(_showUrl, body, ct).ConfigureAwait(false);
+        return resp.IsSuccessStatusCode
+            ? ImageCapability.ParseOllamaShow(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false))
+            : null;
     }
 
     /// <inheritdoc/>

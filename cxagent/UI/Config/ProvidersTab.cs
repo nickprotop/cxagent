@@ -372,6 +372,7 @@ public sealed class ProvidersTab
         var model = new FieldGrid();
         model.Add("Model", "The model id this instance sends requests to.", ModelEditor(draft));
         model.Add("Thinking", "The level new sessions start at; /think and F10 change it per session.", ThinkingEditor(draft));
+        model.Add("Images", "Whether this model can see a pasted image.", ImagesEditor(draft));
         // PROMPT CACHING BESIDE THE MODEL, and only where it does something: on by default for Anthropic
         // and OpenRouter, which cache nothing unless asked. Anywhere else it is shown only once set, so
         // that it can be turned back off.
@@ -505,6 +506,56 @@ public sealed class ProvidersTab
 
         return stack.Control;
     }
+
+    /// <summary>
+    /// Whether the model sees images: the server's own answer, or Yes or No pinned over it.
+    ///
+    /// <para>THE ANSWER IS ASKED WHEN THE DIALOG OPENS, through the running provider's own probe, so the
+    /// first item says what the server said — "Ask the server: no" — and pinning is a choice made
+    /// knowing it. Pinning is for the servers that cannot be asked (vLLM, LM Studio, OpenAI) and the
+    /// ones that answer wrong.</para>
+    /// </summary>
+    private IWindowControl ImagesEditor(InstanceDraft draft)
+    {
+        var dropdown = new DropdownControl("", [ImagesAsk("…"), "Yes", "No"]) { HorizontalAlignment = HorizontalAlignment.Left };
+        dropdown.SelectedIndex = draft.Images switch { true => 1, false => 2, null => 0 };
+        dropdown.SelectedIndexChanged += (_, index) =>
+        {
+            draft.Images = index switch { 1 => true, 2 => false, _ => null };
+            Changed();
+        };
+
+        // A SAVED PIN IS NOT ASKED PAST: the running provider answers with the pin, and the item exists to
+        // say what asking gives. Unpinned, it asks the same probe a request makes.
+        if (draft.Original.Images is not null)
+        {
+            dropdown.ClearItems();
+            foreach (var item in new[] { "Ask the server", "Yes", "No" }) dropdown.AddItem(item);
+            dropdown.SelectedIndex = draft.Images switch { true => 1, false => 2, null => 0 };
+            return dropdown;
+        }
+
+        _ = Task.Run(async () =>
+            _host.Apply.Current.Value.Providers?.TryGet(draft.Name, out var provider) == true
+                && provider is IImageCapability capability
+                ? await capability.CanSeeImagesAsync()
+                : null
+        ).ContinueWith(t => _host.System.EnqueueOnUIThread(() =>
+        {
+            var said = t.IsCompletedSuccessfully ? t.Result : null;
+            var selected = dropdown.SelectedIndex;
+            dropdown.ClearItems();
+            dropdown.AddItem(ImagesAsk(said switch { true => "yes", false => "no", null => "the server did not say" }));
+            dropdown.AddItem("Yes");
+            dropdown.AddItem("No");
+            dropdown.SelectedIndex = selected;
+        }, "providersTab.Images"), TaskScheduler.Default);
+
+        return dropdown;
+    }
+
+    /// <summary>The first Images item, naming what asking the server gave.</summary>
+    internal static string ImagesAsk(string answer) => $"Ask the server: {answer}";
 
     private IWindowControl DisplayEditor(InstanceDraft draft)
     {

@@ -24,6 +24,21 @@ public class InstanceDraftTests
         Assert.Empty(fields.Clear);
     }
 
+    /// <summary>Yes or No pins it; "Ask the server" takes the key away, so the endpoint is asked again.</summary>
+    [Fact]
+    public void Images_IsWrittenWhenPinned_AndClearedWhenAskingTheServer()
+    {
+        var pinned = new InstanceDraft("local", Local) { Images = false };
+        Assert.True(pinned.IsDirty);
+        Assert.False(pinned.ToFields().Images);
+        Assert.False(pinned.ToConfig().Images);
+
+        var asking = new InstanceDraft("local", Local with { Images = true }) { Images = null };
+        Assert.True(asking.IsDirty);
+        Assert.Null(asking.ToFields().Images);
+        Assert.Contains("images", asking.ToFields().Clear);
+    }
+
     [Fact]
     public void ChangingTheModel_IsTheOnlyFieldWritten()
     {

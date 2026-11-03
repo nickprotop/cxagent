@@ -229,4 +229,29 @@ public class ImageTokenTests : IDisposable
         var token = Assert.Single(restored, s => s.Token is not null).Token;
         Assert.NotNull(ImageTokens.Of(token));
     }
+
+    /// <summary>A model known not to see images refuses one at the paste, and the path stays text.</summary>
+    [Fact]
+    public void AModelThatCannotSee_RefusesTheImageAtThePaste()
+    {
+        var said = new List<string>();
+        var before = ImageTokens.Refused;
+        ImageTokens.Refused = said.Add;
+        try
+        {
+            var composer = MainWindow.NewPrompt();
+            var provider = new CxAgent.Core.Llm.Providers.OpenAiCompatibleProvider(new CxAgent.Core.Llm.Providers.OpenAiProviderOptions
+            {
+                ProviderId = "local", DisplayName = "local", Model = "qwen3", BaseUrl = "http://h/v1", Images = false,
+            });
+            ImageTokens.For(composer).CannotSee = () => ImageTokens.Refusal(provider);
+            var path = Png(10, 10);
+
+            composer.Paste(path);
+
+            Assert.Equal(path, composer.InputLabelText);
+            Assert.Equal(["local:qwen3 can't see images"], said);
+        }
+        finally { ImageTokens.Refused = before; }
+    }
 }

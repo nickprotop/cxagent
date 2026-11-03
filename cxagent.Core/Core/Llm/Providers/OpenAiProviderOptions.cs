@@ -65,4 +65,7 @@ internal sealed record OpenAiProviderOptions
     /// model that does not reason is a 400 — so its levels are offered only on this word.
     /// </summary>
     public bool Reasoning { get; init; }
+
+    /// <summary>The configuration's word on whether the model sees images; null asks the endpoint.</summary>
+    public bool? Images { get; init; }
 }

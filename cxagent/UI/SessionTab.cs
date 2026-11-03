@@ -49,8 +49,15 @@ public sealed class SessionTab
     /// </summary>
     public Core.Sessions.Session? Session { get; private set; }
 
-    /// <summary>Records the session this tab shows, once the composition root has one.</summary>
-    public void NoteSession(Core.Sessions.Session session) => Session = session;
+    /// <summary>
+    /// Records the session this tab shows, once the composition root has one — and starts asking whether
+    /// its model sees images, so the first image pasted is judged on an answer rather than on nothing.
+    /// </summary>
+    public void NoteSession(Core.Sessions.Session session)
+    {
+        Session = session;
+        ImageTokens.Refusal(session.Provider);
+    }
 
     /// <summary>The conversation.</summary>
     public ChatTranscriptControl Chat { get; }
@@ -270,6 +277,12 @@ public sealed class SessionTab
         Chat = chat;
         Input = input;
         JobPanel = jobPanel;
+
+        // AN IMAGE IS REFUSED AT THE PASTE when this tab's model is known not to see it, so the user
+        // learns it then, with the line still in front of them, rather than from a reply that never
+        // mentions the picture. Asked through the tab because the session arrives after the composer,
+        // and /model changes the provider under it.
+        ImageTokens.For(input).CannotSee = () => ImageTokens.Refusal(Session?.Provider);
     }
 
     /// <summary>Assembles the tab's own grid over a composer built by the window.</summary>

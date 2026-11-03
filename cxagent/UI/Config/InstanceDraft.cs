@@ -29,6 +29,9 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
     public string? Thinking { get; set; } = original.Thinking;
     public ThinkingDisplay ThinkingDisplay { get; set; } = original.ThinkingDisplay;
     public bool Reasoning { get; set; } = original.Reasoning;
+
+    /// <summary>Whether the model sees images: true or false pinned, null to ask the server.</summary>
+    public bool? Images { get; set; } = original.Images;
     public bool CacheControl { get; set; } = original.CacheControl;
     public int? ContextWindow { get; set; } = original.ContextWindow;
     public int? MaxConcurrentAgents { get; set; } = original.MaxConcurrentAgents;
@@ -42,7 +45,7 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
     /// <summary>Whether anything on screen differs from the file.</summary>
     public bool IsDirty =>
         Model != Original.Model || UrlChanged || DescriptionChanged || KeyChanged || Thinking != Original.Thinking
-        || ThinkingDisplay != Original.ThinkingDisplay || Reasoning != Original.Reasoning
+        || ThinkingDisplay != Original.ThinkingDisplay || Reasoning != Original.Reasoning || Images != Original.Images
         || CacheControl != Original.CacheControl || ContextWindow != Original.ContextWindow
         || MaxConcurrentAgents != Original.MaxConcurrentAgents || HeadersChanged;
 
@@ -64,6 +67,7 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
         }
 
         if (ClearApiKey && Original.ApiKey is not null) clear.Add("apiKey");
+        if (Images is null && Original.Images is not null) clear.Add("images");
         var fields = new InstanceFields
         {
             Kind = IsNew ? Original.Kind : null,
@@ -75,6 +79,7 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
             ThinkingDisplay = ThinkingDisplay != Original.ThinkingDisplay
                 ? (ThinkingDisplay == ThinkingDisplay.Omitted ? "omitted" : "summarized") : null,
             Reasoning = Reasoning != Original.Reasoning ? Reasoning : null,
+            Images = Images != Original.Images ? Images : null,
             CacheControl = CacheControl != Original.CacheControl ? CacheControl : null,
             ContextWindow = Number(ContextWindow, Original.ContextWindow, "contextWindow"),
             MaxConcurrentAgents = Number(MaxConcurrentAgents, Original.MaxConcurrentAgents, "maxConcurrentAgents"),
@@ -97,6 +102,7 @@ public sealed class InstanceDraft(string name, ProviderInstanceConfig original)
         Thinking = Thinking,
         ThinkingDisplay = ThinkingDisplay,
         Reasoning = Reasoning,
+        Images = Images,
         CacheControl = CacheControl,
         ContextWindow = ContextWindow,
         MaxConcurrentAgents = MaxConcurrentAgents,

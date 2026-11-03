@@ -49,6 +49,31 @@ internal sealed class ImageTokens
     private readonly PromptControl _composer;
     private int _count;
 
+    /// <summary>
+    /// Why this composer's model cannot take an image, or null when it can or nobody knows yet. Set by the
+    /// tab, which knows the session; unset, every image is taken.
+    /// </summary>
+    internal Func<string?> CannotSee { get; set; } = () => null;
+
+    /// <summary>
+    /// The refusal for <paramref name="provider"/>: <c>local:qwen3 can't see images</c> when it is known not
+    /// to, and null otherwise.
+    ///
+    /// <para>NOT KNOWN YET STARTS THE QUESTION AND LETS THIS IMAGE GO. Asking on the UI thread would hold
+    /// the paste for as long as the endpoint takes, and the request itself asks again before it is sent,
+    /// so an image that turns out unseeable goes as its placeholder rather than failing the turn.</para>
+    /// </summary>
+    internal static string? Refusal(Core.Llm.ILlmProvider? provider)
+    {
+        if (provider is not Core.Llm.IImageCapability capability) return null;
+        if (capability.KnownCanSeeImages is null)
+        {
+            _ = capability.CanSeeImagesAsync();
+            return null;
+        }
+        return capability.KnownCanSeeImages == false ? $"{provider.ProviderId}:{provider.ModelId} can't see images" : null;
+    }
+
     private ImageTokens(PromptControl composer) => _composer = composer;
 
     /// <summary>
@@ -106,6 +131,11 @@ internal sealed class ImageTokens
     {
         if (SplitPaths(pasted) is not { Count: > 0 } paths) return null;
         if (!paths.All(File.Exists)) return null;
+        if (CannotSee() is { } cannot)
+        {
+            Refused(cannot);
+            return null;
+        }
 
         var prepared = new List<Prepared>();
         foreach (var path in paths)

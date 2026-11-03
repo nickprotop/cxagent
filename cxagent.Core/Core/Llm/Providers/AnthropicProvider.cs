@@ -6,7 +6,7 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Llm.Providers;
 
 /// <summary>Native Anthropic Messages API driver. Normalizes stop_reason/usage at this boundary.</summary>
-public class AnthropicProvider : ILlmProvider, IModelCatalog, IModelCatalogDetail, IThinkingProvider
+public class AnthropicProvider : ILlmProvider, IModelCatalog, IModelCatalogDetail, IThinkingProvider, IImageCapability
 {
     private const string AnthropicVersion = "2023-06-01";
 
@@ -20,6 +20,7 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog, IModelCatalogDetai
     private readonly ThinkingDisplay _display;
     private readonly string? _level;
     private readonly CapabilityCache _caps;
+    private readonly bool? _images;
 
     public string ProviderId { get; }
     public string DisplayName { get; }
@@ -46,11 +47,20 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog, IModelCatalogDetai
     /// </summary>
     public const int DefaultMaxTokens = 32_000;
 
+    /// <summary>
+    /// Every current Claude model reads images, so nothing is asked; the configuration can still say no,
+    /// for a gateway that speaks Anthropic's API in front of one that does not.
+    /// </summary>
+    public bool? KnownCanSeeImages => _images ?? true;
+
+    public Task<bool?> CanSeeImagesAsync(CancellationToken ct = default) => Task.FromResult(KnownCanSeeImages);
+
     public AnthropicProvider(string providerId, string displayName, string model, string apiKey,
         int maxTokens = DefaultMaxTokens, string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null,
         bool cacheControl = false, ThinkingDisplay thinkingDisplay = ThinkingDisplay.Summarized,
-        string? thinking = null)
+        string? thinking = null, bool? images = null)
     {
+        _images = images;
         _cache = cacheControl;
         _display = thinkingDisplay;
         _level = thinking;
@@ -69,6 +79,7 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog, IModelCatalogDetai
     /// no second probe.</summary>
     private AnthropicProvider(AnthropicProvider from, string? level)
     {
+        _images = from._images;
         _client = from._client;
         _model = from._model;
         _apiKey = from._apiKey;
@@ -137,7 +148,7 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog, IModelCatalogDetai
     {
         var thinking = await ThinkingForAsync(ct);
         var body = AnthropicWire.BuildRequestBody(_model, _maxTokens, messages, tools, stream: false, cache: _cache,
-            thinking: thinking).ToJsonString();
+            thinking: thinking, sendImages: KnownCanSeeImages != false).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         var json = await resp.Content.ReadAsStringAsync(ct);
@@ -150,7 +161,7 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog, IModelCatalogDetai
     {
         var thinking = await ThinkingForAsync(ct);
         var body = AnthropicWire.BuildRequestBody(_model, _maxTokens, messages, tools, stream: true, cache: _cache,
-            thinking: thinking).ToJsonString();
+            thinking: thinking, sendImages: KnownCanSeeImages != false).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         using var stream = await resp.Content.ReadAsStreamAsync(ct);

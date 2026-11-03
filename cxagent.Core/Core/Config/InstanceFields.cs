@@ -21,6 +21,7 @@ public sealed record InstanceFields
     public string? ThinkingDisplay { get; init; }
     public string? Thinking { get; init; }
     public bool? Reasoning { get; init; }
+    public bool? Images { get; init; }
 
     /// <summary>JSON key names to remove from the instance.</summary>
     public IReadOnlySet<string> Clear { get; init; } = new HashSet<string>();
@@ -42,6 +43,7 @@ public sealed record InstanceFields
         Set(instance, "thinkingDisplay", ThinkingDisplay);
         Set(instance, "thinking", Thinking);
         if (Reasoning is { } reasoning) instance["reasoning"] = reasoning;
+        if (Images is { } images) instance["images"] = images;
         foreach (var key in Clear) instance.Remove(key);
     }
 
