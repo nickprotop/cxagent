@@ -103,11 +103,12 @@ public sealed class MainWindow : IDisposable
         prompt.PasteFilter = text => images.Paste(text) ?? pastes.For(text);
 
         // A CLICK ON A PASTED TOKEN EXPANDS IT, which is what the user chose a click to mean; Ctrl+G does
-        // the same from the keyboard (AppBootstrap). Never an image's: its value is only its label, and
-        // expanding it would leave the label as text and drop the image.
+        // the same from the keyboard (AppBootstrap). A click on an image's shows the image instead: its
+        // value is only its label, and expanding it would leave the label as text and drop the image.
         prompt.TokenActivated += (_, token) =>
         {
             if (token.Tag == PasteTokens.Tag) PasteTokens.Expand(prompt, token);
+            else if (ImageTokens.Of(token) is { } image) ImagePreview.Current?.Open(image);
         };
         return prompt;
     }

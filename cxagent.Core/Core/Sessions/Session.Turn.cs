@@ -940,7 +940,12 @@ public sealed partial class Session
                 if (!(request.Quiet && firstLap))
                 {
                     if (announceAsNote) _sink?.Said(new Message(echo ?? text, Severity.Info));
-                    else _sink?.UserTurnAdded(NextTurnId(), echo ?? text);
+                    else
+                    {
+                        var userId = NextTurnId();
+                        _sink?.UserTurnAdded(userId, echo ?? text);
+                        if (attachments?.Images is { Count: > 0 } shownImages) _sink?.UserImagesAttached(userId, shownImages);
+                    }
                 }
 
                 var assistantId = NextTurnId();

@@ -1479,6 +1479,15 @@ public static class AppBootstrap
                 return;
             }
 
+            // AN OPEN IMAGE TAKES THE NEXT KEY TO CLOSE IT, Esc included, so the Esc that dismisses the
+            // picture never also takes the keyboard off the composer behind it.
+            if (ImagePreview.Current is { IsOpen: true } preview)
+            {
+                preview.ProcessKey(e.KeyInfo);
+                e.Handled = true;
+                return;
+            }
+
             // THE MENU HEARS EVERY KEY THE COMPOSER IS ABOUT TO GET, so it can tell a history recall from
             // typing — see CommandMenu.NoteKey. Only looked at, never claimed: the composer still walks
             // its history. While the menu is open it has the keyboard and this is not reached.
@@ -1926,13 +1935,18 @@ public static class AppBootstrap
         // A DROPPED IMAGE THAT COULD NOT BE TAKEN SAYS WHY, or a path left as text would look like a drop
         // that worked. Set here because the composers exist before the window system does.
         ImageTokens.Refused = text => system.ToastService.Show(text, SharpConsoleUI.Core.NotificationSeverity.Warning);
+        ImagePreview.Current = new ImagePreview(system);
 
         // A PASTED TOKEN BACK INTO TEXT, from the keyboard — a click on one does the same (MainWindow.NewPrompt).
         // Ctrl+G because the composer keeps A, E, C, X, K, U, W and L, and Ctrl+T is the library's
         // window-cycle key. Declined when no token is beside the caret, so the key does nothing rather than
         // something unexpected.
-        keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.G, "expand the pasted text beside the caret", () =>
-            mainWindow.Input.HasFocus && ImageTokens.ExpandPasteAtCaret(mainWindow.Input, out _));
+        keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.G, "expand the pasted text, or show the image, beside the caret", () =>
+        {
+            if (!mainWindow.Input.HasFocus || !ImageTokens.ExpandPasteAtCaret(mainWindow.Input, out var image)) return false;
+            if (image is not null) ImagePreview.Current?.Open(image);
+            return true;
+        });
 
         // F9 OPENS THE THEME LIST, and the item at the left of the status bar opens the same one on a
         // click. One key for the whole registry rather than a key per theme: the list already knows

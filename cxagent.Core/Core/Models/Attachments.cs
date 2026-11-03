@@ -45,6 +45,12 @@ public sealed record Attachments(IReadOnlyList<PastedText> Pastes, IReadOnlyList
 /// <param name="Height">The height sent, in pixels.</param>
 public sealed record AttachedImage(string Label, string Hash, int Width, int Height)
 {
+    /// <summary>The width of the file the user gave, before it was shrunk to send; 0 when it was not.</summary>
+    public int OriginalWidth { get; init; }
+
+    /// <summary>The height of the file the user gave, before it was shrunk; 0 when it was not.</summary>
+    public int OriginalHeight { get; init; }
+
     /// <summary>The PNG sent, or null when its file could not be read back.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public byte[]? Png { get; init; }

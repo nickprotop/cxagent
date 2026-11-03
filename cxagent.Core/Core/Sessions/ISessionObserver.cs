@@ -21,6 +21,16 @@ public interface ISessionObserver
     /// <summary>The user said something, under the id the SESSION assigned it.</summary>
     void UserTurnAdded(ChatMessageId id, string text);
 
+    /// <summary>
+    /// The user turn under <paramref name="id"/> carried images, raised right after
+    /// <see cref="UserTurnAdded"/>.
+    ///
+    /// <para>ITS OWN MEMBER, WITH NOTHING TO DO BY DEFAULT. Only a transcript draws images; a recorder, a
+    /// headless printer and a buffer have the label in the text already, and a parameter on
+    /// UserTurnAdded would have changed every one of them for the one that needs it.</para>
+    /// </summary>
+    void UserImagesAttached(ChatMessageId id, IReadOnlyList<Models.AttachedImage> images) { }
+
     /// <summary>A turn began. Every later report about it carries this same id.</summary>
     void AssistantTurnBegan(ChatMessageId id);
     /// <summary>

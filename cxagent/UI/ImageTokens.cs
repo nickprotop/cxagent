@@ -132,12 +132,18 @@ internal sealed class ImageTokens
         Images.AddOrUpdate(token, new AttachedImage(label, prepared.Hash, prepared.Width, prepared.Height)
         {
             Png = prepared.Png,
+            OriginalWidth = prepared.Original.Width,
+            OriginalHeight = prepared.Original.Height,
         });
         return token;
     }
 
     /// <summary>An image ready to send: its PNG, its hash, and the size it is sent at.</summary>
-    internal sealed record Prepared(byte[] Png, string Hash, int Width, int Height);
+    internal sealed record Prepared(byte[] Png, string Hash, int Width, int Height)
+    {
+        /// <summary>The size of what the user gave, before it was shrunk.</summary>
+        public (int Width, int Height) Original { get; init; }
+    }
 
     /// <summary>
     /// Reads, decodes, shrinks and encodes one image, or says why not.
@@ -202,7 +208,10 @@ internal sealed class ImageTokens
         using var ms = new MemoryStream();
         new ImageWriter().WritePng(rgb, width, height, ColorComponents.RedGreenBlue, ms);
         var png = ms.ToArray();
-        return new Prepared(png, Convert.ToHexStringLower(SHA256.HashData(png)), width, height);
+        return new Prepared(png, Convert.ToHexStringLower(SHA256.HashData(png)), width, height)
+        {
+            Original = (pixels.Width, pixels.Height),
+        };
     }
 
     private static byte[] Rgb(PixelBuffer pixels)

@@ -86,6 +86,9 @@ public sealed class ObserverFanOut : ISessionObserver
     public void UserTurnAdded(ChatMessageId id, string text) =>
         Each(o => o.UserTurnAdded(id, text));
 
+    public void UserImagesAttached(ChatMessageId id, IReadOnlyList<Models.AttachedImage> images) =>
+        Each(o => o.UserImagesAttached(id, images));
+
     public void AssistantTurnBegan(ChatMessageId id) =>
         Each(o => o.AssistantTurnBegan(id));
 

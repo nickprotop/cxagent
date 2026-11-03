@@ -84,6 +84,27 @@ public sealed class ChatTranscriptSink : ISessionObserver
         }, "chat.UserTurnAdded");
     }
 
+    /// <summary>
+    /// The images a user turn carried, as one button each on its message: <c>▣ Image #1 1568×882 · 42 KB</c>.
+    ///
+    /// <para>A BUTTON, NOT A PICTURE, because the transcript has no place inside a message for a control
+    /// other than its footer, and the footer's actions are already what a click and the keyboard reach. The
+    /// button opens the image the way the terminal can — see <see cref="ImagePreview"/>.</para>
+    /// </summary>
+    public void UserImagesAttached(ChatMessageId id, IReadOnlyList<Core.Models.AttachedImage> images)
+    {
+        _post(() =>
+        {
+            if (!_map.TryGetValue(id.Value, out var message)) return;
+            _chat.SetActions(message, images.Select((image, i) => new ChatMessageAction
+            {
+                Id = "image-" + i,
+                Label = ImagePreview.Line(image),
+                OnClick = _ => ImagePreview.Current?.Open(image),
+            }));
+        }, "chat.UserImagesAttached");
+    }
+
     /// <summary>Run on the UI thread just before a user turn is written — see
     /// <see cref="UserTurnAdded"/>. The composition root uses it to take down the queued block.</summary>
     public Action? BeforeUserTurn { get; set; }

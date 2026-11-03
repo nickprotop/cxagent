@@ -219,7 +219,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
                 // idle is this path, which empties it before appending. The state that would lose a
                 // message is the state that delivers it.
                 stored.Agent.Agent.ReceiveMail(stored.Agent.Agent.Context.Messages);
-                stored.Agent.Agent.EchoPrompt(request.Shown ?? prompt, request.FromUser);
+                stored.Agent.Agent.EchoPrompt(request.Shown ?? prompt, request.FromUser, request.Attachments?.Images);
                 stored.Agent.Agent.History?.NoteIncoming(request.FromUser ? Incoming.You : Incoming.Parent);
 
                 // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child
@@ -330,7 +330,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
 
         // SHOWN WHEN DELIVERED, the moment the sender pressed Enter — the mailbox keeps only the text, so whose it
         // was is known here and nowhere later.
-        stored.Agent.Agent.EchoPrompt(request.Shown ?? request.Prompt, request.FromUser);
+        stored.Agent.Agent.EchoPrompt(request.Shown ?? request.Prompt, request.FromUser, request.Attachments?.Images);
 
         // NAMES WHERE THE ANSWER IS NOT. Without that clause the obvious next move is to call this again
         // expecting a reply, which is the loop this exists to prevent.

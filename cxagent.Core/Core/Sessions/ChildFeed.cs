@@ -76,6 +76,9 @@ public sealed class ChildFeed : ISessionObserver, IToolObserver
     public void UserTurnAdded(ChatMessageId id, string text) =>
         Publish(() => _buffer.UserTurnAdded(id, text), v => v.Transcript.UserTurnAdded(id, text));
 
+    public void UserImagesAttached(ChatMessageId id, IReadOnlyList<Models.AttachedImage> images) =>
+        Publish(() => { }, v => v.Transcript.UserImagesAttached(id, images));
+
     public void AssistantTurnBegan(ChatMessageId id) =>
         Publish(() => _buffer.AssistantTurnBegan(id), v => v.Transcript.AssistantTurnBegan(id));
 

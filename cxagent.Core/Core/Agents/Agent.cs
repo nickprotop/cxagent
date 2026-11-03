@@ -978,10 +978,15 @@ public sealed class Agent
     ///
     /// <para>NOTHING FOR THE SESSION'S OWN AGENT, whose prompts the session has already shown.</para>
     /// </summary>
-    internal void EchoPrompt(string text, bool fromUser)
+    internal void EchoPrompt(string text, bool fromUser, IReadOnlyList<AttachedImage>? images = null)
     {
         if (!_isSubAgent) return;
-        if (fromUser) _sink.UserTurnAdded(NextTurnId(), text);
+        if (fromUser)
+        {
+            var id = NextTurnId();
+            _sink.UserTurnAdded(id, text);
+            if (images is { Count: > 0 }) _sink.UserImagesAttached(id, images);
+        }
         else _sink.Said(new Message($"from the parent agent:\n\n{text}", Severity.Info));
     }
 
@@ -2184,7 +2189,9 @@ public sealed class Agent
                     // user turn. Without this the model changes direction for no visible reason.
                     // WHAT THE USER TYPED, not what the model received: anything the app queued to go
                     // with it is the model's to read, not words to put in the user's mouth.
-                    _sink.UserTurnAdded(NextTurnId(), steer.Shown);
+                    var steerId = NextTurnId();
+                    _sink.UserTurnAdded(steerId, steer.Shown);
+                    if (steer.Attachments?.Images is { Count: > 0 } steerShown) _sink.UserImagesAttached(steerId, steerShown);
 
                     // THE BUDGET GOES BACK. A correction arriving at turn 90 of a 100-turn cap would
                     // otherwise get ten turns to act on instructions it had never seen. The turn is
