@@ -58,6 +58,7 @@ public sealed class FolderSessionStore(AppPaths paths)
             Directory.CreateDirectory(folder.Dir);
             SessionFolder.WriteAtomic(folder.ContextPath,
                 JsonSerializer.Serialize(turn.Context, Json));
+            WriteImages(folder, turn.Context);
             SessionHeader.Write(folder, new SessionHeader(
                 turn.AgentId, KeptTitle(folder) ?? TitleOf(turn.Context), turn.WorkingDir,
                 turn.InputTokens, turn.OutputTokens,
@@ -67,6 +68,57 @@ public sealed class FolderSessionStore(AppPaths paths)
         {
             // Resume state is worth less than the turn in flight. See SessionHeader.Write.
         }
+    }
+
+    /// <summary>
+    /// Writes each image the context carries that this folder does not hold yet.
+    ///
+    /// <para>THE ONE PLACE IMAGES ARE WRITTEN, and it is enough. A resume and a re-wire both hand the
+    /// context, bytes and all, to a new agent with a folder of its own; that agent's first save lands
+    /// here and gives the folder its own copies. So no folder refers into another, and deleting a
+    /// session's folder takes its images with it and nothing a live session still needs.</para>
+    ///
+    /// <para>BY HASH, SO ONCE: a file already there is the same bytes, and the turn after the first pays
+    /// one existence check per image.</para>
+    /// </summary>
+    private static void WriteImages(SessionFolder folder, IReadOnlyList<ChatMessage> context)
+    {
+        foreach (var image in context.SelectMany(m => m.Images ?? []))
+        {
+            if (image.Png is not { Length: > 0 } png) continue;
+            var path = Path.Combine(folder.ImagesDir, image.Hash + ".png");
+            if (File.Exists(path)) continue;
+            Directory.CreateDirectory(folder.ImagesDir);
+            SessionFolder.WriteAtomic(path, png);
+        }
+    }
+
+    /// <summary>
+    /// The context with each image's bytes read back from the folder.
+    ///
+    /// <para>A MISSING FILE LEAVES THE BYTES NULL rather than failing the load: the wire builders send
+    /// a note in the image's place, and the rest of the conversation resumes.</para>
+    /// </summary>
+    private static List<ChatMessage> WithImages(SessionFolder folder, List<ChatMessage> context)
+    {
+        for (var i = 0; i < context.Count; i++)
+        {
+            if (context[i].Images is not { Count: > 0 } images) continue;
+            context[i] = context[i] with
+            {
+                Images = [.. images.Select(image => image with
+                {
+                    Png = ReadBytesOrNull(Path.Combine(folder.ImagesDir, image.Hash + ".png")),
+                })],
+            };
+        }
+        return context;
+    }
+
+    private static byte[]? ReadBytesOrNull(string path)
+    {
+        try { return File.Exists(path) ? File.ReadAllBytes(path) : null; }
+        catch (Exception) { return null; }
     }
 
     /// <summary>This agent's snapshot, or null when its folder holds nothing readable.</summary>
@@ -89,7 +141,9 @@ public sealed class FolderSessionStore(AppPaths paths)
         if (text is null) return null;
         try
         {
-            return JsonSerializer.Deserialize<List<ChatMessage>>(text, Json);
+            return JsonSerializer.Deserialize<List<ChatMessage>>(text, Json) is { } context
+                ? WithImages(folder, context)
+                : null;
         }
         catch (JsonException)
         {

@@ -70,12 +70,12 @@ public static class SessionCompressor
         // tail is at most half the characters. Never past the last message: the walk-back below then
         // keeps the newest call with its results, which the model has not yet answered.
         var total = 0;
-        foreach (var m in conversation) total += m.Content?.Length ?? 0;
+        foreach (var m in conversation) total += m.SizeChars;
         var tail = 0;
-        for (var i = cut; i < conversation.Count; i++) tail += conversation[i].Content?.Length ?? 0;
+        for (var i = cut; i < conversation.Count; i++) tail += conversation[i].SizeChars;
         var limit = Math.Min(conversation.Count - 1, UnansweredFrom(conversation) ?? int.MaxValue);
         while (cut < limit && tail > total / 2)
-            tail -= conversation[cut++].Content?.Length ?? 0;
+            tail -= conversation[cut++].SizeChars;
 
         // A MIDPOINT ALREADY PAST THE LIMIT comes back to it: the last step is the newer half by count.
         cut = Math.Min(cut, limit);

@@ -21,6 +21,9 @@ public sealed class SessionFolder(AppPaths paths, string agentId)
     /// <summary>The messages. Read only by an actual resume or wake, never by a listing.</summary>
     public string ContextPath => Path.Combine(Dir, "context.json");
 
+    /// <summary>The images the context carries, one PNG per hash. See <see cref="Models.AttachedImage"/>.</summary>
+    public string ImagesDir => Path.Combine(Dir, "images");
+
     /// <summary>Scrollback, one JSON object per line.</summary>
     public string TranscriptPath => Path.Combine(Dir, "transcript.jsonl");
 
@@ -39,6 +42,14 @@ public sealed class SessionFolder(AppPaths paths, string agentId)
     {
         var temp = path + ".tmp";
         File.WriteAllText(temp, content);
+        File.Move(temp, path, overwrite: true);
+    }
+
+    /// <summary>The same, for bytes: an image cut short by a crash would not decode on resume.</summary>
+    public static void WriteAtomic(string path, byte[] content)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllBytes(temp, content);
         File.Move(temp, path, overwrite: true);
     }
 

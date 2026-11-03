@@ -1417,6 +1417,7 @@ public sealed class Agent
             Content = prompt,
             Shown = typed.Shown,
             Pastes = typed.Attachments?.Pastes is { Count: > 0 } typedPastes ? typedPastes : null,
+            Images = typed.Attachments?.Images is { Count: > 0 } typedImages ? typedImages : null,
             Timestamp = DateTimeOffset.UtcNow,
         });
 
@@ -1688,7 +1689,7 @@ public sealed class Agent
             // AND THE WHOLE REQUEST, for judging the reading: the provider counts the system prompt and
             // every tool definition too, so a short conversation behind them reports far more tokens
             // than its own characters — a possible reading, not a garbage one.
-            var requestChars = messages.Sum(m => m.Content?.Length ?? 0)
+            var requestChars = messages.Sum(m => m.SizeChars)
                 + tools.Sum(t => t.Name.Length + t.Description.Length
                     // A TOOL MAY CARRY NO SCHEMA AT ALL — an undefined element, whose text cannot be read.
                     + (t.InputSchema.ValueKind == System.Text.Json.JsonValueKind.Undefined ? 0 : t.InputSchema.GetRawText().Length));
@@ -2175,6 +2176,7 @@ public sealed class Agent
                         Content = steer.ForModel,
                         Shown = steer.Shown != steer.ForModel ? steer.Shown : null,
                         Pastes = steer.Attachments?.Pastes is { Count: > 0 } steerPastes ? steerPastes : null,
+                        Images = steer.Attachments?.Images is { Count: > 0 } steerImages ? steerImages : null,
                         Timestamp = DateTimeOffset.UtcNow,
                     });
 

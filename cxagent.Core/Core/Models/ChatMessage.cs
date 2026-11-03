@@ -35,6 +35,20 @@ public record ChatMessage
     public IReadOnlyList<PastedText>? Pastes { get; init; }
 
     /// <summary>
+    /// The images attached to this message, sent beside <see cref="Content"/>, which carries each one's
+    /// label where it was typed.
+    ///
+    /// <para>UNLIKE <see cref="Pastes"/>, THESE REACH THE PROVIDER: they are what the model sees, not a
+    /// record of how the line looked. Saved as references; see <see cref="AttachedImage"/>.</para>
+    /// </summary>
+    public IReadOnlyList<AttachedImage>? Images { get; init; }
+
+    /// <summary>
+    /// The message's size as the context counts it: its text, and each image at its weight.
+    /// </summary>
+    public int SizeChars => (Content?.Length ?? 0) + (Images?.Sum(i => i.WeightChars) ?? 0);
+
+    /// <summary>
     /// True for the ONE regenerated message carrying the model's task list.
     ///
     /// <para>A PROPERTY, NOT A TEXT MATCH. The list is rewritten every turn, so the previous copy has

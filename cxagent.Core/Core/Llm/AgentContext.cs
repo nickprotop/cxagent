@@ -310,11 +310,14 @@ public sealed class AgentContext
     /// </summary>
     public bool IsEstimated { get; private set; }
 
-    /// <summary>Total characters of message content — the size compaction actually changes.</summary>
+    /// <summary>
+    /// Total characters of message content — the size compaction actually changes — with each image
+    /// at its weight (<see cref="AttachedImage.WeightChars"/>).
+    /// </summary>
     public int TotalChars()
     {
         var total = 0;
-        foreach (var m in _messages) total += m.Content?.Length ?? 0;
+        foreach (var m in _messages) total += m.SizeChars;
         return total;
     }
 
