@@ -153,6 +153,45 @@ internal sealed class ImageTokens
         return tokens[^1];
     }
 
+    /// <summary>
+    /// The token for an image read off the clipboard, or null with the reason.
+    ///
+    /// <para>THE SAME ROAD AS A FILE: the same decode, shrink and encode, the same numbering, the same
+    /// refusal for a model known not to see it.</para>
+    /// </summary>
+    /// <param name="encoded">The clipboard's bytes, as <c>ClipboardHelper.GetImage</c> gives them.</param>
+    /// <param name="refusal">Why not, for a toast.</param>
+    internal PromptToken? FromBytes(byte[] encoded, out string? refusal)
+    {
+        if (CannotSee() is { } cannot)
+        {
+            refusal = cannot;
+            return null;
+        }
+        return Encode(encoded, "the clipboard's image", out refusal) is { } prepared ? Token(prepared) : null;
+    }
+
+    /// <summary>
+    /// Ctrl+V (Alt+V on Windows): the clipboard's image into the composer at the caret.
+    ///
+    /// <para>RETURNS WHETHER THE KEY WAS USED. With no image there, Ctrl+V is still the text paste it has
+    /// always been, so the caller lets the key go on to it; Alt+V has no text paste behind it, and says
+    /// there was nothing.</para>
+    /// </summary>
+    /// <param name="read">Reads the clipboard's image, or null.</param>
+    /// <param name="sayWhenEmpty">Whether an empty clipboard is worth a toast.</param>
+    internal bool PasteClipboard(Func<byte[]?> read, bool sayWhenEmpty)
+    {
+        if (read() is not { Length: > 0 } bytes)
+        {
+            if (sayWhenEmpty) Refused("no image on the clipboard");
+            return sayWhenEmpty;
+        }
+        if (FromBytes(bytes, out var refusal) is { } token) _composer.InsertToken(token);
+        else if (refusal is not null) Refused(refusal);
+        return true;
+    }
+
     private PromptToken Token(Prepared prepared)
     {
         _count++;

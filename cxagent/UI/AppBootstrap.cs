@@ -1488,6 +1488,19 @@ public static class AppBootstrap
                 return;
             }
 
+            // CTRL+V WITH AN IMAGE ON THE CLIPBOARD makes it a token; without one the key goes on to the text
+            // paste the window gives it. Windows Terminal keeps Ctrl+V for itself, so there it is Alt+V,
+            // which has no text paste behind it. The composer must have the keyboard: an image anywhere
+            // else has nowhere to go.
+            if (mainWindow.Input.HasFocus && e.KeyInfo.Key == ConsoleKey.V
+                && e.KeyInfo.Modifiers == (OperatingSystem.IsWindows() ? ConsoleModifiers.Alt : ConsoleModifiers.Control)
+                && ImageTokens.For(mainWindow.Input).PasteClipboard(
+                    () => SharpConsoleUI.Helpers.ClipboardHelper.GetImageWithTimeout(), sayWhenEmpty: OperatingSystem.IsWindows()))
+            {
+                e.Handled = true;
+                return;
+            }
+
             // THE MENU HEARS EVERY KEY THE COMPOSER IS ABOUT TO GET, so it can tell a history recall from
             // typing — see CommandMenu.NoteKey. Only looked at, never claimed: the composer still walks
             // its history. While the menu is open it has the keyboard and this is not reached.

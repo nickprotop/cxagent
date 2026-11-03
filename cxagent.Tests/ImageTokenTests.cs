@@ -254,4 +254,28 @@ public class ImageTokenTests : IDisposable
         }
         finally { ImageTokens.Refused = before; }
     }
+
+    /// <summary>A clipboard's image takes the same road as a dropped file's, and numbers on from it.</summary>
+    [Fact]
+    public void AClipboardImage_GivesTheSameTokenAsTheFile()
+    {
+        var composer = MainWindow.NewPrompt();
+        var bytes = File.ReadAllBytes(Png(3000, 2000));
+        composer.Paste(Png(10, 10, "first.png"));
+
+        var token = ImageTokens.For(composer).FromBytes(bytes, out var refusal);
+
+        Assert.Null(refusal);
+        Assert.Equal("[Image #2 1568×1045]", token!.Label);
+        Assert.Equal((3000, 2000), (ImageTokens.Of(token)!.OriginalWidth, ImageTokens.Of(token)!.OriginalHeight));
+    }
+
+    [Fact]
+    public void AClipboardThatIsNotAnImage_IsRefused()
+    {
+        var token = ImageTokens.For(MainWindow.NewPrompt()).FromBytes([1, 2, 3], out var refusal);
+
+        Assert.Null(token);
+        Assert.Equal("can't read the clipboard's image: not a format cxagent reads (PNG, JPEG, BMP, GIF)", refusal);
+    }
 }
