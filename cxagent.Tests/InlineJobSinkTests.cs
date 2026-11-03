@@ -1103,7 +1103,7 @@ public class InlineJobSinkTests
         sink.WorkerSettled(child.Agent.Id, "cancelled");
 
         Assert.Equal(JobState.Cancelled, job.State);
-        var header = sink.RunningHeaderForTest(job);
+        var header = InlineJobSink.CompactHeaderForTest(job);
         Assert.DoesNotContain("✔", header);
         Assert.DoesNotContain("done", header);
         Assert.Contains("cancelled", header);
@@ -1699,47 +1699,6 @@ public class InlineJobSinkTests
 
         Assert.EndsWith("*◆ the >= change needs a test*", body.TrimEnd(), StringComparison.Ordinal);
         Assert.DoesNotContain("first idea", body, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void ARunningWorkersHeader_CarriesItsLatestThought()
-    {
-        // ON THE HEADER, so a folded row shows it too: the body's line is behind the fold.
-        var sink = HeadlessSink();
-        var child = Child();
-        sink.NoteChild("j1", child);
-        child.Sink.AssistantThinkingAppended(new CxAgent.Core.Sessions.ChatMessageId(1),
-            "first idea\ncheck [prices] first");
-
-        var header = sink.RunningHeaderForTest(RunningWorker());
-
-        Assert.StartsWith(InlineJobSink.CompactHeaderForTest(RunningWorker()), header, StringComparison.Ordinal);
-        Assert.Contains("◆ check [[prices]] first", header, StringComparison.Ordinal);
-        Assert.DoesNotContain("first idea", header, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void ALongThought_IsCutShort_OnTheHeader()
-    {
-        var sink = HeadlessSink();
-        var child = Child();
-        sink.NoteChild("j1", child);
-        child.Sink.AssistantThinkingAppended(new CxAgent.Core.Sessions.ChatMessageId(1), new string('x', 300));
-
-        var header = sink.RunningHeaderForTest(RunningWorker());
-
-        Assert.Contains("…", header, StringComparison.Ordinal);
-        Assert.DoesNotContain(new string('x', 100), header, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void AWorkerNotThinking_HasThePlainHeader()
-    {
-        var sink = HeadlessSink();
-        sink.NoteChild("j1", Child());
-
-        Assert.Equal(InlineJobSink.CompactHeaderForTest(RunningWorker()),
-            sink.RunningHeaderForTest(RunningWorker()));
     }
 
     [Fact]

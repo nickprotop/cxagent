@@ -579,7 +579,7 @@ public sealed class InlineJobSink : IToolObserver
             _known[job.Id] = job;
             if (!_lines.TryGetValue(job.Id, out var id)) return;
 
-            _chat.SetHeader(id, RunningHeader(job));
+            _chat.SetHeader(id, CompactHeader(job));
 
             // THE BODY TOO, when there is one — but ONLY the body. This is still not ToolUpdated: that
             // method force-expands the row (SetExpanded(id, true)) and blanks it, and doing either
@@ -652,7 +652,10 @@ public sealed class InlineJobSink : IToolObserver
             if (!_lines.TryGetValue(job.Id, out var id)) continue;
             if (SettledUnstarted(job)) continue;
 
-            _chat.SetHeader(id, RunningHeader(job));
+            // THE HEADER WITHOUT THE WORKER'S THOUGHT. A thought here changes with every chunk the model
+            // streams, and a title that rewrites itself several times a second reads as flicker; the
+            // clock beside it already says the row is alive, and the thought is in the body, one expand away.
+            _chat.SetHeader(id, CompactHeader(job));
 
             // AND A LIVE WORKER'S BODY, which has its own spinner and its own clock and so needs the
             // same driver the header's clock needs — for the same reason, spelled out above: the
@@ -2097,38 +2100,6 @@ public sealed class InlineJobSink : IToolObserver
     /// <summary>Test seam for <see cref="RunningWorkerBody"/>, which reads the sink's own maps and
     /// so cannot be static.</summary>
     public string? RunningWorkerBodyForTest(Job job) => RunningWorkerBody(job);
-
-    /// <summary>Test seam for <see cref="RunningHeader"/>.</summary>
-    public string RunningHeaderForTest(Job job) => RunningHeader(job);
-
-    /// <summary>The longest thought a header carries before it is cut with an ellipsis.</summary>
-    private const int HeaderThoughtLength = 72;
-
-    /// <summary>
-    /// A running row's header: <see cref="CompactHeader"/>, and for a worker that is thinking, the
-    /// last line of that thinking.
-    ///
-    /// <para>ON THE HEADER, NOT ONLY THE BODY. A worker's row starts folded, and the body's thought
-    /// line is behind the fold — so the row a user is not looking into is exactly the one where a
-    /// minute of silent thinking reads as a hang. The header is the line that is always on screen.
-    /// </para>
-    ///
-    /// <para>CUT SHORT, because a header is one line beside the row's clock and counts: a thought is
-    /// a sentence of any length, and the whole of it is one expand away.</para>
-    ///
-    /// <para>IN THE THINKING COLOUR, read fresh on every call. The header is stored text and a theme
-    /// switch does not re-run this, but the one-second tick does, so the colour follows within a
-    /// second.</para>
-    /// </summary>
-    private string RunningHeader(Job job)
-    {
-        var header = CompactHeader(job);
-        if (job.JobType != "llm_agent" || IsTerminal(job.State)) return header;
-        if (ChildFor(job.Id)?.Sink.LatestThinkingLine is not { } thought) return header;
-
-        var cut = thought.Length > HeaderThoughtLength ? thought[..(HeaderThoughtLength - 1)].TrimEnd() + "…" : thought;
-        return header + $"  ·  [{ColorScheme.ThinkingMarkup}]◆ {SharpConsoleUI.Parsing.MarkupParser.Escape(cut)}[/]";
-    }
 
     /// <summary>
     /// What a RUNNING row's body should say right now, or null when it should keep whatever it has.
