@@ -580,6 +580,7 @@ one run before it was written down), and the full reference for options, output 
 | `F10` | Next thinking level this model offers; see `/think`. (gnome-terminal opens its own menu on F10 unless that is turned off in its preferences) |
 | `F9` | Theme |
 | `Ctrl+O` | Open or fold the latest thinking block |
+| `Ctrl+G` | Expand the pasted text beside the caret. A paste of three lines or more, or 800 characters, sits in the composer as one token, `[Pasted text #1 +18 lines]`; the model is sent the text, and a click on the token expands it too |
 | `Shift+Tab` | Cycle the edit mode; see [COMMANDS.md](COMMANDS.md) |
 | `Ctrl+Q` | Quit |
 

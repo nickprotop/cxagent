@@ -38,6 +38,19 @@ public static class PromptQueue
     /// than where every other append happens. Two places that combine pending text is one too
     /// many.</para>
     /// </summary>
+    /// <summary>
+    /// <see cref="Restore(string?, string)"/> over the composer's segments, so a pasted token the user
+    /// is still writing with survives the queue coming back: restored through the text, it would turn
+    /// into the paste it stands for.
+    /// </summary>
+    public static IReadOnlyList<SharpConsoleUI.Controls.PromptSegment> Restore(string? pending,
+        IReadOnlyList<SharpConsoleUI.Controls.PromptSegment> composer)
+    {
+        if (string.IsNullOrEmpty(pending)) return composer;
+        var above = SharpConsoleUI.Controls.PromptSegment.FromText(composer.Count == 0 ? pending : pending + "\n");
+        return [above, .. composer];
+    }
+
     public static string Restore(string? pending, string composer)
     {
         if (string.IsNullOrEmpty(pending)) return composer;

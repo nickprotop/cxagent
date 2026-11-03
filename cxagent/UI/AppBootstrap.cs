@@ -548,7 +548,7 @@ public static class AppBootstrap
             {
                 // INTO THE COMPOSER OF THE SESSION THAT CANCELLED, not the one on screen.
                 if (mainWindow.TabForSession(session) is { } tab)
-                    tab.Input.Input = PromptQueue.Restore(text, tab.Input.Input);
+                    tab.Input.SetInputSegments(PromptQueue.Restore(text, tab.Input.InputSegments));
                 RemoveQueuedBlock();
             }, "appBootstrap.DrainQueuedToComposer");
 
@@ -1604,13 +1604,13 @@ public static class AppBootstrap
             // editor, not part of the goal — and replaced by the newline it asked for. Trailing
             // whitespace is ignored when looking for it, because a stray space after the backslash is
             // invisible and would otherwise silently submit the goal instead of continuing it.
-            if (ComposerContinuation(mainWindow.Input.Input) is { } continued)
+            if (ComposerContinuation(mainWindow.Input.InputSegments) is { } continued)
             {
                 // The caret follows on its own: PromptControl's Input setter puts it at the end of
                 // the new value. MultilineEditControl left it at 0,0, so everything typed after a
                 // continuation was inserted at the START — "first line \" + Enter + "second line"
                 // produced "second linefirst line", and it needed an explicit cursor move here.
-                mainWindow.Input.Input = continued;
+                mainWindow.Input.SetInputSegments(continued);
 
                 e.Handled = true;
                 return;
@@ -1629,7 +1629,10 @@ public static class AppBootstrap
         // to do with a keystroke.
         void SubmitComposer()
         {
-            var goalText = mainWindow.Input.Input;
+            // THE TEXT IS SENT, THE LABELS ARE SHOWN. A pasted block sits in the composer as a token
+            // (PasteTokens); the model gets its text, while the row and ↑ keep the token.
+            var line = ComposerLine.Of(mainWindow.Input);
+            var goalText = line.Text;
             if (string.IsNullOrWhiteSpace(goalText)) return;
 
             // NO PROVIDER BLOCKS A GOAL, NOT A COMMAND. Opening this handler with
@@ -1675,7 +1678,7 @@ public static class AppBootstrap
             // RECORD IT FOR ↑/↓ OURSELVES. PromptControl records history inside its own Submit(),
             // which this handler pre-empts — we consume Enter before the control sees it, so nothing
             // would ever reach the history and the feature would be silently dead.
-            mainWindow.Input.RecordHistory(goalText);
+            mainWindow.Input.RecordHistory(line.Segments);
 
             mainWindow.Input.Input = "";   // clear the composer for the next goal
             mainWindow.RetireComposerPlaceholder();
@@ -1695,7 +1698,7 @@ public static class AppBootstrap
             // otherwise pre-empt, running "/clear what does this do?" as a /clear.
             if (!target.InAside && manager.Commands.TryRun(target, goalText)) return;
 
-            var disposition = target.Submit(goalText);
+            var disposition = target.Submit(goalText, line.Echo);
             if (disposition is not Session.SubmitOutcome.Started started) return;
 
             // Fire-and-forget on the UI-initiated flow; sync-context resumes continuations on the UI thread.
@@ -1896,6 +1899,13 @@ public static class AppBootstrap
             return true;
         });
 
+
+        // A PASTED TOKEN BACK INTO TEXT, from the keyboard — a click on one does the same (MainWindow.NewPrompt).
+        // Ctrl+G because the composer keeps A, E, C, X, K, U, W and L, and Ctrl+T is the library's
+        // window-cycle key. Declined when no token is beside the caret, so the key does nothing rather than
+        // something unexpected.
+        keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.G, "expand the pasted text beside the caret", () =>
+            mainWindow.Input.HasFocus && mainWindow.Input.ExpandTokenAtCaret());
 
         // F9 OPENS THE THEME LIST, and the item at the left of the status bar opens the same one on a
         // click. One key for the whole registry rather than a key per theme: the list already knows
@@ -2449,6 +2459,25 @@ public static class AppBootstrap
     /// InternalsVisibleTo, and the ForTest suffix follows the seam convention used elsewhere here.</para>
     /// </summary>
     public static string? ComposerContinuationForTest(string? typed) => ComposerContinuation(typed);
+
+    /// <summary>The segment form of <see cref="ComposerContinuationForTest(string?)"/>.</summary>
+    public static IReadOnlyList<SharpConsoleUI.Controls.PromptSegment>? SegmentContinuationForTest(
+        IReadOnlyList<SharpConsoleUI.Controls.PromptSegment> typed) => ComposerContinuation(typed);
+
+    /// <summary>
+    /// The continuation rule over the composer's segments, so a pasted token in the line survives it.
+    ///
+    /// <para>THE LAST RUN OF TEXT IS ALL IT TOUCHES. Rewriting the line through its text would turn
+    /// every token into the paste it stands for. A line that ends in a token ends in no backslash,
+    /// so it submits.</para>
+    /// </summary>
+    private static IReadOnlyList<SharpConsoleUI.Controls.PromptSegment>? ComposerContinuation(
+        IReadOnlyList<SharpConsoleUI.Controls.PromptSegment> typed)
+    {
+        if (typed.Count == 0 || typed[^1].Text is not { } last) return null;
+        if (ComposerContinuation(last) is not { } continued) return null;
+        return [.. typed.Take(typed.Count - 1), SharpConsoleUI.Controls.PromptSegment.FromText(continued)];
+    }
 
     private static string? ComposerContinuation(string? typed)
     {

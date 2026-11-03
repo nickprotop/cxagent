@@ -89,8 +89,26 @@ public sealed class MainWindow : IDisposable
     /// submitted at all. A drive found exactly that where a second tab's composer should have been,
     /// which is why this is shared rather than repeated.</para>
     /// </summary>
-    internal static PromptControl NewPrompt() => new()
+    internal static PromptControl NewPrompt()
     {
+        var prompt = NewPromptControl();
+
+        // A LONG PASTE BECOMES ONE TOKEN — see PasteTokens. One rule per composer, so its numbers
+        // count within the conversation it belongs to.
+        prompt.PasteFilter = new PasteTokens().For;
+
+        // A CLICK ON A TOKEN EXPANDS IT, which is what the user chose a click to mean; Ctrl+G does the
+        // same from the keyboard (AppBootstrap).
+        prompt.TokenActivated += (_, token) => PasteTokens.Expand(prompt, token);
+        return prompt;
+    }
+
+    private static PromptControl NewPromptControl() => new()
+    {
+        // THE ACCENT, so a token reads as a chip and not as text the user typed. Re-applied with the
+        // other composer colours in ReapplyTheme.
+        TokenForegroundColor = ColorScheme.AccentRgb,
+
         // NO MARGIN. The cell already carries the composer's inset (_composer.Cell(0,0).Padding), and
         // the mode line beside it has none — so a margin here pushed the prompt one column right of
         // the caption under it. Two left edges in a control that reads as one object.
@@ -3704,6 +3722,7 @@ public sealed class MainWindow : IDisposable
     {
         Input.InputBackgroundColor = ColorScheme.ComposerSurface;
         Input.InputFocusedBackgroundColor = ColorScheme.ComposerSurface;
+        Input.TokenForegroundColor = ColorScheme.AccentRgb;
         StatusBar.BackgroundColor = ColorScheme.ChatSurface;
         // NULL UNTIL BuildWindow RUNS, and a config-named theme switches before that.
         if (Window is not null) Window.BackgroundColor = ColorScheme.ChatSurface;
