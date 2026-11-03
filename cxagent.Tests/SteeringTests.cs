@@ -118,6 +118,24 @@ public class SteeringTests
         Assert.Equal([paste], steer.Pastes!);
     }
 
+    /// <summary>
+    /// A message with an image left in a busy agent's mailbox — a send from its tab while it works — reaches
+    /// the model with the image, not only the label its tab drew a button for.
+    /// </summary>
+    [Fact]
+    public async Task MailWithAnImage_DeliversTheImage()
+    {
+        var provider = ProviderThatCallsATool();
+        var agent = NewAgent(provider, new RecordingSink());
+        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1, 2, 3] };
+        Assert.True(agent.Mailbox.TryEnqueue("and this [Image #1 4×2]", out _, from: Incoming.You, images: [image]));
+
+        await agent.SendAsync("do the thing", CancellationToken.None);
+
+        var mail = Assert.Single(provider.LastMessages!, m => m.Role == "user" && m.Content == "and this [Image #1 4×2]");
+        Assert.Equal([image], mail.Images!);
+    }
+
     /// <summary>A steer with an image, taken at the barrier: the model is sent the image with the words.</summary>
     [Fact]
     public async Task ASteerWithAnImage_DeliversTheImage()

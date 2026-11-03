@@ -93,11 +93,6 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
     protected OpenAiCompatibleProvider(OpenAiCompatibleProvider other, string? level)
         : this(other._options with { Thinking = level }, other._caps, other._images) { }
 
-    /// <summary>
-    /// What this model offers, asked in the endpoint's own way: llama.cpp's <c>/props</c>,
-    /// OpenRouter's model list, or — for OpenAI, which cannot be asked — the configuration's word.
-    /// </summary>
-    /// <param name="ct">Cancels the probe.</param>
     public bool? KnownCanSeeImages => _options.Images ?? _images.Known;
 
     public Task<bool?> CanSeeImagesAsync(CancellationToken ct = default) =>
@@ -137,6 +132,11 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
     private async Task<bool> SendImagesAsync(List<ChatMessage> messages, CancellationToken ct) =>
         !ImageCapability.AnyImages(messages) || await CanSeeImagesAsync(ct).ConfigureAwait(false) != false;
 
+    /// <summary>
+    /// What this model offers, asked in the endpoint's own way: llama.cpp's <c>/props</c>,
+    /// OpenRouter's model list, or — for OpenAI, which cannot be asked — the configuration's word.
+    /// </summary>
+    /// <param name="ct">Cancels the probe.</param>
     public Task<ThinkingOptions> GetThinkingOptionsAsync(CancellationToken ct = default) =>
         _options.Dialect switch
         {

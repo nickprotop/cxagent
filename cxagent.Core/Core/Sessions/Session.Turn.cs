@@ -503,7 +503,7 @@ public sealed partial class Session
             // A COMMAND IS HELD, NEVER STEERED. RunCommand checks IsBusy too, but a turn can start
             // between that check and this one; steering here would deliver the raw "/name" line as
             // prose and drop the expansion that was the whole point of the request.
-            if (request.Expand is not null) return Hold(request.Text);
+            if (request.Expand is not null) return Hold(new HeldLine(request.Text.Trim(), request.Echo, request.Attachments));
 
             // NOBODY TYPED THIS, SO NOTHING MAY SAY THEY DID. Steer is announced through
             // UserTurnAdded and drawn as the user's own queued block — offered back for editing when
@@ -1163,7 +1163,7 @@ public sealed partial class Session
         // before Cancel returns. Read afterwards, both are gone and the user's typed command with
         // them; whether that happens depends on how the awaits below happened to be scheduled.
         var expanding = Interlocked.Exchange(ref _expanding, null);
-        var held = TakeHeld();
+        var held = TakeHeld()?.Line;
         turn.Cancel();
 
         Announce(SessionChangeKind.TurnCancelled);

@@ -325,11 +325,11 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
     private static string Deliver(StoredAgent stored, string agentName, SendRequest request)
     {
         if (!stored.Agent.Agent.Mailbox.TryEnqueue(request.Prompt, out var full,
-                from: request.FromUser ? Incoming.You : Incoming.Parent))
+                from: request.FromUser ? Incoming.You : Incoming.Parent, images: request.Attachments?.Images))
             return $"error: could not reach '{agentName}' — {full}";
 
-        // SHOWN WHEN DELIVERED, the moment the sender pressed Enter — the mailbox keeps only the text, so whose it
-        // was is known here and nowhere later.
+        // SHOWN WHEN DELIVERED, the moment the sender pressed Enter — the mailbox keeps the text and its images,
+        // not how the line was shown, so whose it was is known here and nowhere later.
         stored.Agent.Agent.EchoPrompt(request.Shown ?? request.Prompt, request.FromUser, request.Attachments?.Images);
 
         // NAMES WHERE THE ANSWER IS NOT. Without that clause the obvious next move is to call this again

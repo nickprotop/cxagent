@@ -45,6 +45,7 @@ public class ImageTokenTests : IDisposable
     [InlineData("\"C:\\x\\y z.png\"", "C:\\x\\y z.png")]
     [InlineData("file:///a/b%20c.png", "/a/b c.png")]
     [InlineData("  '/a/one.png'  ", "/a/one.png")]
+    [InlineData("\\\\server\\share\\x.png", "\\\\server\\share\\x.png")]
     public void SplitPaths_ReadsEachTerminalsForm(string pasted, string path)
     {
         Assert.Equal([path], ImageTokens.SplitPaths(pasted));
@@ -136,12 +137,12 @@ public class ImageTokenTests : IDisposable
         Assert.Equal("[Image #1 8×8]", composer.InputLabelText);
     }
 
-    /// <summary>A .png that is not an image stays its path, and says why.</summary>
+    /// <summary>A file that starts like a PNG and does not decode — cut short, corrupt — stays its path, and says why.</summary>
     [Fact]
     public void AFileThatDoesNotDecode_IsTextWithAReason()
     {
         var path = Path.Combine(_dir, "broken.png");
-        File.WriteAllText(path, "not an image");
+        File.WriteAllBytes(path, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3]);
         var said = new List<string>();
         var before = ImageTokens.Refused;
         ImageTokens.Refused = said.Add;
@@ -277,5 +278,30 @@ public class ImageTokenTests : IDisposable
 
         Assert.Null(token);
         Assert.Equal("can't read the clipboard's image: not a format cxagent reads (PNG, JPEG, BMP, GIF)", refusal);
+    }
+
+    /// <summary>
+    /// Pasting a source file's path is routine in a coding agent: it stays text, says nothing, and the file
+    /// is not read — even with a model that cannot see images, whose refusal is only for images.
+    /// </summary>
+    [Fact]
+    public void ANonImagePath_IsTextAndSilent_EvenForAModelThatCannotSee()
+    {
+        var path = Path.Combine(_dir, "Program.cs");
+        File.WriteAllText(path, "class Program {}");
+        var said = new List<string>();
+        var before = ImageTokens.Refused;
+        ImageTokens.Refused = said.Add;
+        try
+        {
+            var composer = MainWindow.NewPrompt();
+            ImageTokens.For(composer).CannotSee = () => "local:qwen can't see images";
+
+            composer.Paste(path);
+
+            Assert.Equal(path, composer.InputLabelText);
+            Assert.Empty(said);
+        }
+        finally { ImageTokens.Refused = before; }
     }
 }

@@ -2347,9 +2347,13 @@ public sealed class Agent
     /// </summary>
     internal void ReceiveMail(List<ChatMessage> messages)
     {
-        foreach (var (text, from) in Mailbox.DrainEntries())
+        foreach (var (text, from, images) in Mailbox.DrainEntries())
         {
-            var message = new ChatMessage { Role = "user", Content = text, Timestamp = DateTimeOffset.UtcNow };
+            var message = new ChatMessage
+            {
+                Role = "user", Content = text, Timestamp = DateTimeOffset.UtcNow,
+                Images = images is { Count: > 0 } ? images : null,
+            };
 
             // MAIL NOBODY SIGNED IS THE APPLICATION'S: left unlabelled it would take the label meant for the prompt
             // that follows it, and a note would read as what the user typed.

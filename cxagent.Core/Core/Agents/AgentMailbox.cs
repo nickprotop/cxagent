@@ -37,7 +37,8 @@ public sealed class AgentMailbox
     /// </summary>
     /// <para>WHO SENT IT, FOR THE RECORD: an export labels each message the agent received, and a drain loses
     /// the sender unless it travels with the text — see <see cref="Incoming"/>.</para>
-    private readonly record struct Entry(string Text, bool Wakes, Sessions.TurnOriginator? Origin, Incoming? From);
+    private readonly record struct Entry(string Text, bool Wakes, Sessions.TurnOriginator? Origin, Incoming? From,
+        IReadOnlyList<Models.AttachedImage>? Images = null);
 
     // A PLAIN object, matching PluginSubmitQueue and the rest of Core, which does not use
     // System.Threading.Lock anywhere.
@@ -51,8 +52,9 @@ public sealed class AgentMailbox
     /// neither extends a running turn nor starts one — see <see cref="HasWaking"/>.
     /// </param>
     /// <param name="from">Who sent it, for the agent's history; null when nobody said.</param>
-    public bool TryEnqueue(string message, out string? refusal, bool wakes = true, Incoming? from = null) =>
-        TryEnqueue(new Entry(message, wakes, null, from), out refusal);
+    public bool TryEnqueue(string message, out string? refusal, bool wakes = true, Incoming? from = null,
+        IReadOnlyList<Models.AttachedImage>? images = null) =>
+        TryEnqueue(new Entry(message, wakes, null, from, images), out refusal);
 
     /// <summary>Takes a waking message on someone's behalf — see <see cref="DrainedOrigin"/>.</summary>
     /// <remarks>ONLY THE APPLICATION DELIVERS THIS WAY — a session's System submit — so it is recorded as a delivery.</remarks>
@@ -107,12 +109,12 @@ public sealed class AgentMailbox
     /// <see cref="Drain"/>, keeping who sent each message — for a drain that writes them into the context, where
     /// the agent's history records the sender.
     /// </summary>
-    public IReadOnlyList<(string Text, Incoming? From)> DrainEntries()
+    public IReadOnlyList<Mail> DrainEntries()
     {
         lock (_lock)
         {
             if (_pending.Count == 0) return [];
-            var all = _pending.Select(e => (e.Text, e.From)).ToArray();
+            var all = _pending.Select(e => new Mail(e.Text, e.From, e.Images)).ToArray();
             _pending.Clear();
             return all;
         }
@@ -157,3 +159,15 @@ public sealed class AgentMailbox
     /// </summary>
     public bool HasWaking { get { lock (_lock) return _pending.Any(e => e.Wakes); } }
 }
+
+/// <summary>
+/// One message taken from a mailbox: its text, who sent it, and the images it carries.
+///
+/// <para>THE IMAGES TRAVEL WITH IT because a send from an agent's tab to an agent that is working lands
+/// here, and its tab has already drawn the image's button: delivered as text only, the model would read
+/// the label of an image it was never sent.</para>
+/// </summary>
+/// <param name="Text">What the agent reads.</param>
+/// <param name="From">Who sent it, when that was recorded.</param>
+/// <param name="Images">The images it carries, or null.</param>
+public sealed record Mail(string Text, Incoming? From, IReadOnlyList<Models.AttachedImage>? Images = null);

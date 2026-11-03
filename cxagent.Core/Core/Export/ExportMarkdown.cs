@@ -202,9 +202,17 @@ public static partial class ExportMarkdown
                 // THE IMAGES AS LINKS, in either export: an image has no text to print, so the export
                 // stays one file and points at the PNG the model was sent, in the folder of the agent
                 // that recorded the message — the folder the session keeps that image in.
+                //
+                // NAMED, NOT LINKED, WHEN THE FILE IS NOT THERE. A sub-agent's images are never written,
+                // nor a first message's whose turn was cancelled before anything saved, and a link to
+                // nothing reads as an export that lost the file.
                 if (m.Images is { } images)
                     foreach (var image in images)
-                        Paragraph($"![{image.Label.Trim('[', ']')}]({new Uri(Path.Combine(entry.Dir, "images", image.Hash + ".png")).AbsoluteUri})");
+                    {
+                        var file = Path.Combine(entry.Dir, "images", image.Hash + ".png");
+                        var name = image.Label.Trim('[', ']');
+                        Paragraph(File.Exists(file) ? $"![{name}]({new Uri(file).AbsoluteUri})" : $"**{name}** (not kept)");
+                    }
                 _messages++;
                 return;
             }

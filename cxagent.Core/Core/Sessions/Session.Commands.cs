@@ -613,7 +613,7 @@ public sealed partial class Session
 
         // A HELD COMMAND WAS TYPED AGAINST THE CONVERSATION BEING CLEARED, so it does not survive it.
         // Taken now, named after the announcement below — for the reason given there.
-        var dropped = TakeHeld();
+        var dropped = TakeHeld()?.Line;
 
         Host.NoteCleared();
         Host.Context.Clear();

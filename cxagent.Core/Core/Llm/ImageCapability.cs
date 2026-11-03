@@ -6,10 +6,10 @@ namespace CxAgent.Core.Llm;
 /// A provider that can say whether its model sees images.
 ///
 /// <para>THREE ANSWERS, AND UNKNOWN IS NOT NO. Null means nobody could say — an endpoint without a route
-/// that tells, a probe that failed — and an image is then sent, so the endpoint answers for itself; a
-/// wrong guess costs one failed turn. False sends each image's placeholder instead, because an endpoint
-/// that cannot see refuses the whole request, and keeps refusing every later turn the image stays in
-/// the context for.</para>
+/// that tells, a probe that failed — and an image is then sent, so the endpoint answers for itself. A
+/// wrong guess is not one failed turn: an endpoint that cannot see refuses the whole request, and keeps
+/// refusing every later turn the image stays in the context for, until <c>images: false</c> is set on
+/// the entry. False sends each image's placeholder instead, so the conversation goes on.</para>
 /// </summary>
 public interface IImageCapability
 {
@@ -24,11 +24,16 @@ public interface IImageCapability
 /// <summary>
 /// What each kind of endpoint says about images, and the one probe a provider keeps.
 /// </summary>
-internal sealed class ImageCapability
+/// <param name="timeout">How long a probe may take; three seconds unless a test says.</param>
+/// <param name="clock">The time; the system clock unless a test sets one.</param>
+internal sealed class ImageCapability(TimeSpan? timeout = null, TimeProvider? clock = null)
 {
     /// <summary>How long a probe may take before the image goes unasked.</summary>
-    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(3);
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(3);
 
+    private readonly TimeSpan _timeout = timeout ?? DefaultTimeout;
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    private DateTimeOffset _askAgainAt = DateTimeOffset.MinValue;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _answered;
     private bool? _known;
@@ -37,8 +42,12 @@ internal sealed class ImageCapability
     public bool? Known => Volatile.Read(ref _answered) ? _known : null;
 
     /// <summary>
-    /// The endpoint's answer, asking once. A probe that fails or times out is not kept, so the next image
-    /// asks again; a reply that says nothing is kept as "unknown", since asking again would hear the same.
+    /// The endpoint's answer, asking once. A probe that fails is not kept, so the next image asks again; a
+    /// reply that says nothing is kept as "unknown", since asking again would hear the same.
+    ///
+    /// <para>A TIMEOUT WAITS A MINUTE before it is asked again, as <see cref="CapabilityCache"/> does for
+    /// thinking: every request carrying an image waits on this, and an endpoint that hangs on its probe
+    /// route would add the whole bound to each of them.</para>
     /// </summary>
     /// <param name="probe">Asks the endpoint; throws or times out when it cannot answer.</param>
     /// <param name="ct">Cancels the wait.</param>
@@ -49,8 +58,9 @@ internal sealed class ImageCapability
         try
         {
             if (_answered) return _known;
+            if (_clock.GetUtcNow() < _askAgainAt) return null;
             using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            bounded.CancelAfter(Timeout);
+            bounded.CancelAfter(_timeout);
             try
             {
                 _known = await probe(bounded.Token).ConfigureAwait(false);
@@ -58,6 +68,11 @@ internal sealed class ImageCapability
                 return _known;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (OperationCanceledException)
+            {
+                _askAgainAt = _clock.GetUtcNow() + CapabilityCache.AfterATimeout;
+                return null;
+            }
             catch (Exception) { return null; }
         }
         finally { _gate.Release(); }

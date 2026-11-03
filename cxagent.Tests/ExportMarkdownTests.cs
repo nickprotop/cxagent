@@ -169,11 +169,27 @@ public class ExportMarkdownTests : IDisposable
     [InlineData(false)]
     public void AnExport_LinksEachImageToItsFile(bool full)
     {
+        Directory.CreateDirectory(Path.Combine(_dir, "images"));
+        File.WriteAllBytes(Path.Combine(_dir, "images", "abc123.png"), [1]);
+
         var md = Render(Source(E(Imaged(), Incoming.You)), full ? Full : Readable);
 
         var file = new Uri(Path.Combine(_dir, "images", "abc123.png")).AbsoluteUri;
         Assert.Contains($"![Image #1 4×2]({file})", md);
         Assert.True(md.IndexOf("what is", StringComparison.Ordinal) < md.IndexOf("![Image", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// An image whose file was never kept — a sub-agent's, or a first message cancelled before anything was
+    /// saved — is named, not linked: a link to nothing reads as an export that lost the file.
+    /// </summary>
+    [Fact]
+    public void AnImageNotKept_IsNamedNotLinked()
+    {
+        var md = Render(Source(E(Imaged(), Incoming.You)), Readable);
+
+        Assert.DoesNotContain("![Image #1", md);
+        Assert.Contains("**Image #1 4×2** (not kept)", md);
     }
 
     /// <summary>A full export is the message as the model got it, the pastes already in place.</summary>

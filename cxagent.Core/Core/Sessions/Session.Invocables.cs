@@ -61,7 +61,7 @@ public sealed partial class Session
     public SubmitOutcome RunCommand(TypedCommand command)
     {
         if (Host is null) return new SubmitOutcome.NoAgent();
-        if (IsBusy) return Hold(command.Line);
+        if (IsBusy) return Hold(new HeldLine(command.Line.Trim(), command.Shown?.Trim(), command.Attachments));
 
         var line = command.Line.Trim();
         var arguments = CommandText.SplitLine(line).Arguments;
@@ -108,11 +108,20 @@ public sealed partial class Session
         },
         Say);
 
-    private string? _held;
+    /// <summary>
+    /// A command waiting for the running turn to end: its line, and how it was typed.
+    ///
+    /// <para>THE WHOLE LINE, NOT ITS TEXT. What the transcript shows and what the line carries — a
+    /// pasted block's label, an image — must reach the turn it runs as, or a /review typed with a
+    /// screenshot during a turn runs afterwards with only the screenshot's label.</para>
+    /// </summary>
+    internal sealed record HeldLine(string Line, string? Shown, Models.Attachments? Attachments);
+
+    private HeldLine? _held;
     private readonly object _heldGate = new();
 
     /// <summary>The command waiting for the running turn to end, or null.</summary>
-    public string? HeldCommand { get { lock (_heldGate) return _held; } }
+    public string? HeldCommand { get { lock (_heldGate) return _held?.Line; } }
 
     /// <summary>The held line when the slot fills or changes; null when it empties.</summary>
     public event Action<string?>? HeldChanged;
@@ -130,14 +139,16 @@ public sealed partial class Session
     /// <para>INTERNAL so a test can call it on an idle session — the one moment of the race below
     /// that cannot be forced by scheduling.</para>
     /// </summary>
-    internal SubmitOutcome Hold(string line)
+    internal SubmitOutcome Hold(string line) => Hold(new HeldLine(line.Trim(), null, null));
+
+    internal SubmitOutcome Hold(HeldLine line)
     {
-        string? replaced;
-        lock (_heldGate) { replaced = _held; _held = line.Trim(); }
+        HeldLine? replaced;
+        lock (_heldGate) { replaced = _held; _held = line; }
 
         if (replaced is not null)
-            Say(new Message($"{replaced} was not run — {line.Trim()} replaced it.", Severity.Warning));
-        HeldChanged?.Invoke(line.Trim());
+            Say(new Message($"{replaced.Line} was not run — {line.Line} replaced it.", Severity.Warning));
+        HeldChanged?.Invoke(line.Line);
 
         // THE TURN MAY HAVE ENDED SINCE THE CALLER SAW IT BUSY. The tail takes the slot after
         // releasing ownership; a line stored after that take has no turn left to run it, and would sit
@@ -158,12 +169,12 @@ public sealed partial class Session
     /// this was typed before the mode was entered, as a command for the turn it was waiting on, and
     /// sent to the aside it would become a question about "/commit" and never run.</para>
     /// </summary>
-    private SubmitOutcome RunHeld(string held) =>
-        Route(new TurnRequest(held, null, null, null, SubmitSource.User));
+    private SubmitOutcome RunHeld(HeldLine held) =>
+        Route(new TurnRequest(held.Line, held.Shown, null, null, SubmitSource.User) { Attachments = held.Attachments });
 
-    private string? TakeHeld()
+    private HeldLine? TakeHeld()
     {
-        string? taken;
+        HeldLine? taken;
         lock (_heldGate) { taken = _held; _held = null; }
         if (taken is not null) HeldChanged?.Invoke(null);
         return taken;
@@ -173,7 +184,7 @@ public sealed partial class Session
     /// by something other than <see cref="CancelTurn"/> — which takes the slot itself.</summary>
     internal void DropHeld()
     {
-        if (TakeHeld() is { } dropped) Say(new Message($"{dropped} was not run.", Severity.Warning));
+        if (TakeHeld() is { } dropped) Say(new Message($"{dropped.Line} was not run.", Severity.Warning));
     }
 
     /// <summary>
@@ -188,8 +199,10 @@ public sealed partial class Session
     /// exit would otherwise drop it as "not run" before it could be handed back.</param>
     private void HandBack(string? expanding, string? held)
     {
-        string? steered;
-        lock (_pendingGate) { steered = _pending; _pending = null; }
+        // THE WHOLE QUEUE, NOT ONLY ITS TEXT: what it showed and what it carried go with it, or they wait
+        // behind the cancel and join the next line steered — the old line drawn again, its screenshot
+        // sent again.
+        var steered = TakeWaiting()?.Text;
 
         var lines = new[] { steered, expanding, held }.Where(l => l is { Length: > 0 }).ToList();
         if (lines.Count == 0) return;

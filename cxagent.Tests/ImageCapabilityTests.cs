@@ -155,4 +155,21 @@ public class ImageCapabilityTests
 
         Assert.Contains("provider 'p': 'images' must be true or false.", ex.Errors);
     }
+
+    /// <summary>
+    /// An endpoint that hangs on its probe is left for a minute before it is asked again: every request
+    /// carrying an image would otherwise wait out the probe's whole bound first.
+    /// </summary>
+    [Fact]
+    public async Task AProbeThatTimesOut_IsNotAskedAgainAtOnce()
+    {
+        var capability = new ImageCapability(TimeSpan.FromMilliseconds(20));
+        var asked = 0;
+        async Task<bool?> Hangs(CancellationToken ct) { asked++; await Task.Delay(Timeout.Infinite, ct); return true; }
+
+        Assert.Null(await capability.GetAsync(Hangs, CancellationToken.None));
+        Assert.Null(await capability.GetAsync(Hangs, CancellationToken.None));
+
+        Assert.Equal(1, asked);
+    }
 }

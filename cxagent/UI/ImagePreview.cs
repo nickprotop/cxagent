@@ -80,23 +80,22 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
     /// <summary>
     /// The system viewer, on a copy of the PNG.
     ///
-    /// <para>A COPY IN THE TEMP FOLDER, not the session's own file: the session folder gets the image when
-    /// the turn ends and saves, and a click on a message still being answered comes before that. Named by
-    /// hash, so a second look writes nothing.</para>
+    /// <para>A COPY IN THIS USER'S OWN TEMP FOLDER, not the session's own file: the session folder gets the
+    /// image when the turn ends and saves, and a click on a message still being answered comes before that.
+    /// Per user, because the system temp folder is everyone's.</para>
     ///
     /// <para>WITHOUT A DESKTOP IT SAYS WHERE THE FILE IS, and so does a launch that fails: over SSH there
     /// is nothing to open it on, and the path is what lets the user copy it somewhere that has one.</para>
     /// </summary>
     private void OpenInViewer(AttachedImage image, byte[] png)
     {
-        var file = Path.Combine(Path.GetTempPath(), "cxagent-images", image.Hash + ".png");
+        var file = Path.Combine(ViewerFolder(), image.Hash + ".png");
         try
         {
-            if (!File.Exists(file))
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-                File.WriteAllBytes(file, png);
-            }
+            // WRITTEN EVERY TIME, never trusted because it is there: whatever sits at this path — left by
+            // an older run, or put there by someone else — is not what the model was sent.
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllBytes(file, png);
             if (Desktop()) Launch(file);
             else system.ToastService.Show($"no desktop to open the image on; it is at {file}", NotificationSeverity.Info);
         }
@@ -105,6 +104,15 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
             system.ToastService.Show($"couldn't open the image ({e.Message}); it is at {file}", NotificationSeverity.Warning);
         }
     }
+
+    /// <summary>
+    /// Where the viewer's copies go: <c>$XDG_RUNTIME_DIR/cxagent-images</c>, which only this user can read,
+    /// else a folder in the temp directory named for the user.
+    /// </summary>
+    private static string ViewerFolder() =>
+        Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } runtime
+            ? Path.Combine(runtime, "cxagent-images")
+            : Path.Combine(Path.GetTempPath(), "cxagent-images-" + Environment.UserName);
 
     private void OpenPortal(AttachedImage image, byte[] png)
     {

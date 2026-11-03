@@ -1492,9 +1492,9 @@ public static class AppBootstrap
             // paste the window gives it. Windows Terminal keeps Ctrl+V for itself, so there it is Alt+V,
             // which has no text paste behind it. The composer must have the keyboard: an image anywhere
             // else has nowhere to go.
-            if (mainWindow.Input.HasFocus && e.KeyInfo.Key == ConsoleKey.V
+            if (FocusedComposer(mainWindow) is { } composer && e.KeyInfo.Key == ConsoleKey.V
                 && e.KeyInfo.Modifiers == (OperatingSystem.IsWindows() ? ConsoleModifiers.Alt : ConsoleModifiers.Control)
-                && ImageTokens.For(mainWindow.Input).PasteClipboard(
+                && ImageTokens.For(composer).PasteClipboard(
                     () => SharpConsoleUI.Helpers.ClipboardHelper.GetImageWithTimeout(), sayWhenEmpty: OperatingSystem.IsWindows()))
             {
                 e.Handled = true;
@@ -1956,7 +1956,7 @@ public static class AppBootstrap
         // something unexpected.
         keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.G, "expand the pasted text, or show the image, beside the caret", () =>
         {
-            if (!mainWindow.Input.HasFocus || !ImageTokens.ExpandPasteAtCaret(mainWindow.Input, out var image)) return false;
+            if (FocusedComposer(mainWindow) is not { } composer || !ImageTokens.ExpandPasteAtCaret(composer, out var image)) return false;
             if (image is not null) ImagePreview.Current?.Open(image);
             return true;
         });
@@ -2617,6 +2617,15 @@ public static class AppBootstrap
             },
         ]);
     }
+
+    /// <summary>
+    /// The composer with the keyboard: the session tab's, or the agent tab's in front. Ctrl+V and Ctrl+G act on
+    /// whichever one the user is typing in, and an agent's tab takes images the way a session's does.
+    /// </summary>
+    private static PromptControl? FocusedComposer(MainWindow main) =>
+        main.Input.HasFocus ? main.Input
+        : main.ActiveAgentTab?.Input is { HasFocus: true } agentInput ? agentInput
+        : null;
 
     /// <summary>How long ago, in the coarsest unit that is still informative.</summary>
     private static string Ago(DateTimeOffset when)

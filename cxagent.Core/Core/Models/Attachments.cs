@@ -64,6 +64,10 @@ public sealed record AttachedImage(string Label, string Hash, int Width, int Hei
     /// one reads as more tokens than characters, which the context rejects as an impossible reading.
     /// The token count is Anthropic's <c>width × height / 750</c>, which lies within the range of what
     /// OpenAI's tiles and Qwen-VL's patches charge for the sizes sent.</para>
+    ///
+    /// <para>COUNTED WHETHER OR NOT THE BYTES GO. A model that cannot see images is sent a short placeholder,
+    /// and the context then reads heavier than it is. That errs toward compacting a little early, which
+    /// costs a summary; the other way errs toward a request the window refuses.</para>
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public int WeightChars => (int)Math.Ceiling((double)Width * Height / 750) * 4;
@@ -75,6 +79,21 @@ public sealed record AttachedImage(string Label, string Hash, int Width, int Hei
     /// <summary>What is sent when the image's bytes are gone.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public string Unavailable => $"[image unavailable: {Name}]";
+
+    /// <summary>
+    /// A message's text with a note for each image that is not going as itself: its placeholder when the
+    /// model cannot see images, its "unavailable" when the bytes are gone. Both wire builders send this
+    /// as the text beside whatever images do go.
+    /// </summary>
+    /// <param name="text">The message's text.</param>
+    /// <param name="images">Its images.</param>
+    /// <param name="sendImages">Whether the model sees images.</param>
+    public static string WithNotes(string text, IReadOnlyList<AttachedImage> images, bool sendImages)
+    {
+        var notes = images.Where(i => !sendImages || i.Png is null)
+            .Select(i => i.Png is null ? i.Unavailable : i.Placeholder).ToList();
+        return notes.Count == 0 ? text : text + "\n" + string.Join("\n", notes);
+    }
 
     /// <summary>"Image #1", from a label of <c>[Image #1 1568×882]</c>.</summary>
     private string Name

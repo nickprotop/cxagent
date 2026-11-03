@@ -22,9 +22,7 @@ internal static class OpenAiWire
     /// </summary>
     internal static JsonNode WithImages(string text, IReadOnlyList<AttachedImage> images, bool sendImages)
     {
-        var notes = images.Where(i => !sendImages || i.Png is null)
-            .Select(i => i.Png is null ? i.Unavailable : i.Placeholder).ToList();
-        var withNotes = notes.Count == 0 ? text : text + "\n" + string.Join("\n", notes);
+        var withNotes = AttachedImage.WithNotes(text, images, sendImages);
         if (!sendImages || images.All(i => i.Png is null)) return JsonValue.Create(withNotes)!;
 
         var parts = new JsonArray { new JsonObject { ["type"] = "text", ["text"] = withNotes } };

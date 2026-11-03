@@ -130,7 +130,7 @@ internal sealed class ImageTokens
     internal PromptToken? Paste(string pasted)
     {
         if (SplitPaths(pasted) is not { Count: > 0 } paths) return null;
-        if (!paths.All(File.Exists)) return null;
+        if (!paths.All(File.Exists) || !paths.All(LooksLikeAnImage)) return null;
         if (CannotSee() is { } cannot)
         {
             Refused(cannot);
@@ -205,6 +205,34 @@ internal sealed class ImageTokens
             OriginalHeight = prepared.Original.Height,
         });
         return token;
+    }
+
+    /// <summary>
+    /// Whether a file's first bytes are an image's: PNG, JPEG, GIF or BMP.
+    ///
+    /// <para>ASKED BEFORE ANYTHING ELSE. Pasting a source file's path is routine here, and that paste must
+    /// stay text and say nothing — not read the file on the UI thread, not refuse it as an image the
+    /// model cannot see. Only a file that looks like an image is read; one that looks like one and does
+    /// not decode is the case worth a toast. TGA carries no signature, so a dropped TGA stays its path.</para>
+    /// </summary>
+    internal static bool LooksLikeAnImage(string path)
+    {
+        try
+        {
+            Span<byte> head = stackalloc byte[8];
+            using var file = File.OpenRead(path);
+            var n = file.Read(head);
+            var h = head[..n];
+            return h.StartsWith((ReadOnlySpan<byte>)[0x89, 0x50, 0x4E, 0x47])
+                || h.StartsWith((ReadOnlySpan<byte>)[0xFF, 0xD8, 0xFF])
+                || h.StartsWith("GIF8"u8)
+                || h.StartsWith("BM"u8);
+        }
+        catch (Exception)
+        {
+            // Unreadable here means unreadable to the decode too, and the path stays text either way.
+            return false;
+        }
     }
 
     /// <summary>An image ready to send: its PNG, its hash, and the size it is sent at.</summary>
@@ -375,7 +403,7 @@ internal sealed class ImageTokens
             if (w.StartsWith("file://", StringComparison.OrdinalIgnoreCase)
                 && Uri.TryCreate(w, UriKind.Absolute, out var uri) && uri.IsFile)
                 paths.Add(uri.LocalPath);
-            else if (Path.IsPathFullyQualified(w) || IsDrivePath(w) || w.StartsWith("~/", StringComparison.Ordinal))
+            else if (Path.IsPathFullyQualified(w) || IsDrivePath(w) || w.StartsWith(@"\\", StringComparison.Ordinal) || w.StartsWith("~/", StringComparison.Ordinal))
                 paths.Add(w.StartsWith("~/", StringComparison.Ordinal)
                     ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), w[2..])
                     : w);
@@ -392,6 +420,10 @@ internal sealed class ImageTokens
     private static bool IsDrivePath(string w) =>
         w.Length >= 3 && char.IsAsciiLetter(w[0]) && w[1] == ':' && w[2] is '\\' or '/';
 
-    private static bool LooksLikeWindows(string text) =>
+    /// <summary>
+    /// Whether the paste is a Windows path, whose backslashes are separators rather than escapes: a drive
+    /// path (<c>C:\x</c>) or a share (<c>\\server\share</c>).
+    /// </summary>
+    private static bool LooksLikeWindows(string text) => text.TrimStart('"', '\'').StartsWith(@"\\", StringComparison.Ordinal) ||
         text.Length >= 3 && char.IsLetter(text.TrimStart('"', '\'')[0]) && text.TrimStart('"', '\'')[1..].StartsWith(":\\", StringComparison.Ordinal);
 }

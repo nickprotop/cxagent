@@ -107,6 +107,33 @@ public class CustomCommandSessionTests : IDisposable
         Assert.Equal([paste], sent.Pastes!);
     }
 
+    /// <summary>
+    /// A command typed while a turn runs waits for it, and runs with what it carried: the line as typed,
+    /// and its image, not only the label in its text.
+    /// </summary>
+    [Fact]
+    public async Task AHeldCommand_RunsWithItsImage()
+    {
+        CommandFile("quiet", "!`true`");
+        CommandFile("look", "Look at this: $ARGUMENTS");
+        var asked = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        var w = Open(new HeldGate(asked, release));
+        using var _ = w.Manager;
+        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1] };
+
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(w.Session.Submit("/quiet"));
+        await asked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.IsType<Session.SubmitOutcome.Queued>(
+            w.Session.Submit("/look [Image #1 4×2]", attachments: new Attachments([], [image])));
+        release.SetResult();
+        await started.Turn.WaitAsync(TimeSpan.FromSeconds(10));
+        for (var i = 0; i < 100 && w.Model.LastMessages?.Any(m => m.Images is not null) != true; i++) await Task.Delay(50);
+
+        var sent = Assert.Single(w.Model.LastMessages!, m => m.Role == "user" && m.Content == "Look at this: [Image #1 4×2]");
+        Assert.Equal([image], sent.Images!);
+    }
+
     /// <summary>A plain message with a paste keeps it the same way.</summary>
     [Fact]
     public async Task AMessageWithAPaste_KeepsThePasteWithTheMessage()
@@ -205,6 +232,54 @@ public class CustomCommandSessionTests : IDisposable
         Assert.Equal("/slow", handedBack);
         Assert.Null(w.Model.LastMessages);
         Assert.Equal(SendOutcome.Cancelled, await started.Outcome);
+    }
+
+    /// <summary>
+    /// A cancel hands the queued line back and takes all of it out of the queue — its words as shown and
+    /// its images too — so the next steer is only what is typed next, not a second copy of the screenshot.
+    /// </summary>
+    [Fact]
+    public async Task ACancel_TakesTheQueuedLinesImagesWithIt()
+    {
+        CommandFile("slow", "!`sleep 30`");
+        var asked = new TaskCompletionSource();
+        var w = Open(new BlockingGate(asked));
+        using var _ = w.Manager;
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(w.Session.Submit("/slow"));
+        await asked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1] };
+        w.Session.Submit("see [Image #1 4×2]", attachments: new Attachments([], [image]));
+
+        Assert.True(w.Session.CancelTurn());
+        await started.Turn;
+        w.Session.Steer("also X");
+        var next = w.Session.TakeSteer();
+
+        Assert.Equal("also X", next!.Shown);
+        Assert.True(next.Attachments is null or { IsEmpty: true });
+    }
+
+    /// <summary>Two lines typed while a turn runs go as one message, carrying both lines' images in order.</summary>
+    [Fact]
+    public async Task TwoQueuedLines_CarryBothImages_InOrder()
+    {
+        CommandFile("slow", "!`sleep 30`");
+        var asked = new TaskCompletionSource();
+        var w = Open(new BlockingGate(asked));
+        using var _ = w.Manager;
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(w.Session.Submit("/slow"));
+        await asked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var one = new AttachedImage("[Image #1 4×2]", "a", 4, 2) { Png = [1] };
+        var two = new AttachedImage("[Image #2 4×2]", "b", 4, 2) { Png = [2] };
+
+        w.Session.Submit("see [Image #1 4×2]", attachments: new Attachments([], [one]));
+        w.Session.Submit("and [Image #2 4×2]", attachments: new Attachments([], [two]));
+        var queued = w.Session.TakeSteer();
+        w.Session.CancelTurn();
+        await started.Turn;
+
+        Assert.Equal("see [Image #1 4×2]\nand [Image #2 4×2]", queued!.Shown);
+        Assert.Equal([one, two], queued.Attachments!.Images);
     }
 
     [Fact]

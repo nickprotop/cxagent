@@ -90,6 +90,25 @@ public class ImageRowTests
     }
 
     /// <summary>
+    /// The viewer opens the bytes the model was sent, whatever is already at the copy's path: a file left
+    /// there — by an older run, or by someone else on a shared temp folder — is never shown in its place.
+    /// </summary>
+    [Fact]
+    public void TheViewerCopy_IsWrittenEveryTime()
+    {
+        string? launched = null;
+        var preview = new ImagePreview(System()) { Kitty = () => false, Desktop = () => true, Launch = f => launched = f };
+        var image = Image(bytes: 10) with { Hash = "stale" + Guid.NewGuid().ToString("N") };
+        preview.Open(image);
+        File.WriteAllBytes(launched!, [9, 9, 9]);
+
+        preview.Open(image);
+
+        Assert.Equal(new byte[10], File.ReadAllBytes(launched!));
+        Assert.DoesNotContain(Path.Combine(Path.GetTempPath(), "cxagent-images") + Path.DirectorySeparatorChar, launched);
+    }
+
+    /// <summary>
     /// With no desktop to open it on — over SSH, or a console without a display — nothing is launched.
     /// xdg-open there falls back to a text browser, which takes the terminal from the app.
     /// </summary>

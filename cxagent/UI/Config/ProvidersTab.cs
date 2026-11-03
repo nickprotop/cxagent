@@ -517,11 +517,11 @@ public sealed class ProvidersTab
     /// </summary>
     private IWindowControl ImagesEditor(InstanceDraft draft)
     {
-        var dropdown = new DropdownControl("", [ImagesAsk("…"), "Yes", "No"]) { HorizontalAlignment = HorizontalAlignment.Left };
-        dropdown.SelectedIndex = draft.Images switch { true => 1, false => 2, null => 0 };
+        var dropdown = new DropdownControl("", [ImagesAsk(null, asking: true), "Yes", "No"]) { HorizontalAlignment = HorizontalAlignment.Left };
+        dropdown.SelectedIndex = ImagesIndex(draft.Images);
         dropdown.SelectedIndexChanged += (_, index) =>
         {
-            draft.Images = index switch { 1 => true, 2 => false, _ => null };
+            draft.Images = ImagesChoice(index);
             Changed();
         };
 
@@ -531,7 +531,7 @@ public sealed class ProvidersTab
         {
             dropdown.ClearItems();
             foreach (var item in new[] { "Ask the server", "Yes", "No" }) dropdown.AddItem(item);
-            dropdown.SelectedIndex = draft.Images switch { true => 1, false => 2, null => 0 };
+            dropdown.SelectedIndex = ImagesIndex(draft.Images);
             return dropdown;
         }
 
@@ -545,7 +545,7 @@ public sealed class ProvidersTab
             var said = t.IsCompletedSuccessfully ? t.Result : null;
             var selected = dropdown.SelectedIndex;
             dropdown.ClearItems();
-            dropdown.AddItem(ImagesAsk(said switch { true => "yes", false => "no", null => "the server did not say" }));
+            dropdown.AddItem(ImagesAsk(said));
             dropdown.AddItem("Yes");
             dropdown.AddItem("No");
             dropdown.SelectedIndex = selected;
@@ -554,8 +554,15 @@ public sealed class ProvidersTab
         return dropdown;
     }
 
-    /// <summary>The first Images item, naming what asking the server gave.</summary>
-    internal static string ImagesAsk(string answer) => $"Ask the server: {answer}";
+    /// <summary>The first Images item, naming what asking the server gave; "…" while it is being asked.</summary>
+    internal static string ImagesAsk(bool? said, bool asking = false) =>
+        "Ask the server: " + (asking ? "…" : said switch { true => "yes", false => "no", null => "the server did not say" });
+
+    /// <summary>The Images item for a setting: ask the server, Yes, No.</summary>
+    internal static int ImagesIndex(bool? images) => images switch { true => 1, false => 2, null => 0 };
+
+    /// <summary>The setting an Images item stands for; the first, asking the server, writes none.</summary>
+    internal static bool? ImagesChoice(int index) => index switch { 1 => true, 2 => false, _ => null };
 
     private IWindowControl DisplayEditor(InstanceDraft draft)
     {
