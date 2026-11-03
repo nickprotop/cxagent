@@ -45,7 +45,10 @@ public record ChatMessage
 
     /// <summary>
     /// The message's size as the context counts it: its text, and each image at its weight.
+    ///
+    /// <para>NOT SAVED: worked out from the message, and the history writes every message it records.</para>
     /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public int SizeChars => (Content?.Length ?? 0) + (Images?.Sum(i => i.WeightChars) ?? 0);
 
     /// <summary>

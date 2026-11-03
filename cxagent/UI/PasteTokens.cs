@@ -112,13 +112,16 @@ internal sealed record ComposerLine(string Text, string? Echo, IReadOnlyList<Pro
     internal bool IsBtw(out string question, out string shown)
     {
         question = shown = "";
-        if (Echo is null || !Text.StartsWith("/btw", StringComparison.Ordinal)) return false;
+        // AN IMAGE TOKEN'S LABEL IS ITS VALUE, so a line whose only token is an image echoes nothing
+        // different; it still has to reach the aside here, with its image, rather than through the
+        // registry, which passes only the text.
+        if ((Echo is null && Attachments.Images.Count == 0) || !Text.StartsWith("/btw", StringComparison.Ordinal)) return false;
 
         var typed = CxAgent.Core.Skills.CommandText.SplitLine(Text);
         if (typed.Name != "btw") return false;
 
         question = typed.Arguments;
-        shown = CxAgent.Core.Skills.CommandText.SplitLine(Echo).Arguments;
+        shown = CxAgent.Core.Skills.CommandText.SplitLine(Echo ?? Text).Arguments;
         return true;
     }
 
@@ -126,6 +129,7 @@ internal sealed record ComposerLine(string Text, string? Echo, IReadOnlyList<Pro
     /// The pasted blocks in the line, label and text, kept with the message so a readable export can
     /// show what each label stood for.
     /// </summary>
-    internal Attachments Attachments => Attachments.Of(
-        [.. Segments.Where(s => s.Token?.Tag == PasteTokens.Tag).Select(s => new PastedText(s.Token!.Label, s.Token.Value))]);
+    internal Attachments Attachments => new(
+        [.. Segments.Where(s => s.Token?.Tag == PasteTokens.Tag).Select(s => new PastedText(s.Token!.Label, s.Token.Value))],
+        [.. Segments.Select(s => ImageTokens.Of(s.Token)).OfType<AttachedImage>()]);
 }

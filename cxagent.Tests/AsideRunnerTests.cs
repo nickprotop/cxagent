@@ -106,6 +106,20 @@ public class AsideRunnerTests : IDisposable
         Assert.EndsWith("which line? a\nb\nc", runner.Messages.Last(m => m.Role == "user").Content);
     }
 
+    /// <summary>An image in a /btw question goes to the aside's model with it, not only its label.</summary>
+    [Fact]
+    public async Task AQuestionWithAnImage_GivesTheAsideTheImage()
+    {
+        var mock = new MockLlmProvider();
+        mock.EnqueueResponse(Says("a cat"));
+        var runner = Runner(mock, new Seen());
+        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1, 2, 3] };
+
+        await runner.Ask("what is [Image #1 4×2]?", attachments: new Attachments([], [image]))!;
+
+        Assert.Equal([image], runner.Messages.First(m => m.Role == "user" && m.Images is not null).Images);
+    }
+
     [Fact]
     public async Task TheFork_IsTheMainConversation_ThenOneUserMessage_WithTheNoteAndTheQuestion()
     {

@@ -59,12 +59,15 @@ public sealed record AttachedImage(string Label, string Hash, int Width, int Hei
     /// The token count is Anthropic's <c>width × height / 750</c>, which lies within the range of what
     /// OpenAI's tiles and Qwen-VL's patches charge for the sizes sent.</para>
     /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public int WeightChars => (int)Math.Ceiling((double)Width * Height / 750) * 4;
 
     /// <summary>What a model that cannot see the image is sent in its place.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public string Placeholder => $"[image: {Name}, {Width}×{Height}]";
 
     /// <summary>What is sent when the image's bytes are gone.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public string Unavailable => $"[image unavailable: {Name}]";
 
     /// <summary>"Image #1", from a label of <c>[Image #1 1568×882]</c>.</summary>

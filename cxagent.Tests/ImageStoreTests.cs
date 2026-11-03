@@ -103,4 +103,21 @@ public class ImageStoreTests : IDisposable
         Assert.DoesNotContain("AAAAAAAA", context);
         Assert.Contains("\"Hash\"", context);
     }
+
+    /// <summary>
+    /// What is worked out from a message is not saved with it: a size, a weight, a placeholder. Saved, it
+    /// is written into every message of every save, and read back as a value nothing reads.
+    /// </summary>
+    [Fact]
+    public void TheContextFile_HoldsNothingComputed()
+    {
+        Save("agent-a", [Said("look", Image([1]))]);
+
+        var context = File.ReadAllText(new SessionFolder(_paths, "agent-a").ContextPath);
+
+        Assert.DoesNotContain("SizeChars", context);
+        Assert.DoesNotContain("WeightChars", context);
+        Assert.DoesNotContain("Placeholder", context);
+        Assert.DoesNotContain("Unavailable", context);
+    }
 }

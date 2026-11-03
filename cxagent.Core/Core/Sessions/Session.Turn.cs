@@ -358,7 +358,7 @@ public sealed partial class Session
         //
         // ONLY THE USER'S. A delivery or a plugin's goal arriving meanwhile is the main conversation's
         // business, and sending it to the aside would lose it.
-        if (InAside && IsTheUser(source, origin)) return SendAside(text, echo);
+        if (InAside && IsTheUser(source, origin)) return SendAside(text, echo, attachments);
 
         return Route(new TurnRequest(text, echo, tools, origin, source) { Attachments = attachments });
     }

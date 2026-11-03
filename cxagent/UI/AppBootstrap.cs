@@ -1709,7 +1709,7 @@ public static class AppBootstrap
             // only the text and draw the paste in full in its block — see ComposerLine.IsBtw.
             if (!target.InAside && line.IsBtw(out var question, out var shownQuestion))
             {
-                target.Btw(question, shownQuestion);
+                target.Btw(question, shownQuestion, line.Attachments);
                 return;
             }
 
@@ -1923,12 +1923,16 @@ public static class AppBootstrap
         });
 
 
+        // A DROPPED IMAGE THAT COULD NOT BE TAKEN SAYS WHY, or a path left as text would look like a drop
+        // that worked. Set here because the composers exist before the window system does.
+        ImageTokens.Refused = text => system.ToastService.Show(text, SharpConsoleUI.Core.NotificationSeverity.Warning);
+
         // A PASTED TOKEN BACK INTO TEXT, from the keyboard — a click on one does the same (MainWindow.NewPrompt).
         // Ctrl+G because the composer keeps A, E, C, X, K, U, W and L, and Ctrl+T is the library's
         // window-cycle key. Declined when no token is beside the caret, so the key does nothing rather than
         // something unexpected.
         keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.G, "expand the pasted text beside the caret", () =>
-            mainWindow.Input.HasFocus && mainWindow.Input.ExpandTokenAtCaret());
+            mainWindow.Input.HasFocus && ImageTokens.ExpandPasteAtCaret(mainWindow.Input, out _));
 
         // F9 OPENS THE THEME LIST, and the item at the left of the status bar opens the same one on a
         // click. One key for the whole registry rather than a key per theme: the list already knows

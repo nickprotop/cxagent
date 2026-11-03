@@ -118,6 +118,22 @@ public class SteeringTests
         Assert.Equal([paste], steer.Pastes!);
     }
 
+    /// <summary>A steer with an image, taken at the barrier: the model is sent the image with the words.</summary>
+    [Fact]
+    public async Task ASteerWithAnImage_DeliversTheImage()
+    {
+        var provider = ProviderThatCallsATool();
+        var agent = NewAgent(provider, new RecordingSink());
+        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1, 2, 3] };
+        SteerDelivery? pending = new("look at [Image #1 4×2]", "look at [Image #1 4×2]", new Attachments([], [image]));
+        agent.TakePendingSteer = () => { var p = pending; pending = null; return p; };
+
+        await agent.SendAsync("do the thing", CancellationToken.None);
+
+        var steer = Assert.Single(provider.LastMessages!, m => m.Role == "user" && m.Content == "look at [Image #1 4×2]");
+        Assert.Equal([image], steer.Images!);
+    }
+
     [Fact]
     public async Task ASteerIsDeliveredExactlyOnce()
     {

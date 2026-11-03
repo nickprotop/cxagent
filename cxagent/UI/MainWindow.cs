@@ -96,11 +96,19 @@ public sealed class MainWindow : IDisposable
 
         // A LONG PASTE BECOMES ONE TOKEN — see PasteTokens. One rule per composer, so its numbers
         // count within the conversation it belongs to.
-        prompt.PasteFilter = new PasteTokens().For;
+        // A DROPPED IMAGE FILE IS ASKED ABOUT FIRST: its path is one short line, which the paste rule
+        // would leave as text anyway, and as text it would never become the image.
+        var pastes = new PasteTokens();
+        var images = ImageTokens.For(prompt);
+        prompt.PasteFilter = text => images.Paste(text) ?? pastes.For(text);
 
-        // A CLICK ON A TOKEN EXPANDS IT, which is what the user chose a click to mean; Ctrl+G does the
-        // same from the keyboard (AppBootstrap).
-        prompt.TokenActivated += (_, token) => PasteTokens.Expand(prompt, token);
+        // A CLICK ON A PASTED TOKEN EXPANDS IT, which is what the user chose a click to mean; Ctrl+G does
+        // the same from the keyboard (AppBootstrap). Never an image's: its value is only its label, and
+        // expanding it would leave the label as text and drop the image.
+        prompt.TokenActivated += (_, token) =>
+        {
+            if (token.Tag == PasteTokens.Tag) PasteTokens.Expand(prompt, token);
+        };
         return prompt;
     }
 

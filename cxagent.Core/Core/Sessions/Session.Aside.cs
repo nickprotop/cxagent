@@ -31,7 +31,8 @@ public sealed partial class Session
     /// The question as its block shows it, when that differs — a pasted block as its label. The command
     /// registry passes only the text, so a front end that has the line as typed calls this itself.
     /// </param>
-    public CommandStatus Btw(string question, string? shown = null)
+    /// <param name="attachments">What the question carries; its images reach the aside's model.</param>
+    public CommandStatus Btw(string question, string? shown = null, Models.Attachments? attachments = null)
     {
         if (Host is not { } host)
         {
@@ -59,19 +60,20 @@ public sealed partial class Session
         Volatile.Write(ref _inAside, true);
         Announce(SessionChangeKind.Aside);
 
-        if (!string.IsNullOrWhiteSpace(question)) runner.Ask(question.Trim(), shown?.Trim());
+        if (!string.IsNullOrWhiteSpace(question)) runner.Ask(question.Trim(), shown?.Trim(), attachments);
         return CommandStatus.Reported;
     }
 
     /// <summary>Sends what the user typed in btw mode to the aside.</summary>
     /// <param name="text">What the aside reads.</param>
     /// <param name="echo">What the aside's block shows, when that differs — a pasted block as its label.</param>
-    public SubmitOutcome SendAside(string text, string? echo = null)
+    /// <param name="attachments">What the line carries; its images reach the aside's model.</param>
+    public SubmitOutcome SendAside(string text, string? echo = null, Models.Attachments? attachments = null)
     {
         var runner = Volatile.Read(ref _aside);
         if (runner is null) return new SubmitOutcome.Refused("not in btw mode");
 
-        var answering = runner.Ask(text, echo);
+        var answering = runner.Ask(text, echo, attachments);
         if (answering is null)
             Say(new Message("the aside is still answering — wait for it, or Esc to stop it", Severity.Warning));
         return new SubmitOutcome.Aside(answering);

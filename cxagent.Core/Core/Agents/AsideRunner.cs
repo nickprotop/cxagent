@@ -69,7 +69,8 @@ public sealed class AsideRunner
     /// The question as its block shows it, when that differs: a pasted block shows as its label, as it
     /// does in the main conversation. Null shows the question itself.
     /// </param>
-    public Task? Ask(string question, string? shown = null)
+    /// <param name="attachments">What the question carries; its images reach the aside's model.</param>
+    public Task? Ask(string question, string? shown = null, Models.Attachments? attachments = null)
     {
         var cts = new CancellationTokenSource();
         if (Interlocked.CompareExchange(ref _answering, cts, null) is not null)
@@ -80,7 +81,11 @@ public sealed class AsideRunner
 
         var text = _asked ? question : Note + question;
         _asked = true;
-        _messages.Add(new ChatMessage { Role = "user", Content = text, Timestamp = DateTimeOffset.UtcNow });
+        _messages.Add(new ChatMessage
+        {
+            Role = "user", Content = text, Timestamp = DateTimeOffset.UtcNow,
+            Images = attachments?.Images is { Count: > 0 } images ? images : null,
+        });
         _runtime.Observer.Asked(Number, shown ?? question);
 
         return Task.Run(() => AnswerAsync(cts));
