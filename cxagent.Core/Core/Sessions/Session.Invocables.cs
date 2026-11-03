@@ -19,7 +19,7 @@ public sealed record TypedCommand(string Line, Invocable Entry)
     public string? Shown { get; init; }
 
     /// <summary>The blocks pasted into the arguments, each shown in <see cref="Shown"/> as its label.</summary>
-    public IReadOnlyList<CxAgent.Core.Models.PastedText>? Pastes { get; init; }
+    public CxAgent.Core.Models.Attachments? Attachments { get; init; }
 }
 
 public sealed partial class Session
@@ -68,7 +68,7 @@ public sealed partial class Session
 
         return Send(new TurnRequest(line, command.Shown?.Trim() ?? line, null, null, SubmitSource.User)
         {
-            Pastes = command.Pastes,
+            Attachments = command.Attachments,
             Expand = async ct =>
             {
                 Volatile.Write(ref _expanding, line);

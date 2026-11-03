@@ -12,6 +12,6 @@ namespace CxAgent.Core.Agents;
 /// as its label.</param>
 /// <param name="ForModel">What the model receives: anything queued for this message, then the
 /// user's words, each pasted block as its text.</param>
-/// <param name="Pastes">The blocks pasted into the message, each shown in <paramref name="Shown"/> as its
+/// <param name="Attachments">The blocks pasted into the message, each shown in <paramref name="Shown"/> as its
 /// label — kept with the message for a readable export.</param>
-public sealed record SteerDelivery(string Shown, string ForModel, IReadOnlyList<Models.PastedText>? Pastes = null);
+public sealed record SteerDelivery(string Shown, string ForModel, Models.Attachments? Attachments = null);

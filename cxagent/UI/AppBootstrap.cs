@@ -1715,7 +1715,7 @@ public static class AppBootstrap
 
             if (!target.InAside && manager.Commands.TryRun(target, goalText)) return;
 
-            var disposition = target.Submit(goalText, line.Echo, pastes: line.Pastes);
+            var disposition = target.Submit(goalText, line.Echo, attachments: line.Attachments);
 
             // A LINE THAT JOINED THE RUNNING TURN IS KEPT AS TYPED, so a cancel can hand it back with its
             // tokens — see SessionTab.QueuedLines. Added here, on the UI thread, before the Drained that

@@ -108,7 +108,7 @@ public class SteeringTests
         var sink = new RecordingSink();
         var agent = NewAgent(provider, sink);
         var paste = new PastedText("[Pasted text #1 +3 lines]", "a\nb\nc");
-        SteerDelivery? pending = new("check [Pasted text #1 +3 lines]", "check a\nb\nc", [paste]);
+        SteerDelivery? pending = new("check [Pasted text #1 +3 lines]", "check a\nb\nc", Attachments.Of([paste]));
         agent.TakePendingSteer = () => { var p = pending; pending = null; return p; };
 
         await agent.SendAsync("do the thing", CancellationToken.None);

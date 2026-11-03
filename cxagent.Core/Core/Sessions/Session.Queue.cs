@@ -42,7 +42,7 @@ public sealed partial class Session
     /// together under the same gate so they always describe the same lines.</para>
     /// </summary>
     private string? _pendingShown;
-    private List<Models.PastedText>? _pendingPastes;
+    private Models.Attachments? _pendingAttachments;
 
     /// <summary>
     /// Whose <see cref="_pending"/> is: one plugin's when only that plugin queued it, and the user's
@@ -102,8 +102,8 @@ public sealed partial class Session
     /// </summary>
     public void Steer(string text) => SteerAs(text, TurnOriginator.User);
 
-    /// <summary>What is waiting, as the model will read it, as the user typed it, and the pastes in it.</summary>
-    private sealed record Waiting(string Text, string Shown, IReadOnlyList<Models.PastedText>? Pastes, TurnOriginator Origin);
+    /// <summary>What is waiting, as the model will read it, as the user typed it, and the attachments in it.</summary>
+    private sealed record Waiting(string Text, string Shown, Models.Attachments? Attachments, TurnOriginator Origin);
 
     /// <summary>
     /// <see cref="Steer"/> on someone's behalf.
@@ -114,9 +114,9 @@ public sealed partial class Session
     /// <param name="text">What the model reads.</param>
     /// <param name="origin">Whose words they are.</param>
     /// <param name="shown">The line as typed, when it differs — a pasted block as its label.</param>
-    /// <param name="pastes">The blocks pasted into it.</param>
+    /// <param name="attachments">The blocks pasted into it.</param>
     private void SteerAs(string text, TurnOriginator origin, string? shown = null,
-        IReadOnlyList<Models.PastedText>? pastes = null)
+        Models.Attachments? attachments = null)
     {
         string whole;
         var added = shown ?? text;
@@ -126,7 +126,7 @@ public sealed partial class Session
             _pendingOrigin = string.IsNullOrEmpty(_pending) || _pendingOrigin == origin ? origin : TurnOriginator.User;
             _pending = string.IsNullOrEmpty(_pending) ? text : _pending + "\n" + text;
             whole = _pendingShown = string.IsNullOrEmpty(_pendingShown) ? added : _pendingShown + "\n" + added;
-            if (pastes is { Count: > 0 }) (_pendingPastes ??= []).AddRange(pastes);
+            if (attachments is { IsEmpty: false }) _pendingAttachments = _pendingAttachments?.Plus(attachments) ?? attachments;
             spoke = _userSpoke;
             _userSpoke = null;
         }
@@ -300,8 +300,8 @@ public sealed partial class Session
 
     private Agents.SteerDelivery WithInjected(Waiting waiting) =>
         TakeInjected() is { Length: > 0 } injected
-            ? new Agents.SteerDelivery(waiting.Shown, injected + "\n\n" + waiting.Text, waiting.Pastes)
-            : new Agents.SteerDelivery(waiting.Shown, waiting.Text, waiting.Pastes);
+            ? new Agents.SteerDelivery(waiting.Shown, injected + "\n\n" + waiting.Text, waiting.Attachments)
+            : new Agents.SteerDelivery(waiting.Shown, waiting.Text, waiting.Attachments);
 
     /// <summary>
     /// The source <see cref="UserSpokeToken"/> hands out while nothing is waiting; <see cref="Steer"/>
@@ -368,8 +368,8 @@ public sealed partial class Session
         {
             var waiting = string.IsNullOrEmpty(_pending)
                 ? null
-                : new Waiting(_pending, _pendingShown ?? _pending, _pendingPastes, _pendingOrigin);
-            (_pending, _pendingShown, _pendingPastes, _pendingOrigin) = (null, null, null, TurnOriginator.User);
+                : new Waiting(_pending, _pendingShown ?? _pending, _pendingAttachments, _pendingOrigin);
+            (_pending, _pendingShown, _pendingAttachments, _pendingOrigin) = (null, null, null, TurnOriginator.User);
             return waiting;
         }
     }

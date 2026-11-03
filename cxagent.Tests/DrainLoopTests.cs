@@ -81,7 +81,7 @@ public class DrainLoopTests : IDisposable
         provider.OnCall = () =>
         {
             provider.OnCall = null;
-            session.Submit("check a\nb\nc", "check [Pasted text #1 +3 lines]", pastes: [paste]);
+            session.Submit("check a\nb\nc", "check [Pasted text #1 +3 lines]", attachments: Attachments.Of([paste]));
         };
         var started = Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("the first"));
         await started.Turn;

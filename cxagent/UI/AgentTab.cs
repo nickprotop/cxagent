@@ -205,14 +205,14 @@ public sealed class AgentTab : IDisposable
     public Task SubmitComposer()
     {
         var line = ComposerLine.Of(_input);
-        return Send(line.Text, line.Echo, line.Pastes);
+        return Send(line.Text, line.Echo, line.Attachments);
     }
 
-    private async Task Send(string text, string? echo, IReadOnlyList<Core.Models.PastedText>? pastes)
+    private async Task Send(string text, string? echo, Core.Models.Attachments? attachments)
     {
         if (!CanType || string.IsNullOrWhiteSpace(text)) return;
         _input.Input = "";
-        if (await Session.SendFromAgentTab(Kept.Name, text, echo, pastes) is { } line)
+        if (await Session.SendFromAgentTab(Kept.Name, text, echo, attachments) is { } line)
             _views.Transcript.Said(new Message(line, Severity.Info));
     }
 

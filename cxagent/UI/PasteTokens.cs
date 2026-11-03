@@ -98,10 +98,6 @@ internal sealed record ComposerLine(string Text, string? Echo, IReadOnlyList<Pro
     }
 
     /// <summary>
-    /// The pasted blocks in the line, label and text, kept with the message so a readable export can
-    /// show what each label stood for.
-    /// </summary>
-    /// <summary>
     /// Whether this is a <c>/btw</c> line with a pasted token, and its question both ways: as the aside
     /// reads it and as its block shows it.
     ///
@@ -126,6 +122,10 @@ internal sealed record ComposerLine(string Text, string? Echo, IReadOnlyList<Pro
         return true;
     }
 
-    internal IReadOnlyList<PastedText> Pastes =>
-        [.. Segments.Where(s => s.Token?.Tag == PasteTokens.Tag).Select(s => new PastedText(s.Token!.Label, s.Token.Value))];
+    /// <summary>
+    /// The pasted blocks in the line, label and text, kept with the message so a readable export can
+    /// show what each label stood for.
+    /// </summary>
+    internal Attachments Attachments => Attachments.Of(
+        [.. Segments.Where(s => s.Token?.Tag == PasteTokens.Tag).Select(s => new PastedText(s.Token!.Label, s.Token.Value))]);
 }

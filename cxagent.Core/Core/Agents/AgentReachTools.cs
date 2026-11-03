@@ -22,8 +22,8 @@ internal sealed record SendRequest(string To, string Prompt, bool Background, st
     /// </summary>
     public string? Shown { get; init; }
 
-    /// <summary>The blocks pasted into the prompt, each shown in <see cref="Shown"/> as its label.</summary>
-    public IReadOnlyList<Models.PastedText>? Pastes { get; init; }
+    /// <summary>The blocks pasted into the prompt, each shown in <see cref="Shown"/> as its label, and its images.</summary>
+    public Models.Attachments? Attachments { get; init; }
 }
 
 /// <summary>
@@ -235,7 +235,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
                 try
                 {
                     var send = stored.Agent.Agent.SendAsync(prompt, foreground?.Token ?? ct,
-                        shown: request.Shown, pastes: request.Pastes);
+                        shown: request.Shown, attachments: request.Attachments);
                     // AN ANSWER THAT WON THE RACE IS CLAIMED, as the spawner claims it — see ForegroundRun.
                     var released = foreground is null
                         || (await Task.WhenAny(send, foreground.Released) == send && foreground.TryAnswer())

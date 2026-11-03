@@ -535,7 +535,7 @@ public sealed partial class Session
     /// and by whom; the model is not told (core decision 25), and a System row reaches no context.</para>
     /// </summary>
     public Task<string?> SendFromAgentTab(string name, string prompt, string? echo = null,
-        IReadOnlyList<Models.PastedText>? pastes = null)
+        Models.Attachments? attachments = null)
     {
         var text = prompt.Trim();
         if (text.Length == 0) return Task.FromResult<string?>(null);
@@ -559,7 +559,7 @@ public sealed partial class Session
             {
                 var reach = new Agents.AgentReachTools(SubAgents, _spawner?.ConcurrencySlot);
                 var answer = await reach.SendAsync(new Agents.SendRequest(To: name, Prompt: text,
-                    Background: false, ParentAgentId: null, FromUser: true) { Shown = typed, Pastes = pastes }, token);
+                    Background: false, ParentAgentId: null, FromUser: true) { Shown = typed, Attachments = attachments }, token);
 
                 // A REFUSAL IS THE TAB'S TO SHOW; SO IS A DELIVERY, in the tab's own words — the reach's reply says
                 // the answer goes elsewhere, and from the tab the child's further work is right there.

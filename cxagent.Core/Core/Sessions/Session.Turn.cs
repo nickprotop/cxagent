@@ -345,12 +345,12 @@ public sealed partial class Session
     /// <para>NO MANAGER, NO DISPATCH. A session built outside SessionManager.Open has no registry
     /// to consult and behaves exactly as <see cref="SubmitRaw"/>.</para>
     ///
-    /// <para><c>pastes</c> are the blocks pasted into the text, each shown in <c>echo</c> as its label —
+    /// <para><c>attachments</c> are the blocks pasted into the text, each shown in <c>echo</c> as its label —
     /// kept with the message so a readable export can show them (ChatMessage.Pastes).</para>
     /// </summary>
     public SubmitOutcome Submit(string text, string? echo = null, Jobs.ToolSelection? tools = null,
         TurnOriginator? origin = null, SubmitSource source = SubmitSource.User,
-        IReadOnlyList<PastedText>? pastes = null)
+        Attachments? attachments = null)
     {
         // BTW MODE TAKES WHAT THE USER TYPES, ALL OF IT, and before commands: the mode is a
         // conversation with the aside and nothing else, so "/clear what does this do?" is a question
@@ -360,7 +360,7 @@ public sealed partial class Session
         // business, and sending it to the aside would lose it.
         if (InAside && IsTheUser(source, origin)) return SendAside(text, echo);
 
-        return Route(new TurnRequest(text, echo, tools, origin, source) { Pastes = pastes });
+        return Route(new TurnRequest(text, echo, tools, origin, source) { Attachments = attachments });
     }
 
     /// <summary>
@@ -408,7 +408,7 @@ public sealed partial class Session
                 // wins — and ONLY FOR THE USER'S OWN TYPING: a delivery or a plugin's goal that
                 // happens to start with /deploy must never run a file's shell lines.
                 if (IsTheUser(source, origin) && FindTyped(text) is { } entry)
-                    return RunCommand(new TypedCommand(text, entry) { Shown = echo, Pastes = request.Pastes });
+                    return RunCommand(new TypedCommand(text, entry) { Shown = echo, Attachments = request.Attachments });
 
                 Say(new Message($"Unknown command '{text.TrimStart().Split(' ')[0]}'. Available: "
                     + string.Join(", ", manager.Commands.All.Select(c => c.Name)) + ".",
@@ -548,7 +548,7 @@ public sealed partial class Session
 
             // Steer raises Pending, so a watcher draws its own queued block. Nothing is said here:
             // the block IS the report, and a line saying "queued" beside it would say it twice.
-            SteerAs(text, origin ?? TurnOriginator.User, echo, request.Pastes);
+            SteerAs(text, origin ?? TurnOriginator.User, echo, request.Attachments);
             ResumeIfReleasedMeanwhile();
 
             // A QUEUED MESSAGE IS NOT A SECOND REQUEST. It joins the running turn — taken at its
@@ -796,7 +796,7 @@ public sealed partial class Session
                 finally
                 {
                     StartOwnedTurn(new TurnRequest(steer.ForModel, steer.Shown, _turnTools, steerOrigin,
-                        SubmitSource.User) { Pastes = steer.Pastes });
+                        SubmitSource.User) { Attachments = steer.Attachments });
                 }
                 return true;
             }
@@ -867,7 +867,7 @@ public sealed partial class Session
     {
         var text = request.Text;
         var echo = request.Echo;
-        var pastes = request.Pastes;
+        var attachments = request.Attachments;
         var tools = request.Tools;
         var origin = request.Origin;
         var expand = request.Expand;
@@ -989,7 +989,7 @@ public sealed partial class Session
                     // WHAT THE TRANSCRIPT SHOWED goes with the message when it differs from what is
                     // sent, so the session list can name the session by it — see ChatMessage.Shown.
                     sent = await Host!.RunAsync(text, scope.Token, tools,
-                        echo is not null && echo != text ? echo : null, pastes);
+                        echo is not null && echo != text ? echo : null, attachments);
                 }
             }
             catch (OperationCanceledException)
@@ -1083,7 +1083,7 @@ public sealed partial class Session
 
             text = queued.ForModel;
             echo = queued.Shown;
-            pastes = queued.Pastes;
+            attachments = queued.Attachments;
             announceAsNote = false;
             firstLap = false;
         }
@@ -1109,7 +1109,7 @@ public sealed partial class Session
         public Func<CancellationToken, Task<string?>>? Expand { get; init; }
 
         /// <summary>The blocks pasted into the text, each shown in <see cref="Echo"/> as its label.</summary>
-        public IReadOnlyList<PastedText>? Pastes { get; init; }
+        public Attachments? Attachments { get; init; }
 
         /// <summary>
         /// A first lap that draws nothing on the transcript.

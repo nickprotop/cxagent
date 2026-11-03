@@ -98,7 +98,7 @@ public class CustomCommandSessionTests : IDisposable
         var paste = new PastedText("[Pasted text #1 +3 lines]", "a\nb\nc");
 
         var started = Assert.IsType<Session.SubmitOutcome.Started>(
-            w.Session.Submit("/look a\nb\nc", "/look [Pasted text #1 +3 lines]", pastes: [paste]));
+            w.Session.Submit("/look a\nb\nc", "/look [Pasted text #1 +3 lines]", attachments: Attachments.Of([paste])));
         await started.Turn;
 
         Assert.Contains("> /look [Pasted text #1 +3 lines]", w.Observer.Transcript);
@@ -116,7 +116,7 @@ public class CustomCommandSessionTests : IDisposable
         var paste = new PastedText("[Pasted text #1 +3 lines]", "a\nb\nc");
 
         var started = Assert.IsType<Session.SubmitOutcome.Started>(
-            w.Session.Submit("fix a\nb\nc", "fix [Pasted text #1 +3 lines]", pastes: [paste]));
+            w.Session.Submit("fix a\nb\nc", "fix [Pasted text #1 +3 lines]", attachments: Attachments.Of([paste])));
         await started.Turn;
 
         var sent = Assert.Single(w.Model.LastMessages!, m => m.Role == "user" && m.Content == "fix a\nb\nc");

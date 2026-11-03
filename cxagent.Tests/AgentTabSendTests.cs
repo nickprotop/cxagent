@@ -55,7 +55,7 @@ public sealed class AgentTabSendTests : IDisposable
         var s = Open("counted");
         var paste = new PastedText("[Pasted text #1 +3 lines]", "a\nb\nc");
 
-        await s.SendFromAgentTab("finder", "count a\nb\nc", "count [Pasted text #1 +3 lines]", [paste]);
+        await s.SendFromAgentTab("finder", "count a\nb\nc", "count [Pasted text #1 +3 lines]", Attachments.Of([paste]));
 
         var sent = Assert.Single(s.SubAgents.Find("finder")!.Agent.Agent.Context.Messages, m => m.Content == "count a\nb\nc");
         Assert.Equal("count [Pasted text #1 +3 lines]", sent.Shown);

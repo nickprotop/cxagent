@@ -97,7 +97,7 @@ public class ComposerTokenTests
 
         Assert.Equal("fix this: " + Pasted, line.Text);
         Assert.Equal("fix this: [Pasted text #1 +18 lines]", line.Echo);
-        Assert.Equal([new CxAgent.Core.Models.PastedText("[Pasted text #1 +18 lines]", Pasted)], line.Pastes);
+        Assert.Equal([new CxAgent.Core.Models.PastedText("[Pasted text #1 +18 lines]", Pasted)], line.Attachments.Pastes);
     }
 
     /// <summary>
