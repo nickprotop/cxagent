@@ -28,9 +28,10 @@ internal static class AnthropicWire
     /// In a tool loop the history is most of every request, so the system marker alone saves little.
     /// </param>
     /// <param name="thinking">What to say about thinking, or null to say nothing.</param>
+    /// <param name="sendImages">Whether the model can see images; false sends each one's placeholder.</param>
     public static JsonObject BuildRequestBody(string model, int maxTokens,
         List<ChatMessage> messages, List<ToolDefinition>? tools, bool stream, bool cache = false,
-        AnthropicThinking? thinking = null)
+        AnthropicThinking? thinking = null, bool sendImages = true)
     {
         var systemParts = new List<string>();
         var msgs = new JsonArray();
@@ -90,6 +91,10 @@ internal static class AnthropicWire
                 AddThinking(content, blocks);
                 if (m.Content.Length > 0) content.Add(new JsonObject { ["type"] = "text", ["text"] = m.Content });
                 msgs.Add(new JsonObject { ["role"] = "assistant", ["content"] = content });
+            }
+            else if (m.Images is { Count: > 0 } images)
+            {
+                msgs.Add(new JsonObject { ["role"] = m.Role, ["content"] = WithImages(m.Content, images, sendImages) });
             }
             else
             {
@@ -162,6 +167,35 @@ internal static class AnthropicWire
             content.Add(b.Redacted
                 ? new JsonObject { ["type"] = "redacted_thinking", ["data"] = b.Data }
                 : new JsonObject { ["type"] = "thinking", ["thinking"] = b.Thinking ?? "", ["signature"] = b.Signature });
+    }
+
+    /// <summary>
+    /// A user message's content with its images: an image block per image, then the text.
+    ///
+    /// <para>IMAGES FIRST, which is the order Anthropic's guide recommends for a question about them.
+    /// What cannot go is noted in the text, for the reason <see cref="OpenAiWire.WithImages"/> gives.</para>
+    /// </summary>
+    private static JsonNode WithImages(string text, IReadOnlyList<AttachedImage> images, bool sendImages)
+    {
+        var notes = images.Where(i => !sendImages || i.Png is null)
+            .Select(i => i.Png is null ? i.Unavailable : i.Placeholder).ToList();
+        var withNotes = notes.Count == 0 ? text : text + "\n" + string.Join("\n", notes);
+        if (!sendImages || images.All(i => i.Png is null)) return JsonValue.Create(withNotes)!;
+
+        var blocks = new JsonArray();
+        foreach (var image in images.Where(i => i.Png is not null))
+            blocks.Add(new JsonObject
+            {
+                ["type"] = "image",
+                ["source"] = new JsonObject
+                {
+                    ["type"] = "base64",
+                    ["media_type"] = "image/png",
+                    ["data"] = Convert.ToBase64String(image.Png!),
+                },
+            });
+        blocks.Add(new JsonObject { ["type"] = "text", ["text"] = withNotes });
+        return blocks;
     }
 
     private static void MarkLastBlock(JsonObject message)

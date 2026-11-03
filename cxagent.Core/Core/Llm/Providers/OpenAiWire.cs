@@ -12,6 +12,31 @@ namespace CxAgent.Core.Llm.Providers;
 /// </remarks>
 internal static class OpenAiWire
 {
+    /// <summary>
+    /// A user message's content with its images: the text, then one data URL per image.
+    ///
+    /// <para>A PART FOR EVERY IMAGE THAT CAN GO, A NOTE FOR EVERY ONE THAT CANNOT. A model that cannot
+    /// see images refuses the whole request when it is sent one, and that would fail every later turn
+    /// of the session too, since the message stays in the context; its placeholder keeps the
+    /// conversation going. Bytes that could not be read back say so instead of vanishing.</para>
+    /// </summary>
+    internal static JsonNode WithImages(string text, IReadOnlyList<AttachedImage> images, bool sendImages)
+    {
+        var notes = images.Where(i => !sendImages || i.Png is null)
+            .Select(i => i.Png is null ? i.Unavailable : i.Placeholder).ToList();
+        var withNotes = notes.Count == 0 ? text : text + "\n" + string.Join("\n", notes);
+        if (!sendImages || images.All(i => i.Png is null)) return JsonValue.Create(withNotes)!;
+
+        var parts = new JsonArray { new JsonObject { ["type"] = "text", ["text"] = withNotes } };
+        foreach (var image in images.Where(i => i.Png is not null))
+            parts.Add(new JsonObject
+            {
+                ["type"] = "image_url",
+                ["image_url"] = new JsonObject { ["url"] = "data:image/png;base64," + Convert.ToBase64String(image.Png!) },
+            });
+        return parts;
+    }
+
     /// <summary>Builds the Chat Completions request body.</summary>
     /// <param name="model">The model id.</param>
     /// <param name="messages">The conversation, in order.</param>
@@ -19,8 +44,10 @@ internal static class OpenAiWire
     /// <param name="stream">Whether to request a streamed response (and its usage chunk).</param>
     /// <param name="cacheSystemPrompt">Mark the system prompt with a <c>cache_control</c> breakpoint.</param>
     /// <param name="thinking">Top-level fields that set the thinking level, in the endpoint's own dialect; null sends nothing.</param>
+    /// <param name="sendImages">Whether the model can see images; false sends each one's placeholder.</param>
     public static JsonObject BuildRequestBody(string model, List<ChatMessage> messages,
-        List<ToolDefinition>? tools, bool stream, bool cacheSystemPrompt = false, JsonObject? thinking = null)
+        List<ToolDefinition>? tools, bool stream, bool cacheSystemPrompt = false, JsonObject? thinking = null,
+        bool sendImages = true)
     {
         var msgs = new JsonArray();
         var systemMarked = false;
@@ -85,6 +112,7 @@ internal static class OpenAiWire
                     },
                 };
             }
+            else if (m.Images is { Count: > 0 } images) obj["content"] = WithImages(m.Content, images, sendImages);
             else obj["content"] = m.Content;
             msgs.Add(obj);
         }
