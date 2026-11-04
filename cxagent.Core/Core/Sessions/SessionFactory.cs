@@ -51,7 +51,8 @@ internal static class SessionFactory
                     Foreground: session.ForegroundShells,
                     Children: shared.GlobalInstructionsDir is { } childDir
                         ? new Plugins.ChildProcessStore(childDir)
-                        : null));
+                        : null),
+                resolution.WebSearch);
 
         // WRAPPED HERE, NOT BY THE EMBEDDER. A bare IAgentTool in ports.Tools is not a compile
         // error and would run with no gate at all — PermissionGatedExecutor cannot cover it, because

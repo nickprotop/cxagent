@@ -24,21 +24,20 @@ namespace CxAgent.Core.Permissions;
 public sealed class PermissionGatedExecutor : IJobExecutor
 {
     private readonly IJobExecutor _inner;
-    private readonly IPermissionGate _gate;
-
-    /// <summary>
-    /// THIS SESSION'S POLICY, stamped onto every request so one process-wide gate can judge each
-    /// session by its own root and its own edit mode. Null on the paths that have no policy — the
-    /// mock and the fixed test gates — where the gate's own is the only one there is.
-    /// </summary>
-    private readonly PermissionPolicy? _policy;
 
     public PermissionGatedExecutor(IJobExecutor inner, IPermissionGate gate, PermissionPolicy? policy = null)
     {
         _inner = inner;
-        _gate = gate;
-        _policy = policy;
+        _asker = new PermissionAsker(gate, policy);
     }
+
+    /// <summary>
+    /// How one request is put to the gate — shared with executors that ask for themselves. It carries
+    /// THIS SESSION'S POLICY, stamped onto every request so one process-wide gate can judge each
+    /// session by its own root and its own edit mode; null on the paths that have no policy — the mock
+    /// and the fixed test gates — where the gate's own is the only one there is.
+    /// </summary>
+    private readonly PermissionAsker _asker;
 
     public string TypeName => _inner.TypeName;
     public string DisplayName => _inner.DisplayName;
@@ -69,27 +68,7 @@ public sealed class PermissionGatedExecutor : IJobExecutor
             // and elapsed time while a prompt sits unanswered, so without this a parked child reads
             // as a working one — and with several up, the user cannot tell which row their answer
             // releases. In a finally because a cancelled-while-queued request never returns here.
-            context.ReportPermissionWait(true);
-            PermissionOutcome outcome;
-            try
-            {
-                outcome = await _gate.RequestAsync(
-                    request with
-                    {
-                        Requester = context.Requester,
-                        RequesterRunsOn = (context as Execution.JobContext)?.RequesterRunsOn,
-                        RequesterRoot = (context as Execution.JobContext)?.RequesterRoot,
-                        // THE ID TOO, from the concrete context: IJobContext is published and carries no agent id.
-                        RequesterAgentId = (context as Execution.JobContext)?.AgentId,
-                        // THE CALLER'S POLICY FIRST — see JobContext.Policy.
-                        Policy = (context as Execution.JobContext)?.Policy ?? _policy,
-                        OnReviewing = context.ReportReviewing,
-                    }, ct);
-            }
-            finally
-            {
-                context.ReportPermissionWait(false);
-            }
+            var outcome = await _asker.AskAsync(request, context, ct);
 
             // `??`, NOT a plain assignment. A single call — `copy` is the case that showed this —
             // raises SEVERAL requests, and a later one that clears silently (a stored rule, an

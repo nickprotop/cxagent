@@ -525,6 +525,23 @@ public class PermissionPolicy
         catch (ArgumentException) { return request with { ActsOn = null }; }
     }
 
+    /// <summary>
+    /// A web search, before its query leaves the machine.
+    ///
+    /// <para>AN HTTP REQUEST ON THE ENGINE'S ORIGIN, so it rides everything an http request already
+    /// has: the per-host "always" rule, the classifier's facts, headless's refusal list. The origin as
+    /// the rule means "always" covers ONE engine — allowing DuckDuckGo does not send queries to
+    /// Tavily. The display is the engine and the query, because the query is what is being sent.</para>
+    /// </summary>
+    internal static PermissionRequest SearchRequest(Jobs.Builtin.Search.ISearchEngine engine, string query)
+    {
+        var origin = engine.Endpoint.GetLeftPart(UriPartial.Authority);
+        return new PermissionRequest(PermissionKind.Http, $"search {engine.Name}: \"{query}\"", origin, origin)
+        {
+            Facts = new ActionFacts { Http = new ActionFacts.HttpFacts("POST", engine.Endpoint.ToString(), query.Length) },
+        };
+    }
+
     private static PermissionRequest HttpRequest(JobParameters parameters)
     {
         var url = parameters.Get<string>("url");

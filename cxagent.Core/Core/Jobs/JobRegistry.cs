@@ -38,6 +38,12 @@ public class JobRegistry
     public static JobRegistry CreateWithBuiltins() => CreateWithBuiltins(null, PermissionGate.AllowAll);
 
     /// <summary>
+    /// One client for every search, as HttpClient is meant to be shared. A search that takes longer
+    /// than this has stopped being useful to a model waiting on it.
+    /// </summary>
+    private static readonly HttpClient SearchHttp = new() { Timeout = TimeSpan.FromSeconds(20) };
+
+    /// <summary>
     /// As <see cref="CreateWithBuiltins()"/>, taking the permission gate explicitly.
     /// </summary>
     /// <param name="permissions">Wraps shell/file/http before registration, so the agent's tool
@@ -55,13 +61,15 @@ public class JobRegistry
     /// caller with no policy of its own can offer.</para>
     /// </param>
     /// <param name="providers">The configured models, for executors that need one.</param>
+    /// <param name="webSearch">What web_search may use — a Tavily key, or none for DuckDuckGo. Null is
+    /// none, which is what a test or a caller with no config wants.</param>
     /// <param name="backgrounding">How the shell executor treats a command it stops waiting for —
     /// see <see cref="Builtin.ShellBackgrounding"/>. Null takes every default, which is what every
     /// test and every headless path wants; only the composition root that has read config and knows
     /// where to persist has anything else to say.</param>
     public static JobRegistry CreateWithBuiltins(Llm.ProviderRegistry? providers,
         IPermissionGate permissions, PermissionPolicy? policy = null,
-        Builtin.ShellBackgrounding? backgrounding = null)
+        Builtin.ShellBackgrounding? backgrounding = null, Builtin.WebSearchSettings? webSearch = null)
     {
         _ = providers;   // kept in the signature: callers pass their resolution's registry
         var reg = new JobRegistry();
@@ -70,6 +78,10 @@ public class JobRegistry
         reg.Register(new PermissionGatedExecutor(new FileJobExecutor(policy), permissions, policy));
         reg.Register(new WaitJobExecutor());
         reg.Register(new PermissionGatedExecutor(new HttpJobExecutor(), permissions, policy));
+        // NOT WRAPPED: search asks for itself, once per engine it reaches — see WebSearchJobExecutor.
+        reg.Register(new WebSearchJobExecutor(
+            Builtin.Search.SearchEngines.From(webSearch ?? Builtin.WebSearchSettings.None, SearchHttp),
+            new PermissionAsker(permissions, policy)));
         return reg;
     }
 }
