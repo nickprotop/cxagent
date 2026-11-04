@@ -3446,6 +3446,10 @@ public sealed class Agent
         {
             await foreach (var chunk in _provider.ChatStreamAsync(messages, tools, ct))
             {
+                // WHAT THE PROVIDER DID TO THE REQUEST, said before the reply it changed: images sent as
+                // placeholders after the endpoint refused them, so an answer that never mentions the
+                // picture is not read as the model having looked.
+                if (chunk.Notice is { } notice) _sink.Said(new Message(notice, Severity.Warning));
                 if (chunk.ThinkingDelta is { } delta)
                 {
                     thinking.Add(delta, chunk.ThinkingRedacted);

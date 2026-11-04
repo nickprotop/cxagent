@@ -152,6 +152,38 @@ public class SteeringTests
         Assert.Equal([image], steer.Images!);
     }
 
+    /// <summary>A provider that tells the turn it sent the images as placeholders, then answers.</summary>
+    private sealed class SaysItsImagesWentAsPlaceholders : ILlmProvider
+    {
+        public string ProviderId => "local";
+        public string DisplayName => "local";
+        public string ModelId => "m";
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => true;
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t, CancellationToken ct) =>
+            Task.FromResult(new LlmResponse { Text = "ok", StopReason = "end_turn" });
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> m, List<ToolDefinition>? t,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            yield return new LlmStreamChunk(null, null, IsFinal: false) { Notice = "the images went as placeholders" };
+            yield return new LlmStreamChunk("ok", null, IsFinal: false);
+            yield return new LlmStreamChunk(null, null, IsFinal: true, new LlmUsage(), "end_turn");
+        }
+    }
+
+    /// <summary>What the provider did to the request reaches the transcript as a warning.</summary>
+    [Fact]
+    public async Task AProvidersNotice_IsSaidAsAWarning()
+    {
+        var sink = new RecordingSink();
+        var agent = new Agent(TestAgents.Setup(new SaysItsImagesWentAsPlaceholders(), new(sink, new NullJobPanel()), 5));
+
+        await agent.SendAsync("look", CancellationToken.None);
+
+        Assert.Contains("the images went as placeholders", sink.Notices);
+    }
+
     [Fact]
     public async Task ASteerIsDeliveredExactlyOnce()
     {

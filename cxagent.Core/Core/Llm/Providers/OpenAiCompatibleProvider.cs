@@ -132,6 +132,40 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
     private async Task<bool> SendImagesAsync(List<ChatMessage> messages, CancellationToken ct) =>
         !ImageCapability.AnyImages(messages) || await CanSeeImagesAsync(ct).ConfigureAwait(false) != false;
 
+    /// <summary>A sent request's response, and what the user should hear of how it went.</summary>
+    private sealed record Sent(HttpResponseMessage Response, string? Notice);
+
+    /// <summary>
+    /// Sends a request, and once more with each image's placeholder when the endpoint refused the images.
+    ///
+    /// <para>ONLY WHILE NOBODY KNOWS. An endpoint with no route that says — OpenAI's own, vLLM, LM Studio —
+    /// is sent the image, and a text-only model behind it refuses the whole request, and would refuse every
+    /// later turn the image stays in the context for. A 400, 415 or 422 to a request that carried images is
+    /// taken as that answer, kept, and the request goes again without them. A model known to see images
+    /// that refuses one has refused something else, and that is the error the user sees.</para>
+    /// </summary>
+    /// <param name="messages">The conversation, to tell whether the request carries images.</param>
+    /// <param name="body">The request body, with the images or with their placeholders.</param>
+    /// <param name="ct">Cancels the request.</param>
+    private async Task<Sent> SendAsync(List<ChatMessage> messages, Func<bool, string> body, CancellationToken ct)
+    {
+        var sendImages = await SendImagesAsync(messages, ct);
+        var withImages = body(sendImages);
+        try
+        {
+            return new(await LlmHttpRetry.SendWithRetryAsync(_client, () => BuildRequest(withImages), ProviderId, _retry, ct), null);
+        }
+        catch (LlmProviderException e) when (sendImages && ImageCapability.AnyImages(messages)
+            && KnownCanSeeImages is null && e.HttpStatus is 400 or 415 or 422)
+        {
+            _images.Learn(false);
+            var without = body(false);
+            var resp = await LlmHttpRetry.SendWithRetryAsync(_client, () => BuildRequest(without), ProviderId, _retry, ct);
+            return new(resp, $"{ProviderId}:{_model} refused the request with its images, so they went as placeholders, "
+                + "and will from now on. If this model never sees images, set images: false on the provider to skip that first try.");
+        }
+    }
+
     /// <summary>
     /// What this model offers, asked in the endpoint's own way: llama.cpp's <c>/props</c>,
     /// OpenRouter's model list, or — for OpenAI, which cannot be asked — the configuration's word.
@@ -238,11 +272,10 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
     public async Task<LlmResponse> ChatAsync(List<ChatMessage> messages,
         List<ToolDefinition>? tools, CancellationToken ct)
     {
-        var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: false,
-            cacheSystemPrompt: _cacheControl, thinking: await ThinkingFieldsAsync(ct),
-            sendImages: await SendImagesAsync(messages, ct)).ToJsonString();
-        using var resp = await LlmHttpRetry.SendWithRetryAsync(
-            _client, () => BuildRequest(body), ProviderId, _retry, ct);
+        var thinking = await ThinkingFieldsAsync(ct);
+        var sent = await SendAsync(messages, images => OpenAiWire.BuildRequestBody(_model, messages, tools, stream: false,
+            cacheSystemPrompt: _cacheControl, thinking: thinking, sendImages: images).ToJsonString(), ct);
+        using var resp = sent.Response;
         var json = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(json);
         return OpenAiWire.ParseResponse(doc.RootElement);
@@ -251,11 +284,11 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
     public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
         List<ToolDefinition>? tools, [EnumeratorCancellation] CancellationToken ct)
     {
-        var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: true,
-            cacheSystemPrompt: _cacheControl, thinking: await ThinkingFieldsAsync(ct),
-            sendImages: await SendImagesAsync(messages, ct)).ToJsonString();
-        using var resp = await LlmHttpRetry.SendWithRetryAsync(
-            _client, () => BuildRequest(body), ProviderId, _retry, ct);
+        var thinking = await ThinkingFieldsAsync(ct);
+        var sent = await SendAsync(messages, images => OpenAiWire.BuildRequestBody(_model, messages, tools, stream: true,
+            cacheSystemPrompt: _cacheControl, thinking: thinking, sendImages: images).ToJsonString(), ct);
+        using var resp = sent.Response;
+        if (sent.Notice is { } notice) yield return new LlmStreamChunk(null, null, IsFinal: false) { Notice = notice };
         using var stream = await resp.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream, Encoding.UTF8);
 

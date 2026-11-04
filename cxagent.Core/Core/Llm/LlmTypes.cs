@@ -108,7 +108,11 @@ public record LlmResponse
 /// </param>
 public record LlmStreamChunk(string? TextDelta, ToolCall? ToolCallDelta, bool IsFinal,
     LlmUsage? Usage = null, string? StopReason = null, string? ThinkingDelta = null,
-    bool ThinkingRedacted = false, ThinkingBlock? ThinkingBlock = null);
+    bool ThinkingRedacted = false, ThinkingBlock? ThinkingBlock = null)
+{
+    /// <summary>Something the provider did to this request that the user should hear of, as a warning.</summary>
+    public string? Notice { get; init; }
+}
 
 /// <summary>A terminal LLM provider failure (auth, bad request, model-not-found, or retries exhausted).</summary>
 internal sealed class LlmProviderException : Exception

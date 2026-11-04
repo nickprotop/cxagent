@@ -107,6 +107,83 @@ public class ImageCapabilityTests
         Assert.DoesNotContain("image_url", sent);
     }
 
+    /// <summary>
+    /// An endpoint with no route that says — /props answers nothing about images — refusing the image
+    /// itself, as a text-only model behind vLLM or LM Studio does with a 400.
+    /// </summary>
+    private sealed class RefusesImages : HttpMessageHandler
+    {
+        public List<string> Bodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.RequestUri!.AbsolutePath == "/props")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"chat_template":"x"}""") };
+            var body = await request.Content!.ReadAsStringAsync(ct);
+            Bodies.Add(body);
+            return body.Contains("image_url")
+                ? new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("""{"error":"image input is not supported"}""") }
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Reply, Encoding.UTF8, "application/json") };
+        }
+    }
+
+    private static OpenAiCompatibleProvider Unaskable(HttpMessageHandler handler, bool? pin = null) => new(new OpenAiProviderOptions
+    {
+        ProviderId = "local", DisplayName = "local", Model = "m", BaseUrl = "http://h/v1",
+        Client = new HttpClient(handler), Images = pin, Retry = new RetryPolicy(1, TimeSpan.Zero),
+    });
+
+    [Fact]
+    public async Task ARefusedImage_GoesAgainAsItsPlaceholder_AndTheAnswerIsKept()
+    {
+        var handler = new RefusesImages();
+        var provider = Unaskable(handler);
+
+        var reply = await provider.ChatAsync(WithAnImage(), null, CancellationToken.None);
+
+        Assert.Equal("ok", reply.Text);
+        Assert.Equal(2, handler.Bodies.Count);
+        Assert.Contains("[image not sent: this model cannot see images", handler.Bodies[1]);
+        Assert.False(provider.KnownCanSeeImages);
+    }
+
+    /// <summary>The turn says why the model was not shown the image, in the stream it is reading.</summary>
+    [Fact]
+    public async Task ARefusedImage_InAStream_SaysSo()
+    {
+        var chunks = new List<LlmStreamChunk>();
+        await foreach (var chunk in Unaskable(new StreamRefusesImages()).ChatStreamAsync(WithAnImage(), null, CancellationToken.None))
+            chunks.Add(chunk);
+
+        Assert.Contains(chunks, c => c.Notice?.Contains("images: false") == true);
+    }
+
+    /// <summary>A model said to see images that refuses one has refused something else; that is its error.</summary>
+    [Fact]
+    public async Task ARefusalFromAModelKnownToSee_IsTheError()
+    {
+        var handler = new RefusesImages();
+
+        await Assert.ThrowsAnyAsync<Exception>(() => Unaskable(handler, pin: true).ChatAsync(WithAnImage(), null, CancellationToken.None));
+        Assert.Single(handler.Bodies);
+    }
+
+    private sealed class StreamRefusesImages : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.RequestUri!.AbsolutePath == "/props")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+            var body = await request.Content!.ReadAsStringAsync(ct);
+            return body.Contains("image_url")
+                ? new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("{}") }
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"),
+                };
+        }
+    }
+
     [Fact]
     public async Task AMessageWithoutImages_NeverAsks()
     {

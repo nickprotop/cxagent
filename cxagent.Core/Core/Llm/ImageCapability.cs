@@ -6,10 +6,10 @@ namespace CxAgent.Core.Llm;
 /// A provider that can say whether its model sees images.
 ///
 /// <para>THREE ANSWERS, AND UNKNOWN IS NOT NO. Null means nobody could say — an endpoint without a route
-/// that tells, a probe that failed — and an image is then sent, so the endpoint answers for itself. A
-/// wrong guess is not one failed turn: an endpoint that cannot see refuses the whole request, and keeps
-/// refusing every later turn the image stays in the context for, until <c>images: false</c> is set on
-/// the entry. False sends each image's placeholder instead, so the conversation goes on.</para>
+/// that tells, a probe that failed — and an image is then sent, so the endpoint answers for itself. An
+/// endpoint that cannot see refuses the whole request; that refusal is taken as the answer, and the
+/// request goes again with placeholders (see the provider's send). False sends each image's placeholder
+/// from the start, so the conversation goes on without the refused try.</para>
 /// </summary>
 public interface IImageCapability
 {
@@ -76,6 +76,17 @@ internal sealed class ImageCapability(TimeSpan? timeout = null, TimeProvider? cl
             catch (Exception) { return null; }
         }
         finally { _gate.Release(); }
+    }
+
+    /// <summary>
+    /// Keeps an answer learned another way than asking: an endpoint that refused a request carrying an
+    /// image has said no as plainly as a probe would, and every later image would be refused the same.
+    /// </summary>
+    /// <param name="sees">What the endpoint showed.</param>
+    public void Learn(bool sees)
+    {
+        _known = sees;
+        Volatile.Write(ref _answered, true);
     }
 
     /// <summary>
