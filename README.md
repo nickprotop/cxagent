@@ -196,6 +196,7 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `run_shell` | Run a command, or start one in the background (`background`) and be told when it exits |
 | `http_request` | Call an HTTP endpoint |
 | `web_fetch` | Read a web page as text, markup stripped |
+| `web_search` | Find pages: Tavily with a key, DuckDuckGo without one (best effort); asks before each search |
 | `skill` | Load a skill's instructions on demand |
 | `todowrite` | Keep a task list across a long job |
 | `ask_user` | Ask the user questions: options with descriptions, several per call |

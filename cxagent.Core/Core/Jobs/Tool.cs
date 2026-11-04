@@ -37,7 +37,7 @@ public static class Tool
     /// </summary>
     public const string All = "all";
 
-    // --- The eight built-ins (BuiltinTool), by the name the MODEL sees ------------------
+    // --- The nine built-ins (BuiltinTool), by the name the MODEL sees -------------------
 
     public const string ReadFile = "read_file";
     public const string WriteFile = "write_file";
@@ -52,6 +52,9 @@ public static class Tool
     public const string RunShell = "run_shell";
     public const string HttpRequest = "http_request";
     public const string WebFetch = "web_fetch";
+
+    /// <summary>Find pages: a query in, a numbered list of results out.</summary>
+    public const string WebSearch = "web_search";
 
     // --- The ones that are not enum members, and are selectable just the same ----------
 
@@ -100,7 +103,7 @@ public static class Tool
 
     private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
     {
-        ReadFile, WriteFile, ReplaceInFile, Glob, Grep, RunShell, HttpRequest, WebFetch,
+        ReadFile, WriteFile, ReplaceInFile, Glob, Grep, RunShell, HttpRequest, WebFetch, WebSearch,
         Agent, AgentSend, TaskList, TaskStop, TaskOutput, TodoWrite, AskUser, Skill,
     };
 
@@ -121,6 +124,7 @@ public static class Tool
         public const string RunShell = "-" + Tool.RunShell;
         public const string HttpRequest = "-" + Tool.HttpRequest;
         public const string WebFetch = "-" + Tool.WebFetch;
+        public const string WebSearch = "-" + Tool.WebSearch;
         public const string Agent = "-" + Tool.Agent;
         public const string TodoWrite = "-" + Tool.TodoWrite;
         public const string AskUser = "-" + Tool.AskUser;
@@ -145,6 +149,7 @@ public static class Tool
         public const string RunShell = "+" + Tool.RunShell;
         public const string HttpRequest = "+" + Tool.HttpRequest;
         public const string WebFetch = "+" + Tool.WebFetch;
+        public const string WebSearch = "+" + Tool.WebSearch;
         public const string Agent = "+" + Tool.Agent;
         public const string TodoWrite = "+" + Tool.TodoWrite;
         public const string AskUser = "+" + Tool.AskUser;

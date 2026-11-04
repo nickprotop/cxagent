@@ -1513,6 +1513,7 @@ public sealed class Agent
                     CanAskUser = _askUser is not null && SelectionAllows(Jobs.Tool.AskUser, turnTools),
                     CanPlan = SelectionAllows(Jobs.Tool.TodoWrite, turnTools),
                     CanEdit = SelectionAllows(Jobs.Tool.ReplaceInFile, turnTools),
+                    CanSearch = SelectionAllows(Jobs.Tool.WebSearch, turnTools),
                     ModelFacingCommands = _modelFacingCommands?.Invoke() ?? [],
                 })
                 // AFTER the general prompt, so a project can override it.
@@ -3894,6 +3895,8 @@ public sealed class Agent
             // bare pattern beside a tool name reads as a second word of the name.
             "grep" => ReadArg(c, "pattern") is { } p ? $"\"{p}\"" : Relative(ReadArg(c, "path")),
             "glob" => ReadArg(c, "pattern"),
+            // QUOTED, like grep's pattern: a bare query beside the tool name reads as more of the name.
+            "web_search" => ReadArg(c, "query") is { } q ? $"\"{q}\"" : null,
             _ => null,
         };
 

@@ -226,15 +226,15 @@ public class ToolSelectionTests
 public class ToolNameConstantsTests
 {
     [Fact]
-    public void TheEightBuiltinConstants_AreTheNamesToolBindingsOffers()
+    public void TheNineBuiltinConstants_AreTheNamesToolBindingsOffers()
     {
         var offered = ToolBindings.NamesFor(Enum.GetValues<BuiltinTool>()).ToHashSet(StringComparer.Ordinal);
 
-        Assert.Equal(8, offered.Count);
+        Assert.Equal(9, offered.Count);
         foreach (var name in new[]
         {
             Tool.ReadFile, Tool.WriteFile, Tool.ReplaceInFile, Tool.Glob,
-            Tool.Grep, Tool.RunShell, Tool.HttpRequest, Tool.WebFetch,
+            Tool.Grep, Tool.RunShell, Tool.HttpRequest, Tool.WebFetch, Tool.WebSearch,
         })
             Assert.Contains(name, offered);
     }

@@ -42,7 +42,7 @@ public class CommandSelectionTests
         string[] documented =
         [
             Tool.ReadFile, Tool.WriteFile, Tool.ReplaceInFile, Tool.Glob, Tool.Grep, Tool.RunShell,
-            Tool.WebFetch, Tool.HttpRequest, Tool.TodoWrite, Tool.AskUser, Tool.Agent,
+            Tool.WebFetch, Tool.WebSearch, Tool.HttpRequest, Tool.TodoWrite, Tool.AskUser, Tool.Agent,
             Tool.AgentSend, Tool.TaskList, Tool.TaskStop, Tool.TaskOutput, Tool.Skill,
         ];
 

@@ -27,4 +27,5 @@ public enum BuiltinTool
     SearchFiles,
     ReplaceInFile,
     WebFetch,
+    WebSearch,
 }

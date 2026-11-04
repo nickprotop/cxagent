@@ -81,7 +81,8 @@ public static class ToolBindings
         string[] Params, string[] Required,
         IReadOnlyDictionary<string, object?>? Pinned = null,
         string? Description = null,
-        ToolCrossReference? SeeAlso = null);
+        ToolCrossReference? SeeAlso = null,
+        ToolCrossReference? AlsoSee = null);
 
     /// <summary>
     /// One sentence of a description that names ANOTHER tool, kept separate so it can be dropped
@@ -233,7 +234,17 @@ public static class ToolBindings
                        + "styles and navigation, leaving the readable content. Use this for "
                        + "documentation and articles.",
             SeeAlso: new(BuiltinTool.HttpRequest,
-                "Use http_request for APIs, where the raw response is what you want."))),
+                "Use http_request for APIs, where the raw response is what you want."),
+            // A SECOND POINTER, for the URL the model does not have. Without one it invents an address,
+            // which is how an agent confidently reads a page that does not exist.
+            AlsoSee: new(BuiltinTool.WebSearch, "To find a page you do not have the address of, use web_search."))),
+        // FINDS PAGES; web_fetch READS THEM. Its own executor, because it asks for itself — once per
+        // engine it reaches — rather than being gated before it runs (see WebSearchJobExecutor).
+        (BuiltinTool.WebSearch, new ToolBinding("web_search", "search", null,
+            Params: ["query", "engine", "max_results"], Required: ["query"],
+            Description: "Search the web. Returns a numbered list of results, each a title, its URL and "
+                       + "a snippet of what the page says. Every search asks the user first.",
+            SeeAlso: new(BuiltinTool.WebFetch, "Read a result in full with web_fetch."))),
     };
 
     /// <summary>
@@ -347,6 +358,8 @@ public static class ToolBindings
         // SeeAlso.
         if (spec.SeeAlso is { } also && allowed.Contains(also.Tool))
             description += " " + also.Sentence;
+        if (spec.AlsoSee is { } second && allowed.Contains(second.Tool))
+            description += " " + second.Sentence;
 
         return new ToolDefinition(spec.Name, description, JsonSerializer.SerializeToElement(jsonSchema));
     }

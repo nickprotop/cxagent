@@ -7,8 +7,6 @@ What is next. See [README](README.md) for what cxagent does and
 
 - **Checkpoints and rewind** — roll the working tree back to before a turn. Today there is no undo
   inside cxagent; git is the safety net, and an edit the model made has to be reverted by hand.
-- **Web search** — a tool that finds pages. `web_fetch` reads a URL the model already has; nothing
-  finds one it does not.
 - **Hooks** — commands run on events the user chooses: before or after a tool call, when a turn
   ends, when a session starts. Today the only way in is a plugin, which is code.
 - **Sandboxed shell** — commands run as the user, gated by permission rules but not contained; the

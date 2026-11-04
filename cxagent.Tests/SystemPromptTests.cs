@@ -849,6 +849,13 @@ public class SystemPromptTests
     }
 
     [Fact]
+    public void Prompt_mentions_search_only_when_offered()
+    {
+        Assert.Contains("web_search", SystemPrompt.Build(Context() with { CanSearch = true }), StringComparison.Ordinal);
+        Assert.DoesNotContain("web_search", SystemPrompt.Build(Context() with { CanSearch = false }), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Prompt_does_not_name_replace_in_file_when_it_is_withheld()
     {
         var p = SystemPrompt.Build(Context() with { CanEdit = false });

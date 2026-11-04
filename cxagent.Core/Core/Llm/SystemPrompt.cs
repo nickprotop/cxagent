@@ -124,6 +124,9 @@ internal readonly record struct SystemPromptContext(
     /// </summary>
     public bool CanEdit { get; init; }
 
+    /// <summary>True when this agent has <c>web_search</c> — gated like <see cref="CanEdit"/>.</summary>
+    public bool CanSearch { get; init; }
+
     /// <summary>
     /// The commands that asked to be named to the model — name and one-line summary each.
     ///
@@ -219,6 +222,14 @@ internal static class SystemPrompt
         // ONE CALL FOR SEVERAL CHANGES TO A FILE. The schema already takes a list; a local model still
         // made one call per small change — a round trip each, and a prompt each outside accept-edits —
         // until the prompt said so.
+        // FIND, THEN READ. With search available, an address the model needs is something to look
+        // up, not to recall — and recalled addresses are where invented URLs come from.
+        if (ctx.CanSearch)
+        {
+            sb.AppendLine("To find a page, search with web_search, then read the results worth reading "
+                        + "with web_fetch.");
+            sb.AppendLine();
+        }
         if (ctx.CanEdit)
         {
             sb.AppendLine("Several changes to one file go in one replace_in_file call, as a list of "

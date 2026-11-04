@@ -350,7 +350,7 @@ saying which it should have:
 That is a session that reads and searches but never writes or shells out. Absent, nothing is
 narrowed — the default is unchanged and this key is one you can ignore entirely.
 
-F8's **General** tab edits `llmAgent.tools` — the session's agent — as a base and the sixteen tools as
+F8's **General** tab edits `llmAgent.tools` — the session's agent — as a base and the seventeen tools as
 boxes; the **Agents** tab does the same for each type's `tools`.
 
 ### The terms
@@ -391,10 +391,10 @@ A shipped type may set `tools` even though it may not set `briefing`. The two ar
 thing: a briefing is text the code depends on, while a toolset is a property of **your** deployment,
 which cxagent cannot know.
 
-### The sixteen names
+### The seventeen names
 
 `read_file` · `write_file` · `replace_in_file` · `glob` · `grep` · `run_shell` · `web_fetch` ·
-`http_request` · `todowrite` · `ask_user` · `agent` · `agent_send` ·
+`web_search` · `http_request` · `todowrite` · `ask_user` · `agent` · `agent_send` ·
 `task_list` · `task_stop` · `task_output` · `skill`
 
 A name that matches nothing is not an error and not a warning: names arrive late — a skill appears,

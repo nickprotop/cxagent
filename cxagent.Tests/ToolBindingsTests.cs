@@ -351,7 +351,7 @@ public class ToolBindingsTests
         // slips in. Named, so a failure says WHICH set changed.
         Assert.Equal(
             ["read_file", "glob", "grep", "write_file", "replace_in_file",
-             "run_shell", "http_request", "web_fetch"],
+             "run_shell", "http_request", "web_fetch", "web_search"],
             tools.Select(t => t.Name));
     }
 
