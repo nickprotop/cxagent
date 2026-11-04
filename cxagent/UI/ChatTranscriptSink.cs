@@ -36,21 +36,26 @@ public sealed class ChatTranscriptSink : ISessionObserver
     /// <summary>A label given to a step before its answer message existed, for when it does.</summary>
     private readonly ConcurrentDictionary<long, string> _labels = new();
 
-    public ChatTranscriptSink(ConsoleWindowSystem system, ChatTranscriptControl chat)
-        : this(chat, (action, name) => system.EnqueueOnUIThread(action, name)) { }
+    /// <summary>Whether the terminal draws pixels, which a message's thumbnail needs. Asked when an image
+    /// arrives, not when the sink is made, which can come before the driver has found out.</summary>
+    private readonly Func<bool> _kitty;
 
-    private ChatTranscriptSink(ChatTranscriptControl chat, Action<Action, string> post)
+    public ChatTranscriptSink(ConsoleWindowSystem system, ChatTranscriptControl chat)
+        : this(chat, (action, name) => system.EnqueueOnUIThread(action, name), () => SharpConsoleUI.Helpers.TerminalCapabilities.SupportsKittyGraphics) { }
+
+    private ChatTranscriptSink(ChatTranscriptControl chat, Action<Action, string> post, Func<bool> kitty)
     {
         _chat = chat;
         _post = post;
+        _kitty = kitty;
     }
 
     /// <summary>
     /// Runs each write inline. Public with a ForTest suffix because this assembly grants no
     /// InternalsVisibleTo, and a headless test cannot drain the UI queue a real sink writes through.
     /// </summary>
-    public static ChatTranscriptSink ForTest(ChatTranscriptControl chat) =>
-        new(chat, static (action, _) => action());
+    public static ChatTranscriptSink ForTest(ChatTranscriptControl chat, bool kitty = false) =>
+        new(chat, static (action, _) => action(), () => kitty);
 
     /// <summary>
     /// Adds what the user said, and marks it with a rail down the gutter.
@@ -102,6 +107,10 @@ public sealed class ChatTranscriptSink : ISessionObserver
                 Label = ImagePreview.Line(image),
                 OnClick = _ => ImagePreview.Current?.Open(image),
             }));
+
+            // THE IMAGE UNDER ITS MESSAGE, where the terminal draws pixels; the buttons stay, because the
+            // thumbnail takes no keys or clicks and the button is what opens the whole image.
+            _chat.SetMessageAttachment(message, ImageThumbnails.For(images, _kitty()));
         }, "chat.UserImagesAttached");
     }
 

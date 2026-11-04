@@ -47,6 +47,56 @@ public class ImageRowTests
         Assert.Contains(row!.Items.OfType<ButtonControl>(), b => b.Text.Contains("Image #1 1568×882 · 42 KB"));
     }
 
+    /// <summary>A real PNG of the given size, as the session store would hold it.</summary>
+    private static AttachedImage Decodable(int width, int height, string label = "[Image #1 1568×882]")
+    {
+        using var ms = new MemoryStream();
+        new StbImageWriteSharp.ImageWriter().WritePng(new byte[width * height * 3], width, height, StbImageWriteSharp.ColorComponents.RedGreenBlue, ms);
+        return new AttachedImage(label, "h", width, height) { Bytes = ms.ToArray() };
+    }
+
+    /// <summary>
+    /// On Kitty a message shows its image under it, ten rows tall and as wide as its shape makes that,
+    /// and keeps its button: the thumbnail takes no keys or clicks, and the button opens the whole image.
+    /// </summary>
+    [Fact]
+    public void OnKitty_AMessageShowsItsImage_TenRowsTall_AndKeepsItsButton()
+    {
+        var chat = new ChatTranscriptControl();
+        var sink = ChatTranscriptSink.ForTest(chat, kitty: true);
+        sink.UserTurnAdded(new ChatMessageId(1), "look");
+
+        sink.UserImagesAttached(new ChatMessageId(1), [Decodable(1568, 882)]);
+
+        var thumbnail = chat.GetMessageAttachment(chat.MessageIds[^1]);
+        Assert.NotNull(thumbnail);
+        var size = ((SharpConsoleUI.Layout.IDOMPaintable)thumbnail!).MeasureDOM(new SharpConsoleUI.Layout.LayoutConstraints(0, 120, 0, int.MaxValue));
+        Assert.Equal(ImageThumbnails.Rows, size.Height);
+        Assert.InRange(size.Width, 34, 37);
+        Assert.NotNull(chat.NewestActionsRow());
+    }
+
+    /// <summary>Without Kitty a thumbnail is half-blocks, which show nothing useful at this size: none.</summary>
+    [Fact]
+    public void WithoutKitty_AMessageShowsNoThumbnail()
+    {
+        var chat = new ChatTranscriptControl();
+        var sink = ChatTranscriptSink.ForTest(chat, kitty: false);
+        sink.UserTurnAdded(new ChatMessageId(1), "look");
+
+        sink.UserImagesAttached(new ChatMessageId(1), [Decodable(1568, 882)]);
+
+        Assert.Null(chat.GetMessageAttachment(chat.MessageIds[^1]));
+    }
+
+    /// <summary>An image whose file was not kept has nothing to draw; the others still show.</summary>
+    [Fact]
+    public void AThumbnail_SkipsAnImageWithoutBytes()
+    {
+        Assert.Null(ImageThumbnails.For([Image() with { Bytes = null }], kitty: true));
+        Assert.NotNull(ImageThumbnails.For([Image() with { Bytes = null }, Decodable(40, 20)], kitty: true));
+    }
+
     [Fact]
     public void TheFanOut_PassesImagesOn()
     {
