@@ -212,6 +212,39 @@ public class ImageCapabilityTests
         Assert.Null(provider.KnownCanSeeImages);
     }
 
+    /// <summary>
+    /// A refusal learned while a probe is still out stays learned: the probe's answer, arriving after, is the
+    /// endpoint's word on its route and not the newer evidence of a request it refused.
+    /// </summary>
+    [Fact]
+    public async Task ALearnedAnswer_OutlivesAProbeStillOut()
+    {
+        var capability = new ImageCapability();
+        var answer = new TaskCompletionSource<bool?>();
+        var probing = capability.GetAsync(_ => answer.Task, CancellationToken.None);
+
+        capability.Learn(false);
+        answer.SetResult(true);
+        await probing;
+
+        Assert.False(capability.Known);
+    }
+
+    /// <summary>
+    /// The endpoint's own word stays its own: after a refusal is learned, asking the endpoint still says
+    /// what the endpoint says — nothing, for one with no route — so the Providers tab never shows a lesson
+    /// as the server's answer.
+    /// </summary>
+    [Fact]
+    public async Task AskingTheEndpoint_AfterARefusalWasLearned_IsStillTheEndpointsWord()
+    {
+        var provider = Unaskable(new RefusesImages());
+        await provider.ChatAsync(WithAnImage(), null, CancellationToken.None);
+        Assert.False(provider.KnownCanSeeImages);
+
+        Assert.Null(await provider.AskEndpointAsync());
+    }
+
     /// <summary>The turn says why the model was not shown the image, in the stream it is reading.</summary>
     [Fact]
     public async Task ARefusedImage_InAStream_SaysSo()

@@ -21,8 +21,9 @@ public interface IImageCapability
     Task<bool?> CanSeeImagesAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// The endpoint's own word, past any pin the configuration sets: what a settings page shows beside the
-    /// pin, so a model pinned text-only on a server that now says yes is visible as that disagreement.
+    /// The endpoint's own word, past any pin the configuration sets and anything a refused request taught:
+    /// what a settings page shows beside the pin, so a model pinned text-only on a server that now says yes
+    /// is visible as that disagreement. Null for an endpoint with no route that says.
     /// </summary>
     /// <param name="ct">Cancels the wait.</param>
     Task<bool?> AskEndpointAsync(CancellationToken ct = default);
@@ -43,13 +44,26 @@ internal sealed class ImageCapability(TimeSpan? timeout = null, TimeProvider? cl
     private DateTimeOffset _askAgainAt = DateTimeOffset.MinValue;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _answered;
-    private bool? _known;
+    private bool? _probed;
 
-    /// <summary>The answer once the endpoint gave one.</summary>
-    public bool? Known => Volatile.Read(ref _answered) ? _known : null;
+    // WHAT A REFUSED REQUEST TAUGHT, apart from what the endpoint said. Kept in a field of its own so a
+    // probe finishing after it cannot overwrite it, and so asking the endpoint still gives the endpoint's
+    // word. 0 is nothing learned, 1 sees, 2 does not.
+    private int _learned;
+
+    private bool? Learned => Volatile.Read(ref _learned) switch { 1 => true, 2 => false, _ => null };
+
+    /// <summary>The answer once known: what a refusal taught, else what the endpoint said.</summary>
+    public bool? Known => Learned ?? (Volatile.Read(ref _answered) ? _probed : null);
+
+    /// <summary>The answer, asking the endpoint once when nothing has taught it yet.</summary>
+    /// <param name="probe">Asks the endpoint; throws or times out when it cannot answer.</param>
+    /// <param name="ct">Cancels the wait.</param>
+    public async Task<bool?> GetAsync(Func<CancellationToken, Task<bool?>> probe, CancellationToken ct) =>
+        Learned ?? await AskAsync(probe, ct).ConfigureAwait(false);
 
     /// <summary>
-    /// The endpoint's answer, asking once. A probe that fails is not kept, so the next image asks again; a
+    /// The endpoint's own answer, asking once. A probe that fails is not kept, so the next image asks again; a
     /// reply that says nothing is kept as "unknown", since asking again would hear the same.
     ///
     /// <para>A TIMEOUT WAITS A MINUTE before it is asked again, as <see cref="CapabilityCache"/> does for
@@ -58,21 +72,21 @@ internal sealed class ImageCapability(TimeSpan? timeout = null, TimeProvider? cl
     /// </summary>
     /// <param name="probe">Asks the endpoint; throws or times out when it cannot answer.</param>
     /// <param name="ct">Cancels the wait.</param>
-    public async Task<bool?> GetAsync(Func<CancellationToken, Task<bool?>> probe, CancellationToken ct)
+    public async Task<bool?> AskAsync(Func<CancellationToken, Task<bool?>> probe, CancellationToken ct)
     {
-        if (Volatile.Read(ref _answered)) return _known;
+        if (Volatile.Read(ref _answered)) return _probed;
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_answered) return _known;
+            if (_answered) return _probed;
             if (_clock.GetUtcNow() < _askAgainAt) return null;
             using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct);
             bounded.CancelAfter(_timeout);
             try
             {
-                _known = await probe(bounded.Token).ConfigureAwait(false);
+                _probed = await probe(bounded.Token).ConfigureAwait(false);
                 Volatile.Write(ref _answered, true);
-                return _known;
+                return _probed;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (OperationCanceledException)
@@ -87,14 +101,10 @@ internal sealed class ImageCapability(TimeSpan? timeout = null, TimeProvider? cl
 
     /// <summary>
     /// Keeps an answer learned another way than asking: an endpoint that refused a request carrying an
-    /// image has said no as plainly as a probe would, and every later image would be refused the same.
+    /// image, and took it without, has said no as plainly as a probe would.
     /// </summary>
     /// <param name="sees">What the endpoint showed.</param>
-    public void Learn(bool sees)
-    {
-        _known = sees;
-        Volatile.Write(ref _answered, true);
-    }
+    public void Learn(bool sees) => Volatile.Write(ref _learned, sees ? 1 : 2);
 
     /// <summary>
     /// llama.cpp's <c>/props</c>: <c>modalities.vision</c>, true only when the server loaded a vision
