@@ -129,7 +129,8 @@ internal sealed class ImageTokens
     /// </summary>
     internal PromptToken? Paste(string pasted)
     {
-        if (SplitPaths(pasted) is not { Count: > 0 } paths) return null;
+        var paths = BareLines(pasted) is { } bare && bare.All(File.Exists) ? bare : SplitPaths(pasted);
+        if (paths is not { Count: > 0 }) return null;
         if (!paths.All(File.Exists) || !paths.All(LooksLikeAnImage)) return null;
         if (CannotSee() is { } cannot)
         {
@@ -363,7 +364,8 @@ internal sealed class ImageTokens
     /// <summary>
     /// The paths in a paste that is nothing but paths, or null when it is anything else.
     ///
-    /// <para>EVERY TERMINAL'S OWN FORM: GNOME Terminal and kitty quote a dropped path in single quotes;
+    /// <para>EVERY TERMINAL'S OWN FORM: GNOME Terminal, and kitty at a shell prompt, quote a dropped path
+    /// in single quotes (kitty elsewhere sends it bare, which <see cref="BareLines"/> reads);
     /// macOS Terminal and iTerm2 escape its spaces with backslashes; Windows Terminal uses double
     /// quotes; some send a <c>file://</c> URL. Several files come separated by unquoted spaces. A word
     /// that is not a path — the "look at" of "look at /tmp/a.png" — makes the whole paste text.</para>
@@ -410,6 +412,20 @@ internal sealed class ImageTokens
             else return null;
         }
         return paths;
+    }
+
+    /// <summary>
+    /// The lines of a paste that is one bare absolute path to a line, or null when it is anything else.
+    ///
+    /// <para>KITTY'S FORM OUTSIDE A SHELL PROMPT: a drop anywhere but a prompt kitty's shell integration
+    /// marked pastes each path as it is, unquoted, one to a line. "Screenshot from 2026-11-04.png" split
+    /// at its spaces is three words that are not files, so a whole line is tried as one path first, and
+    /// only a line that exists is taken that way.</para>
+    /// </summary>
+    internal static IReadOnlyList<string>? BareLines(string pasted)
+    {
+        var lines = pasted.Trim().Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        return lines.Count > 0 && lines.All(Path.IsPathFullyQualified) ? lines : null;
     }
 
     /// <summary>

@@ -103,6 +103,30 @@ public class ImageTokenTests : IDisposable
         Assert.Equal("[Image #1 10×10][Image #2 20×20]", composer.InputLabelText);
     }
 
+    /// <summary>
+    /// kitty, dropping outside a shell prompt, pastes the bare path: no quotes round a name with spaces.
+    /// </summary>
+    [Fact]
+    public void AnUnquotedPathWithSpaces_IsAnImage()
+    {
+        var composer = MainWindow.NewPrompt();
+
+        composer.Paste(Png(10, 10, "Screenshot from 2026-11-04 07-23-41.png"));
+
+        Assert.Equal("[Image #1 10×10]", composer.InputLabelText);
+    }
+
+    /// <summary>kitty's drop of several files outside a shell prompt: one bare path to a line.</summary>
+    [Fact]
+    public void BarePathsOnePerLine_AreTwoTokens_InOrder()
+    {
+        var composer = MainWindow.NewPrompt();
+
+        composer.Paste(Png(10, 10, "a one.png") + "\n" + Png(20, 20, "b two.png"));
+
+        Assert.Equal("[Image #1 10×10][Image #2 20×20]", composer.InputLabelText);
+    }
+
     [Fact]
     public void ANonImageFile_IsText()
     {
