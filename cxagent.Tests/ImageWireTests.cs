@@ -54,7 +54,7 @@ public class ImageWireTests
     {
         var user = OpenAiUser(Asked(Image()), sendImages: false)!;
 
-        Assert.Equal("what is [Image #1 4×2]?\n[image: Image #1, 4×2]", user["content"]!.GetValue<string>());
+        Assert.Equal("what is [Image #1 4×2]?\n[image not sent: this model cannot see images — Image #1, 4×2]", user["content"]!.GetValue<string>());
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public class ImageWireTests
     {
         var user = AnthropicUser(Asked(Image()), sendImages: false)!;
 
-        Assert.Equal("what is [Image #1 4×2]?\n[image: Image #1, 4×2]", user["content"]!.GetValue<string>());
+        Assert.Equal("what is [Image #1 4×2]?\n[image not sent: this model cannot see images — Image #1, 4×2]", user["content"]!.GetValue<string>());
     }
 
     [Fact]

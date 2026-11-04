@@ -72,9 +72,15 @@ public sealed record AttachedImage(string Label, string Hash, int Width, int Hei
     [System.Text.Json.Serialization.JsonIgnore]
     public int WeightChars => (int)Math.Ceiling((double)Width * Height / 750) * 4;
 
-    /// <summary>What a model that cannot see the image is sent in its place.</summary>
+    /// <summary>
+    /// What a model that cannot see the image is sent in its place.
+    ///
+    /// <para>IT SAYS THE IMAGE WAS NOT SENT, AND WHY. A bare "[image: …]" reads to a model as an image it
+    /// was shown and failed to make out, and it answers as if it had looked: "I can't read all the
+    /// details in your screenshot".</para>
+    /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
-    public string Placeholder => $"[image: {Name}, {Width}×{Height}]";
+    public string Placeholder => $"[image not sent: this model cannot see images — {Name}, {Width}×{Height}]";
 
     /// <summary>What is sent when the image's bytes are gone.</summary>
     [System.Text.Json.Serialization.JsonIgnore]

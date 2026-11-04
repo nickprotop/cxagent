@@ -103,7 +103,7 @@ public class ImageCapabilityTests
 
         var sent = Assert.Single(serves.Bodies);
         var content = System.Text.Json.Nodes.JsonNode.Parse(sent)!["messages"]![0]!["content"]!.GetValue<string>();
-        Assert.Equal("what is [Image #1 4×2]?\n[image: Image #1, 4×2]", content);
+        Assert.Equal("what is [Image #1 4×2]?\n[image not sent: this model cannot see images — Image #1, 4×2]", content);
         Assert.DoesNotContain("image_url", sent);
     }
 
