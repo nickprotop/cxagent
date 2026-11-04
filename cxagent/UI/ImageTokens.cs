@@ -37,8 +37,11 @@ internal sealed class ImageTokens
     /// </summary>
     internal const int MaxSentBytes = 5 * 1024 * 1024 / 4 * 3;
 
-    /// <summary>The quality a photo too large for PNG is sent at: past it, the bytes grow faster than what is seen.</summary>
-    private const int JpegQuality = 85;
+    /// <summary>
+    /// The qualities a photo too large for PNG is tried at, best first. 85 is where it starts: past it the
+    /// bytes grow faster than what is seen. Below 45 a screenshot's text stops being readable.
+    /// </summary>
+    private static readonly int[] JpegQualities = [85, 70, 55, 45];
 
     /// <summary>
     /// A file larger than this is not decoded. A decode runs on the UI thread at the moment of the paste,
@@ -301,7 +304,7 @@ internal sealed class ImageTokens
     }
 
     /// <summary>The same from bytes already in hand — a clipboard's image.</summary>
-    internal static Prepared? Encode(byte[] encoded, string name, out string? refusal)
+    internal static Prepared? Encode(byte[] encoded, string name, out string? refusal, int maxBytes = MaxSentBytes)
     {
         refusal = null;
         PixelBuffer pixels;
@@ -328,12 +331,23 @@ internal sealed class ImageTokens
 
         // A PHOTO PNG CANNOT HOLD IS SENT AS JPEG. A screenshot's flat colour packs small, and stays PNG,
         // whose edges keep its text sharp; a photo's noise barely compresses, and at the longest edge
-        // sent its PNG can pass what Anthropic takes. A JPEG at that size is a fraction of the limit.
-        if (ms.Length > MaxSentBytes)
+        // sent its PNG can pass what Anthropic takes. A JPEG at that size is usually a fraction of the
+        // limit; one that is not — a square of pure noise — is written lower until it fits, and an image
+        // no quality brings under it is refused here, with a reason, rather than by the provider without one.
+        if (ms.Length > maxBytes)
         {
-            ms.SetLength(0);
-            new ImageWriter().WriteJpg(rgb, width, height, ColorComponents.RedGreenBlue, ms, JpegQuality);
             mediaType = "image/jpeg";
+            foreach (var quality in JpegQualities)
+            {
+                ms.SetLength(0);
+                new ImageWriter().WriteJpg(rgb, width, height, ColorComponents.RedGreenBlue, ms, quality);
+                if (ms.Length <= maxBytes) break;
+            }
+            if (ms.Length > maxBytes)
+            {
+                refusal = $"{name} is too large to send, even as a JPEG";
+                return null;
+            }
         }
         var bytes = ms.ToArray();
         return new Prepared(bytes, Convert.ToHexStringLower(SHA256.HashData(bytes)), width, height)

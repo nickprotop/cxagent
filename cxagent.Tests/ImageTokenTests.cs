@@ -124,6 +124,54 @@ public class ImageTokenTests : IDisposable
             Assert.InRange(sent.GetPixel(x, 0).R, 120, 135);
     }
 
+    private static byte[] NoisePng(int size)
+    {
+        var noise = new byte[size * size * 3];
+        new Random(11).NextBytes(noise);
+        using var ms = new MemoryStream();
+        new ImageWriter().WritePng(noise, size, size, ColorComponents.RedGreenBlue, ms);
+        return ms.ToArray();
+    }
+
+    private static int JpegLength(byte[] png, int quality)
+    {
+        var pixels = SharpConsoleUI.Imaging.PixelBuffer.FromStream(new MemoryStream(png));
+        var rgb = new byte[pixels.Width * pixels.Height * 3];
+        for (var y = 0; y < pixels.Height; y++)
+            for (var x = 0; x < pixels.Width; x++)
+            {
+                var p = pixels.GetPixel(x, y);
+                (rgb[(y * pixels.Width + x) * 3], rgb[(y * pixels.Width + x) * 3 + 1], rgb[(y * pixels.Width + x) * 3 + 2]) = (p.R, p.G, p.B);
+            }
+        using var ms = new MemoryStream();
+        new ImageWriter().WriteJpg(rgb, pixels.Width, pixels.Height, ColorComponents.RedGreenBlue, ms, quality);
+        return (int)ms.Length;
+    }
+
+    /// <summary>A JPEG that is still over the limit at its first quality is written lower until it fits.</summary>
+    [Fact]
+    public void AJpegStillTooLarge_IsWrittenAtALowerQuality()
+    {
+        var png = NoisePng(400);
+        var limit = JpegLength(png, 85) - 1;
+
+        var prepared = ImageTokens.Encode(png, "noise.png", out var refusal, maxBytes: limit)!;
+
+        Assert.Null(refusal);
+        Assert.Equal("image/jpeg", prepared.MediaType);
+        Assert.True(prepared.Bytes.Length <= limit, $"{prepared.Bytes.Length} bytes over a {limit}-byte limit");
+    }
+
+    /// <summary>An image no quality brings under the limit is refused, and says so, rather than sent to be refused.</summary>
+    [Fact]
+    public void AnImageNoQualityFits_IsRefusedWithAReason()
+    {
+        var prepared = ImageTokens.Encode(NoisePng(400), "noise.png", out var refusal, maxBytes: 1000);
+
+        Assert.Null(prepared);
+        Assert.Contains("too large", refusal);
+    }
+
     /// <summary>A screenshot compresses well, and stays a PNG: JPEG blurs the edges of text.</summary>
     [Fact]
     public void AScreenshot_StaysAPng()
