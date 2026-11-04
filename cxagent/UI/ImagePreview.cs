@@ -121,13 +121,7 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Fill,
         };
-        panel.AddControl(new ImageControl
-        {
-            Source = PixelBuffer.FromStream(new MemoryStream(png)),
-            ScaleMode = ImageScaleMode.Fit,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            MinimumHeight = height - 4,
-        });
+        panel.AddControl(PortalImage(png, rows: height - 4));
         panel.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]{Sizes(image)} · any key closes[/]"])
         {
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -139,6 +133,14 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
             DismissOnClickOutside: true,
             OnDismiss: () => _open = null));
     }
+
+    /// <summary>The portal's image, held to <paramref name="rows"/>: the portal's inside, less the caption.</summary>
+    internal static IWindowControl PortalImage(byte[] png, int rows) =>
+        new BoundedImage(PixelBuffer.FromStream(new MemoryStream(png)), rows)
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MinimumHeight = rows,
+        };
 
     /// <summary>Any key closes the portal; it has nothing to do with a key but go away.</summary>
     public void ProcessKey(ConsoleKeyInfo key) => Close();

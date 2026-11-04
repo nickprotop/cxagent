@@ -1,8 +1,6 @@
 using CxAgent.Core.Models;
-using SharpConsoleUI.Configuration;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Imaging;
-using SharpConsoleUI.Layout;
 
 namespace CxAgent.UI;
 
@@ -25,7 +23,7 @@ internal static class ImageThumbnails
     internal static IWindowControl? For(IReadOnlyList<AttachedImage> images, bool kitty)
     {
         if (!kitty) return null;
-        var thumbnails = images.Select(Decode).OfType<Thumbnail>().ToList();
+        var thumbnails = images.Select(Decode).OfType<BoundedImage>().ToList();
         if (thumbnails.Count <= 1) return thumbnails.FirstOrDefault();
 
         var row = new HorizontalGridControl();
@@ -39,12 +37,12 @@ internal static class ImageThumbnails
         return row;
     }
 
-    private static Thumbnail? Decode(AttachedImage image)
+    private static BoundedImage? Decode(AttachedImage image)
     {
         if (image.Bytes is not { Length: > 0 } bytes) return null;
         try
         {
-            return new Thumbnail(PixelBuffer.FromStream(new MemoryStream(bytes)));
+            return new BoundedImage(PixelBuffer.FromStream(new MemoryStream(bytes)), Rows);
         }
         catch (Exception)
         {
@@ -52,30 +50,5 @@ internal static class ImageThumbnails
             // more than leaving its picture out. The button still names it.
             return null;
         }
-    }
-
-    /// <summary>
-    /// An image held to <see cref="Rows"/> rows.
-    ///
-    /// <para>THE HEIGHT IS BOUNDED HERE, NOT BY SHRINKING THE PIXELS. A transcript lays a message out with no
-    /// limit on height, and an image control asked that way takes a cell per pixel: a screenshot thirty
-    /// rows tall. A smaller source would fix the size and blur it, since Kitty is sent the pixels it is
-    /// given and scales them into the cells; bounding the measure keeps every pixel and fits them in.</para>
-    /// </summary>
-    private sealed class Thumbnail : ImageControl
-    {
-        public Thumbnail(PixelBuffer source)
-        {
-            Source = source;
-            ScaleMode = ImageScaleMode.Fit;
-        }
-
-        /// <summary>How wide the thumbnail draws: its rows, at the image's shape, in cells two pixels tall.</summary>
-        public int Columns => Source is { } s
-            ? (int)Math.Ceiling((double)Rows * ImagingDefaults.PixelsPerCell * s.Width / s.Height)
-            : 0;
-
-        public override LayoutSize MeasureDOM(LayoutConstraints constraints) =>
-            base.MeasureDOM(constraints with { MaxHeight = Math.Min(constraints.MaxHeight, Rows) });
     }
 }

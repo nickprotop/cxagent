@@ -89,6 +89,21 @@ public class ImageRowTests
         Assert.Null(chat.GetMessageAttachment(chat.MessageIds[^1]));
     }
 
+    /// <summary>
+    /// The portal's image fits the portal's height and leaves the caption's row. Inside a scroll panel the
+    /// height is unbounded, and an image fitted to the width alone runs taller than the portal: a 16:9
+    /// screenshot at 141 columns is 40 rows, and the caption scrolls out of sight.
+    /// </summary>
+    [Fact]
+    public void ThePortalsImage_FitsItsRows_AndLeavesTheCaptionInSight()
+    {
+        var image = ImagePreview.PortalImage(Decodable(1568, 882).Bytes!, rows: 36);
+
+        var size = ((SharpConsoleUI.Layout.IDOMPaintable)image).MeasureDOM(new SharpConsoleUI.Layout.LayoutConstraints(0, 141, 0, int.MaxValue));
+
+        Assert.True(size.Height <= 36, $"the image took {size.Height} rows of 36");
+    }
+
     /// <summary>An image whose file was not kept has nothing to draw; the others still show.</summary>
     [Fact]
     public void AThumbnail_SkipsAnImageWithoutBytes()
