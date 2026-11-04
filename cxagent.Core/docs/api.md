@@ -596,6 +596,7 @@ var resolution = new AgentConfig
 | `Headers` · `CacheControl` | extra headers, and prompt caching where the provider bills for it |
 | `Thinking` · `ThinkingDisplay` | the level a new session starts at, and whether a Claude model's thinking is summarized or omitted — see `/think` |
 | `Reasoning` | marks an `api.openai.com` model as one that reasons, so it offers `minimal` to `high` |
+| `Images` | whether the model sees images. Null asks the endpoint where it can say; `false` sends each image's placeholder from the start |
 
 **The same settings, the same model.** A `ModelConfig` builds its provider the way a `config.json` entry does, so every key the file documents behaves identically here.
 
