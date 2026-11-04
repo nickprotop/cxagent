@@ -52,13 +52,13 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
 
     /// <summary>The one line an image's button carries: <c>▣ Image #1 1568×882 · 42 KB</c>.</summary>
     internal static string Line(AttachedImage image) => string.Create(CultureInfo.InvariantCulture,
-        $"▣ {image.Label.Trim('[', ']')} · {Math.Max(1, (image.Png?.Length ?? 0) / 1024)} KB");
+        $"▣ {image.Label.Trim('[', ']')} · {Math.Max(1, (image.Bytes?.Length ?? 0) / 1024)} KB");
 
     /// <summary>The sizes under the portal: <c>1920×1080 → 1568×882, 42 KB</c>.</summary>
     internal static string Sizes(AttachedImage image)
     {
         var sent = $"{image.Width}×{image.Height}";
-        var kb = Math.Max(1, (image.Png?.Length ?? 0) / 1024);
+        var kb = Math.Max(1, (image.Bytes?.Length ?? 0) / 1024);
         return image.OriginalWidth > 0 && (image.OriginalWidth, image.OriginalHeight) != (image.Width, image.Height)
             ? string.Create(CultureInfo.InvariantCulture, $"{image.OriginalWidth}×{image.OriginalHeight} → {sent}, {kb} KB")
             : string.Create(CultureInfo.InvariantCulture, $"{sent}, {kb} KB");
@@ -67,7 +67,7 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
     /// <summary>Shows <paramref name="image"/> the way this terminal can.</summary>
     public void Open(AttachedImage image)
     {
-        if (image.Png is not { Length: > 0 } png)
+        if (image.Bytes is not { Length: > 0 } png)
         {
             system.ToastService.Show($"{image.Unavailable}", NotificationSeverity.Warning);
             return;

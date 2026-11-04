@@ -68,7 +68,7 @@ public class ImageCapabilityTests
     private static List<ChatMessage> WithAnImage() =>
     [
         new() { Role = "user", Content = "what is [Image #1 4×2]?",
-            Images = [new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1, 2, 3] }] },
+            Images = [new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Bytes = [1, 2, 3] }] },
     ];
 
     [Fact]

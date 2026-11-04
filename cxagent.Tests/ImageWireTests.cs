@@ -14,7 +14,7 @@ public class ImageWireTests
     private static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47];
 
     private static AttachedImage Image(byte[]? png = null) =>
-        new("[Image #1 4×2]", "h", 4, 2) { Png = png ?? Png };
+        new("[Image #1 4×2]", "h", 4, 2) { Bytes = png ?? Png };
 
     private static List<ChatMessage> Asked(AttachedImage image) =>
         [new ChatMessage { Role = "user", Content = "what is [Image #1 4×2]?", Images = [image] }];
@@ -68,7 +68,7 @@ public class ImageWireTests
     [Fact]
     public void OpenAi_GoneBytes_SendTheUnavailableNote()
     {
-        var user = OpenAiUser(Asked(Image() with { Png = null }))!;
+        var user = OpenAiUser(Asked(Image() with { Bytes = null }))!;
 
         Assert.Equal("what is [Image #1 4×2]?\n[image unavailable: Image #1]", user["content"]!.GetValue<string>());
     }
@@ -76,7 +76,7 @@ public class ImageWireTests
     [Fact]
     public void Anthropic_GoneBytes_SendTheUnavailableNote()
     {
-        var user = AnthropicUser(Asked(Image() with { Png = null }))!;
+        var user = AnthropicUser(Asked(Image() with { Bytes = null }))!;
 
         Assert.Equal("what is [Image #1 4×2]?\n[image unavailable: Image #1]", user["content"]!.GetValue<string>());
     }

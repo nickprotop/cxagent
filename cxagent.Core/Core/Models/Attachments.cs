@@ -34,7 +34,7 @@ public sealed record Attachments(IReadOnlyList<PastedText> Pastes, IReadOnlyList
 /// <para>THE BYTES LIVE IN MEMORY, NOT IN THE SAVED CONTEXT. <c>context.json</c> is rewritten whole on
 /// every save, so a screenshot inline in it would be written again every turn. The session store writes
 /// each image once, as <c>images/&lt;Hash&gt;.png</c> in the folder of the agent saving it, and reads it
-/// back into <see cref="Png"/> on load. The wire builders read <see cref="Png"/> and nothing else, which
+/// back into <see cref="Bytes"/> on load. The wire builders read <see cref="Bytes"/> and nothing else, which
 /// keeps them free of I/O.</para>
 /// </summary>
 /// <param name="Label">The token's label, which the message text carries in the image's place —
@@ -53,7 +53,7 @@ public sealed record AttachedImage(string Label, string Hash, int Width, int Hei
 
     /// <summary>The PNG sent, or null when its file could not be read back.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
-    public byte[]? Png { get; init; }
+    public byte[]? Bytes { get; init; }
 
     /// <summary>
     /// What the image weighs in the context, as characters of text would.
@@ -96,8 +96,8 @@ public sealed record AttachedImage(string Label, string Hash, int Width, int Hei
     /// <param name="sendImages">Whether the model sees images.</param>
     public static string WithNotes(string text, IReadOnlyList<AttachedImage> images, bool sendImages)
     {
-        var notes = images.Where(i => !sendImages || i.Png is null)
-            .Select(i => i.Png is null ? i.Unavailable : i.Placeholder).ToList();
+        var notes = images.Where(i => !sendImages || i.Bytes is null)
+            .Select(i => i.Bytes is null ? i.Unavailable : i.Placeholder).ToList();
         return notes.Count == 0 ? text : text + "\n" + string.Join("\n", notes);
     }
 

@@ -11,7 +11,7 @@ namespace CxAgent.Tests;
 /// </summary>
 public class ImageCompressionTests
 {
-    private static AttachedImage Image(string label) => new(label, "h", 1568, 882) { Png = new byte[2048] };
+    private static AttachedImage Image(string label) => new(label, "h", 1568, 882) { Bytes = new byte[2048] };
 
     private static AgentContext Conversation()
     {

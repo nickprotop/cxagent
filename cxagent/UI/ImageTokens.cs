@@ -201,7 +201,7 @@ internal sealed class ImageTokens
         var token = new PromptToken(label, label, Tag);
         Images.AddOrUpdate(token, new AttachedImage(label, prepared.Hash, prepared.Width, prepared.Height)
         {
-            Png = prepared.Png,
+            Bytes = prepared.Bytes,
             OriginalWidth = prepared.Original.Width,
             OriginalHeight = prepared.Original.Height,
         });
@@ -237,7 +237,7 @@ internal sealed class ImageTokens
     }
 
     /// <summary>An image ready to send: its PNG, its hash, and the size it is sent at.</summary>
-    internal sealed record Prepared(byte[] Png, string Hash, int Width, int Height)
+    internal sealed record Prepared(byte[] Bytes, string Hash, int Width, int Height)
     {
         /// <summary>The size of what the user gave, before it was shrunk.</summary>
         public (int Width, int Height) Original { get; init; }

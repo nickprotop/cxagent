@@ -120,7 +120,7 @@ public class CustomCommandSessionTests : IDisposable
         var release = new TaskCompletionSource();
         var w = Open(new HeldGate(asked, release));
         using var _ = w.Manager;
-        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1] };
+        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Bytes = [1] };
 
         var started = Assert.IsType<Session.SubmitOutcome.Started>(w.Session.Submit("/quiet"));
         await asked.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -247,7 +247,7 @@ public class CustomCommandSessionTests : IDisposable
         using var _ = w.Manager;
         var started = Assert.IsType<Session.SubmitOutcome.Started>(w.Session.Submit("/slow"));
         await asked.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1] };
+        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Bytes = [1] };
         w.Session.Submit("see [Image #1 4×2]", attachments: new Attachments([], [image]));
 
         Assert.True(w.Session.CancelTurn());
@@ -269,8 +269,8 @@ public class CustomCommandSessionTests : IDisposable
         using var _ = w.Manager;
         var started = Assert.IsType<Session.SubmitOutcome.Started>(w.Session.Submit("/slow"));
         await asked.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var one = new AttachedImage("[Image #1 4×2]", "a", 4, 2) { Png = [1] };
-        var two = new AttachedImage("[Image #2 4×2]", "b", 4, 2) { Png = [2] };
+        var one = new AttachedImage("[Image #1 4×2]", "a", 4, 2) { Bytes = [1] };
+        var two = new AttachedImage("[Image #2 4×2]", "b", 4, 2) { Bytes = [2] };
 
         w.Session.Submit("see [Image #1 4×2]", attachments: new Attachments([], [one]));
         w.Session.Submit("and [Image #2 4×2]", attachments: new Attachments([], [two]));

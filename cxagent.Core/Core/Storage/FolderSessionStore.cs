@@ -85,7 +85,7 @@ public sealed class FolderSessionStore(AppPaths paths)
     {
         foreach (var image in context.SelectMany(m => m.Images ?? []))
         {
-            if (image.Png is not { Length: > 0 } png) continue;
+            if (image.Bytes is not { Length: > 0 } png) continue;
             var path = Path.Combine(folder.ImagesDir, image.Hash + ".png");
             if (File.Exists(path)) continue;
             Directory.CreateDirectory(folder.ImagesDir);
@@ -108,7 +108,7 @@ public sealed class FolderSessionStore(AppPaths paths)
             {
                 Images = [.. images.Select(image => image with
                 {
-                    Png = ReadBytesOrNull(Path.Combine(folder.ImagesDir, image.Hash + ".png")),
+                    Bytes = ReadBytesOrNull(Path.Combine(folder.ImagesDir, image.Hash + ".png")),
                 })],
             };
         }

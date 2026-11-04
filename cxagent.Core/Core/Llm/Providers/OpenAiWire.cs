@@ -23,14 +23,14 @@ internal static class OpenAiWire
     internal static JsonNode WithImages(string text, IReadOnlyList<AttachedImage> images, bool sendImages)
     {
         var withNotes = AttachedImage.WithNotes(text, images, sendImages);
-        if (!sendImages || images.All(i => i.Png is null)) return JsonValue.Create(withNotes)!;
+        if (!sendImages || images.All(i => i.Bytes is null)) return JsonValue.Create(withNotes)!;
 
         var parts = new JsonArray { new JsonObject { ["type"] = "text", ["text"] = withNotes } };
-        foreach (var image in images.Where(i => i.Png is not null))
+        foreach (var image in images.Where(i => i.Bytes is not null))
             parts.Add(new JsonObject
             {
                 ["type"] = "image_url",
-                ["image_url"] = new JsonObject { ["url"] = "data:image/png;base64," + Convert.ToBase64String(image.Png!) },
+                ["image_url"] = new JsonObject { ["url"] = "data:image/png;base64," + Convert.ToBase64String(image.Bytes!) },
             });
         return parts;
     }

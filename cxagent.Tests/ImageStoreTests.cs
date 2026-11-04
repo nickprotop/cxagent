@@ -29,7 +29,7 @@ public class ImageStoreTests : IDisposable
     }
 
     internal static AttachedImage Image(byte[] png, string label = "[Image #1 4×2]") =>
-        new(label, Convert.ToHexStringLower(SHA256.HashData(png)), 4, 2) { Png = png };
+        new(label, Convert.ToHexStringLower(SHA256.HashData(png)), 4, 2) { Bytes = png };
 
     private static ChatMessage Said(string text, params AttachedImage[] images) =>
         new() { Role = "user", Content = text, Images = images };
@@ -76,8 +76,8 @@ public class ImageStoreTests : IDisposable
 
         var loaded = _store.LoadById("agent-a")!.Context[0].Images!.Single();
 
-        Assert.Equal(image with { Png = null }, loaded with { Png = null });
-        Assert.Equal([5, 5, 5], loaded.Png);
+        Assert.Equal(image with { Bytes = null }, loaded with { Bytes = null });
+        Assert.Equal([5, 5, 5], loaded.Bytes);
     }
 
     [Fact]
@@ -89,7 +89,7 @@ public class ImageStoreTests : IDisposable
 
         var loaded = _store.LoadById("agent-a")!.Context[0].Images!.Single();
 
-        Assert.Null(loaded.Png);
+        Assert.Null(loaded.Bytes);
     }
 
     /// <summary>The bytes are in their own file, never a second copy inside the context.</summary>

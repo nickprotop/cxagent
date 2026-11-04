@@ -113,7 +113,7 @@ public class AsideRunnerTests : IDisposable
         var mock = new MockLlmProvider();
         mock.EnqueueResponse(Says("a cat"));
         var runner = Runner(mock, new Seen());
-        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1, 2, 3] };
+        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Bytes = [1, 2, 3] };
 
         await runner.Ask("what is [Image #1 4×2]?", attachments: new Attachments([], [image]))!;
 

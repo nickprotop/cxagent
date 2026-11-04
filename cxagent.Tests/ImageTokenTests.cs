@@ -80,7 +80,7 @@ public class ImageTokenTests : IDisposable
         Assert.Equal(ImageTokens.Tag, token.Tag);
         var image = ImageTokens.Of(token)!;
         Assert.Equal((1568, 1045), (image.Width, image.Height));
-        Assert.NotNull(image.Png);
+        Assert.NotNull(image.Bytes);
     }
 
     [Fact]

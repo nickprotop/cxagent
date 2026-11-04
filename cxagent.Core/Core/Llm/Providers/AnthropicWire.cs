@@ -178,10 +178,10 @@ internal static class AnthropicWire
     private static JsonNode WithImages(string text, IReadOnlyList<AttachedImage> images, bool sendImages)
     {
         var withNotes = AttachedImage.WithNotes(text, images, sendImages);
-        if (!sendImages || images.All(i => i.Png is null)) return JsonValue.Create(withNotes)!;
+        if (!sendImages || images.All(i => i.Bytes is null)) return JsonValue.Create(withNotes)!;
 
         var blocks = new JsonArray();
-        foreach (var image in images.Where(i => i.Png is not null))
+        foreach (var image in images.Where(i => i.Bytes is not null))
             blocks.Add(new JsonObject
             {
                 ["type"] = "image",
@@ -189,7 +189,7 @@ internal static class AnthropicWire
                 {
                     ["type"] = "base64",
                     ["media_type"] = "image/png",
-                    ["data"] = Convert.ToBase64String(image.Png!),
+                    ["data"] = Convert.ToBase64String(image.Bytes!),
                 },
             });
         blocks.Add(new JsonObject { ["type"] = "text", ["text"] = withNotes });

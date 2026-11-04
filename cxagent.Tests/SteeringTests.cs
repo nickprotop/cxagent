@@ -127,7 +127,7 @@ public class SteeringTests
     {
         var provider = ProviderThatCallsATool();
         var agent = NewAgent(provider, new RecordingSink());
-        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1, 2, 3] };
+        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Bytes = [1, 2, 3] };
         Assert.True(agent.Mailbox.TryEnqueue("and this [Image #1 4×2]", out _, from: Incoming.You, images: [image]));
 
         await agent.SendAsync("do the thing", CancellationToken.None);
@@ -142,7 +142,7 @@ public class SteeringTests
     {
         var provider = ProviderThatCallsATool();
         var agent = NewAgent(provider, new RecordingSink());
-        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Png = [1, 2, 3] };
+        var image = new AttachedImage("[Image #1 4×2]", "h", 4, 2) { Bytes = [1, 2, 3] };
         SteerDelivery? pending = new("look at [Image #1 4×2]", "look at [Image #1 4×2]", new Attachments([], [image]));
         agent.TakePendingSteer = () => { var p = pending; pending = null; return p; };
 

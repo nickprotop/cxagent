@@ -17,7 +17,7 @@ namespace CxAgent.Tests;
 public class ImageRowTests
 {
     private static AttachedImage Image(int bytes = 43_008) =>
-        new("[Image #1 1568×882]", "abc", 1568, 882) { Png = new byte[bytes], OriginalWidth = 1920, OriginalHeight = 1080 };
+        new("[Image #1 1568×882]", "abc", 1568, 882) { Bytes = new byte[bytes], OriginalWidth = 1920, OriginalHeight = 1080 };
 
     [Fact]
     public void TheButton_NamesTheImageItsSizeAndWeight()
@@ -146,7 +146,7 @@ public class ImageRowTests
         var launched = false;
         var preview = new ImagePreview(System()) { Kitty = () => true, Launch = _ => launched = true };
 
-        preview.Open(Image() with { Png = png.ToArray() });
+        preview.Open(Image() with { Bytes = png.ToArray() });
         Assert.True(preview.IsOpen);
         Assert.False(launched);
 
