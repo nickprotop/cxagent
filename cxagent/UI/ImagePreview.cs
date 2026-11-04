@@ -118,7 +118,7 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
     internal void OpenInViewer(AttachedImage image)
     {
         if (image.Bytes is not { Length: > 0 } png) return;
-        var file = Path.Combine(ViewerFolder(), image.FileName);
+        var file = Path.Combine(ViewerFolder, image.FileName);
         try
         {
             // WRITTEN EVERY TIME, never trusted because it is there: whatever sits at this path — left by
@@ -133,11 +133,14 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
         }
     }
 
+    /// <summary>Where the viewer's copies go; a seam so a test's copies never land in the user's own folder.</summary>
+    internal string ViewerFolder { get; init; } = DefaultViewerFolder();
+
     /// <summary>
-    /// Where the viewer's copies go: <c>$XDG_RUNTIME_DIR/cxagent-images</c>, which only this user can read,
-    /// else a folder in the temp directory named for the user.
+    /// The app's folder for the viewer's copies: <c>$XDG_RUNTIME_DIR/cxagent-images</c>, which only this user
+    /// can read, else a folder in the temp directory named for the user.
     /// </summary>
-    private static string ViewerFolder() =>
+    internal static string DefaultViewerFolder() =>
         Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } runtime
             ? Path.Combine(runtime, "cxagent-images")
             : Path.Combine(Path.GetTempPath(), "cxagent-images-" + Environment.UserName);

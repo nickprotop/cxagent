@@ -11,11 +11,19 @@ using ChatMessageId = CxAgent.Core.Sessions.ChatMessageId;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// A message's images show as one button each on it, and a button opens the image the way the terminal
-/// can: a portal where it draws pixels, the system viewer where it does not.
+/// A message's images show as one button each on it, a thumbnail on Kitty, and a button opens the image in
+/// a window of its own, with the system viewer a button away from there.
 /// </summary>
-public class ImageRowTests
+public class ImageRowTests : IDisposable
 {
+    /// <summary>Where these tests' viewer copies go: never the user's own folder, which a run would litter.</summary>
+    private readonly string _viewer = Path.Combine(Path.GetTempPath(), "imgrow-" + Guid.NewGuid().ToString("N"));
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_viewer)) Directory.Delete(_viewer, recursive: true);
+    }
+
     private static AttachedImage Image(int bytes = 43_008) =>
         new("[Image #1 1568×882]", "abc", 1568, 882) { Bytes = new byte[bytes], OriginalWidth = 1920, OriginalHeight = 1080 };
 
@@ -168,7 +176,7 @@ public class ImageRowTests
     {
         string? launched = null;
         var system = System();
-        var preview = new ImagePreview(system) { Launch = f => { launched = f; return true; } };
+        var preview = new ImagePreview(system) { ViewerFolder = _viewer, Launch = f => { launched = f; return true; } };
         var image = Decodable(40, 20);
         preview.Open(image);
 
@@ -200,7 +208,7 @@ public class ImageRowTests
     public void TheViewerCopy_IsWrittenEveryTime()
     {
         string? launched = null;
-        var preview = new ImagePreview(System()) { Launch = f => { launched = f; return true; } };
+        var preview = new ImagePreview(System()) { ViewerFolder = _viewer, Launch = f => { launched = f; return true; } };
         var image = Image(bytes: 10) with { Hash = "stale" + Guid.NewGuid().ToString("N") };
         preview.OpenInViewer(image);
         File.WriteAllBytes(launched!, [9, 9, 9]);
@@ -208,7 +216,28 @@ public class ImageRowTests
         preview.OpenInViewer(image);
 
         Assert.Equal(new byte[10], File.ReadAllBytes(launched!));
-        Assert.DoesNotContain(Path.Combine(Path.GetTempPath(), "cxagent-images") + Path.DirectorySeparatorChar, launched);
+    }
+
+    /// <summary>The copies go where the preview is told, so a test's never reach the user's own folder.</summary>
+    [Fact]
+    public void TheViewerCopy_GoesInTheFolderItIsGiven()
+    {
+        string? launched = null;
+        var preview = new ImagePreview(System()) { ViewerFolder = _viewer, Launch = f => { launched = f; return true; } };
+
+        preview.OpenInViewer(Image(bytes: 10));
+
+        Assert.Equal(_viewer, Path.GetDirectoryName(launched));
+    }
+
+    /// <summary>
+    /// The app's own folder is this user's: the system temp folder is everyone's, and a copy there could be
+    /// swapped for another picture by anyone who can write to it.
+    /// </summary>
+    [Fact]
+    public void TheDefaultViewerFolder_IsThisUsersOwn()
+    {
+        Assert.NotEqual(Path.Combine(Path.GetTempPath(), "cxagent-images"), ImagePreview.DefaultViewerFolder());
     }
 
     /// <summary>
@@ -218,7 +247,7 @@ public class ImageRowTests
     public void ALaunchThatOpenedNothing_LeavesTheCopy()
     {
         string? tried = null;
-        var preview = new ImagePreview(System()) { Launch = f => { tried = f; return false; } };
+        var preview = new ImagePreview(System()) { ViewerFolder = _viewer, Launch = f => { tried = f; return false; } };
 
         preview.OpenInViewer(Image(bytes: 10));
 
