@@ -231,26 +231,31 @@ public class ImageRowTests : IDisposable
     }
 
     /// <summary>
-    /// The app's own folder is this user's: the system temp folder is everyone's, and a copy there could be
-    /// swapped for another picture by anyone who can write to it.
+    /// The app's own folder is this user's: the runtime folder, which only they can read, where there is
+    /// one; else a folder in the temp directory named for them, since the temp directory is everyone's.
     /// </summary>
-    [Fact]
-    public void TheDefaultViewerFolder_IsThisUsersOwn()
+    [Theory]
+    [InlineData("/run/user/1000", true)]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    public void TheDefaultViewerFolder_IsThisUsersOwn(string? runtime, bool inRuntime)
     {
-        Assert.NotEqual(Path.Combine(Path.GetTempPath(), "cxagent-images"), ImagePreview.DefaultViewerFolder());
+        var folder = ImagePreview.DefaultViewerFolder(name => name == "XDG_RUNTIME_DIR" ? runtime : null);
+
+        Assert.Equal(inRuntime
+            ? Path.Combine("/run/user/1000", "cxagent-images")
+            : Path.Combine(Path.GetTempPath(), "cxagent-images-" + Environment.UserName), folder);
     }
 
-    /// <summary>
-    /// A launcher that opened nothing — no desktop, over SSH — leaves the copy where the toast says.
-    /// </summary>
+    /// <summary>An image that does not decode — its file changed on disk — is said, and opens no window.</summary>
     [Fact]
-    public void ALaunchThatOpenedNothing_LeavesTheCopy()
+    public void AnImageThatDoesNotDecode_IsSaid_AndOpensNoWindow()
     {
-        string? tried = null;
-        var preview = new ImagePreview(System()) { ViewerFolder = _viewer, Launch = f => { tried = f; return false; } };
+        var system = System();
+        var preview = new ImagePreview(system);
 
-        preview.OpenInViewer(Image(bytes: 10));
+        preview.Open(Image(bytes: 10));
 
-        Assert.Equal(new byte[10], File.ReadAllBytes(tried!));
+        Assert.DoesNotContain(system.Windows.Values, w => w.Title.Contains("Image #1"));
     }
 }

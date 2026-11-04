@@ -62,9 +62,18 @@ public sealed record AttachedImage(string Label, string Hash, int Width, int Hei
     /// </summary>
     public string MediaType { get; init; } = "image/png";
 
-    /// <summary>The image's file in a session's <c>images</c> folder: its hash, and the extension of its type.</summary>
+    /// <summary>
+    /// The image's file in a session's <c>images</c> folder: its hash, and the extension of its type. A type
+    /// with no extension here is written as <c>.png</c>, which is what a viewer opening it will most likely read.
+    /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
-    public string FileName => Hash + (MediaType == "image/jpeg" ? ".jpg" : ".png");
+    public string FileName => Hash + MediaType switch
+    {
+        "image/jpeg" => ".jpg",
+        "image/gif" => ".gif",
+        "image/webp" => ".webp",
+        _ => ".png",
+    };
 
     /// <summary>
     /// What the image weighs in the context, as characters of text would.

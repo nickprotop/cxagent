@@ -55,6 +55,18 @@ public class ImageStoreTests : IDisposable
         Assert.Equal([0xFF, 0xD8, 0xFF], loaded.Bytes);
     }
 
+    /// <summary>An image the SDK was handed as GIF or WebP keeps its own extension, on disk and in an export.</summary>
+    [Theory]
+    [InlineData("image/png", ".png")]
+    [InlineData("image/jpeg", ".jpg")]
+    [InlineData("image/gif", ".gif")]
+    [InlineData("image/webp", ".webp")]
+    [InlineData("image/x-unknown", ".png")]
+    public void FileName_TakesTheExtensionOfTheType(string mediaType, string extension)
+    {
+        Assert.Equal("h" + extension, new AttachedImage("[Image #1 4×2]", "h", 4, 2) { MediaType = mediaType }.FileName);
+    }
+
     [Fact]
     public void SaveTurn_WritesEachImageOnce_ByHash()
     {

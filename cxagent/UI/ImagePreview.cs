@@ -64,6 +64,19 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
             return;
         }
 
+        // DECODED BEFORE ANY WINDOW, so a picture that will not decode — its file changed on disk since it
+        // was pasted — is said where the user clicked, not thrown from inside the click.
+        PixelBuffer pixels;
+        try
+        {
+            pixels = PixelBuffer.FromStream(new MemoryStream(bytes));
+        }
+        catch (Exception e)
+        {
+            system.ToastService.Show($"can't show {image.Label.Trim('[', ']')}: {e.Message}", NotificationSeverity.Warning);
+            return;
+        }
+
         Close();
         var desktop = system.DesktopDimensions;
         var window = new WindowBuilder(system)
@@ -85,7 +98,7 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
 
         window.AddControl(new ImageControl
         {
-            Source = PixelBuffer.FromStream(new MemoryStream(bytes)),
+            Source = pixels,
             ScaleMode = ImageScaleMode.Fit,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Fill,
@@ -140,8 +153,9 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
     /// The app's folder for the viewer's copies: <c>$XDG_RUNTIME_DIR/cxagent-images</c>, which only this user
     /// can read, else a folder in the temp directory named for the user.
     /// </summary>
-    internal static string DefaultViewerFolder() =>
-        Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } runtime
+    /// <param name="env">Reads an environment variable; the process's own unless a test says.</param>
+    internal static string DefaultViewerFolder(Func<string, string?>? env = null) =>
+        (env ?? Environment.GetEnvironmentVariable)("XDG_RUNTIME_DIR") is { Length: > 0 } runtime
             ? Path.Combine(runtime, "cxagent-images")
             : Path.Combine(Path.GetTempPath(), "cxagent-images-" + Environment.UserName);
 }
