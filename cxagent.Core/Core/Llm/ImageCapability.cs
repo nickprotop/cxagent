@@ -19,6 +19,13 @@ public interface IImageCapability
     /// <summary>The configuration's word, else the endpoint's, asked once and kept once it answers.</summary>
     /// <param name="ct">Cancels the wait.</param>
     Task<bool?> CanSeeImagesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// The endpoint's own word, past any pin the configuration sets: what a settings page shows beside the
+    /// pin, so a model pinned text-only on a server that now says yes is visible as that disagreement.
+    /// </summary>
+    /// <param name="ct">Cancels the wait.</param>
+    Task<bool?> AskEndpointAsync(CancellationToken ct = default);
 }
 
 /// <summary>

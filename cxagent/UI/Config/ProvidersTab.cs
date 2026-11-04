@@ -517,42 +517,42 @@ public sealed class ProvidersTab
     /// </summary>
     private IWindowControl ImagesEditor(InstanceDraft draft)
     {
+        var dropdown = ImagesDropdown(draft, Changed);
+
+        // THE SERVER IS ASKED PINNED OR NOT. The first item says what asking gives, and beside a pin that
+        // is the one place a model pinned text-only on a server that now says yes shows the disagreement.
+        _ = Task.Run(async () =>
+            _host.Apply.Current.Value.Providers?.TryGet(draft.Name, out var provider) == true
+                && provider is IImageCapability capability
+                ? await capability.AskEndpointAsync()
+                : null
+        ).ContinueWith(t => _host.System.EnqueueOnUIThread(
+            () => ShowServerAnswer(dropdown, t.IsCompletedSuccessfully ? t.Result : null), "providersTab.Images"),
+            TaskScheduler.Default);
+
+        return dropdown;
+    }
+
+    /// <summary>The Images row, on the draft's setting, its first item waiting for the server's answer.</summary>
+    /// <param name="draft">The entry being edited; a choice writes its <see cref="InstanceDraft.Images"/>.</param>
+    /// <param name="changed">Told after each choice.</param>
+    internal static DropdownControl ImagesDropdown(InstanceDraft draft, Action changed)
+    {
         var dropdown = new DropdownControl("", [ImagesAsk(null, asking: true), "Yes", "No"]) { HorizontalAlignment = HorizontalAlignment.Left };
         dropdown.SelectedIndex = ImagesIndex(draft.Images);
         dropdown.SelectedIndexChanged += (_, index) =>
         {
             draft.Images = ImagesChoice(index);
-            Changed();
+            changed();
         };
-
-        // A SAVED PIN IS NOT ASKED PAST: the running provider answers with the pin, and the item exists to
-        // say what asking gives. Unpinned, it asks the same probe a request makes.
-        if (draft.Original.Images is not null)
-        {
-            dropdown.ClearItems();
-            foreach (var item in new[] { "Ask the server", "Yes", "No" }) dropdown.AddItem(item);
-            dropdown.SelectedIndex = ImagesIndex(draft.Images);
-            return dropdown;
-        }
-
-        _ = Task.Run(async () =>
-            _host.Apply.Current.Value.Providers?.TryGet(draft.Name, out var provider) == true
-                && provider is IImageCapability capability
-                ? await capability.CanSeeImagesAsync()
-                : null
-        ).ContinueWith(t => _host.System.EnqueueOnUIThread(() =>
-        {
-            var said = t.IsCompletedSuccessfully ? t.Result : null;
-            var selected = dropdown.SelectedIndex;
-            dropdown.ClearItems();
-            dropdown.AddItem(ImagesAsk(said));
-            dropdown.AddItem("Yes");
-            dropdown.AddItem("No");
-            dropdown.SelectedIndex = selected;
-        }, "providersTab.Images"), TaskScheduler.Default);
-
         return dropdown;
     }
+
+    /// <summary>Names the first item for what the server said, keeping the choice.</summary>
+    internal static void ShowServerAnswer(DropdownControl dropdown, bool? said) =>
+        // THE LIST SWAPPED WHOLE, at the same length, keeps the selection and raises nothing; cleared and
+        // refilled, it passes through no selection and the first item, and each would read as a choice.
+        dropdown.Items = [new DropdownItem(ImagesAsk(said)), new DropdownItem("Yes"), new DropdownItem("No")];
 
     /// <summary>The first Images item, naming what asking the server gave; "…" while it is being asked.</summary>
     internal static string ImagesAsk(bool? said, bool asking = false) =>

@@ -98,6 +98,8 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
     public Task<bool?> CanSeeImagesAsync(CancellationToken ct = default) =>
         _options.Images is { } pinned ? Task.FromResult<bool?>(pinned) : _images.GetAsync(AskImagesAsync, ct);
 
+    public Task<bool?> AskEndpointAsync(CancellationToken ct = default) => _images.GetAsync(AskImagesAsync, ct);
+
     /// <summary>
     /// Asks the endpoint whether the model sees images, in its own way: llama.cpp's <c>/props</c>,
     /// OpenRouter's model list. OpenAI has no route that says, and is left to the configuration.

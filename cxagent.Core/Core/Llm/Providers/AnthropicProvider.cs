@@ -55,6 +55,9 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog, IModelCatalogDetai
 
     public Task<bool?> CanSeeImagesAsync(CancellationToken ct = default) => Task.FromResult(KnownCanSeeImages);
 
+    /// <summary>Every Claude model sees images, and there is nothing to ask.</summary>
+    public Task<bool?> AskEndpointAsync(CancellationToken ct = default) => Task.FromResult<bool?>(true);
+
     public AnthropicProvider(string providerId, string displayName, string model, string apiKey,
         int maxTokens = DefaultMaxTokens, string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null,
         bool cacheControl = false, ThinkingDisplay thinkingDisplay = ThinkingDisplay.Summarized,
