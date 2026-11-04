@@ -124,6 +124,54 @@ public class ImageRowTests
         Assert.Contains("1920×1080 → 1568×882", screen);
     }
 
+    /// <summary>A headless driver that says it draws Kitty graphics, so the image takes the placeholder path.</summary>
+    private sealed class KittyHeadlessDriver(int width, int height) : HeadlessConsoleDriver(width, height), SharpConsoleUI.Drivers.IGraphicsProtocol
+    {
+        public bool SupportsKittyGraphics => true;
+        public void TransmitImage(uint imageId, byte[] pngData, int columns, int rows) { }
+        public void DeleteImage(uint imageId) { }
+        public void TransmitRawRgb(uint imageId, byte[] rgbData, int pixelWidth, int pixelHeight, int columns, int rows) { }
+        public void UpdateRawRgbFrame(uint imageId, byte[] rgbData, int pixelWidth, int pixelHeight) { }
+    }
+
+    /// <summary>
+    /// Every placeholder cell the preview portal paints carries a row and a column diacritic, in the
+    /// portal's own buffer, before anything copies it to the terminal. Kitty showed the portal's
+    /// placeholders bare after each row's first cell, and drew nothing.
+    /// </summary>
+    [Theory]
+    [InlineData(40, 14)]
+    [InlineData(218, 64)]
+    public void ThePortalsPlaceholders_CarryBothDiacritics_InItsBuffer(int cols, int rows)
+    {
+        var driver = new KittyHeadlessDriver(cols, rows);
+        var system = new ConsoleWindowSystem(driver);
+        var window = new Window(system) { Left = 0, Top = 0, Width = cols, Height = rows };
+        system.AddWindow(window);
+        var content = ImagePreview.PortalContent(Decodable(1568, 882), new System.Drawing.Rectangle(0, 0, cols, rows));
+        window.AddControl(content);
+
+        var buffer = new SharpConsoleUI.Layout.CharacterBuffer(cols, rows, SharpConsoleUI.Color.Black);
+        var rect = new SharpConsoleUI.Layout.LayoutRect(0, 0, cols, rows);
+        var paintable = (SharpConsoleUI.Layout.IDOMPaintable)content;
+        paintable.PaintDOM(buffer, rect, rect, SharpConsoleUI.Color.White, SharpConsoleUI.Color.Black);
+        Thread.Sleep(800);
+        paintable.PaintDOM(buffer, rect, rect, SharpConsoleUI.Color.White, SharpConsoleUI.Color.Black);
+
+        int placeholders = 0, bare = 0;
+        for (var y = 0; y < rows; y++)
+            for (var x = 0; x < cols; x++)
+            {
+                var cell = buffer.GetCell(x, y);
+                if (cell.Character != SharpConsoleUI.Configuration.ImagingDefaults.KittyPlaceholder) continue;
+                placeholders++;
+                if (string.IsNullOrEmpty(cell.Combiners) || cell.Combiners.Length < 2) bare++;
+            }
+
+        Assert.True(placeholders > 0, "no placeholder cells were painted");
+        Assert.Equal(0, bare);
+    }
+
     /// <summary>An image whose file was not kept has nothing to draw; the others still show.</summary>
     [Fact]
     public void AThumbnail_SkipsAnImageWithoutBytes()
