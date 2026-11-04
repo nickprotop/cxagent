@@ -83,6 +83,35 @@ public class ImageTokenTests : IDisposable
         Assert.NotNull(image.Bytes);
     }
 
+    /// <summary>
+    /// A photo whose PNG would pass Anthropic's 5 MB, once base64, goes as a JPEG. Noise is the worst
+    /// case PNG meets: nothing to compress.
+    /// </summary>
+    [Fact]
+    public void APhotoTooLargeAsPng_IsSentAsAJpeg()
+    {
+        var noise = new byte[1568 * 1107 * 3];
+        new Random(7).NextBytes(noise);
+        using var ms = new MemoryStream();
+        new ImageWriter().WritePng(noise, 1568, 1107, ColorComponents.RedGreenBlue, ms);
+
+        var prepared = ImageTokens.Encode(ms.ToArray(), "photo.png", out _)!;
+
+        Assert.Equal("image/jpeg", prepared.MediaType);
+        Assert.Equal([0xFF, 0xD8], prepared.Bytes[..2]);
+        Assert.True(prepared.Bytes.Length <= ImageTokens.MaxSentBytes);
+    }
+
+    /// <summary>A screenshot compresses well, and stays a PNG: JPEG blurs the edges of text.</summary>
+    [Fact]
+    public void AScreenshot_StaysAPng()
+    {
+        using var ms = new MemoryStream();
+        new ImageWriter().WritePng(new byte[1568 * 1107 * 3], 1568, 1107, ColorComponents.RedGreenBlue, ms);
+
+        Assert.Equal("image/png", ImageTokens.Encode(ms.ToArray(), "shot.png", out _)!.MediaType);
+    }
+
     [Fact]
     public void ASmallImage_IsSentAtItsOwnSize()
     {

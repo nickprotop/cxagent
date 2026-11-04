@@ -29,17 +29,17 @@ public sealed record Attachments(IReadOnlyList<PastedText> Pastes, IReadOnlyList
 }
 
 /// <summary>
-/// An image attached to a message: the PNG the model is sent, and how it is named and sized.
+/// An image attached to a message: the bytes the model is sent, and how it is named and sized.
 ///
 /// <para>THE BYTES LIVE IN MEMORY, NOT IN THE SAVED CONTEXT. <c>context.json</c> is rewritten whole on
 /// every save, so a screenshot inline in it would be written again every turn. The session store writes
-/// each image once, as <c>images/&lt;Hash&gt;.png</c> in the folder of the agent saving it, and reads it
+/// each image once, as <c>images/</c><see cref="FileName"/> in the folder of the agent saving it, and reads it
 /// back into <see cref="Bytes"/> on load. The wire builders read <see cref="Bytes"/> and nothing else, which
 /// keeps them free of I/O.</para>
 /// </summary>
 /// <param name="Label">The token's label, which the message text carries in the image's place —
 /// <c>[Image #1 1568×882]</c>.</param>
-/// <param name="Hash">SHA-256 of the PNG, lowercase hex: the file's name, so one image pasted twice is
+/// <param name="Hash">SHA-256 of the bytes sent, lowercase hex: the file's name, so one image pasted twice is
 /// stored once.</param>
 /// <param name="Width">The width sent, in pixels.</param>
 /// <param name="Height">The height sent, in pixels.</param>
@@ -51,9 +51,20 @@ public sealed record AttachedImage(string Label, string Hash, int Width, int Hei
     /// <summary>The height of the file the user gave, before it was shrunk; 0 when it was not.</summary>
     public int OriginalHeight { get; init; }
 
-    /// <summary>The PNG sent, or null when its file could not be read back.</summary>
+    /// <summary>The image sent, encoded as <see cref="MediaType"/>, or null when its file could not be read back.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public byte[]? Bytes { get; init; }
+
+    /// <summary>
+    /// How <see cref="Bytes"/> are encoded: <c>image/png</c>, or <c>image/jpeg</c> for a photo too large
+    /// to send as PNG. Kept in the context, so a resume sends the file under the type it was written as;
+    /// a context saved before images could be JPEG has none, and reads as PNG.
+    /// </summary>
+    public string MediaType { get; init; } = "image/png";
+
+    /// <summary>The image's file in a session's <c>images</c> folder: its hash, and the extension of its type.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string FileName => Hash + (MediaType == "image/jpeg" ? ".jpg" : ".png");
 
     /// <summary>
     /// What the image weighs in the context, as characters of text would.

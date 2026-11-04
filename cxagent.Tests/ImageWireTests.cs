@@ -103,4 +103,17 @@ public class ImageWireTests
         Assert.Equal("hi", OpenAiUser(plain)!["content"]!.GetValue<string>());
         Assert.Equal("hi", AnthropicUser(plain)!["content"]!.GetValue<string>());
     }
+
+    /// <summary>A JPEG goes as a JPEG: a model told PNG for JPEG bytes refuses the request.</summary>
+    [Fact]
+    public void AJpeg_IsSentWithItsOwnType()
+    {
+        var jpeg = Asked(Image() with { MediaType = "image/jpeg" });
+
+        var openAi = OpenAiWire.BuildRequestBody("m", jpeg, null, stream: false).ToJsonString();
+        var anthropic = AnthropicWire.BuildRequestBody("m", 100, jpeg, null, stream: false).ToJsonString();
+
+        Assert.Contains("data:image/jpeg;base64,", openAi);
+        Assert.Contains("\"media_type\":\"image/jpeg\"", anthropic);
+    }
 }

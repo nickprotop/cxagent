@@ -30,7 +30,7 @@ internal static class OpenAiWire
             parts.Add(new JsonObject
             {
                 ["type"] = "image_url",
-                ["image_url"] = new JsonObject { ["url"] = "data:image/png;base64," + Convert.ToBase64String(image.Bytes!) },
+                ["image_url"] = new JsonObject { ["url"] = $"data:{image.MediaType};base64," + Convert.ToBase64String(image.Bytes!) },
             });
         return parts;
     }

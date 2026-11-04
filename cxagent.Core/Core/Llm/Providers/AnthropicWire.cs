@@ -188,7 +188,7 @@ internal static class AnthropicWire
                 ["source"] = new JsonObject
                 {
                     ["type"] = "base64",
-                    ["media_type"] = "image/png",
+                    ["media_type"] = image.MediaType,
                     ["data"] = Convert.ToBase64String(image.Bytes!),
                 },
             });

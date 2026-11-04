@@ -32,6 +32,15 @@ internal sealed class ImageTokens
     internal const int MaxEdge = 1568;
 
     /// <summary>
+    /// The most an image may weigh as sent: Anthropic refuses one over 5 MB, and that is counted after
+    /// base64, which turns three bytes into four.
+    /// </summary>
+    internal const int MaxSentBytes = 5 * 1024 * 1024 / 4 * 3;
+
+    /// <summary>The quality a photo too large for PNG is sent at: past it, the bytes grow faster than what is seen.</summary>
+    private const int JpegQuality = 85;
+
+    /// <summary>
     /// A file larger than this is not decoded. A decode runs on the UI thread at the moment of the paste,
     /// and no screenshot is this big; past it the paste is something else, and stays text.
     /// </summary>
@@ -204,6 +213,7 @@ internal sealed class ImageTokens
             Bytes = prepared.Bytes,
             OriginalWidth = prepared.Original.Width,
             OriginalHeight = prepared.Original.Height,
+            MediaType = prepared.MediaType,
         });
         return token;
     }
@@ -241,6 +251,9 @@ internal sealed class ImageTokens
     {
         /// <summary>The size of what the user gave, before it was shrunk.</summary>
         public (int Width, int Height) Original { get; init; }
+
+        /// <summary>How <see cref="Bytes"/> are encoded.</summary>
+        public string MediaType { get; init; } = "image/png";
     }
 
     /// <summary>
@@ -249,9 +262,9 @@ internal sealed class ImageTokens
     /// <para>DECODED BY CONTENT, NOT BY NAME, so a <c>.png</c> that is a JPEG is read, a screenshot saved
     /// without an extension is read, and a <c>.png</c> that is not an image at all is refused.</para>
     ///
-    /// <para>RE-ENCODED AS PNG EVEN WHEN NOTHING SHRANK. The wire builders send every image as
-    /// <c>image/png</c>, and the bytes stored are the bytes sent, so a resume sends exactly what the model
-    /// saw. The decoder keeps no alpha, so a transparent area arrives black.</para>
+    /// <para>RE-ENCODED EVEN WHEN NOTHING SHRANK, as PNG unless that is too large (see <see cref="Encode"/>).
+    /// The bytes stored are the bytes sent, under the type they were written as, so a resume sends
+    /// exactly what the model saw. The decoder keeps no alpha, so a transparent area arrives black.</para>
     /// </summary>
     /// <param name="read">Reads the file — a seam for the size check, which must run before the read.</param>
     /// <param name="path">The file.</param>
@@ -305,10 +318,22 @@ internal sealed class ImageTokens
 
         using var ms = new MemoryStream();
         new ImageWriter().WritePng(rgb, width, height, ColorComponents.RedGreenBlue, ms);
-        var png = ms.ToArray();
-        return new Prepared(png, Convert.ToHexStringLower(SHA256.HashData(png)), width, height)
+        var mediaType = "image/png";
+
+        // A PHOTO PNG CANNOT HOLD IS SENT AS JPEG. A screenshot's flat colour packs small, and stays PNG,
+        // whose edges keep its text sharp; a photo's noise barely compresses, and at the longest edge
+        // sent its PNG can pass what Anthropic takes. A JPEG at that size is a fraction of the limit.
+        if (ms.Length > MaxSentBytes)
+        {
+            ms.SetLength(0);
+            new ImageWriter().WriteJpg(rgb, width, height, ColorComponents.RedGreenBlue, ms, JpegQuality);
+            mediaType = "image/jpeg";
+        }
+        var bytes = ms.ToArray();
+        return new Prepared(bytes, Convert.ToHexStringLower(SHA256.HashData(bytes)), width, height)
         {
             Original = (pixels.Width, pixels.Height),
+            MediaType = mediaType,
         };
     }
 

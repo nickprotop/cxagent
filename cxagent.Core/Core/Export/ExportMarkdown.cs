@@ -209,7 +209,7 @@ public static partial class ExportMarkdown
                 if (m.Images is { } images)
                     foreach (var image in images)
                     {
-                        var file = Path.Combine(entry.Dir, "images", image.Hash + ".png");
+                        var file = Path.Combine(entry.Dir, "images", image.FileName);
                         var name = image.Label.Trim('[', ']');
                         Paragraph(File.Exists(file) ? $"![{name}]({new Uri(file).AbsoluteUri})" : $"**{name}** (not kept)");
                     }

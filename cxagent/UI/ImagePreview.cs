@@ -89,7 +89,7 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
     /// </summary>
     private void OpenInViewer(AttachedImage image, byte[] png)
     {
-        var file = Path.Combine(ViewerFolder(), image.Hash + ".png");
+        var file = Path.Combine(ViewerFolder(), image.FileName);
         try
         {
             // WRITTEN EVERY TIME, never trusted because it is there: whatever sits at this path — left by

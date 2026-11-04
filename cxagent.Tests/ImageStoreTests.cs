@@ -40,6 +40,21 @@ public class ImageStoreTests : IDisposable
     private string ImageFile(string agent, AttachedImage image) =>
         Path.Combine(new SessionFolder(_paths, agent).ImagesDir, image.Hash + ".png");
 
+    /// <summary>A JPEG is kept as one, under its own extension, and read back with its type.</summary>
+    [Fact]
+    public void AJpeg_IsStoredAsJpg_AndLoadsAsOne()
+    {
+        var image = Image([0xFF, 0xD8, 0xFF]) with { MediaType = "image/jpeg" };
+
+        Save("agent-j", [Said("look", image)]);
+
+        var file = Assert.Single(Directory.GetFiles(new SessionFolder(_paths, "agent-j").ImagesDir));
+        Assert.Equal(image.Hash + ".jpg", Path.GetFileName(file));
+        var loaded = _store.LoadById("agent-j")!.Context.SelectMany(m => m.Images ?? []).Single();
+        Assert.Equal("image/jpeg", loaded.MediaType);
+        Assert.Equal([0xFF, 0xD8, 0xFF], loaded.Bytes);
+    }
+
     [Fact]
     public void SaveTurn_WritesEachImageOnce_ByHash()
     {
