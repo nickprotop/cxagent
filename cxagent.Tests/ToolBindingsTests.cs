@@ -313,7 +313,9 @@ public class ToolBindingsTests
         Assert.Contains("\"required\":[\"path\",\"content\"]", write);
 
         var replace = SchemaFor("replace_in_file").Replace(" ", "");
-        Assert.Contains("\"required\":[\"path\",\"pattern\",\"replacement\"]", replace);
+        Assert.Contains("\"required\":[\"path\",\"edits\"]", replace);
+        // AND EACH EDIT NEEDS BOTH HALVES — an edit with no replacement is not an edit.
+        Assert.Contains("\"required\":[\"pattern\",\"replacement\"]", replace);
     }
 
     [Fact]

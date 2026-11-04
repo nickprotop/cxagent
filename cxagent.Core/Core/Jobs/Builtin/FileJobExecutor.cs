@@ -83,6 +83,21 @@ public class FileJobExecutor : IJobExecutor
             + "(tabs or spaces, matching the line being replaced), keeping any nesting inside it. "
             + "The result echoes the exact text written, so there is no need to re-read the file "
             + "or inspect it with a shell command to confirm."),
+        // A LIST, so a run of small changes to one file is one call and one permission rather than a
+        // round trip each. Each item says what `pattern` and `replacement` say above.
+        new JobParamSpec("edits", "array", Required: false,
+            "replace: the changes to make to this one file, applied in order, each to the result of "
+            + "the one before. Each `pattern` must appear EXACTLY once at the moment it is applied, or "
+            + "nothing at all is written. Indentation is handled as for a single replacement.")
+        {
+            ItemFields =
+            [
+                new JobParamSpec("pattern", "string", Required: true,
+                    "The exact existing text to replace, copied from what you read."),
+                new JobParamSpec("replacement", "string", Required: true,
+                    "The text it becomes. An empty string deletes it."),
+            ],
+        },
     });
 
     public JobValidation Validate(JobParameters parameters)
@@ -100,10 +115,9 @@ public class FileJobExecutor : IJobExecutor
             errors.Add($"'content' is required for action '{action}'.");
         if (action == "replace")
         {
-            if (string.IsNullOrEmpty(parameters.Get("pattern", "")))
-                errors.Add("'pattern' is required for action 'replace'.");
-            if (parameters.Get<string?>("replacement", null) is null)
-                errors.Add("'replacement' is required for action 'replace'.");
+            // THE SAME READER THE EDIT USES, so a call that validates is a call that can be applied.
+            try { ReplaceEdits.Read(parameters); }
+            catch (InvalidOperationException ex) { errors.Add(ex.Message); }
         }
         if (action is "copy" or "move" && string.IsNullOrWhiteSpace(parameters.Get("dest", "")))
             errors.Add($"'dest' is required for action '{action}'.");
@@ -604,19 +618,7 @@ public class FileJobExecutor : IJobExecutor
     private static async Task ReplaceAsync(string path, JobParameters parameters,
         Dictionary<string, object?> output, CancellationToken ct)
     {
-        var pattern = parameters.Get<string>("pattern");
-        var replacement = parameters.Get<string>("replacement");
-
-        // IDENTICAL IS NOT AN EDIT. This wrote the file and reported "replaced 1 occurrence
-        // (indentation adjusted to match the file)" — success, with a note implying something
-        // changed, for an operation that changed nothing. A model reading that has been told its
-        // edit landed and will move on; the reason it sent the same text twice (a mis-copied
-        // replacement, a rewrite it thought it had made) goes unexamined.
-        if (string.Equals(pattern, replacement, StringComparison.Ordinal))
-            throw new InvalidOperationException(
-                "'pattern' and 'replacement' are identical, so this would change nothing. If you "
-                + "meant to edit the file, send the text you want it to say instead. Nothing was "
-                + "written.");
+        var list = ReplaceEdits.Read(parameters);
 
         // READ THROUGH THE SERVICE, so the conventions this edit must restore come from the SAME
         // read its content is computed against — and so the write below can tell whether the file
@@ -624,30 +626,32 @@ public class FileJobExecutor : IJobExecutor
         var snapshot = await FileMutation.ReadAsync(path, ct);
         var text = snapshot.Text;
 
-        var match = FindSingleMatch(text, pattern, path);
-        var (first, matchLength) = (match.Start, match.Length);
-
-        // SHIFT ONTO THE FILE'S INDENTATION. Extracted to IndentShift, a pure function over three
-        // strings — see its doc for why. The matched span is extended back to the START OF ITS LINE,
-        // because the span begins at the pattern's first character and so does not itself contain
-        // the indentation being matched against.
-        //
-        // A match that does not begin a line is a FRAGMENT (`a + b` inside `int t = a + b;`) and has
-        // no indentation to correct; prepending one would splice whitespace into a statement.
-        // NO CORRECTION AT THE CALL SITE. The matcher normalises a whole-line span to start at the
-        // line, so the slice already contains the file's indentation whichever pass found it — and
-        // the pattern and replacement go through exactly as the model sent them, so IndentShift can
-        // cancel each side's own base independently. That is the entire mechanism.
-        //
-        // Every previous attempt failed by reconstructing one side here: extending the pattern with
-        // the file's leading whitespace while leaving the replacement raw made the two describe
-        // different things, and the indent was added on top of indentation already present.
-        //
-        // A fragment (`a + b` inside `int t = a + b;`) has no indentation to correct at all.
-        var original = replacement;
-        if (match.WholeLines)
-            replacement = IndentShift.Apply(
-                text.Substring(first, matchLength), pattern, replacement);
+        // EVERY EDIT AGAINST THE RESULT OF THE ONE BEFORE, AND NOTHING WRITTEN UNTIL ALL OF THEM
+        // APPLY. A model told "nothing happened, edit 3 failed because X" fixes edit 3 and resends;
+        // one told "edits 1 and 2 landed, 3 did not" has to work out the file's new state first, and
+        // that is where small models start re-sending edits that already happened.
+        var applied = new List<AppliedEdit>(list.Edits.Count);
+        for (var i = 0; i < list.Edits.Count; i++)
+        {
+            try
+            {
+                var edit = ApplyEdit(text, list.Edits[i], path);
+                applied.Add(edit);
+                // THE NEXT EDIT SEES WHAT A SEPARATE CALL WOULD HAVE READ. A replacement typed with
+                // bare \n lands in a CRLF file as a mixed line, and the write would normalise it — but
+                // only after the last edit. Matched against the mixed text, the next pattern was found
+                // twice on one line (once per ending), so normalise now, the way the write will.
+                text = snapshot.UsesCrlf
+                    ? edit.Result.Replace("\r\n", "\n", StringComparison.Ordinal)
+                                 .Replace("\n", "\r\n", StringComparison.Ordinal)
+                    : edit.Result;
+            }
+            catch (InvalidOperationException ex) when (list.FromList)
+            {
+                throw new InvalidOperationException($"edit {i + 1}: {ex.Message}"
+                    + (applied.Count > 0 ? $" None of the {list.Edits.Count} edits were written." : ""));
+            }
+        }
 
         // PRESERVE THE BOM. File.WriteAllTextAsync writes UTF-8 without one regardless of what the
         // file had, so editing one line of a BOM'd file silently rewrote its first three bytes —
@@ -661,28 +665,72 @@ public class FileJobExecutor : IJobExecutor
         // between. The service restores the BOM and line endings from the snapshot this edit was
         // computed against — see FileMutation for why both have to come from the file rather than
         // from the replacement.
-        var result = text[..first] + replacement + text[(first + matchLength)..];
-        await FileMutation.WriteIfUnchangedAsync(path, result, snapshot, ct);
+        await FileMutation.WriteIfUnchangedAsync(path, text, snapshot, ct);
 
         // SHOW WHAT LANDED. The old result said only "replaced 1 occurrence", so a model with any
         // doubt about its edit had exactly one way to check: shell out. Measured live — an agent
         // followed a correct replace with `cat -A`, mistrusted what it saw, reverted its own fix and
-        // spent the rest of the run patching through run_shell. Echoing the written line closes that
+        // spent the rest of the run patching through run_shell. Echoing the written lines closes that
         // loop in-band, and saying the indentation was adjusted explains the difference it would
         // otherwise discover and misread as damage.
+        var note = applied.Any(a => a.IndentAdjusted) ? " (indentation adjusted to match the file)" : "";
+        output["content"] = applied.Count == 1
+            ? $"replaced 1 occurrence in {path}{note}\n"
+              + $"the file now reads:\n{QuoteWritten(applied[0].Written)}"
+            : $"replaced {applied.Count} passages in {path}{note}\n"
+              + string.Join("\n", applied.Select((a, i) => $"edit {i + 1} now reads:\n{QuoteWritten(a.Written)}"));
+        output["bytes_before"] = snapshot.Text.Length;
+    }
+
+    /// <summary>One edit applied to the running text: the text after it, what was written, and
+    /// whether the replacement was shifted onto the file's indentation.</summary>
+    private sealed record AppliedEdit(string Result, string Written, bool IndentAdjusted);
+
+    /// <summary>
+    /// One exact replacement against <paramref name="text"/>, refusing (by throwing) everything the
+    /// single-edit tool always refused: an edit that changes nothing, a pattern that is not there, and
+    /// one that is there more than once.
+    /// </summary>
+    private static AppliedEdit ApplyEdit(string text, ReplaceEdit edit, string path)
+    {
+        var (pattern, replacement) = (edit.Pattern, edit.Replacement);
+
+        // IDENTICAL IS NOT AN EDIT. This wrote the file and reported "replaced 1 occurrence
+        // (indentation adjusted to match the file)" — success, with a note implying something
+        // changed, for an operation that changed nothing. A model reading that has been told its
+        // edit landed and will move on; the reason it sent the same text twice (a mis-copied
+        // replacement, a rewrite it thought it had made) goes unexamined.
+        if (string.Equals(pattern, replacement, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                "'pattern' and 'replacement' are identical, so this would change nothing. If you "
+                + "meant to edit the file, send the text you want it to say instead. Nothing was "
+                + "written.");
+
+        var match = FindSingleMatch(text, pattern, path);
+        var (first, matchLength) = (match.Start, match.Length);
+
+        // SHIFT ONTO THE FILE'S INDENTATION. Extracted to IndentShift, a pure function over three
+        // strings — see its doc for why. The matcher normalises a whole-line span to start at the
+        // line, so the slice already contains the file's indentation whichever pass found it — and
+        // the pattern and replacement go through exactly as the model sent them, so IndentShift can
+        // cancel each side's own base independently. That is the entire mechanism.
+        //
+        // Every previous attempt failed by reconstructing one side here: extending the pattern with
+        // the file's leading whitespace while leaving the replacement raw made the two describe
+        // different things, and the indent was added on top of indentation already present.
+        //
+        // A fragment (`a + b` inside `int t = a + b;`) has no indentation to correct at all.
+        var written = match.WholeLines
+            ? IndentShift.Apply(text.Substring(first, matchLength), pattern, replacement)
+            : replacement;
+
         // BY VALUE, not by reference. IndentShift returns a fresh string from string.Join even when
         // it changed nothing, so a reference check reported "indentation adjusted" on every edit —
         // including the ones where the model got it exactly right. A note that always appears is a
         // note nobody reads, which costs the one case where it matters.
-        var note = string.Equals(original, replacement, StringComparison.Ordinal)
-            ? ""
-            : " (indentation adjusted to match the file)";
-
-        output["content"] = $"replaced 1 occurrence in {path}{note}\n"
-            + $"the file now reads:\n{QuoteWritten(replacement)}";
-        output["bytes_before"] = text.Length;
+        var adjusted = !string.Equals(written, replacement, StringComparison.Ordinal);
+        return new AppliedEdit(text[..first] + written + text[(first + matchLength)..], written, adjusted);
     }
-
 
     /// <summary>
     /// The written text, capped, for echoing back in the tool result. Bounded because a large

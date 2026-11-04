@@ -189,9 +189,18 @@ public static class ToolBindings
                 + "of them you misremember is a silent edit nobody asked for."))),
         // Producers only: replace EDITS an existing file. write_file is whole-file, so changing one
         // function meant reproducing every other line from memory.
+        //
+        // A LIST OF EDITS, NOT A PAIR. A local model making five small changes to a file made five
+        // calls — five round trips and, outside accept-edits, five prompts. One shape is advertised:
+        // a schema offering a flat pair AND a list invites a small model to send both. The flat pair
+        // is still READ (see ReplaceEdits.Read) because resumed history is full of it.
         (BuiltinTool.ReplaceInFile, new ToolBinding("replace_in_file", "file", "replace",
-            Params: ["path", "pattern", "replacement"],
-            Required: ["path", "pattern", "replacement"])),
+            Params: ["path", "edits"],
+            Required: ["path", "edits"],
+            Description: "Change parts of a file that already exists by exact replacement. Put every "
+                       + "change to this file in one call: `edits` is applied in order, each to the "
+                       + "result of the one before, and if any edit's text is missing or appears more "
+                       + "than once, nothing is written and the refusal names that edit.")),
         // Unpinned: the shell executor serves one action, so its whole schema IS this tool's.
         //
         // THIS LIST IS WHAT THE MODEL MAY SEND, and ShellJobExecutor.GetSchema is what it is TOLD each
