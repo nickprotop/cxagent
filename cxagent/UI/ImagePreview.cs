@@ -3,6 +3,8 @@ using CxAgent.Core.Models;
 using SharpConsoleUI;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Core;
+using SharpConsoleUI.Drawing;
+using SharpConsoleUI.Events;
 using SharpConsoleUI.Helpers;
 using SharpConsoleUI.Imaging;
 using SharpConsoleUI.Layout;
@@ -67,7 +69,7 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
             return;
         }
 
-        if (Kitty()) OpenPortal(image, png);
+        if (Kitty()) OpenPortal(image);
         else OpenInViewer(image, png);
     }
 
@@ -107,7 +109,7 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
             ? Path.Combine(runtime, "cxagent-images")
             : Path.Combine(Path.GetTempPath(), "cxagent-images-" + Environment.UserName);
 
-    private void OpenPortal(AttachedImage image, byte[] png)
+    private void OpenPortal(AttachedImage image)
     {
         Close();
 
@@ -116,23 +118,15 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
         var height = Math.Max(8, desktop.Height * 8 / 10);
         var bounds = new SRectangle((desktop.Width - width) / 2, (desktop.Height - height) / 2, width, height);
 
-        var panel = new ScrollablePanelControl
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Fill,
-        };
-        panel.AddControl(PortalImage(png, rows: height - 4));
-        panel.AddControl(new MarkupControl([$"[{ColorScheme.MutedMarkup}]{Sizes(image)} · any key closes[/]"])
-        {
-            HorizontalAlignment = HorizontalAlignment.Center,
-        });
-
         _open = system.DesktopPortalService.CreatePortal(new DesktopPortalOptions(
-            Content: new ThemePortalContent(panel, bounds),
+            Content: PortalContent(image, bounds),
             Bounds: bounds,
             DismissOnClickOutside: true,
             OnDismiss: () => _open = null));
     }
+
+    /// <summary>What the portal hosts: the image, and its sizes under it.</summary>
+    internal static PortalContentBase PortalContent(AttachedImage image, SRectangle bounds) => new ImagePortalContent(image, bounds);
 
     /// <summary>The portal's image, held to <paramref name="rows"/>: the portal's inside, less the caption.</summary>
     internal static IWindowControl PortalImage(byte[] png, int rows) =>
@@ -150,5 +144,60 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
         if (_open is null) return;
         system.DesktopPortalService.RemovePortal(_open);
         _open = null;
+    }
+}
+
+/// <summary>
+/// The preview portal: the image, and its sizes on the row under it.
+///
+/// <para>PAINTED HERE, NOT HOSTED IN A PANEL. A portal measures and paints its content directly, with no
+/// window layout pass; a scroll panel places its children in that pass, so hosted in a portal it painted
+/// nothing at all, image and caption both. Two things in a fixed arrangement need no panel: the image takes
+/// every row but the last, and the caption that one.</para>
+/// </summary>
+internal sealed class ImagePortalContent : PortalContentBase
+{
+    private readonly SRectangle _bounds;
+    private readonly IWindowControl _image;
+    private readonly string _caption;
+
+    /// <param name="image">The image; its bytes must be there.</param>
+    /// <param name="bounds">Where the portal sits, in desktop coordinates.</param>
+    public ImagePortalContent(AttachedImage image, SRectangle bounds)
+    {
+        _bounds = bounds;
+        BorderStyle = BoxChars.Rounded;
+        BorderColor = DialogLook.Palette.ActiveBorder;
+        BorderBackgroundColor = DialogLook.Palette.Surface;
+        BackgroundColor = DialogLook.Palette.Surface;
+        ForegroundColor = ColorScheme.Heading;
+
+        // INSIDE THE BORDER, LESS THE CAPTION'S ROW.
+        _image = ImagePreview.PortalImage(image.Bytes!, rows: Math.Max(1, bounds.Height - 3));
+        // THE CONTAINER IS WHAT REACHES THE DRIVER: the image asks it whether the terminal draws pixels.
+        _image.Container = this;
+        _caption = $"{ImagePreview.Sizes(image)} · any key closes";
+    }
+
+    /// <inheritdoc/>
+    public override SRectangle GetPortalBounds() => _bounds;
+
+    /// <summary>A click inside does nothing; outside, the portal closes.</summary>
+    public override bool ProcessMouseEvent(MouseEventArgs args) => false;
+
+    /// <inheritdoc/>
+    protected override void PaintPortalContent(
+        CharacterBuffer buffer, LayoutRect bounds, LayoutRect clipRect, Color defaultFg, Color defaultBg)
+    {
+        var background = BackgroundColor;
+        var imageRect = new LayoutRect(bounds.X, bounds.Y, bounds.Width, Math.Max(0, bounds.Height - 1));
+        if (_image is IDOMPaintable paintable)
+        {
+            paintable.MeasureDOM(LayoutConstraints.Tight(imageRect.Width, imageRect.Height));
+            paintable.PaintDOM(buffer, imageRect, imageRect.Intersect(clipRect), ForegroundColor, background);
+        }
+
+        var x = bounds.X + Math.Max(0, (bounds.Width - _caption.Length) / 2);
+        buffer.WriteStringClipped(x, bounds.Y + bounds.Height - 1, _caption, ColorScheme.MutedRgb, background, clipRect);
     }
 }

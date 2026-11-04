@@ -104,6 +104,26 @@ public class ImageRowTests
         Assert.True(size.Height <= 36, $"the image took {size.Height} rows of 36");
     }
 
+    /// <summary>
+    /// The portal paints its caption. A portal measures and paints what it hosts directly, with no window
+    /// layout pass, so content that waits for one — a scroll panel placing its children — paints nothing:
+    /// in a real Kitty the portal opened empty, image and caption both.
+    /// </summary>
+    [Fact]
+    public void ThePortal_PaintsItsCaption()
+    {
+        var image = Decodable(1568, 882) with { OriginalWidth = 1920, OriginalHeight = 1080 };
+        var content = ImagePreview.PortalContent(image, new System.Drawing.Rectangle(0, 0, 100, 30));
+        var buffer = new SharpConsoleUI.Layout.CharacterBuffer(100, 30);
+
+        ((SharpConsoleUI.Layout.IDOMPaintable)content).PaintDOM(buffer, new SharpConsoleUI.Layout.LayoutRect(0, 0, 100, 30),
+            new SharpConsoleUI.Layout.LayoutRect(0, 0, 100, 30), SharpConsoleUI.Color.White, SharpConsoleUI.Color.Black);
+
+        var screen = string.Join("\n", Enumerable.Range(0, 30).Select(y =>
+            string.Concat(Enumerable.Range(0, 100).Select(x => buffer.GetCell(x, y).Character.ToString()))));
+        Assert.Contains("1920×1080 → 1568×882", screen);
+    }
+
     /// <summary>An image whose file was not kept has nothing to draw; the others still show.</summary>
     [Fact]
     public void AThumbnail_SkipsAnImageWithoutBytes()
