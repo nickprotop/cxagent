@@ -372,6 +372,30 @@ public class HistoryWiringTests : IDisposable
         Assert.Contains(lines, l => l.Message?.Content.Contains("they asked twice") == true);
     }
 
+    /// <summary>
+    /// A /model switch hands the conversation to a new agent, whose folder is a new one. The image it
+    /// carries must be written there when that agent saves, and read back from there on a resume, or a
+    /// session switched once resumes with its screenshot gone.
+    /// </summary>
+    [Fact]
+    public async Task ARewire_CarriesAnImage_IntoTheNewAgentsFolder_AndBackOnLoad()
+    {
+        var (s, config, sink) = Open(new ScriptedProvider(Answer("one"), Answer("two")));
+        var image = new AttachedImage("[Image #1 4×2]", "abc123", 4, 2) { Bytes = [7, 7, 7] };
+        await Assert.IsType<Session.SubmitOutcome.Started>(
+            s.Submit("look [Image #1 4×2]", attachments: new Attachments([], [image]))).Turn;
+        Assert.True(await Poll.Until(() => !s.IsBusy && !s.TurnOwned), "the session never went idle");
+
+        Assert.True(s.CarryToNextWire());
+        _manager!.Open(s, config, new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() }, s.Mode);
+        await Turn(s, "again");
+
+        var loaded = new FolderSessionStore(new AppPaths(_dir)).LoadById(s.SessionId!)!.Context;
+        var carried = loaded.SelectMany(m => m.Images ?? []).Single();
+        Assert.Equal([7, 7, 7], carried.Bytes);
+        Assert.True(File.Exists(Path.Combine(_dir, "logs", s.SessionId!, "images", "abc123.png")));
+    }
+
     /// <summary>A RE-WIRE AFTER /clear STILL CONTINUES THE HISTORY: the context is empty, the conversation before it is not gone.</summary>
     [Fact]
     public async Task ARewireAfterClear_StillContinuesTheHistory()
