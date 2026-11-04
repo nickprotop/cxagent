@@ -10,7 +10,7 @@ namespace CxAgent.UI;
 ///
 /// <para>THE HEIGHT IS BOUNDED IN THE MEASURE, NOT BY SHRINKING THE PIXELS. A transcript, or a scroll panel,
 /// lays its content out with no limit on height, and an image control asked that way fits the width alone:
-/// a 16:9 screenshot at 141 columns is 40 rows, taller than the portal it sits in. A smaller source would
+/// a 16:9 screenshot at 141 columns is 40 rows, where a thumbnail wants ten. A smaller source would
 /// fix the size and blur it, since Kitty is sent the pixels it is given and scales them into the cells;
 /// bounding the measure keeps every pixel and fits them in.</para>
 /// </summary>

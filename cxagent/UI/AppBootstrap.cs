@@ -1479,15 +1479,6 @@ public static class AppBootstrap
                 return;
             }
 
-            // AN OPEN IMAGE TAKES THE NEXT KEY TO CLOSE IT, Esc included, so the Esc that dismisses the
-            // picture never also takes the keyboard off the composer behind it.
-            if (ImagePreview.Current is { IsOpen: true } preview)
-            {
-                preview.ProcessKey(e.KeyInfo);
-                e.Handled = true;
-                return;
-            }
-
             // CTRL+V WITH ONLY AN IMAGE ON THE CLIPBOARD makes it a token; with text there, or nothing, the
             // key goes on to the text paste the window gives it. Windows Terminal keeps Ctrl+V for itself, so there it is Alt+V,
             // which has no text paste behind it. The composer must have the keyboard: an image anywhere

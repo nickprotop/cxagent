@@ -26,7 +26,7 @@ public class ImageRowTests
     }
 
     [Fact]
-    public void ThePortalCaption_ShowsWhatTheImageWasShrunkFrom()
+    public void TheSizes_ShowWhatTheImageWasShrunkFrom()
     {
         Assert.Equal("1920×1080 → 1568×882, 42 KB", ImagePreview.Sizes(Image()));
         Assert.Equal("1568×882, 42 KB", ImagePreview.Sizes(Image() with { OriginalWidth = 1568, OriginalHeight = 882 }));
@@ -89,89 +89,6 @@ public class ImageRowTests
         Assert.Null(chat.GetMessageAttachment(chat.MessageIds[^1]));
     }
 
-    /// <summary>
-    /// The portal's image fits the portal's height and leaves the caption's row. Inside a scroll panel the
-    /// height is unbounded, and an image fitted to the width alone runs taller than the portal: a 16:9
-    /// screenshot at 141 columns is 40 rows, and the caption scrolls out of sight.
-    /// </summary>
-    [Fact]
-    public void ThePortalsImage_FitsItsRows_AndLeavesTheCaptionInSight()
-    {
-        var image = ImagePreview.PortalImage(Decodable(1568, 882).Bytes!, rows: 36);
-
-        var size = ((SharpConsoleUI.Layout.IDOMPaintable)image).MeasureDOM(new SharpConsoleUI.Layout.LayoutConstraints(0, 141, 0, int.MaxValue));
-
-        Assert.True(size.Height <= 36, $"the image took {size.Height} rows of 36");
-    }
-
-    /// <summary>
-    /// The portal paints its caption. A portal measures and paints what it hosts directly, with no window
-    /// layout pass, so content that waits for one — a scroll panel placing its children — paints nothing:
-    /// in a real Kitty the portal opened empty, image and caption both.
-    /// </summary>
-    [Fact]
-    public void ThePortal_PaintsItsCaption()
-    {
-        var image = Decodable(1568, 882) with { OriginalWidth = 1920, OriginalHeight = 1080 };
-        var content = ImagePreview.PortalContent(image, new System.Drawing.Rectangle(0, 0, 100, 30));
-        var buffer = new SharpConsoleUI.Layout.CharacterBuffer(100, 30);
-
-        ((SharpConsoleUI.Layout.IDOMPaintable)content).PaintDOM(buffer, new SharpConsoleUI.Layout.LayoutRect(0, 0, 100, 30),
-            new SharpConsoleUI.Layout.LayoutRect(0, 0, 100, 30), SharpConsoleUI.Color.White, SharpConsoleUI.Color.Black);
-
-        var screen = string.Join("\n", Enumerable.Range(0, 30).Select(y =>
-            string.Concat(Enumerable.Range(0, 100).Select(x => buffer.GetCell(x, y).Character.ToString()))));
-        Assert.Contains("1920×1080 → 1568×882", screen);
-    }
-
-    /// <summary>A headless driver that says it draws Kitty graphics, so the image takes the placeholder path.</summary>
-    private sealed class KittyHeadlessDriver(int width, int height) : HeadlessConsoleDriver(width, height), SharpConsoleUI.Drivers.IGraphicsProtocol
-    {
-        public bool SupportsKittyGraphics => true;
-        public void TransmitImage(uint imageId, byte[] pngData, int columns, int rows) { }
-        public void DeleteImage(uint imageId) { }
-        public void TransmitRawRgb(uint imageId, byte[] rgbData, int pixelWidth, int pixelHeight, int columns, int rows) { }
-        public void UpdateRawRgbFrame(uint imageId, byte[] rgbData, int pixelWidth, int pixelHeight) { }
-    }
-
-    /// <summary>
-    /// Every placeholder cell the preview portal paints carries a row and a column diacritic, in the
-    /// portal's own buffer, before anything copies it to the terminal. Kitty showed the portal's
-    /// placeholders bare after each row's first cell, and drew nothing.
-    /// </summary>
-    [Theory]
-    [InlineData(40, 14)]
-    [InlineData(218, 64)]
-    public void ThePortalsPlaceholders_CarryBothDiacritics_InItsBuffer(int cols, int rows)
-    {
-        var driver = new KittyHeadlessDriver(cols, rows);
-        var system = new ConsoleWindowSystem(driver);
-        var window = new Window(system) { Left = 0, Top = 0, Width = cols, Height = rows };
-        system.AddWindow(window);
-        var content = ImagePreview.PortalContent(Decodable(1568, 882), new System.Drawing.Rectangle(0, 0, cols, rows));
-        window.AddControl(content);
-
-        var buffer = new SharpConsoleUI.Layout.CharacterBuffer(cols, rows, SharpConsoleUI.Color.Black);
-        var rect = new SharpConsoleUI.Layout.LayoutRect(0, 0, cols, rows);
-        var paintable = (SharpConsoleUI.Layout.IDOMPaintable)content;
-        paintable.PaintDOM(buffer, rect, rect, SharpConsoleUI.Color.White, SharpConsoleUI.Color.Black);
-        Thread.Sleep(800);
-        paintable.PaintDOM(buffer, rect, rect, SharpConsoleUI.Color.White, SharpConsoleUI.Color.Black);
-
-        int placeholders = 0, bare = 0;
-        for (var y = 0; y < rows; y++)
-            for (var x = 0; x < cols; x++)
-            {
-                var cell = buffer.GetCell(x, y);
-                if (cell.Character != SharpConsoleUI.Configuration.ImagingDefaults.KittyPlaceholder) continue;
-                placeholders++;
-                if (string.IsNullOrEmpty(cell.Combiners) || cell.Combiners.Length < 2) bare++;
-            }
-
-        Assert.True(placeholders > 0, "no placeholder cells were painted");
-        Assert.Equal(0, bare);
-    }
-
     /// <summary>An image whose file was not kept has nothing to draw; the others still show.</summary>
     [Fact]
     public void AThumbnail_SkipsAnImageWithoutBytes()
@@ -208,18 +125,71 @@ public class ImageRowTests
     private static ConsoleWindowSystem System() =>
         new(new HeadlessConsoleDriver(120, 40), new ConsoleWindowSystemOptions(InstallSynchronizationContext: true));
 
-    /// <summary>Without pixels, the viewer gets a file with the PNG the model was sent.</summary>
+    /// <summary>Every control under <paramref name="root"/>, depth first.</summary>
+    private static IEnumerable<IWindowControl> All(IEnumerable<IWindowControl> root)
+    {
+        foreach (var control in root)
+        {
+            yield return control;
+            if (control is IContainerControl container)
+                foreach (var child in All(container.GetChildren())) yield return child;
+        }
+    }
+
+    private static Window OpenedIn(ConsoleWindowSystem system) =>
+        Assert.Single(system.Windows.Values, w => w.Title.Contains("Image #1"));
+
+    /// <summary>
+    /// The image opens in a window of its own, large, with a single border and only a close button, titled
+    /// with what it is and what it was shrunk from. Kitty draws its pixels there; any other terminal draws
+    /// half-blocks, which at that size still show what the picture is.
+    /// </summary>
     [Fact]
-    public void WithoutKitty_TheImageOpensInTheViewer()
+    public void Opening_ShowsTheImageInAWindow_TitledWithItsSizes()
+    {
+        var system = System();
+        var preview = new ImagePreview(system);
+
+        preview.Open(Decodable(1568, 882) with { OriginalWidth = 1920, OriginalHeight = 1080 });
+
+        var window = OpenedIn(system);
+        Assert.Contains("1920×1080 → 1568×882", window.Title);
+        Assert.Equal(BorderStyle.Single, window.BorderStyle);
+        Assert.False(window.IsMinimizable);
+        Assert.False(window.IsMaximizable);
+        Assert.True(window.IsClosable);
+        var image = Assert.Single(All(window.GetControls()).OfType<ImageControl>());
+        Assert.Equal((1568, 882), (image.Source!.Width, image.Source.Height));
+    }
+
+    /// <summary>The window's button opens the image in the system viewer, on a copy of the bytes the model was sent.</summary>
+    [Fact]
+    public void TheViewerButton_OpensTheImageInTheSystemViewer()
     {
         string? launched = null;
-        var preview = new ImagePreview(System()) { Kitty = () => false, Launch = f => { launched = f; return true; } };
+        var system = System();
+        var preview = new ImagePreview(system) { Launch = f => { launched = f; return true; } };
+        var image = Decodable(40, 20);
+        preview.Open(image);
 
-        preview.Open(Image(bytes: 10));
+        var button = Assert.Single(All(OpenedIn(system).GetControls()).OfType<ButtonControl>(), b => b.Text.Contains("Open in viewer"));
+        button.ProcessKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
 
         Assert.NotNull(launched);
-        Assert.Equal(new byte[10], File.ReadAllBytes(launched!));
-        Assert.False(preview.IsOpen);
+        Assert.Equal(image.Bytes, File.ReadAllBytes(launched!));
+    }
+
+    /// <summary>Opening another image replaces the window rather than stacking a second one.</summary>
+    [Fact]
+    public void OpeningAgain_ReplacesTheWindow()
+    {
+        var system = System();
+        var preview = new ImagePreview(system);
+
+        preview.Open(Decodable(40, 20));
+        preview.Open(Decodable(40, 20));
+
+        OpenedIn(system);
     }
 
     /// <summary>
@@ -230,46 +200,28 @@ public class ImageRowTests
     public void TheViewerCopy_IsWrittenEveryTime()
     {
         string? launched = null;
-        var preview = new ImagePreview(System()) { Kitty = () => false, Launch = f => { launched = f; return true; } };
+        var preview = new ImagePreview(System()) { Launch = f => { launched = f; return true; } };
         var image = Image(bytes: 10) with { Hash = "stale" + Guid.NewGuid().ToString("N") };
-        preview.Open(image);
+        preview.OpenInViewer(image);
         File.WriteAllBytes(launched!, [9, 9, 9]);
 
-        preview.Open(image);
+        preview.OpenInViewer(image);
 
         Assert.Equal(new byte[10], File.ReadAllBytes(launched!));
         Assert.DoesNotContain(Path.Combine(Path.GetTempPath(), "cxagent-images") + Path.DirectorySeparatorChar, launched);
     }
 
     /// <summary>
-    /// A launcher that opened nothing — no desktop, over SSH — leaves the copy where the toast says, and
-    /// nothing else happens: no portal, no second try.
+    /// A launcher that opened nothing — no desktop, over SSH — leaves the copy where the toast says.
     /// </summary>
     [Fact]
     public void ALaunchThatOpenedNothing_LeavesTheCopy()
     {
         string? tried = null;
-        var preview = new ImagePreview(System()) { Kitty = () => false, Launch = f => { tried = f; return false; } };
+        var preview = new ImagePreview(System()) { Launch = f => { tried = f; return false; } };
 
-        preview.Open(Image(bytes: 10));
+        preview.OpenInViewer(Image(bytes: 10));
 
         Assert.Equal(new byte[10], File.ReadAllBytes(tried!));
-        Assert.False(preview.IsOpen);
-    }
-
-    [Fact]
-    public void WithKitty_TheImageOpensInAPortal_AndAnyKeyClosesIt()
-    {
-        var png = new MemoryStream();
-        new StbImageWriteSharp.ImageWriter().WritePng(new byte[4 * 2 * 3], 4, 2, StbImageWriteSharp.ColorComponents.RedGreenBlue, png);
-        var launched = false;
-        var preview = new ImagePreview(System()) { Kitty = () => true, Launch = _ => launched = true };
-
-        preview.Open(Image() with { Bytes = png.ToArray() });
-        Assert.True(preview.IsOpen);
-        Assert.False(launched);
-
-        preview.ProcessKey(new ConsoleKeyInfo('\u001b', ConsoleKey.Escape, false, false, false));
-        Assert.False(preview.IsOpen);
     }
 }
