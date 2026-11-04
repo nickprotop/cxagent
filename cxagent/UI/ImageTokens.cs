@@ -86,14 +86,21 @@ internal sealed class ImageTokens
         var cannot = $"{provider.ProviderId}:{provider.ModelId} can't see images";
         if (capability.KnownCanSeeImages is null)
         {
+            // ONE ANSWER, SAID ONCE. Every image pasted before the probe answers would otherwise wait on it
+            // with a toast of its own, and three pastes would say the same thing three times.
+            if (late is not null && !Waiting.TryAdd(capability, new object())) return null;
             _ = capability.CanSeeImagesAsync().ContinueWith(answer =>
             {
-                if (answer.Result == false) late?.Invoke(cannot + "; the image will go as its placeholder");
-            }, CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+                Waiting.Remove(capability);
+                if (answer.IsCompletedSuccessfully && answer.Result == false) late?.Invoke(cannot + "; the image will go as its placeholder");
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             return null;
         }
         return capability.KnownCanSeeImages == false ? cannot : null;
     }
+
+    /// <summary>The models whose late answer someone is already waiting to say.</summary>
+    private static readonly ConditionalWeakTable<Core.Llm.IImageCapability, object> Waiting = new();
 
     private ImageTokens(PromptControl composer) => _composer = composer;
 

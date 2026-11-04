@@ -434,6 +434,29 @@ public class ImageTokenTests : IDisposable
         Assert.Equal("[Image #1 10×10]", composer.InputLabelText);
     }
 
+    /// <summary>Several images pasted before the answer comes hear it once: it is one answer about one model.</summary>
+    [Fact]
+    public async Task ALateAnswer_IsSaidOnce_HoweverManyImagesWaitedForIt()
+    {
+        var said = new List<string>();
+        var server = new AnswersWhenLet("""{"modalities":{"vision":false}}""");
+        var provider = new CxAgent.Core.Llm.Providers.OpenAiCompatibleProvider(new CxAgent.Core.Llm.Providers.OpenAiProviderOptions
+        {
+            ProviderId = "local", DisplayName = "local", Model = "qwen3", BaseUrl = "http://h/v1", Client = new HttpClient(server),
+        });
+        var composer = MainWindow.NewPrompt();
+        ImageTokens.For(composer).CannotSee = () => ImageTokens.Refusal(provider, text => { lock (said) said.Add(text); });
+
+        composer.Paste(Png(10, 10, "one.png"));
+        composer.Paste(Png(10, 10, "two.png"));
+        composer.Paste(Png(10, 10, "three.png"));
+        server.Let.SetResult();
+        Assert.True(await Poll.Until(() => { lock (said) return said.Count > 0; }), "no answer was said");
+        await Task.Delay(200);
+
+        lock (said) Assert.Single(said);
+    }
+
     /// <summary>A clipboard's image takes the same road as a dropped file's, and numbers on from it.</summary>
     [Fact]
     public void AClipboardImage_GivesTheSameTokenAsTheFile()
