@@ -309,6 +309,47 @@ public class ImageTokenTests : IDisposable
         finally { ImageTokens.Refused = before; }
     }
 
+    /// <summary>An endpoint whose /props answers only when the test lets it.</summary>
+    private sealed class AnswersWhenLet(string props) : HttpMessageHandler
+    {
+        public TaskCompletionSource Let { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            await Let.Task.WaitAsync(ct);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(props) };
+        }
+    }
+
+    /// <summary>
+    /// The first image after a start or a /model goes before the probe has answered. When it then says
+    /// no, the user hears it while the line is still in front of them, and the token stays: the image
+    /// goes as its placeholder.
+    /// </summary>
+    [Fact]
+    public async Task AnAnswerAfterThePaste_ThatTheModelCannotSee_IsSaid()
+    {
+        var said = new List<string>();
+        var heard = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var server = new AnswersWhenLet("""{"modalities":{"vision":false}}""");
+        var provider = new CxAgent.Core.Llm.Providers.OpenAiCompatibleProvider(new CxAgent.Core.Llm.Providers.OpenAiProviderOptions
+        {
+            ProviderId = "local", DisplayName = "local", Model = "qwen3", BaseUrl = "http://h/v1", Client = new HttpClient(server),
+        });
+        var composer = MainWindow.NewPrompt();
+        ImageTokens.For(composer).CannotSee = () => ImageTokens.Refusal(provider, text => { said.Add(text); heard.TrySetResult(); });
+
+        composer.Paste(Png(10, 10));
+        Assert.Equal("[Image #1 10×10]", composer.InputLabelText);
+        Assert.Empty(said);
+
+        server.Let.SetResult();
+        await heard.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(["local:qwen3 can't see images; the image will go as its placeholder"], said);
+        Assert.Equal("[Image #1 10×10]", composer.InputLabelText);
+    }
+
     /// <summary>A clipboard's image takes the same road as a dropped file's, and numbers on from it.</summary>
     [Fact]
     public void AClipboardImage_GivesTheSameTokenAsTheFile()

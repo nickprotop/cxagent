@@ -1946,8 +1946,10 @@ public static class AppBootstrap
 
 
         // A DROPPED IMAGE THAT COULD NOT BE TAKEN SAYS WHY, or a path left as text would look like a drop
-        // that worked. Set here because the composers exist before the window system does.
-        ImageTokens.Refused = text => system.ToastService.Show(text, SharpConsoleUI.Core.NotificationSeverity.Warning);
+        // that worked. Set here because the composers exist before the window system does. ON THE UI
+        // THREAD, because a model's answer about images can arrive after the paste, from the probe's.
+        ImageTokens.Refused = text => system.EnqueueOnUIThread(
+            () => system.ToastService.Show(text, SharpConsoleUI.Core.NotificationSeverity.Warning), "imageTokens.Refused");
         ImagePreview.Current = new ImagePreview(system);
 
         // A PASTED TOKEN BACK INTO TEXT, from the keyboard — a click on one does the same (MainWindow.NewPrompt).

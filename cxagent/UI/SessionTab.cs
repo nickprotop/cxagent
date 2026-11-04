@@ -282,7 +282,7 @@ public sealed class SessionTab
         // learns it then, with the line still in front of them, rather than from a reply that never
         // mentions the picture. Asked through the tab because the session arrives after the composer,
         // and /model changes the provider under it.
-        ImageTokens.For(input).CannotSee = () => ImageTokens.Refusal(Session?.Provider);
+        ImageTokens.For(input).CannotSee = () => ImageTokens.Refusal(Session?.Provider, text => ImageTokens.Refused(text));
     }
 
     /// <summary>Assembles the tab's own grid over a composer built by the window.</summary>

@@ -70,17 +70,26 @@ internal sealed class ImageTokens
     ///
     /// <para>NOT KNOWN YET STARTS THE QUESTION AND LETS THIS IMAGE GO. Asking on the UI thread would hold
     /// the paste for as long as the endpoint takes, and the request itself asks again before it is sent,
-    /// so an image that turns out unseeable goes as its placeholder rather than failing the turn.</para>
+    /// so an image that turns out unseeable goes as its placeholder rather than failing the turn. An
+    /// answer of no that comes after is handed to <paramref name="late"/>, so the user hears it with the
+    /// line still in front of them rather than from a reply that never mentions the picture.</para>
     /// </summary>
-    internal static string? Refusal(Core.Llm.ILlmProvider? provider)
+    /// <param name="provider">The composer's model.</param>
+    /// <param name="late">Told when the answer comes after the paste and is no; called off the UI thread.
+    /// Null when nothing was pasted — a tab warming the question.</param>
+    internal static string? Refusal(Core.Llm.ILlmProvider? provider, Action<string>? late = null)
     {
         if (provider is not Core.Llm.IImageCapability capability) return null;
+        var cannot = $"{provider.ProviderId}:{provider.ModelId} can't see images";
         if (capability.KnownCanSeeImages is null)
         {
-            _ = capability.CanSeeImagesAsync();
+            _ = capability.CanSeeImagesAsync().ContinueWith(answer =>
+            {
+                if (answer.Result == false) late?.Invoke(cannot + "; the image will go as its placeholder");
+            }, CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
             return null;
         }
-        return capability.KnownCanSeeImages == false ? $"{provider.ProviderId}:{provider.ModelId} can't see images" : null;
+        return capability.KnownCanSeeImages == false ? cannot : null;
     }
 
     private ImageTokens(PromptControl composer) => _composer = composer;
