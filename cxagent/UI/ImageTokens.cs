@@ -196,11 +196,18 @@ internal sealed class ImageTokens
     /// <para>RETURNS WHETHER THE KEY WAS USED. With no image there, Ctrl+V is still the text paste it has
     /// always been, so the caller lets the key go on to it; Alt+V has no text paste behind it, and says
     /// there was nothing.</para>
+    ///
+    /// <para>TEXT WINS. Spreadsheet cells and slides copy as their text and a picture of it together, and
+    /// what the user meant to paste is the text; so with any text there, Ctrl+V leaves the key to the text
+    /// paste and the image is not read at all.</para>
     /// </summary>
     /// <param name="read">Reads the clipboard's image, or null.</param>
     /// <param name="sayWhenEmpty">Whether an empty clipboard is worth a toast.</param>
-    internal bool PasteClipboard(Func<byte[]?> read, bool sayWhenEmpty)
+    /// <param name="hasText">Whether the clipboard holds text a text paste would take; null for Alt+V,
+    /// which pastes only images.</param>
+    internal bool PasteClipboard(Func<byte[]?> read, bool sayWhenEmpty, Func<bool>? hasText = null)
     {
+        if (hasText?.Invoke() == true) return false;
         if (read() is not { Length: > 0 } bytes)
         {
             if (sayWhenEmpty) Refused("no image on the clipboard");

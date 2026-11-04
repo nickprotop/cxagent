@@ -1488,14 +1488,15 @@ public static class AppBootstrap
                 return;
             }
 
-            // CTRL+V WITH AN IMAGE ON THE CLIPBOARD makes it a token; without one the key goes on to the text
-            // paste the window gives it. Windows Terminal keeps Ctrl+V for itself, so there it is Alt+V,
+            // CTRL+V WITH ONLY AN IMAGE ON THE CLIPBOARD makes it a token; with text there, or nothing, the
+            // key goes on to the text paste the window gives it. Windows Terminal keeps Ctrl+V for itself, so there it is Alt+V,
             // which has no text paste behind it. The composer must have the keyboard: an image anywhere
             // else has nowhere to go.
             if (FocusedComposer(mainWindow) is { } composer && e.KeyInfo.Key == ConsoleKey.V
                 && e.KeyInfo.Modifiers == (OperatingSystem.IsWindows() ? ConsoleModifiers.Alt : ConsoleModifiers.Control)
                 && ImageTokens.For(composer).PasteClipboard(
-                    () => SharpConsoleUI.Helpers.ClipboardHelper.GetImageWithTimeout(), sayWhenEmpty: OperatingSystem.IsWindows()))
+                    () => SharpConsoleUI.Helpers.ClipboardHelper.GetImageWithTimeout(), sayWhenEmpty: OperatingSystem.IsWindows(),
+                    hasText: OperatingSystem.IsWindows() ? null : () => SharpConsoleUI.Helpers.ClipboardHelper.GetTextWithTimeout().Length > 0))
             {
                 e.Handled = true;
                 return;

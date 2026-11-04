@@ -365,6 +365,35 @@ public class ImageTokenTests : IDisposable
         Assert.Equal((3000, 2000), (ImageTokens.Of(token)!.OriginalWidth, ImageTokens.Of(token)!.OriginalHeight));
     }
 
+    /// <summary>
+    /// Spreadsheet cells and slides copy as text and a picture of it together. Ctrl+V pastes the text,
+    /// and leaves the key to the composer's own paste; the image is not even read.
+    /// </summary>
+    [Fact]
+    public void AClipboardWithTextAndAnImage_PastesTheText()
+    {
+        var composer = MainWindow.NewPrompt();
+        var imageRead = false;
+
+        var taken = ImageTokens.For(composer).PasteClipboard(
+            () => { imageRead = true; return File.ReadAllBytes(Png(10, 10)); }, sayWhenEmpty: false, hasText: () => true);
+
+        Assert.False(taken);
+        Assert.False(imageRead);
+        Assert.Equal("", composer.InputLabelText);
+    }
+
+    /// <summary>With no text beside it, the image is pasted.</summary>
+    [Fact]
+    public void AClipboardWithOnlyAnImage_PastesTheImage()
+    {
+        var composer = MainWindow.NewPrompt();
+        var bytes = File.ReadAllBytes(Png(10, 10));
+
+        Assert.True(ImageTokens.For(composer).PasteClipboard(() => bytes, sayWhenEmpty: false, hasText: () => false));
+        Assert.Equal("[Image #1 10×10]", composer.InputLabelText);
+    }
+
     [Fact]
     public void AClipboardThatIsNotAnImage_IsRefused()
     {
