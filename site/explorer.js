@@ -1,4 +1,4 @@
-// The captures and their text are in the HTML, so a reader without JavaScript gets all eight
+// The captures and their text are in the HTML, so a reader without JavaScript gets every one
 // stacked with their explanations — the same content, just not one at a time. This only adds the
 // selection behaviour: it reveals the sidebar and shows one pane.
 (function () {

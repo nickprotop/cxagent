@@ -426,7 +426,9 @@ body.landing { max-width: none; }
 /* nav */
 .landing .site-nav {
   position: sticky; top: 0; z-index: 20;
-  background: rgba(8, 10, 12, 0.82);
+  /* THE PAGE'S OWN BACKGROUND, MADE TRANSLUCENT, not a fixed dark tint: a hard-coded near-black
+     painted a dark band across the light theme, on the one page whose nav differed from the rest. */
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border-dim);
 }
@@ -498,32 +500,51 @@ body.landing { max-width: none; }
 }
 .section-sub { max-width: 62ch; margin: 0 0 26px; }
 
-/* the session explorer */
-.explorer { display: grid; grid-template-columns: 250px 1fr; }
-.exp-nav { background: var(--bg-raised); border-right: 1px solid var(--border); padding: 8px 0; }
+/* the session explorer
+   A TAB STRIP ACROSS THE TOP, NOT A SIDEBAR. The captures are terminal text, and a sidebar took a
+   fifth of the window's width from them: at what was left the text was a texture rather than
+   something to read, which is the one thing this section exists to show. A sidebar also set the
+   window's height by its own length, leaving a band of nothing under short captures. */
+.explorer { display: block; }
+.exp-nav {
+  background: var(--bg-raised); border-bottom: 1px solid var(--border);
+  padding: 0 8px; overflow-x: auto; white-space: nowrap; scrollbar-width: thin;
+}
 .exp-item {
-  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
-  background: none; border: 0; border-left: 2px solid transparent;
-  padding: 11px 16px; cursor: pointer; color: var(--fg);
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 12px 14px 10px; cursor: pointer; color: var(--fg);
   font: 400 0.9rem var(--font-prose);
 }
 .exp-item:hover { background: var(--accent-bg); }
-.exp-item[aria-selected="true"] {
-  background: var(--accent-bg); border-left-color: var(--accent); color: var(--accent);
-}
+.exp-item[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); }
 .exp-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.exp-icon { font-size: 1.05rem; opacity: 0.9; flex-shrink: 0; }
+/* TEXT TABS, NO ICONS. Eight labels with an emoji each overflowed a 1180px strip, hiding the last
+   tab behind a scroll nobody sees on a desktop; the words alone fit and read as tabs. The icons stay
+   in the markup for a stacked, script-less page, where each one heads its capture. */
+.js .exp-item .exp-icon { display: none; }
+.exp-icon { font-size: 1rem; opacity: 0.9; }
 .exp-body { display: flex; flex-direction: column; min-width: 0; }
-.exp-shot { background: var(--bg-code); border-bottom: 1px solid var(--border); }
-.exp-shot img { display: block; width: 100%; height: auto; }
-.exp-text { padding: 20px 24px; }
+/* ONE SHAPE FOR EVERY CAPTURE. They were taken at different window sizes, so each kept its own
+   aspect and the window changed height on every click, moving everything below it. The frame is
+   the common 17:10 of most of them; the others are fitted inside it on the capture background. */
+/* The frame is a terminal's black in both themes: the captures are dark, and a light band around a
+   fitted one reads as a margin the page forgot to fill rather than as the window behind it. */
+.exp-shot {
+  background: #0b0d10; border-bottom: 1px solid var(--border);
+  aspect-ratio: 17 / 10;
+}
+.exp-shot a { display: block; width: 100%; height: 100%; }
+.exp-shot img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.exp-text { padding: 20px 24px; min-height: 9.5rem; }
 .exp-text h3 { font: 500 1.02rem var(--font-prose); color: var(--fg-bright); margin: 0 0 7px; }
-.exp-text p { margin: 0; font-size: 0.94rem; line-height: 1.62; max-width: 74ch; }
+.exp-text p { margin: 0; font-size: 0.94rem; line-height: 1.62; max-width: 90ch; }
 
 /* numbered differentiators — order is real here, they are not decoration */
-/* THREE ACROSS, NOT auto-fit. With five items, auto-fit packs four onto the first row and strands
-   the fifth beside three empty cells — which reads as a layout bug rather than a fifth point. Three
-   columns give 3 + 2, where the short row is a pair and looks deliberate. */
+/* THREE ACROSS, NOT auto-fit, AND A MULTIPLE OF THREE CARDS. auto-fit packs whatever fits onto a
+   row and strands the remainder beside empty cells; the grid's 1px gap is its background showing
+   through, so an empty cell paints as a dark block and reads as a layout bug. Three fixed columns
+   and a count that fills them leave no empty cell to paint. */
 .uniques {
   display: grid; grid-template-columns: repeat(3, 1fr);
   gap: 1px; background: var(--border-dim);
@@ -547,9 +568,12 @@ body.landing { max-width: none; }
 
 .landing .install-line pre {
   background: var(--bg-code);
-  /* Keep the wrap: a scrollbar under the page's primary call to action is worse than two lines. */
+  /* KEEP THE WRAP, BUT ONLY WHERE THE MARKUP ALLOWS IT. A scrollbar under the page's primary call
+     to action is worse than two lines; a break mid-word ("…/m" / "aster/…") is worse than both,
+     because it reads as two commands. The <wbr> after a slash and before the pipe are the only
+     places the line may break, and they add nothing to what Copy puts on the clipboard. */
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 .warn-block { border-left: 2px solid var(--warn); padding-left: 18px; }
 .warn-block p { max-width: 66ch; }
@@ -574,11 +598,8 @@ body.landing { max-width: none; }
 @media (max-width: 60rem) {
   .hero-split { flex-direction: column; align-items: stretch; gap: 34px; }
   .hero-media { flex: 1; max-width: none; }
-  .explorer { grid-template-columns: 1fr; }
   .uniques { grid-template-columns: 1fr; }
-  .js .exp-nav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); }
-  .exp-item { border-left: 0; border-bottom: 2px solid transparent; white-space: nowrap; }
-  .exp-item[aria-selected="true"] { border-left-color: transparent; border-bottom-color: var(--accent); }
+  .exp-text { min-height: 0; }
   .landing main { padding: 0 20px; }
 }
 
@@ -783,12 +804,6 @@ main.doc-wide > ol,
 main.doc-wide > blockquote { max-width: 78ch; }
 main.doc-wide > p:has(> img) { max-width: none; }
 
-/* ITS OWN ROW, ALWAYS. Left to wrap it sat beside `models` at 1440px, alone at 1100px and alone
-   again at 900px -- landing wherever there happened to be room, which reads as an accident rather
-   than a decision. A flex-basis of 100% breaks the line before it every time.
-   
-   IT IS ALSO NOT THE SAME KIND OF FACT as the three above it: those are fixed properties of the
-   software, this one changes with every release. A row of its own says so without a caption. */
 /* A ROW OF ITS OWN, forced rather than left to chance. Wrapping naturally it sat beside `models` at
    1440px, alone at 1100px and alone again at 900px -- landing wherever there was room, which reads
    as an accident. `.pills` wraps, so a full-width spacer before this pill breaks the line every
@@ -809,3 +824,10 @@ main.doc-wide > p:has(> img) { max-width: none; }
   transition: border-color 0.15s ease, color 0.15s ease;
 }
 .pill-link:hover { border-color: var(--accent); color: var(--fg-bright); }
+
+/* The landing page's footer: the nav again, for a reader who has scrolled past it, then the line
+   that names the licence and the library underneath. */
+.site-footer .footer-links { display: flex; flex-wrap: wrap; gap: 0.6rem 1.4rem; margin-bottom: 0.8rem; }
+.site-footer .footer-links a { color: var(--fg); }
+.site-footer .footer-links a:hover { color: var(--accent); }
+.site-footer p { margin: 0; }
