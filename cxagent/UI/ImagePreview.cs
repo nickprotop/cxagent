@@ -32,21 +32,15 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
     /// <summary>Whether the terminal draws pixels; a seam so a test can say either.</summary>
     internal Func<bool> Kitty { get; init; } = () => TerminalCapabilities.SupportsKittyGraphics;
 
-    /// <summary>Whether there is a desktop to open a viewer on; a seam for tests.</summary>
-    internal Func<bool> Desktop { get; init; } = () => HasDesktop(Environment.GetEnvironmentVariable, OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD());
-
     /// <summary>
-    /// Whether a viewer can open here.
+    /// Opens a file in the system viewer, and says whether anything opened; a seam so a drive or a test
+    /// never opens one on a desktop.
     ///
-    /// <para>ON LINUX ONLY WITH A DISPLAY. Without one xdg-open does not fail: it falls back to a text
-    /// browser in this same terminal — w3m, lynx — which takes the screen from the app, and prints its
-    /// search for one over the frame. macOS and Windows always have their desktop.</para>
+    /// <para>THE LAUNCHER DECIDES WHETHER THERE IS A DESKTOP. On Linux without a display xdg-open falls back
+    /// to a text browser in this same terminal, which would take the screen from the app; the launcher
+    /// refuses that case and says so, and the viewer's answer to "nothing opened" is the file's path.</para>
     /// </summary>
-    internal static bool HasDesktop(Func<string, string?> env, bool linux) =>
-        !linux || !string.IsNullOrEmpty(env("DISPLAY")) || !string.IsNullOrEmpty(env("WAYLAND_DISPLAY"));
-
-    /// <summary>Opens a file in the system viewer; a seam so a drive or a test never opens one on a desktop.</summary>
-    internal Action<string> Launch { get; init; } = file => UrlLauncher.Open(new Uri(file).AbsoluteUri);
+    internal Func<string, bool> Launch { get; init; } = file => UrlLauncher.TryOpen(new Uri(file).AbsoluteUri);
 
     public bool IsOpen => _open is not null;
 
@@ -96,8 +90,7 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
             // an older run, or put there by someone else — is not what the model was sent.
             Directory.CreateDirectory(Path.GetDirectoryName(file)!);
             File.WriteAllBytes(file, png);
-            if (Desktop()) Launch(file);
-            else system.ToastService.Show($"no desktop to open the image on; it is at {file}", NotificationSeverity.Info);
+            if (!Launch(file)) system.ToastService.Show($"no desktop to open the image on; it is at {file}", NotificationSeverity.Info);
         }
         catch (Exception e)
         {

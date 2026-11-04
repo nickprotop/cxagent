@@ -80,7 +80,7 @@ public class ImageRowTests
     public void WithoutKitty_TheImageOpensInTheViewer()
     {
         string? launched = null;
-        var preview = new ImagePreview(System()) { Kitty = () => false, Desktop = () => true, Launch = f => launched = f };
+        var preview = new ImagePreview(System()) { Kitty = () => false, Launch = f => { launched = f; return true; } };
 
         preview.Open(Image(bytes: 10));
 
@@ -97,7 +97,7 @@ public class ImageRowTests
     public void TheViewerCopy_IsWrittenEveryTime()
     {
         string? launched = null;
-        var preview = new ImagePreview(System()) { Kitty = () => false, Desktop = () => true, Launch = f => launched = f };
+        var preview = new ImagePreview(System()) { Kitty = () => false, Launch = f => { launched = f; return true; } };
         var image = Image(bytes: 10) with { Hash = "stale" + Guid.NewGuid().ToString("N") };
         preview.Open(image);
         File.WriteAllBytes(launched!, [9, 9, 9]);
@@ -109,33 +109,19 @@ public class ImageRowTests
     }
 
     /// <summary>
-    /// With no desktop to open it on — over SSH, or a console without a display — nothing is launched.
-    /// xdg-open there falls back to a text browser, which takes the terminal from the app.
+    /// A launcher that opened nothing — no desktop, over SSH — leaves the copy where the toast says, and
+    /// nothing else happens: no portal, no second try.
     /// </summary>
     [Fact]
-    public void WithoutADesktop_NothingIsLaunched()
+    public void ALaunchThatOpenedNothing_LeavesTheCopy()
     {
-        var launched = false;
-        var preview = new ImagePreview(System()) { Kitty = () => false, Desktop = () => false, Launch = _ => launched = true };
+        string? tried = null;
+        var preview = new ImagePreview(System()) { Kitty = () => false, Launch = f => { tried = f; return false; } };
 
         preview.Open(Image(bytes: 10));
 
-        Assert.False(launched);
-    }
-
-    [Theory]
-    [InlineData(null, null, false)]
-    [InlineData(":0", null, true)]
-    [InlineData(null, "wayland-0", true)]
-    [InlineData("", "", false)]
-    public void OnLinux_ADesktopIsADisplayOrAWaylandSocket(string? display, string? wayland, bool desktop)
-    {
-        Assert.Equal(desktop, ImagePreview.HasDesktop(name => name switch
-        {
-            "DISPLAY" => display,
-            "WAYLAND_DISPLAY" => wayland,
-            _ => null,
-        }, linux: true));
+        Assert.Equal(new byte[10], File.ReadAllBytes(tried!));
+        Assert.False(preview.IsOpen);
     }
 
     [Fact]
