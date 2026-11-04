@@ -66,6 +66,10 @@ public sealed record ModelConfig(ProviderKind Kind, string Model)
     /// <summary>Marks an <c>api.openai.com</c> model as one that reasons — config.json's
     /// <c>reasoning</c>. OpenAI cannot be asked, and a model that does not reason refuses the field.</summary>
     public bool Reasoning { get; init; }
+
+    /// <summary>Whether this model sees images — config.json's <c>images</c>. Null asks the endpoint
+    /// where it can say; false sends each image's placeholder from the start.</summary>
+    public bool? Images { get; init; }
 }
 
 /// <summary>
@@ -255,7 +259,10 @@ public sealed record AgentConfig
             CacheControl: model.CacheControl,
             ThinkingDisplay: model.ThinkingDisplay,
             Thinking: model.Thinking,
-            Reasoning: model.Reasoning), client);
+            Reasoning: model.Reasoning)
+        {
+            Images = model.Images,
+        }, client);
 
     /// <summary>The config.json spelling, so a display name reads the same however it was built.</summary>
     private static string KindName(ProviderKind kind) => kind switch

@@ -93,6 +93,21 @@ public class AgentConfigTests
         Assert.Equal(["npx", "-y", "@upstash/context7-mcp"], resolved.McpServers["context7"].Command);
     }
 
+    /// <summary>A model pinned as text-only in code is the same pin config.json's <c>images</c> sets.</summary>
+    [Theory]
+    [InlineData(ProviderKind.OpenAiCompatible)]
+    [InlineData(ProviderKind.Ollama)]
+    [InlineData(ProviderKind.Anthropic)]
+    public void Images_PinsWhetherTheModelSeesThem(ProviderKind kind)
+    {
+        var resolved = new AgentConfig
+        {
+            Models = { ["m"] = new(kind, "model") { BaseUrl = "http://h/v1", ApiKey = "k", Images = false } },
+        }.Resolve();
+
+        Assert.False(Assert.IsAssignableFrom<IImageCapability>(resolved.Provider).KnownCanSeeImages);
+    }
+
     // ONE MODEL NEEDS NO DEFAULT, because there is nothing to choose between.
     [Fact]
     public void ASingleModelIsTheDefault()
