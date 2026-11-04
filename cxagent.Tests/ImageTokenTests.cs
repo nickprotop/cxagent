@@ -102,6 +102,28 @@ public class ImageTokenTests : IDisposable
         Assert.True(prepared.Bytes.Length <= ImageTokens.MaxSentBytes);
     }
 
+    /// <summary>
+    /// A shrink averages what each sent pixel covers: a one-pixel checkerboard halved is flat grey. Sampled
+    /// instead, it comes out all black or all white, which is how a screenshot's thin strokes vanish.
+    /// </summary>
+    [Fact]
+    public void AShrink_AveragesWhatEachPixelCovers()
+    {
+        const int width = ImageTokens.MaxEdge * 2, height = 4;
+        var checker = new byte[width * height * 3];
+        for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
+                if ((x + y) % 2 == 0) checker.AsSpan((y * width + x) * 3, 3).Fill(255);
+        using var ms = new MemoryStream();
+        new ImageWriter().WritePng(checker, width, height, ColorComponents.RedGreenBlue, ms);
+
+        var sent = SharpConsoleUI.Imaging.PixelBuffer.FromStream(new MemoryStream(ImageTokens.Encode(ms.ToArray(), "c.png", out _)!.Bytes));
+
+        Assert.Equal((ImageTokens.MaxEdge, 2), (sent.Width, sent.Height));
+        for (var x = 0; x < sent.Width; x++)
+            Assert.InRange(sent.GetPixel(x, 0).R, 120, 135);
+    }
+
     /// <summary>A screenshot compresses well, and stays a PNG: JPEG blurs the edges of text.</summary>
     [Fact]
     public void AScreenshot_StaysAPng()

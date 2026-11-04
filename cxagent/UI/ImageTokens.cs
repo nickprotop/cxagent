@@ -320,7 +320,7 @@ internal sealed class ImageTokens
         var scale = Math.Min(1.0, (double)MaxEdge / Math.Max(pixels.Width, pixels.Height));
         var width = Math.Max(1, (int)Math.Round(pixels.Width * scale));
         var height = Math.Max(1, (int)Math.Round(pixels.Height * scale));
-        var rgb = scale < 1.0 ? Shrink(pixels, width, height) : Rgb(pixels);
+        var rgb = Rgb(scale < 1.0 ? pixels.Resize(width, height) : pixels);
 
         using var ms = new MemoryStream();
         new ImageWriter().WritePng(rgb, width, height, ColorComponents.RedGreenBlue, ms);
@@ -353,42 +353,6 @@ internal sealed class ImageTokens
                 var i = (y * pixels.Width + x) * 3;
                 (rgb[i], rgb[i + 1], rgb[i + 2]) = (p.R, p.G, p.B);
             }
-        return rgb;
-    }
-
-    /// <summary>
-    /// Shrinks by averaging each target pixel's area of the source.
-    ///
-    /// <para>NOT <see cref="PixelBuffer.Resize"/>: it caps both sides at the library's display limit of
-    /// 500 and clamps each on its own, so a 3000×2000 screenshot came back 500×500, squashed. And an area
-    /// average keeps a screenshot's text legible where sampling between four neighbours drops whole
-    /// strokes once the scale passes two.</para>
-    /// </summary>
-    private static byte[] Shrink(PixelBuffer source, int width, int height)
-    {
-        var rgb = new byte[width * height * 3];
-        var sx = (double)source.Width / width;
-        var sy = (double)source.Height / height;
-        for (var y = 0; y < height; y++)
-        {
-            var y0 = (int)(y * sy);
-            var y1 = Math.Max(y0 + 1, Math.Min(source.Height, (int)((y + 1) * sy)));
-            for (var x = 0; x < width; x++)
-            {
-                var x0 = (int)(x * sx);
-                var x1 = Math.Max(x0 + 1, Math.Min(source.Width, (int)((x + 1) * sx)));
-                long r = 0, g = 0, b = 0;
-                for (var yy = y0; yy < y1; yy++)
-                    for (var xx = x0; xx < x1; xx++)
-                    {
-                        var p = source.GetPixel(xx, yy);
-                        r += p.R; g += p.G; b += p.B;
-                    }
-                var n = (x1 - x0) * (y1 - y0);
-                var i = (y * width + x) * 3;
-                (rgb[i], rgb[i + 1], rgb[i + 2]) = ((byte)(r / n), (byte)(g / n), (byte)(b / n));
-            }
-        }
         return rgb;
     }
 
