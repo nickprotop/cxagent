@@ -13,13 +13,7 @@ What is next. See [README](README.md) for what cxagent does and
   ends, when a session starts. Today the only way in is a plugin, which is code.
 - **Several edits in one call** — `replace_in_file` changes one exact passage; a multi-edit or patch
   tool would let a refactor across a file be one call and one permission, not one per passage.
-- **A worktree per sub-agent** — background agents that write share the one checkout, so two of
-  them on the same files is the user's to avoid. A git worktree each would let them work apart and
-  be merged back.
 - **Sandboxed shell** — commands run as the user, gated by permission rules but not contained; the
   same thing stands between this loop and running tools in parallel.
-- **Publishing a plugin from outside this repository** — the catalog and the picker that installs
-  from it ship (`/plugin browse`, F2); adding an entry still takes a change to
-  [`plugins.json`](plugins/plugins.json) here.
 - **A web front end** — the reason the extraction was worth doing.
 - **Skill scripts** — a skill that runs, not just one that is read.
