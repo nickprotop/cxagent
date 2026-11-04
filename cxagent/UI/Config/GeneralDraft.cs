@@ -37,11 +37,15 @@ public sealed class GeneralDraft
     private int? _originalCapNumber;
     private int? _originalCompact;
     private IReadOnlyList<string>? _originalTools;
+    private string _originalTavilyKey = "";
 
     private GeneralDraft() { }
 
     /// <summary>The settings as config has them.</summary>
-    public static GeneralDraft From(ProviderSettings settings)
+    /// <param name="settings">The loaded config.</param>
+    /// <param name="tavilyKeyAsWritten">The Tavily key as the file has it, placeholder and all — see
+    /// <see cref="ProvidersRead.TavilyKeyAsWritten"/>. Never the loaded, expanded value.</param>
+    public static GeneralDraft From(ProviderSettings settings, string? tavilyKeyAsWritten = null)
     {
         var turns = settings.Orchestrator.MaxTurns;
         var terms = ToolBoxes.Read(settings.Tools?.Terms);
@@ -56,12 +60,14 @@ public sealed class GeneralDraft
             Base = terms.Base,
             Removed = [.. terms.Removed],
             Added = [.. terms.Added],
+            TavilyKey = tavilyKeyAsWritten ?? "",
         };
         draft._originalDetach = draft.DetachOnTimeout;
         draft._originalCap = draft.Cap;
         draft._originalCapNumber = turns;
         draft._originalCompact = settings.Orchestrator.ContextCompressThreshold;
         draft._originalTools = ToolBoxes.Canonical(settings.Tools?.Terms);
+        draft._originalTavilyKey = draft.TavilyKey;
         return draft;
     }
 
@@ -99,8 +105,15 @@ public sealed class GeneralDraft
     private bool CapChanged => Cap != _originalCap || (Cap == TurnCap.Number && CapNumber != _originalCapNumber);
     private bool CompactChanged => Compact != _originalCompact || (Compact is null && CompactText.Trim().Length > 0);
     private bool ToolsChanged => !ToolBoxes.Same(Tools, _originalTools);
+    private bool TavilyKeyChanged => TavilyKey.Trim() != _originalTavilyKey.Trim();
 
-    public bool IsDirty => DetachChanged || CapChanged || CompactChanged || ToolsChanged;
+    /// <summary>The Tavily key as it will be written: empty means none, and searches use DuckDuckGo.</summary>
+    public string TavilyKey { get; set; } = "";
+
+    /// <summary>The Tavily key the file holds now — what the line shows once nothing new has been typed.</summary>
+    public string SavedTavilyKey => _originalTavilyKey;
+
+    public bool IsDirty => DetachChanged || CapChanged || CompactChanged || ToolsChanged || TavilyKeyChanged;
 
     /// <summary>
     /// What was just written becomes what the file says, so the draft is clean without being rebuilt — a rebuild
@@ -113,6 +126,7 @@ public sealed class GeneralDraft
         _originalCapNumber = CapNumber;
         _originalCompact = Compact;
         _originalTools = Tools;
+        _originalTavilyKey = TavilyKey;
     }
 
     /// <summary>Why this cannot be saved as it stands, in words for the user; null when it can.</summary>
@@ -135,6 +149,9 @@ public sealed class GeneralDraft
         if (CompactChanged) Set(root, "orchestrator", "contextCompressThreshold", Compact is { } c ? JsonValue.Create(c) : null);
         if (ToolsChanged)
             Set(root, "llmAgent", "tools", Tools is { } terms ? new JsonArray([.. terms.Select(t => (JsonNode)JsonValue.Create(t))]) : null);
+        // EMPTY REMOVES IT, and the block with it when nothing else is left: no key is DuckDuckGo.
+        if (TavilyKeyChanged)
+            Set(root, "webSearch", "tavilyApiKey", TavilyKey.Trim() is { Length: > 0 } key ? JsonValue.Create(key) : null);
     }
 
     /// <summary>One key in a block, or removed when <paramref name="value"/> is null — with the block, when that empties it.</summary>

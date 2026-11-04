@@ -8,7 +8,15 @@ namespace CxAgent.UI.Config;
 /// <summary>The file as the dialog reads it, or why it cannot be read.</summary>
 /// <param name="Settings">What the loader made of it; null when it cannot be read.</param>
 /// <param name="Errors">The loader's reasons, when it cannot.</param>
-public sealed record ProvidersRead(ProviderSettings? Settings, IReadOnlyList<string> Errors);
+public sealed record ProvidersRead(ProviderSettings? Settings, IReadOnlyList<string> Errors)
+{
+    /// <summary>
+    /// <c>webSearch.tavilyApiKey</c> exactly as the file has it — a <c>{env:NAME}</c> placeholder left
+    /// a placeholder. The dialog edits this, not the loaded value: a draft built from the expanded key
+    /// would write the secret a placeholder stood for back into the file on the next save.
+    /// </summary>
+    public string? TavilyKeyAsWritten { get; init; }
+}
 
 /// <summary>
 /// Reads config.json for the configuration dialog.
@@ -32,17 +40,24 @@ public static class ProvidersFile
             return new ProvidersRead(null, [$"config.json could not be read: {ex.Message}"]);
         }
 
+        string? tavilyKey = null;
         try
         {
-            if (JsonNode.Parse(text) is JsonObject root && root["providers"] is null)
+            if (JsonNode.Parse(text) is JsonObject root)
             {
-                root["providers"] = new JsonObject();
-                text = root.ToJsonString();
+                if (root["webSearch"] is JsonObject ws && ws["tavilyApiKey"] is JsonValue key
+                    && key.TryGetValue<string>(out var written))
+                    tavilyKey = written;
+                if (root["providers"] is null)
+                {
+                    root["providers"] = new JsonObject();
+                    text = root.ToJsonString();
+                }
             }
         }
         catch (JsonException ex) { return new ProvidersRead(null, [$"config.json is not valid JSON: {ex.Message}"]); }
 
-        try { return new ProvidersRead(ProviderConfigLoader.Parse(text, env, paths.ConfigDir), []); }
+        try { return new ProvidersRead(ProviderConfigLoader.Parse(text, env, paths.ConfigDir), []) { TavilyKeyAsWritten = tavilyKey }; }
         catch (ProviderConfigException ex) { return new ProvidersRead(null, ex.Errors); }
         catch (Exception ex) when (ex is InvalidOperationException or FormatException)
         {

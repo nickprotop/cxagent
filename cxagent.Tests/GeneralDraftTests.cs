@@ -278,4 +278,76 @@ public class GeneralDraftTests
         draft.DetachOnTimeout = true;
         Assert.True(draft.IsDirty);
     }
+
+    // ---- Web search -----------------------------------------------------------------------
+
+    [Fact]
+    public void Unchanged_key_writes_nothing()
+    {
+        var draft = GeneralDraft.From(Settings(), tavilyKeyAsWritten: "tvly-x");
+        Assert.Equal("tvly-x", draft.TavilyKey);
+        Assert.False(draft.IsDirty);
+        var root = Root(""" "webSearch": { "tavilyApiKey": "tvly-x" } """);
+        draft.Apply(root);
+        Assert.Equal("tvly-x", root["webSearch"]!["tavilyApiKey"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Setting_a_key_writes_webSearch_block()
+    {
+        var draft = GeneralDraft.From(Settings());
+        draft.TavilyKey = "  tvly-new ";
+        Assert.True(draft.IsDirty);
+        var root = Root();
+        draft.Apply(root);
+        Assert.Equal("tvly-new", root["webSearch"]!["tavilyApiKey"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Clearing_the_key_removes_it()
+    {
+        var draft = GeneralDraft.From(Settings(), tavilyKeyAsWritten: "tvly-x");
+        draft.TavilyKey = "";
+        var root = Root(""" "webSearch": { "tavilyApiKey": "tvly-x" } """);
+        draft.Apply(root);
+        Assert.Null(root["webSearch"]);
+    }
+
+    /// <summary>THE KEY AS WRITTEN, never as expanded. A draft built from the loaded settings would hold
+    /// the secret a {env:NAME} placeholder resolved to, and a save would write it into the file.</summary>
+    [Fact]
+    public void Env_placeholder_round_trips_unexpanded()
+    {
+        var draft = GeneralDraft.From(Settings(), tavilyKeyAsWritten: "{env:TAVILY_API_KEY}");
+        Assert.Equal("{env:TAVILY_API_KEY}", draft.TavilyKey);
+        Assert.False(draft.IsDirty);
+    }
+
+    [Fact]
+    public void The_file_reader_hands_back_the_key_as_written()
+    {
+        var dir = Directory.CreateTempSubdirectory("cxagent-general-ws").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "config.json"),
+                "{" + Provider + """, "webSearch": { "tavilyApiKey": "{env:TAVILY_API_KEY}" } }""");
+            var read = ProvidersFile.Read(new Core.Storage.AppPaths(dir),
+                new Dictionary<string, string> { ["TAVILY_API_KEY"] = "secret" });
+            Assert.Equal("{env:TAVILY_API_KEY}", read.TavilyKeyAsWritten);
+            Assert.Equal("secret", read.Settings!.WebSearch!.TavilyApiKey);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>AFTER A SAVE THE TYPED KEY IS THE SAVED ONE, so the line stops saying "new key typed".</summary>
+    [Fact]
+    public void Saving_makes_the_typed_key_the_saved_one()
+    {
+        var draft = GeneralDraft.From(Settings());
+        draft.TavilyKey = "{env:TAVILY_API_KEY}";
+        Assert.Equal("", draft.SavedTavilyKey);
+        draft.Saved();
+        Assert.Equal("{env:TAVILY_API_KEY}", draft.SavedTavilyKey);
+        Assert.False(draft.IsDirty);
+    }
 }

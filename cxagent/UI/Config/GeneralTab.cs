@@ -77,7 +77,7 @@ public sealed class GeneralTab
             MarkSave();
             return;
         }
-        _draft = GeneralDraft.From(settings);
+        _draft = GeneralDraft.From(settings, read.TavilyKeyAsWritten);
         Fill(_draft);
         SetStatus("");
         MarkSave();
@@ -140,7 +140,58 @@ public sealed class GeneralTab
         tools.AddBare(new MarkupControl([$"[{muted}]What your session's agent may use: a base, and the tools taken from it. Sub-agent types set their own in Agents.[/]"]) { Wrap = true });
         tools.AddBare(ToolsEditor(draft));
         _detail.AddControl(ListDetail.Section("Session tools", tools.Control));
+        _detail.AddControl(ListDetail.Gap());
+
+        var search = new FieldGrid();
+        search.AddBare(Label("Tavily API key"));
+        search.AddBare(TavilyKeyEditor(draft));
+        search.AddBare(Help("Empty: searches use DuckDuckGo, which needs no account but may answer with a bot check. "
+            + "A free Tavily key (tavily.com, 1,000 searches a month) makes search reliable. {env:NAME} works here."));
+        _detail.AddControl(ListDetail.Section("Web search", search.Control));
     }
+
+    /// <summary>
+    /// The Tavily key, the way the Providers tab edits a provider's: the stored value is never shown or put
+    /// back into a field — only "set" and its last four characters — and a new one is typed into a masked
+    /// prompt. A placeholder is shown as written: <c>{env:NAME}</c> names a variable, it is not the secret.
+    /// </summary>
+    private IWindowControl TavilyKeyEditor(GeneralDraft draft)
+    {
+        var stack = new FieldGrid();
+        var line = new MarkupControl([TavilyLine(draft)]);
+        // REDRAWN AFTER A SAVE, which makes the typed key the saved one; left alone, the line went on
+        // saying "new key typed — saved with Save" about a key that was already saved.
+        _afterSave = () => line.SetContent([TavilyLine(draft)]);
+        var entry = ListDetail.Input(new PromptControl { MaskCharacter = '•', Visible = false, HorizontalAlignment = HorizontalAlignment.Stretch, Prompt = "New key: " });
+        entry.InputChanged += (_, text) => { draft.TavilyKey = text; line.SetContent([TavilyLine(draft)]); MarkSave(); };
+
+        var set = Controls.Button(" Set… ").OnClick((_, _) => { entry.Visible = true; entry.Input = ""; }).Build();
+        var clear = Controls.Button(" Clear ").OnClick((_, _) =>
+        {
+            draft.TavilyKey = "";
+            entry.Visible = false;
+            line.SetContent([TavilyLine(draft)]);
+            MarkSave();
+        }).Build();
+
+        var row = new ToolbarControl { ItemSpacing = 3, HorizontalAlignment = HorizontalAlignment.Left };
+        row.AddItem(line);
+        row.AddItem(set);
+        row.AddItem(clear);
+        stack.AddBare(row);
+        stack.AddBare(entry);
+        return stack.Control;
+    }
+
+    private static string TavilyLine(GeneralDraft draft) => TavilyLine(draft, draft.SavedTavilyKey);
+
+    private static string TavilyLine(GeneralDraft draft, string original) =>
+        draft.TavilyKey.Trim() == original.Trim()
+            ? (original.TrimStart().StartsWith('{')
+                ? MarkupParser.Escape(original)
+                : MarkupParser.Escape(SecretField.Describe(original)))
+        : draft.TavilyKey.Trim().Length == 0 ? $"[{ColorScheme.CautionMarkup}]will be removed on save — searches use DuckDuckGo[/]"
+        : $"[{ColorScheme.CautionMarkup}]new key typed — saved with Save[/]";
 
     /// <summary>
     /// What an empty threshold means, as a number when it can be one: 80% of the default model's window, or the
@@ -204,6 +255,7 @@ public sealed class GeneralTab
                 // CLEAN WITHOUT A REBUILD: rebuilding would replace the field Ctrl+S was pressed in, and a replaced
                 // field is left out of the Tab order.
                 draft.Saved();
+                _afterSave?.Invoke();
                 MarkSave();
                 // WRITTEN BUT NOT LIVE when the file resolves to no usable provider: nothing is current to open a
                 // tab from, so the reason is said rather than "saved".
@@ -224,4 +276,7 @@ public sealed class GeneralTab
     }
 
     private void SetStatus(string markup) => _status.SetContent([markup]);
+
+    /// <summary>Redraws what a save changes in place — the Tavily key's line.</summary>
+    private Action? _afterSave;
 }
