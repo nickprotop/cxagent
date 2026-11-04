@@ -1496,7 +1496,7 @@ public static class AppBootstrap
                 && e.KeyInfo.Modifiers == (OperatingSystem.IsWindows() ? ConsoleModifiers.Alt : ConsoleModifiers.Control)
                 && ImageTokens.For(composer).PasteClipboard(
                     () => SharpConsoleUI.Helpers.ClipboardHelper.GetImageWithTimeout(), sayWhenEmpty: OperatingSystem.IsWindows(),
-                    hasText: OperatingSystem.IsWindows() ? null : () => SharpConsoleUI.Helpers.ClipboardHelper.GetTextWithTimeout().Length > 0))
+                    hasText: OperatingSystem.IsWindows() ? null : ClipboardHasText))
             {
                 e.Handled = true;
                 return;
@@ -2629,6 +2629,15 @@ public static class AppBootstrap
         main.Input.HasFocus ? main.Input
         : main.ActiveAgentTab?.Input is { HasFocus: true } agentInput ? agentInput
         : null;
+
+    /// <summary>
+    /// Whether the clipboard holds text for Ctrl+V's text paste to take.
+    ///
+    /// <para>A READ THAT TIMED OUT IS NOT TEXT. The plain timed read answers a slow clipboard with whatever
+    /// this app last copied itself, and that would win over an image the user just copied elsewhere.</para>
+    /// </summary>
+    private static bool ClipboardHasText() =>
+        SharpConsoleUI.Helpers.ClipboardHelper.TryGetTextWithTimeout(out var text) && text.Length > 0;
 
     /// <summary>How long ago, in the coarsest unit that is still informative.</summary>
     private static string Ago(DateTimeOffset when)
