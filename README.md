@@ -110,6 +110,17 @@ shell has shown so far; either way it is queued and arrives with whatever you sa
   <img src="docs/screenshots/23-shell-terminal.png" alt="A shell in its own tab beside the Chat tab, with copy back on exit and Copy now in its toolbar" width="800">
 </div>
 
+**A screenshot, pasted into the conversation.** `Ctrl+V` pastes an image from the clipboard as a token,
+`[Image #1 1568×1122]`, and dropping an image file on the terminal does the same. The model is sent the
+picture, shrunk to 1568 pixels on its long edge, and it stays in the context until compression. `Ctrl+G`
+or a click opens it in a window of its own: Kitty draws the pixels, any other terminal draws half-blocks,
+and the system viewer is a button away. A model that cannot see images is sent a short note in its
+place, so the conversation carries on; the `images` key in [CONFIG.md](CONFIG.md) says which can.
+
+<div align="center">
+  <img src="docs/screenshots/40-images.png" alt="The image window over a session on Claude Haiku: a pasted 3500 by 2504 screenshot shrunk to 1568 by 1122, drawn in full in Kitty, its sizes in the title and Open in viewer in the footer, and the composer holding the image's token and the question about it" width="800">
+</div>
+
 **A live session panel.** The right-hand column (`F3`) shows the session as it runs: the context
 window, turns and tool calls, limits, MCP servers and their tools, agent types, permissions granted,
 tokens by model and by agent, and the git branch and its state. The picture at the top shows it.

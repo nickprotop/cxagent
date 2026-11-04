@@ -489,6 +489,19 @@ session without resuming it.
 
 ---
 
+## A screenshot in the conversation
+
+![The image window over a session on Claude Haiku: a pasted 3500 by 2504 screenshot shrunk to 1568 by 1122, drawn in full in Kitty, its sizes in the title and Open in viewer in the footer, and the composer holding the image's token and the question about it](40-images.png)
+
+A 3500×2504 screenshot, pasted with `Ctrl+V`, sits in the composer as `[Image #2 1568×1122]`: the size
+the model is sent, shrunk to 1568 pixels on its long edge. `Ctrl+G` beside the token, or a click on the
+message's image button once it is sent, opens this window. Kitty draws the pixels; any other terminal
+draws half-blocks, which show what the picture is but not its text, and `Open in viewer` hands the file
+to the system's own. The session is on Claude Haiku, which reads the picture; a model that cannot is
+sent a note naming it instead, so the conversation goes on.
+
+---
+
 ## A second project, and a worker's receipts
 
 ![A session exploring a codebase, with two finished workers and the panel showing what it cost](session-overview.png)

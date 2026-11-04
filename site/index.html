@@ -103,6 +103,7 @@
       <button type="button" class="exp-item" role="tab" id="tab-33-thinking" aria-controls="pane-33-thinking"><span class="exp-icon">&#128161;</span><span>Thinking</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-34-configuration" aria-controls="pane-34-configuration"><span class="exp-icon">&#128295;</span><span>Configuration</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-39-agent-types" aria-controls="pane-39-agent-types"><span class="exp-icon">&#129302;</span><span>Agent types</span></button>
+      <button type="button" class="exp-item" role="tab" id="tab-40-images" aria-controls="pane-40-images"><span class="exp-icon">&#128444;</span><span>Images</span></button>
       </div>
       <div class="exp-body" id="panels">
       <div class="exp-pane" role="tabpanel" id="pane-session-overview" aria-labelledby="tab-session-overview">
@@ -172,6 +173,10 @@
       <div class="exp-pane" role="tabpanel" id="pane-39-agent-types" aria-labelledby="tab-39-agent-types">
         <div class="exp-shot"><a href="screenshots/39-agent-types.png" title="Open the full-size capture"><img src="screenshots/39-agent-types.png" alt="The Agents tab: a researcher type of the user's own, its description and briefing, and Runs on set to two providers with the first as default" loading="lazy"></a></div>
         <div class="exp-text"><h3>Where each sub-agent runs</h3><p>The Agents tab lists every sub-agent type: the default child, the ones that ship with cxagent, and your own. A type of yours carries a description saying when the model should reach for it and a briefing saying how it works.</p><p class="exp-aside"><b>Runs on</b> is the per-sub-agent model: the session's, a list whose first is the default and from which a spawn may pick another, or any provider, which a spawn must name.</p></div>
+      </div>
+      <div class="exp-pane" role="tabpanel" id="pane-40-images" aria-labelledby="tab-40-images">
+        <div class="exp-shot"><a href="screenshots/40-images.png" title="Open the full-size capture"><img src="screenshots/40-images.png" alt="The image window over a session on Claude Haiku: a pasted 3500 by 2504 screenshot shrunk to 1568 by 1122, drawn in full in Kitty, its sizes in the title and Open in viewer in the footer, and the composer holding the image's token and the question about it" loading="lazy"></a></div>
+        <div class="exp-text"><h3>A screenshot in the conversation</h3><p><code>Ctrl+V</code> pastes an image from the clipboard as a token, and dropping a file on the terminal does the same. The model is sent the picture, shrunk to 1568 pixels on its long edge; here Claude Haiku reads it. <code>Ctrl+G</code>, or a click on the message's image button, opens it in a window of its own.</p><p class="exp-aside">Kitty draws the pixels, any other terminal draws half-blocks, and the system viewer is a button away. A model that cannot see images is sent a note naming each one, so the conversation goes on.</p></div>
       </div>
       </div>
     </div>
