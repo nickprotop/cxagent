@@ -102,19 +102,20 @@ processes — keys on `Session.Id`, or a model switch silently orphans it.
 ## Running a turn
 
 ```csharp
-SubmitOutcome Submit(string text, string? echo = null)
+SubmitOutcome Submit(string text, string? echo = null, Attachments? attachments = null)
 SubmitOutcome Initialise()
 bool          CancelTurn()
 bool          IsBusy
 bool          RefuseIfBusy()
 ```
 
-### `Submit(text, echo?)`
+### `Submit(text, echo?, attachments?)`
 
 | Parameter | |
 |---|---|
 | `text` | what the model receives |
 | `echo` | what the USER sees, when it differs. `/init` sends paragraphs of briefing and displays `"/init"` — echoing the briefing would attribute words to them they never wrote |
+| `attachments` | images sent with the message, and pasted blocks shown by their label — see [Attachments](#attachments) |
 
 **Returns** a `SubmitOutcome`, synchronously:
 
@@ -127,6 +128,45 @@ bool          RefuseIfBusy()
 
 **Raises:** `UserTurnAdded` then `AssistantTurnBegan` on your observer; `TokensUpdated` and
 `ContextUsedUpdated` as the turn proceeds; `TurnCompleted` at the end.
+
+### Attachments
+
+```csharp
+record Attachments(IReadOnlyList<PastedText> Pastes, IReadOnlyList<AttachedImage> Images)
+record PastedText(string Label, string Text)
+record AttachedImage(string Label, string Hash, int Width, int Height)
+{
+    byte[]? Bytes; string MediaType;              // "image/png" unless set
+    int OriginalWidth; int OriginalHeight;        // the size before you shrank it; 0 when you did not
+}
+```
+
+An image goes with the message it was attached to, and stays in the context until compression
+folds that message away, where the summary keeps its label.
+
+```csharp
+var png  = File.ReadAllBytes("shot.png");
+var shot = new AttachedImage("[Image #1 1568×882]", Convert.ToHexString(SHA256.HashData(png)).ToLowerInvariant(), 1568, 882)
+           { Bytes = png };
+session.Submit("what is wrong in [Image #1 1568×882]?", attachments: new Attachments([], [shot]));
+```
+
+| | |
+|---|---|
+| `Label` | how the text names the image. The model is sent the text, then the image; where the image cannot go, the label names it in the note sent instead |
+| `Hash` | SHA-256 of `Bytes`, lowercase hex. The session stores the image once under it, beside the session's saved context, and reads it back on resume |
+| `Bytes` · `MediaType` | **sent as given.** The library does not shrink or re-encode: keep an image within what the provider takes — Anthropic refuses one over 5 MB once base64 encoded, and recommends 1568 pixels on the long edge |
+| `Width` · `Height` | the size of `Bytes`; what an image weighs in the context is estimated from them |
+
+**A model that cannot see images is sent a note in each one's place**: `[image not sent: this model
+cannot see images — Image #1, 1568×882]`. Whether it can is the provider's to say: `ModelConfig.Images`
+when set, else the endpoint where it can be asked (llama.cpp, Ollama, OpenRouter), else unknown, and an
+unknown model is sent the image. One that refuses it is sent the request again with the notes, the
+provider remembers the answer, and the turn says so through `Said`.
+
+**Pasted blocks** are for a front end that shows a long paste as a label: `text` carries the
+paste's content where the model reads it, `echo` carries the label, and `Pastes` keeps both with the
+message so the line can be shown as typed again.
 
 ### `Initialise()`
 
@@ -435,6 +475,7 @@ transcript must never be handed to another.
 | `AssistantThinkingEnded(id, summary)` | that run of thinking is over: duration, words, hidden, redacted |
 | `AssistantTurnEnded(id)` | that turn's answer is complete |
 | `AssistantLabelled(id, header)` | a header for the turn |
+| `UserImagesAttached(id, images)` | right after `UserTurnAdded`, when the prompt carries images. Does nothing unless you implement it |
 | `Said(message)` | the **session's own** words, in Core's markup dialect |
 | `Failed(message)` | a turn failed |
 
