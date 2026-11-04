@@ -95,6 +95,16 @@ or inline `<think>…</think>` text. It is shown, never sent back, and never sav
 is sent back within the tool loop it belongs to, as Anthropic requires for the loop to keep thinking,
 and dropped once the next message starts; it is not saved either.
 
+**`images` says whether the model sees images**, for pasting a screenshot (Ctrl+V, or dropping a file
+on the terminal). `true` sends each image to the model; `false` sends a short note in its place, so the
+conversation goes on with a model that would refuse the picture. Left unset, it is asked of the endpoint
+where it can say: a llama.cpp server's `/props` (`true` only when it loaded a vision projector with
+`--mmproj`), Ollama's `/api/show`, OpenRouter's model list. An `anthropic` instance is `true`. Elsewhere
+(OpenAI, vLLM, LM Studio) nothing says, so the image is sent; if the endpoint refuses it, the request goes
+again with the notes and the model is treated as `false` from then on. Set `false` on such
+a text-only model to skip that first refused try. The Providers tab in `/config` sets it, and shows what
+the endpoint itself says beside your choice.
+
 **`apiKey` supports `${ENV_VAR}`**, so a config file can be committed or shared without carrying a
 secret. A key written literally is still forced to `0600`, but the variable form is better.
 
