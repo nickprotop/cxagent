@@ -481,6 +481,16 @@ public class EditDiffTests
             diff.Split('\n').Where(l => l.StartsWith('-') && !l.StartsWith("---") || l.StartsWith('+') && !l.StartsWith("+++")));
     }
 
+    /// <summary>A RECORDED CALL WITH A REPEATED KEY exports as the call ran: the last value wins, as in dispatch.</summary>
+    [Fact]
+    public void A_duplicate_key_in_a_recorded_call_does_not_break_export()
+    {
+        var call = new ToolCall { Id = "1", Name = "replace_in_file",
+            Arguments = JsonDocument.Parse("""{"path":"a.cs","pattern":"x","pattern":"old","replacement":"new"}""").RootElement };
+        var diff = EditDiff.For(call)!;
+        Assert.Contains("-old", diff);
+    }
+
     /// <summary>RESUMED HISTORY IS FULL OF THE FLAT SHAPE, and an export of it must still show the edit.</summary>
     [Fact]
     public void Recorded_flat_replace_still_exports()

@@ -82,7 +82,8 @@ public static class ToolBindings
         IReadOnlyDictionary<string, object?>? Pinned = null,
         string? Description = null,
         ToolCrossReference? SeeAlso = null,
-        ToolCrossReference? AlsoSee = null);
+        ToolCrossReference? AlsoSee = null,
+        string[]? AlsoReads = null);
 
     /// <summary>
     /// One sentence of a description that names ANOTHER tool, kept separate so it can be dropped
@@ -198,6 +199,9 @@ public static class ToolBindings
         (BuiltinTool.ReplaceInFile, new ToolBinding("replace_in_file", "file", "replace",
             Params: ["path", "edits"],
             Required: ["path", "edits"],
+            // READ, NOT ADVERTISED: the flat pair resumed history is full of. A refusal of a flat call
+            // must not also tell the model these arguments were ignored — they were the call.
+            AlsoReads: ["pattern", "replacement"],
             Description: "Change parts of a file that already exists by exact replacement. Put every "
                        + "change to this file in one call: `edits` is applied in order, each to the "
                        + "result of the one before, and if any edit's text is missing or appears more "
@@ -545,7 +549,8 @@ public static class ToolBindings
 
         if (!validation.IsValid)
             return string.Join("; ", validation.Errors)
-                 + UnknownArgumentNote.For(call.Arguments.EnumerateObject().Select(p => p.Name),
+                 + UnknownArgumentNote.For(call.Arguments.EnumerateObject().Select(p => p.Name)
+                           .Where(n => entry.Spec.AlsoReads?.Contains(n, StringComparer.Ordinal) != true),
                        entry.Spec.Params, call.Name);
 
         // Tell the UI what this worker is DOING, before the call rather than after: a read of a large

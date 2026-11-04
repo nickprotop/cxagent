@@ -163,12 +163,12 @@ public sealed class GeneralTab
         // saying "new key typed — saved with Save" about a key that was already saved.
         _afterSave = () => line.SetContent([TavilyLine(draft)]);
         var entry = ListDetail.Input(new PromptControl { MaskCharacter = '•', Visible = false, HorizontalAlignment = HorizontalAlignment.Stretch, Prompt = "New key: " });
-        entry.InputChanged += (_, text) => { draft.TavilyKey = text; line.SetContent([TavilyLine(draft)]); MarkSave(); };
+        entry.InputChanged += (_, text) => { draft.TypeTavilyKey(text); line.SetContent([TavilyLine(draft)]); MarkSave(); };
 
         var set = Controls.Button(" Set… ").OnClick((_, _) => { entry.Visible = true; entry.Input = ""; }).Build();
         var clear = Controls.Button(" Clear ").OnClick((_, _) =>
         {
-            draft.TavilyKey = "";
+            draft.ClearTavilyKey();
             entry.Visible = false;
             line.SetContent([TavilyLine(draft)]);
             MarkSave();

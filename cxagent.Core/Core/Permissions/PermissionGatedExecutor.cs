@@ -61,13 +61,10 @@ public sealed class PermissionGatedExecutor : IJobExecutor
         var requests = PermissionPolicy.RequestsFor(_inner.TypeName, parameters, context.WorkingDirectory);
         foreach (var request in requests)
         {
-            // STAMPED HERE, not built into RequestsFor. That method is a pure policy function over
+            // STAMPED AT THE ASK, not built into RequestsFor. That method is a pure policy function over
             // (jobType, parameters) — it has no idea which agent is running and should not learn.
-            // This is the one layer that sees both the request and the context it was made in.
-            // MARKED WAITING FOR THE DURATION OF THE ASK. The row above this job keeps ticking turns
-            // and elapsed time while a prompt sits unanswered, so without this a parked child reads
-            // as a working one — and with several up, the user cannot tell which row their answer
-            // releases. In a finally because a cancelled-while-queued request never returns here.
+            // PermissionAsker is the one layer that sees both the request and the context it was made
+            // in, and it marks the job waiting while the prompt is up.
             var outcome = await _asker.AskAsync(request, context, ct);
 
             // `??`, NOT a plain assignment. A single call — `copy` is the case that showed this —

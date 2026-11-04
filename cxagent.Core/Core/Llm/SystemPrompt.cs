@@ -219,9 +219,6 @@ internal static class SystemPrompt
         sb.AppendLine("Independent tool calls can go in one turn. Reading three files is one round "
                     + "trip, not three.");
         sb.AppendLine();
-        // ONE CALL FOR SEVERAL CHANGES TO A FILE. The schema already takes a list; a local model still
-        // made one call per small change — a round trip each, and a prompt each outside accept-edits —
-        // until the prompt said so.
         // FIND, THEN READ. With search available, an address the model needs is something to look
         // up, not to recall — and recalled addresses are where invented URLs come from.
         if (ctx.CanSearch)
@@ -230,6 +227,9 @@ internal static class SystemPrompt
                         + "with web_fetch.");
             sb.AppendLine();
         }
+        // ONE CALL FOR SEVERAL CHANGES TO A FILE. The schema already takes a list; a local model still
+        // made one call per small change — a round trip each, and a prompt each outside accept-edits —
+        // until the prompt said so.
         if (ctx.CanEdit)
         {
             sb.AppendLine("Several changes to one file go in one replace_in_file call, as a list of "

@@ -41,7 +41,9 @@ internal static class ReplaceEdits
     {
         parameters.Values.TryGetValue("edits", out var raw);
         var hasList = raw is not null && raw is not JsonElement { ValueKind: JsonValueKind.Null };
-        var hasFlat = parameters.Values.ContainsKey("pattern") || parameters.Values.ContainsKey("replacement");
+        // JSON NULL IS ABSENT, for these keys as for `edits`: a model that fills every field it was shown
+        // with null has not sent a second shape.
+        var hasFlat = Present(parameters, "pattern") || Present(parameters, "replacement");
 
         if (hasList && hasFlat)
             throw new InvalidOperationException(
@@ -81,6 +83,9 @@ internal static class ReplaceEdits
         }
         return new(edits, FromList: true);
     }
+
+    private static bool Present(JobParameters parameters, string key) =>
+        parameters.Values.TryGetValue(key, out var v) && v is not null && v is not JsonElement { ValueKind: JsonValueKind.Null };
 
     private static JsonElement AsArray(object raw)
     {

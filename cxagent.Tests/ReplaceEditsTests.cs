@@ -191,4 +191,12 @@ public class ReplaceEditsTests : IDisposable
         Assert.True(r.Success, r.ErrorMessage);
         Assert.Equal("int a = 1;\r\nint b = 2;\r\nint c = 30;\r\n", System.IO.File.ReadAllText(path));
     }
+
+    /// <summary>JSON NULL IS ABSENT, for the flat keys as for `edits`.</summary>
+    [Fact]
+    public void Null_flat_keys_beside_edits_are_not_a_second_shape()
+    {
+        var nulls = JsonSerializer.SerializeToElement<object?>(null);
+        Assert.True(Validate(("path", "f.txt"), ("edits", Edits(("a", "b"))), ("pattern", nulls), ("replacement", nulls)).IsValid);
+    }
 }

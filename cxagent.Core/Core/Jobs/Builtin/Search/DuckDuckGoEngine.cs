@@ -97,7 +97,8 @@ internal sealed partial class DuckDuckGoEngine(HttpClient http) : ISearchEngine
             hits.Add(new SearchHit(Text(title.Groups["text"].Value), url, snippet.Success ? Text(snippet.Groups["text"].Value) : ""));
         }
 
-        if (hits.Count == 0 && !html.Contains("no-results", StringComparison.Ordinal))
+        // THE ELEMENT, not the word: "no-results" in a stylesheet or a script says nothing about this page.
+        if (hits.Count == 0 && !NoResults().IsMatch(html))
             return new([], null, "DuckDuckGo's page could not be read — its layout may have changed. No results were taken from it.");
 
         return new(hits, NextPageForm(html), null);
@@ -150,6 +151,9 @@ internal sealed partial class DuckDuckGoEngine(HttpClient http) : ISearchEngine
 
     [GeneratedRegex("""<input type="hidden" name="(?<name>[^"]*)" value="(?<value>[^"]*)"\s*/?>""")]
     private static partial Regex Hidden();
+
+    [GeneratedRegex("""<div[^>]*class="[^"]*\bno-results\b[^"]*"[^>]*>""")]
+    private static partial Regex NoResults();
 
     [GeneratedRegex("<[^>]+>")]
     private static partial Regex Tag();

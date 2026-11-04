@@ -350,4 +350,29 @@ public class GeneralDraftTests
         Assert.Equal("{env:TAVILY_API_KEY}", draft.SavedTavilyKey);
         Assert.False(draft.IsDirty);
     }
+
+    /// <summary>OPENING THE KEY PROMPT IS NOT A DELETION. Set… empties its field, and an empty field
+    /// read as "no key" removed a saved key on the next save of anything else on the tab.</summary>
+    [Fact]
+    public void An_empty_typed_key_leaves_the_saved_one()
+    {
+        var draft = GeneralDraft.From(Settings(), tavilyKeyAsWritten: "{env:TAVILY_API_KEY}");
+        draft.TypeTavilyKey("");
+        Assert.False(draft.IsDirty);
+        draft.TypeTavilyKey("tvly-x");
+        draft.TypeTavilyKey("");
+        Assert.False(draft.IsDirty);
+        Assert.Equal("{env:TAVILY_API_KEY}", draft.TavilyKey);
+    }
+
+    [Fact]
+    public void Only_clear_removes_the_key()
+    {
+        var draft = GeneralDraft.From(Settings(), tavilyKeyAsWritten: "tvly-x");
+        draft.ClearTavilyKey();
+        Assert.True(draft.IsDirty);
+        var root = Root(""" "webSearch": { "tavilyApiKey": "tvly-x" } """);
+        draft.Apply(root);
+        Assert.Null(root["webSearch"]);
+    }
 }

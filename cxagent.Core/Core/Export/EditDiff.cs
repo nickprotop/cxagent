@@ -55,10 +55,15 @@ internal static class EditDiff
     private static List<string> Lines(string? text) =>
         string.IsNullOrEmpty(text) ? [] : [.. text.Replace("\r\n", "\n").Split('\n')];
 
-    private static JobParameters Parameters(ToolCall call) =>
-        new(call.Arguments.ValueKind == JsonValueKind.Object
-            ? call.Arguments.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.Clone())
-            : []);
+    // LAST VALUE WINS on a repeated key, as dispatch assigns them — a recorded call is exported as it ran,
+    // and a ToDictionary that threw on the repeat would take the whole export down with it.
+    private static JobParameters Parameters(ToolCall call)
+    {
+        var values = new Dictionary<string, object?>();
+        if (call.Arguments.ValueKind == JsonValueKind.Object)
+            foreach (var p in call.Arguments.EnumerateObject()) values[p.Name] = p.Value.Clone();
+        return new(values);
+    }
 
     private static string? Arg(ToolCall call, string name) =>
         call.Arguments.ValueKind == JsonValueKind.Object && call.Arguments.TryGetProperty(name, out var value)

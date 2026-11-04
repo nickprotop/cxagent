@@ -193,4 +193,35 @@ public class SearchEngineTests
             .SearchAsync("q", 5, CancellationToken.None);
         Assert.Contains("could not be read", outcome.Failure);
     }
+
+    /// <summary>"no-results" IN A SCRIPT OR STYLE is not the no-results element: a changed layout that
+    /// happens to mention it must still read as unreadable, never as an empty answer.</summary>
+    [Fact]
+    public async Task No_results_text_outside_the_element_is_not_an_empty_answer()
+    {
+        var page = "<html><head><style>.no-results{color:red}</style></head><body>changed layout</body></html>";
+        var outcome = await new DuckDuckGoEngine(new HttpClient(new Pages((HttpStatusCode.OK, page))))
+            .SearchAsync("q", 5, CancellationToken.None);
+        Assert.Contains("could not be read", outcome.Failure);
+    }
+
+    private sealed class BrokenBody : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new BrokenContent() });
+        private sealed class BrokenContent : HttpContent
+        {
+            protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) =>
+                throw new IOException("connection reset");
+            protected override bool TryComputeLength(out long length) { length = 0; return false; }
+        }
+    }
+
+    /// <summary>A BODY THAT BREAKS MID-READ is a failure the executor can fall back from, not an exception.</summary>
+    [Fact]
+    public async Task Tavily_body_read_failure_is_a_failure()
+    {
+        var outcome = await new TavilyEngine("k", new HttpClient(new BrokenBody())).SearchAsync("q", 5, CancellationToken.None);
+        Assert.NotNull(outcome.Failure);
+    }
 }

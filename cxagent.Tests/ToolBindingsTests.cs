@@ -611,4 +611,16 @@ public class ToolBindingsTests
             ToolBindings.ParamSchema(new JobParamSpec("path", "string", true, "the file")));
         Assert.Equal(["type", "description"], json.EnumerateObject().Select(p => p.Name));
     }
+
+    /// <summary>THE FLAT SHAPE IS READ, so a refusal of a flat call must not also say its arguments were ignored.</summary>
+    [Fact]
+    public async Task A_refused_flat_replace_does_not_call_pattern_unrecognised()
+    {
+        var result = (await ToolBindings.InvokeAsync(
+            Call("replace_in_file", new { path = "a.txt", pattern = "x" }),
+            new[] { BuiltinTool.ReplaceInFile }, JobRegistry.CreateWithBuiltins(),
+            new TestJobContext(), CancellationToken.None)).Text;
+        Assert.Contains("replacement", result);
+        Assert.DoesNotContain("Unrecognised", result);
+    }
 }

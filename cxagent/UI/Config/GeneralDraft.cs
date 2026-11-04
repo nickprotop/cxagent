@@ -113,6 +113,16 @@ public sealed class GeneralDraft
     /// <summary>The Tavily key the file holds now — what the line shows once nothing new has been typed.</summary>
     public string SavedTavilyKey => _originalTavilyKey;
 
+    /// <summary>
+    /// What the key prompt holds. EMPTY MEANS UNCHANGED, as on the Providers tab: opening the prompt empties
+    /// it, and reading that as "no key" deleted a saved key the next time anything else on the tab was saved.
+    /// Removing the key is <see cref="ClearTavilyKey"/>'s job alone.
+    /// </summary>
+    public void TypeTavilyKey(string text) => TavilyKey = text.Trim().Length == 0 ? _originalTavilyKey : text;
+
+    /// <summary>Remove the key on save, so searches use DuckDuckGo.</summary>
+    public void ClearTavilyKey() => TavilyKey = "";
+
     public bool IsDirty => DetachChanged || CapChanged || CompactChanged || ToolsChanged || TavilyKeyChanged;
 
     /// <summary>
