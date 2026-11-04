@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#080a0c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<script>
+/* BEFORE THE STYLESHEET PAINTS ANYTHING: a reader who chose a theme gets it on the first frame
+   rather than after a flash of the other one. site.js owns the toggle; this only applies the choice. */
+try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <title>cxagent — a multi-agent coding workbench for the terminal</title>
 <meta name="description" content="A multi-agent coding workbench for the terminal: several agents in tabs, sub-agents in the background, an editor and a real shell beside the conversation. Bring your own model.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -269,6 +276,7 @@
     <a class="chip" href="docs/commands.html"><b>05</b>Commands</a>
     <a class="chip" href="docs/config.html"><b>06</b>Configuration</a>
     <a class="chip" href="docs/scripting.html"><b>07</b>Scripting</a>
+    <a class="chip" href="docs/walkthrough.html"><b>08</b>Walkthrough</a>
     <a class="chip" href="https://github.com/nickprotop/cxagent/releases"><b>↗</b>Releases</a>
     <a class="chip" href="https://github.com/nickprotop/cxagent"><b>↗</b>GitHub</a>
   </div>

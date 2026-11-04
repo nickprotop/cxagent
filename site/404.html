@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#080a0c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<script>
+/* BEFORE THE STYLESHEET PAINTS ANYTHING: a reader who chose a theme gets it on the first frame
+   rather than after a flash of the other one. site.js owns the toggle; this only applies the choice. */
+try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<title>Not found — cxagent</title>
+<meta name="robots" content="noindex">
+<!-- ABSOLUTE PATHS, NOT RELATIVE. GitHub Pages serves this file for a missing URL at any depth, so
+     a relative "style.css" would resolve against /cxagent/docs/whatever/ and the page would arrive
+     unstyled with every link broken — on the one page whose whole job is to get the reader back. -->
+<link rel="icon" href="/cxagent/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fragment+Mono&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/cxagent/style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="/cxagent/"><img class="brand-mark" src="/cxagent/logo.svg" alt="" width="22" height="22"><span>cxagent</span></a>
+  <a href="/cxagent/install.html">Install</a>
+  <a href="/cxagent/plugins.html">Plugins</a>
+  <a href="/cxagent/core.html">CxAgent.Core</a>
+  <a href="/cxagent/docs/">Docs</a>
+  <a href="https://github.com/nickprotop/cxagent">GitHub</a>
+</nav>
+<main>
+  <div class="page-head">
+    <div class="section-label"><span>//</span> 404</div>
+    <h1>Nothing here</h1>
+    <p class="lede">This page does not exist, or it moved. The <a href="/cxagent/">front page</a>,
+    the <a href="/cxagent/docs/">documentation</a> and the
+    <a href="https://github.com/nickprotop/cxagent">repository</a> are where to look next.</p>
+  </div>
+</main>
+<footer>
+  cxagent is MIT licensed. <a href="https://github.com/nickprotop/cxagent">Source on GitHub</a>.
+</footer>
+<script src="/cxagent/site.js" defer></script>
+</body>
+</html>

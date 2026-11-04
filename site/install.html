@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#080a0c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<script>
+/* BEFORE THE STYLESHEET PAINTS ANYTHING: a reader who chose a theme gets it on the first frame
+   rather than after a flash of the other one. site.js owns the toggle; this only applies the choice. */
+try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <title>Install — cxagent</title>
 <meta name="description" content="Install cxagent: the one-line installers, the six platform binaries, the .NET tool, uninstalling, and verifying a download against SHA256SUMS.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">

@@ -33,14 +33,23 @@
   --dot-green: #28c840;
   --radius: 10px;
   --radius-sm: 6px;
+  /* SHADOWS ARE TOKENS, like the colours: a shadow dark enough to lift a window off a black page is
+     a grey smudge on a white one. */
+  --shadow-win: 0 28px 70px rgba(0, 0, 0, 0.55);
+  --shadow-nav: 0 6px 24px -8px rgba(0, 0, 0, 0.55);
 
   --font-prose: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "Fragment Mono", ui-monospace, "SF Mono", "JetBrains Mono", Consolas,
                "DejaVu Sans Mono", monospace;
 }
 
+/* THREE WAYS TO GET THE LIGHT THEME, ONE SET OF VALUES TWICE. The system asks for light and the
+   reader has not chosen dark; or the reader chose light, whatever the system says. The nav's toggle
+   sets data-theme on <html>; without it (no script, or "System" chosen) the media query alone
+   decides, which is how the site behaved before it had a toggle. CSS has no way to share one block
+   between a media query and a selector, so the values are repeated: change them in both. */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --bg: #ffffff;
     --bg-raised: #f6f7f9;
     --bg-code: #f2f3f6;
@@ -52,9 +61,34 @@
     --accent-dim: #d9a35b;
     --accent-ink: #ffffff;
     --border: #dde0e6;
+    /* EVERY TOKEN THE DARK THEME SETS, SET AGAIN HERE. One left out keeps its dark value, and this one
+       drew near-black rules between the feature cards and across every document. */
+    --border-dim: #eceef2;
+    --shadow-win: 0 18px 48px rgba(15, 23, 42, 0.12);
+    --shadow-nav: 0 6px 20px -10px rgba(15, 23, 42, 0.18);
     --warn: #b42318;
     --ok: #1f7a4d;
   }
+}
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-raised: #f6f7f9;
+  --bg-code: #f2f3f6;
+  --fg: #24282f;
+  --fg-dim: #5d636e;
+  --fg-bright: #0d1015;
+  /* A DEEPER AMBER on white: the dark theme's amber is too light to read as link text here. */
+  --accent: #b45309;
+  --accent-dim: #d9a35b;
+  --accent-ink: #ffffff;
+  --border: #dde0e6;
+  /* EVERY TOKEN THE DARK THEME SETS, SET AGAIN HERE. One left out keeps its dark value, and this one
+     drew near-black rules between the feature cards and across every document. */
+  --border-dim: #eceef2;
+  --shadow-win: 0 18px 48px rgba(15, 23, 42, 0.12);
+  --shadow-nav: 0 6px 20px -10px rgba(15, 23, 42, 0.18);
+  --warn: #b42318;
+  --ok: #1f7a4d;
 }
 
 * { box-sizing: border-box; }
@@ -111,7 +145,7 @@ a:hover { text-decoration: underline; }
 /* THE SHADOW APPEARS ONLY ONCE THERE IS SOMETHING UNDERNEATH. At the top of the page the nav sits
    on the background and a shadow would be drawing a line for no reason. */
 .site-nav.scrolled {
-  box-shadow: 0 6px 24px -8px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-nav);
   border-bottom-color: var(--border);
 }
 
@@ -467,7 +501,7 @@ body.landing { max-width: none; }
 .win {
   border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
   background: var(--bg-raised);
-  box-shadow: 0 28px 70px rgba(0,0,0,0.55), 0 0 0 1px var(--border-dim);
+  box-shadow: var(--shadow-win), 0 0 0 1px var(--border-dim);
 }
 .win-bar {
   display: flex; align-items: center; gap: 10px; padding: 11px 15px;
@@ -831,3 +865,15 @@ main.doc-wide > p:has(> img) { max-width: none; }
 .site-footer .footer-links a { color: var(--fg); }
 .site-footer .footer-links a:hover { color: var(--accent); }
 .site-footer p { margin: 0; }
+
+/* The theme toggle: added to the nav by site.js, so a page without script has no button that does
+   nothing. An icon alone, with its mode in the tooltip and the accessible name. */
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0; margin-left: -0.4rem;
+  background: none; border: 1px solid transparent; border-radius: var(--radius-sm);
+  color: var(--fg-dim); cursor: pointer;
+}
+.theme-toggle:hover { color: var(--fg-bright); border-color: var(--border); }
+.theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.theme-toggle svg { width: 18px; height: 18px; display: block; }

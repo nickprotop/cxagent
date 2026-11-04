@@ -1,5 +1,5 @@
 // Progressive polish shared by every page: a copy button on each code block, the nav link for the
-// current page marked, and a shadow under the nav once the page scrolls beneath it.
+// current page marked, a shadow under the nav once the page scrolls beneath it, and the theme toggle.
 //
 // NOTHING HERE IS LOAD-BEARING. Every page is complete without this file: the code is selectable,
 // the nav still navigates, and the shadow is decoration. It is loaded with `defer` for the same
@@ -71,6 +71,58 @@
     // passive: this listener never calls preventDefault, and saying so keeps scrolling smooth.
     window.addEventListener("scroll", sync, { passive: true });
     sync();
+  }
+
+  // ---- Theme: System, Light, Dark -------------------------------------------------------------
+  //
+  // SYSTEM IS THE ABSENCE OF A CHOICE, not a third theme: no data-theme on <html>, so the
+  // stylesheet's media query decides, exactly as it does with script off. The inline script in each
+  // page's <head> applies a stored choice before first paint; this adds the button and changes it.
+  //
+  // localStorage CAN THROW (a private window, storage disabled), so every touch is guarded and a
+  // failure leaves the toggle working for this page view and simply not remembered.
+  if (nav) {
+    var KEY = "cxagent-theme";
+    var ORDER = ["system", "light", "dark"];
+    var ICONS = {
+      system: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
+      light: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+      dark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="currentColor"/></svg>'
+    };
+    var LABELS = { system: "Theme: system", light: "Theme: light", dark: "Theme: dark" };
+    // THE BROWSER BAR FOLLOWS THE CHOICE TOO. The theme-color metas carry media queries for the
+    // system setting; a chosen theme overrides both so the bar matches the page, not the OS.
+    var metas = document.querySelectorAll('meta[name="theme-color"]');
+    var original = Array.prototype.map.call(metas, function (m) { return m.content; });
+    var BAR = { light: "#ffffff", dark: "#080a0c" };
+
+    var current = function () {
+      var t = document.documentElement.dataset.theme;
+      return t === "light" || t === "dark" ? t : "system";
+    };
+    var toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "theme-toggle";
+    var apply = function (mode) {
+      if (mode === "system") delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = mode;
+      Array.prototype.forEach.call(metas, function (m, i) {
+        m.content = mode === "system" ? original[i] : BAR[mode];
+      });
+      toggle.innerHTML = ICONS[mode];
+      toggle.title = LABELS[mode];
+      toggle.setAttribute("aria-label", LABELS[mode] + ". Change theme");
+    };
+    toggle.addEventListener("click", function () {
+      var next = ORDER[(ORDER.indexOf(current()) + 1) % ORDER.length];
+      apply(next);
+      try {
+        if (next === "system") localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, next);
+      } catch (e) { /* not remembered; still applied */ }
+    });
+    apply(current());
+    nav.appendChild(toggle);
   }
 
   // ---- The version, from the catalog ---------------------------------------------------------
