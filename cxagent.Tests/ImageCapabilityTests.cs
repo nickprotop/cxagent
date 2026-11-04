@@ -147,6 +147,71 @@ public class ImageCapabilityTests
         Assert.False(provider.KnownCanSeeImages);
     }
 
+    /// <summary>An endpoint whose /props says nothing about images, refusing every chat with one answer.</summary>
+    private sealed class AlwaysRefuses(string error) : HttpMessageHandler
+    {
+        public List<string> Bodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.RequestUri!.AbsolutePath == "/props")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"chat_template":"x"}""") };
+            Bodies.Add(await request.Content!.ReadAsStringAsync(ct));
+            return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent(error) };
+        }
+    }
+
+    /// <summary>
+    /// A context that outgrew the window is refused with a 400 too. It is the agent's to recover by
+    /// compacting, and no answer about images: a vision model must not be marked blind by it.
+    /// </summary>
+    [Fact]
+    public async Task AnOverflowRefusal_IsNotTakenAsBlindness()
+    {
+        var handler = new AlwaysRefuses("""{"error":{"message":"This model's maximum context length is 128000 tokens"}}""");
+        var provider = Unaskable(handler);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => provider.ChatAsync(WithAnImage(), null, CancellationToken.None));
+
+        Assert.Single(handler.Bodies);
+        Assert.Null(provider.KnownCanSeeImages);
+    }
+
+    /// <summary>
+    /// A request refused again without its images was refused for something else: the first error is the
+    /// one shown, and nothing is learned about images.
+    /// </summary>
+    [Fact]
+    public async Task ARefusalThatOutlivesThePlaceholders_IsTheOriginalError_AndLearnsNothing()
+    {
+        var provider = Unaskable(new AlwaysRefuses("""{"error":"unsupported parameter: reasoning_effort"}"""));
+
+        var error = await Assert.ThrowsAnyAsync<Exception>(() => provider.ChatAsync(WithAnImage(), null, CancellationToken.None));
+
+        Assert.Contains("reasoning_effort", error.ToString());
+        Assert.Null(provider.KnownCanSeeImages);
+    }
+
+    /// <summary>
+    /// Images whose files were not kept go as notes already; a refusal of that request says nothing about
+    /// images, and sending the same body again would only be refused again.
+    /// </summary>
+    [Fact]
+    public async Task ARefusalOfARequestWithNoImageBytes_IsNotRetried()
+    {
+        var handler = new AlwaysRefuses("{}");
+        var provider = Unaskable(handler);
+        List<ChatMessage> gone =
+        [
+            new() { Role = "user", Content = "what is [Image #1 4×2]?", Images = [new AttachedImage("[Image #1 4×2]", "h", 4, 2)] },
+        ];
+
+        await Assert.ThrowsAnyAsync<Exception>(() => provider.ChatAsync(gone, null, CancellationToken.None));
+
+        Assert.Single(handler.Bodies);
+        Assert.Null(provider.KnownCanSeeImages);
+    }
+
     /// <summary>The turn says why the model was not shown the image, in the stream it is reading.</summary>
     [Fact]
     public async Task ARefusedImage_InAStream_SaysSo()

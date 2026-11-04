@@ -142,9 +142,16 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
     ///
     /// <para>ONLY WHILE NOBODY KNOWS. An endpoint with no route that says — OpenAI's own, vLLM, LM Studio —
     /// is sent the image, and a text-only model behind it refuses the whole request, and would refuse every
-    /// later turn the image stays in the context for. A 400, 415 or 422 to a request that carried images is
-    /// taken as that answer, kept, and the request goes again without them. A model known to see images
-    /// that refuses one has refused something else, and that is the error the user sees.</para>
+    /// later turn the image stays in the context for. A 400, 415 or 422 to a request that carried images
+    /// goes again without them. A model known to see images that refuses one has refused something else,
+    /// and that is the error the user sees.</para>
+    ///
+    /// <para>THE ANSWER IS KEPT ONLY WHEN THE RESEND IS TAKEN. A 400 has many causes: a context past the
+    /// window, a parameter the model does not take, a bad tool schema. Kept on the refusal alone, any of
+    /// them would mark a vision model blind for the rest of the session. So a refusal that names an
+    /// overflow is left to the agent, which compacts; a request whose images were already notes (their
+    /// files gone) is not sent twice; and a resend refused too means the images were not the cause, so
+    /// nothing is learned and the first refusal is the error shown.</para>
     /// </summary>
     /// <param name="messages">The conversation, to tell whether the request carries images.</param>
     /// <param name="body">The request body, with the images or with their placeholders.</param>
@@ -157,12 +164,21 @@ internal class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog, IModelCat
         {
             return new(await LlmHttpRetry.SendWithRetryAsync(_client, () => BuildRequest(withImages), ProviderId, _retry, ct), null);
         }
-        catch (LlmProviderException e) when (sendImages && ImageCapability.AnyImages(messages)
-            && KnownCanSeeImages is null && e.HttpStatus is 400 or 415 or 422)
+        catch (LlmProviderException e) when (sendImages && KnownCanSeeImages is null && e.HttpStatus is 400 or 415 or 422
+            && !ContextOverflow.IsOverflow(e.Message, e.HttpStatus, e.VendorBody)
+            && body(false) is var without && without != withImages)
         {
+            HttpResponseMessage resp;
+            try
+            {
+                resp = await LlmHttpRetry.SendWithRetryAsync(_client, () => BuildRequest(without), ProviderId, _retry, ct);
+            }
+            catch (LlmProviderException)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(e);
+                throw;
+            }
             _images.Learn(false);
-            var without = body(false);
-            var resp = await LlmHttpRetry.SendWithRetryAsync(_client, () => BuildRequest(without), ProviderId, _retry, ct);
             return new(resp, $"{ProviderId}:{_model} refused the request with its images, so they went as placeholders, "
                 + "and will from now on. If this model never sees images, set images: false on the provider to skip that first try.");
         }
