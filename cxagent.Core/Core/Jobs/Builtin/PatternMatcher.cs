@@ -89,7 +89,12 @@ internal static class PatternMatcher
         // Running both passes and reporting every hit lets the caller refuse. Duplicates are removed
         // below, so an exact match is not counted twice for also matching tolerantly.
         var patternLines = Split(pattern);
-        var textLines = Split(text);
+        // THE FILE'S OWN LINES, \r AND ALL. Offsets are positions in `text`, so they must be measured
+        // on `text` as it is: split after normalising CRLF, every line after the first sat one
+        // character short per line above it, its span never equalled the exact pass's, and a
+        // whole-line edit anywhere below line 1 of a CRLF file was refused as "appears 2 times".
+        // Comparing is unaffected — Squash trims the \r with the rest of the outer whitespace.
+        var textLines = text.Split('\n');
 
         // Offsets computed once: recomputing a prefix sum inside the loop made this quadratic on a
         // large file, for a value that only ever moves forward.
@@ -111,6 +116,9 @@ internal static class PatternMatcher
             var start = lineOffsets[i];
             var length = 0;
             for (var k = 0; k < patternLines.Length; k++) length += textLines[i + k].Length + 1;
+            // ENDING BEFORE THE LAST LINE'S \r, where the exact pass's span ends, so the two agree and
+            // the duplicate check below sees one match rather than two.
+            if (textLines[i + patternLines.Length - 1].EndsWith('\r')) length--;
 
             // CLAMPED AT ZERO, not just at the remaining text. `text.Length - start` goes NEGATIVE
             // when a pattern's trailing newline puts the span's start past the end of the file, and
