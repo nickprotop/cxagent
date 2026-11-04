@@ -345,8 +345,9 @@ public sealed partial class Session
     /// <para>NO MANAGER, NO DISPATCH. A session built outside SessionManager.Open has no registry
     /// to consult and behaves exactly as <see cref="SubmitRaw"/>.</para>
     ///
-    /// <para><c>attachments</c> are the blocks pasted into the text, each shown in <c>echo</c> as its label —
-    /// kept with the message so a readable export can show them (ChatMessage.Pastes).</para>
+    /// <para><c>attachments</c> are what goes with the line: the images sent with it, and the blocks pasted
+    /// into the text, each shown in <c>echo</c> as its label — kept with the message so a readable export can
+    /// show them (ChatMessage.Pastes, ChatMessage.Images).</para>
     /// </summary>
     public SubmitOutcome Submit(string text, string? echo = null, Jobs.ToolSelection? tools = null,
         TurnOriginator? origin = null, SubmitSource source = SubmitSource.User,

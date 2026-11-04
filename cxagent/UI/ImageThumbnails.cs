@@ -9,7 +9,7 @@ namespace CxAgent.UI;
 ///
 /// <para>KITTY ONLY. Kitty draws the image's own pixels scaled into the cells, so ten rows show a screenshot
 /// well enough to recognise. Half-blocks at that size are a smear of colour that says nothing a label does
-/// not, and the message's button opens the image in the system viewer instead.</para>
+/// not; the message's button opens the image in its own window, large enough for half-blocks to show it.</para>
 /// </summary>
 internal static class ImageThumbnails
 {

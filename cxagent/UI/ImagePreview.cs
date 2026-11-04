@@ -125,8 +125,10 @@ internal sealed class ImagePreview(ConsoleWindowSystem system)
     /// image when the turn ends and saves, and a click on a message still being answered comes before that.
     /// Per user, because the system temp folder is everyone's.</para>
     ///
-    /// <para>WITHOUT A DESKTOP IT SAYS WHERE THE FILE IS, and so does a launch that fails: over SSH there
-    /// is nothing to open it on, and the path is what lets the user copy it somewhere that has one.</para>
+    /// <para>WITHOUT A DESKTOP IT SAYS WHERE THE FILE IS, and so does a copy that cannot be written: over
+    /// SSH there is nothing to open it on, and the path is what lets the user copy it somewhere that has
+    /// one. A viewer that fails once launched is not heard of: the launcher hands the file to the desktop
+    /// and does not wait to learn how that went.</para>
     /// </summary>
     internal void OpenInViewer(AttachedImage image)
     {

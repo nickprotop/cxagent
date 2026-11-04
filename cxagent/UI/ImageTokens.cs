@@ -267,7 +267,7 @@ internal sealed class ImageTokens
         }
     }
 
-    /// <summary>An image ready to send: its PNG, its hash, and the size it is sent at.</summary>
+    /// <summary>An image ready to send: its bytes (a PNG, or a JPEG for a photo too large for one), its hash, and the size it is sent at.</summary>
     internal sealed record Prepared(byte[] Bytes, string Hash, int Width, int Height)
     {
         /// <summary>The size of what the user gave, before it was shrunk.</summary>

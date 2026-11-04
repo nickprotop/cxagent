@@ -102,7 +102,9 @@ processes — keys on `Session.Id`, or a model switch silently orphans it.
 ## Running a turn
 
 ```csharp
-SubmitOutcome Submit(string text, string? echo = null, Attachments? attachments = null)
+SubmitOutcome Submit(string text, string? echo = null, ToolSelection? tools = null,
+                     TurnOriginator? origin = null, SubmitSource source = SubmitSource.User,
+                     Attachments? attachments = null)
 SubmitOutcome Initialise()
 bool          CancelTurn()
 bool          IsBusy
@@ -115,7 +117,9 @@ bool          RefuseIfBusy()
 |---|---|
 | `text` | what the model receives |
 | `echo` | what the USER sees, when it differs. `/init` sends paragraphs of briefing and displays `"/init"` — echoing the briefing would attribute words to them they never wrote |
-| `attachments` | images sent with the message, and pasted blocks shown by their label — see [Attachments](#attachments) |
+| `tools` | narrows the tools for this one request — **S3** in [tool selection](#tool-selection) |
+| `origin` · `source` | who the line came from; leave them out for a person typing |
+| `attachments` | images sent with the message, and pasted blocks shown by their label — see [Attachments](#attachments). Name it, since it comes after three others |
 
 **Returns** a `SubmitOutcome`, synchronously:
 
@@ -160,8 +164,8 @@ session.Submit("what is wrong in [Image #1 1568×882]?", attachments: new Attach
 
 **A model that cannot see images is sent a note in each one's place**: `[image not sent: this model
 cannot see images — Image #1, 1568×882]`. Whether it can is the provider's to say: `ModelConfig.Images`
-when set, else the endpoint where it can be asked (llama.cpp, Ollama, OpenRouter), else unknown, and an
-unknown model is sent the image. One that refuses it is sent the request again with the notes, the
+when set; else yes for an Anthropic model, which all see images; else the endpoint where it can be asked
+(llama.cpp, Ollama, OpenRouter); else unknown, and an unknown model is sent the image. One that refuses it is sent the request again with the notes, the
 provider remembers the answer, and the turn says so through `Said`.
 
 **Pasted blocks** are for a front end that shows a long paste as a label: `text` carries the

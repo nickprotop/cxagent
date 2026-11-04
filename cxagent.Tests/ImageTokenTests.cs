@@ -310,7 +310,6 @@ public class ImageTokenTests : IDisposable
         Assert.Equal("[Image #1 40×20]", Assert.Single(line.Attachments.Images).Label);
     }
 
-    /// <summary>A click on an image token must not turn it into its label as text, which drops the image.</summary>
     /// <summary>Ctrl+G beside an image opens it and leaves the caret where it was.</summary>
     [Fact]
     public void Ctrl_G_BesideAnImage_LeavesTheCaretWhereItWas()
@@ -325,6 +324,7 @@ public class ImageTokenTests : IDisposable
         Assert.Equal("x[Image #1 40×20]", composer.InputLabelText);
     }
 
+    /// <summary>A click on an image token must not turn it into its label as text, which drops the image.</summary>
     [Fact]
     public void Ctrl_G_BesideAnImage_KeepsTheImage()
     {

@@ -96,7 +96,7 @@ public class ImageStoreTests : IDisposable
     }
 
     [Fact]
-    public void LoadById_FillsPngFromTheFolder()
+    public void LoadById_FillsBytesFromTheFolder()
     {
         var image = Image([5, 5, 5]);
         Save("agent-a", [Said("look", image)]);
@@ -108,7 +108,7 @@ public class ImageStoreTests : IDisposable
     }
 
     [Fact]
-    public void LoadById_AMissingFile_LeavesPngNull()
+    public void LoadById_AMissingFile_LeavesBytesNull()
     {
         var image = Image([4, 4]);
         Save("agent-a", [Said("look", image)]);
