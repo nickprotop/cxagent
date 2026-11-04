@@ -198,16 +198,21 @@ internal sealed class ImageTokens
     /// there was nothing.</para>
     ///
     /// <para>TEXT WINS. Spreadsheet cells and slides copy as their text and a picture of it together, and
-    /// what the user meant to paste is the text; so with any text there, Ctrl+V leaves the key to the text
-    /// paste and the image is not read at all.</para>
+    /// what the user meant to paste is the text; so with any text there, Ctrl+V pastes it and the image is
+    /// not read at all. THE TEXT ALREADY READ IS THE ONE PASTED: each read can wait on another application,
+    /// and handing the key on to the window's own paste would read the clipboard a second time.</para>
     /// </summary>
     /// <param name="read">Reads the clipboard's image, or null.</param>
     /// <param name="sayWhenEmpty">Whether an empty clipboard is worth a toast.</param>
-    /// <param name="hasText">Whether the clipboard holds text a text paste would take; null for Alt+V,
+    /// <param name="readText">Reads the clipboard's text, or null when there is none; null for Alt+V,
     /// which pastes only images.</param>
-    internal bool PasteClipboard(Func<byte[]?> read, bool sayWhenEmpty, Func<bool>? hasText = null)
+    internal bool PasteClipboard(Func<byte[]?> read, bool sayWhenEmpty, Func<string?>? readText = null)
     {
-        if (hasText?.Invoke() == true) return false;
+        if (readText?.Invoke() is { Length: > 0 } text)
+        {
+            _composer.Paste(text);
+            return true;
+        }
         if (read() is not { Length: > 0 } bytes)
         {
             if (sayWhenEmpty) Refused("no image on the clipboard");

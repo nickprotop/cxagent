@@ -473,8 +473,8 @@ public class ImageTokenTests : IDisposable
     }
 
     /// <summary>
-    /// Spreadsheet cells and slides copy as text and a picture of it together. Ctrl+V pastes the text,
-    /// and leaves the key to the composer's own paste; the image is not even read.
+    /// Spreadsheet cells and slides copy as text and a picture of it together. Ctrl+V pastes the text it
+    /// already read — the clipboard is read once — and the image is not even read.
     /// </summary>
     [Fact]
     public void AClipboardWithTextAndAnImage_PastesTheText()
@@ -483,11 +483,11 @@ public class ImageTokenTests : IDisposable
         var imageRead = false;
 
         var taken = ImageTokens.For(composer).PasteClipboard(
-            () => { imageRead = true; return File.ReadAllBytes(Png(10, 10)); }, sayWhenEmpty: false, hasText: () => true);
+            () => { imageRead = true; return File.ReadAllBytes(Png(10, 10)); }, sayWhenEmpty: false, readText: () => "cells");
 
-        Assert.False(taken);
+        Assert.True(taken);
         Assert.False(imageRead);
-        Assert.Equal("", composer.InputLabelText);
+        Assert.Equal("cells", composer.InputLabelText);
     }
 
     /// <summary>With no text beside it, the image is pasted.</summary>
@@ -497,7 +497,7 @@ public class ImageTokenTests : IDisposable
         var composer = MainWindow.NewPrompt();
         var bytes = File.ReadAllBytes(Png(10, 10));
 
-        Assert.True(ImageTokens.For(composer).PasteClipboard(() => bytes, sayWhenEmpty: false, hasText: () => false));
+        Assert.True(ImageTokens.For(composer).PasteClipboard(() => bytes, sayWhenEmpty: false, readText: () => null));
         Assert.Equal("[Image #1 10×10]", composer.InputLabelText);
     }
 

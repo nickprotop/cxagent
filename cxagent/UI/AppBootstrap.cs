@@ -1479,15 +1479,15 @@ public static class AppBootstrap
                 return;
             }
 
-            // CTRL+V WITH ONLY AN IMAGE ON THE CLIPBOARD makes it a token; with text there, or nothing, the
-            // key goes on to the text paste the window gives it. Windows Terminal keeps Ctrl+V for itself, so there it is Alt+V,
-            // which has no text paste behind it. The composer must have the keyboard: an image anywhere
-            // else has nowhere to go.
+            // CTRL+V PASTES THE CLIPBOARD'S TEXT, or its image as a token when there is no text; with
+            // neither, the key goes on to the text paste the window gives it. Windows Terminal keeps Ctrl+V
+            // for itself, so there it is Alt+V, which has no text paste behind it. The composer must have the
+            // keyboard: an image anywhere else has nowhere to go.
             if (FocusedComposer(mainWindow) is { } composer && e.KeyInfo.Key == ConsoleKey.V
                 && e.KeyInfo.Modifiers == (OperatingSystem.IsWindows() ? ConsoleModifiers.Alt : ConsoleModifiers.Control)
                 && ImageTokens.For(composer).PasteClipboard(
                     () => SharpConsoleUI.Helpers.ClipboardHelper.GetImageWithTimeout(), sayWhenEmpty: OperatingSystem.IsWindows(),
-                    hasText: OperatingSystem.IsWindows() ? null : ClipboardHasText))
+                    readText: OperatingSystem.IsWindows() ? null : ClipboardText))
             {
                 e.Handled = true;
                 return;
@@ -2622,13 +2622,13 @@ public static class AppBootstrap
         : null;
 
     /// <summary>
-    /// Whether the clipboard holds text for Ctrl+V's text paste to take.
+    /// The clipboard's text for Ctrl+V, or null when it holds none.
     ///
     /// <para>A READ THAT TIMED OUT IS NOT TEXT. The plain timed read answers a slow clipboard with whatever
     /// this app last copied itself, and that would win over an image the user just copied elsewhere.</para>
     /// </summary>
-    private static bool ClipboardHasText() =>
-        SharpConsoleUI.Helpers.ClipboardHelper.TryGetTextWithTimeout(out var text) && text.Length > 0;
+    private static string? ClipboardText() =>
+        SharpConsoleUI.Helpers.ClipboardHelper.TryGetTextWithTimeout(out var text) && text.Length > 0 ? text : null;
 
     /// <summary>How long ago, in the coarsest unit that is still informative.</summary>
     private static string Ago(DateTimeOffset when)
