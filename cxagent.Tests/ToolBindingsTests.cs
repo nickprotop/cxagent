@@ -575,4 +575,38 @@ public class ToolBindingsTests
         Assert.Contains("trusted", tools.Single(t => t.Name == "grep").Description, StringComparison.Ordinal);
         Assert.Contains("trusted", tools.Single(t => t.Name == "glob").Description, StringComparison.Ordinal);
     }
+
+    // ---- Parameter schemas beyond { type, description } ------------------------------------------
+
+    [Fact]
+    public void Array_param_with_item_fields_emits_items_object_schema()
+    {
+        var spec = new JobParamSpec("edits", "array", Required: true, "the edits")
+        {
+            ItemFields = [new("pattern", "string", true, "old"), new("replacement", "string", true, "new")],
+        };
+        var json = JsonSerializer.SerializeToElement(ToolBindings.ParamSchema(spec));
+        Assert.Equal("array", json.GetProperty("type").GetString());
+        var items = json.GetProperty("items");
+        Assert.Equal("object", items.GetProperty("type").GetString());
+        Assert.True(items.GetProperty("properties").TryGetProperty("pattern", out _));
+        Assert.Equal(["pattern", "replacement"],
+            items.GetProperty("required").EnumerateArray().Select(e => e.GetString()));
+    }
+
+    [Fact]
+    public void Allowed_values_emit_an_enum()
+    {
+        var spec = new JobParamSpec("engine", "string", false, "which") { AllowedValues = ["duckduckgo"] };
+        var json = JsonSerializer.SerializeToElement(ToolBindings.ParamSchema(spec));
+        Assert.Equal(["duckduckgo"], json.GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
+    }
+
+    [Fact]
+    public void A_plain_param_still_emits_only_type_and_description()
+    {
+        var json = JsonSerializer.SerializeToElement(
+            ToolBindings.ParamSchema(new JobParamSpec("path", "string", true, "the file")));
+        Assert.Equal(["type", "description"], json.EnumerateObject().Select(p => p.Name));
+    }
 }

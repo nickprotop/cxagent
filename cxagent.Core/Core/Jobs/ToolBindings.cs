@@ -296,7 +296,7 @@ public static class ToolBindings
         IReadOnlySet<BuiltinTool> allowed)
     {
         var byName = schema.Params.ToDictionary(p => p.Name, StringComparer.Ordinal);
-        var properties = new Dictionary<string, object>();
+        var properties = new Dictionary<string, object?>();
 
         foreach (var name in spec.Params)
         {
@@ -308,7 +308,7 @@ public static class ToolBindings
                     $"tool '{spec.Name}' names param '{name}', which executor '{spec.JobType}' "
                     + "does not accept.");
 
-            properties[name] = new { type = p.Type, description = p.Description };
+            properties[name] = ParamSchema(p);
         }
 
         var jsonSchema = new
@@ -340,6 +340,28 @@ public static class ToolBindings
             description += " " + also.Sentence;
 
         return new ToolDefinition(spec.Name, description, JsonSerializer.SerializeToElement(jsonSchema));
+    }
+
+    /// <summary>
+    /// One parameter's JSON schema: its type and description, plus <c>enum</c> and <c>items</c> when
+    /// the spec carries them.
+    ///
+    /// <para>A PLAIN PARAMETER SERIALISES EXACTLY AS IT ALWAYS HAS — the two keys, in that order. The
+    /// tool list is part of every request's prefix, and a byte that moves there costs a provider's
+    /// prompt cache on every turn of every session.</para>
+    /// </summary>
+    internal static Dictionary<string, object?> ParamSchema(JobParamSpec p)
+    {
+        var schema = new Dictionary<string, object?> { ["type"] = p.Type, ["description"] = p.Description };
+        if (p.AllowedValues is { } values) schema["enum"] = values;
+        if (p.ItemFields is { } fields)
+            schema["items"] = new Dictionary<string, object?>
+            {
+                ["type"] = "object",
+                ["properties"] = fields.ToDictionary(f => f.Name, f => (object?)ParamSchema(f), StringComparer.Ordinal),
+                ["required"] = fields.Where(f => f.Required).Select(f => f.Name).ToArray(),
+            };
+        return schema;
     }
 
     /// <summary>
