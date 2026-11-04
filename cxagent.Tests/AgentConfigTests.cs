@@ -300,4 +300,17 @@ public class AgentConfigTests
         Assert.True(resolved.AgentTypes["scout"].AnyProvider);
         Assert.Null(resolved.AgentTypes["scout"].Disabled);
     }
+
+    /// <summary>CODE-FIRST CONFIG GETS THE SAME SEARCH as a config file: an embedder that sets a key
+    /// here has Tavily, one that does not has DuckDuckGo.</summary>
+    [Fact]
+    public void Web_search_key_in_code_reaches_the_resolved_config()
+    {
+        var resolved = (Machine with { WebSearch = new Core.Jobs.Builtin.WebSearchSettings("tvly-code") }).Resolve();
+        Assert.Equal("tvly-code", resolved.WebSearch.TavilyApiKey);
+    }
+
+    [Fact]
+    public void No_web_search_in_code_means_no_key() =>
+        Assert.Null(Machine.Resolve().WebSearch.TavilyApiKey);
 }

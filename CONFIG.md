@@ -599,6 +599,28 @@ build's error included — is lost.
 A malformed value warns at startup and the default is kept, rather than refusing to start over a
 behaviour switch.
 
+## `webSearch` — where `web_search` looks
+
+```json
+"webSearch": { "tavilyApiKey": "{env:TAVILY_API_KEY}" }
+```
+
+F8's **General** tab sets it too, in its *Web search* section.
+
+**Optional.** With no block, or no key, `web_search` uses **DuckDuckGo**, which needs no account, so
+search works on a machine with nothing configured. With a **Tavily** key, searches go to Tavily, whose
+results carry text from the page itself and often save the follow-up `web_fetch`. Tavily's free tier is
+1,000 searches a month with no card (as of November 2026; see tavily.com).
+
+**`{env:NAME}` and `{file:path}` work here**, so the key need not sit in this file. An unset variable
+warns at startup and leaves search on DuckDuckGo; a key that is not a string does the same. Neither
+stops the config loading.
+
+The model may name an engine for a call. When it does not, Tavily is used if there is a key, and a
+failed Tavily search (a refused key, a used-up quota) is retried on DuckDuckGo, saying so in the
+result. Every search asks first, like `web_fetch`, and *always allow* covers one engine: allowing
+DuckDuckGo does not allow sending queries to Tavily.
+
 ## `orchestrator` — caps
 
 ```json

@@ -95,6 +95,18 @@
     "A malformed value warns and the default is kept, rather than refusing to start over a",
     "behaviour switch."
   ],
+  "//webSearch": [
+    "WHERE web_search LOOKS. Optional: without this block, searches go to DuckDuckGo, which needs no",
+    "account, so a machine with nothing configured can still search.",
+    "WITH A TAVILY KEY, searches go to Tavily, whose results carry the page's own text and often",
+    "save a web_fetch. Its free tier is 1,000 searches a month with no card (tavily.com, as of",
+    "November 2026). If Tavily fails and the model did not name an engine, the search is retried on",
+    "DuckDuckGo and says so.",
+    "{env:NAME} AND {file:path} WORK HERE, so the key need not sit in this file; an unset variable",
+    "warns and leaves search on DuckDuckGo. Every search asks first, like web_fetch, and an",
+    "\"always\" covers one engine. F8's General tab edits the key."
+  ],
+  "webSearch": { "tavilyApiKey": "{env:TAVILY_API_KEY}" },
   "//theme": [
     "WHICH THEME cxagent STARTS IN. A registered theme's name, or absent.",
     "ABSENT MEANS `cxagent` \u2014 its own palette, a near-black ground with a warm amber accent.",

@@ -631,6 +631,7 @@ var resolution = new AgentConfig
 | `MaxTurns` · `CompressAbove` | turn ceiling and compaction threshold; null derives both. A set ceiling binds the session's own agent and its sub-agents; unset, the session's agent has no cap and sub-agents keep a built-in 300 |
 | `Agents` | sub-agent types, merged with the shipped ones rather than replacing them |
 | `Mcp` | MCP servers, stdio or HTTP |
+| `WebSearch` | `new WebSearchSettings(tavilyKey)` sends `web_search` to Tavily; null (or a null key) uses DuckDuckGo, which needs no account. The key is used as given |
 
 | `ModelConfig(Kind, Model)` | |
 |---|---|

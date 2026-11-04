@@ -458,6 +458,12 @@ public record ProviderSettings(
     public bool? ShellDetachOnTimeout { get; init; }
 
     /// <summary>
+    /// The <c>webSearch</c> block, or null when the config has none — which is not an error: search
+    /// then uses DuckDuckGo.
+    /// </summary>
+    public Jobs.Builtin.WebSearchSettings? WebSearch { get; init; }
+
+    /// <summary>
     /// The name of the theme the terminal should start in, or null for cxagent's own.
     ///
     /// <para>A NAME RATHER THAN COLOURS. The window framework owns the theme registry and ships a
@@ -1007,6 +1013,31 @@ public static class ProviderConfigLoader
                     warnings.Add("shellDetachOnTimeout must be true or false — using the default (true).");
             }
 
+            // A KEY THAT CANNOT BE READ WARNS AND LEAVES SEARCH ON DuckDuckGo. Refusing the config over
+            // an optional search key would take every provider down with it. {env:NAME} and
+            // {file:path} expand through ConfigVariable, the placeholder syntax the loader has; an
+            // unset variable is empty, and an empty key is no key.
+            Jobs.Builtin.WebSearchSettings? webSearch = null;
+            if (root.TryGetProperty("webSearch", out var ws))
+            {
+                string? tavily = null;
+                if (ws.ValueKind != JsonValueKind.Object)
+                    warnings.Add("webSearch must be an object — searches will use DuckDuckGo.");
+                else if (ws.TryGetProperty("tavilyApiKey", out var tk))
+                {
+                    if (tk.ValueKind != JsonValueKind.String)
+                        warnings.Add("webSearch.tavilyApiKey must be a string — searches will use DuckDuckGo.");
+                    else
+                    {
+                        var before = warnings.Count;
+                        tavily = ConfigVariable.Substitute(tk.GetString() ?? "", warnings, env);
+                        for (var i = before; i < warnings.Count; i++)
+                            warnings[i] = $"webSearch.tavilyApiKey: {warnings[i]}";
+                    }
+                }
+                webSearch = new Jobs.Builtin.WebSearchSettings(string.IsNullOrWhiteSpace(tavily) ? null : tavily);
+            }
+
             // READ AFTER `warnings` EXISTS, not beside the other llmAgent fields above: a malformed
             // term warns rather than throwing, and there is nowhere to put a warning before this.
             var llmAgentTools = root.TryGetProperty("llmAgent", out var laTools)
@@ -1313,6 +1344,7 @@ public static class ProviderConfigLoader
                 Classifier = classifier,
                 ClassifierTimeoutSeconds = classifierTimeout,
                 ShellDetachOnTimeout = shellDetachOnTimeout,
+                WebSearch = webSearch,
                 Theme = theme,
                 Plugins = plugins,
                 PluginPaths = pluginPaths,

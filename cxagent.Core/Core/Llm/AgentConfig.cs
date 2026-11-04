@@ -162,6 +162,13 @@ public sealed record AgentConfig
     public List<string> PluginPaths { get; init; } = [];
 
     /// <summary>
+    /// What web_search may use: a Tavily key, or null for DuckDuckGo. The same setting as config's
+    /// <c>webSearch</c> block, so an embedder configuring in code gets the same tool. The key is used
+    /// as given — code can read its own environment, so there are no placeholders here.
+    /// </summary>
+    public Jobs.Builtin.WebSearchSettings? WebSearch { get; init; }
+
+    /// <summary>
     /// Builds what the runtime consumes.
     ///
     /// <para>THE ERRORS COME BACK AS A VALUE, exactly as ConfigResolver's do — a model named as
@@ -240,7 +247,7 @@ public sealed record AgentConfig
                 Orchestrator: new OrchestratorSettings(MaxTurns, CompressAbove),
                 MaxConcurrentAgents: chosen.MaxConcurrentAgents,
                 ClassifierInstance: Classifier)
-            { PluginPaths = PluginPaths },
+            { PluginPaths = PluginPaths, WebSearch = WebSearch },
             [],
             Warnings: warnings,
             Entries: new PluginEntries(Plugins));

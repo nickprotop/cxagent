@@ -104,6 +104,9 @@ public sealed record ResolvedConfig(
     /// an unconfigured machine gets the default, true, so a caller need not know what that is.</summary>
     public bool ShellDetachOnTimeout => Catalog.ShellDetachOnTimeout ?? true;
 
+    /// <summary>What web_search may use. Never null — no block means no key, and DuckDuckGo.</summary>
+    public Jobs.Builtin.WebSearchSettings WebSearch => Catalog.WebSearch ?? Jobs.Builtin.WebSearchSettings.None;
+
     /// <summary>The theme name from config, or null for cxagent's own. Resolved at startup, where
     /// an unknown name falls back rather than failing — the registry does not exist here.</summary>
     public string? Theme => Catalog.Theme;
@@ -185,7 +188,8 @@ public static class ConfigResolver
                   // BOTH CONSTRUCTION SITES, for the reason the comment above gives about
                   // PluginPaths: a key carried only by ResolveInstance takes effect after a /model
                   // switch and not on launch.
-                  ShellDetachOnTimeout = settings.ShellDetachOnTimeout },
+                  ShellDetachOnTimeout = settings.ShellDetachOnTimeout,
+                  WebSearch = settings.WebSearch },
                 [],
                 settings.Warnings,
                 Entries: new PluginEntries(settings.Plugins));
@@ -296,7 +300,8 @@ public static class ConfigResolver
                   // BOTH CONSTRUCTION SITES, for the reason the comment above gives about
                   // PluginPaths: a key carried only by ResolveInstance takes effect after a /model
                   // switch and not on launch.
-                  ShellDetachOnTimeout = settings.ShellDetachOnTimeout },
+                  ShellDetachOnTimeout = settings.ShellDetachOnTimeout,
+                  WebSearch = settings.WebSearch },
                 [],
                 settings.Warnings,
                 Entries: new PluginEntries(settings.Plugins));
