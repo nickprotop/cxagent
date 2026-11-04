@@ -87,4 +87,110 @@ public class SearchEngineTests
     public void A_note_is_appended() =>
         Assert.EndsWith("returned 1 of 5 requested",
             SearchResults.Format("x", "q", new SearchOutcome([new("T", "https://u", "")], Note: "returned 1 of 5 requested")));
+
+    // ---- DuckDuckGo ---------------------------------------------------------------------------
+
+    private static string Page(string name) =>
+        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "SearchFixtures", name));
+
+    /// <summary>Answers each request with the next page in the list; the last one repeats.</summary>
+    private sealed class Pages(params (HttpStatusCode Status, string Body)[] pages) : HttpMessageHandler
+    {
+        public List<(HttpRequestMessage Request, string Body)> Seen { get; } = [];
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Seen.Add((request, request.Content is null ? "" : await request.Content.ReadAsStringAsync(ct)));
+            var (status, body) = pages[Math.Min(Seen.Count - 1, pages.Length - 1)];
+            return new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "text/html") };
+        }
+    }
+
+    [Fact]
+    public async Task Ddg_parses_titles_urls_and_snippets_and_skips_ads()
+    {
+        var outcome = await new DuckDuckGoEngine(new HttpClient(new Pages((HttpStatusCode.OK, Page("ddg-results.html")))))
+            .SearchAsync("terminal ui", 2, CancellationToken.None);
+        Assert.Null(outcome.Failure);
+        Assert.Equal(2, outcome.Hits.Count);
+        Assert.Equal("SharpConsoleUI & ConsoleEx", outcome.Hits[0].Title);
+        Assert.Equal("A terminal UI framework for .NET.", outcome.Hits[0].Snippet);
+        Assert.DoesNotContain(outcome.Hits, h => h.Title.Contains("advert"));
+    }
+
+    [Fact]
+    public async Task Ddg_unwraps_redirect_urls()
+    {
+        var outcome = await new DuckDuckGoEngine(new HttpClient(new Pages((HttpStatusCode.OK, Page("ddg-results.html")))))
+            .SearchAsync("terminal ui", 2, CancellationToken.None);
+        Assert.Equal("https://github.com/nickprotop/ConsoleEx", outcome.Hits[0].Url);
+        Assert.Equal("https://example.com/direct", outcome.Hits[1].Url);
+    }
+
+    /// <summary>ONE PLAIN REQUEST, SAYING WHO IS ASKING. The User-Agent names cxagent rather than
+    /// passing for a browser: the endpoint is DuckDuckGo's, and its bot check is theirs to apply.</summary>
+    [Fact]
+    public async Task Ddg_sends_one_honest_request_with_the_query()
+    {
+        var handler = new Pages((HttpStatusCode.OK, Page("ddg-results.html")));
+        await new DuckDuckGoEngine(new HttpClient(handler)).SearchAsync("terminal ui", 2, CancellationToken.None);
+        var (request, body) = Assert.Single(handler.Seen);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Contains("cxagent", request.Headers.UserAgent.ToString());
+        Assert.DoesNotContain("Mozilla", request.Headers.UserAgent.ToString());
+        Assert.Contains("q=terminal+ui", body);
+    }
+
+    [Fact]
+    public async Task Ddg_fetches_a_second_page_only_when_more_are_asked()
+    {
+        var few = new Pages((HttpStatusCode.OK, Page("ddg-results.html")));
+        await new DuckDuckGoEngine(new HttpClient(few)).SearchAsync("terminal ui", 2, CancellationToken.None);
+        Assert.Single(few.Seen);
+
+        var many = new Pages((HttpStatusCode.OK, Page("ddg-results.html")), (HttpStatusCode.OK, Page("ddg-results.html")));
+        var outcome = await new DuckDuckGoEngine(new HttpClient(many)).SearchAsync("terminal ui", 4, CancellationToken.None);
+        Assert.Equal(2, many.Seen.Count);
+        Assert.Contains("s=10", many.Seen[1].Body);
+        Assert.Contains("vqd=4-123", many.Seen[1].Body);
+        Assert.Equal(4, outcome.Hits.Count);
+    }
+
+    [Fact]
+    public async Task Ddg_second_page_failure_keeps_the_first_with_a_note()
+    {
+        var handler = new Pages((HttpStatusCode.OK, Page("ddg-results.html")), ((HttpStatusCode)202, Page("ddg-anomaly.html")));
+        var outcome = await new DuckDuckGoEngine(new HttpClient(handler)).SearchAsync("terminal ui", 5, CancellationToken.None);
+        Assert.Null(outcome.Failure);
+        Assert.Equal(2, outcome.Hits.Count);
+        Assert.Contains("2 of 5", outcome.Note);
+    }
+
+    [Fact]
+    public async Task Anomaly_page_is_reported_not_parsed()
+    {
+        var outcome = await new DuckDuckGoEngine(new HttpClient(new Pages(((HttpStatusCode)202, Page("ddg-anomaly.html")))))
+            .SearchAsync("terminal ui", 5, CancellationToken.None);
+        Assert.Empty(outcome.Hits);
+        Assert.Contains("bot check", outcome.Failure);
+        Assert.Contains("Tavily", outcome.Failure);
+    }
+
+    [Fact]
+    public async Task Empty_results_page_says_so()
+    {
+        var outcome = await new DuckDuckGoEngine(new HttpClient(new Pages((HttpStatusCode.OK, Page("ddg-empty.html")))))
+            .SearchAsync("zzqq", 5, CancellationToken.None);
+        Assert.Null(outcome.Failure);
+        Assert.Empty(outcome.Hits);
+    }
+
+    [Fact]
+    public async Task Unrecognised_page_is_a_failure_not_an_empty_success()
+    {
+        // MARKUP CHANGED: neither results, nor "no results", nor the bot check. Saying "no results"
+        // here would tell the model nothing exists when the parser simply stopped understanding.
+        var outcome = await new DuckDuckGoEngine(new HttpClient(new Pages((HttpStatusCode.OK, "<html><body>something new</body></html>"))))
+            .SearchAsync("q", 5, CancellationToken.None);
+        Assert.Contains("could not be read", outcome.Failure);
+    }
 }

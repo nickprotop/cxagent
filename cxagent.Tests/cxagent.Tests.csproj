@@ -144,6 +144,7 @@
          '<plugin>.plugin.json' beside '<plugin>.dll' at the OUTPUT path, not the source path, so
          these must land in the test binaries' own output directory, named after their DLL's own
          stem, to be found at all. -->
+    <None Include="SearchFixtures/*.html" CopyToOutputDirectory="PreserveNewest" />
     <None Include="PluginFixtures/WellFormedPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
           TargetPath="cxagent.Tests.PluginFixture.plugin.json" />
     <None Include="PluginFixtures/MismatchedPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"

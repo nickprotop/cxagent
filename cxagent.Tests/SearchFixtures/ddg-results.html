@@ -1,0 +1,30 @@
+<!-- HAND-MADE, in the markup of DuckDuckGo's HTML endpoint (html.duckduckgo.com/html/): a real
+     results page could not be captured, because the first automated request was answered with the
+     bot check in ddg-anomaly.html. Two results, an ad that must be skipped, and the next-page form. -->
+<html><body>
+<div class="result results_links results_links_deep result--ad">
+  <h2 class="result__title"><a rel="nofollow" class="result__a" href="https://duckduckgo.com/y.js?ad_provider=x">An advert</a></h2>
+  <a class="result__snippet" href="https://duckduckgo.com/y.js">Buy things.</a>
+</div>
+<div class="result results_links results_links_deep web-result">
+  <h2 class="result__title"><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fnickprotop%2FConsoleEx&amp;rut=abc">SharpConsoleUI &amp; <b>ConsoleEx</b></a></h2>
+  <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fnickprotop%2FConsoleEx&amp;rut=abc">A <b>terminal</b> UI framework for .NET.</a>
+</div>
+<div class="result results_links results_links_deep web-result">
+  <h2 class="result__title"><a rel="nofollow" class="result__a" href="https://example.com/direct">Direct link</a></h2>
+  <a class="result__snippet" href="https://example.com/direct">Second result.</a>
+</div>
+<div class="nav-link">
+  <form action="/html/" method="post">
+    <input type="submit" class="btn btn--alt" value="Next" />
+    <input type="hidden" name="q" value="terminal ui" />
+    <input type="hidden" name="s" value="10" />
+    <input type="hidden" name="nextParams" value="" />
+    <input type="hidden" name="v" value="l" />
+    <input type="hidden" name="o" value="json" />
+    <input type="hidden" name="dc" value="11" />
+    <input type="hidden" name="api" value="d.js" />
+    <input type="hidden" name="vqd" value="4-123" />
+  </form>
+</div>
+</body></html>
