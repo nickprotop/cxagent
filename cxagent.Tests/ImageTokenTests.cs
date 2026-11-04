@@ -241,6 +241,20 @@ public class ImageTokenTests : IDisposable
     }
 
     /// <summary>A click on an image token must not turn it into its label as text, which drops the image.</summary>
+    /// <summary>Ctrl+G beside an image opens it and leaves the caret where it was.</summary>
+    [Fact]
+    public void Ctrl_G_BesideAnImage_LeavesTheCaretWhereItWas()
+    {
+        var composer = MainWindow.NewPrompt();
+        composer.Paste(Png(40, 20));
+        composer.ProcessKey(new ConsoleKeyInfo('\0', ConsoleKey.Home, false, false, false));
+
+        ImageTokens.ExpandPasteAtCaret(composer, out _);
+        composer.ProcessKey(new ConsoleKeyInfo('x', ConsoleKey.X, false, false, false));
+
+        Assert.Equal("x[Image #1 40×20]", composer.InputLabelText);
+    }
+
     [Fact]
     public void Ctrl_G_BesideAnImage_KeepsTheImage()
     {

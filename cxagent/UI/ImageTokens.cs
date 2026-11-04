@@ -111,27 +111,17 @@ internal sealed class ImageTokens
     /// <summary>
     /// Ctrl+G: expands the pasted token beside the caret, and never an image's.
     ///
-    /// <para>THE CONTROL KEEPS ITS "WHICH TOKEN IS AT THE CARET" PRIVATE, so this lets it expand and looks
-    /// at what went. An image comes back at once, the line as it was, and is handed out for the caller
-    /// to show instead. Putting it back sets the segments whole, which leaves the caret at the end of
-    /// the line; that is the cost of not knowing in advance.</para>
+    /// <para>ASKED BEFORE ACTING. An image token's value is its label, so expanding it would leave the
+    /// label behind as plain text and the image gone. The token at the caret is looked at first, and an
+    /// image is handed out for the caller to show instead, the line untouched.</para>
     /// </summary>
     /// <param name="composer">The composer the key was pressed in.</param>
     /// <param name="image">The image token's image, when that is what the caret was beside.</param>
     /// <returns>Whether something happened: a paste expanded, or an image found.</returns>
     internal static bool ExpandPasteAtCaret(PromptControl composer, out AttachedImage? image)
     {
-        image = null;
-        var before = composer.InputSegments;
-        if (!composer.ExpandTokenAtCaret()) return false;
-
-        var after = composer.InputSegments.Select(s => s.Token).OfType<PromptToken>().ToHashSet(ReferenceEqualityComparer.Instance);
-        var gone = before.Select(s => s.Token).OfType<PromptToken>().FirstOrDefault(t => !after.Contains(t));
-        if (Of(gone) is not { } found) return true;
-
-        composer.SetInputSegments(before);
-        image = found;
-        return true;
+        image = Of(composer.TokenAtCaret);
+        return image is not null || composer.ExpandTokenAtCaret();
     }
 
     /// <summary>
