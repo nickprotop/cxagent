@@ -836,6 +836,25 @@ public class SystemPromptTests
     /// agent to keep a list it cannot write is the same defect as offering a read-only agent
     /// write_file — which is why the block above it deliberately names no tool at all.
     /// </summary>
+    /// <summary>
+    /// SEVERAL CHANGES TO ONE FILE, ONE CALL. The schema says replace_in_file takes a list; a local
+    /// model still made one call per change, five round trips for five small edits, until told.
+    /// </summary>
+    [Fact]
+    public void Prompt_says_several_changes_to_one_file_go_in_one_call()
+    {
+        var p = SystemPrompt.Build(Context() with { CanEdit = true });
+        Assert.Contains("replace_in_file", p, StringComparison.Ordinal);
+        Assert.Contains("one call", p, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Prompt_does_not_name_replace_in_file_when_it_is_withheld()
+    {
+        var p = SystemPrompt.Build(Context() with { CanEdit = false });
+        Assert.DoesNotContain("replace_in_file", p, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Build_WhenItCannotPlan_DoesNotMentionTheTaskListTool()
     {

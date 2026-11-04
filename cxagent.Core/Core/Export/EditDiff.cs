@@ -25,9 +25,18 @@ internal static class EditDiff
         switch (call.Name)
         {
             case Tool.ReplaceInFile:
+                // THE EXECUTOR'S OWN READER, so an export sees exactly the edits the call made, in
+                // either shape — a recorded flat call from before the list existed included. A call
+                // it cannot read made no change, and has no diff.
+                IReadOnlyList<Jobs.Builtin.ReplaceEdit> edits;
+                try { edits = Jobs.Builtin.ReplaceEdits.Read(Parameters(call)).Edits; }
+                catch (InvalidOperationException) { return null; }
                 text.Append("--- ").Append(path).Append('\n').Append("+++ ").Append(path).Append('\n');
-                foreach (var line in Lines(Arg(call, "pattern"))) text.Append('-').Append(line).Append('\n');
-                foreach (var line in Lines(Arg(call, "replacement"))) text.Append('+').Append(line).Append('\n');
+                foreach (var edit in edits)
+                {
+                    foreach (var line in Lines(edit.Pattern)) text.Append('-').Append(line).Append('\n');
+                    foreach (var line in Lines(edit.Replacement)) text.Append('+').Append(line).Append('\n');
+                }
                 break;
 
             case Tool.WriteFile:
@@ -45,6 +54,11 @@ internal static class EditDiff
 
     private static List<string> Lines(string? text) =>
         string.IsNullOrEmpty(text) ? [] : [.. text.Replace("\r\n", "\n").Split('\n')];
+
+    private static JobParameters Parameters(ToolCall call) =>
+        new(call.Arguments.ValueKind == JsonValueKind.Object
+            ? call.Arguments.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.Clone())
+            : []);
 
     private static string? Arg(ToolCall call, string name) =>
         call.Arguments.ValueKind == JsonValueKind.Object && call.Arguments.TryGetProperty(name, out var value)

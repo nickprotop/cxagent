@@ -119,6 +119,12 @@ internal readonly record struct SystemPromptContext(
     public bool CanPlan { get; init; }
 
     /// <summary>
+    /// True when this agent has <c>replace_in_file</c>. Gated for the reason the task-list line is: a
+    /// line naming a tool the agent was not offered sends it to call one it cannot.
+    /// </summary>
+    public bool CanEdit { get; init; }
+
+    /// <summary>
     /// The commands that asked to be named to the model — name and one-line summary each.
     ///
     /// <para>EMPTY IS THE NORMAL CASE and renders nothing: almost every command is the user's to
@@ -210,6 +216,15 @@ internal static class SystemPrompt
         sb.AppendLine("Independent tool calls can go in one turn. Reading three files is one round "
                     + "trip, not three.");
         sb.AppendLine();
+        // ONE CALL FOR SEVERAL CHANGES TO A FILE. The schema already takes a list; a local model still
+        // made one call per small change — a round trip each, and a prompt each outside accept-edits —
+        // until the prompt said so.
+        if (ctx.CanEdit)
+        {
+            sb.AppendLine("Several changes to one file go in one replace_in_file call, as a list of "
+                        + "edits — not one call per change.");
+            sb.AppendLine();
+        }
         // A FETCH TOOL PLUS AN INVENTED URL is how an agent confidently reads a page that does not
         // exist.
         sb.AppendLine("Never invent a URL for a request. Use one the user gave you, or one you "

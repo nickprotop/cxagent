@@ -1305,4 +1305,18 @@ public class PermissionPolicyTests
         var policy = TrustedPolicy(root, EditMode.AcceptEdits);
         Assert.Equal(silent, policy.IsSilentlyAllowed(ShellRead(command, workingDir, root, policy)));
     }
+
+    /// <summary>A LIST OF EDITS IS STILL ONE WRITE TO ONE FILE: one prompt, naming the path.</summary>
+    [Fact]
+    public void Replace_with_edits_asks_one_file_write_for_the_path()
+    {
+        var root = Path.GetTempPath();
+        var edits = System.Text.Json.JsonSerializer.SerializeToElement(new[]
+            { new { pattern = "a", replacement = "b" }, new { pattern = "c", replacement = "d" } });
+        var requests = PermissionPolicy.RequestsFor("file", new JobParameters(new Dictionary<string, object?>
+            { ["action"] = "replace", ["path"] = "/etc/elsewhere.txt", ["edits"] = edits }), root);
+        var only = Assert.Single(requests);
+        Assert.Equal(PermissionKind.FileWrite, only.Kind);
+        Assert.Contains("elsewhere.txt", only.Display);
+    }
 }

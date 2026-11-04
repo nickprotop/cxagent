@@ -190,7 +190,7 @@ and style, because it is looking at the actual text rather than reconstructing i
 |------|---------|
 | `read_file` | Read a file, or a line window of it (`offset`/`limit`) |
 | `write_file` | Write a whole file |
-| `replace_in_file` | Replace an exact passage, leaving the rest untouched |
+| `replace_in_file` | Replace exact passages, leaving the rest untouched; several changes to one file go in one call, applied all or nothing |
 | `glob` | Find files by path pattern, e.g. `**/*.cs` |
 | `grep` | Search file contents, literal or regex |
 | `run_shell` | Run a command, or start one in the background (`background`) and be told when it exits |

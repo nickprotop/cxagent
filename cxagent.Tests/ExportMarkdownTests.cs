@@ -467,4 +467,27 @@ public class EditDiffTests
     [Fact]
     public void OtherTools_HaveNoDiff() => Assert.Null(EditDiff.For(Call("read_file", new { path = "a" })));
 
+    [Fact]
+    public void Replace_with_two_edits_exports_one_diff()
+    {
+        var diff = EditDiff.For(Call("replace_in_file", new
+        {
+            path = "a.cs",
+            edits = new[] { new { pattern = "int a = 1;", replacement = "int a = 2;" },
+                            new { pattern = "int b = 1;", replacement = "int b = 2;" } },
+        }))!;
+        Assert.Equal(1, diff.Split('\n').Count(l => l.StartsWith("--- ")));
+        Assert.Equal(["-int a = 1;", "+int a = 2;", "-int b = 1;", "+int b = 2;"],
+            diff.Split('\n').Where(l => l.StartsWith('-') && !l.StartsWith("---") || l.StartsWith('+') && !l.StartsWith("+++")));
+    }
+
+    /// <summary>RESUMED HISTORY IS FULL OF THE FLAT SHAPE, and an export of it must still show the edit.</summary>
+    [Fact]
+    public void Recorded_flat_replace_still_exports()
+    {
+        var diff = EditDiff.For(Call("replace_in_file", new { path = "a.cs", pattern = "old", replacement = "new" }))!;
+        Assert.Contains("-old", diff);
+        Assert.Contains("+new", diff);
+    }
+
 }

@@ -1512,6 +1512,7 @@ public sealed class Agent
                     // for a sub-agent whatever the caller passed.
                     CanAskUser = _askUser is not null && SelectionAllows(Jobs.Tool.AskUser, turnTools),
                     CanPlan = SelectionAllows(Jobs.Tool.TodoWrite, turnTools),
+                    CanEdit = SelectionAllows(Jobs.Tool.ReplaceInFile, turnTools),
                     ModelFacingCommands = _modelFacingCommands?.Invoke() ?? [],
                 })
                 // AFTER the general prompt, so a project can override it.

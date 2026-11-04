@@ -11,8 +11,6 @@ What is next. See [README](README.md) for what cxagent does and
   finds one it does not.
 - **Hooks** — commands run on events the user chooses: before or after a tool call, when a turn
   ends, when a session starts. Today the only way in is a plugin, which is code.
-- **Several edits in one call** — `replace_in_file` changes one exact passage; a multi-edit or patch
-  tool would let a refactor across a file be one call and one permission, not one per passage.
 - **Sandboxed shell** — commands run as the user, gated by permission rules but not contained; the
   same thing stands between this loop and running tools in parallel.
 - **A web front end** — the reason the extraction was worth doing.
