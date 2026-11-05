@@ -16,6 +16,8 @@ public sealed class SandboxProbeTests : IDisposable
 
     public void Dispose() { try { Directory.Delete(_dir, recursive: true); } catch (IOException) { } }
 
+    /// <summary>A script standing in for bubblewrap. Linux only, as every caller already checks first.</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     private string FakeBwrap(string body)
     {
         var path = Path.Combine(_dir, "bwrap");

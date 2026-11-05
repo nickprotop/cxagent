@@ -35,7 +35,7 @@ public class SandboxDraftTests
         var draft = Draft();
         draft.SandboxEnabled = false;
         Assert.True(draft.IsDirty);
-        Assert.Equal(false, Saved(draft)["sandbox"]!["enabled"]!.GetValue<bool>());
+        Assert.False(Saved(draft)["sandbox"]!["enabled"]!.GetValue<bool>());
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public class SandboxDraftTests
         draft.SandboxNetwork = false;
         var sandbox = Saved(draft, """, "sandbox": { "future": 1 } """)["sandbox"]!;
         Assert.Equal(1, sandbox["future"]!.GetValue<int>());
-        Assert.Equal(false, sandbox["network"]!.GetValue<bool>());
+        Assert.False(sandbox["network"]!.GetValue<bool>());
     }
 
     [Fact]
@@ -81,8 +81,8 @@ public class SandboxDraftTests
     {
         var root = JsonNode.Parse($$"""{ {{Providers}}, "sandbox": { "network": false } }""")!.AsObject();
         GeneralDraft.SetSandboxEnabled(root, false);
-        Assert.Equal(false, root["sandbox"]!["enabled"]!.GetValue<bool>());
-        Assert.Equal(false, root["sandbox"]!["network"]!.GetValue<bool>());
+        Assert.False(root["sandbox"]!["enabled"]!.GetValue<bool>());
+        Assert.False(root["sandbox"]!["network"]!.GetValue<bool>());
         GeneralDraft.SetSandboxEnabled(root, true);
         Assert.Null(root["sandbox"]!["enabled"]);
     }
