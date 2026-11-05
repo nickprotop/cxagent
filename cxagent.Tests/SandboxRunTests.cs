@@ -186,6 +186,23 @@ public sealed class SandboxRunTests : IDisposable
         Assert.Equal("asked-for", Out(r).Trim());
     }
 
+    /// <summary>
+    /// THIS MACHINE'S SOCKETS, whatever it has: a tmux server, X11, Docker, the session bus. Inside, a socket path is no
+    /// socket and a socket folder is empty — a read-only bind does not stop connect(), so they must be gone.
+    /// </summary>
+    [Fact]
+    public async Task The_machines_sockets_are_not_reachable()
+    {
+        if (!CanRun) return;
+        var sockets = SandboxHome.FromEnvironment(null).Sockets;
+        var policy = Policy();
+        policy.Sandbox = new SandboxState(SandboxSettings.AppDefault, new SandboxHome(Home, ConfigDir, null) { Sockets = sockets },
+            () => Probed);
+        var probe = string.Join("; ", sockets.Select(p => $"[ -S '{p}' ] && echo 'socket {p}'; [ -d '{p}' ] && ls -A '{p}'"));
+        var r = await Run(probe + "; true", policy);
+        Assert.Equal("", Out(r).Trim());
+    }
+
     [Fact]
     public async Task Cache_is_writable()
     {

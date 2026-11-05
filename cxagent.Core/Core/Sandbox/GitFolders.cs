@@ -34,6 +34,50 @@ internal static class GitFolders
         }
     }
 
+    /// <summary>Every submodule's own git folder under <paramref name="gitDir"/>'s <c>modules</c>, nested ones too — the
+    /// folders that must be mount points so none can be renamed and rebuilt.</summary>
+    public static IEnumerable<string> SubmoduleGitDirs(string gitDir)
+    {
+        var modules = Path.Combine(gitDir, "modules");
+        if (!Directory.Exists(modules)) return [];
+        try
+        {
+            return [.. Directory.EnumerateDirectories(modules, "*", SearchOption.AllDirectories)
+                .Where(d => File.Exists(Path.Combine(d, "HEAD")))];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+    }
+
+    /// <summary>
+    /// The folder <c>core.hooksPath</c> in <paramref name="gitDir"/>'s config names, as a full path, or null. Hooks
+    /// there run on the next git command like those in <c>.git/hooks</c>, so it is held read-only the same way. A
+    /// relative path is relative to the working tree, as git reads it.
+    /// </summary>
+    public static string? HooksPath(string gitDir, string workTree)
+    {
+        try
+        {
+            var config = Path.Combine(gitDir, "config");
+            if (!File.Exists(config)) return null;
+            var inCore = false;
+            foreach (var raw in File.ReadLines(config))
+            {
+                var line = raw.Trim();
+                if (line.StartsWith('[')) { inCore = line.StartsWith("[core]", StringComparison.OrdinalIgnoreCase); continue; }
+                if (!inCore) continue;
+                var eq = line.IndexOf('=');
+                if (eq < 0 || !line[..eq].Trim().Equals("hooksPath", StringComparison.OrdinalIgnoreCase)) continue;
+                var value = line[(eq + 1)..].Trim().Trim('"');
+                if (value.Length == 0) return null;
+                if (value.StartsWith("~/", StringComparison.Ordinal))
+                    value = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), value[2..]);
+                return Path.GetFullPath(value, workTree);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { }
+        return null;
+    }
+
     /// <summary>
     /// The paths inside a git folder that make git run something: its hooks, its config (where
     /// <c>core.hooksPath</c>, <c>core.fsmonitor</c> and filter drivers are set), each worktree's

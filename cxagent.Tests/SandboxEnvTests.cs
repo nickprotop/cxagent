@@ -46,4 +46,12 @@ public class SandboxEnvTests
     [Fact]
     public void Patterns_ignore_case() =>
         Assert.Single(Unset(Env("github_token")));
+
+    [Fact]
+    public void Display_and_terminal_multiplexer_variables_are_unset() =>
+        Assert.Equal(4, Unset(Env("TMUX", "TMUX_PANE", "DISPLAY", "WAYLAND_DISPLAY")).Count);
+
+    [Fact]
+    public void More_credential_names_are_unset() =>
+        Assert.Equal(5, Unset(Env("PGPASSWORD", "STRIPE_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "DATABASE_URL", "MYSQL_PWD")).Count);
 }

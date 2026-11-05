@@ -22,7 +22,14 @@ public static class SandboxProfile
     {
         var args = new List<string> { "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc" };
 
-        foreach (var w in layout.Writable) args.AddRange(["--bind", w, w]);
+        // THE ROOT FIRST, THEN THE HOME'S DOTFILES OVER IT (when the root is the home), THEN EVERYTHING ELSE WRITABLE —
+        // so a cache inside the home is writable again after its dot folder was held.
+        for (var i = 0; i < layout.Writable.Count; i++)
+        {
+            args.AddRange(["--bind", layout.Writable[i], layout.Writable[i]]);
+            if (i == 0)
+                foreach (var dot in layout.HomeDotfiles) args.AddRange(["--ro-bind", dot, dot]);
+        }
         foreach (var r in layout.ReadOnly) args.AddRange(["--ro-bind", r, r]);
         foreach (var h in layout.HiddenFolders) args.AddRange(["--tmpfs", h]);
         foreach (var h in layout.HiddenFiles) args.AddRange(["--ro-bind", "/dev/null", h]);

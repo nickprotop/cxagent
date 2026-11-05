@@ -15,11 +15,13 @@ public static class SandboxEnv
 {
     /// <summary>Removed whatever their name looks like: their sockets are hidden, and a stale address only
     /// confuses the program that reads it.</summary>
-    private static readonly string[] Sockets = ["DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK"];
+    private static readonly string[] Sockets =
+        ["DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK", "TMUX", "TMUX_PANE", "DISPLAY", "WAYLAND_DISPLAY"];
 
     /// <summary>The shapes credentials are named in.</summary>
     private static readonly string[] CredentialPatterns =
-        ["*_API_KEY", "*_APIKEY", "*_TOKEN", "*_SECRET*", "*_PASSWORD", "AWS_*"];
+        ["*_API_KEY", "*_APIKEY", "*_KEY", "*_TOKEN", "*_SECRET*", "*PASSWORD*", "*_PWD", "*_CREDENTIALS", "AWS_*",
+         "DATABASE_URL"];
 
     /// <summary>The names to unset, in the environment's own order.</summary>
     /// <param name="environment">The environment the command would inherit.</param>

@@ -265,4 +265,111 @@ public sealed class SandboxProfileTests : IDisposable
         Assert.Contains(real, layout.Writable);
         Assert.Equal(real, layout.WorkingDir);
     }
+
+    // ---- the final review's holes -------------------------------------------------------------------------------
+
+    /// <summary>A FOLDER THAT IS NOT A MOUNT POINT CAN BE RENAMED: `mv .git .git2` and a rebuilt .git with its own
+    /// hooks walked straight past the read-only hooks and config. Bound onto itself, it cannot be moved.</summary>
+    [Fact]
+    public void The_git_folder_is_bound_onto_itself()
+    {
+        var repo = Folder("repo");
+        GitDir(repo);
+        var args = Args(Layout(repo));
+        Assert.True(At(args, "--bind", Path.Combine(repo, ".git")) > At(args, "--bind", repo));
+        Assert.True(At(args, "--ro-bind", Path.Combine(repo, ".git", "hooks")) > At(args, "--bind", Path.Combine(repo, ".git")));
+    }
+
+    [Fact]
+    public void A_submodules_git_folder_is_bound_onto_itself()
+    {
+        var repo = Folder("repo");
+        GitDir(repo);
+        var module = Folder("repo", ".git", "modules", "lib");
+        File.WriteAllText(Path.Combine(module, "HEAD"), "");
+        Assert.Contains(module, Layout(repo).Writable);
+    }
+
+    [Fact]
+    public void Known_sockets_are_hidden()
+    {
+        var tmux = Folder("fake-tmp", "tmux-1000");
+        var x11 = Folder("fake-tmp", ".X11-unix");
+        var docker = Path.Combine(_base, "docker.sock");
+        File.WriteAllText(docker, "");
+        var layout = SandboxLayout.For(new SandboxLayoutRequest(Folder("w"), Folder("w"), false, null,
+            FakeHome with { Sockets = [tmux, x11, docker, Path.Combine(_base, "missing.sock")] }, SandboxSettings.AppDefault));
+        Assert.Contains(tmux, layout.HiddenFolders);
+        Assert.Contains(x11, layout.HiddenFolders);
+        Assert.Contains(docker, layout.HiddenFiles);
+    }
+
+    [Fact]
+    public void The_machine_names_its_sockets_even_without_a_runtime_dir()
+    {
+        var home = SandboxHome.FromEnvironment(null);
+        Assert.Contains(home.Sockets, s => s.StartsWith("/run/user/", StringComparison.Ordinal));
+        Assert.Contains(home.Sockets, s => s.EndsWith("/.X11-unix", StringComparison.Ordinal));
+        Assert.Contains("/run/docker.sock", home.Sockets);
+        Assert.Contains("/var/run/docker.sock", home.Sockets);
+    }
+
+    [Fact]
+    public void More_credential_files_are_hidden()
+    {
+        File.WriteAllText(Path.Combine(Home, ".npmrc"), "");
+        File.WriteAllText(Path.Combine(Home, ".pypirc"), "");
+        Directory.CreateDirectory(Path.Combine(Home, ".config", "gcloud"));
+        Directory.CreateDirectory(Path.Combine(Home, ".password-store"));
+        var layout = Layout(Folder("w"));
+        Assert.Contains(Path.Combine(Home, ".npmrc"), layout.HiddenFiles);
+        Assert.Contains(Path.Combine(Home, ".pypirc"), layout.HiddenFiles);
+        Assert.Contains(Path.Combine(Home, ".config", "gcloud"), layout.HiddenFolders);
+        Assert.Contains(Path.Combine(Home, ".password-store"), layout.HiddenFolders);
+    }
+
+    [Fact]
+    public void A_configured_hooks_path_is_read_only()
+    {
+        var repo = Folder("repo");
+        GitDir(repo);
+        File.WriteAllText(Path.Combine(repo, ".git", "config"), "[core]\n\thooksPath = .githooks\n");
+        var hooks = Folder("repo", ".githooks");
+        Assert.Contains(hooks, Layout(repo).ReadOnly);
+    }
+
+    [Fact]
+    public void The_apps_own_folders_are_read_only()
+    {
+        var app = Folder("home", ".cache", "dotnet_bundle_extract", "cxagent");
+        var layout = SandboxLayout.For(new SandboxLayoutRequest(Folder("w"), Folder("w"), false, null,
+            FakeHome with { AppFolders = [app] }, SandboxSettings.AppDefault));
+        Assert.Contains(app, layout.ReadOnly);
+        Assert.Contains(Path.Combine(Home, ".cache"), layout.Writable);
+    }
+
+    /// <summary>STARTED IN THE HOME FOLDER, the dotfiles there still run code later — a shell rc, a systemd unit, a
+    /// gitconfig's fsmonitor — so they are held read-only right after the home is made writable.</summary>
+    [Fact]
+    public void Home_dotfiles_are_never_writable()
+    {
+        File.WriteAllText(Path.Combine(Home, ".bashrc"), "");
+        var layout = Layout(Home);
+        var args = Args(layout);
+        Assert.True(At(args, "--ro-bind", Path.Combine(Home, ".bashrc")) > At(args, "--bind", Home));
+        // A CACHE IN HOME IS MADE WRITABLE AGAIN AFTER, so builds still work.
+        Assert.True(At(args, "--bind", Path.Combine(Home, ".cache")) > At(args, "--ro-bind", Path.Combine(Home, ".cache")));
+    }
+
+    /// <summary>A DOTFILES REPOSITORY AT THE HOME does not make the home the project: the folder the session works
+    /// in stays the writable root.</summary>
+    [Fact]
+    public void A_dotfiles_repo_at_home_does_not_widen_the_root()
+    {
+        GitDir(Home);
+        var work = Folder("home", "notes");
+        var layout = Layout(work);
+        Assert.Contains(work, layout.Writable);
+        Assert.DoesNotContain(Home, layout.Writable);
+    }
 }
