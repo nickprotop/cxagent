@@ -198,6 +198,8 @@ public sealed class GeneralDraft
     public string? Problem =>
         Cap == TurnCap.Number && CapNumber is null ? "The turn cap must be a whole number of 1 or more."
         : CompactText.Trim().Length > 0 && Compact is null ? "Compact above must be a whole number of tokens, 1 or more — or empty for the default."
+        : Split(WritableText).Concat(Split(HiddenText)).FirstOrDefault(p => !Core.Sandbox.SandboxSettings.IsAnchored(p)) is { } relative
+            ? $"Sandbox folders must start with / or ~ — '{relative}' would mean a different place on each launch."
         : null;
 
     /// <summary>Writes what changed into the config's root.</summary>

@@ -98,4 +98,15 @@ public class SandboxSettingsTests : IDisposable
     [Fact]
     public void Tilde_paths_are_kept_as_written() =>
         Assert.Equal(["~/a"], Parse(""", "sandbox": { "writable": ["~/a"] } """).Sandbox!.Writable);
+
+    /// <summary>A RELATIVE PATH WOULD RESOLVE AGAINST WHEREVER cxagent WAS STARTED, a different folder each time: refused
+    /// with a warning rather than guessed at.</summary>
+    [Fact]
+    public void Relative_paths_are_dropped_with_a_warning()
+    {
+        var settings = Parse(""", "sandbox": { "writable": ["build/out", "~/ok", "/abs"], "hidden": ["secret"] } """);
+        Assert.Equal(["~/ok", "/abs"], settings.Sandbox!.Writable);
+        Assert.Empty(settings.Sandbox.Hidden);
+        Assert.Contains(settings.Warnings, w => w.Contains("build/out"));
+    }
 }

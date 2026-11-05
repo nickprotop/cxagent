@@ -40,6 +40,10 @@ public sealed record SandboxSettings(
     /// </summary>
     public static readonly SandboxSettings AppDefault = new(true, true, [], [], [], []);
 
+    /// <summary>Whether a path in <see cref="Writable"/> or <see cref="Hidden"/> names one place on every launch:
+    /// absolute, or under the home.</summary>
+    public static bool IsAnchored(string path) => path == "~" || path.StartsWith("~/", StringComparison.Ordinal) || Path.IsPathRooted(path);
+
     /// <summary>
     /// Reads config.json's <c>sandbox</c> block. Absent is <see cref="AppDefault"/>; a block of the wrong shape
     /// warns and is <see cref="AppDefault"/> too, so a typo leaves the user protected rather than not.
@@ -76,7 +80,16 @@ public sealed record SandboxSettings(
                 .Select(e => e.GetString()!)];
         }
 
+        // A RELATIVE PATH WOULD RESOLVE AGAINST WHEREVER cxagent WAS STARTED — a different folder each launch — so it is
+        // refused out loud rather than guessed at.
+        IReadOnlyList<string> Paths(string name) => [.. List(name).Where(p =>
+        {
+            if (IsAnchored(p)) return true;
+            warnings.Add($"sandbox.{name}: '{p}' is relative — use a path starting with / or ~. Ignored.");
+            return false;
+        })];
+
         return new(Flag("enabled", true), Flag("network", true),
-            List("writable"), List("hidden"), List("hiddenEnv"), List("passEnv"));
+            Paths("writable"), Paths("hidden"), List("hiddenEnv"), List("passEnv"));
     }
 }

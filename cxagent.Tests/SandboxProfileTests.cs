@@ -372,4 +372,17 @@ public sealed class SandboxProfileTests : IDisposable
         Assert.Contains(work, layout.Writable);
         Assert.DoesNotContain(Home, layout.Writable);
     }
+
+    [Fact]
+    public void Relative_entries_set_in_code_are_skipped()
+    {
+        var cwd = Directory.GetCurrentDirectory();
+        Directory.CreateDirectory(Path.Combine(cwd, "sbx-relative-probe"));
+        try
+        {
+            var layout = Layout(Folder("w"), settings: SandboxSettings.AppDefault with { Writable = ["sbx-relative-probe"] });
+            Assert.DoesNotContain(layout.Writable, w => w.EndsWith("sbx-relative-probe", StringComparison.Ordinal));
+        }
+        finally { Directory.Delete(Path.Combine(cwd, "sbx-relative-probe")); }
+    }
 }

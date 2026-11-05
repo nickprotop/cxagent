@@ -185,7 +185,8 @@ public sealed record SandboxLayout
         foreach (var temp in new[] { Path.GetTempPath(), "/tmp" }.Select(Real).OfType<string>().Distinct())
             if (Directory.Exists(temp)) writable.Add(temp);
         writable.AddRange(Caches.Select(c => Path.Combine(home.Home, c)).Where(Directory.Exists).Select(Real).OfType<string>());
-        writable.AddRange(request.Settings.Writable.Select(p => Expand(p, home.Home)).Where(Directory.Exists).Select(Real).OfType<string>());
+        writable.AddRange(request.Settings.Writable.Where(SandboxSettings.IsAnchored).Select(p => Expand(p, home.Home))
+            .Where(Directory.Exists).Select(Real).OfType<string>());
 
         // CODE THAT RUNS LATER, OUTSIDE THE SANDBOX — the same folders a file-tool write into always asks about.
         // .git is the exception: its objects, refs and index must stay writable or commit fails, so only the parts
@@ -218,7 +219,7 @@ public sealed record SandboxLayout
         // key, and cxagent's own diagnostics socket answers its permission prompts.
         if (home.RuntimeDir is { } run) Hide(run);
         foreach (var socket in home.Sockets) Hide(socket);
-        foreach (var h in request.Settings.Hidden) Hide(Expand(h, home.Home));
+        foreach (var h in request.Settings.Hidden.Where(SandboxSettings.IsAnchored)) Hide(Expand(h, home.Home));
 
         return new SandboxLayout
         {

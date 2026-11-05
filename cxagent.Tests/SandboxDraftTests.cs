@@ -86,4 +86,12 @@ public class SandboxDraftTests
         GeneralDraft.SetSandboxEnabled(root, true);
         Assert.Null(root["sandbox"]!["enabled"]);
     }
+
+    [Fact]
+    public void A_relative_path_cannot_be_saved()
+    {
+        var draft = Draft();
+        draft.WritableText = "build/out";
+        Assert.Contains("start with / or ~", draft.Problem);
+    }
 }
