@@ -28,7 +28,28 @@ public sealed class SandboxState
     /// <param name="settings">The user's settings.</param>
     /// <param name="configDir">The config folder in use, hidden from commands.</param>
     public static SandboxState ForThisMachine(SandboxSettings settings, string? configDir) =>
-        new(settings, SandboxHome.FromEnvironment(configDir), () => SandboxProbe.Run(SandboxProbeRequest.ThisMachine()));
+        new(settings, SandboxHome.FromEnvironment(configDir), () => SandboxProbe.Run(SandboxProbeRequest.ThisMachine()))
+        {
+            ConfigKeyVariables = KeyVariablesIn(configDir),
+        };
+
+    /// <summary>The variables config.json reads values from, or none when there is no such file to read.</summary>
+    private static IReadOnlyList<string> KeyVariablesIn(string? configDir)
+    {
+        if (configDir is null) return [];
+        try
+        {
+            var file = Path.Combine(configDir, "config.json");
+            return File.Exists(file) ? Llm.ConfigVariable.EnvNames(File.ReadAllText(file)) : [];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+    }
+
+    /// <summary>
+    /// The variables config.json reads a value from with <c>{env:NAME}</c>. Kept from contained commands whatever
+    /// they are called: a key named <c>LOCAL_LLM</c> matches no credential pattern and is still a key.
+    /// </summary>
+    public IReadOnlyCollection<string> ConfigKeyVariables { get; init; } = [];
 
     /// <summary>The user's settings.</summary>
     public SandboxSettings Settings { get; }

@@ -103,6 +103,31 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
 
     public async Task<JobResult> ExecuteAsync(JobParameters parameters, IJobContext context, CancellationToken ct)
     {
+        // THE GATE'S DECISION when one ran, so the call runs exactly as it was asked about — see
+        // JobContext.JudgedSandbox. With no gate the same function decides here.
+        var policy = (context as JobContext)?.Policy;
+        var sandbox = (context as JobContext)?.JudgedSandbox ?? Sandbox.ShellSandbox.Decide(policy, parameters);
+        var result = await RunAsync(parameters, context, new SandboxedRun(sandbox, policy?.Sandbox), ct);
+
+        // SAID ON EVERY CALL WHILE THE SANDBOX IS TURNED ON, so a row can show the one that ran outside it — an
+        // escape, a failed start the user let through, or a machine with no sandbox at all. Nothing when it is off:
+        // then there is no sandbox for a call to be in or out of.
+        if (policy?.Sandbox is { Settings.Enabled: true })
+        {
+            var output = new Dictionary<string, object?>(result.Output)
+            {
+                ["sandbox"] = sandbox.Use == Sandbox.SandboxUse.Contained ? "contained" : "uncontained",
+            };
+            result = result with { Output = output };
+        }
+        return result;
+    }
+
+    /// <summary>A call's sandbox decision and the session's sandbox it is made against.</summary>
+    private sealed record SandboxedRun(Sandbox.SandboxDecision Decision, Sandbox.SandboxState? State);
+
+    private async Task<JobResult> RunAsync(JobParameters parameters, IJobContext context, SandboxedRun run, CancellationToken ct)
+    {
         var command = parameters.Get<string>("command");
 
         // THE AGENT'S FOLDER WHEN THE MODEL NAMES NONE, rather than the process's. `working_dir` is
@@ -157,6 +182,15 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
             new RunOptions(workingDir, env, timeout, spillDir, _bg.DetachOnTimeout));
         var start = DateTimeOffset.UtcNow;
 
+        var contained = run.Decision.Use == Sandbox.SandboxUse.Contained;
+        if (contained)
+        {
+            if (Contain(spec, context, run.State) is not { } wrapped)
+                return new JobResult { Success = false, ExitCode = -1,
+                    ErrorMessage = "the sandbox is not ready to run this command; it was not run." };
+            spec = wrapped;
+        }
+
         // THROUGH ShellArguments, NOT Get("background") HERE. The permission gate reads the same
         // argument through the same helper, and the two must reach the same answer for the same JSON:
         // a call the executor backgrounded while the gate judged it foreground has escaped the
@@ -171,6 +205,17 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
             foreground is null ? spec : spec with { Options = spec.Run with { DetachNow = foreground.Token } },
             context, ct, _bg.Registry);
         var duration = DateTimeOffset.UtcNow - start;
+
+        // BUBBLEWRAP ITSELF FAILED, not the command: it prints its own "bwrap: " line and exits 1 before running
+        // anything. Reported as the sandbox's failure and never re-run uncontained — the status is asked again,
+        // so the model's retry meets the "run uncontained?" question instead.
+        if (contained && result.ExitCode == 1 && string.IsNullOrEmpty(result.Stdout)
+            && result.Stderr.TrimStart().StartsWith("bwrap: ", StringComparison.Ordinal))
+        {
+            run.State?.Reprobe();
+            return new JobResult { Success = false, ExitCode = 1, Duration = duration,
+                ErrorMessage = $"the sandbox could not start: {result.Stderr.Trim()} The command did not run." };
+        }
 
         // CHECKED BEFORE TimedOut, BECAUSE BOTH ARE SET AND THEY MEAN OPPOSITE THINGS. The deadline
         // passed, and the command is still running — so nothing below may say it was killed, and the
@@ -238,6 +283,39 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
                       + "to completion; any output above is what it printed before the stop."
                     : $"command exited with code {result.ExitCode}",
             Output = output,
+        };
+    }
+
+    /// <summary>
+    /// The same command, run through bubblewrap: the agent's folder writable, the rest of the machine read-only,
+    /// credentials and the session's sockets empty, credential variables unset. Null when the sandbox has no
+    /// bubblewrap to run — which the gate's decision should have made impossible, and which must then refuse, not
+    /// fall through to running uncontained.
+    /// </summary>
+    private static ProcessSpec? Contain(ProcessSpec spec, IJobContext context, Sandbox.SandboxState? state)
+    {
+        if (state?.Status is not { Kind: Sandbox.SandboxStatusKind.Active, BwrapPath: { } bwrap }) return null;
+        var job = context as JobContext;
+        var agentFolder = job?.Policy?.Root ?? context.WorkingDirectory ?? Directory.GetCurrentDirectory();
+        var layout = Sandbox.SandboxLayout.For(new Sandbox.SandboxLayoutRequest(
+            agentFolder,
+            spec.Run.WorkingDir ?? agentFolder,
+            job?.Policy?.IsNarrowed ?? false,
+            job?.JobDir is { } jobDir ? Path.GetDirectoryName(jobDir) : null,
+            state.Home,
+            state.Settings));
+
+        // THE CALL'S OWN env IS NOT UNSET: a call that names a variable asked for it, and was asked about as a
+        // custom environment. Everything inherited is filtered.
+        var inherited = Environment.GetEnvironmentVariables().Keys.Cast<string>()
+            .Where(k => spec.Run.Env?.ContainsKey(k) != true)
+            .ToDictionary(k => k, k => "", StringComparer.Ordinal);
+        var unset = Sandbox.SandboxEnv.ToUnset(inherited, state.Settings, state.ConfigKeyVariables);
+
+        return spec with
+        {
+            FileName = bwrap,
+            Arguments = [.. Sandbox.SandboxProfile.Arguments(layout, new Sandbox.SandboxRun(unset)), spec.FileName, .. spec.Arguments],
         };
     }
 

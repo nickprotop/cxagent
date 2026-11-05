@@ -24,6 +24,11 @@ public static class ConfigVariable
     private static readonly Regex EnvPattern = new(@"\{env:([^}]+)\}", RegexOptions.Compiled);
     private static readonly Regex FilePattern = new(@"\{file:([^}]+)\}", RegexOptions.Compiled);
 
+    /// <summary>The variable names <paramref name="text"/> reads with <c>{env:NAME}</c> — the ones the sandbox keeps
+    /// from a contained command, since config reads keys from them.</summary>
+    public static IReadOnlyList<string> EnvNames(string text) =>
+        [.. EnvPattern.Matches(text).Select(m => m.Groups[1].Value.Trim()).Where(n => n.Length > 0).Distinct()];
+
     /// <summary>
     /// Expands every placeholder in <paramref name="text"/>, appending a line to
     /// <paramref name="warnings"/> for each one that could not be resolved.

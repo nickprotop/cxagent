@@ -24,13 +24,17 @@ public sealed record SandboxHome(string Home, string? ConfigDir, string? Runtime
 }
 
 /// <summary>What a layout is built from.</summary>
-/// <param name="WorkingDir">Where the command runs.</param>
+/// <param name="AgentFolder">The agent's own folder — the boundary its permission policy judges against. The
+/// writable root is worked out from this, NEVER from where the call asked to run: a <c>working_dir</c> of the
+/// user's home would otherwise make the whole home writable.</param>
+/// <param name="RunFolder">Where the command runs (the call's <c>working_dir</c>, or the agent's folder).</param>
 /// <param name="Narrowed">True for a sub-agent spawned with a folder of its own: it writes only there, as its
 /// file tools do, instead of the whole repository.</param>
-/// <param name="JobDir">The call's own folder for spill and background output, or null when it has none.</param>
+/// <param name="Logs">The agent's log folder — earlier calls' spill and background output — or null.</param>
 /// <param name="Home">The machine's folders.</param>
 /// <param name="Settings">The user's sandbox settings.</param>
-public sealed record SandboxLayoutRequest(string WorkingDir, bool Narrowed, string? JobDir, SandboxHome Home, SandboxSettings Settings);
+public sealed record SandboxLayoutRequest(string AgentFolder, string RunFolder, bool Narrowed, string? Logs,
+    SandboxHome Home, SandboxSettings Settings);
 
 /// <summary>
 /// Every folder a contained command is given, resolved on this machine: real paths, only ones that exist.
@@ -61,8 +65,12 @@ public sealed record SandboxLayout
     /// <summary>Files replaced by <c>/dev/null</c>.</summary>
     public required IReadOnlyList<string> HiddenFiles { get; init; }
 
-    /// <summary>The call's own folder, bound back in after the config folder above it is hidden.</summary>
-    public string? JobDir { get; init; }
+    /// <summary>
+    /// The agent's log folder, bound back READ-ONLY after the config folder above it is hidden: a later command
+    /// reads an earlier one's spill file and background output there. cxagent writes those files itself, from
+    /// outside, so nothing inside needs to write them.
+    /// </summary>
+    public string? Logs { get; init; }
 
     /// <summary>Whether the command reaches the network.</summary>
     public bool Network { get; init; } = true;
@@ -88,12 +96,13 @@ public sealed record SandboxLayout
     public static SandboxLayout For(SandboxLayoutRequest request)
     {
         var home = request.Home;
-        var work = PathResolver.RealFolder(request.WorkingDir);
+        var work = PathResolver.RealFolder(request.RunFolder);
+        var agent = PathResolver.RealFolder(request.AgentFolder);
 
         // THE REPOSITORY, NOT THE FOLDER, for the main agent: a session started in repo/src/app still commits, and
         // a build that writes repo/bin still works. A narrowed sub-agent is held to its own folder instead, as its
         // file tools are — unless that folder is itself a worktree, which gets its common .git below.
-        var root = request.Narrowed ? work : Real(Hooks.HookSources.RepoRoot(work)) ?? work;
+        var root = request.Narrowed ? agent : Real(Hooks.HookSources.RepoRoot(agent)) ?? agent;
 
         var writable = new List<string> { root };
         var readOnly = new List<string>();
@@ -149,7 +158,7 @@ public sealed record SandboxLayout
             ReadOnly = [.. readOnly.Distinct()],
             HiddenFolders = [.. hiddenFolders.Distinct()],
             HiddenFiles = [.. hiddenFiles.Distinct()],
-            JobDir = request.JobDir is { } job && Directory.Exists(job) ? Real(job) : null,
+            Logs = request.Logs is { } logs && Directory.Exists(logs) ? Real(logs) : null,
             Network = request.Settings.Network,
         };
     }

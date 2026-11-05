@@ -43,11 +43,13 @@ public sealed class SandboxProfileTests : IDisposable
         File.WriteAllText(Path.Combine(repo, ".git", "HEAD"), "ref: refs/heads/main");
     }
 
-    private SandboxLayout Layout(string workingDir, bool narrowed = false, string? jobDir = null, SandboxSettings? settings = null) =>
-        SandboxLayout.For(new SandboxLayoutRequest(workingDir, narrowed, jobDir, FakeHome, settings ?? SandboxSettings.AppDefault));
+    private SandboxLayout Layout(string workingDir, bool narrowed = false, string? logs = null,
+        SandboxSettings? settings = null, string? runFolder = null) =>
+        SandboxLayout.For(new SandboxLayoutRequest(workingDir, runFolder ?? workingDir, narrowed, logs, FakeHome,
+            settings ?? SandboxSettings.AppDefault));
 
-    private static IReadOnlyList<string> Args(SandboxLayout layout, bool foreground = true) =>
-        SandboxProfile.Arguments(layout, new SandboxRun(foreground, []));
+    private static IReadOnlyList<string> Args(SandboxLayout layout) =>
+        SandboxProfile.Arguments(layout, new SandboxRun([]));
 
     /// <summary>The index of the pair <c>flag path</c> in the argument list, or -1.</summary>
     private static int At(IReadOnlyList<string> args, string flag, string path)
@@ -171,13 +173,26 @@ public sealed class SandboxProfileTests : IDisposable
     }
 
     [Fact]
-    public void Job_folder_is_bound_back_after_the_config_dir_is_hidden()
+    public void Log_folder_is_bound_back_read_only_after_the_config_dir_is_hidden()
     {
-        var job = Path.Combine(ConfigDir, "logs", "a", "j1");
-        Directory.CreateDirectory(job);
-        var args = Args(Layout(Folder("w"), jobDir: job));
-        Assert.True(At(args, "--bind", job) > At(args, "--tmpfs", ConfigDir));
+        var logs = Path.Combine(ConfigDir, "logs", "s", "a");
+        Directory.CreateDirectory(logs);
+        var args = Args(Layout(Folder("w"), logs: logs));
         Assert.True(At(args, "--tmpfs", ConfigDir) >= 0);
+        Assert.True(At(args, "--ro-bind", logs) > At(args, "--tmpfs", ConfigDir));
+        Assert.Equal(-1, At(args, "--bind", logs));
+    }
+
+    /// <summary>THE CALL CHOOSES WHERE IT RUNS, NEVER WHAT IT MAY WRITE: a working_dir of the home must not make
+    /// the home writable.</summary>
+    [Fact]
+    public void Running_elsewhere_does_not_move_the_writable_root()
+    {
+        var work = Folder("w");
+        var layout = Layout(work, runFolder: Home);
+        Assert.Equal(Home, layout.WorkingDir);
+        Assert.Contains(work, layout.Writable);
+        Assert.DoesNotContain(Home, layout.Writable);
     }
 
     [Fact]
@@ -216,12 +231,8 @@ public sealed class SandboxProfileTests : IDisposable
     }
 
     [Fact]
-    public void Background_call_has_no_die_with_parent()
-    {
-        var layout = Layout(Folder("w"));
-        Assert.Contains("--die-with-parent", Args(layout, foreground: true));
-        Assert.DoesNotContain("--die-with-parent", Args(layout, foreground: false));
-    }
+    public void A_command_does_not_die_with_the_app() =>
+        Assert.DoesNotContain("--die-with-parent", Args(Layout(Folder("w"))));
 
     [Fact]
     public void Arguments_end_with_the_separator_and_run_in_the_working_folder()
@@ -237,7 +248,7 @@ public sealed class SandboxProfileTests : IDisposable
     [Fact]
     public void Unset_names_become_unsetenv()
     {
-        var args = SandboxProfile.Arguments(Layout(Folder("w")), new SandboxRun(true, ["GITHUB_TOKEN"]));
+        var args = SandboxProfile.Arguments(Layout(Folder("w")), new SandboxRun(["GITHUB_TOKEN"]));
         Assert.True(At(args, "--unsetenv", "GITHUB_TOKEN") >= 0);
     }
 
