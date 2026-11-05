@@ -20,7 +20,7 @@ public class HookListTests
         var text = HookList.Describe(Runner(false,
             H("PreToolUse", HookSource.User, "run_shell", name: "guard"),
             H("PostToolUse", HookSource.Project, name: "lint"),
-            H("PreToolUse", HookSource.Local, type: "http", name: "audit"),
+            H("PreToolUse", HookSource.Local, type: "websocket", name: "audit"),
             H("Setup", HookSource.User, name: "boot")), []);
         Assert.Contains("guard", text);
         Assert.Contains("run_shell", text);

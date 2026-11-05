@@ -32,8 +32,11 @@ public sealed record HookVerdict(string? Decision, string? Reason, JsonObject? U
 /// <param name="ProjectTrusted">Whether the folder is trusted NOW — asked at every event, never cached.</param>
 internal sealed record HookRunnerDeps(HookSnapshot Snapshot, HookHandlers Handlers, Func<bool> ProjectTrusted, Action<HookNotice> Notice)
 {
-    /// <summary>Runs one command hook. A seam for tests; production runs a real process.</summary>
-    public Func<HookRun, CancellationToken, Task<HookReply>> Run { get; init; } = HookProcess.RunAsync;
+    /// <summary>What hooks other than command reach — models, MCP servers, the network, an agent.</summary>
+    public HookServices Services { get; init; } = new();
+
+    /// <summary>Runs one hook. A seam for tests; null runs it for real, by its type (<see cref="HookDispatch"/>).</summary>
+    public Func<HookRun, CancellationToken, Task<HookReply>>? Run { get; init; }
 
     /// <summary>Where command hooks run: the repository's top, or the working folder outside one.</summary>
     public string ProjectDir { get; init; } = Environment.CurrentDirectory;
@@ -146,7 +149,8 @@ public sealed class HookRunner
             .Where(h => matchOn is null || HookNames.Matches(h.Matcher, matchOn))
             .ToList();
 
-        var replies = await Task.WhenAll(hooks.Select(h => _deps.Run(new HookRun(h, input, _deps.ProjectDir), ct)));
+        var run = _deps.Run ?? ((r, c) => HookDispatch.RunAsync(r, _deps.Services, c));
+        var replies = await Task.WhenAll(hooks.Select(h => run(new HookRun(h, input, _deps.ProjectDir), ct)));
 
         var acc = new Accumulator(eventName, matchOn);
         // SOURCE ORDER, not completion order: rewrites apply user, project, local, and the last one stands,

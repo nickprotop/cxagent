@@ -147,7 +147,7 @@ public class HookRunnerTests
     [Fact]
     public async Task Unsupported_hooks_never_run()
     {
-        var (r, fake, _) = Make([H("http", type: "http"), H("setup", ev: "Setup")]);
+        var (r, fake, _) = Make([H("ws", type: "websocket"), H("setup", ev: "Setup")]);
         await Pre(r);
         await r.RunAsync("Setup", null, [], CancellationToken.None);
         Assert.Empty(fake.Ran);

@@ -33,8 +33,6 @@ public static class HookProcess
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    /// <summary>A hook's deadline when it sets none.</summary>
-    public const int DefaultTimeoutSeconds = 60;
 
     public static async Task<HookReply> RunAsync(HookRun run, CancellationToken ct)
     {
@@ -66,7 +64,7 @@ public static class HookProcess
         var stdout = new CappedReader(process.StandardOutput);
         var stderr = new CappedReader(process.StandardError);
 
-        var timeout = TimeSpan.FromSeconds(hook.TimeoutSeconds ?? DefaultTimeoutSeconds);
+        var timeout = TimeSpan.FromSeconds(HookDispatch.TimeoutSeconds(hook));
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(timeout);
         try

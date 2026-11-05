@@ -255,7 +255,7 @@ public sealed class HooksTab
         {
             var timeout = ListDetail.Input(new PromptControl { Input = e.TimeoutSeconds?.ToString() ?? "", InputWidth = 8 });
             timeout.InputChanged += (_, text) => { e.TimeoutSeconds = int.TryParse(text.Trim(), out var n) && n > 0 ? n : null; Changed(); };
-            more.Add("Timeout", $"Seconds it may run; empty is {HookProcess.DefaultTimeoutSeconds}.", timeout);
+            more.Add("Timeout", $"Seconds it may run; empty is the default for its type (600 for a command).", timeout);
 
             var shells = new List<string> { "default", "bash", "powershell" };
             var shellBox = new DropdownControl("", shells) { HorizontalAlignment = HorizontalAlignment.Left };

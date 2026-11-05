@@ -47,7 +47,7 @@ public class HookConfigParserTests
     [Fact]
     public void Unsupported_type_is_kept_not_run()
     {
-        var p = Parse("""{ "PreToolUse": [ { "hooks": [ { "type": "http", "url": "https://example.com/h" } ] } ] }""");
+        var p = Parse("""{ "PreToolUse": [ { "hooks": [ { "type": "websocket", "url": "https://example.com/h" } ] } ] }""");
         Assert.Empty(p.Problems);
         var h = Assert.Single(p.Hooks);
         Assert.Equal("https://example.com/h", h.Url);

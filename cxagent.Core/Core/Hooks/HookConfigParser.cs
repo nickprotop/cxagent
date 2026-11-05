@@ -73,7 +73,7 @@ public static class HookConfigParser
         var type = Str(h, "type");
         if (type is null) return null;
         var command = Str(h, "command");
-        if (type == "command" && string.IsNullOrWhiteSpace(command)) return null;
+        if (Missing(type, h) is not null) return null;
 
         return new HookDefinition(ev, string.IsNullOrEmpty(matcher) ? null : matcher, type, source)
         {
@@ -84,14 +84,37 @@ public static class HookConfigParser
             OnFailureBlock = Str(h, "onFailure") == "block",
             Model = Str(h, "model"),
             Url = Str(h, "url"),
+            Prompt = Str(h, "prompt"),
+            ContinueOnBlock = h.TryGetProperty("continueOnBlock", out var cob) && cob.ValueKind == JsonValueKind.True,
+            Server = Str(h, "server"),
+            Tool = Str(h, "tool"),
+            Input = h.TryGetProperty("input", out var input) && input.ValueKind == JsonValueKind.Object ? input.Clone() : null,
+            Headers = h.TryGetProperty("headers", out var hd) && hd.ValueKind == JsonValueKind.Object
+                ? hd.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.String)
+                    .ToDictionary(p => p.Name, p => p.Value.GetString()!, StringComparer.OrdinalIgnoreCase)
+                : null,
+            AllowedEnvVars = h.TryGetProperty("allowedEnvVars", out var envs) && envs.ValueKind == JsonValueKind.Array
+                ? [.. envs.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.String).Select(v => v.GetString()!)]
+                : [],
             Raw = h.Clone(),
         };
     }
 
     private static string Why(JsonElement h) =>
         h.ValueKind != JsonValueKind.Object ? "must be an object."
-        : Str(h, "type") is null ? "needs a \"type\"."
-        : "a command hook needs a \"command\".";
+        : Str(h, "type") is not { } type ? "needs a \"type\"."
+        : Missing(type, h) ?? "could not be read.";
+
+    /// <summary>What a hook of this type cannot run without, or null when it has it. Unknown types need nothing: they are kept, not run.</summary>
+    private static string? Missing(string type, JsonElement h) => type switch
+    {
+        "command" when string.IsNullOrWhiteSpace(Str(h, "command")) => "a command hook needs a \"command\".",
+        "prompt" or "agent" when string.IsNullOrWhiteSpace(Str(h, "prompt")) => $"a {type} hook needs a \"prompt\".",
+        "http" when string.IsNullOrWhiteSpace(Str(h, "url")) => "an http hook needs a \"url\".",
+        "mcp_tool" when string.IsNullOrWhiteSpace(Str(h, "server")) || string.IsNullOrWhiteSpace(Str(h, "tool"))
+            => "an mcp_tool hook needs a \"server\" and a \"tool\".",
+        _ => null,
+    };
 
     private static string? Str(JsonElement o, string key) =>
         o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;

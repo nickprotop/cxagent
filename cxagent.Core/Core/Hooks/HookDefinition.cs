@@ -26,14 +26,41 @@ public sealed record HookDefinition(string Event, string? Matcher, string Type, 
     /// <summary>Whether a failure of this hook blocks what it guards (<c>onFailure: "block"</c>) rather than letting it through.</summary>
     public bool OnFailureBlock { get; init; }
 
+    /// <summary>The question for a <c>prompt</c> or <c>agent</c> hook; <c>$ARGUMENTS</c> stands for the event's JSON.</summary>
+    public string? Prompt { get; init; }
+
+    /// <summary>
+    /// A prompt hook's <c>continueOnBlock</c>: on a block, feed the reason back and carry on rather than end the
+    /// turn. Agent hooks always carry on.
+    /// </summary>
+    public bool ContinueOnBlock { get; init; }
+
+    /// <summary>The <c>provider:model</c> entry a <c>prompt</c> or <c>agent</c> hook asks.</summary>
     public string? Model { get; init; }
+
+    /// <summary>Where an <c>http</c> hook posts the event.</summary>
     public string? Url { get; init; }
+
+    /// <summary>An <c>http</c> hook's headers; <c>$NAME</c> in a value expands only for names in <see cref="AllowedEnvVars"/>.</summary>
+    public IReadOnlyDictionary<string, string>? Headers { get; init; }
+
+    /// <summary>The environment variables an <c>http</c> hook's headers may read.</summary>
+    public IReadOnlyList<string> AllowedEnvVars { get; init; } = [];
+
+    /// <summary>The MCP server an <c>mcp_tool</c> hook calls, by its configured name.</summary>
+    public string? Server { get; init; }
+
+    /// <summary>The tool on that server.</summary>
+    public string? Tool { get; init; }
+
+    /// <summary>The tool's arguments; a string <c>${path}</c> reads that path from the event's JSON.</summary>
+    public JsonElement? Input { get; init; }
 
     /// <summary>The hook's own JSON object, as read — what a save writes back for a hook nobody edited.</summary>
     public JsonElement? Raw { get; init; }
 
-    /// <summary>The types cxagent runs today.</summary>
-    public static bool TypeRuns(string type) => type == "command";
+    /// <summary>The types cxagent runs: all five of the contract's.</summary>
+    public static bool TypeRuns(string type) => type is "command" or "prompt" or "agent" or "http" or "mcp_tool";
 
     /// <summary>Whether this hook fires: its event is wired and its type is one cxagent runs.</summary>
     public bool Runs => HookEvents.Fires(Event) && TypeRuns(Type);
@@ -43,8 +70,11 @@ public sealed record HookDefinition(string Event, string? Matcher, string Type, 
     /// it runs — enough to tell two hooks on one event apart without a name.
     /// </summary>
     public string DisplayName => Name is { Length: > 0 } n ? n
-        : string.Join(' ', new[] { Event, Matcher, FirstWords(Command ?? Url ?? Type) }
+        : string.Join(' ', new[] { Event, Matcher, FirstWords(Command ?? Prompt ?? Url ?? (Server is not null ? $"{Server}.{Tool}" : Type)) }
             .Where(s => !string.IsNullOrWhiteSpace(s)));
+
+    /// <summary>What the hook runs, in a few words — its command, prompt, URL or tool.</summary>
+    public string? Body => Command ?? Prompt ?? Url ?? (Server is not null ? $"{Server}.{Tool}" : null);
 
     private static string FirstWords(string text) =>
         string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Take(2));
