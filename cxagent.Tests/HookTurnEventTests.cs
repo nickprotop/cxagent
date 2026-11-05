@@ -255,4 +255,17 @@ public class HookTurnEventTests : IDisposable
         Assert.True((await gate.RequestAsync(new PermissionRequest(PermissionKind.Shell, "make", "make", "make"), CancellationToken.None)).Allowed);
         Assert.Empty(shown);
     }
+
+    [Fact]
+    public async Task PermissionRequest_allow_at_a_protected_write_says_why_it_still_asks()
+    {
+        var (policy, _, fake) = Hooks(H("PermissionRequest"));
+        fake.Answer = (_, _) => Task.FromResult(Ok("""{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"""));
+        var (gate, shown) = Gate(policy);
+        var path = Path.Combine(_dir, ".git", "hooks", "pre-commit");
+        await gate.RequestAsync(new PermissionRequest(PermissionKind.FileWrite, path, path), CancellationToken.None);
+        var asked = Assert.Single(shown);
+        Assert.True(asked.HookAllowedProtected);
+        Assert.Equal("permissionrequest", asked.HookDecidedBy);
+    }
 }

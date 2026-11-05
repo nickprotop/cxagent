@@ -508,11 +508,15 @@ public sealed class PermissionDecider : IPermissionGate
                 OnDecision?.Invoke(new(request.Kind, "hook", request.Requester, request.What) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
                 return new PermissionOutcome(false, "hook", answered.Reason ?? answered.DecidedBy);
             }
-            if (answered?.Decision == "allow" && request.Kind is not (PermissionKind.Tool or PermissionKind.Plugin)
-                && !HookCannotAllow(request.Policy!, request))
+            if (answered?.Decision == "allow" && request.Kind is not (PermissionKind.Tool or PermissionKind.Plugin))
             {
-                OnDecision?.Invoke(new(request.Kind, "hook", request.Requester, request.What) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
-                return PermissionOutcome.ByHook(answered.DecidedBy);
+                if (!HookCannotAllow(request.Policy!, request))
+                {
+                    OnDecision?.Invoke(new(request.Kind, "hook", request.Requester, request.What) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
+                    return PermissionOutcome.ByHook(answered.DecidedBy);
+                }
+                // THE SAME WORD ON THE PROMPT as a PreToolUse allow that stops here gets.
+                request = request with { HookAllowedProtected = true, HookDecidedBy = answered.DecidedBy };
             }
             Hooks.HookLifecycle.PromptWaiting(hooks, request);
         }
