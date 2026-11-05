@@ -32,6 +32,21 @@ public static class HookEvents
     public const string Stop = "Stop";
     public const string StopFailure = "StopFailure";
     public const string Notification = "Notification";
+    public const string UserPromptExpansion = "UserPromptExpansion";
+    public const string PermissionDenied = "PermissionDenied";
+    public const string PostToolBatch = "PostToolBatch";
+    public const string MessageDisplay = "MessageDisplay";
+    public const string SubagentStart = "SubagentStart";
+    public const string SubagentStop = "SubagentStop";
+    public const string TaskCreated = "TaskCreated";
+    public const string TaskCompleted = "TaskCompleted";
+    public const string InstructionsLoaded = "InstructionsLoaded";
+    public const string ConfigChange = "ConfigChange";
+    public const string CwdChanged = "CwdChanged";
+    public const string PreCompact = "PreCompact";
+    public const string PostCompact = "PostCompact";
+    public const string PreModelSwitch = "PreModelSwitch";
+    public const string PostModelSwitch = "PostModelSwitch";
 
     /// <summary>Every event name in the contract, in its reference order.</summary>
     public static IReadOnlyList<string> All { get; } =
@@ -44,11 +59,18 @@ public static class HookEvents
         "ElicitationResult", SessionEnd,
     ];
 
-    private static readonly HashSet<string> Firing = new(StringComparer.Ordinal)
+    /// <summary>
+    /// The events cxagent has nothing to fire on: no init mode, no agent teams, no MCP elicitation, no
+    /// <c>/add-dir</c>, no file watch list, and no worktree creation of its own (a worktree plugin makes them).
+    /// A hook on one loads and shows as not supported here.
+    /// </summary>
+    private static readonly HashSet<string> NotFired = new(StringComparer.Ordinal)
     {
-        SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PermissionRequest,
-        PostToolUse, PostToolUseFailure, Stop, StopFailure, Notification,
+        "Setup", "TeammateIdle", "Elicitation", "ElicitationResult", "DirectoryAdded", "FileChanged",
+        "WorktreeCreate", "WorktreeRemove",
     };
+
+    private static readonly HashSet<string> Firing = new(All.Where(e => !NotFired.Contains(e)), StringComparer.Ordinal);
 
     /// <summary>Whether cxagent fires this event today.</summary>
     public static bool Fires(string name) => Firing.Contains(name);
@@ -57,8 +79,11 @@ public static class HookEvents
     public static bool Known(string name) => All.Contains(name, StringComparer.Ordinal);
 
     /// <summary>The events whose hooks may stop what is happening — where <c>onFailure: "block"</c> means something.</summary>
-    public static bool CanBlock(string name) => name is UserPromptSubmit or PreToolUse or PermissionRequest or Stop;
+    public static bool CanBlock(string name) => name is UserPromptSubmit or PreToolUse or PermissionRequest or Stop
+        or SubagentStop or UserPromptExpansion or PostToolBatch or TaskCreated or TaskCompleted or ConfigChange
+        or PreCompact or PreModelSwitch;
 
     /// <summary>The events matched against a tool name.</summary>
-    public static bool IsToolEvent(string name) => name is PreToolUse or PermissionRequest or PostToolUse or PostToolUseFailure;
+    public static bool IsToolEvent(string name) => name is PreToolUse or PermissionRequest or PostToolUse or PostToolUseFailure
+        or PermissionDenied;
 }

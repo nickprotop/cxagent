@@ -1409,8 +1409,25 @@ public sealed class Agent
     /// work its brief sets, so it belongs after the brief — where the loop's own drain puts it, before
     /// the first request.</para>
     /// </param>
-    internal Task<SendResult> SendAsync(string prompt, CancellationToken ct, bool mailFirst) =>
-        RecordedAfter(SendCoreAsync(prompt, ct, turnTools: null, typed: default, mailFirst));
+    internal async Task<SendResult> SendAsync(string prompt, CancellationToken ct, bool mailFirst)
+    {
+        // A SUB-AGENT'S FIRST TASK fires SubagentStart, once: its hooks may hand it context for the work, the way
+        // SessionStart does for the session.
+        if (_isSubAgent && !_childStarted && _hooks is { } hooks && hooks.Listens(Hooks.HookEvents.SubagentStart))
+        {
+            _childStarted = true;
+            var verdict = await Hooks.HookLifecycle.SubagentStartAsync(hooks, HookContext(hooks), AgentTypeLabel, ct);
+            if (verdict.Context.Count > 0)
+                prompt = prompt + "\n\n" + string.Join("\n\n", verdict.Context.Select(c => $"[hook] {c}"));
+        }
+        return await RecordedAfter(SendCoreAsync(prompt, ct, turnTools: null, typed: default, mailFirst));
+    }
+
+    private bool _childStarted;
+
+    /// <summary>What a sub-agent hook matches on: its type, from how it runs ("planner on deepseek:…"), else its label.</summary>
+    private string AgentTypeLabel => _requesterRunsOn is { } on && on.IndexOf(" on ", StringComparison.Ordinal) is var at and > 0
+        ? on[..at] : _requesterLabel ?? "sub-agent";
 
     /// <summary>
     /// The run, then whatever it added since its last request into the history — however it ended. A cancelled
@@ -1958,11 +1975,13 @@ public sealed class Agent
                 if (Mailbox.HasWaking) continue;
 
                 // STOP HOOKS MAY SEND THE AGENT BACK TO WORK — "the tests still fail" — but only so many
-                // times in one turn, and only the session's own agent: a sub-agent's end is its parent's
-                // to judge.
-                if (!_isSubAgent && _hooks is { } stopHooks && stopHooks.Listens(Hooks.HookEvents.Stop))
+                // times in one turn. The session's own agent fires Stop; a sub-agent fires SubagentStop, matched
+                // on its type, which may send it back the same way.
+                var stopEvent = _isSubAgent ? Hooks.HookEvents.SubagentStop : Hooks.HookEvents.Stop;
+                if (_hooks is { } stopHooks && stopHooks.Listens(stopEvent))
                 {
-                    var verdict = await Hooks.HookLifecycle.StopAsync(stopHooks, new Hooks.HookStop(HookContext(stopHooks), text, stopBlocks > 0), ct);
+                    var verdict = await Hooks.HookLifecycle.StopAsync(stopHooks,
+                        new Hooks.HookStop(HookContext(stopHooks), text, stopBlocks > 0) { Event = stopEvent, AgentType = AgentTypeLabel }, ct);
                     // CONTINUE: FALSE OUTRANKS A BLOCK: one hook asking the agent to carry on and another
                     // asking everything to stop resolves to stopping.
                     if (verdict.Stops && verdict.Halt is null)
@@ -2011,6 +2030,8 @@ public sealed class Agent
                     return new SendResult(text, SendOutcome.Silent, why);
                 }
 
+                if (_hooks is { } shown && !string.IsNullOrEmpty(text))
+                    Hooks.HookLifecycle.MessageDisplayed(shown, HookContext(shown), text);
                 return new SendResult(text, SendOutcome.Completed);
             }
 
@@ -2351,6 +2372,18 @@ public sealed class Agent
                     $"stopped: {stuckOn} was called with the same arguments {stuckTimes} times and "
                     + "returned the same result each time. The run was not making progress.", Severity.Error));
                 return new SendResult(text, SendOutcome.Stuck);
+            }
+
+            // THE BATCH IS DONE: every call from this reply has its result. PostToolBatch hooks see them together,
+            // and may add context before the next model call or stop the loop before it.
+            if (_hooks is { } batchHooks && batchHooks.Listens(Hooks.HookEvents.PostToolBatch))
+            {
+                var batch = await Hooks.HookLifecycle.PostToolBatchAsync(batchHooks, HookContext(batchHooks),
+                    [.. response.ToolCalls.Select(c => (c, messages.LastOrDefault(m => m.ToolCallId == (c.Id ?? c.Name))?.Content ?? ""))], ct);
+                if (batch.Stops || batch.Halt is not null)
+                    Volatile.Write(ref _hookHalt, $"hook '{batch.DecidedBy}' stopped the turn: {batch.Reason ?? batch.Halt}");
+                else if (batch.Context.Count > 0)
+                    messages.Add(Nudge(string.Join("\n\n", batch.Context.Select(c => $"[hook] {c}"))));
             }
 
             // A HOOK SAID STOP. Every result of this lap is recorded above, so nothing is left orphaned.
@@ -3536,6 +3569,13 @@ public sealed class Agent
     /// <summary>Runs this call's PreToolUse hooks and hands their allow or ask to the permission gate; null when none listen.</summary>
     private async Task<Hooks.HookVerdict?> PreToolHooksAsync(ToolCall call, JobContext ctx, CancellationToken ct)
     {
+        // THE TO-DO LIST'S OWN EVENTS, before PreToolUse: an item a hook refuses to create, or to close, refuses the
+        // whole call, so the list the model sees afterwards is the one it had.
+        if (call.Name == Jobs.Tool.TodoWrite && _hooks is { } todoHooks
+            && await Hooks.HookLifecycle.TasksAsync(todoHooks, HookContext(todoHooks),
+                new Hooks.HookTasks(_todos.Items, TodoParse(call)), ct) is { Stops: true } refused)
+            return refused;
+
         if (_hooks is not { } hooks || !hooks.Listens(Hooks.HookEvents.PreToolUse)) return null;
         var verdict = await hooks.RunAsync(Hooks.HookEvents.PreToolUse, call.Name,
             Hooks.HookPayload.ForTool(HookContext(hooks), Hooks.HookEvents.PreToolUse, call), ct);
@@ -3571,6 +3611,10 @@ public sealed class Agent
         }
         return verdict;
     }
+
+    private static IReadOnlyList<TodoItem> TodoParse(ToolCall call) =>
+        call.Arguments.ValueKind == JsonValueKind.Object && call.Arguments.TryGetProperty("todos", out var todos)
+            ? TodoList.Parse(todos) : [];
 
     /// <summary>Tools that raise no permission request of their own — where a hook's ask must be asked by the agent.</summary>
     private bool Ungated(string name) =>

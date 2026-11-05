@@ -101,12 +101,16 @@ public class HookConfigParserTests
     }
 
     [Fact]
-    public void Slice_one_events_fire()
+    public void The_events_cxagent_has_something_to_fire_on_fire()
     {
         foreach (var e in new[] { "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PermissionRequest",
                                    "PostToolUse", "PostToolUseFailure", "Stop", "StopFailure", "Notification" })
             Assert.True(HookEvents.Fires(e), e);
-        Assert.False(HookEvents.Fires("SubagentStop"));
+        Assert.True(HookEvents.Fires("SubagentStop"));
         Assert.Equal(33, HookEvents.All.Count);
+        // NOTHING TO FIRE ON: no init mode, teams, elicitation, /add-dir, watch list or worktree creation of cxagent's own.
+        Assert.Equal(25, HookEvents.All.Count(HookEvents.Fires));
+        foreach (var e in new[] { "Setup", "TeammateIdle", "Elicitation", "ElicitationResult", "DirectoryAdded", "FileChanged", "WorktreeCreate", "WorktreeRemove" })
+            Assert.False(HookEvents.Fires(e), e);
     }
 }

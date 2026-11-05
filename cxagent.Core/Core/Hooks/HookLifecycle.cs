@@ -93,13 +93,81 @@ public static class HookLifecycle
             HookPayload.For(ctx, HookEvents.UserPromptSubmit, new JsonObject { ["prompt"] = prompt }), ct);
 
     /// <summary>Fires Stop as the agent is about to hand its answer back.</summary>
-    public static Task<HookVerdict> StopAsync(HookRunner runner, HookStop stop, CancellationToken ct) =>
-        runner.RunAsync(HookEvents.Stop, null,
-            HookPayload.For(stop.Context, HookEvents.Stop, new JsonObject
+    public static Task<HookVerdict> StopAsync(HookRunner runner, HookStop stop, CancellationToken ct)
+    {
+        var fields = new JsonObject
+        {
+            ["stop_hook_active"] = stop.Active,
+            ["last_assistant_message"] = stop.LastMessage,
+        };
+        if (stop.Event == HookEvents.SubagentStop)
+        {
+            fields["agent_id"] = stop.Context.AgentId;
+            fields["agent_type"] = stop.AgentType;
+            fields["agent_transcript_path"] = stop.Context.TranscriptPath;
+        }
+        // A SUB-AGENT'S STOP MATCHES ON ITS TYPE; the session's Stop takes no matcher.
+        return runner.RunAsync(stop.Event, stop.Event == HookEvents.SubagentStop ? stop.AgentType : null,
+            HookPayload.For(stop.Context, stop.Event, fields), ct);
+    }
+
+    /// <summary>Fires SubagentStart as a sub-agent takes its first task; its context goes to the sub-agent.</summary>
+    public static Task<HookVerdict> SubagentStartAsync(HookRunner runner, HookEventContext ctx, string agentType, CancellationToken ct) =>
+        runner.RunAsync(HookEvents.SubagentStart, agentType,
+            HookPayload.For(ctx, HookEvents.SubagentStart, new JsonObject { ["agent_id"] = ctx.AgentId, ["agent_type"] = agentType }), ct);
+
+    /// <summary>
+    /// Fires MessageDisplay for a reply as it is shown, without waiting. The reply is shown once it is whole, so
+    /// this fires once per reply with <c>final</c> true and the whole text as <c>delta</c>.
+    /// </summary>
+    public static void MessageDisplayed(HookRunner runner, HookEventContext ctx, string text)
+    {
+        if (!runner.Listens(HookEvents.MessageDisplay)) return;
+        _ = Task.Run(() => runner.RunAsync(HookEvents.MessageDisplay, null, HookPayload.For(ctx, HookEvents.MessageDisplay,
+            new JsonObject { ["turn_id"] = ctx.SessionId, ["message_id"] = Guid.NewGuid().ToString("N"), ["index"] = 0, ["final"] = true, ["delta"] = text }),
+            CancellationToken.None));
+    }
+
+    /// <summary>Fires PostToolBatch once every call from one model reply has its result.</summary>
+    public static Task<HookVerdict> PostToolBatchAsync(HookRunner runner, HookEventContext ctx,
+        IReadOnlyList<(Models.ToolCall Call, string Result)> calls, CancellationToken ct) =>
+        runner.RunAsync(HookEvents.PostToolBatch, null, HookPayload.For(ctx, HookEvents.PostToolBatch, new JsonObject
+        {
+            ["tool_calls"] = new JsonArray([.. calls.Select(c => (JsonNode)new JsonObject
             {
-                ["stop_hook_active"] = stop.Active,
-                ["last_assistant_message"] = stop.LastMessage,
+                ["tool_name"] = c.Call.Name,
+                ["tool_input"] = HookNames.WithAliases(c.Call.Name, HookPayload.InputOf(c.Call)),
+                ["tool_use_id"] = c.Call.Id,
+                ["tool_response"] = new JsonObject { ["output"] = c.Result },
+            })]),
+        }), ct);
+
+    /// <summary>
+    /// Fires TaskCreated for each item a to-do write adds and TaskCompleted for each it closes. The first refusal
+    /// is the answer: the write is refused whole, so the list stays as the model last had it.
+    /// </summary>
+    public static async Task<HookVerdict?> TasksAsync(HookRunner runner, HookEventContext ctx, HookTasks tasks, CancellationToken ct)
+    {
+        var before = tasks.Before.ToDictionary(i => i.Text, i => i.Status, StringComparer.Ordinal);
+        foreach (var item in tasks.After)
+        {
+            var ev = !before.TryGetValue(item.Text, out var was) ? HookEvents.TaskCreated
+                : item.Status == Agents.TodoStatus.Completed && was != Agents.TodoStatus.Completed ? HookEvents.TaskCompleted
+                : null;
+            if (ev is null || !runner.Listens(ev)) continue;
+            var verdict = await runner.RunAsync(ev, null, HookPayload.For(ctx, ev, new JsonObject
+            {
+                ["task_id"] = TaskId(item.Text),
+                ["task_subject"] = item.Text,
             }), ct);
+            if (verdict.Stops) return verdict;
+        }
+        return null;
+    }
+
+    /// <summary>A to-do item's id: stable for its text, so a hook sees the same id when it is created and when it is closed.</summary>
+    private static string TaskId(string text) =>
+        "task-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)))[..8].ToLowerInvariant();
 
     /// <summary>Fires StopFailure without waiting: the turn has already failed, and nothing a hook says changes that.</summary>
     public static void StopFailure(HookRunner runner, HookEventContext ctx, Exception error)
@@ -157,7 +225,17 @@ public static class HookLifecycle
 
 /// <summary>What a Stop hook is told: who is stopping, what they last said, and whether a Stop hook already sent them back.</summary>
 /// <param name="Active">Whether this turn already went on because a Stop hook said so — the contract's guard against loops.</param>
-public sealed record HookStop(HookEventContext Context, string? LastMessage, bool Active);
+public sealed record HookStop(HookEventContext Context, string? LastMessage, bool Active)
+{
+    /// <summary><c>Stop</c> for the session's agent, <c>SubagentStop</c> for a sub-agent.</summary>
+    public string Event { get; init; } = HookEvents.Stop;
+
+    /// <summary>A sub-agent's type, which SubagentStop matches on.</summary>
+    public string? AgentType { get; init; }
+}
+
+/// <summary>A to-do write: the list before it, and the list it would leave.</summary>
+public sealed record HookTasks(IReadOnlyList<Agents.TodoItem> Before, IReadOnlyList<Agents.TodoItem> After);
 
 /// <summary>A tool by the name a hook's matcher uses, and its arguments as the hook reads them.</summary>
 internal sealed record HookTool(string Name, JsonObject Input);
