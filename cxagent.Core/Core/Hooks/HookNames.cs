@@ -38,8 +38,14 @@ public static class HookNames
     {
         if (string.IsNullOrEmpty(matcher) || matcher == "*") return true;
         if (Patterns.GetOrAdd(matcher, Compile) is not { } regex) return false;
-        if (regex.IsMatch(toolName)) return true;
-        return Aliases.TryGetValue(toolName, out var other) && other.Any(regex.IsMatch);
+        try
+        {
+            if (regex.IsMatch(toolName)) return true;
+            return Aliases.TryGetValue(toolName, out var other) && other.Any(regex.IsMatch);
+        }
+        // A PATTERN THAT RUNS AWAY on a name is a matcher that does not match it: the alternative is an exception
+        // escaping into the tool call, or a close, from a line in a hooks file.
+        catch (RegexMatchTimeoutException) { return false; }
     }
 
     private static Regex? Compile(string pattern)

@@ -1361,7 +1361,7 @@ public sealed class Agent
         // sub-agent, whose "prompt" is a task the model wrote.
         if (!_isSubAgent && _hooks is { } hooks)
         {
-            var extra = new List<string>(await hooks.TakeStartContextAsync(ct));
+            var extra = new List<string>();
             if (hooks.Listens(Hooks.HookEvents.UserPromptSubmit))
             {
                 var verdict = await Hooks.HookLifecycle.PromptAsync(hooks, HookContext(hooks), prompt, ct);
@@ -1374,8 +1374,15 @@ public sealed class Agent
                 }
                 extra.AddRange(verdict.Context);
             }
+            // THE START'S CONTEXT ONLY ONCE A PROMPT GOES THROUGH: taken before a blocked one, it would be gone
+            // with it, and the session's first sent prompt would arrive without it.
+            extra.InsertRange(0, await hooks.TakeStartContextAsync(ct));
             if (extra.Count > 0)
+            {
+                // WHAT THE USER TYPED STAYS WHAT THE TRANSCRIPT SHOWS: the hooks' lines are for the model.
+                shown ??= prompt;
                 prompt = prompt + "\n\n" + string.Join("\n\n", extra.Select(c => $"[hook] {c}"));
+            }
         }
         return await RecordedAfter(SendCoreAsync(prompt, ct, turnTools, new AsTyped(shown, attachments), mailFirst: true));
     }

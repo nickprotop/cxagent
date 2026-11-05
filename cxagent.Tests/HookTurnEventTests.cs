@@ -100,6 +100,33 @@ public class HookTurnEventTests : IDisposable
     }
 
     [Fact]
+    public async Task SessionStart_context_survives_a_blocked_first_prompt()
+    {
+        var (policy, runner, fake) = Hooks(H("SessionStart"), H("UserPromptSubmit"));
+        fake.Answer = (run, _) => Task.FromResult(run.Hook.Event == "SessionStart"
+            ? Ok("""{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"uses bun test"}}""")
+            : (string?)run.Input["prompt"] == "secret" ? Block("no secrets") : Ok("{}"));
+        await HookLifecycle.SessionStartAsync(runner, "startup", CancellationToken.None);
+        var provider = new ScriptedProvider(Answer("hi"));
+        var agent = AgentWith(provider, policy);
+        await agent.SendAsync("secret", CancellationToken.None);
+        await agent.SendAsync("hello", CancellationToken.None);
+        Assert.Contains("uses bun test", provider.Last);
+    }
+
+    [Fact]
+    public async Task Hook_context_is_not_shown_as_what_the_user_typed()
+    {
+        var (policy, _, fake) = Hooks(H("UserPromptSubmit"));
+        fake.Answer = (_, _) => Task.FromResult(new HookReply(HookOutcomeKind.Ok, null, null, "branch: main\n", ""));
+        var agent = AgentWith(new ScriptedProvider(Answer("hi")), policy);
+        await agent.SendAsync("hello", CancellationToken.None);
+        var user = agent.Context.Messages.Last(m => m.Role == "user");
+        Assert.Contains("branch: main", user.Content);
+        Assert.Equal("hello", user.Shown);
+    }
+
+    [Fact]
     public async Task Stop_block_continues_the_turn()
     {
         var (policy, _, fake) = Hooks(H("Stop"));

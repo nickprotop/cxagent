@@ -130,4 +130,10 @@ public class HookPayloadTests
         var back = HookNames.ToCxagentInput("read_file", JsonNode.Parse("""{"path":"b","file_path":"a"}""")!.AsObject());
         Assert.Equal("""{"path":"b"}""", back.ToJsonString());
     }
+
+    [Fact]
+    public void A_runaway_matcher_counts_as_no_match()
+    {
+        Assert.False(HookNames.Matches("(a+)+$", new string('a', 40) + "!"));
+    }
 }
