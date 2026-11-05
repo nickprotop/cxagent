@@ -69,13 +69,31 @@ public sealed class SandboxSessionTests : IDisposable
         Assert.Single(sink.Notices, n => n.Contains("bubblewrap is not installed"));
     }
 
+    /// <summary>
+    /// THE STATE IT IS HANDED, not the one on the session's policy. The wiring starts the notice off the calling
+    /// thread before the session holds its policy, and a probe that answers in milliseconds — bubblewrap failing
+    /// at once — found no policy and said nothing. Seen on a live drive: "sandbox failed" on the status bar, no
+    /// line in the transcript.
+    /// </summary>
+    [Fact]
+    public void The_notice_reports_the_state_it_is_given()
+    {
+        var (session, policy, sink) = OpenWithSink(SandboxSettings.AppDefault);
+        policy.Sandbox = Fake(SandboxStatus.Active);
+        session.NoteSandbox(Fake(new SandboxStatus(SandboxStatusKind.Failed, "userns blocked")));
+        Assert.Contains(sink.Notices, n => n.Contains("userns blocked"));
+    }
+
     [Fact]
     public void A_failed_sandbox_says_each_command_will_ask()
     {
         var (session, policy, sink) = OpenWithSink(SandboxSettings.AppDefault);
-        policy.Sandbox = Fake(new SandboxStatus(SandboxStatusKind.Failed, "userns blocked"));
+        policy.Sandbox = Fake(new SandboxStatus(SandboxStatusKind.Failed, "userns blocked") { Fix = "Allow user namespaces." });
         session.NoteSandbox();
-        Assert.Contains(sink.Notices, n => n.Contains("userns blocked") && n.Contains("asks before"));
+        var notice = Assert.Single(sink.Notices, n => n.Contains("userns blocked"));
+        Assert.Contains("Allow user namespaces.", notice);
+        Assert.Contains("asks before", notice);
+        Assert.DoesNotContain("..", notice);
     }
 
     [Fact]

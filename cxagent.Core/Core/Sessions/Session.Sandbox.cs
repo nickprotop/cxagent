@@ -15,13 +15,27 @@ public sealed partial class Session
     /// </summary>
     public void NoteSandbox()
     {
-        if (Policy?.Sandbox is not { } sandbox || sandbox.FallbackNoticeShown) return;
+        if (Policy?.Sandbox is { } sandbox) NoteSandbox(sandbox);
+    }
+
+    /// <summary>
+    /// The same, for the sandbox state the wiring just built.
+    ///
+    /// <para>HANDED IN, NOT LOOKED UP. The wiring starts this off the calling thread before the session holds its
+    /// policy, and a probe that answers at once — bubblewrap failing in milliseconds — would otherwise find no policy
+    /// and say nothing, while the status bar, which reads later, says "sandbox failed".</para>
+    /// </summary>
+    /// <param name="sandbox">The state to report on.</param>
+    public void NoteSandbox(SandboxState sandbox)
+    {
+        if (sandbox.FallbackNoticeShown) return;
         var status = sandbox.Status;
+        var fix = status.Fix is { Length: > 0 } f ? " " + f : "";
         var line = status.Kind switch
         {
-            SandboxStatusKind.Unavailable => $"Commands are not contained: {status.Reason}",
+            SandboxStatusKind.Unavailable => $"Commands are not contained: {status.Reason}.{fix}",
             SandboxStatusKind.Failed =>
-                $"The sandbox could not start: {status.Reason}. Each command asks before it runs uncontained.",
+                $"The sandbox could not start: {status.Reason}.{fix} Each command asks before it runs uncontained.",
             _ => null,
         };
         if (line is null) return;
@@ -56,9 +70,12 @@ public sealed partial class Session
 
         var status = sandbox.Status;
         if (status.Kind != SandboxStatusKind.Active)
+        {
+            var fix = status.Fix is { Length: > 0 } f ? "\n" + f : "";
             return status.Kind == SandboxStatusKind.Failed
-                ? $"Sandbox: could not start — {status.Reason}\nEach command asks before it runs uncontained."
-                : $"Sandbox: not available — {status.Reason}";
+                ? $"Sandbox: could not start — {status.Reason}.{fix}\nEach command asks before it runs uncontained."
+                : $"Sandbox: not available — {status.Reason}.{fix}";
+        }
 
         var layout = SandboxLayout.For(new SandboxLayoutRequest(Policy.Root, Policy.Root, false, null, sandbox.Home, sandbox.Settings));
         static string List(IEnumerable<string> paths) =>

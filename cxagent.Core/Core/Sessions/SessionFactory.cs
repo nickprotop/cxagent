@@ -68,17 +68,16 @@ internal static class SessionFactory
         var hooks = firstWire ? BuildHooks(session, resolution, shared) : session.Hooks!;
         if (ports.Policy is { } hookPolicy) hookPolicy.Hooks = hooks;
 
-        // THE SANDBOX, SET ON EVERY WIRE so a config change takes effect. The probe runs on first need — the gate's
-        // first shell request — and is warmed here off the calling thread so that request does not wait for
-        // bubblewrap to start. The once-only "not contained" notice is carried over, so a /model switch does not
-        // repeat it.
+        // THE SANDBOX, SET ON EVERY WIRE so a config change takes effect. The once-only "not contained" notice is
+        // carried over, so a /model switch does not repeat it. The probe is started further down, once the session
+        // can say what it found.
+        Sandbox.SandboxState? wiredSandbox = null;
         if (ports.Policy is { } sandboxPolicy)
         {
             var shown = sandboxPolicy.Sandbox?.FallbackNoticeShown ?? false;
-            var sandbox = Sandbox.SandboxState.ForThisMachine(resolution.Sandbox, shared.GlobalInstructionsDir);
-            sandbox.FallbackNoticeShown = shown;
-            sandboxPolicy.Sandbox = sandbox;
-            if (sandbox.Settings.Enabled) _ = Task.Run(session.NoteSandbox);
+            wiredSandbox = Sandbox.SandboxState.ForThisMachine(resolution.Sandbox, shared.GlobalInstructionsDir);
+            wiredSandbox.FallbackNoticeShown = shown;
+            sandboxPolicy.Sandbox = wiredSandbox;
         }
 
         // WRAPPED HERE, NOT BY THE EMBEDDER. A bare IAgentTool in ports.Tools is not a compile
@@ -434,6 +433,13 @@ internal static class SessionFactory
         if (spawnWithheld)
             session.SayFallbackToSingle();
         session.NotePolicy(ports.Policy);
+
+        // THE SANDBOX PROBED HERE, OFF THE CALLING THREAD, AND ONLY NOW: Say is a no-op before NoteObserver, and a
+        // notice said to nobody is spent all the same — "sandbox failed" sat on the status bar with no line in the
+        // transcript to say why. Warming it also spares the first shell request the wait for bubblewrap to start.
+        if (wiredSandbox is { Settings.Enabled: true } toProbe)
+            _ = Task.Run(() => session.NoteSandbox(toProbe));
+
         session.NoteHooks(hooks, HookSettingsFor(resolution));
         if (firstWire)
         {

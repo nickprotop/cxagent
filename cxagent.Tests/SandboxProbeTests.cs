@@ -38,6 +38,7 @@ public sealed class SandboxProbeTests : IDisposable
         var status = SandboxProbe.Run(new SandboxProbeRequest(null, IsLinux: true));
         Assert.Equal(SandboxStatusKind.Unavailable, status.Kind);
         Assert.Contains("bubblewrap", status.Reason);
+        Assert.Contains("Install", status.Fix);
     }
 
     [Fact]
@@ -47,8 +48,10 @@ public sealed class SandboxProbeTests : IDisposable
         var bwrap = FakeBwrap("echo 'bwrap: setting up uid map: Permission denied' >&2; exit 1");
         var status = SandboxProbe.Run(new SandboxProbeRequest(bwrap, IsLinux: true));
         Assert.Equal(SandboxStatusKind.Failed, status.Kind);
-        Assert.Contains("setting up uid map: Permission denied", status.Reason);
-        Assert.Contains("user namespaces", status.Reason);
+        // THE REASON IS BUBBLEWRAP'S OWN LINE, short enough for a prompt heading; the fix is said apart from it,
+        // where there is room — a live drive clipped the hint mid-word when the two were one string.
+        Assert.Equal("bwrap: setting up uid map: Permission denied", status.Reason);
+        Assert.Contains("user namespaces", status.Fix);
     }
 
     [Fact]

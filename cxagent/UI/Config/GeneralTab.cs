@@ -207,7 +207,7 @@ public sealed class GeneralTab
             var probed = Core.Sandbox.SandboxProbe.Run(Core.Sandbox.SandboxProbeRequest.ThisMachine());
             var line = probed.Kind == Core.Sandbox.SandboxStatusKind.Active
                 ? $"[{ColorScheme.AffirmativeMarkup}]✔ bubblewrap works on this machine.[/]"
-                : $"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(probed.Reason ?? "")}[/]";
+                : $"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape($"{probed.Reason}. {probed.Fix}".Trim())}[/]";
             _host.System.EnqueueOnUIThread(() => status.SetContent([line]), "generalTab.sandboxStatus");
         });
         return grid.Control;
