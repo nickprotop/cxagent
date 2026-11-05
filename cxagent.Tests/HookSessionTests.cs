@@ -186,4 +186,18 @@ public class HookSessionTests : IDisposable
         session.CheckHookChanges();
         Assert.Single(sink.Notices, m => m.Contains("changed"));
     }
+
+    [Fact]
+    public void Close_does_not_wait_on_SessionEnd_but_shutdown_does()
+    {
+        var marker = Marker("slow-end");
+        ProjectHooks($$"""{ "SessionEnd": [ { "hooks": [ { "type": "command", "timeout": 10, "command": "sleep 2; echo ok > {{marker}}" } ] } ] }""");
+        var (session, _) = Open();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        Assert.True(_manager.Close(session));
+        Assert.True(watch.Elapsed < TimeSpan.FromMilliseconds(800), watch.Elapsed.ToString());
+        Assert.False(File.Exists(marker));
+        _manager.Shutdown(TimeSpan.FromSeconds(5));
+        Assert.True(File.Exists(marker));
+    }
 }
