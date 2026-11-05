@@ -76,6 +76,25 @@ public sealed class HookRunner
     public Func<HookEventContext> Session { get; set; } =
         () => new("", "", Environment.CurrentDirectory, "default", "main");
 
+    private readonly List<string> _startContext = [];
+
+    /// <summary>Holds what SessionStart hooks said for the model, until the first prompt carries it.</summary>
+    internal void HoldStartContext(IEnumerable<string> context)
+    {
+        lock (_startContext) _startContext.AddRange(context);
+    }
+
+    /// <summary>Takes the held SessionStart context — once, so it is said at the start and not with every prompt.</summary>
+    internal IReadOnlyList<string> TakeStartContext()
+    {
+        lock (_startContext)
+        {
+            var taken = _startContext.ToList();
+            _startContext.Clear();
+            return taken;
+        }
+    }
+
     /// <summary>Swaps in a reviewed set of hooks — F8's save, or the user accepting a changed file.</summary>
     public void Replace(HookSnapshot reviewed) => _snapshot = reviewed;
 

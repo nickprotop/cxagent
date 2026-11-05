@@ -1339,9 +1339,32 @@ public sealed class Agent
     /// the blocks pasted into it, each shown there as its label. Both are stored with the message and
     /// never sent.</para>
     /// </remarks>
-    public Task<SendResult> SendAsync(string prompt, CancellationToken ct,
-        Jobs.ToolSelection? turnTools = null, string? shown = null, Attachments? attachments = null) =>
-        RecordedAfter(SendCoreAsync(prompt, ct, turnTools, new AsTyped(shown, attachments), mailFirst: true));
+    public async Task<SendResult> SendAsync(string prompt, CancellationToken ct,
+        Jobs.ToolSelection? turnTools = null, string? shown = null, Attachments? attachments = null)
+    {
+        // THE PROMPT HOOKS SEE WHAT THE USER SENT, before the model does: a block keeps it from the model
+        // altogether, and context rides in after it. Only on this path — the user's — and never for a
+        // sub-agent, whose "prompt" is a task the model wrote.
+        if (!_isSubAgent && _policy?.Hooks is { } hooks)
+        {
+            var extra = new List<string>(hooks.TakeStartContext());
+            if (hooks.Listens(Hooks.HookEvents.UserPromptSubmit))
+            {
+                var verdict = await Hooks.HookLifecycle.PromptAsync(hooks, HookContext(hooks), prompt, ct);
+                if (verdict.Stops || verdict.Halt is not null)
+                {
+                    var why = verdict.Reason ?? verdict.Halt ?? "no reason given";
+                    var text = $"prompt blocked by hook '{verdict.DecidedBy}': {why}";
+                    _sink.Said(new Message(text, Severity.Warning));
+                    return new SendResult(text, SendOutcome.Failed, why);
+                }
+                extra.AddRange(verdict.Context);
+            }
+            if (extra.Count > 0)
+                prompt = prompt + "\n\n" + string.Join("\n\n", extra.Select(c => $"[hook] {c}"));
+        }
+        return await RecordedAfter(SendCoreAsync(prompt, ct, turnTools, new AsTyped(shown, attachments), mailFirst: true));
+    }
 
     /// <summary>
     /// How the user's prompt looked as typed, when that differs from what is sent: the line with its
@@ -1586,6 +1609,7 @@ public sealed class Agent
         // a sub-agent's report that stops mid-sentence, marked "completed". The parts are joined so the caller
         // receives one answer; bounded, because a model that never finishes would otherwise loop.
         var capContinuations = 0;
+        var stopBlocks = 0;
         var capturedParts = new StringBuilder();
 
         // Set when a call has repeated past the point where a nudge could still help, which ends the
@@ -1755,11 +1779,13 @@ public sealed class Agent
 
                 continue;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // The turn MUST be closed on every path. A spinner left running after a failure is
                 // worse than no spinner: it says "still working" about a goal that is already over.
                 _sink.AssistantTurnEnded(turnId);
+                if (ex is not OperationCanceledException && !_isSubAgent && _policy?.Hooks is { } failHooks)
+                    Hooks.HookLifecycle.StopFailure(failHooks, HookContext(failHooks), ex);
                 throw;
             }
 
@@ -1906,6 +1932,26 @@ public sealed class Agent
                 // left without a wake waits for the next turn instead: it was left precisely so that it
                 // would not cost a request of its own.
                 if (Mailbox.HasWaking) continue;
+
+                // STOP HOOKS MAY SEND THE AGENT BACK TO WORK — "the tests still fail" — but only so many
+                // times in one turn, and only the session's own agent: a sub-agent's end is its parent's
+                // to judge.
+                if (!_isSubAgent && _policy?.Hooks is { } stopHooks && stopHooks.Listens(Hooks.HookEvents.Stop))
+                {
+                    var verdict = await Hooks.HookLifecycle.StopAsync(stopHooks, HookContext(stopHooks), text, stopBlocks > 0, ct);
+                    if (verdict.Stops)
+                    {
+                        if (stopBlocks < Hooks.HookLifecycle.MaxStopBlocks)
+                        {
+                            stopBlocks++;
+                            messages.Add(Nudge($"A hook did not let this turn end yet (hook '{verdict.DecidedBy}'): "
+                                               + (verdict.Reason ?? "no reason given") + " Carry on with the work."));
+                            continue;
+                        }
+                        _sink.Said(new Message($"hook '{verdict.DecidedBy}' kept the turn going {stopBlocks} times; "
+                                               + "it ends here anyway.", Severity.Warning));
+                    }
+                }
 
                 // A turn with no tool calls is the model saying it is done. CHALLENGE IT if the goal
                 // asked for a change and nothing was written — the failure this mode exists to fix

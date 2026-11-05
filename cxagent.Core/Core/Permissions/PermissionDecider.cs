@@ -496,6 +496,25 @@ public sealed class PermissionDecider : IPermissionGate
     /// </summary>
     private async Task<PermissionOutcome> PromptAsync(PermissionRequest request, CancellationToken ct)
     {
+        // THE HOOKS HEAR OF THE PROMPT FIRST. A PermissionRequest hook may answer it — a deny always, an allow
+        // only where a hook's allow may answer at all — and a Notification hook is told someone is waiting.
+        if (request.Policy?.Hooks is { } hooks)
+        {
+            var answered = await Hooks.HookLifecycle.PermissionRequestAsync(hooks, request, ct);
+            if (answered?.Decision == "deny")
+            {
+                OnDecision?.Invoke(new(request.Kind, "hook", request.Requester, request.What) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
+                return new PermissionOutcome(false, "hook", answered.Reason ?? answered.DecidedBy);
+            }
+            if (answered?.Decision == "allow" && request.Kind is not (PermissionKind.Tool or PermissionKind.Plugin)
+                && !HookCannotAllow(request.Policy!, request))
+            {
+                OnDecision?.Invoke(new(request.Kind, "hook", request.Requester, request.What) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
+                return PermissionOutcome.ByHook(answered.DecidedBy);
+            }
+            Hooks.HookLifecycle.PromptWaiting(hooks, request);
+        }
+
         // WAITING STARTS HERE — before the queue, not after it. A child third in line behind two
         // other prompts is waiting from this moment, and a row that only turned "waiting" once its
         // prompt was actually SHOWN would sit reading "running" through the whole queue.
