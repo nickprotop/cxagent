@@ -60,7 +60,13 @@ public static class HookLifecycle
             await runner.RunAsync(HookEvents.SessionEnd, reason,
                 HookPayload.For(runner.Session(), HookEvents.SessionEnd, new JsonObject { ["reason"] = reason }), budget.Token);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            // NAMED, NOT DROPPED: a SessionEnd hook that did not finish may have left its work half done.
+            var names = runner.Snapshot.Hooks.Where(h => h.Event == HookEvents.SessionEnd && h.Runs).Select(h => h.DisplayName);
+            runner.Report(new($"SessionEnd hook(s) cut off after {EndBudget(runner.Snapshot.Hooks).TotalSeconds:0.#} s: "
+                              + string.Join(", ", names), IsError: true));
+        }
     }
 
     /// <summary>Fires UserPromptSubmit for a prompt the user (or a plugin on their behalf) sent.</summary>

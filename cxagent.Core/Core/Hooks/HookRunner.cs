@@ -66,6 +66,9 @@ public sealed class HookRunner
     /// <summary>The library's handlers.</summary>
     public HookHandlers Handlers => _deps.Handlers;
 
+    /// <summary>Tells the user something about the hooks — where the session shows its notices.</summary>
+    internal void Report(HookNotice notice) => _deps.Notice(notice);
+
     /// <summary>Whether the repository's hooks may run right now.</summary>
     public bool ProjectTrusted => _deps.ProjectTrusted();
 

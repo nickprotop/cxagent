@@ -37,12 +37,14 @@ public class HookTurnEventTests : IDisposable
     private static HookDefinition H(string ev, int? timeout = null) =>
         new(ev, null, "command", HookSource.User) { Command = "hook", Name = ev.ToLowerInvariant(), TimeoutSeconds = timeout };
 
+    private readonly List<HookNotice> _notices = [];
+
     private (PermissionPolicy Policy, HookRunner Runner, Fake Fake) Hooks(params HookDefinition[] hooks)
     {
         var fake = new Fake();
         var policy = new PermissionPolicy(_dir, new PermissionRulesStore(new AppPaths(_dir)));
         var runner = new HookRunner(new HookRunnerDeps(new HookSnapshot(hooks, [], null, new Dictionary<string, string>()),
-            new HookHandlers(), () => true, _ => { }) { Run = fake.Run, ProjectDir = _dir });
+            new HookHandlers(), () => true, n => { lock (_notices) _notices.Add(n); }) { Run = fake.Run, ProjectDir = _dir });
         policy.Hooks = runner;
         return (policy, runner, fake);
     }
@@ -159,6 +161,8 @@ public class HookTurnEventTests : IDisposable
         await HookLifecycle.SessionEndAsync(runner, "exit");
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(3), watch.Elapsed.ToString());
         Assert.Equal("exit", (string?)Assert.Single(fake.Runs).Input["reason"]);
+        // CUT OFF, AND SAID: a hook that did not finish is named, not silently dropped.
+        Assert.Contains(_notices, n => n.Text.Contains("sessionend") && n.Text.Contains("cut off"));
     }
 
     [Fact]
