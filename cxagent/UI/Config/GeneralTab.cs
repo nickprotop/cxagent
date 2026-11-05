@@ -191,16 +191,19 @@ public sealed class GeneralTab
         network.SelectionChanged += (_, on) => { draft.SandboxNetwork = on; MarkSave(); };
         grid.AddBare(blank());
 
-        PromptControl List(string text, Action<string> set)
+        // ONE ENTRY PER LINE, in the editor the Agents tab uses for a briefing: a comma is a legal character in a path.
+        MultilineEditControl List(string text, Action<string> set)
         {
-            var input = ListDetail.Input(new PromptControl { Input = text, InputWidth = 48 });
-            input.InputChanged += (_, t) => { set(t); MarkSave(); };
-            return input;
+            var editor = new MultilineEditControl(viewportHeight: 3) { HorizontalAlignment = HorizontalAlignment.Stretch };
+            editor.SetContent(text);
+            editor.ContentChanged += (_, _) => { set(editor.GetContent()); MarkSave(); };
+            return editor;
         }
-        grid.Add("Also writable", "Folders, comma-separated. ~ is your home.", List(draft.WritableText, t => draft.WritableText = t));
-        grid.Add("Also hidden", "Folders or files seen empty, comma-separated.", List(draft.HiddenText, t => draft.HiddenText = t));
-        grid.Add("Also unset", "Variable names or patterns like MY_*, comma-separated.", List(draft.HiddenEnvText, t => draft.HiddenEnvText = t));
-        grid.Add("Keep anyway", "Variable names a credential pattern would remove.", List(draft.PassEnvText, t => draft.PassEnvText = t));
+        grid.Add("Also writable", "Folders, one per line, starting with / or ~. Enter to type, Esc when done.",
+            List(draft.WritableText, t => draft.WritableText = t));
+        grid.Add("Also hidden", "Folders or files seen empty, one per line.", List(draft.HiddenText, t => draft.HiddenText = t));
+        grid.Add("Also unset", "Variable names or patterns like MY_*, one per line.", List(draft.HiddenEnvText, t => draft.HiddenEnvText = t));
+        grid.Add("Keep anyway", "Variable names a credential pattern would remove, one per line.", List(draft.PassEnvText, t => draft.PassEnvText = t));
 
         _ = Task.Run(() =>
         {

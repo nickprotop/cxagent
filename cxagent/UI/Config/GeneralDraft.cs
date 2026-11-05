@@ -86,16 +86,16 @@ public sealed class GeneralDraft
     /// <summary>Whether a contained command reaches the network.</summary>
     public bool SandboxNetwork { get; set; } = true;
 
-    /// <summary>Extra writable folders, comma-separated as typed.</summary>
+    /// <summary>Extra writable folders, one per line as typed.</summary>
     public string WritableText { get; set; } = "";
 
-    /// <summary>Extra folders or files seen empty, comma-separated as typed.</summary>
+    /// <summary>Extra folders or files seen empty, one per line as typed.</summary>
     public string HiddenText { get; set; } = "";
 
-    /// <summary>Extra variable names or patterns removed, comma-separated as typed.</summary>
+    /// <summary>Extra variable names or patterns removed, one per line as typed.</summary>
     public string HiddenEnvText { get; set; } = "";
 
-    /// <summary>Variable names kept despite a pattern, comma-separated as typed.</summary>
+    /// <summary>Variable names kept despite a pattern, one per line as typed.</summary>
     public string PassEnvText { get; set; } = "";
 
     /// <summary>The sandbox settings as they would be written.</summary>
@@ -109,12 +109,13 @@ public sealed class GeneralDraft
         && a.Writable.SequenceEqual(b.Writable) && a.Hidden.SequenceEqual(b.Hidden)
         && a.HiddenEnv.SequenceEqual(b.HiddenEnv) && a.PassEnv.SequenceEqual(b.PassEnv);
 
-    /// <summary>A list as one line: comma-separated, the way it is typed back.</summary>
-    private static string Joined(IReadOnlyList<string> items) => string.Join(", ", items);
+    /// <summary>A list as text, one entry per line — the way it is typed back.</summary>
+    private static string Joined(IReadOnlyList<string> items) => string.Join("\n", items);
 
-    /// <summary>A typed line as a list: comma-separated, blanks dropped.</summary>
+    /// <summary>Typed text as a list: ONE ENTRY PER LINE, blanks dropped. Lines, not commas, because a comma is a
+    /// legal character in a path and a separator inside one would cut it in two.</summary>
     private static IReadOnlyList<string> Split(string text) =>
-        [.. text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+        [.. text.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 
     /// <summary>
     /// Sets <c>sandbox.enabled</c> alone, for <c>/sandbox on</c> and <c>off</c>: on is the default, so it removes the

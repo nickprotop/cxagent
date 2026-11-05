@@ -51,7 +51,8 @@ public class SandboxDraftTests
     {
         var draft = Draft();
         draft.SandboxNetwork = false;
-        draft.WritableText = "~/out, /data/shared";
+        // ONE PER LINE, so a comma in a path is part of the path.
+        draft.WritableText = "~/out\n/data/a,b";
         draft.HiddenText = "~/.secret";
         draft.HiddenEnvText = "MY_*";
         draft.PassEnvText = "NPM_TOKEN";
@@ -59,7 +60,7 @@ public class SandboxDraftTests
 
         var back = GeneralDraft.From(ProviderConfigLoader.Parse(root.ToJsonString(), NoEnv));
         Assert.False(back.SandboxNetwork);
-        Assert.Equal("~/out, /data/shared", back.WritableText);
+        Assert.Equal("~/out\n/data/a,b", back.WritableText);
         Assert.Equal("~/.secret", back.HiddenText);
         Assert.Equal("MY_*", back.HiddenEnvText);
         Assert.Equal("NPM_TOKEN", back.PassEnvText);
