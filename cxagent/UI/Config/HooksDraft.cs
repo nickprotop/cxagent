@@ -69,6 +69,8 @@ public sealed class HookEntry
         {
             Name = Name, Command = Command, Shell = Shell, TimeoutSeconds = TimeoutSeconds, OnFailureBlock = OnFailureBlock,
             Prompt = Prompt, Model = Model, ContinueOnBlock = ContinueOnBlock, Url = Url, Server = Server, Tool = Tool,
+            // AS IT WOULD BE WRITTEN, so comparing it with what the session runs compares every field.
+            Raw = System.Text.Json.JsonSerializer.SerializeToElement(ToJson()),
         };
 
     /// <summary>The hook's object as it will be written: what was read, with the edited fields laid over it.</summary>

@@ -202,8 +202,11 @@ public static class HookDispatch
         {
             // ONLY THE NAMED VARIABLES EXPAND. A header naming one it was not allowed reads empty: a repository's
             // hook must not be able to post the user's environment to a URL of its choosing.
+            // AND ONLY FOR YOUR OWN HOOKS: a repository's hook lists its own allowedEnvVars, so honouring them would let
+            // it name the variable it wants sent. A repository's http hook expands nothing.
+            var mayExpand = run.Hook.Source is HookSource.User or HookSource.Library;
             var expanded = EnvRef.Replace(value, m =>
-                run.Hook.AllowedEnvVars.Contains(m.Groups[1].Value) ? services.Env(m.Groups[1].Value) ?? "" : "");
+                mayExpand && run.Hook.AllowedEnvVars.Contains(m.Groups[1].Value) ? services.Env(m.Groups[1].Value) ?? "" : "");
             request.Headers.TryAddWithoutValidation(name, expanded);
         }
 

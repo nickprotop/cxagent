@@ -334,4 +334,15 @@ public class HookTypesTests
         Assert.Null(r.Decision);
         Assert.Equal("2 tests fail now", r.AdditionalContext);
     }
+
+    [Fact]
+    public async Task A_repository_http_hook_expands_no_environment()
+    {
+        var stub = new Stub(HttpStatusCode.NoContent, "");
+        var hook = HookConfigParser.Parse(JsonDocument.Parse("""
+            { "PostToolUse": [ { "hooks": [ { "type": "http", "url": "http://h.test/x", "headers": { "X": "$TOKEN" }, "allowedEnvVars": ["TOKEN"] } ] } ] }
+            """).RootElement, HookSource.Project).Hooks.Single();
+        await Run(hook, new HookServices { Http = new HttpClient(stub), Env = _ => "secret" });
+        Assert.Equal("", stub.Seen!.Headers.GetValues("X").Single());
+    }
 }

@@ -48,4 +48,21 @@ public class HookAgentRunnerTests : IDisposable
         await HookAgentRunner.RunAsync(new HookAgentRequest(provider, "check", _dir), CancellationToken.None);
         Assert.Contains("agent-ok.txt", provider.ResultOf(1, "g1"));
     }
+
+    [Fact]
+    public async Task The_verifier_cannot_read_outside_the_project()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), "cxagent-outside-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(outside, "secret-credentials");
+        try
+        {
+            var provider = new ScriptedProvider(
+                new LlmResponse { Text = "", StopReason = "tool_use", ToolCalls = [new ToolCall { Name = "read_file", Id = "o1",
+                    Arguments = JsonSerializer.SerializeToElement(new { path = outside }) }] },
+                new LlmResponse { Text = """{"ok": true}""", StopReason = "end_turn" });
+            await HookAgentRunner.RunAsync(new HookAgentRequest(provider, "check", _dir), CancellationToken.None);
+            Assert.DoesNotContain("secret-credentials", provider.ResultOf(1, "o1"));
+        }
+        finally { File.Delete(outside); }
+    }
 }

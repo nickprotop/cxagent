@@ -30,7 +30,7 @@ public static class HookAgentRunner
             Model = new AgentModel(request.Model, new TokenLedger()),
             Outputs = new AgentOutputs(new BufferedChatSink(), new BufferedJobPanel()),
             Identity = new AgentIdentity { WorkingDir = request.ProjectDir, IsSubAgent = true, Label = "hook verifier" },
-            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()) { Selection = ReadOnly },
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins(null, new ProjectOnly(request.ProjectDir))) { Selection = ReadOnly },
             Guards = new AgentGuards(),
             Brief = new AgentBrief(),
             Limits = new AgentLimits(MaxTurns),
@@ -38,5 +38,36 @@ public static class HookAgentRunner
         });
         var result = await agent.SendAsync(request.Prompt, ct);
         return result.Text;
+    }
+
+    /// <summary>
+    /// The verifier's gate: a read inside the project is allowed, and everything else is refused without asking.
+    ///
+    /// <para>INSIDE THE PROJECT ONLY. A repository's agent hook writes the verifier's instructions, and a verifier
+    /// that could read <c>~/.aws/credentials</c> would hand them to a refusal reason the model reads and any later
+    /// hook can post on. It asks nobody, because nobody is watching it decide.</para>
+    /// </summary>
+    private sealed class ProjectOnly(string projectDir) : Permissions.IPermissionGate
+    {
+        private readonly string _root = Permissions.PathResolver.RealFolder(projectDir);
+
+        public Task<Permissions.PermissionOutcome> RequestAsync(Permissions.PermissionRequest request, CancellationToken ct)
+        {
+            var inside = request.Kind == Permissions.PermissionKind.FileRead
+                         && Permissions.PathResolver.Contains(_root, RealPath(request.What));
+            return Task.FromResult(inside ? Permissions.PermissionOutcome.Allow
+                : new Permissions.PermissionOutcome(false, "hook", "a hook's verifier reads only inside the project"));
+        }
+
+        private static string RealPath(string path)
+        {
+            try
+            {
+                var full = Path.GetFullPath(path);
+                var target = File.Exists(full) ? new FileInfo(full).ResolveLinkTarget(returnFinalTarget: true)?.FullName : null;
+                return target ?? full;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { return path; }
+        }
     }
 }

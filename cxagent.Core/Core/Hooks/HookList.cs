@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text;
 
 namespace CxAgent.Core.Hooks;
@@ -57,7 +58,11 @@ public static class HookList
 
     /// <summary>
     /// The repository hooks in <paramref name="next"/> that <paramref name="running"/> does not have (<c>+</c>),
-    /// and the other way round (<c>−</c>) — one line each, with what the hook runs.
+    /// and the other way round (<c>−</c>) — one line each, with the hook as written.
+    ///
+    /// <para>EVERY FIELD COUNTS. A review is only a review if a change anywhere in a hook shows: a header added to an
+    /// http hook, an <c>allowedEnvVars</c> entry, an MCP tool swapped for another. Only the name is left out, since
+    /// renaming a hook changes nothing it does.</para>
     /// </summary>
     public static IReadOnlyList<string> Changes(HookSnapshot running, HookSnapshot next)
     {
@@ -67,9 +72,28 @@ public static class HookList
         return [.. after.Except(before).Select(k => "+ " + k), .. before.Except(after).Select(k => "− " + k)];
     }
 
-    /// <summary>A hook as one line: where, when, and what it runs — what a change is judged by.</summary>
+    /// <summary>A hook as one line: where, when, and everything it is configured with but its name.</summary>
     public static string Key(HookDefinition h) =>
-        $"{SourceTag(h.Source)} {h.Event}{(h.Matcher is { } m ? $" [{m}]" : "")} {h.Type}: {h.Command ?? h.Url ?? h.Model ?? ""}".TrimEnd();
+        $"{SourceTag(h.Source)} {h.Event}{(h.Matcher is { } m ? $" [{m}]" : "")} {Canonical(h)}";
+
+    private static string Canonical(HookDefinition h)
+    {
+        var o = h.Raw is { } raw && JsonNode.Parse(raw.GetRawText()) is JsonObject json ? json : new JsonObject
+        {
+            ["type"] = h.Type, ["command"] = h.Command, ["prompt"] = h.Prompt, ["model"] = h.Model, ["url"] = h.Url,
+            ["server"] = h.Server, ["tool"] = h.Tool,
+        };
+        o.Remove("name");
+        return Sorted(o).ToJsonString();
+    }
+
+    private static JsonNode? Sorted(JsonNode? node) => node switch
+    {
+        JsonObject o => new JsonObject(o.Where(kv => kv.Value is not null).OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => KeyValuePair.Create(kv.Key, Sorted(kv.Value)))),
+        JsonArray a => new JsonArray([.. a.Select(Sorted)]),
+        _ => node?.DeepClone(),
+    };
 
     private static int HookEventOrder(string ev)
     {
