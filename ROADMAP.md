@@ -11,7 +11,9 @@ What is next. See [README](README.md) for what cxagent does and
   formatter), not the edit tools, so a rewind that tracks only those would promise an undo it cannot
   deliver; and git already undoes what is in the folder.
 - **Hooks in plugins** — a plugin folder bringing its own `hooks/hooks.json`, approved with the plugin.
-- **Sandboxed shell** — commands run as the user, gated by permission rules but not contained; the
-  same thing stands between this loop and running tools in parallel.
+- **Sandbox on macOS** — Linux commands run inside bubblewrap; macOS would need a Seatbelt profile.
+  Built when someone asks for it.
+- **Network allowlists in the sandbox** — today the network is on or off; letting a contained command
+  reach only a package registry or a git host needs a proxy it is forced through.
 - **A web front end** — the reason the extraction was worth doing.
 - **Skill scripts** — a skill that runs, not just one that is read.

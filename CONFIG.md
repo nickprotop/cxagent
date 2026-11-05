@@ -599,6 +599,79 @@ build's error included — is lost.
 A malformed value warns at startup and the default is kept, rather than refusing to start over a
 behaviour switch.
 
+## `sandbox` — where the model's commands run
+
+```json
+"sandbox": {
+  "enabled": true,
+  "network": true,
+  "writable": ["~/work/shared-out"],
+  "hidden": ["~/.config/some-tool"],
+  "hiddenEnv": ["MY_SERVICE_*"],
+  "passEnv": ["NPM_TOKEN"]
+}
+```
+
+F8's **General** tab sets every key; `/sandbox on` and `/sandbox off` set `enabled` and apply it to the
+tab they are typed in at once. `/sandbox` shows what a command may touch here.
+
+On Linux, every shell command the model runs (its own, a sub-agent's, a background one) runs inside
+[bubblewrap](https://github.com/containers/bubblewrap). **Absent means on.** Every key is optional:
+
+| Key | Default | What it does |
+|---|---|---|
+| `enabled` | `true` | `false` runs commands as you, as before the sandbox. |
+| `network` | `true` | `false` gives each command an empty network of its own: nothing leaves, and installs, restores and pushes fail. |
+| `writable` | `[]` | Folders a command may write besides the built-in ones. `~` is your home. |
+| `hidden` | `[]` | Folders or files a command sees as empty, besides the built-in ones. |
+| `hiddenEnv` | `[]` | Variable names or `*` patterns removed from a command's environment, besides the built-in ones. |
+| `passEnv` | `[]` | Variable names kept even when a pattern would remove them. |
+
+**What a contained command gets**, in the order it is applied, a later line winning over an earlier one:
+
+| What | Access |
+|---|---|
+| The whole filesystem | Read-only |
+| The project: the repository root, or the working folder outside a repository. A sub-agent spawned with a folder of its own gets only that folder. | Read-write |
+| A linked worktree's shared `.git` in the main repository | Read-write, its `hooks` and `config` read-only |
+| The temp folder, and `~/.cache`, `~/.nuget/packages`, `~/.npm`, `~/.cargo/registry`, `~/.cargo/git`, `~/go/pkg/mod`, `~/.m2/repository`, `~/.gradle/caches`, `~/.local/share/pnpm`, `~/.yarn` where they exist | Read-write |
+| `writable` | Read-write |
+| Inside the project: `.git/hooks`, `.git/config`, each submodule's and each worktree's git config, `.cxagent`, `.vscode`, `.claude`, `.idea`, `.github`, `.husky`, `.envrc`, `.devcontainer` | Read-only: what is in them runs later, outside the sandbox |
+| `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.azure`, `~/.kube`, `~/.docker/config.json`, `~/.netrc`, `~/.git-credentials`, `~/.config/gh`, cxagent's config folder, `$XDG_RUNTIME_DIR`, and `hidden` | Seen empty |
+| The agent's own log folder, inside the config folder | Read-only, so a command reads an earlier one's long output |
+
+The writable root comes from the agent's folder, never from where a call asks to run: a `working_dir`
+of your home does not make your home writable.
+
+**The environment** loses `DBUS_SESSION_BUS_ADDRESS`, `SSH_AUTH_SOCK`, every name matching
+`*_API_KEY`, `*_APIKEY`, `*_TOKEN`, `*_SECRET*`, `*_PASSWORD` or `AWS_*` (case ignored), every
+variable `config.json` reads with `{env:NAME}`, and `hiddenEnv`. `passEnv` keeps a name back. A
+variable the call sets in its own `env` is kept, since the call asked for it.
+
+**The prompt.** A contained command runs without asking in a trusted folder under Accept edits or
+`auto` (and `auto` does not consult the classifier for it). Under Always ask, or in a folder that is
+not trusted, it asks as any command does. A command can ask to run outside with `unsandboxed: true`
+and a `reason`: that always prompts, offers no Always, and no rule, hook or mode can approve it.
+Headless refuses it, and `--dangerously-skip-permissions` runs it with a line on stderr.
+
+**Where it cannot run:**
+
+| Machine | What happens |
+|---|---|
+| bubblewrap starts | Contained |
+| bubblewrap installed, will not start (user namespaces blocked, AppArmor) | Each command asks "Sandbox could not start: … Run this command uncontained?"; headless refuses |
+| bubblewrap not installed, or not Linux | Commands run as before, through the normal prompts; the session says so once |
+
+**What it does not cover.** With `network` on, a contained command can send out anything it can
+read. Your own shell tabs and `!` lines, hooks, MCP servers, plugins and the file tools run as before.
+A protected folder the project does not have yet (no `.github`) can be created by a contained command,
+because a folder that does not exist cannot be held read-only; nor is a nested repository's own
+`.git/hooks` held, unless it is a submodule. A command still writes anywhere in the project:
+commit before you let it loose, and `git` is the undo.
+
+Only your own config sets the sandbox. Nothing in a repository's `.cxagent` folder can turn it off or
+widen it. In the library, `AgentConfig.Sandbox` is null, so off, unless set.
+
 ## `webSearch` — where `web_search` looks
 
 ```json

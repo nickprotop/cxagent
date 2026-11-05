@@ -324,6 +324,38 @@ classifier can also **deny** an action outright, with a reason you're shown. Eve
 Auto-decided rows are marked `auto-approved` / `auto-denied` so you can tell a model's call from a
 stored rule or a silent boundary pass.
 
+### Sandbox
+
+On Linux, the model's shell commands run inside [bubblewrap](https://github.com/containers/bubblewrap).
+A contained command can write only in the project (the repository root, or the working folder outside
+a repository), the temp folder and package caches like `~/.cache`, `~/.nuget/packages` and `~/.npm`.
+It sees `~/.ssh`, `~/.aws`, `~/.gnupg`, cxagent's own config folder and the other usual credential
+places as empty, loses credential-shaped variables (`*_API_KEY`, `*_TOKEN`, `AWS_*` and the like),
+and cannot reach your session's sockets, so no D-Bus, no SSH agent. Inside the project, git's hooks
+and config and folders like `.cxagent`, `.vscode` and `.github` stay read-only, because what is in
+them runs later, outside the sandbox.
+
+**A contained command skips the prompt where a write would.** In a trusted folder under Accept edits
+or `auto`, it runs without asking, and `auto` does not ask the classifier about it either. Under
+Always ask, or in a folder you have not trusted, it asks as before.
+
+**Leaving the sandbox is always your call.** A command that fails because the sandbox blocked it can
+be retried with `unsandboxed: true` and a reason. That asks every time, with no Always button, and no
+rule, hook or mode can approve it. Rows that ran outside are marked `uncontained`.
+
+**What it does not do.** With the network on (the default) a contained command can still send out
+whatever it can read, which is everything outside the hidden list. `sandbox.network: false` closes
+that and breaks installs and pushes with it. Your own shell tabs, hooks, MCP servers and plugins are
+not sandboxed; the file tools are not either, because the permission rules already see their paths.
+A repository without a `.github` folder can have one created by a contained command, since a folder
+that does not exist cannot be held read-only.
+
+On by default where bubblewrap starts. Where it is not installed, or this is not Linux, commands run as
+before and the session says so once. Where it is installed but will not start (user namespaces
+blocked), each command asks whether to run uncontained. `/sandbox` shows what a command may touch,
+`/sandbox on` and `/sandbox off` switch it, and F8 › General sets the rest. See
+[CONFIG.md](CONFIG.md#sandbox--where-the-models-commands-run).
+
 ### Sub-agents
 
 **Fan-out is the default.** The agent can delegate a job to a sub-agent: a second agent with its own
@@ -629,10 +661,14 @@ Read this once. It is short, and every line of it is something the software genu
 it, and it is why you should run it in a git repository with your work committed. `git diff` is the
 review step. There is no undo inside cxagent.
 
-**It runs shell commands.** Anything outside the working folder, and every shell command, asks first:
-**Allow once**, **Always allow**, or **Deny**. "Always" is remembered per folder. Read what you are
-approving: the command is shown in full, and *"always allow"* means the next one like it will not
-ask. A model can propose a command that deletes things, and if you approve it, it runs.
+**It runs shell commands.** On Linux they run inside a sandbox that lets them write only in the
+project, temp and package caches, and hides your credentials. In a trusted folder under Accept edits
+or `auto`, a contained command runs without asking. Elsewhere, and every command the sandbox does not
+contain, asks first: **Allow once**, **Always allow**, or **Deny**. "Always" is remembered per folder.
+Read what you are approving: the command is shown in full, and *"always allow"* means the next one
+like it will not ask. A model can propose a command that deletes things, and if you approve it, it
+runs. Inside the project the sandbox does not stop it: `git` is the undo. With the network on, a
+contained command can still send out what it can read.
 
 **In `auto` mode, a model can run a shell command without asking you first.** This is bounded (the
 folder has to be trusted, the command has to resolve entirely inside it, and things like `$(...)`

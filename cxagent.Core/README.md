@@ -572,6 +572,10 @@ handlers registered in code — `OnPreToolUse`, `OnStop` and the rest — that d
 call, or add context. The repository's `.cxagent/hooks.json` is read beside them, under the folder's trust.
 See [Hooks from code](docs/api.md#hooks-from-code).
 
+**The sandbox is off** unless you set `AgentConfig.Sandbox`, unlike in the app: a host often runs where
+bubblewrap cannot start (a container, CI). `Sandbox = SandboxSettings.AppDefault` turns it on as the app has
+it, so the agent's shell commands write only in its folder and cannot read the usual credential places.
+
 ---
 
 ## Watching a session work

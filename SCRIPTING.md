@@ -68,11 +68,18 @@ hooks vouch for through, and nothing else. A hook's `ask` is refused like any pr
 own hooks need the folder trusted, by `--trust` or a stored decision; system hooks from `config.json`
 always run. See [Hooks](CONFIG.md#hooks--commands-that-run-on-the-agents-events).
 
+**The sandbox applies here too.** A shell command runs inside it where bubblewrap starts, and a
+contained command follows the table above like any other: the sandbox bounds what it can touch, it does
+not answer a prompt. A command that asks to run outside the sandbox (`unsandboxed`), or one that would
+run uncontained because bubblewrap will not start, is refused; under `--dangerously-skip-permissions`
+it runs, with a `cxagent: running outside the sandbox` or `running uncontained` line on stderr. See
+[Sandbox](CONFIG.md#sandbox--where-the-models-commands-run).
+
 **`--dangerously-skip-permissions` still refuses one thing:** a file-tool write into a `.git`,
 `.vscode`, `.claude`, `.idea`, `.github`, `.husky`, `.devcontainer` or `.cxagent` folder, or an `.envrc`,
 anywhere on the path, because what lands there runs later,
 outside the run. That check reads file-tool requests, not shell text — a shell command that writes
-there is approved like any other. Use it where the checkout is disposable: a CI container, a scratch
+there is approved like any other, and only the sandbox, where it runs, keeps it out of those folders. Use it where the checkout is disposable: a CI container, a scratch
 clone.
 
 ---

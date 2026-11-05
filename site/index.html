@@ -261,6 +261,14 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
       before you approve it. Unwiring it stops the turn it started — and leaves the one you started
       alone.</p>
     </div>
+    <div class="u-item">
+      <div class="u-num">16</div>
+      <p class="u-title">Commands in a sandbox</p>
+      <p class="u-body">On Linux the model's shell commands run inside bubblewrap: they write only in the project,
+      temp and package caches, see <code>~/.ssh</code> and your other credentials as empty, and cannot
+      touch git's hooks. A contained command skips the prompt where a write would; leaving the sandbox
+      always asks you, and only you.</p>
+    </div>
   </div>
 </section>
 
@@ -293,7 +301,11 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
     that is the point of it, and it is why you should run it in a git repository with your work
     committed. <code>git diff</code> is the review step; there is no undo inside cxagent.</p>
 
-    <p><strong>It runs shell commands, and it spends your money.</strong> Every turn is a request to
+    <p><strong>It runs shell commands.</strong> On Linux they are sandboxed: they write only in the
+    project and cannot read your credentials. Inside the project they can still delete things, and
+    with the network on they can still send out what they read.</p>
+
+    <p><strong>It spends your money.</strong> Every turn is a request to
     whichever provider you configured, and a sub-agent is a whole second run of turns. If you point
     cxagent at a paid API, you are paying for what it does, including work that turns out to be
     wrong.</p>

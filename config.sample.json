@@ -107,6 +107,14 @@
     "\"always\" covers one engine. F8's General tab edits the key."
   ],
   "webSearch": { "tavilyApiKey": "{env:TAVILY_API_KEY}" },
+  "//sandbox": [
+    "ON BY DEFAULT ON LINUX, so this block is only for changing it. The model's shell commands run",
+    "inside bubblewrap: they write only in the project, temp and package caches, and see your",
+    "credential folders as empty. Every key is optional:",
+    "  \"sandbox\": { \"enabled\": true, \"network\": true, \"writable\": [], \"hidden\": [],",
+    "               \"hiddenEnv\": [], \"passEnv\": [] }",
+    "/sandbox shows what a command may touch; F8's General tab edits it; CONFIG.md has the lists."
+  ],
   "//hooks": [
     "COMMANDS ON THE AGENT'S EVENTS, before or after a tool call, when a prompt is sent, when a turn",
     "ends. Left as a comment here: a live block would run its command for whoever copies this file.",

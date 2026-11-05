@@ -33,6 +33,9 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/hooks` | List the hooks this session runs: where each comes from, and whether it fires here |
 | `/hooks edit` | Add, edit, move or remove hooks (F8 › Hooks) |
 | `/hooks review` | Apply hooks files that changed since the session read them |
+| `/sandbox` | Show whether the model's commands run contained, and what they may write, read and reach |
+| `/sandbox on` / `/sandbox off` | Save the setting and apply it to this tab at once |
+| `/sandbox edit` | Set what the sandbox allows (F8 › General) |
 | `/mcp` | List MCP servers, or inspect one |
 | `/mcp reload` | Re-read config and reconnect |
 | `/mcp edit` | Add, edit or remove MCP servers |
@@ -392,7 +395,9 @@ instruction files, skills, commands, plugins and hooks — with counts and names
 **General.** The settings every tab is opened with: what a command past its timeout gets (handed to the
 background, or killed), the turn cap per request (the default — none for you, 300 for sub-agents — no cap, or
 a number for both), the token count a conversation compacts above (empty is 80% of the model's window; the
-hint shows the number), and which tools the session's agent is offered. A tab reads these as it opens, so a
+hint shows the number), the sandbox (on or off, the network inside it, and the folders and variables added to
+its lists, with whether bubblewrap works on this machine shown above them), and which tools the session's
+agent is offered. A tab reads these as it opens, so a
 save reaches the tabs opened after it — and a running tab when another change re-wires it, such as a move to
 a new model.
 
