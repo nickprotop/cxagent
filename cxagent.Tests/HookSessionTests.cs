@@ -200,4 +200,28 @@ public class HookSessionTests : IDisposable
         _manager.Shutdown(TimeSpan.FromSeconds(5));
         Assert.True(File.Exists(marker));
     }
+
+    [Fact]
+    public async Task A_prompt_hook_reaches_the_configured_model_by_name()
+    {
+        var model = new MockLlmProvider();
+        model.EnqueueResponse(new CxAgent.Core.Llm.LlmResponse { Text = """{"ok": false, "reason": "tests still fail"}""", StopReason = "end_turn" });
+        var block = System.Text.Json.JsonDocument.Parse(
+            """{ "Stop": [ { "hooks": [ { "type": "prompt", "prompt": "Done? $ARGUMENTS" } ] } ] }""").RootElement.Clone();
+        _rules.SetTrust(_repo, TrustState.Trusted);
+        var config = ResolvedConfig.ForTesting(model, "cheap");
+        config = config with { Catalog = config.Catalog with
+        {
+            Hooks = new HooksSettings(block) { DefaultModel = "cheap" },
+            Instances = ProviderRegistry.FromProviders(new Dictionary<string, CxAgent.Core.Llm.ILlmProvider> { ["cheap"] = model }, "cheap"),
+        } };
+        var session = _manager.Open(_repo, config, new SessionPorts
+        {
+            Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel(),
+            Policy = new PermissionPolicy(_repo, _rules, EditMode.AcceptEdits),
+        }, AgentMode.Single);
+        var verdict = await session.Hooks!.RunAsync("Stop", null, new System.Text.Json.Nodes.JsonObject(), CancellationToken.None);
+        Assert.True(verdict.Decision == "block", $"{verdict.Decision} | {verdict.Reason} | {string.Join(",", verdict.Fired)} | {session.Hooks.Snapshot.Hooks.Count}");
+        Assert.Equal("tests still fail", verdict.Reason);
+    }
 }

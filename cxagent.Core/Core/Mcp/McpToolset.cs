@@ -75,6 +75,10 @@ public sealed class McpToolset
     /// server into an existing map would make the winner depend on the order servers happened to be
     /// added, so the same config could produce different tools depending on history.</para>
     /// </summary>
+    /// <summary>A connected server by its configured name, or null — for an <c>mcp_tool</c> hook.</summary>
+    public IMcpServer? ServerNamed(string name) =>
+        Volatile.Read(ref _servers).FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.Ordinal));
+
     public void Replace(IReadOnlyList<IMcpServer> servers)
     {
         _servers = servers;

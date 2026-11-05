@@ -480,6 +480,19 @@ internal static class SessionFactory
             notice => { if (notice.IsError) session.NotifyError(notice.Text); else session.Notify(notice.Text); })
         {
             ProjectDir = snapshot.RepoRoot ?? session.WorkingDirectory,
+            Services = new Hooks.HookServices
+            {
+                // THE USER'S OWN PROVIDERS AND SERVERS, by name, and nothing else: a repository's hook may name
+                // one, but cannot bring its own endpoint, key or server.
+                Model = name => resolution.Providers is { } providers && providers.TryGet(name, out var model)
+                    // AT THE LOWEST LEVEL THE MODEL OFFERS, as the classifier asks: a yes or no on an event is not
+                    // worth deliberation, and a hook can run on every tool call.
+                    ? model is Llm.IThinkingProvider thinker ? thinker.WithThinking(Llm.ThinkingLevels.Lowest) : model
+                    : null,
+                DefaultModel = settings.DefaultModel,
+                McpServer = name => shared.Mcp?.ServerNamed(name),
+                Agent = Hooks.HookAgentRunner.RunAsync,
+            },
         });
         runner.Session = () => new Hooks.HookEventContext(
             session.SessionId ?? session.Id,
