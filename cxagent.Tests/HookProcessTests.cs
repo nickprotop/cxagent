@@ -130,4 +130,22 @@ public class HookProcessTests : IDisposable
         try { return !Process.GetProcessById(pid).HasExited; }
         catch (ArgumentException) { return false; }
     }
+
+    [Fact]
+    public async Task A_background_child_holding_the_pipe_does_not_hold_the_hook()
+    {
+        var watch = Stopwatch.StartNew();
+        var r = await Run("sleep 30 & echo hi; exit 0", timeout: 20);
+        watch.Stop();
+        Assert.Equal(HookOutcomeKind.Ok, r.Kind);
+        Assert.Equal("hi", r.Stdout.Trim());
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(4), watch.Elapsed.ToString());
+    }
+
+    [Fact]
+    public async Task Non_ascii_input_arrives_intact()
+    {
+        var r = await Run("cat", input: new JsonObject { ["path"] = "café/ναι.txt" });
+        Assert.Contains("café/ναι.txt", r.Stdout);
+    }
 }

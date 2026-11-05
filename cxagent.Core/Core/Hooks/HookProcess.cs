@@ -24,6 +24,15 @@ public static class HookProcess
     /// <summary>The most of each stream kept, in characters.</summary>
     public const int OutputCap = 64 * 1024;
 
+    /// <summary>
+    /// The input as text a script can grep: non-ASCII and quotes as themselves, not <c>\u</c> escapes —
+    /// valid JSON either way, but a hook matching a path with <c>grep</c> would miss an escaped one.
+    /// </summary>
+    private static readonly JsonSerializerOptions Plain = new()
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
     /// <summary>A hook's deadline when it sets none.</summary>
     public const int DefaultTimeoutSeconds = 60;
 
@@ -40,6 +49,9 @@ public static class HookProcess
         start.UseShellExecute = false;
         start.StandardOutputEncoding = Encoding.UTF8;
         start.StandardErrorEncoding = Encoding.UTF8;
+        // UTF-8 WITHOUT A BOM: the default is the console's code page (and on some hosts plain ASCII), which
+        // mangles a path or prompt with any non-ASCII character before the script sees it.
+        start.StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         start.Environment["CXAGENT_PROJECT_DIR"] = run.ProjectDir;
         // The contract's other spelling of the same variable, so a script written for it finds its folder.
         start.Environment["CLAUDE_PROJECT_DIR"] = run.ProjectDir;
@@ -51,8 +63,8 @@ public static class HookProcess
             return HookReply.Failed($"could not start: {ex.Message}");
         }
 
-        var stdout = ReadCapped(process.StandardOutput);
-        var stderr = ReadCapped(process.StandardError);
+        var stdout = new CappedReader(process.StandardOutput);
+        var stderr = new CappedReader(process.StandardError);
 
         var timeout = TimeSpan.FromSeconds(hook.TimeoutSeconds ?? DefaultTimeoutSeconds);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -63,7 +75,7 @@ public static class HookProcess
             // it can exit first and break the pipe; that is its choice, not a failure.
             try
             {
-                await process.StandardInput.WriteAsync(run.Input.ToJsonString().AsMemory(), deadline.Token);
+                await process.StandardInput.WriteAsync(run.Input.ToJsonString(Plain).AsMemory(), deadline.Token);
                 process.StandardInput.Close();
             }
             catch (IOException) { }
@@ -77,9 +89,14 @@ public static class HookProcess
             return HookReply.Failed($"timed out after {timeout.TotalSeconds:0} s");
         }
 
-        var output = await stdout;
-        var errors = await stderr;
-        return Interpret(process.ExitCode, output, errors);
+        // THE HOOK HAS EXITED, BUT ITS PIPES MAY NOT CLOSE. A child it started in the background (`server &`)
+        // inherits stdout and holds it open for as long as it lives; waiting for end-of-stream would hold the
+        // tool call, the turn and Esc with it. So the output gets a short grace to drain, and then what was
+        // read is what the hook said. The child is left running — starting it was the hook's intent.
+        try { await Task.WhenAll(stdout.Done, stderr.Done).WaitAsync(DrainGrace, ct); }
+        catch (TimeoutException) { }
+
+        return Interpret(process.ExitCode, stdout.Text, stderr.Text);
     }
 
     /// <summary>The contract's exit-code rules.</summary>
@@ -140,22 +157,47 @@ public static class HookProcess
         return null;
     }
 
-    /// <summary>Reads a stream to its end, keeping the first <see cref="OutputCap"/> characters and draining the rest.</summary>
-    private static async Task<string> ReadCapped(StreamReader reader)
+    /// <summary>How long a finished hook's output may take to drain before what was read is taken as all of it.</summary>
+    private static readonly TimeSpan DrainGrace = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Reads a stream to its end in the background, keeping the first <see cref="OutputCap"/> characters, and
+    /// can say what it has so far at any moment — so a pipe that never closes still yields what came through.
+    /// </summary>
+    private sealed class CappedReader
     {
-        var sb = new StringBuilder();
-        var buffer = new char[8192];
-        var cut = false;
-        int n;
-        // DRAINED PAST THE CAP, not abandoned: a writer blocked on a full pipe never exits, and the deadline
-        // would report a hook that had finished its work as hung.
-        while ((n = await reader.ReadAsync(buffer)) > 0)
+        private readonly StringBuilder _sb = new();
+        private bool _cut;
+
+        public CappedReader(StreamReader reader) => Done = ReadAsync(reader);
+
+        public Task Done { get; }
+
+        public string Text
         {
-            if (sb.Length < OutputCap) sb.Append(buffer, 0, Math.Min(n, OutputCap - sb.Length));
-            if (sb.Length >= OutputCap && n > 0) cut = true;
+            get
+            {
+                lock (_sb) return _cut ? _sb + $"\n… (output cut at {OutputCap / 1024} KiB)" : _sb.ToString();
+            }
         }
-        if (cut) sb.Append($"\n… (output cut at {OutputCap / 1024} KiB)");
-        return sb.ToString();
+
+        private async Task ReadAsync(StreamReader reader)
+        {
+            var buffer = new char[8192];
+            int n;
+            try
+            {
+                // DRAINED PAST THE CAP, not abandoned: a writer blocked on a full pipe never exits, and the
+                // deadline would report a hook that had finished its work as hung.
+                while ((n = await reader.ReadAsync(buffer)) > 0)
+                    lock (_sb)
+                    {
+                        if (_sb.Length < OutputCap) _sb.Append(buffer, 0, Math.Min(n, OutputCap - _sb.Length));
+                        if (_sb.Length >= OutputCap) _cut = true;
+                    }
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
+        }
     }
 
     private static void KillTree(Process process)
