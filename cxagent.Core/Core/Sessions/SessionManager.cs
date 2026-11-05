@@ -451,6 +451,11 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, _) => session.DescribeHooks().Handled());
                     break;
 
+                // SHOW ONLY. on and off write config, which is the host's — the app registers them as verbs.
+                case "/sandbox":
+                    Commands.Register(command, (session, _) => session.DescribeSandbox().Handled());
+                    break;
+
                 // THE RESUME STORE IS THIS MANAGER'S, which is the whole argument for registering
                 // here. A front end listing rows and restoring one through Shared.Resume does the
                 // manager's job from outside it, with SessionsCommand already sitting in

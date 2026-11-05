@@ -78,7 +78,7 @@ internal static class SessionFactory
             var sandbox = Sandbox.SandboxState.ForThisMachine(resolution.Sandbox, shared.GlobalInstructionsDir);
             sandbox.FallbackNoticeShown = shown;
             sandboxPolicy.Sandbox = sandbox;
-            if (sandbox.Settings.Enabled) _ = Task.Run(() => sandbox.Status);
+            if (sandbox.Settings.Enabled) _ = Task.Run(session.NoteSandbox);
         }
 
         // WRAPPED HERE, NOT BY THE EMBEDDER. A bare IAgentTool in ports.Tools is not a compile

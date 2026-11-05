@@ -110,7 +110,7 @@ public class NoProviderCommandTests
         // counts diverge.
         var commands = SessionCommands.All;
 
-        Assert.Equal(19, commands.Count);
+        Assert.Equal(20, commands.Count);
         Assert.All(commands, c => Assert.NotNull(SessionCommands.Match(c.Name)));
     }
 
