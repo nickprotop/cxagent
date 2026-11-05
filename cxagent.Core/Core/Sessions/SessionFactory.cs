@@ -57,8 +57,14 @@ internal static class SessionFactory
         // THE SESSION'S HOOKS, BUILT ONCE AND KEPT. A re-wire (a /model switch) reuses them, so it neither
         // re-reads a hooks file the user has not reviewed nor fires SessionStart a second time. They ride
         // the policy to the permission gate, and the guards to every agent.
-        var firstWire = session.Hooks is null;
-        var hooks = session.Hooks ?? BuildHooks(session, resolution, shared, ports);
+        // AND REBUILT WHEN A RESUME MOVED THE SESSION TO ANOTHER FOLDER: the hooks it ran belong to the folder it
+        // left, and the arriving repository's own files — under the arriving folder's trust — are what applies
+        // now. The departing set is told the session ended there.
+        var departing = session.Hooks is { } held && session.HooksFolder != session.WorkingDirectory ? held : null;
+        if (departing is not null)
+            _ = Hooks.HookLifecycle.SessionEndAsync(departing, "other");
+        var firstWire = session.Hooks is null || departing is not null;
+        var hooks = firstWire ? BuildHooks(session, resolution, shared) : session.Hooks!;
         if (ports.Policy is { } hookPolicy) hookPolicy.Hooks = hooks;
 
         // WRAPPED HERE, NOT BY THE EMBEDDER. A bare IAgentTool in ports.Tools is not a compile
@@ -419,7 +425,7 @@ internal static class SessionFactory
             // NOT AWAITED: opening a session must not wait on a script. The first prompt waits for it
             // instead (HookRunner.TakeStartContextAsync), so what it says still reaches the model first.
             hooks.PendingStart = Hooks.HookLifecycle.SessionStartAsync(hooks,
-                resumeSnapshot is null ? "startup" : "resume", CancellationToken.None);
+                resumeSnapshot is null && departing is null ? "startup" : "resume", CancellationToken.None);
         }
         session.NoteToolSelection(toolSelection);
         session.NoteCatalog(resolution, resolution.Providers, resolution.ClassifierInstance is { Length: > 0 });
@@ -461,13 +467,14 @@ internal static class SessionFactory
     /// policy (a session nothing gates) the repository's hooks do not run: nobody was asked whether to
     /// trust the folder, and an unanswered question must not behave like a yes.</para>
     /// </summary>
-    private static Hooks.HookRunner BuildHooks(Session session, ResolvedConfig resolution, SharedServices shared, SessionPorts ports)
+    private static Hooks.HookRunner BuildHooks(Session session, ResolvedConfig resolution, SharedServices shared)
     {
         var settings = HookSettingsFor(resolution);
         var snapshot = Hooks.HookSources.Read(settings, session.WorkingDirectory);
-        var policy = ports.Policy;
+        // THE SESSION'S POLICY AS IT IS AT EACH EVENT, never one captured here: a re-wire replaces it, and a
+        // captured one would judge the arriving folder's hooks by the trust of the folder that was left.
         var runner = new Hooks.HookRunner(new Hooks.HookRunnerDeps(snapshot, settings.Handlers ?? new Hooks.HookHandlers(),
-            () => policy?.FolderTrusted == true,
+            () => session.Policy?.FolderTrusted == true,
             notice => { if (notice.IsError) session.NotifyError(notice.Text); else session.Notify(notice.Text); })
         {
             ProjectDir = snapshot.RepoRoot ?? session.WorkingDirectory,
@@ -476,7 +483,7 @@ internal static class SessionFactory
             session.SessionId ?? session.Id,
             shared.Logs is { } logs && session.SessionId is { } agent ? Path.Combine(logs.DirFor(agent), "history.jsonl") : "",
             session.WorkingDirectory,
-            policy?.Edits switch
+            session.Policy?.Edits switch
             {
                 EditMode.AcceptEdits => "acceptEdits",
                 EditMode.Auto => "auto",

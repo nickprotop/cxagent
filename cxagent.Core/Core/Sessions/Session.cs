@@ -361,8 +361,12 @@ public sealed partial class Session
     /// <summary>The changed hooks files already reported, so each change is said once.</summary>
     private readonly HashSet<string> _hookChangesSaid = new(StringComparer.Ordinal);
 
+    /// <summary>The folder <see cref="Hooks"/> was read for — compared with <see cref="WorkingDirectory"/> after a resume.</summary>
+    internal string? HooksFolder { get; private set; }
+
     internal void NoteHooks(Hooks.HookRunner runner, Hooks.HooksSettings settings)
     {
+        if (!ReferenceEquals(Hooks, runner)) HooksFolder = WorkingDirectory;
         Hooks = runner;
         _hookSettings = settings;
     }

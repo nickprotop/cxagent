@@ -140,4 +140,35 @@ public class HookSessionTests : IDisposable
             new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel(), Policy = session.Policy });
         Assert.Same(runner, session.Hooks);
     }
+
+    [Fact]
+    public void A_resume_into_another_folder_takes_its_hooks_and_its_trust()
+    {
+        ProjectHooks("""{ "Stop": [ { "hooks": [ { "type": "command", "command": "true" } ] } ] }""");
+        var (session, _) = Open();
+        Assert.True(session.Hooks!.ProjectTrusted);
+
+        var other = Directory.CreateTempSubdirectory("cxagent-hook-sess-other").FullName;
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(other, ".git"));
+            Directory.CreateDirectory(Path.Combine(other, ".cxagent"));
+            File.WriteAllText(Path.Combine(other, ".cxagent", "hooks.json"),
+                """{ "hooks": { "PreToolUse": [ { "hooks": [ { "type": "command", "command": "true" } ] } ] } }""");
+            Assert.True(session.MoveTo(other));
+            // THE OTHER FOLDER IS NOT TRUSTED, and the re-wire brings its own policy, as a resume does.
+            var policy = new PermissionPolicy(other, _rules, EditMode.AcceptEdits);
+            _manager.Open(session, ResolvedConfig.ForTesting(new MockLlmProvider()),
+                new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel(), Policy = policy });
+
+            Assert.Equal(Path.GetFullPath(other), session.Hooks!.Snapshot.RepoRoot);
+            Assert.Equal("PreToolUse", Assert.Single(session.Hooks.Snapshot.Hooks).Event);
+            Assert.False(session.Hooks.ProjectTrusted);
+
+            // AND A REVIEW THERE STILL JUDGES BY THAT FOLDER'S TRUST.
+            session.ReviewHooks();
+            Assert.False(session.Hooks.ProjectTrusted);
+        }
+        finally { Directory.Delete(other, recursive: true); }
+    }
 }
