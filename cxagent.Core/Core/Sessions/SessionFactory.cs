@@ -68,6 +68,19 @@ internal static class SessionFactory
         var hooks = firstWire ? BuildHooks(session, resolution, shared) : session.Hooks!;
         if (ports.Policy is { } hookPolicy) hookPolicy.Hooks = hooks;
 
+        // THE SANDBOX, SET ON EVERY WIRE so a config change takes effect. The probe runs on first need — the gate's
+        // first shell request — and is warmed here off the calling thread so that request does not wait for
+        // bubblewrap to start. The once-only "not contained" notice is carried over, so a /model switch does not
+        // repeat it.
+        if (ports.Policy is { } sandboxPolicy)
+        {
+            var shown = sandboxPolicy.Sandbox?.FallbackNoticeShown ?? false;
+            var sandbox = Sandbox.SandboxState.ForThisMachine(resolution.Sandbox, shared.GlobalInstructionsDir);
+            sandbox.FallbackNoticeShown = shown;
+            sandboxPolicy.Sandbox = sandbox;
+            if (sandbox.Settings.Enabled) _ = Task.Run(() => sandbox.Status);
+        }
+
         // WRAPPED HERE, NOT BY THE EMBEDDER. A bare IAgentTool in ports.Tools is not a compile
         // error and would run with no gate at all — PermissionGatedExecutor cannot cover it, because
         // that type keys off the built-in type names and a consumer tool matches none of them. So

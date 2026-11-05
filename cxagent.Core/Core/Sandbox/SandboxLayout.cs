@@ -11,13 +11,13 @@ namespace CxAgent.Core.Sandbox;
 /// </summary>
 /// <param name="Home">The user's home folder.</param>
 /// <param name="ConfigDir">The config folder this process uses — <c>--config-dir</c> included — hidden from
-/// commands because it holds the API keys.</param>
+/// commands because it holds the API keys. Null for an embedder that has none.</param>
 /// <param name="RuntimeDir"><c>$XDG_RUNTIME_DIR</c>, or null when the session has none.</param>
-public sealed record SandboxHome(string Home, string ConfigDir, string? RuntimeDir)
+public sealed record SandboxHome(string Home, string? ConfigDir, string? RuntimeDir)
 {
     /// <summary>The home this process was started with.</summary>
     /// <param name="configDir">The config folder in use.</param>
-    public static SandboxHome FromEnvironment(string configDir) => new(
+    public static SandboxHome FromEnvironment(string? configDir) => new(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         configDir,
         Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } run ? run : null);
@@ -135,7 +135,7 @@ public sealed record SandboxLayout
             else if (File.Exists(real)) hiddenFiles.Add(real);
         }
         foreach (var c in Credentials) Hide(Path.Combine(home.Home, c));
-        Hide(home.ConfigDir);
+        if (home.ConfigDir is { } config) Hide(config);
         // THE SESSION'S SOCKETS. A read-only bind does not stop connect() on a unix socket: through the session
         // bus `systemd-run --user` starts a process with no sandbox at all, the SSH agent signs with the user's
         // key, and cxagent's own diagnostics socket answers its permission prompts.

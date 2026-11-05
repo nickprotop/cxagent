@@ -192,6 +192,22 @@ public class PermissionPolicy
         set { if (_parent is null) _hooks = value; else _parent.Hooks = value; }
     }
 
+    /// <summary>
+    /// This session's sandbox, or null for none. Read by the gate and by the shell executor, which must reach
+    /// the same answer — see <c>ShellSandbox</c>. A sub-agent's policy reads its parent's.
+    /// </summary>
+    public Sandbox.SandboxState? Sandbox
+    {
+        get => _parent is null ? _sandbox : _parent.Sandbox;
+        set { if (_parent is null) _sandbox = value; else _parent.Sandbox = value; }
+    }
+
+    private Sandbox.SandboxState? _sandbox;
+
+    /// <summary>True for a sub-agent's policy narrowed to a folder of its own: its sandboxed commands write only
+    /// there, as its file tools do.</summary>
+    public bool IsNarrowed => _parent is not null;
+
     private Hooks.HookRunner? _hooks;
 
     /// <summary>
