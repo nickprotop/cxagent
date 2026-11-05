@@ -212,4 +212,39 @@ public class HookToolEventTests : IDisposable
         Assert.Equal("ask", asked.HookDecision);
         Assert.Equal("guard", asked.HookDecidedBy);
     }
+
+    [Fact]
+    public async Task PreToolUse_ask_prompts_for_a_tool_that_never_reaches_the_gate()
+    {
+        var fake = new Fake { Answer = _ => Json("""{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask"}}""") };
+        var policy = new PermissionPolicy(_dir, new PermissionRulesStore(new AppPaths(_dir)));
+        policy.Hooks = new HookRunner(new HookRunnerDeps(new HookSnapshot([H("PreToolUse", matcher: "todowrite")], [], null,
+            new Dictionary<string, string>()), new HookHandlers(), () => true, _ => { }) { Run = fake.Run, ProjectDir = _dir });
+        var gate = new DenyingGate();
+        var todo = new ToolCall { Name = "todowrite", Id = "t1",
+            Arguments = JsonSerializer.SerializeToElement(new { todos = new[] { new { content = "x", status = "pending" } } }) };
+        var provider = new ScriptedProvider(
+            new LlmResponse { Text = "", StopReason = "tool_use", ToolCalls = [todo] },
+            new LlmResponse { Text = "done", StopReason = "end_turn" });
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 4) with
+        {
+            Identity = new() { WorkingDir = _dir },
+            Guards = new() { Policy = policy, Gate = gate },
+        });
+        await agent.SendAsync("go", CancellationToken.None);
+        var asked = Assert.Single(gate.Asked);
+        Assert.Equal("ask", asked.HookDecision);
+        Assert.Contains("todowrite", asked.Display);
+        Assert.Contains("declined", provider.ResultOf(1, "t1"));
+    }
+
+    private sealed class DenyingGate : IPermissionGate
+    {
+        public List<PermissionRequest> Asked { get; } = [];
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct)
+        {
+            Asked.Add(request);
+            return Task.FromResult(PermissionOutcome.ByUser);
+        }
+    }
 }

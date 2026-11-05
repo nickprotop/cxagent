@@ -156,6 +156,16 @@ public class HookPermissionTests : IDisposable
     }
 
     [Fact]
+    public async Task Hook_ask_prompts_for_a_tool_admission_too()
+    {
+        var (gate, prompt) = Make();
+        prompt.Answer = PermissionChoice.Once;
+        var request = new PermissionRequest(PermissionKind.Tool, "todowrite", null) { HookDecision = "ask", HookDecidedBy = "guard" };
+        Assert.True((await gate.RequestAsync(request, CancellationToken.None)).Allowed);
+        Assert.Single(prompt.Shown);
+    }
+
+    [Fact]
     public void Prompt_says_why_a_hook_allow_still_asks()
     {
         var heading = PermissionPromptControl.HeadingFor(Write(P(".git/hooks/pre-commit"), "allow") with { HookAllowedProtected = true });

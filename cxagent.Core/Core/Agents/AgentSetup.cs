@@ -155,6 +155,13 @@ public sealed record AgentGuards
     public Hooks.HookRunner? Hooks { get; init; }
 
     /// <summary>
+    /// The permission gate, for the one question an agent asks itself: a hook's <c>ask</c> on a tool that never
+    /// reaches the gate on its own (a spawn, a skill, the to-do list). Null where nothing gates — then there is
+    /// nobody to ask, and the call goes ahead as it would have.
+    /// </summary>
+    public Permissions.IPermissionGate? Gate { get; init; }
+
+    /// <summary>
     /// How the agent asks its user a question, or null when nobody is listening — a sub-agent, or a headless host.
     /// Null removes the ask_user tool rather than making it fail.
     /// </summary>

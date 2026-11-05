@@ -245,6 +245,7 @@ internal static class SessionFactory
             Guards = new AgentGuards
             {
                 Hooks = hooks,
+                Gate = shared.Gate,
                 // THE SAME POLICY THE PARENT GETS. A child calling an MCP tool is the common case, and
                 // without this the gate refuses it for want of a policy.
                 Policy = ports.Policy,
@@ -362,6 +363,7 @@ internal static class SessionFactory
                 Guards = new AgentGuards
                 {
                     Hooks = hooks,
+                    Gate = shared.Gate,
                     // THE SAME POLICY THE PLUGINS GET (line 44). MCP builds its own PermissionRequest
                     // instead of going through PermissionGatedExecutor, so without this the gate refuses
                     // every MCP call for want of a policy.

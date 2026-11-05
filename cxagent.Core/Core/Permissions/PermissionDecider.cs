@@ -336,9 +336,11 @@ public sealed class PermissionDecider : IPermissionGate
         //           and these are the lines a repository must not be able to move.
         // An injected tool's admission and a plugin's load are not tool calls a hook answers: their own
         // gates are never exempted.
+        // AN ASK IS HONOURED FOR EVERY KIND — it only ever adds a question — and an allow for none of the gates a
+        // plugin or an embedder put themselves.
+        if (request.HookDecision == "ask" && request.Kind != PermissionKind.Plugin) return await PromptAsync(request, ct);
         if (request.HookDecision is { } hookSays && request.Kind is not (PermissionKind.Tool or PermissionKind.Plugin))
         {
-            if (hookSays == "ask") return await PromptAsync(request, ct);
             if (hookSays == "allow" && !policy.IsSilentlyAllowed(request))
             {
                 if (HookCannotAllow(policy, request))

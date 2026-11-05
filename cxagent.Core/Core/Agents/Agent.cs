@@ -342,6 +342,9 @@ public sealed class Agent
     /// <summary>The session's hooks — the same runner for every agent of it, sub-agents included.</summary>
     private readonly Hooks.HookRunner? _hooks;
 
+    /// <summary>The gate a hook's <c>ask</c> is put to for a tool that does not reach it on its own.</summary>
+    private readonly Permissions.IPermissionGate? _gate;
+
     /// <summary>The speculation handle — see <see cref="AgentGuards.Classifier"/>. Null wherever no
     /// classifier is reachable, in which case every call site below is a no-op by construction
     /// (each checks this for null before calling Speculate).</summary>
@@ -1046,6 +1049,7 @@ public sealed class Agent
         var toolSelection = setup.Tools.Selection;
         var policy = setup.Guards.Policy;
         _hooks = setup.Guards.Hooks ?? policy?.Hooks;
+        _gate = setup.Guards.Gate;
         var classifier = setup.Guards.Classifier;
         var askUser = setup.Guards.AskUser;
         var briefing = setup.Brief.Briefing;
@@ -3515,8 +3519,32 @@ public sealed class Agent
         // "leave it to the usual rules", which is what no answer already does.
         ctx.HookDecision = verdict.Decision is "allow" or "ask" ? verdict.Decision : null;
         ctx.HookDecidedBy = verdict.DecidedBy;
+
+        // AN ASK ON A TOOL NOTHING ELSE GATES is asked here, or it would mean nothing: a spawn, a skill, the
+        // to-do list and the task tools raise no permission request of their own for the answer to ride on.
+        if (verdict.Decision == "ask" && Ungated(call.Name) && _gate is not null)
+        {
+            var outcome = await _gate.RequestAsync(new Permissions.PermissionRequest(Permissions.PermissionKind.Tool,
+                $"{call.Name} — {DescribeCall(call, _workingDir)}", AlwaysRule: null)
+            {
+                Policy = _policy,
+                Requester = _requesterLabel,
+                RequesterRunsOn = _requesterRunsOn,
+                RequesterAgentId = _isSubAgent ? Id : null,
+                HookDecision = "ask",
+                HookDecidedBy = verdict.DecidedBy,
+            }, ct);
+            if (!outcome.Allowed)
+                return verdict with { Decision = "deny", Reason = $"the user declined it when hook '{verdict.DecidedBy}' asked" };
+        }
         return verdict;
     }
+
+    /// <summary>Tools that raise no permission request of their own — where a hook's ask must be asked by the agent.</summary>
+    private bool Ungated(string name) =>
+        name is Jobs.Tool.AgentSend or Jobs.Tool.TaskList or Jobs.Tool.TaskStop or Jobs.Tool.TaskOutput
+            or Jobs.Tool.TodoWrite or Jobs.Tool.AskUser or Jobs.Tool.Skill
+        || (_spawner is not null && name == _spawner.ToolName);
 
     /// <summary>
     /// What the model reads for a call a hook refused. Worded as a refusal by configuration, not by the user,
