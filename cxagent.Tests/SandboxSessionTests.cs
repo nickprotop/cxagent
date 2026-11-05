@@ -85,6 +85,30 @@ public sealed class SandboxSessionTests : IDisposable
     }
 
     [Fact]
+    public void A_change_the_sandbox_cannot_vouch_for_is_said_in_the_session()
+    {
+        var (_, policy, sink) = OpenWithSink(SandboxSettings.AppDefault);
+        policy.Sandbox!.Check(_work);
+        Directory.CreateDirectory(Path.Combine(_work, ".cxagent"));
+        policy.Sandbox.Check(_work);
+        Assert.Contains(sink.Notices, n => n.Contains(".cxagent appeared") && n.Contains("/sandbox review"));
+    }
+
+    [Fact]
+    public void Sandbox_review_clears_it_and_says_so()
+    {
+        var (session, policy, sink) = OpenWithSink(SandboxSettings.AppDefault);
+        policy.Sandbox!.Check(_work);
+        Directory.CreateDirectory(Path.Combine(_work, ".vscode"));
+        policy.Sandbox.Check(_work);
+        session.DescribeSandbox();
+        Assert.Contains(".vscode appeared", sink.Notices[^1]);
+        session.ReviewSandbox();
+        Assert.Null(policy.Sandbox.Tampered);
+        Assert.Contains("without asking again", sink.Notices[^1]);
+    }
+
+    [Fact]
     public void A_failed_sandbox_says_each_command_will_ask()
     {
         var (session, policy, sink) = OpenWithSink(SandboxSettings.AppDefault);

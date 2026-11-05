@@ -230,7 +230,7 @@ internal static class DiffCommand
             };
             foreach (var a in arguments) info.ArgumentList.Add(a);
 
-            using var p = Process.Start(info);
+            using var p = Process.Start(Sandbox.GitSafe.Harden(info));
             if (p is null) return new(-1, "", "git did not start");
 
             // READ BEFORE WAITING. A diff larger than the pipe buffer blocks git until someone

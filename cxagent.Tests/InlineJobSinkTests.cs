@@ -535,6 +535,17 @@ public class InlineJobSinkTests
     }
 
     [Fact]
+    public void A_call_that_changed_git_files_is_marked()
+    {
+        var job = TypedJob("shell", JobState.Succeeded) with
+        {
+            Result = new JobResult { Success = true, Duration = TimeSpan.Zero,
+                Output = new Dictionary<string, object?> { ["sandbox"] = "contained", ["sandbox_warning"] = "changed .git/commondir" } },
+        };
+        Assert.Contains("git files changed", InlineJobSink.CompactHeaderForTest(job));
+    }
+
+    [Fact]
     public void A_contained_shell_call_is_not_marked()
     {
         var job = TypedJob("shell", JobState.Succeeded) with

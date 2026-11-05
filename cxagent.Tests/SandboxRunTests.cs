@@ -203,6 +203,20 @@ public sealed class SandboxRunTests : IDisposable
         Assert.Equal("", Out(r).Trim());
     }
 
+    /// <summary>A contained command that plants a commondir is seen doing it, said on its result, and the session's
+    /// sandbox stops letting contained commands through silently.</summary>
+    [Fact]
+    public async Task Planting_a_commondir_is_caught()
+    {
+        if (!CanRun) return;
+        Directory.CreateDirectory(Path.Combine(Project, ".git", "hooks"));
+        File.WriteAllText(Path.Combine(Project, ".git", "HEAD"), "ref: refs/heads/main");
+        var policy = Policy();
+        var r = await Run("echo /tmp/evil > .git/commondir", policy);
+        Assert.Contains("commondir", r.Output["sandbox_warning"] as string);
+        Assert.NotNull(policy.Sandbox!.Tampered);
+    }
+
     [Fact]
     public async Task Cache_is_writable()
     {

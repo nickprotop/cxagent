@@ -77,6 +77,7 @@ internal static class SessionFactory
             var shown = sandboxPolicy.Sandbox?.FallbackNoticeShown ?? false;
             wiredSandbox = Sandbox.SandboxState.ForThisMachine(resolution.Sandbox, shared.GlobalInstructionsDir);
             wiredSandbox.FallbackNoticeShown = shown;
+            wiredSandbox.Warn = session.NotifyWarning;
             sandboxPolicy.Sandbox = wiredSandbox;
         }
 

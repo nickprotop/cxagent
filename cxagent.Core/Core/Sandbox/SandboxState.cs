@@ -85,4 +85,54 @@ public sealed class SandboxState
 
     /// <summary>Set once the session has said that commands are not contained, so it says it once.</summary>
     public bool FallbackNoticeShown { get; set; }
+
+    private readonly Dictionary<string, IReadOnlyList<string>> _baselines = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// What a contained command changed that the sandbox cannot vouch for — see <see cref="GitGuard"/> — or null. While
+    /// set, contained commands lose their silent pass and ask, until the user runs <c>/sandbox review</c>.
+    /// </summary>
+    public string? Tampered { get; private set; }
+
+    /// <summary>Where a change is said, as it is found: the session's warning line.</summary>
+    public Action<string>? Warn { get; set; }
+
+    /// <summary>
+    /// Compares <paramref name="root"/> with what it was when last checked, and returns what changed, or null. The first
+    /// check of a root records it. A change marks the state, is said through <see cref="Warn"/>, and becomes the new
+    /// baseline, so the same change is said once.
+    /// </summary>
+    /// <param name="root">A contained command's writable root.</param>
+    public string? Check(string root)
+    {
+        var now = GitGuard.Snapshot(root);
+        string? found;
+        lock (_gate)
+        {
+            if (!_baselines.TryGetValue(root, out var before))
+            {
+                _baselines[root] = now;
+                return null;
+            }
+            _baselines[root] = now;
+            var changes = GitGuard.Changes(before, now);
+            if (changes.Count == 0) return null;
+            found = string.Join(", ", changes);
+            Tampered = Tampered is null ? found : $"{Tampered}; {found}";
+        }
+        Warn?.Invoke($"A sandboxed command changed what git or another tool runs later, outside the sandbox: {found} "
+            + "(in " + root + "). Contained commands now ask until you have looked and run /sandbox review.");
+        return found;
+    }
+
+    /// <summary>The user has looked: contained commands run without asking again, and what is there now is the new
+    /// baseline.</summary>
+    public void Review()
+    {
+        lock (_gate)
+        {
+            Tampered = null;
+            _baselines.Clear();
+        }
+    }
 }

@@ -54,6 +54,26 @@ public sealed partial class Session
         var shown = policy.Sandbox?.FallbackNoticeShown ?? false;
         policy.Sandbox = SandboxState.ForThisMachine(settings, Services?.GlobalInstructionsDir);
         policy.Sandbox.FallbackNoticeShown = shown;
+        policy.Sandbox.Warn = NotifyWarning;
+    }
+
+    /// <summary>
+    /// /sandbox review: the user has looked at what a contained command changed, and contained commands run without
+    /// asking again.
+    /// </summary>
+    public CommandStatus ReviewSandbox()
+    {
+        if (Policy?.Sandbox is not { } sandbox)
+        {
+            Say(new Message("There is no sandbox in this session to review.", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+        var was = sandbox.Tampered;
+        sandbox.Review();
+        Say(new Message(was is null
+            ? "Nothing to review: no contained command changed what runs later."
+            : $"Reviewed ({was}). Contained commands run without asking again.", Severity.Info));
+        return CommandStatus.Reported;
     }
 
     /// <summary>/sandbox: whether commands are contained here, and what a contained command may touch.</summary>
@@ -80,7 +100,10 @@ public sealed partial class Session
         var layout = SandboxLayout.For(new SandboxLayoutRequest(Policy.Root, Policy.Root, false, null, sandbox.Home, sandbox.Settings));
         static string List(IEnumerable<string> paths) =>
             string.Join("\n", paths.Select(p => $"  - `{p}`")) is { Length: > 0 } text ? text : "  - (none)";
-        return "Sandbox: active — the model's shell commands run inside bubblewrap.\n"
+        var tampered = sandbox.Tampered is { } t
+            ? $"A contained command changed what runs later: {t}. Contained commands ask until you run `/sandbox review`.\n"
+            : "";
+        return "Sandbox: active — the model's shell commands run inside bubblewrap.\n" + tampered
             + $"Writable:\n{List(layout.Writable)}\n"
             + $"Read-only inside them (they run code later):\n{List(layout.ReadOnly)}\n"
             + $"Seen empty:\n{List(layout.HiddenFolders.Concat(layout.HiddenFiles))}\n"

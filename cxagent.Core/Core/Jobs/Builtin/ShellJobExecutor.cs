@@ -107,7 +107,24 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
         // JobContext.JudgedSandbox. With no gate the same function decides here.
         var policy = (context as JobContext)?.Policy;
         var sandbox = (context as JobContext)?.JudgedSandbox ?? Sandbox.ShellSandbox.Decide(policy, parameters);
+
+        // WHAT MOUNTS CANNOT HOLD, CHECKED ON BOTH SIDES OF THE RUN — before, for what a background command changed
+        // since the last check; after, for this one. See GitGuard.
+        var guarded = sandbox.Use == Sandbox.SandboxUse.Contained && policy?.Sandbox is { } guard
+            ? (Guard: guard, Root: RootOf(context, guard))
+            : default;
+        var before = guarded.Guard?.Check(guarded.Root!);
         var result = await RunAsync(parameters, context, new SandboxedRun(sandbox, policy?.Sandbox), ct);
+        var after = guarded.Guard?.Check(guarded.Root!);
+        if ((before, after) is not (null, null))
+            result = result with
+            {
+                Output = new Dictionary<string, object?>(result.Output)
+                {
+                    ["sandbox_warning"] = $"changed what runs later, outside the sandbox: {string.Join("; ", new[] { before, after }.OfType<string>())}. "
+                        + "Further commands ask until the user runs /sandbox review.",
+                },
+            };
 
         // SAID ON EVERY CALL WHILE THE SANDBOX IS TURNED ON, so a row can show the one that ran outside it — an
         // escape, a failed start the user let through, or a machine with no sandbox at all. Nothing when it is off:
@@ -298,11 +315,23 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
     /// bubblewrap to run — which the gate's decision should have made impossible, and which must then refuse, not
     /// fall through to running uncontained.
     /// </summary>
+    /// <summary>The agent's own folder — what the writable root is worked out from, never the call's working_dir.</summary>
+    private static string AgentFolder(IJobContext context) =>
+        (context as JobContext)?.Policy?.Root ?? context.WorkingDirectory ?? Directory.GetCurrentDirectory();
+
+    /// <summary>The writable root a contained command of this agent gets.</summary>
+    private static string RootOf(IJobContext context, Sandbox.SandboxState state)
+    {
+        var agentFolder = AgentFolder(context);
+        return Sandbox.SandboxLayout.For(new Sandbox.SandboxLayoutRequest(agentFolder, agentFolder,
+            (context as JobContext)?.Policy?.IsNarrowed ?? false, null, state.Home, state.Settings)).Writable[0];
+    }
+
     private static ProcessSpec? Contain(ProcessSpec spec, IJobContext context, Sandbox.SandboxState? state)
     {
         if (state?.Status is not { Kind: Sandbox.SandboxStatusKind.Active, BwrapPath: { } bwrap }) return null;
         var job = context as JobContext;
-        var agentFolder = job?.Policy?.Root ?? context.WorkingDirectory ?? Directory.GetCurrentDirectory();
+        var agentFolder = AgentFolder(context);
         var layout = Sandbox.SandboxLayout.For(new Sandbox.SandboxLayoutRequest(
             agentFolder,
             spec.Run.WorkingDir ?? agentFolder,

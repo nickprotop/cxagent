@@ -633,6 +633,8 @@ public class PermissionPolicy
         && request.Contained
         && request.UnsandboxedReason is null
         && request.SandboxFailure is null
+        // NOT AFTER A CONTAINED COMMAND CHANGED WHAT RUNS LATER: the sandbox cannot vouch for the next git command.
+        && Sandbox?.Tampered is null
         && RootTrust == TrustState.Trusted
         && Edits is EditMode.AcceptEdits or EditMode.Auto;
 

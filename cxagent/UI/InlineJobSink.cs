@@ -834,8 +834,12 @@ public sealed class InlineJobSink : IToolObserver
     /// the ordinary case and stays unbadged, like a silent allow; the one that left is what a reader looks for.
     /// Read from the result, since the executor is what knows how the command actually ran.
     /// </summary>
-    private static string SandboxWord(Job job) =>
-        job.Result?.Output.GetValueOrDefault("sandbox") as string == "uncontained" ? "uncontained" : "";
+    private static string SandboxWord(Job job) => string.Join("  ·  ", new[]
+    {
+        job.Result?.Output.GetValueOrDefault("sandbox") as string == "uncontained" ? "uncontained" : "",
+        // A CONTAINED CALL THAT CHANGED WHAT RUNS LATER — git's redirects, a new executable-config folder.
+        job.Result?.Output.ContainsKey("sandbox_warning") == true ? "git files changed" : "",
+    }.Where(w => w.Length > 0));
 
     private static string DecisionWord(Job job) =>
         job.DecidedBy == "auto"

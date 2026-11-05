@@ -651,13 +651,14 @@ public sealed class SessionPanel
     {
         try
         {
-            using var p = Process.Start(new ProcessStartInfo(program, "status --porcelain")
+            // HARDENED: this runs on its own, outside any sandbox, and must not be what runs a repository's fsmonitor.
+            using var p = Process.Start(Core.Sandbox.GitSafe.Harden(new ProcessStartInfo(program, "status --porcelain")
             {
                 WorkingDirectory = dir ?? "",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
-            });
+            }));
             if (p is null) return null;
 
             // READ BEFORE WAITING. Past a pipe's worth of status — about 1,500 files — git blocks until someone
@@ -796,12 +797,12 @@ public sealed class SessionPanel
     {
         try
         {
-            using var p = Process.Start(new ProcessStartInfo("git", "rev-parse --abbrev-ref HEAD")
+            using var p = Process.Start(Core.Sandbox.GitSafe.Harden(new ProcessStartInfo("git", "rev-parse --abbrev-ref HEAD")
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
-            });
+            }));
             if (p is null) return null;
 
             // Bounded, because a git call on a network filesystem can hang and this runs on the UI

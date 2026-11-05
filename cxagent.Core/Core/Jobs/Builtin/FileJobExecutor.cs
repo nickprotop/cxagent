@@ -251,7 +251,7 @@ public class FileJobExecutor : IJobExecutor
             psi.ArgumentList.Add("check-ignore");
             psi.ArgumentList.Add("--stdin");
 
-            using var git = System.Diagnostics.Process.Start(psi);
+            using var git = System.Diagnostics.Process.Start(Sandbox.GitSafe.Harden(psi));
             if (git is null) return kept;
 
             // READ WHILE WRITING, AND THIS IS THE WHOLE REASON THIS METHOD IS SHAPED THIS WAY. A pipe
