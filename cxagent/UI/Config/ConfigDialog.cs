@@ -11,7 +11,7 @@ namespace CxAgent.UI.Config;
 /// The dialog's tabs, IN THEIR ORDER: a tab's index is its value, so the tabs are added in this order and nothing
 /// maps one to the other by hand. General first — the settings that shape every tab.
 /// </summary>
-public enum ConfigTab { General, Providers, Mcp, Agents, Hooks }
+public enum ConfigTab { General, Providers, Mcp, Agents, Hooks, Project }
 
 /// <summary>What the dialog needs from the app: where to draw, how a save becomes live, and who is in front.</summary>
 /// <param name="System">The window system.</param>
@@ -60,6 +60,7 @@ public static class ConfigDialog
     private static McpTab? _mcp;
     private static AgentsTab? _agents;
     private static HooksTab? _hooks;
+    private static ProjectTab? _project;
     private static ConfigDialogHost? _host;
     private static Action? _onClosed;
 
@@ -125,6 +126,8 @@ public static class ConfigDialog
         _tabs.AddTab("Agents", WithPath(_agents.Content));
         _hooks = new HooksTab(host, () => _window);
         _tabs.AddTab("Hooks", WithPath(_hooks.Content));
+        _project = new ProjectTab(host, () => SwitchTo(ConfigTab.Hooks));
+        _tabs.AddTab("Project", _project.Content);
         window.AddControl(_tabs);
 
         // ONE FOOTER FOR THE DIALOG, HOSTING THE TAB IN FRONT: its own Revert and Save — their text, their
@@ -140,11 +143,16 @@ public static class ConfigDialog
             foreach (var b in ActiveActions()) footer.Buttons.AddItem(b);
             // WHEN A SAVE TAKES EFFECT, which differs by tab: General's settings are read as a tab opens, the
             // rest reach running tabs at once.
-            footer.Hints.SetContent([$"[{DialogLook.Palette.Muted.ToMarkup()}]{(Active == ConfigTab.General ? "Saved changes apply to tabs opened after saving" : "Saved changes apply at once")} · Esc closes[/]"]);
+            footer.Hints.SetContent([$"[{DialogLook.Palette.Muted.ToMarkup()}]{(Active switch { ConfigTab.General => "Saved changes apply to tabs opened after saving", ConfigTab.Project => "Trust applies at once", _ => "Saved changes apply at once" })} · Esc closes[/]"]);
             footer.Buttons.AddItem(close);
             MarkActiveSave();
         }
-        _tabs.TabChanged += (_, _) => HostActions();
+        _tabs.TabChanged += (_, _) =>
+        {
+            // FRESH ON ARRIVAL: trust or hooks may have changed in another tab, or in the session behind.
+            if (Active == ConfigTab.Project) _project?.Refresh();
+            HostActions();
+        };
 
         void FitPath()
         {
@@ -182,6 +190,7 @@ public static class ConfigDialog
                 case ConfigTab.Mcp: _mcp?.SaveFromKey(); break;
                 case ConfigTab.Agents: _agents?.SaveFromKey(); break;
                 case ConfigTab.Hooks: _hooks?.SaveFromKey(); break;
+                case ConfigTab.Project: break;
                 default: _providers?.SaveFromKey(); break;
             }
             e.Handled = true;
@@ -200,6 +209,7 @@ public static class ConfigDialog
             _mcp = null;
             _agents = null;
             _hooks = null;
+            _project = null;
             var closed = _onClosed;
             _onClosed = null;
             closed?.Invoke();
@@ -262,6 +272,7 @@ public static class ConfigDialog
         ConfigTab.Mcp => _mcp?.Actions ?? [],
         ConfigTab.Agents => _agents?.Actions ?? [],
         ConfigTab.Hooks => _hooks?.Actions ?? [],
+        ConfigTab.Project => _project?.Actions ?? [],
         _ => _providers?.Actions ?? [],
     };
 
@@ -273,6 +284,7 @@ public static class ConfigDialog
             case ConfigTab.Mcp: _mcp?.MarkSave(); break;
             case ConfigTab.Agents: _agents?.MarkSave(); break;
             case ConfigTab.Hooks: _hooks?.MarkSave(); break;
+            case ConfigTab.Project: break;
             default: _providers?.MarkSave(); break;
         }
     }
