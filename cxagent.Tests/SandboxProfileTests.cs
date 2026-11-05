@@ -49,7 +49,7 @@ public sealed class SandboxProfileTests : IDisposable
             settings ?? SandboxSettings.AppDefault));
 
     private static IReadOnlyList<string> Args(SandboxLayout layout) =>
-        SandboxProfile.Arguments(layout, new SandboxRun([]));
+        SandboxProfile.Arguments(layout, new SandboxRun(new Dictionary<string, string>()));
 
     /// <summary>The index of the pair <c>flag path</c> in the argument list, or -1.</summary>
     private static int At(IReadOnlyList<string> args, string flag, string path)
@@ -246,10 +246,13 @@ public sealed class SandboxProfileTests : IDisposable
     }
 
     [Fact]
-    public void Unset_names_become_unsetenv()
+    public void The_calls_variables_are_set_inside()
     {
-        var args = SandboxProfile.Arguments(Layout(Folder("w")), new SandboxRun(["GITHUB_TOKEN"]));
-        Assert.True(At(args, "--unsetenv", "GITHUB_TOKEN") >= 0);
+        var args = SandboxProfile.Arguments(Layout(Folder("w")), new SandboxRun(new Dictionary<string, string> { ["MY_TOKEN"] = "v" }));
+        var at = At(args, "--setenv", "MY_TOKEN");
+        Assert.True(at >= 0);
+        Assert.Equal("v", args[at + 2]);
+        Assert.DoesNotContain("--unsetenv", args);
     }
 
     [Fact]

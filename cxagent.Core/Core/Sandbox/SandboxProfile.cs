@@ -1,8 +1,9 @@
 namespace CxAgent.Core.Sandbox;
 
 /// <summary>How one command runs inside the sandbox.</summary>
-/// <param name="Unset">Variables removed from its environment — see <see cref="SandboxEnv"/>.</param>
-public sealed record SandboxRun(IReadOnlyList<string> Unset);
+/// <param name="Set">The call's own variables, set INSIDE with <c>--setenv</c>. Never on bubblewrap's process: an
+/// <c>LD_PRELOAD</c> there would load into bubblewrap before any namespace exists, outside the sandbox.</param>
+public sealed record SandboxRun(IReadOnlyDictionary<string, string> Set);
 
 /// <summary>
 /// A <see cref="SandboxLayout"/> as bubblewrap arguments. Pure: the layout already holds real paths that exist.
@@ -27,7 +28,7 @@ public static class SandboxProfile
         foreach (var h in layout.HiddenFiles) args.AddRange(["--ro-bind", "/dev/null", h]);
         if (layout.Logs is { } logs) args.AddRange(["--ro-bind", logs, logs]);
 
-        foreach (var name in run.Unset) args.AddRange(["--unsetenv", name]);
+        foreach (var (name, value) in run.Set) args.AddRange(["--setenv", name, value]);
 
         // A SEPARATE PID NAMESPACE, so a contained command cannot signal anything outside. A new session, so it
         // cannot push keystrokes into the terminal.

@@ -83,6 +83,14 @@ internal record RunOptions(
     /// <summary>Every default: the process's own directory, an inherited environment, no deadline and
     /// no spill file. Shared rather than allocated per call, since the record is immutable.</summary>
     public static readonly RunOptions Default = new();
+
+    /// <summary>
+    /// Inherited variables the process does not get, or null for none.
+    ///
+    /// <para>REMOVED FROM THE PROCESS ITSELF, not asked of it. The sandbox needs this: bubblewrap is pid 1 inside, and
+    /// a variable it only unsets for the command is still readable from its own <c>/proc/1/environ</c>.</para>
+    /// </summary>
+    public IReadOnlyList<string>? Unset { get; init; }
 }
 
 /// <summary>
@@ -311,6 +319,8 @@ internal static class ProcessRunner
             WorkingDirectory = spec.Run.WorkingDir ?? Environment.CurrentDirectory,
         };
         foreach (var arg in spec.Arguments) psi.ArgumentList.Add(arg);
+        if (spec.Run.Unset is not null)
+            foreach (var name in spec.Run.Unset) psi.Environment.Remove(name);
         if (spec.Run.Env is not null)
             foreach (var kv in spec.Run.Env) psi.Environment[kv.Key] = kv.Value;
 
@@ -609,6 +619,8 @@ internal static class ProcessRunner
             WorkingDirectory = spec.Run.WorkingDir ?? Environment.CurrentDirectory,
         };
         foreach (var arg in spec.Arguments) psi.ArgumentList.Add(arg);
+        if (spec.Run.Unset is not null)
+            foreach (var name in spec.Run.Unset) psi.Environment.Remove(name);
         if (spec.Run.Env is not null)
             foreach (var kv in spec.Run.Env) psi.Environment[kv.Key] = kv.Value;
 

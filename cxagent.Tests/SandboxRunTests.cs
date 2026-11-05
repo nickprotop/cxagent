@@ -148,6 +148,36 @@ public sealed class SandboxRunTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// BUBBLEWRAP IS PID 1 INSIDE, and its environment is readable at /proc/1/environ. A variable only unset for the
+    /// command (--unsetenv) is still there; bubblewrap itself must start without it.
+    /// </summary>
+    [Fact]
+    public async Task Unset_variables_are_not_readable_through_bubblewrap()
+    {
+        if (!CanRun) return;
+        Environment.SetEnvironmentVariable("SBX_TEST_API_KEY", "secret");
+        try
+        {
+            var r = await Run("tr '\\0' '\\n' < /proc/1/environ | grep -c SBX_TEST_API_KEY || true");
+            Assert.Equal("0", Out(r).Trim());
+        }
+        finally { Environment.SetEnvironmentVariable("SBX_TEST_API_KEY", null); }
+    }
+
+    /// <summary>
+    /// THE CALL'S env GOES IN, NOT ON BUBBLEWRAP. Set on bubblewrap's own process, an LD_PRELOAD the command built
+    /// a call earlier runs before any namespace exists — outside the sandbox, and without a prompt.
+    /// </summary>
+    [Fact]
+    public async Task The_calls_env_does_not_reach_bubblewrap()
+    {
+        if (!CanRun) return;
+        var r = await Run("echo \"$SBX_MARK\"; tr '\\0' '\\n' < /proc/1/environ | grep -c SBX_MARK || true",
+            env: new() { ["SBX_MARK"] = "inside" });
+        Assert.Equal(["inside", "0"], Out(r).Trim().Split('\n').Select(l => l.Trim()));
+    }
+
     [Fact]
     public async Task The_calls_own_env_is_kept()
     {

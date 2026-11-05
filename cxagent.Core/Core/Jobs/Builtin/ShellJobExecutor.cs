@@ -305,17 +305,20 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
             state.Home,
             state.Settings));
 
-        // THE CALL'S OWN env IS NOT UNSET: a call that names a variable asked for it, and was asked about as a
-        // custom environment. Everything inherited is filtered.
+        // THE INHERITED ENVIRONMENT IS FILTERED ON BUBBLEWRAP'S OWN PROCESS, which is pid 1 inside: a variable only
+        // unset for the command stays readable at /proc/1/environ. THE CALL'S OWN env GOES IN with --setenv and never
+        // onto bubblewrap — an LD_PRELOAD there loads before any namespace exists. A call that names a variable asked
+        // for it, and was asked about as a custom environment, so it is not filtered.
         var inherited = Environment.GetEnvironmentVariables().Keys.Cast<string>()
-            .Where(k => spec.Run.Env?.ContainsKey(k) != true)
             .ToDictionary(k => k, k => "", StringComparer.Ordinal);
         var unset = Sandbox.SandboxEnv.ToUnset(inherited, state.Settings, state.ConfigKeyVariables);
+        var set = spec.Run.Env ?? new Dictionary<string, string>();
 
         return spec with
         {
             FileName = bwrap,
-            Arguments = [.. Sandbox.SandboxProfile.Arguments(layout, new Sandbox.SandboxRun(unset)), spec.FileName, .. spec.Arguments],
+            Arguments = [.. Sandbox.SandboxProfile.Arguments(layout, new Sandbox.SandboxRun(set)), spec.FileName, .. spec.Arguments],
+            Options = spec.Run with { Env = null, Unset = unset },
         };
     }
 
