@@ -265,7 +265,7 @@ public static class FileTab
 
         StartWatching(host);
 
-        host.Main.AddTab(title, content);
+        host.Main.AddTab(title, content, owner: host.Session);
         host.Main.SetTabMainControl(content, editor);
         Refresh(host.Main, title);
         Show(host.Main, title);
@@ -302,7 +302,7 @@ public static class FileTab
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
 
-        host.Main.AddTab(title, content);
+        host.Main.AddTab(title, content, owner: host.Session);
         Show(host.Main, title);
     }
 

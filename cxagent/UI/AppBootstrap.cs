@@ -605,7 +605,7 @@ public static class AppBootstrap
         Action<ResolvedConfig>? wireStartup = null;
         var configHost = new ConfigDialogHost(system, mainWindow,
             new ConfigApplyContext(paths, env, configNow, manager, mcp),
-            () => mainWindow.ActiveSession ?? session, mcpCommand)
+            () => mainWindow.SessionInFront ?? session, mcpCommand)
         {
             WireFirst = res => wireStartup?.Invoke(res),
         };

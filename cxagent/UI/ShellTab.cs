@@ -106,7 +106,7 @@ internal static class ShellTab
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
 
-        main.AddTab(title, content);
+        main.AddTab(title, content, owner: session);
         main.SetTabMainControl(content, terminal);
         Focus(main, terminal);
 

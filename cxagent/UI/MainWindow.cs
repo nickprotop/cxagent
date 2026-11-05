@@ -1141,9 +1141,12 @@ public sealed class MainWindow : IDisposable
     /// that added a tab without it would get a tab nobody can reach — the strip is the only way to
     /// see that a second one exists.</para>
     /// </summary>
-    public void AddTab(string title, IWindowControl content, bool closable = true)
+    /// <param name="owner">The session this tab was opened from — a shell or an editor — so what is about "the session
+    /// in front" (F8, the tasks panel) answers for it rather than for the first session in the strip.</param>
+    public void AddTab(string title, IWindowControl content, bool closable = true, Core.Sessions.Session? owner = null)
     {
         Tabs.AddTab(title, content, closable);
+        if (owner is not null && Tabs.GetTab(Tabs.TabCount - 1) is { } page) _tabOwners.AddOrUpdate(page, owner);
         _tabTitles.Add(title);
         RefreshTabStrip();
         Tabs.ActiveTabIndex = Tabs.TabCount - 1;
@@ -2765,10 +2768,25 @@ public sealed class MainWindow : IDisposable
     /// front, the session that owns that job, since a job tab is not a session tab and would otherwise
     /// fall back to the first.
     /// </summary>
-    private Session? JobsSession =>
-        _jobTabs.Values.FirstOrDefault(s => ReferenceEquals(s.Page, Tabs.GetTab(Tabs.ActiveTabIndex)))?.Tab.Session
+    private Session? JobsSession => SessionInFront;
+
+    /// <summary>
+    /// The session the tab in front belongs to: a session tab is its own; a job, agent, shell or editor tab belongs
+    /// to the session it was opened from. Only a tab nothing owns falls back to the first session.
+    ///
+    /// <para>NOT <see cref="ActiveSession"/>, which answers by strip position and so names the FIRST session for any tab
+    /// that is not a session tab — with two projects open, F8 from the second one's shell would show and edit the
+    /// first one's repository.</para>
+    /// </summary>
+    public Session? SessionInFront =>
+        SessionTabAt(Tabs.ActiveTabIndex)?.Session
+        ?? _jobTabs.Values.FirstOrDefault(s => ReferenceEquals(s.Page, Tabs.GetTab(Tabs.ActiveTabIndex)))?.Tab.Session
         ?? ActiveAgentTab?.Session
+        ?? (Tabs.GetTab(Tabs.ActiveTabIndex) is { } page && _tabOwners.TryGetValue(page, out var owner) ? owner : null)
         ?? ActiveSession;
+
+    /// <summary>Which session opened each shell or editor tab. Weak, so a closed tab's page takes its entry with it.</summary>
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<SharpConsoleUI.Controls.TabPage, Session> _tabOwners = new();
 
     /// <summary>
     /// Where ended commands' records are forgotten from: the process-wide record, unless a test hands in its own.
