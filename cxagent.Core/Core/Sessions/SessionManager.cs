@@ -1069,6 +1069,12 @@ public sealed class SessionManager : IDisposable
     {
         if (session.IsBusy) return false;
 
+        // SESSIONEND HOOKS, WITHIN THEIR BUDGET. Run off this thread and waited for at most the budget the
+        // contract gives them, so a slow hook makes closing a tab no slower than that — and never hangs it.
+        if (session.Hooks is { } hooks && hooks.Listens(Hooks.HookEvents.SessionEnd))
+            Task.Run(() => Hooks.HookLifecycle.SessionEndAsync(hooks, "exit"))
+                .Wait(Hooks.HookLifecycle.EndBudget(hooks.Snapshot.Hooks) + TimeSpan.FromMilliseconds(500));
+
         // ITS BACKGROUND WORK ENDS WITH IT, AND TELLS NOBODY: a closed tab has no transcript and no turn to
         // report to, and an agent left running keeps spending on a session nobody can see. Its commands die
         // too unless the user chose to keep them — then they run on, silenced, past the tab.

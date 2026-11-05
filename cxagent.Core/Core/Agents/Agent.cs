@@ -339,6 +339,9 @@ public sealed class Agent
     private readonly Func<IReadOnlyList<Plugins.PluginInstructions>>? _pluginInstructions;
     private readonly Permissions.PermissionPolicy? _policy;
 
+    /// <summary>The session's hooks — the same runner for every agent of it, sub-agents included.</summary>
+    private readonly Hooks.HookRunner? _hooks;
+
     /// <summary>The speculation handle — see <see cref="AgentGuards.Classifier"/>. Null wherever no
     /// classifier is reachable, in which case every call site below is a no-op by construction
     /// (each checks this for null before calling Speculate).</summary>
@@ -1042,6 +1045,7 @@ public sealed class Agent
         var modelFacingCommands = setup.Tools.ModelFacingCommands;
         var toolSelection = setup.Tools.Selection;
         var policy = setup.Guards.Policy;
+        _hooks = setup.Guards.Hooks ?? policy?.Hooks;
         var classifier = setup.Guards.Classifier;
         var askUser = setup.Guards.AskUser;
         var briefing = setup.Brief.Briefing;
@@ -1345,9 +1349,9 @@ public sealed class Agent
         // THE PROMPT HOOKS SEE WHAT THE USER SENT, before the model does: a block keeps it from the model
         // altogether, and context rides in after it. Only on this path — the user's — and never for a
         // sub-agent, whose "prompt" is a task the model wrote.
-        if (!_isSubAgent && _policy?.Hooks is { } hooks)
+        if (!_isSubAgent && _hooks is { } hooks)
         {
-            var extra = new List<string>(hooks.TakeStartContext());
+            var extra = new List<string>(await hooks.TakeStartContextAsync(ct));
             if (hooks.Listens(Hooks.HookEvents.UserPromptSubmit))
             {
                 var verdict = await Hooks.HookLifecycle.PromptAsync(hooks, HookContext(hooks), prompt, ct);
@@ -1784,7 +1788,7 @@ public sealed class Agent
                 // The turn MUST be closed on every path. A spinner left running after a failure is
                 // worse than no spinner: it says "still working" about a goal that is already over.
                 _sink.AssistantTurnEnded(turnId);
-                if (ex is not OperationCanceledException && !_isSubAgent && _policy?.Hooks is { } failHooks)
+                if (ex is not OperationCanceledException && !_isSubAgent && _hooks is { } failHooks)
                     Hooks.HookLifecycle.StopFailure(failHooks, HookContext(failHooks), ex);
                 throw;
             }
@@ -1936,7 +1940,7 @@ public sealed class Agent
                 // STOP HOOKS MAY SEND THE AGENT BACK TO WORK — "the tests still fail" — but only so many
                 // times in one turn, and only the session's own agent: a sub-agent's end is its parent's
                 // to judge.
-                if (!_isSubAgent && _policy?.Hooks is { } stopHooks && stopHooks.Listens(Hooks.HookEvents.Stop))
+                if (!_isSubAgent && _hooks is { } stopHooks && stopHooks.Listens(Hooks.HookEvents.Stop))
                 {
                     var verdict = await Hooks.HookLifecycle.StopAsync(stopHooks, HookContext(stopHooks), text, stopBlocks > 0, ct);
                     if (verdict.Stops)
@@ -3492,7 +3496,7 @@ public sealed class Agent
     /// <summary>Runs this call's PreToolUse hooks and hands their allow or ask to the permission gate; null when none listen.</summary>
     private async Task<Hooks.HookVerdict?> PreToolHooksAsync(ToolCall call, JobContext ctx, CancellationToken ct)
     {
-        if (_policy?.Hooks is not { } hooks || !hooks.Listens(Hooks.HookEvents.PreToolUse)) return null;
+        if (_hooks is not { } hooks || !hooks.Listens(Hooks.HookEvents.PreToolUse)) return null;
         var verdict = await hooks.RunAsync(Hooks.HookEvents.PreToolUse, call.Name,
             Hooks.HookPayload.ForTool(HookContext(hooks), Hooks.HookEvents.PreToolUse, call), ct);
 
@@ -3521,7 +3525,7 @@ public sealed class Agent
     /// <summary>Runs PostToolUse (or PostToolUseFailure) and returns the result with whatever the hooks said for the model.</summary>
     private async Task<string> PostToolHooksAsync(ToolCall call, ToolOutcome outcome, string result, CancellationToken ct)
     {
-        if (_policy?.Hooks is not { } hooks) return result;
+        if (_hooks is not { } hooks) return result;
         var failed = outcome.Result is { Success: false } || result.StartsWith("error:", StringComparison.Ordinal);
         var ev = failed ? Hooks.HookEvents.PostToolUseFailure : Hooks.HookEvents.PostToolUse;
         if (!hooks.Listens(ev)) return result;

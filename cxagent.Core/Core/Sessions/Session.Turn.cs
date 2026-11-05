@@ -700,6 +700,10 @@ public sealed partial class Session
     private async Task RunTurnAsync(TurnRequest request, TaskCompletionSource<string?> result,
         TaskCompletionSource<SendOutcome> outcome)
     {
+        // A HOOKS FILE CHANGED SINCE THE SESSION READ IT is said at the next turn — the moment the user is
+        // about to rely on hooks — and not applied: that is their review to make.
+        CheckHookChanges();
+
         // FAILED UNTIL THE LOOP SAYS OTHERWISE: it catches what a turn throws, so anything escaping is a
         // fault in the loop's own bookkeeping, and a failed turn's tail — run the held command — is the
         // nearest honest account of that.

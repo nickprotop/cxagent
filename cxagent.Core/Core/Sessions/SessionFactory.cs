@@ -54,6 +54,13 @@ internal static class SessionFactory
                         : null),
                 resolution.WebSearch);
 
+        // THE SESSION'S HOOKS, BUILT ONCE AND KEPT. A re-wire (a /model switch) reuses them, so it neither
+        // re-reads a hooks file the user has not reviewed nor fires SessionStart a second time. They ride
+        // the policy to the permission gate, and the guards to every agent.
+        var firstWire = session.Hooks is null;
+        var hooks = session.Hooks ?? BuildHooks(session, resolution, shared, ports);
+        if (ports.Policy is { } hookPolicy) hookPolicy.Hooks = hooks;
+
         // WRAPPED HERE, NOT BY THE EMBEDDER. A bare IAgentTool in ports.Tools is not a compile
         // error and would run with no gate at all — PermissionGatedExecutor cannot cover it, because
         // that type keys off the built-in type names and a consumer tool matches none of them. So
@@ -231,6 +238,7 @@ internal static class SessionFactory
             },
             Guards = new AgentGuards
             {
+                Hooks = hooks,
                 // THE SAME POLICY THE PARENT GETS. A child calling an MCP tool is the common case, and
                 // without this the gate refuses it for want of a policy.
                 Policy = ports.Policy,
@@ -347,6 +355,7 @@ internal static class SessionFactory
                 },
                 Guards = new AgentGuards
                 {
+                    Hooks = hooks,
                     // THE SAME POLICY THE PLUGINS GET (line 44). MCP builds its own PermissionRequest
                     // instead of going through PermissionGatedExecutor, so without this the gate refuses
                     // every MCP call for want of a policy.
@@ -403,6 +412,15 @@ internal static class SessionFactory
         if (spawnWithheld)
             session.SayFallbackToSingle();
         session.NotePolicy(ports.Policy);
+        session.NoteHooks(hooks, HookSettingsFor(resolution));
+        if (firstWire)
+        {
+            session.SayHookProblems(hooks.Snapshot);
+            // NOT AWAITED: opening a session must not wait on a script. The first prompt waits for it
+            // instead (HookRunner.TakeStartContextAsync), so what it says still reaches the model first.
+            hooks.PendingStart = Hooks.HookLifecycle.SessionStartAsync(hooks,
+                resumeSnapshot is null ? "startup" : "resume", CancellationToken.None);
+        }
         session.NoteToolSelection(toolSelection);
         session.NoteCatalog(resolution, resolution.Providers, resolution.ClassifierInstance is { Length: > 0 });
 
@@ -432,4 +450,39 @@ internal static class SessionFactory
         session.SayWithdrawnAgentTools();
     }
 
+
+    /// <summary>The user's hooks block, with an embedder's handlers when there are any.</summary>
+    private static Hooks.HooksSettings HookSettingsFor(ResolvedConfig resolution) => resolution.Hooks;
+
+    /// <summary>
+    /// Reads this session's hooks and builds the runner every agent of it shares.
+    ///
+    /// <para>TRUST IS READ LIVE from the policy at each event, never captured here — see HookRunner. With no
+    /// policy (a session nothing gates) the repository's hooks do not run: nobody was asked whether to
+    /// trust the folder, and an unanswered question must not behave like a yes.</para>
+    /// </summary>
+    private static Hooks.HookRunner BuildHooks(Session session, ResolvedConfig resolution, SharedServices shared, SessionPorts ports)
+    {
+        var settings = HookSettingsFor(resolution);
+        var snapshot = Hooks.HookSources.Read(settings, session.WorkingDirectory);
+        var policy = ports.Policy;
+        var runner = new Hooks.HookRunner(new Hooks.HookRunnerDeps(snapshot, settings.Handlers ?? new Hooks.HookHandlers(),
+            () => policy?.FolderTrusted == true,
+            notice => { if (notice.IsError) session.NotifyError(notice.Text); else session.Notify(notice.Text); })
+        {
+            ProjectDir = snapshot.RepoRoot ?? session.WorkingDirectory,
+        });
+        runner.Session = () => new Hooks.HookEventContext(
+            session.SessionId ?? session.Id,
+            shared.Logs is { } logs && session.SessionId is { } agent ? Path.Combine(logs.DirFor(agent), "history.jsonl") : "",
+            session.WorkingDirectory,
+            policy?.Edits switch
+            {
+                EditMode.AcceptEdits => "acceptEdits",
+                EditMode.Auto => "auto",
+                _ => "default",
+            },
+            "main");
+        return runner;
+    }
 }

@@ -84,6 +84,20 @@ public sealed class HookRunner
         lock (_startContext) _startContext.AddRange(context);
     }
 
+    /// <summary>The SessionStart run still going, if any — the first prompt waits for it, so its context is not missed.</summary>
+    internal Task PendingStart { get; set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// Waits for SessionStart to finish, then takes what it said. A start that fails or is cancelled
+    /// contributes nothing; the prompt goes ahead regardless.
+    /// </summary>
+    internal async Task<IReadOnlyList<string>> TakeStartContextAsync(CancellationToken ct)
+    {
+        try { await PendingStart.WaitAsync(ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested) { }
+        return TakeStartContext();
+    }
+
     /// <summary>Takes the held SessionStart context — once, so it is said at the start and not with every prompt.</summary>
     internal IReadOnlyList<string> TakeStartContext()
     {

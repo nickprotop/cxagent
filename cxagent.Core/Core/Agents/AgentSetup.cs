@@ -149,6 +149,12 @@ public sealed record AgentGuards
     public Permissions.ActionClassifier? Classifier { get; init; }
 
     /// <summary>
+    /// The session's hooks. Usually read through <see cref="Policy"/>, which carries them to the permission
+    /// gate; given here too so a session with no gate — an embedder that asks nothing — still fires them.
+    /// </summary>
+    public Hooks.HookRunner? Hooks { get; init; }
+
+    /// <summary>
     /// How the agent asks its user a question, or null when nobody is listening — a sub-agent, or a headless host.
     /// Null removes the ask_user tool rather than making it fail.
     /// </summary>

@@ -349,6 +349,61 @@ public sealed partial class Session
     public Permissions.PermissionPolicy? Policy { get; private set; }
 
     /// <summary>
+    /// This session's hooks: what F8 and <c>/hooks</c> show, and what every agent of it fires. Null until the
+    /// session is wired. Kept across a re-wire, so a <c>/model</c> switch neither re-reads a changed hooks
+    /// file unreviewed nor fires SessionStart again.
+    /// </summary>
+    public Hooks.HookRunner? Hooks { get; private set; }
+
+    /// <summary>The user's (or embedder's) hooks block this session read, for a re-read on review.</summary>
+    private Hooks.HooksSettings _hookSettings = CxAgent.Core.Hooks.HooksSettings.None;
+
+    /// <summary>The changed hooks files already reported, so each change is said once.</summary>
+    private readonly HashSet<string> _hookChangesSaid = new(StringComparer.Ordinal);
+
+    internal void NoteHooks(Hooks.HookRunner runner, Hooks.HooksSettings settings)
+    {
+        Hooks = runner;
+        _hookSettings = settings;
+    }
+
+    /// <summary>Says, once per change, that a repository hooks file differs from what this session runs.</summary>
+    public void CheckHookChanges()
+    {
+        if (Hooks is not { } hooks) return;
+        foreach (var file in CxAgent.Core.Hooks.HookSources.ChangedSince(hooks.Snapshot))
+            if (_hookChangesSaid.Add(file))
+                NotifyWarning($"{Path.GetFileName(file)} changed: the hooks running are the ones read at start. "
+                              + "Review them in F8 › Hooks to apply the change.");
+    }
+
+    /// <summary>
+    /// Reads the hooks files again and makes what they say now the hooks this session runs — the user's
+    /// review of a change, from F8's save or its review action.
+    /// </summary>
+    public void ReviewHooks()
+    {
+        if (Hooks is not { } hooks) return;
+        var fresh = CxAgent.Core.Hooks.HookSources.Read(_hookSettings, WorkingDirectory);
+        hooks.Replace(fresh);
+        _hookChangesSaid.Clear();
+        SayHookProblems(fresh);
+    }
+
+    /// <summary>Re-reads with a new user block — F8 saved config.json — and applies it.</summary>
+    public void ReviewHooks(Hooks.HooksSettings user)
+    {
+        _hookSettings = user with { Handlers = _hookSettings.Handlers, Source = _hookSettings.Source };
+        ReviewHooks();
+    }
+
+    internal void SayHookProblems(Hooks.HookSnapshot snapshot)
+    {
+        foreach (var p in snapshot.Problems)
+            NotifyWarning($"hooks: {Path.GetFileName(p.File)}: {p.Message}");
+    }
+
+    /// <summary>
     /// The mutable set of tools this session's plugins contribute — see
     /// <see cref="Plugins.PluginRegistry"/>.
     ///

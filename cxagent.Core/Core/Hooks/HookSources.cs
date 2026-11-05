@@ -15,6 +15,12 @@ public sealed record HooksSettings(JsonElement? Block)
     /// <summary>The <c>provider:model</c> entry hooks that need a model use when they name none.</summary>
     public string? DefaultModel { get; init; }
 
+    /// <summary>An embedding app's in-process handlers — see <see cref="HookHandlers"/>. Null from a config file.</summary>
+    public HookHandlers? Handlers { get; init; }
+
+    /// <summary>Where these hooks came from: the user's config file, or an app's <c>AgentConfig</c>.</summary>
+    public HookSource Source { get; init; } = HookSource.User;
+
     public static HooksSettings None { get; } = new((JsonElement?)null);
 }
 
@@ -59,9 +65,10 @@ public static class HookSources
 
         if (user.Block is { } block)
         {
-            var parsed = HookConfigParser.Parse(block, HookSource.User);
+            var parsed = HookConfigParser.Parse(block, user.Source);
             hooks.AddRange(parsed.Hooks);
-            problems.AddRange(parsed.Problems.Select(p => new HookProblem(HookSource.User, "config.json", p)));
+            problems.AddRange(parsed.Problems.Select(p => new HookProblem(user.Source,
+                user.Source == HookSource.Library ? "AgentConfig.Hooks" : "config.json", p)));
         }
 
         var root = RepoRoot(workingDirectory);
