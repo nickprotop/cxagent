@@ -438,7 +438,9 @@ headlessly. See [CONFIG.md](CONFIG.md#custom-commands).
 Commands that run on the agent's events: before a tool call, after one, when a prompt is sent, when a
 turn ends, when a session opens. A hook reads the event as JSON on stdin and answers with its exit
 code: `2` blocks, with its message going to the model. With JSON on stdout it can allow, ask, deny or
-rewrite a tool call, add context, or send the agent back to work when the tests still fail.
+rewrite a tool call, add context, or send the agent back to work when the tests still fail. Besides a
+command, a hook can be a yes-or-no question to one of your models, a read-only agent that checks the
+project before it answers, a web request, or a call to one of your MCP servers.
 
 ```json
 "hooks": {

@@ -681,14 +681,32 @@ the change waits for `/hooks review`. Other tabs take the system hooks only.
 | `StopFailure` | a turn ends on a provider error | (notification only) |
 | `Notification` | a permission prompt is waiting for you | (notification only) |
 | `SessionEnd` | a session closes | (notification only) |
+| `UserPromptExpansion` | a `/command` or skill is about to become a prompt | block it; add context |
+| `PermissionDenied` | auto mode's reviewer refused a call | let the model know it may retry |
+| `PostToolBatch` | every call from one model reply has its result | add context; stop before the next model call |
+| `MessageDisplay` | a reply is shown | (notification only) |
+| `SubagentStart` | a sub-agent takes its first task | add context for the sub-agent |
+| `SubagentStop` | a sub-agent is about to finish | send it back to work, with a reason |
+| `TaskCreated` | a to-do write adds an item | refuse the write |
+| `TaskCompleted` | a to-do write closes an item | keep it open, with a reason |
+| `InstructionsLoaded` | an instruction file is read at the start | (notification only) |
+| `ConfigChange` | a saved config is about to reach a session | keep that session on what it had |
+| `CwdChanged` | a resume moves the session to another folder | (notification only) |
+| `PreCompact` | before compression, `/compress` or automatic | skip it |
+| `PostCompact` | after compression, with its summary | (notification only) |
+| `PreModelSwitch` | before `/model` switches | cancel the switch |
+| `PostModelSwitch` | after it switched | add context for the next request |
 
-The other events of the hook format (`SubagentStop`, `PreCompact`, `TaskCompleted` and the rest) load,
-show as *not supported here* in F8 and `/hooks`, and do not fire yet. A file written for them loads
-without complaint, and each starts working when cxagent fires it.
+Eight events of the hook format have nothing in cxagent to fire on: `Setup`, `TeammateIdle`,
+`Elicitation`, `ElicitationResult`, `DirectoryAdded`, `FileChanged`, `WorktreeCreate` and
+`WorktreeRemove` (worktrees come from the worktree plugin, not from cxagent itself). A hook on one loads,
+shows as *not supported here* in F8 and `/hooks`, and does not fire.
 
 **The matcher** picks the tools a tool event applies to: a pattern matched against the whole tool
 name, `run_shell` or `write_file|replace_in_file`. Empty or `*` is every tool. `SessionStart` matches
-on how the session started (`startup`, `resume`), and `Notification` on its kind (`permission_prompt`).
+on how the session started (`startup`, `resume`), `Notification` on its kind (`permission_prompt`),
+`SubagentStart` and `SubagentStop` on the sub-agent's type, `UserPromptExpansion` on the command's name,
+`PreCompact` and `PostCompact` on `manual` or `auto`, and the model switches on the model switched to.
 
 ### What a hook reads
 
@@ -704,6 +722,17 @@ sub-agent made the call. Then the event's own fields:
 | `SessionStart` · `SessionEnd` | `source` · `reason` |
 | `Notification` | `message`, `notification_type` |
 | `StopFailure` | `error` |
+| `UserPromptExpansion` | `expansion_type`, `command_name`, `command_args`, `command_source`, `prompt` |
+| `PermissionDenied` | `tool_name`, `tool_input`, `reason` |
+| `PostToolBatch` | `tool_calls`: each call's `tool_name`, `tool_input`, `tool_use_id`, `tool_response` |
+| `MessageDisplay` | `turn_id`, `message_id`, `index`, `final`, `delta` (the reply's text) |
+| `SubagentStart` · `SubagentStop` | `agent_id`, `agent_type`; on stop also `last_assistant_message`, `stop_hook_active`, `agent_transcript_path` |
+| `TaskCreated` · `TaskCompleted` | `task_id`, `task_subject` |
+| `InstructionsLoaded` | `file_path`, `memory_type` (`Project` or `User`), `load_reason` |
+| `ConfigChange` | `source`, `file_path` |
+| `CwdChanged` | `old_cwd`, `new_cwd` |
+| `PreCompact` · `PostCompact` | `trigger`; `custom_instructions` before, `compact_summary` after |
+| `PreModelSwitch` · `PostModelSwitch` | `from_model`, `to_model`, `requested_model`, `source`, `context_tokens` |
 
 The command runs in the repository's top folder, with `CXAGENT_PROJECT_DIR` set to it.
 
@@ -766,12 +795,45 @@ way, with folder trust from `--trust` or the stored decision.
 
 | Key | |
 |---|---|
-| `type` | `command`. The other types of the hook format (`prompt`, `agent`, `http`, `mcp_tool`) load and are kept, and do not run yet |
-| `command` | one line, run by `bash -c` |
+| `type` | `command`, `prompt`, `agent`, `http` or `mcp_tool` (below) |
+| `command` | a command hook's line, run by `bash -c` |
 | `shell` | `bash` (the default) or `powershell`. On Windows without Git Bash, PowerShell is the default |
-| `timeout` | seconds, default 60. A hook still running then is stopped, with any process it started |
-| `onFailure` | `"block"`: a hook that crashes, times out or prints broken JSON blocks what it guards, instead of letting it through. Meaningful on `PreToolUse`, `PermissionRequest`, `UserPromptSubmit` and `Stop` |
+| `prompt` | a prompt or agent hook's question. `$ARGUMENTS` stands for the event's JSON; without it, the JSON is added after |
+| `model` | the `provider:model` entry a prompt or agent hook asks, by its name in `providers`. Without one, `hooks.defaultModel` |
+| `continueOnBlock` | a prompt hook's: on a no, feed the reason back and carry on, rather than end the turn |
+| `url` · `headers` · `allowedEnvVars` | an http hook's endpoint, its headers, and the environment variables `$NAME` in a header may read |
+| `server` · `tool` · `input` | an mcp_tool hook's server (one of yours), tool, and arguments; a string `${tool_input.path}` reads from the event |
+| `timeout` | seconds. Defaults: 600 for command, http and mcp_tool (30 on `UserPromptSubmit` and the model switches, 10 on `MessageDisplay`), 30 for a prompt, 60 for an agent. A hook still running then is stopped, with any process it started |
+| `onFailure` | `"block"`: a hook that crashes, times out, prints broken JSON, or cannot reach its model, URL or server blocks what it guards, instead of letting it through. Meaningful on the events that can block |
 | `name` | what messages, F8 and `/hooks` call it. Optional |
+
+### The five types
+
+- **`command`** runs a shell command with the event's JSON on stdin, by the exit-code and output rules above.
+- **`prompt`** asks a model one question, which it answers with `{"ok": true}` or `{"ok": false, "reason": "…"}`.
+  A no blocks: on a tool call or a prompt it also ends the turn, unless `continueOnBlock` is set; on `Stop`
+  and `SubagentStop` it sends the agent back to work, unless the model adds `"impossible": true`.
+- **`agent`** does the same with a read-only verifier: an agent that may `read_file`, `glob` and `grep` for up
+  to 50 turns before it answers. On a no, the reason goes back to the model and the turn carries on.
+- **`http`** POSTs the event's JSON to `url`. A 2xx with an empty body is no objection, a 2xx with a JSON
+  object is read like a command's output, and anything else is a failure. Only the variables listed in
+  `allowedEnvVars` expand in headers; any other `$NAME` reads empty, so a repository's hook cannot post
+  your environment anywhere.
+- **`mcp_tool`** calls a tool on one of your MCP servers; its text is read like a command's output.
+
+**Which model a prompt or agent hook asks** is its own `model`, else `hooks.defaultModel`, else nothing: the
+hook fails, and says to set one. It is never the session's own model, and a repository's hook can only
+name one of your configured providers, never bring its own endpoint or key. Each answers at the lowest
+thinking level its model offers.
+
+```json
+"hooks": {
+  "defaultModel": "openrouter",
+  "Stop": [ { "hooks": [ { "type": "prompt", "prompt": "Did the agent finish what was asked? $ARGUMENTS" } ] } ]
+}
+```
+
+F8's **Hooks** tab sets the default model beside **+ Add hook**, and edits each type's fields.
 
 Hooks matching one event run at the same time. Each one's output is cut at 64 KiB. A hook that starts a
 process in the background (`server &`) is done when it exits: its output is read for a second more, and
