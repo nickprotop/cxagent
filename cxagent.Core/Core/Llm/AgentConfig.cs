@@ -175,6 +175,13 @@ public sealed record AgentConfig
     public Hooks.HooksConfig? Hooks { get; init; }
 
     /// <summary>
+    /// How the agent's shell commands are contained, or null for not at all — the library's default, unlike the
+    /// app's. <c>Sandbox = SandboxSettings.AppDefault</c> turns it on as the app has it. See
+    /// <see cref="CxAgent.Core.Sandbox.SandboxSettings"/>.
+    /// </summary>
+    public CxAgent.Core.Sandbox.SandboxSettings? Sandbox { get; init; }
+
+    /// <summary>
     /// Builds what the runtime consumes.
     ///
     /// <para>THE ERRORS COME BACK AS A VALUE, exactly as ConfigResolver's do — a model named as
@@ -255,7 +262,7 @@ public sealed record AgentConfig
                 Orchestrator: new OrchestratorSettings(MaxTurns, CompressAbove),
                 MaxConcurrentAgents: chosen.MaxConcurrentAgents,
                 ClassifierInstance: Classifier)
-            { PluginPaths = PluginPaths, WebSearch = WebSearch, Hooks = hooks },
+            { PluginPaths = PluginPaths, WebSearch = WebSearch, Hooks = hooks, Sandbox = Sandbox },
             [],
             Warnings: warnings,
             Entries: new PluginEntries(Plugins));

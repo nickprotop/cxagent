@@ -470,6 +470,12 @@ public record ProviderSettings(
     public Hooks.HooksSettings? Hooks { get; init; }
 
     /// <summary>
+    /// The <c>sandbox</c> block — <see cref="Sandbox.SandboxSettings.AppDefault"/> when config.json names none,
+    /// and null only for settings built in code (tests, embedders), which then run without one.
+    /// </summary>
+    public Sandbox.SandboxSettings? Sandbox { get; init; }
+
+    /// <summary>
     /// The name of the theme the terminal should start in, or null for cxagent's own.
     ///
     /// <para>A NAME RATHER THAN COLOURS. The window framework owns the theme registry and ships a
@@ -1060,6 +1066,8 @@ public static class ProviderConfigLoader
                     };
             }
 
+            var sandbox = CxAgent.Core.Sandbox.SandboxSettings.Read(root, warnings);
+
             // READ AFTER `warnings` EXISTS, not beside the other llmAgent fields above: a malformed
             // term warns rather than throwing, and there is nowhere to put a warning before this.
             var llmAgentTools = root.TryGetProperty("llmAgent", out var laTools)
@@ -1368,6 +1376,7 @@ public static class ProviderConfigLoader
                 ShellDetachOnTimeout = shellDetachOnTimeout,
                 WebSearch = webSearch,
                 Hooks = hooks,
+                Sandbox = sandbox,
                 Theme = theme,
                 Plugins = plugins,
                 PluginPaths = pluginPaths,
