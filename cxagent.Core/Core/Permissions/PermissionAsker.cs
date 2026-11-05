@@ -36,6 +36,8 @@ internal sealed class PermissionAsker(IPermissionGate gate, PermissionPolicy? po
                     // THE CALLER'S POLICY FIRST — see JobContext.Policy.
                     Policy = (context as Execution.JobContext)?.Policy ?? policy,
                     OnReviewing = context.ReportReviewing,
+                    HookDecision = (context as Execution.JobContext)?.HookDecision,
+                    HookDecidedBy = (context as Execution.JobContext)?.HookDecidedBy,
                 }, ct);
         }
         finally

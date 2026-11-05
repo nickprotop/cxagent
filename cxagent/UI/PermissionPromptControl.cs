@@ -134,6 +134,14 @@ public sealed class PermissionPromptControl
         var trusted = request.Policy?.FolderTrusted == true;
         var heading = HeadingTextFor(request.Kind, new PathPlace(inside, trusted), request.RefusedByClassifier);
 
+        // WHY A HOOK'S ANSWER DID NOT SETTLE IT, said on the prompt: a user who configured a hook to allow
+        // this and is asked anyway would otherwise read the hook as broken.
+        var hook = request.HookDecidedBy is { Length: > 0 } name ? $"hook '{name}'" : "a hook";
+        if (request.HookAllowedProtected)
+            return $"{heading}  — {hook} allowed this, but the folder is protected, so it still asks";
+        if (request.HookDecision == "ask")
+            return $"{heading}  — {hook} asked";
+
         if (!request.RefusedByClassifier || request.ClassifierReason is not { Length: > 0 } reason)
             return heading;
 

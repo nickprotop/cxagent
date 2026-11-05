@@ -26,6 +26,9 @@ public sealed record PermissionOutcome(bool Allowed, string? DeniedBy = null, st
     /// why) instead of growing a field that means something different per Allowed value.</para>
     /// </summary>
     public static PermissionOutcome AutoAllow => new(true, "auto");
+
+    /// <summary>An allow a hook gave in place of a prompt. <see cref="Reason"/> names the hook.</summary>
+    public static PermissionOutcome ByHook(string? hook) => new(true, "hook", hook);
 }
 
 /// <summary>The text a MODEL reads when an action was refused.</summary>

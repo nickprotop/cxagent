@@ -95,6 +95,8 @@ public sealed class GatedAgentTool : IAgentTool
                 // decides how it is named, so a plugin's names its plugin; see IAgentTool.AdmissionRule.
                 AlwaysRule: _inner.AdmissionRule);
 
+            // NO HOOK ANSWER ON THIS TOOL'S REQUESTS. Its admission and its own gate are questions nothing exempts — a hook's
+            // allow answers cxagent's prompts, not the questions a plugin or an embedder put themselves.
             context.ReportPermissionWait(true);
             PermissionOutcome outcome;
             try

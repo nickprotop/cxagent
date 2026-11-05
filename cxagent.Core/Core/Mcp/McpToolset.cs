@@ -186,6 +186,8 @@ public sealed class McpToolset
             RequesterRunsOn = origin?.RunsOn,
             RequesterRoot = origin?.Root,
             Policy = origin?.Policy,
+            HookDecision = origin?.HookDecision,
+            HookDecidedBy = origin?.HookDecidedBy,
         };
 
         var outcome = await _gate.RequestAsync(request, ct);

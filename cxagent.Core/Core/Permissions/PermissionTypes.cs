@@ -139,6 +139,24 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     public string? Spelling { get; init; }
 
     /// <summary>
+    /// What the hooks answered for the call this request belongs to: <c>allow</c>, <c>ask</c>, or null.
+    ///
+    /// <para>CARRIED ON THE REQUEST because the hooks run where the call is dispatched and the decision is
+    /// made at the one process-wide gate; the request is the only thing that travels between them. A deny
+    /// never arrives here — the call is refused before any request is raised.</para>
+    /// </summary>
+    public string? HookDecision { get; init; }
+
+    /// <summary>The hook that gave <see cref="HookDecision"/>, for the record and the prompt.</summary>
+    public string? HookDecidedBy { get; init; }
+
+    /// <summary>
+    /// Set by the gate when a hook allowed this call but it still asks — a write into a protected folder, or
+    /// a sub-agent's write outside its own — so the prompt can say why a hook's yes was not enough.
+    /// </summary>
+    public bool HookAllowedProtected { get; init; }
+
+    /// <summary>
     /// The path the executor acts on once this request is allowed — resolved by the gate, so nothing resolves it
     /// a second time and lands somewhere else.
     ///
@@ -273,6 +291,12 @@ public enum PermissionChoice { Once, Always, Deny, TrustFolder }
 /// </summary>
 public sealed record RequestOrigin(string? Label, string? RunsOn, PermissionPolicy? Policy)
 {
+    /// <summary>What the hooks answered for this call — see <see cref="PermissionRequest.HookDecision"/>.</summary>
+    public string? HookDecision { get; init; }
+
+    /// <summary>The hook that answered.</summary>
+    public string? HookDecidedBy { get; init; }
+
     /// <summary>A sub-agent's folder relative to its parent's, when it has one of its own — see
     /// <see cref="PermissionRequest.RequesterRoot"/>.</summary>
     public string? Root { get; init; }

@@ -77,6 +77,15 @@ internal sealed class JobContext : IJobHostContext
     /// prompt to show beside <see cref="Requester"/>. Display only; null for the parent's own work.</summary>
     public string? RequesterRunsOn { get; set; }
 
+    /// <summary>
+    /// What this call's PreToolUse hooks answered — <c>allow</c>, <c>ask</c>, or null — stamped onto every
+    /// permission request the call raises. See <see cref="Permissions.PermissionRequest.HookDecision"/>.
+    /// </summary>
+    public string? HookDecision { get; set; }
+
+    /// <summary>The hook that gave <see cref="HookDecision"/>.</summary>
+    public string? HookDecidedBy { get; set; }
+
     /// <summary>For a sub-agent in a folder of its own, that folder relative to its parent's, shown in the
     /// prompt beside <see cref="RequesterRunsOn"/>. Display only; null otherwise.</summary>
     public string? RequesterRoot { get; set; }

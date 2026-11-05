@@ -176,6 +176,21 @@ public class PermissionPolicy
     }
 
     /// <summary>
+    /// This session's hooks, which the gate fires when a prompt is about to show.
+    ///
+    /// <para>ON THE POLICY FOR THE CLASSIFIER'S REASON: one gate serves every session, and the policy is
+    /// what tells it which session is asking. A sub-agent's policy reads its parent's, so a child's prompt
+    /// reaches the same hooks as the session's own.</para>
+    /// </summary>
+    public Hooks.HookRunner? Hooks
+    {
+        get => _parent is null ? _hooks : _parent.Hooks;
+        set { if (_parent is null) _hooks = value; else _parent.Hooks = value; }
+    }
+
+    private Hooks.HookRunner? _hooks;
+
+    /// <summary>
     /// When a write happens without asking.
     ///
     /// <para>SETTABLE, because the mode is session state a user flips mid-session with Shift+Tab, and

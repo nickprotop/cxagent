@@ -327,6 +327,27 @@ public sealed class PermissionDecider : IPermissionGate
             return PermissionOutcome.ByUser;
         }
 
+        // A HOOK'S ANSWER COMES FIRST, and it answers only what would otherwise be a prompt.
+        //   ask   — a prompt, even where a rule, the mode or the classifier would have let it through
+        //           silently: the hook knows something about this call they do not.
+        //   allow — the prompt's answer, never more. What is silent stays silent; and a write into a
+        //           protected folder, or a sub-agent's file request outside its own folder, still asks,
+        //           exactly as no mode lets them through. A hook is configuration a repository can bring,
+        //           and these are the lines a repository must not be able to move.
+        // An injected tool's admission and a plugin's load are not tool calls a hook answers: their own
+        // gates are never exempted.
+        if (request.HookDecision is { } hookSays && request.Kind is not (PermissionKind.Tool or PermissionKind.Plugin))
+        {
+            if (hookSays == "ask") return await PromptAsync(request, ct);
+            if (hookSays == "allow" && !policy.IsSilentlyAllowed(request))
+            {
+                if (HookCannotAllow(policy, request))
+                    return await PromptAsync(request with { HookAllowedProtected = true }, ct);
+                OnDecision?.Invoke(new(request.Kind, "hook", request.Requester, request.What) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
+                return PermissionOutcome.ByHook(request.HookDecidedBy);
+            }
+        }
+
         // The silent path is reported separately: "allowed without asking" and "the user said yes"
         // are different facts, and collapsing them would make a session of stored rules look like a
         // session of decisions.
@@ -466,6 +487,15 @@ public sealed class PermissionDecider : IPermissionGate
             }
         }
 
+        return await PromptAsync(request, ct);
+    }
+
+    /// <summary>
+    /// Puts the request in front of the user (or whatever answers prompts here: headless, bypass) and
+    /// reports the wait and the answer. Every path that ends in a person deciding comes through this.
+    /// </summary>
+    private async Task<PermissionOutcome> PromptAsync(PermissionRequest request, CancellationToken ct)
+    {
         // WAITING STARTS HERE — before the queue, not after it. A child third in line behind two
         // other prompts is waiting from this moment, and a row that only turned "waiting" once its
         // prompt was actually SHOWN would sit reading "running" through the whole queue.
@@ -489,6 +519,13 @@ public sealed class PermissionDecider : IPermissionGate
             OnWaiting?.Invoke(request.Requester, false);
         }
     }
+
+    /// <summary>Whether this request is one a hook's allow may not answer — see the routing in RequestAsync.</summary>
+    private static bool HookCannotAllow(PermissionPolicy policy, PermissionRequest request) =>
+        policy.IsProtectedWrite(request)
+        || (request.Requester is not null
+            && request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite
+            && !policy.IsInBoundary(request.Display));
 
     private async Task<bool> DecideAsync(PermissionRequest request, CancellationToken ct)
     {
