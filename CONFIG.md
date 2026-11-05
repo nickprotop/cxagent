@@ -662,7 +662,7 @@ time an event fires: trusting the folder mid-session starts its hooks at once, a
 
 **Hooks are read when the session starts.** A hooks file that changes while it runs, by a `git pull`,
 another editor or the model, does not take effect on its own. cxagent says so at the next turn;
-`/hooks` lists what a review would add and remove, `/hooks review` applies it and says what it applied,
+`/hooks` lists what a review would add and remove, every field of each hook, `/hooks review` applies it and says what it applied,
 and F8 marks hooks that are not running yet. A save in F8 applies the files that dialog showed, in the
 tab it was opened from; if one changed on disk while it was open, only the system hooks are applied and
 the change waits for `/hooks review`. Other tabs take the system hooks only.
@@ -684,10 +684,10 @@ the change waits for `/hooks review`. Other tabs take the system hooks only.
 | `UserPromptExpansion` | a `/command` or skill is about to become a prompt | block it; add context |
 | `PermissionDenied` | auto mode's reviewer refused a call | let the model know it may retry |
 | `PostToolBatch` | every call from one model reply has its result | add context; stop before the next model call |
-| `MessageDisplay` | a reply is shown | (notification only) |
+| `MessageDisplay` | the session's reply is shown (a sub-agent's is not) | (notification only) |
 | `SubagentStart` | a sub-agent takes its first task | add context for the sub-agent |
 | `SubagentStop` | a sub-agent is about to finish | send it back to work, with a reason |
-| `TaskCreated` | a to-do write adds an item | refuse the write |
+| `TaskCreated` | a to-do write adds an item (a renamed item counts as new) | refuse the write |
 | `TaskCompleted` | a to-do write closes an item | keep it open, with a reason |
 | `InstructionsLoaded` | an instruction file is read at the start | (notification only) |
 | `ConfigChange` | a saved config is about to reach a session | keep that session on what it had |
@@ -803,7 +803,7 @@ way, with folder trust from `--trust` or the stored decision.
 | `continueOnBlock` | a prompt hook's: on a no, feed the reason back and carry on, rather than end the turn |
 | `url` · `headers` · `allowedEnvVars` | an http hook's endpoint, its headers, and the environment variables `$NAME` in a header may read |
 | `server` · `tool` · `input` | an mcp_tool hook's server (one of yours), tool, and arguments; a string `${tool_input.path}` reads from the event |
-| `timeout` | seconds. Defaults: 600 for command, http and mcp_tool (30 on `UserPromptSubmit` and the model switches, 10 on `MessageDisplay`), 30 for a prompt, 60 for an agent. A hook still running then is stopped, with any process it started |
+| `timeout` | seconds. Defaults: 600 for command, http and mcp_tool (30 on `UserPromptSubmit`; 10 on `MessageDisplay`, the model switches and `ConfigChange`, which a command waits on), 30 for a prompt, 60 for an agent. A hook still running then is stopped, with any process it started |
 | `onFailure` | `"block"`: a hook that crashes, times out, prints broken JSON, or cannot reach its model, URL or server blocks what it guards, instead of letting it through. Meaningful on the events that can block |
 | `name` | what messages, F8 and `/hooks` call it. Optional |
 
@@ -813,18 +813,23 @@ way, with folder trust from `--trust` or the stored decision.
 - **`prompt`** asks a model one question, which it answers with `{"ok": true}` or `{"ok": false, "reason": "…"}`.
   A no blocks: on a tool call or a prompt it also ends the turn, unless `continueOnBlock` is set; on `Stop`
   and `SubagentStop` it sends the agent back to work, unless the model adds `"impossible": true`.
-- **`agent`** does the same with a read-only verifier: an agent that may `read_file`, `glob` and `grep` for up
-  to 50 turns before it answers. On a no, the reason goes back to the model and the turn carries on.
+- **`agent`** does the same with a read-only verifier: an agent that may `read_file`, `glob` and `grep` inside
+  the project, and nothing outside it, for up to 50 turns before it answers. It asks nobody. On a no, the
+  reason goes back to the model and the turn carries on; after a tool batch, it goes to the model as
+  context before its next call.
 - **`http`** POSTs the event's JSON to `url`. A 2xx with an empty body is no objection, a 2xx with a JSON
-  object is read like a command's output, and anything else is a failure. Only the variables listed in
-  `allowedEnvVars` expand in headers; any other `$NAME` reads empty, so a repository's hook cannot post
-  your environment anywhere.
+  object is read like a command's output, and anything else is a failure. In a system hook, `$NAME` in a
+  header expands only for the variables listed in `allowedEnvVars`, and any other reads empty. A
+  repository's http hook expands none at all: it writes its own `allowedEnvVars`, so honouring them would
+  let it pick what to send.
 - **`mcp_tool`** calls a tool on one of your MCP servers; its text is read like a command's output.
 
 **Which model a prompt or agent hook asks** is its own `model`, else `hooks.defaultModel`, else nothing: the
 hook fails, and says to set one. It is never the session's own model, and a repository's hook can only
 name one of your configured providers, never bring its own endpoint or key. Each answers at the lowest
-thinking level its model offers.
+thinking level its model offers, and what it costs is counted in the session's spend and in `/stats`, as
+`hook:<name>`. A prompt or agent hook on `PermissionRequest` does not run: that event's answer is a
+command hook's.
 
 ```json
 "hooks": {

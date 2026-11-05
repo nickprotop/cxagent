@@ -803,11 +803,11 @@ public sealed partial class Session
 
         // POSTMODELSWITCH'S WORD FOR THE MODEL goes with the next request, as SessionStart's does.
         if (Hooks is { } after)
-            _ = Task.Run(() =>
+            after.HoldPending(Task.Run(() =>
             {
                 var post = CxAgent.Core.Hooks.HookLifecycle.ModelSwitch(after, CxAgent.Core.Hooks.HookEvents.PostModelSwitch, change);
                 after.HoldStartContext(post.Context);
-            });
+            }));
 
         Announce(SessionChangeKind.Model);
         Say(ModelSwitchNotice.For(next.InstanceName ?? next.Provider.ProviderId, next.Provider.ModelId,

@@ -166,12 +166,17 @@ public sealed class SessionManager : IDisposable
             sessions = [.. _sessions];
         }
 
-        foreach (var session in sessions)
+        // CONFIGCHANGE HOOKS FOR EVERY SESSION AT ONCE, before any is changed: the wait is the slowest session's, not
+        // the sum of them, and this runs on the thread a person is waiting on.
+        var configFile = _configDir is { } dir ? Path.Combine(dir, "config.json") : null;
+        var verdicts = Task.WhenAll(sessions.Select(s => Task.Run(() => s.Hooks is { } h
+            ? Hooks.HookLifecycle.ConfigChange(h, "user_settings", configFile)
+            : Hooks.HookVerdict.None))).GetAwaiter().GetResult();
+
+        foreach (var (session, verdict) in sessions.Zip(verdicts))
         {
             // A CONFIGCHANGE HOOK MAY KEEP THIS SESSION ON WHAT IT HAD — the new file is written either way.
-            if (session.Hooks is { } hooks
-                && Hooks.HookLifecycle.ConfigChange(hooks, "user_settings", _configDir is { } dir ? Path.Combine(dir, "config.json") : null)
-                    is { Stops: true } kept)
+            if (verdict is { Stops: true } kept)
             {
                 session.NotifyWarning($"config change not applied to this session: hook '{kept.DecidedBy}' blocked it.");
                 continue;

@@ -265,8 +265,9 @@ public static class HookLifecycle
 
     /// <summary>Fires PreCompact; a block skips the compaction.</summary>
     /// <param name="trigger"><c>manual</c> for <c>/compress</c>, <c>auto</c> otherwise.</param>
-    public static Task<HookVerdict> PreCompactAsync(HookRunner runner, string trigger, CancellationToken ct) =>
-        runner.RunAsync(HookEvents.PreCompact, trigger, HookPayload.For(runner.Session(), HookEvents.PreCompact,
+    /// <param name="ctx">The compacting agent — a sub-agent compacts its own conversation; null for the session's.</param>
+    public static Task<HookVerdict> PreCompactAsync(HookRunner runner, string trigger, HookEventContext? ctx, CancellationToken ct) =>
+        runner.RunAsync(HookEvents.PreCompact, trigger, HookPayload.For(ctx ?? runner.Session(), HookEvents.PreCompact,
             new JsonObject { ["trigger"] = trigger, ["custom_instructions"] = null }), ct);
 
     /// <summary>Fires UserPromptExpansion for a <c>/command</c> or skill about to become a prompt; a block keeps it from the model.</summary>
@@ -334,7 +335,7 @@ public static class HookLifecycle
     {
         if (!runner.Listens(HookEvents.PermissionDenied)) return null;
         var tool = ToolOf(request);
-        return await runner.RunAsync(HookEvents.PermissionDenied, tool.Name, HookPayload.For(runner.Session(), HookEvents.PermissionDenied,
+        return await runner.RunAsync(HookEvents.PermissionDenied, tool.Name, HookPayload.For(ContextFor(runner, request), HookEvents.PermissionDenied,
             new JsonObject { ["tool_name"] = tool.Name, ["tool_input"] = HookNames.WithAliases(tool.Name, tool.Input), ["reason"] = reason }), ct);
     }
 }

@@ -47,6 +47,9 @@ internal static class CompressionRun
 
         /// <summary><c>manual</c> for <c>/compress</c>, <c>auto</c> for compaction on pressure.</summary>
         public string Trigger { get; init; } = "auto";
+
+        /// <summary>Who is compacting, for the hooks' input; null for the session's own agent.</summary>
+        public Hooks.HookEventContext? HookContext { get; init; }
     }
 
     /// <summary>
@@ -84,7 +87,7 @@ internal static class CompressionRun
     {
         // A PRECOMPACT HOOK MAY SKIP IT: the conversation goes on uncompacted, and what was asked for is said.
         if (work.Hooks is { } hooks && hooks.Listens(CxAgent.Core.Hooks.HookEvents.PreCompact)
-            && await CxAgent.Core.Hooks.HookLifecycle.PreCompactAsync(hooks, work.Trigger, ct) is { Stops: true } kept)
+            && await CxAgent.Core.Hooks.HookLifecycle.PreCompactAsync(hooks, work.Trigger, work.HookContext, ct) is { Stops: true } kept)
         {
             hooks.Report(new($"compaction skipped: hook '{kept.DecidedBy}' blocked it"
                              + (kept.Reason is { Length: > 0 } why ? $" ({why})" : ""), IsError: false));

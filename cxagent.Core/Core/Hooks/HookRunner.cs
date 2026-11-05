@@ -108,9 +108,22 @@ public sealed class HookRunner
     /// </summary>
     internal async Task<IReadOnlyList<string>> TakeStartContextAsync(CancellationToken ct)
     {
-        try { await PendingStart.WaitAsync(ct); }
+        Task[] pending;
+        lock (_pending) { pending = [PendingStart, .. _pending]; _pending.Clear(); }
+        try { await Task.WhenAll(pending).WaitAsync(ct); }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested) { }
         return TakeStartContext();
+    }
+
+    private readonly List<Task> _pending = [];
+
+    /// <summary>
+    /// A hook run whose context belongs with the next request — PostModelSwitch's. The next prompt waits for it, so a
+    /// prompt typed straight after <c>/model</c> still carries what the hook said.
+    /// </summary>
+    internal void HoldPending(Task run)
+    {
+        lock (_pending) _pending.Add(run);
     }
 
     /// <summary>Takes the held SessionStart context — once, so it is said at the start and not with every prompt.</summary>
@@ -212,9 +225,9 @@ public sealed class HookRunner
             if (reply.UpdatedInput is { } updated && toolName is not null)
                 Rewrite = HookNames.ToCxagentInput(toolName, updated);
             if (reply.AdditionalContext is { Length: > 0 } ctx) _context.Add(ctx);
-            // PLAIN STDOUT IS CONTEXT where the contract says so: a prompt and a session's start. Elsewhere it
+            // PLAIN STDOUT IS CONTEXT where the contract says so: a prompt, a session's start, a model switch done. Elsewhere it
             // is the hook talking to itself and goes nowhere.
-            else if (reply.Json is null && eventName is HookEvents.UserPromptSubmit or HookEvents.SessionStart
+            else if (reply.Json is null && eventName is HookEvents.UserPromptSubmit or HookEvents.SessionStart or HookEvents.PostModelSwitch
                      && reply.Stdout.Trim() is { Length: > 0 } text)
                 _context.Add(text);
             if (reply.SystemMessage is { Length: > 0 } msg) notice(new($"hook '{name}': {msg}", IsError: false));

@@ -345,4 +345,35 @@ public class HookTypesTests
         await Run(hook, new HookServices { Http = new HttpClient(stub), Env = _ => "secret" });
         Assert.Equal("", stub.Seen!.Headers.GetValues("X").Single());
     }
+
+    [Fact]
+    public void Events_a_person_waits_on_default_short()
+    {
+        foreach (var ev in new[] { "PreModelSwitch", "PostModelSwitch", "ConfigChange" })
+            Assert.Equal(10, HookDispatch.TimeoutSeconds(Parse("""{ "type": "command", "command": "x" }""", ev)));
+    }
+
+    private sealed class Spending(string text) : ILlmProvider
+    {
+        public string ProviderId => "t";
+        public string ModelId => "t";
+        public string DisplayName => "t";
+        public bool SupportsToolCalling => false;
+        public bool SupportsStreaming => false;
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct) =>
+            Task.FromResult(new LlmResponse { Text = text, StopReason = "end_turn", Usage = new LlmUsage { InputTokens = 120, OutputTokens = 8 } });
+        public IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct) =>
+            throw new NotSupportedException();
+    }
+
+    [Fact]
+    public async Task A_prompt_hooks_spend_is_recorded()
+    {
+        var spent = new List<(LlmUsage Usage, string Label)>();
+        await Run(Parse("""{ "type": "prompt", "prompt": "x", "model": "m", "name": "judge" }"""),
+            new HookServices { Model = _ => new Spending("""{"ok": true}"""), Spend = (u, l) => spent.Add((u, l)) });
+        var (usage, label) = Assert.Single(spent);
+        Assert.Equal(120, usage.InputTokens);
+        Assert.Equal("hook:judge", label);
+    }
 }

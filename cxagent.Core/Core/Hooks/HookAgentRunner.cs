@@ -27,7 +27,9 @@ public static class HookAgentRunner
     {
         var agent = new Agent(new AgentSetup
         {
-            Model = new AgentModel(request.Model, new TokenLedger()),
+            // ITS SPEND IS THE SESSION'S: every model reply the verifier gets is recorded where the hook's other
+            // costs are, so an agent hook on every tool call is not a bill nobody sees.
+            Model = new AgentModel(request.Spend is { } spend ? new Metered(request.Model, spend) : request.Model, new TokenLedger()),
             Outputs = new AgentOutputs(new BufferedChatSink(), new BufferedJobPanel()),
             Identity = new AgentIdentity { WorkingDir = request.ProjectDir, IsSubAgent = true, Label = "hook verifier" },
             Tools = new AgentTools(JobRegistry.CreateWithBuiltins(null, new ProjectOnly(request.ProjectDir))) { Selection = ReadOnly },
@@ -38,6 +40,33 @@ public static class HookAgentRunner
         });
         var result = await agent.SendAsync(request.Prompt, ct);
         return result.Text;
+    }
+
+    /// <summary>A provider that reports each reply's usage — the verifier's model, metered for the session.</summary>
+    private sealed class Metered(ILlmProvider inner, Action<LlmUsage> spend) : ILlmProvider
+    {
+        public string ProviderId => inner.ProviderId;
+        public string ModelId => inner.ModelId;
+        public string DisplayName => inner.DisplayName;
+        public bool SupportsToolCalling => inner.SupportsToolCalling;
+        public bool SupportsStreaming => inner.SupportsStreaming;
+
+        public async Task<LlmResponse> ChatAsync(List<Models.ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct)
+        {
+            var response = await inner.ChatAsync(messages, tools, ct);
+            if (response.Usage is { } usage) spend(usage);
+            return response;
+        }
+
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<Models.ChatMessage> messages, List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await foreach (var chunk in inner.ChatStreamAsync(messages, tools, ct))
+            {
+                if (chunk.Usage is { } usage) spend(usage);
+                yield return chunk;
+            }
+        }
     }
 
     /// <summary>

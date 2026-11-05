@@ -1805,7 +1805,7 @@ public sealed class Agent
                 _turn++;
 
                 await CompressionRun.RunAsync(
-                    new CompressionRun.CompressionWork(_context, _provider, SkillToolOffered) { Hooks = _hooks },
+                    new CompressionRun.CompressionWork(_context, _provider, SkillToolOffered) { Hooks = _hooks, HookContext = _hooks is { } h ? HookContext(h) : null },
                     new CompressionRun.CompressionReport(_jobs, Id,
                         "compress context · provider refused the request as too long",
                         // ATTRIBUTED LIKE ANY OTHER CALL. Compaction is a real request to a real
@@ -3927,7 +3927,7 @@ public sealed class Agent
         // and the /compress command. The threshold test stays here because only this caller measures
         // per-turn pressure.
         await CompressionRun.RunAsync(
-            new CompressionRun.CompressionWork(_context, _provider, SkillToolOffered) { Hooks = _hooks },
+            new CompressionRun.CompressionWork(_context, _provider, SkillToolOffered) { Hooks = _hooks, HookContext = _hooks is { } h ? HookContext(h) : null },
             new CompressionRun.CompressionReport(_jobs, agentId, $"compress context · {reason}",
                 // ATTRIBUTED LIKE ANY OTHER CALL. Compaction is a real request to a real
                 // model, and a summarisation turn that vanished from the per-model tally

@@ -10,7 +10,11 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Hooks;
 
 /// <summary>What an <c>agent</c> hook's verifier is given: the model to run on, and the question with the event in it.</summary>
-public sealed record HookAgentRequest(ILlmProvider Model, string Prompt, string ProjectDir);
+public sealed record HookAgentRequest(ILlmProvider Model, string Prompt, string ProjectDir)
+{
+    /// <summary>Where the verifier's model spend is recorded.</summary>
+    public Action<LlmUsage>? Spend { get; init; }
+}
 
 /// <summary>
 /// What hooks of the types other than command reach: models by name, MCP servers by name, the network, and a
@@ -32,6 +36,12 @@ public sealed record HookServices
 
     /// <summary>Reads an environment variable — for an http hook's allowed header values.</summary>
     public Func<string, string?> Env { get; init; } = Environment.GetEnvironmentVariable;
+
+    /// <summary>
+    /// Records what a hook's model call cost, under a label naming the hook — so a prompt hook firing on every tool
+    /// call shows in the session's spend and in /stats, rather than as money nobody can see going.
+    /// </summary>
+    public Action<LlmUsage, string>? Spend { get; init; }
 
     /// <summary>Runs an agent hook's verifier and returns its final text; null where no agent can be run.</summary>
     public Func<HookAgentRequest, CancellationToken, Task<string>>? Agent { get; init; }
@@ -58,7 +68,10 @@ public static class HookDispatch
             "agent" => 60,
             _ => hook.Event switch
             {
-                HookEvents.UserPromptSubmit or HookEvents.PreModelSwitch or HookEvents.PostModelSwitch => 30,
+                HookEvents.UserPromptSubmit => 30,
+                // TEN SECONDS where a command waits on them synchronously: a model switch and a config change hold
+                // the window until their hooks answer, and a hung default of minutes would freeze it.
+                HookEvents.PreModelSwitch or HookEvents.PostModelSwitch or HookEvents.ConfigChange => 10,
                 HookEvents.MessageDisplay => 10,
                 _ => 600,
             },
@@ -128,6 +141,7 @@ public static class HookDispatch
             new ChatMessage { Role = "system", Content = "You check one event for an agent's hook. " + AnswerShape },
             new ChatMessage { Role = "user", Content = Question(run) },
         ], null, ct);
+        if (response.Usage is { } usage) services.Spend?.Invoke(usage, $"hook:{run.Hook.DisplayName}");
         return FromAnswer(run.Hook, response.Text ?? "", carryOn: run.Hook.ContinueOnBlock);
     }
 
@@ -136,7 +150,8 @@ public static class HookDispatch
         var (model, error) = ModelFor(run.Hook, services);
         if (model is null) return HookReply.Failed(error!);
         if (services.Agent is not { } agent) return HookReply.Failed("agent hooks cannot run here");
-        var text = await agent(new HookAgentRequest(model, Question(run) + "\n\n" + AnswerShape, run.ProjectDir), ct);
+        var text = await agent(new HookAgentRequest(model, Question(run) + "\n\n" + AnswerShape, run.ProjectDir)
+            { Spend = usage => services.Spend?.Invoke(usage, $"hook:{run.Hook.DisplayName}") }, ct);
         // A VERIFIER STOPPED BY ITS DEADLINE returns what it had rather than throwing; that is a timeout, not an answer.
         ct.ThrowIfCancellationRequested();
         // AN AGENT HOOK ALWAYS CARRIES ON when it blocks, as the contract has it: it looked before it answered,

@@ -500,6 +500,8 @@ internal static class SessionFactory
                 DefaultModel = settings.DefaultModel,
                 McpServer = name => shared.Mcp?.ServerNamed(name),
                 Agent = Hooks.HookAgentRunner.RunAsync,
+                // ON THE SESSION'S LEDGER AS IT IS WHEN THE HOOK RUNS: a re-wire replaces the host and its ledger.
+                Spend = (usage, label) => session.Host?.Ledger.Record(usage, label, subAgent: true),
             },
         });
         runner.Session = () => new Hooks.HookEventContext(

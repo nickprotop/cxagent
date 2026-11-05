@@ -714,15 +714,15 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     public const int DefaultTurnCeiling = 300;
 
+    /// <summary>The model this session runs on — what a model-switch hook is told it switches from.</summary>
+    public string ModelId => _runtime.Provider.ModelId;
+
     /// <summary>
     /// How this session's spend is attributed: <c>instance:model</c> when the instance is known.
     ///
     /// <para>The same string the UI shows and the same one <c>/stats</c> groups by, so a figure in
     /// the dashboard and a name in the panel do not have to be reconciled by the reader.</para>
     /// </summary>
-    /// <summary>The model this session runs on — what a model-switch hook is told it switches from.</summary>
-    public string ModelId => _runtime.Provider.ModelId;
-
     private string SpendLabel =>
         _runtime.InstanceName is { Length: > 0 } instance
             ? $"{instance}:{_runtime.Provider.ModelId}"

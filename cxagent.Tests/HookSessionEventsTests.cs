@@ -270,4 +270,27 @@ public class HookSessionEventsTests : IDisposable
         var verdict = HookLifecycle.ModelSwitch(runner, "PreModelSwitch", new HookModelSwitch("a", "b", null, 0));
         Assert.Null(verdict.Decision);
     }
+
+    [Fact]
+    public async Task PostModelSwitch_context_is_ready_for_the_very_next_prompt()
+    {
+        Hook("PostModelSwitch", answer: "now on b");
+        var session = Open(TwoModels());
+        Assert.Equal(CommandStatus.Changed, session.Use("b"));
+        var context = await session.Hooks!.TakeStartContextAsync(CancellationToken.None);
+        Assert.Contains("now on b", context);
+    }
+
+    [Fact]
+    public async Task ConfigChange_runs_for_every_session_at_once()
+    {
+        File.WriteAllText(Path.Combine(_repo, ".cxagent", "hooks.json"),
+            """{ "hooks": { "ConfigChange": [ { "hooks": [ { "type": "command", "command": "sleep 1" } ] } ] } }""");
+        var sessions = Enumerable.Range(0, 3).Select(_ => Open()).ToList();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        _manager.ApplyConfig(ResolvedConfig.ForTesting(new MockLlmProvider(), "test"),
+            new ConfigChange(new HashSet<string> { "test" }, new Dictionary<string, string>(), Everyone: true, Note: "x"));
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2.5), watch.Elapsed.ToString());
+        await Task.CompletedTask;
+    }
 }
