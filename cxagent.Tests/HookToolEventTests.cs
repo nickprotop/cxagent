@@ -2,7 +2,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Hooks;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Mcp;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
@@ -166,5 +168,48 @@ public class HookToolEventTests : IDisposable
         var input = Assert.Single(fake.Runs).Input;
         Assert.NotEqual("main", (string?)input["agent"]);
         Assert.Equal(agent.Id, (string?)input["agent_id"]);
+    }
+
+    private sealed class McpServer : IMcpServer
+    {
+        public string Name => "files";
+        public string? Instructions => null;
+        public string? Error => null;
+        public IReadOnlyList<McpToolDef> Tools { get; } =
+            [new("read", "reads", JsonDocument.Parse("""{"type":"object","properties":{}}""").RootElement.Clone())];
+        public Task<string> CallToolAsync(string tool, JsonElement args, CancellationToken ct) => Task.FromResult("mcp result");
+    }
+
+    private sealed class RecordingGate : IPermissionGate
+    {
+        public List<PermissionRequest> Asked { get; } = [];
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct)
+        {
+            Asked.Add(request);
+            return Task.FromResult(PermissionOutcome.Allow);
+        }
+    }
+
+    [Fact]
+    public async Task PreToolUse_answer_reaches_an_mcp_call()
+    {
+        var fake = new Fake { Answer = _ => Json("""{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask"}}""") };
+        var policy = new PermissionPolicy(_dir, new PermissionRulesStore(new AppPaths(_dir)));
+        policy.Hooks = new HookRunner(new HookRunnerDeps(new HookSnapshot([H("PreToolUse", matcher: null)], [], null,
+            new Dictionary<string, string>()), new HookHandlers(), () => true, _ => { }) { Run = fake.Run, ProjectDir = _dir });
+        var gate = new RecordingGate();
+        var provider = new ScriptedProvider(
+            new LlmResponse { Text = "", StopReason = "tool_use", ToolCalls = [new ToolCall { Name = "files_read", Id = "m1", Arguments = JsonSerializer.SerializeToElement(new { }) }] },
+            new LlmResponse { Text = "done", StopReason = "end_turn" });
+        var agent = new Agent(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 4) with
+        {
+            Identity = new() { WorkingDir = _dir },
+            Guards = new() { Policy = policy },
+            Tools = new(JobRegistry.CreateWithBuiltins()) { Mcp = new McpToolset([new McpServer()], gate) },
+        });
+        await agent.SendAsync("go", CancellationToken.None);
+        var asked = Assert.Single(gate.Asked);
+        Assert.Equal("ask", asked.HookDecision);
+        Assert.Equal("guard", asked.HookDecidedBy);
     }
 }

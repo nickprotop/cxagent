@@ -3225,7 +3225,14 @@ public sealed class Agent
                 ?? Text(ReportMcpWonOverInjected(call.Name,
                         _mcp is null || DynamicOffers(call.Name) ? null
                             : await _mcp.TryInvokeAsync(call, ct,
-                                new Permissions.RequestOrigin(_requesterLabel, _requesterRunsOn, _policy) { Root = _requesterRoot })))
+                                new Permissions.RequestOrigin(_requesterLabel, _requesterRunsOn, _policy)
+                                {
+                                    Root = _requesterRoot,
+                                    // THE CALL'S HOOK ANSWER RIDES ALONG: MCP asks the gate itself, not through
+                                    // the executor that stamps it for the built-ins.
+                                    HookDecision = ctx.HookDecision,
+                                    HookDecidedBy = ctx.HookDecidedBy,
+                                })))
                 // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. ToolBindings.InvokeAsync
                 // answers "no such tool" rather than null, so it ENDS this chain — a link placed
                 // after it never runs at all, and looks perfectly correct while never running.
