@@ -66,7 +66,8 @@ public sealed partial class Session
             Say(new Message("Hooks are not available in this session.", Severity.Warning));
             return CommandStatus.Reported;
         }
-        Say(new Message(CxAgent.Core.Hooks.HookList.Describe(hooks, CxAgent.Core.Hooks.HookSources.ChangedSince(hooks.Snapshot)),
+        var changed = CxAgent.Core.Hooks.HookSources.ChangedSince(hooks.Snapshot);
+        Say(new Message(CxAgent.Core.Hooks.HookList.Describe(hooks, changed, changed.Count > 0 ? HooksOnDisk() : null),
             Severity.Info));
         return CommandStatus.Reported;
     }

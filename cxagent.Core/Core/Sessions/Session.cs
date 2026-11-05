@@ -364,6 +364,11 @@ public sealed partial class Session
     /// <summary>The folder <see cref="Hooks"/> was read for — compared with <see cref="WorkingDirectory"/> after a resume.</summary>
     internal string? HooksFolder { get; private set; }
 
+    private bool Said(string file)
+    {
+        lock (_hookChangesSaid) return _hookChangesSaid.Add(file);
+    }
+
     internal void NoteHooks(Hooks.HookRunner runner, Hooks.HooksSettings settings)
     {
         if (!ReferenceEquals(Hooks, runner)) HooksFolder = WorkingDirectory;
@@ -376,7 +381,8 @@ public sealed partial class Session
     {
         if (Hooks is not { } hooks) return;
         foreach (var file in CxAgent.Core.Hooks.HookSources.ChangedSince(hooks.Snapshot))
-            if (_hookChangesSaid.Add(file))
+            // LOCKED: the turn's thread adds here while a review on the UI thread clears.
+            if (Said(file))
                 NotifyWarning($"{Path.GetFileName(file)} changed: the hooks running are the ones read at start. "
                               + "/hooks review applies it, or a save in F8 › Hooks.");
     }
@@ -385,20 +391,26 @@ public sealed partial class Session
     /// Reads the hooks files again and makes what they say now the hooks this session runs — the user's
     /// review of a change, from F8's save or its review action.
     /// </summary>
-    public void ReviewHooks()
+    /// <returns>What changed among the repository's hooks, one line each — what the review applied.</returns>
+    public IReadOnlyList<string> ReviewHooks()
     {
-        if (Hooks is not { } hooks) return;
+        if (Hooks is not { } hooks) return [];
         var fresh = CxAgent.Core.Hooks.HookSources.Read(_hookSettings, WorkingDirectory);
+        var applied = CxAgent.Core.Hooks.HookList.Changes(hooks.Snapshot, fresh);
         hooks.Replace(fresh);
-        _hookChangesSaid.Clear();
+        lock (_hookChangesSaid) _hookChangesSaid.Clear();
         SayHookProblems(fresh);
+        return applied;
     }
 
+    /// <summary>The repository's hooks files as they are on disk now, for showing what a review would apply.</summary>
+    internal CxAgent.Core.Hooks.HookSnapshot HooksOnDisk() => CxAgent.Core.Hooks.HookSources.Read(_hookSettings, WorkingDirectory);
+
     /// <summary>Re-reads with a new user block — F8 saved config.json — and applies it.</summary>
-    public void ReviewHooks(Hooks.HooksSettings user)
+    public IReadOnlyList<string> ReviewHooks(Hooks.HooksSettings user)
     {
         _hookSettings = user with { Handlers = _hookSettings.Handlers, Source = _hookSettings.Source };
-        ReviewHooks();
+        return ReviewHooks();
     }
 
     /// <summary>

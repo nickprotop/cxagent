@@ -105,8 +105,9 @@ public class HookSessionTests : IDisposable
         ProjectHooks("""{ "Stop": [ { "hooks": [ { "type": "command", "command": "true" } ] } ] }""");
         var (session, sink) = Open();
         ProjectHooks("""{ "Stop": [ { "hooks": [ { "type": "command", "command": "true" }, { "type": "command", "command": "false" } ] } ] }""");
-        session.ReviewHooks();
+        var applied = session.ReviewHooks();
         Assert.Equal(2, session.Hooks!.Snapshot.Hooks.Count);
+        Assert.Contains(applied, c => c.StartsWith('+') && c.Contains("false"));
         session.CheckHookChanges();
         Assert.DoesNotContain(sink.Notices, m => m.Contains("changed"));
     }

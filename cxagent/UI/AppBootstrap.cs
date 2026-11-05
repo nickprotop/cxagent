@@ -828,8 +828,10 @@ public static class AppBootstrap
             (s, _) =>
             {
                 var user = ProvidersFile.Read(paths, env).Settings?.Hooks ?? Core.Hooks.HooksSettings.None;
-                s.ReviewHooks(user);
-                s.Notify("Hooks re-read: this session runs the files as they are now.");
+                var applied = s.ReviewHooks(user);
+                s.Notify(applied.Count == 0
+                    ? "Hooks re-read: no repository hook changed."
+                    : "Hooks re-read. This session now runs:\n" + string.Join("\n", applied.Select(c => $"- `{c}`")));
                 return true;
             });
         manager.Commands.RegisterVerb("/agents",

@@ -25,7 +25,8 @@ public static class HookList
 
     /// <summary>The <c>/hooks</c> listing, as markdown.</summary>
     /// <param name="changed">Project hooks files that differ from what the session runs.</param>
-    public static string Describe(HookRunner runner, IReadOnlyList<string> changed)
+    /// <param name="onDisk">Those files as they are now, so the listing can show what a review would apply.</param>
+    public static string Describe(HookRunner runner, IReadOnlyList<string> changed, HookSnapshot? onDisk = null)
     {
         var snapshot = runner.Snapshot;
         var trusted = runner.ProjectTrusted;
@@ -43,10 +44,32 @@ public static class HookList
 
         foreach (var file in changed)
             sb.Append($"\n{Path.GetFileName(file)} changed since this session read it. `/hooks review` applies it.\n");
+        // WHAT A REVIEW WOULD APPLY, said before it is applied: the review is reading this, not typing a word.
+        if (changed.Count > 0 && onDisk is not null && Changes(snapshot, onDisk) is { Count: > 0 } diff)
+        {
+            sb.Append("\n");
+            foreach (var line in diff) sb.Append($"- `{line}`\n");
+        }
         foreach (var p in snapshot.Problems)
             sb.Append($"\n{Path.GetFileName(p.File)}: {p.Message}\n");
         return sb.ToString();
     }
+
+    /// <summary>
+    /// The repository hooks in <paramref name="next"/> that <paramref name="running"/> does not have (<c>+</c>),
+    /// and the other way round (<c>−</c>) — one line each, with what the hook runs.
+    /// </summary>
+    public static IReadOnlyList<string> Changes(HookSnapshot running, HookSnapshot next)
+    {
+        static bool Project(HookDefinition h) => h.Source is HookSource.Project or HookSource.Local;
+        var before = running.Hooks.Where(Project).Select(Key).ToList();
+        var after = next.Hooks.Where(Project).Select(Key).ToList();
+        return [.. after.Except(before).Select(k => "+ " + k), .. before.Except(after).Select(k => "− " + k)];
+    }
+
+    /// <summary>A hook as one line: where, when, and what it runs — what a change is judged by.</summary>
+    public static string Key(HookDefinition h) =>
+        $"{SourceTag(h.Source)} {h.Event}{(h.Matcher is { } m ? $" [{m}]" : "")} {h.Type}: {h.Command ?? h.Url ?? h.Model ?? ""}".TrimEnd();
 
     private static int HookEventOrder(string ev)
     {

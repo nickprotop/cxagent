@@ -161,7 +161,12 @@ public sealed class HooksTab
             _ => ("○", ColorScheme.CautionMarkup),
         };
         var name = e.Name is { Length: > 0 } n ? n : FirstWords(e.Command ?? e.Type);
-        return $"[bold]{MarkupParser.Escape(name)}[/] [{colour}]{glyph}[/]\n"
+        // NOT WHAT THIS TAB RUNS: a hook that differs from the session's — edited here and not saved, or changed
+        // on disk and not reviewed — is marked, so a change is seen before it is applied.
+        var running = Session.Hooks?.Snapshot.Hooks.Select(HookList.Key).ToHashSet();
+        var pending = running is not null && !running.Contains(HookList.Key(def))
+            ? $" [{ColorScheme.CautionMarkup}]◆ not running yet[/]" : "";
+        return $"[bold]{MarkupParser.Escape(name)}[/] [{colour}]{glyph}[/]{pending}\n"
                + $"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(e.Event)}{(e.Matcher is { Length: > 0 } m ? " · " + MarkupParser.Escape(m) : "")} · {HookList.SourceTag(e.Source)}[/]";
     }
 

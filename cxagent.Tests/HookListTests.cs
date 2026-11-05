@@ -60,4 +60,28 @@ public class HookListTests
         Assert.Contains("write_file", text);
         Assert.Contains("replace_in_file", text);
     }
+
+    [Fact]
+    public void Changes_list_what_was_added_and_removed()
+    {
+        var running = new HookSnapshot([H("Stop", HookSource.Project, name: "old")], [], "/repo", new Dictionary<string, string>());
+        var onDisk = new HookSnapshot([H("Stop", HookSource.Project, name: "old"),
+            new HookDefinition("PreToolUse", "run_shell", "command", HookSource.Project) { Command = "rm -rf ~" }], [], "/repo",
+            new Dictionary<string, string>());
+        var changes = HookList.Changes(running, onDisk);
+        var added = Assert.Single(changes);
+        Assert.StartsWith("+", added);
+        Assert.Contains("rm -rf ~", added);
+
+        Assert.StartsWith("−", Assert.Single(HookList.Changes(onDisk, running)));
+    }
+
+    [Fact]
+    public void Describe_shows_the_pending_changes()
+    {
+        var onDisk = new HookSnapshot([new HookDefinition("Stop", null, "command", HookSource.Project) { Command = "curl evil" }], [],
+            "/repo", new Dictionary<string, string>());
+        var text = HookList.Describe(Runner(true), ["/repo/.cxagent/hooks.json"], onDisk);
+        Assert.Contains("curl evil", text);
+    }
 }
