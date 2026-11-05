@@ -615,12 +615,35 @@ public class PermissionPolicy
         };
     }
 
+    /// <summary>
+    /// A shell command the sandbox contains, in a trusted folder, under a mode that lets writes inside the folder be
+    /// silent.
+    ///
+    /// <para>THE SAME LINE AS A FILE WRITE. A contained command can write anywhere in the project and nowhere else
+    /// — exactly what Accept edits lets a file tool do without asking. Always ask means every write asks, and a
+    /// contained command is a write as far as anyone can tell from its text. Trust is the floor: an untrusted
+    /// folder asks for everything, contained or not. Auto needs no classifier for it: what a verdict would weigh is
+    /// already bounded by the kernel.</para>
+    ///
+    /// <para>NEVER AN ESCAPE OR A FAILED START. Both are stamped without <see cref="PermissionRequest.Contained"/>,
+    /// and checked here as well so a request carrying both cannot slip through.</para>
+    /// </summary>
+    public bool IsContainedSilently(PermissionRequest request) =>
+        request.Kind == PermissionKind.Shell
+        && request.Contained
+        && request.UnsandboxedReason is null
+        && request.SandboxFailure is null
+        && RootTrust == TrustState.Trusted
+        && Edits is EditMode.AcceptEdits or EditMode.Auto;
+
     /// <summary>True when this request needs no prompt: an in-boundary file read/write, or a
     /// request matched by a previously stored "Always" rule. Shell has no in-boundary free
     /// pass — a command string says nothing reliable about what it touches — so it is silent
     /// only via a matching rule.</summary>
     public bool IsSilentlyAllowed(PermissionRequest request)
     {
+        if (IsContainedSilently(request)) return true;
+
         // THE MODE TEST SITS INSIDE THE TRUST GUARD, AND-ed with it, so an untrusted folder is
         // STRUCTURALLY incapable of a silent write: modes narrow, trust bounds. Placing it here makes
         // the floor a property of the code's shape rather than a rule someone has to remember.

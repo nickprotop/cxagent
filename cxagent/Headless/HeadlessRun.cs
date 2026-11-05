@@ -89,7 +89,7 @@ public static class HeadlessRun
             r.Io.Err.WriteLine("cxagent: --dangerously-skip-permissions: every prompt is approved, "
                 + "except file-tool writes into .git, .vscode, .claude and .idea.");
 
-        var prompt = new HeadlessPrompt(bypass);
+        var prompt = new HeadlessPrompt(bypass, line => r.Io.Err.WriteLine(line));
         foreach (var hash in plugins.RunApprovedHashes) prompt.ApprovePluginForRun(hash);
         var gate = PermissionDecider.WithPrompt(stores.Rules,
             notice: (_, message) => output.Said(message), prompt.Answer);

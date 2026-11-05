@@ -134,6 +134,14 @@ public sealed class PermissionPromptControl
         var trusted = request.Policy?.FolderTrusted == true;
         var heading = HeadingTextFor(request.Kind, new PathPlace(inside, trusted), request.RefusedByClassifier);
 
+        // THE SANDBOX'S TWO QUESTIONS SAY SO FIRST. Neither is the ordinary "run this command?": one is a command
+        // the sandbox would have held and cannot, the other a model asking to be let out. Both reasons are clipped
+        // like the classifier's — the model's reason is model-authored text and must not push the command off.
+        if (request.SandboxFailure is { Length: > 0 } failure)
+            return $"Sandbox could not start: {ClipReason(failure)}. Run this command uncontained?";
+        if (request.UnsandboxedReason is { Length: > 0 } why)
+            return $"{heading}  — wants to run outside the sandbox: {ClipReason(why)}";
+
         // WHY A HOOK'S ANSWER DID NOT SETTLE IT, said on the prompt: a user who configured a hook to allow
         // this and is asked anyway would otherwise read the hook as broken.
         var hook = request.HookDecidedBy is { Length: > 0 } name ? $"hook '{name}'" : "a hook";
@@ -145,12 +153,11 @@ public sealed class PermissionPromptControl
         if (!request.RefusedByClassifier || request.ClassifierReason is not { Length: > 0 } reason)
             return heading;
 
-        var clipped = reason.Length > MaxReasonChars
-            ? reason[..MaxReasonChars] + "…"
-            : reason;
-
-        return $"{heading}  — {clipped}";
+        return $"{heading}  — {ClipReason(reason)}";
     }
+
+    private static string ClipReason(string reason) =>
+        reason.Length > MaxReasonChars ? reason[..MaxReasonChars] + "…" : reason;
 
     /// <summary>Where a requested path is: inside the working folder or not, and whether that folder is trusted.</summary>
     private readonly record struct PathPlace(bool Inside, bool Trusted);

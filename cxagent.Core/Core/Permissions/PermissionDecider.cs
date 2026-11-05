@@ -339,6 +339,12 @@ public sealed class PermissionDecider : IPermissionGate
         // AN ASK IS HONOURED FOR EVERY KIND — it only ever adds a question — and an allow for none of the gates a
         // plugin or an embedder put themselves.
         if (request.HookDecision == "ask" && request.Kind != PermissionKind.Plugin) return await PromptAsync(request, ct);
+
+        // LEAVING THE SANDBOX, OR RUNNING WHEN IT WILL NOT START, ONLY THE USER ANSWERS. Not a stored rule (the
+        // request carries none), not a hook's allow, not a mode, not the classifier: each of those was configured
+        // for commands the sandbox holds, and this one it will not.
+        if (request.UnsandboxedReason is not null || request.SandboxFailure is not null)
+            return await PromptAsync(request, ct);
         if (request.HookDecision is { } hookSays && request.Kind is not (PermissionKind.Tool or PermissionKind.Plugin))
         {
             if (hookSays == "allow" && !policy.IsSilentlyAllowed(request))
@@ -355,7 +361,9 @@ public sealed class PermissionDecider : IPermissionGate
         // session of decisions.
         if (policy.IsSilentlyAllowed(request))
         {
-            OnDecision?.Invoke(new(request.Kind, "silent", request.Requester, request.What) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
+            // "sandbox", NOT "silent", for a command let through because it is contained: the two answer different
+            // questions afterwards — how many commands the sandbox spared a prompt, against how many a rule did.
+            OnDecision?.Invoke(new(request.Kind, policy.IsContainedSilently(request) ? "sandbox" : "silent", request.Requester, request.What) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
             return PermissionOutcome.Allow;
         }
 
@@ -554,6 +562,8 @@ public sealed class PermissionDecider : IPermissionGate
     /// <summary>Whether this request is one a hook's allow may not answer — see the routing in RequestAsync.</summary>
     private static bool HookCannotAllow(PermissionPolicy policy, PermissionRequest request) =>
         policy.IsProtectedWrite(request)
+        || request.UnsandboxedReason is not null
+        || request.SandboxFailure is not null
         || (request.Requester is not null
             && request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite
             && !policy.IsInBoundary(request.Display));
