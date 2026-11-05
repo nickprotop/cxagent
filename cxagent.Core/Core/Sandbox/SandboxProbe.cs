@@ -45,8 +45,29 @@ public sealed record SandboxStatus(SandboxStatusKind Kind, string? Reason, strin
 /// <param name="IsLinux">Whether this is Linux, the one system bubblewrap runs on.</param>
 public sealed record SandboxProbeRequest(string? BwrapPath, bool IsLinux)
 {
+    /// <summary>Whether commands will reach the network — the probe asks for no network when they will not, since
+    /// that is a namespace of its own that can fail to start.</summary>
+    public bool Network { get; init; } = true;
+
+    /// <summary>A bubblewrap found and refused, said in the reason when none was accepted.</summary>
+    public string? Rejected { get; init; }
+
+    /// <summary>
+    /// The bubblewrap this process uses, found ONCE, from the PATH it was started with.
+    ///
+    /// <para>NEVER SEARCHED AGAIN. A re-probe follows a command's failure, and a contained command can write into
+    /// folders that sit early on PATH; a fresh search after it ran would find what it planted and make that the
+    /// sandbox.</para>
+    /// </summary>
+    private static readonly Lazy<BwrapLocation> Machine = new(() => SandboxProbe.Locate(new BwrapSearch(
+        Environment.GetEnvironmentVariable("PATH") ?? "",
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        System.IO.Path.GetTempPath())));
+
     /// <summary>This machine.</summary>
-    public static SandboxProbeRequest ThisMachine() => new(SandboxProbe.FindOnPath(), OperatingSystem.IsLinux());
+    /// <param name="network">Whether commands will reach the network.</param>
+    public static SandboxProbeRequest ThisMachine(bool network = true) =>
+        new(Machine.Value.Path, OperatingSystem.IsLinux()) { Network = network, Rejected = Machine.Value.Rejected };
 }
 
 /// <summary>
@@ -70,6 +91,47 @@ public static class SandboxProbe
         return null;
     }
 
+    /// <summary>
+    /// The first bubblewrap on the search path that a contained command could not have written: not under the home or
+    /// temp folders (both writable from inside, in part), not group- or world-writable, not reached through a
+    /// relative PATH entry. Candidates passed over are named, so the reason can say why none was used.
+    /// </summary>
+    /// <param name="search">Where to look, and what counts as writable from inside.</param>
+    public static BwrapLocation Locate(BwrapSearch search)
+    {
+        var rejected = new List<string>();
+        var home = Permissions.PathResolver.RealFolder(search.Home);
+        var temps = new[] { search.Temp, "/tmp" }.Where(Directory.Exists).Select(Permissions.PathResolver.RealFolder).ToList();
+        static bool Under(string path, string folder) =>
+            path.StartsWith(Path.TrimEndingDirectorySeparator(folder) + "/", StringComparison.Ordinal);
+
+        foreach (var dir in search.Path.Split(':', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!Path.IsPathRooted(dir)) continue;
+            var candidate = Path.Combine(dir, "bwrap");
+            if (!File.Exists(candidate)) continue;
+            var real = new FileInfo(candidate).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? candidate;
+            real = Path.Combine(Permissions.PathResolver.RealFolder(Path.GetDirectoryName(real)!), Path.GetFileName(real));
+            if (Under(real, home) || temps.Any(t => Under(real, t)))
+            {
+                rejected.Add($"{candidate} (in a folder a contained command can write)");
+                continue;
+            }
+            if (OperatingSystem.IsLinux())
+            {
+                var mode = File.GetUnixFileMode(real);
+                if ((mode & (UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) != 0)
+                {
+                    rejected.Add($"{candidate} (writable by others)");
+                    continue;
+                }
+                if ((mode & UnixFileMode.UserExecute) == 0) continue;
+            }
+            return new(candidate, null);
+        }
+        return new(null, rejected.Count == 0 ? null : string.Join(", ", rejected));
+    }
+
     /// <summary>Starts bubblewrap with the sandbox's own isolation and nothing to run.</summary>
     /// <param name="request">The machine.</param>
     public static SandboxStatus Run(SandboxProbeRequest request)
@@ -77,10 +139,15 @@ public static class SandboxProbe
         if (!request.IsLinux)
             return new(SandboxStatusKind.Unavailable, "the sandbox is not available on this system");
         if (request.BwrapPath is not { } bwrap)
-            return new(SandboxStatusKind.Unavailable, "bubblewrap is not installed")
-            {
-                Fix = "Install the bubblewrap package to contain the model's commands.",
-            };
+            return request.Rejected is { } refused
+                ? new(SandboxStatusKind.Unavailable, $"no trusted bubblewrap — passed over {refused}")
+                {
+                    Fix = "Install bubblewrap system-wide (the bubblewrap package) so a contained command cannot replace it.",
+                }
+                : new(SandboxStatusKind.Unavailable, "bubblewrap is not installed")
+                {
+                    Fix = "Install the bubblewrap package to contain the model's commands.",
+                };
 
         try
         {
@@ -90,8 +157,11 @@ public static class SandboxProbe
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
             };
-            foreach (var a in new[] { "--ro-bind", "/", "/", "--unshare-pid", "--new-session", "--", "true" })
-                psi.ArgumentList.Add(a);
+            // THE FLAGS A COMMAND GETS, so "works" means a command will start: a bubblewrap that binds / but cannot
+            // mount /proc, or make a network namespace, would otherwise read as working while every command failed.
+            string[] args = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--unshare-pid", "--new-session"];
+            if (!request.Network) args = [.. args, "--unshare-net"];
+            foreach (var a in args.Concat(["--", "true"])) psi.ArgumentList.Add(a);
             using var process = Process.Start(psi)!;
             var stderr = process.StandardError.ReadToEndAsync();
             if (!process.WaitForExit(5000))
@@ -115,3 +185,14 @@ public static class SandboxProbe
     private static string? FirstLine(string text) =>
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault()?.TrimEnd('.');
 }
+
+/// <summary>Where to look for bubblewrap, and which folders a contained command could have written it into.</summary>
+/// <param name="Path">A PATH-style list of folders.</param>
+/// <param name="Home">The user's home: anything under it a contained command may be able to write.</param>
+/// <param name="Temp">The temp folder, writable by every contained command.</param>
+public sealed record BwrapSearch(string Path, string Home, string Temp);
+
+/// <summary>The bubblewrap to use, or null; and the candidates passed over, with why.</summary>
+/// <param name="Path">The trusted bubblewrap, or null when none was found.</param>
+/// <param name="Rejected">What was found and refused, for the reason line; null when nothing was.</param>
+public sealed record BwrapLocation(string? Path, string? Rejected);

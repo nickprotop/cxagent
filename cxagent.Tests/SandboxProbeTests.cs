@@ -72,6 +72,51 @@ public sealed class SandboxProbeTests : IDisposable
         Assert.Null(SandboxProbe.FindOnPath("/nonexistent"));
     }
 
+    /// <summary>
+    /// A BUBBLEWRAP A COMMAND COULD HAVE WRITTEN IS NOT BUBBLEWRAP. A writable folder early on PATH — a venv's bin,
+    /// node_modules/.bin, pnpm's home — would otherwise let a contained command plant the sandbox itself.
+    /// </summary>
+    [Fact]
+    public void A_bwrap_under_home_or_temp_is_not_trusted()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var planted = FakeBwrap("exit 0");
+        var found = SandboxProbe.Locate(new BwrapSearch(_dir, Home: Path.GetTempPath(), Temp: "/nonexistent-temp"));
+        Assert.Null(found.Path);
+        Assert.Contains(planted, found.Rejected);
+    }
+
+    [Fact]
+    public void A_relative_path_entry_is_skipped()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        FakeBwrap("exit 0");
+        var cwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(_dir);
+        try { Assert.Null(SandboxProbe.Locate(new BwrapSearch(".", Home: "/nonexistent-home", Temp: "/nonexistent-temp")).Path); }
+        finally { Directory.SetCurrentDirectory(cwd); }
+    }
+
+    [Fact]
+    public void The_system_bwrap_is_trusted()
+    {
+        if (!OperatingSystem.IsLinux() || SandboxProbe.FindOnPath() is not { } system) return;
+        var found = SandboxProbe.Locate(new BwrapSearch(Path.GetDirectoryName(system)!,
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Path.GetTempPath()));
+        if (system.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), StringComparison.Ordinal)) return;
+        Assert.Equal(system, found.Path);
+    }
+
+    /// <summary>THE PROBE ASKS FOR WHAT A COMMAND GETS. A bubblewrap that starts with a bare root bind but fails to
+    /// mount /proc would otherwise read as working while every command failed.</summary>
+    [Fact]
+    public void The_probe_uses_the_flags_commands_get()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var bwrap = FakeBwrap("case \"$*\" in *--proc*) echo 'bwrap: cannot mount proc' >&2; exit 1;; esac; exit 0");
+        Assert.Equal(SandboxStatusKind.Failed, SandboxProbe.Run(new SandboxProbeRequest(bwrap, IsLinux: true)).Kind);
+    }
+
     private static SandboxHome AnyHome => new(Path.GetTempPath(), null, null);
 
     [Fact]

@@ -28,7 +28,7 @@ public sealed class SandboxState
     /// <param name="settings">The user's settings.</param>
     /// <param name="configDir">The config folder in use, hidden from commands.</param>
     public static SandboxState ForThisMachine(SandboxSettings settings, string? configDir) =>
-        new(settings, SandboxHome.FromEnvironment(configDir), () => SandboxProbe.Run(SandboxProbeRequest.ThisMachine()))
+        new(settings, SandboxHome.FromEnvironment(configDir), () => SandboxProbe.Run(SandboxProbeRequest.ThisMachine(settings.Network)))
         {
             ConfigKeyVariables = KeyVariablesIn(configDir),
         };

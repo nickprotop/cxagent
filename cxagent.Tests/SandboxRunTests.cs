@@ -277,17 +277,32 @@ public sealed class SandboxRunTests : IDisposable
         File.SetUnixFileMode(fake, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var probes = 0;
         var policy = new PermissionPolicy(Project, new PermissionRulesStore(new AppPaths(ConfigDir)));
+        // WORKING WHEN ASKED FIRST, BROKEN WHEN ASKED AGAIN: the bubblewrap that fails the command is the one the
+        // re-probe confirms is failing, which is what lets the call be reported as the sandbox's failure.
         policy.Sandbox = new SandboxState(SandboxSettings.AppDefault, new SandboxHome(Home, ConfigDir, null), () =>
-        {
-            probes++;
-            return new SandboxStatus(SandboxStatusKind.Active, null, fake);
-        });
+            ++probes == 1
+                ? new SandboxStatus(SandboxStatusKind.Active, null, fake)
+                : new SandboxStatus(SandboxStatusKind.Failed, "bwrap: setting up uid map: Permission denied"));
         var r = await Run($"echo x > {Outside}/never.txt", policy);
         Assert.False(r.Success);
         Assert.Contains("the sandbox could not start", r.ErrorMessage);
         Assert.False(File.Exists(Path.Combine(Outside, "never.txt")));
-        _ = policy.Sandbox.Status;
         Assert.Equal(2, probes);
+    }
+
+    /// <summary>
+    /// A COMMAND THAT ONLY LOOKS LIKE BUBBLEWRAP FAILING IS THE COMMAND'S OWN FAILURE. Believed outright, any command
+    /// could print "bwrap: …" and exit 1 to be reported as a broken sandbox — pushing the model toward the escape.
+    /// The status is asked again, and only a real failure is called one.
+    /// </summary>
+    [Fact]
+    public async Task A_command_that_only_looks_like_a_bwrap_failure_is_its_own()
+    {
+        if (!CanRun) return;
+        var r = await Run("echo 'bwrap: pretend' >&2; exit 1");
+        Assert.False(r.Success);
+        Assert.DoesNotContain("could not start", r.ErrorMessage);
+        Assert.Equal("contained", r.Output["sandbox"]);
     }
 
     private static bool OnPath(string name) =>

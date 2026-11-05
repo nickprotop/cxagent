@@ -209,12 +209,18 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
         // BUBBLEWRAP ITSELF FAILED, not the command: it prints its own "bwrap: " line and exits 1 before running
         // anything. Reported as the sandbox's failure and never re-run uncontained — the status is asked again,
         // so the model's retry meets the "run uncontained?" question instead.
+        //
+        // CONFIRMED BEFORE IT IS SAID. Any command can print "bwrap: …" and exit 1; believed outright, that reports a
+        // broken sandbox and pushes the model toward asking to leave it. So the status is asked again, and only a
+        // bubblewrap that really fails now is called one — otherwise this is the command's own failure, reported below
+        // like any other.
         if (contained && result.ExitCode == 1 && string.IsNullOrEmpty(result.Stdout)
-            && result.Stderr.TrimStart().StartsWith("bwrap: ", StringComparison.Ordinal))
+            && result.Stderr.TrimStart().StartsWith("bwrap: ", StringComparison.Ordinal) && run.State is { } state)
         {
-            run.State?.Reprobe();
-            return new JobResult { Success = false, ExitCode = 1, Duration = duration,
-                ErrorMessage = $"the sandbox could not start: {result.Stderr.Trim()} The command did not run." };
+            state.Reprobe();
+            if (state.Status.Kind != Sandbox.SandboxStatusKind.Active)
+                return new JobResult { Success = false, ExitCode = 1, Duration = duration,
+                    ErrorMessage = $"the sandbox could not start: {result.Stderr.Trim()} The command did not run." };
         }
 
         // CHECKED BEFORE TimedOut, BECAUSE BOTH ARE SET AND THEY MEAN OPPOSITE THINGS. The deadline
