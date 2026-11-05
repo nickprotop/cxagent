@@ -30,6 +30,9 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/stats` | Usage: tokens, projects, agent types, what fills the context |
 | `/stats 30` · `/stats all` | Widen the window (default: 7 days) |
 | `/stats clear` | Delete all usage history, after confirming |
+| `/hooks` | List the hooks this session runs: where each comes from, and whether it fires here |
+| `/hooks edit` | Add, edit, move or remove hooks (F8 › Hooks) |
+| `/hooks review` | Apply hooks files that changed since the session read them |
 | `/mcp` | List MCP servers, or inspect one |
 | `/mcp reload` | Re-read config and reconnect |
 | `/mcp edit` | Add, edit or remove MCP servers |

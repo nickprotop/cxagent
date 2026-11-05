@@ -62,6 +62,12 @@ trusted folders, the "Always allow" rules you stored in the TUI, and the edit mo
 list, so a run that needs `git diff` either gets it piped in — usually the better design — or needs a
 stored rule or a wider mode.
 
+**Hooks decide before the refusal.** A `PreToolUse` or `PermissionRequest` hook that answers `allow`
+answers the prompt a headless run cannot show, so a run can let exactly the commands a project's
+hooks vouch for through, and nothing else. A hook's `ask` is refused like any prompt. The repository's
+own hooks need the folder trusted, by `--trust` or a stored decision; your `config.json` hooks always
+run. See [Hooks](CONFIG.md#hooks--commands-that-run-on-the-agents-events).
+
 **`--dangerously-skip-permissions` still refuses one thing:** a file-tool write into a `.git`,
 `.vscode`, `.claude`, `.idea`, `.github`, `.husky`, `.devcontainer` or `.cxagent` folder, or an `.envrc`,
 anywhere on the path, because what lands there runs later,

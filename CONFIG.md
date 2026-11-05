@@ -621,6 +621,161 @@ failed Tavily search (a refused key, a used-up quota) is retried on DuckDuckGo, 
 result. Every search asks first, like `web_fetch`, and *always allow* covers one engine: allowing
 DuckDuckGo does not allow sending queries to Tavily.
 
+## `hooks` — commands that run on the agent's events
+
+```json
+"hooks": {
+  "PreToolUse": [
+    { "matcher": "run_shell",
+      "hooks": [ { "type": "command", "command": "~/bin/guard-shell.sh", "name": "guard" } ] }
+  ],
+  "PostToolUse": [
+    { "matcher": "write_file|replace_in_file",
+      "hooks": [ { "type": "command", "command": "dotnet format --include \"$(jq -r .tool_input.path)\"" } ] }
+  ]
+}
+```
+
+A hook is a command cxagent runs when something happens: before a tool call, after one, when a prompt
+is sent, when a turn ends, when a session opens or closes, when a permission prompt is waiting. It reads
+the event as JSON on stdin and answers with its exit code, and optionally with JSON on stdout. F8's
+**Hooks** tab adds, edits, moves and removes them; `/hooks` lists what this session runs.
+
+### Where hooks come from
+
+| File | Whose | Runs |
+|---|---|---|
+| `hooks` in `config.json` | yours, in every folder | always |
+| `<repo>/.cxagent/hooks.json` | the project's, committed with it | only in a trusted folder |
+| `<repo>/.cxagent/hooks.local.json` | the project's, on this machine only (add it to `.gitignore`) | only in a trusted folder |
+
+The two project files hold the same `hooks` block, inside `{ "hooks": { … } }`. Every source's hooks
+run; none overrides another. `<repo>` is the top of the git repository the folder is in; outside a
+repository, no project file is read.
+
+**A repository's hooks are commands from whoever wrote the repository**, so they run only once you
+trust the folder (the question at startup, `/trust`, or F8's **Project** tab). Trust is checked each
+time an event fires: trusting the folder mid-session starts its hooks at once, and revoking it stops them.
+
+**Hooks are read when the session starts.** A hooks file that changes while it runs, by a `git pull`,
+another editor or the model, does not take effect on its own. cxagent says so at the next turn;
+`/hooks` shows what changed, and `/hooks review` or a save in F8 applies it.
+
+### Events
+
+| Event | When | What a hook can do |
+|---|---|---|
+| `SessionStart` | a session opens or resumes | add context for the model |
+| `UserPromptSubmit` | before your prompt reaches the model | block it; add context |
+| `PreToolUse` | before a tool runs, after its arguments are checked | deny, ask, allow, or rewrite the arguments |
+| `PermissionRequest` | a permission prompt is about to show | answer it: allow or deny |
+| `PostToolUse` | after a tool succeeds | tell the model something about the result |
+| `PostToolUseFailure` | after a tool fails | the same, for a failure |
+| `Stop` | the agent is about to finish its turn | send it back to work, with a reason |
+| `StopFailure` | a turn ends on a provider error | (notification only) |
+| `Notification` | a permission prompt is waiting for you | (notification only) |
+| `SessionEnd` | a session closes | (notification only) |
+
+The other events of the hook format (`SubagentStop`, `PreCompact`, `TaskCompleted` and the rest) load,
+show as *not supported here* in F8 and `/hooks`, and do not fire yet. A file written for them loads
+without complaint, and each starts working when cxagent fires it.
+
+**The matcher** picks the tools a tool event applies to: a pattern matched against the whole tool
+name, `run_shell` or `write_file|replace_in_file`. Empty or `*` is every tool. `SessionStart` matches
+on how the session started (`startup`, `resume`), and `Notification` on its kind (`permission_prompt`).
+
+### What a hook reads
+
+Every event's JSON carries `session_id`, `transcript_path` (the session's `history.jsonl`), `cwd`,
+`hook_event_name`, `permission_mode`, and `agent`: `main`, or the sub-agent's type and id when a
+sub-agent made the call. Then the event's own fields:
+
+| Event | Fields |
+|---|---|
+| tool events | `tool_name`, `tool_input` (the arguments as the model sent them), `tool_use_id`; `tool_response` after success, `error` after failure |
+| `UserPromptSubmit` | `prompt` |
+| `Stop` | `last_assistant_message`, and `stop_hook_active`: true when this turn already went on because a Stop hook said so |
+| `SessionStart` · `SessionEnd` | `source` · `reason` |
+| `Notification` | `message`, `notification_type` |
+| `StopFailure` | `error` |
+
+The command runs in the repository's top folder, with `CXAGENT_PROJECT_DIR` set to it.
+
+### What a hook answers
+
+| Exit | Means |
+|---|---|
+| `0` | no objection. Stdout that is a JSON object is read (below); plain stdout is context on `UserPromptSubmit` and `SessionStart` |
+| `2` | **block**, with stderr as the reason: the tool call is refused, the prompt not sent, the turn not ended |
+| anything else | the hook failed: it is reported and the action goes ahead, unless the hook sets `"onFailure": "block"` |
+
+JSON on stdout says more:
+
+```json
+{ "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "no network calls from this repo",
+    "updatedInput": { "command": "ls -la" },
+    "additionalContext": "the build uses bun" },
+  "systemMessage": "shown to you" }
+```
+
+`permissionDecision` is `allow`, `deny`, `ask` or `defer`. A `UserPromptSubmit`, `Stop` or `PostToolUse`
+hook blocks with `{ "decision": "block", "reason": "…" }`, and a `PermissionRequest` hook answers with
+`{ "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": { "behavior": "allow" } } }`.
+`"continue": false` stops the turn.
+
+**When several hooks answer one call, the strictest wins:** deny, then defer, then ask, then allow. An
+`updatedInput` replaces the tool's arguments before anything else sees them, so a permission prompt
+shows what will actually run.
+
+### Hooks and permissions
+
+- **`deny`** refuses the call before it is asked about. The model is told a configured rule refused it.
+- **`ask`** brings up the prompt even where nothing else would have asked: a write that accept-edits
+  would make silently, a command a stored rule allows. Under `--dangerously-skip-permissions` it is
+  approved, since that flag promises no prompts; in a headless run it is refused, like any prompt there.
+- **`allow`** answers a prompt that would otherwise show, and only that. It works in a headless run,
+  which is what makes hooks useful in CI. It never answers:
+  - a file-tool write into a protected folder (`.git`, `.cxagent`, `.vscode`, `.claude`, `.idea`,
+    `.github`, `.husky`, `.devcontainer`, an `.envrc`). That still asks, and the prompt says a hook
+    allowed it but the folder is protected, so a repository's hooks cannot let the agent rewrite its
+    own guard rails;
+  - a sub-agent's file request outside its own folder;
+  - an injected or plugin tool's own gate, which nothing exempts.
+
+A decision made by a hook shows on the tool's row, and in the session log, as *hook*.
+
+### Every agent, every run
+
+Hooks fire for the session's agent, for sub-agents and for background agents alike, so a guard cannot
+be stepped around by delegating the call. A sub-agent's calls carry its own `agent` value; `Stop` and
+`UserPromptSubmit` are the session agent's only. A sub-agent working in a worktree runs the hooks read
+from the main repository, never the worktree's copy. A headless run (`cxagent -p`) fires hooks the same
+way, with folder trust from `--trust` or the stored decision.
+
+### Each hook's settings
+
+| Key | |
+|---|---|
+| `type` | `command`. The other types of the hook format (`prompt`, `agent`, `http`, `mcp_tool`) load and are kept, and do not run yet |
+| `command` | one line, run by `bash -c` |
+| `shell` | `bash` (the default) or `powershell`. On Windows without Git Bash, PowerShell is the default |
+| `timeout` | seconds, default 60. A hook still running then is stopped, with any process it started |
+| `onFailure` | `"block"`: a hook that crashes, times out or prints broken JSON blocks what it guards, instead of letting it through. Meaningful on `PreToolUse`, `PermissionRequest`, `UserPromptSubmit` and `Stop` |
+| `name` | what messages, F8 and `/hooks` call it. Optional |
+
+Hooks matching one event run at the same time. Each one's output is cut at 64 KiB. `SessionEnd` hooks
+share a budget of 1.5 seconds, raised to the longest `timeout` one of them sets, up to 60, so closing a
+tab never waits on a slow script.
+
+**`Stop` hooks are bounded.** A Stop hook that blocks sends the agent back to work with its reason; after
+three in one turn the turn ends anyway, and you are told which hook kept it going.
+
+An app embedding the library adds hooks in code: `AgentConfig.Hooks`, with the same JSON and typed
+handlers. See [the API reference](cxagent.Core/docs/api.md#hooks-from-code).
+
 ## `orchestrator` — caps
 
 ```json

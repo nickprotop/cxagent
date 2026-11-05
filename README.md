@@ -433,6 +433,26 @@ unchanged; `.claude/commands/` itself is not read. Its `allowed-tools` is ignore
 says so, along with every file that was shadowed or skipped. A command typed while a turn runs waits and runs next. `cxagent -p "/review 42"` runs it
 headlessly. See [CONFIG.md](CONFIG.md#custom-commands).
 
+### Hooks
+
+Commands that run on the agent's events: before a tool call, after one, when a prompt is sent, when a
+turn ends, when a session opens. A hook reads the event as JSON on stdin and answers with its exit
+code: `2` blocks, with its message going to the model. With JSON on stdout it can allow, ask, deny or
+rewrite a tool call, add context, or send the agent back to work when the tests still fail.
+
+```json
+"hooks": {
+  "PreToolUse": [ { "matcher": "run_shell", "hooks": [ { "type": "command", "command": "~/bin/guard.sh" } ] } ]
+}
+```
+
+Yours live in `config.json`; a repository's in `.cxagent/hooks.json` (shared) and
+`.cxagent/hooks.local.json` (yours alone), which run only once you trust the folder. They fire for
+sub-agents and headless runs too, so a guard cannot be stepped around. A hook's allow never reaches a
+write into `.git`, `.cxagent` and the other protected folders. F8's **Hooks** tab edits all three files;
+**Project** shows what a repository brings, its hooks among them. `/hooks` lists what runs. See
+[CONFIG.md](CONFIG.md#hooks--commands-that-run-on-the-agents-events).
+
 ## Plugins
 
 Tools from a DLL you drop in a folder, without rebuilding cxagent.

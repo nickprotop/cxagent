@@ -232,10 +232,12 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
     </div>
     <div class="u-item">
       <div class="u-num">12</div>
-      <p class="u-title">MCP, skills and your own commands</p>
+      <p class="u-title">MCP, skills, hooks and your own commands</p>
       <p class="u-body">Tools from any MCP server sit beside the built-in ones. A skill is a <code>SKILL.md</code> the
       model loads when a task needs it, and a markdown file becomes a command like
-      <code>/review 42</code>. Your Claude Code commands and skills work as they are.</p>
+      <code>/review 42</code>. Hooks run your commands on the agent's events: a guard before a shell call,
+      a formatter after an edit, a check that the tests pass before a turn ends. Your Claude Code
+      commands and skills work as they are.</p>
     </div>
     <div class="u-item">
       <div class="u-num">13</div>

@@ -107,6 +107,17 @@
     "\"always\" covers one engine. F8's General tab edits the key."
   ],
   "webSearch": { "tavilyApiKey": "{env:TAVILY_API_KEY}" },
+  "//hooks": [
+    "COMMANDS ON THE AGENT'S EVENTS, before or after a tool call, when a prompt is sent, when a turn",
+    "ends. Left as a comment here: a live block would run its command for whoever copies this file.",
+    "The shape, under \"hooks\":",
+    "  { \"PreToolUse\": [ { \"matcher\": \"run_shell\",",
+    "      \"hooks\": [ { \"type\": \"command\", \"command\": \"~/bin/guard.sh\" } ] } ] }",
+    "THE HOOK READS THE EVENT AS JSON ON STDIN. Exit 2 blocks, with stderr as the reason; JSON on",
+    "stdout can allow, ask, deny or rewrite a tool call. A repository adds its own in",
+    ".cxagent/hooks.json, which run only in a trusted folder. F8's Hooks tab edits all of them;",
+    "CONFIG.md has the events and fields."
+  ],
   "//theme": [
     "WHICH THEME cxagent STARTS IN. A registered theme's name, or absent.",
     "ABSENT MEANS `cxagent` \u2014 its own palette, a near-black ground with a warm amber accent.",
