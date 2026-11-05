@@ -35,6 +35,7 @@ public static class SessionCommands
     [
         new("/clear", "wipe the conversation"),
         new("/compress", "summarise the conversation to free up room") { NeedsModel = true },
+        new("/hooks", "list the hooks this session runs"),
         new("/mcp", "list MCP servers, inspect one, or reload config",
         [
             // COMPLETABLE, and it does not couple this static table to session state: the table

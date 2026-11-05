@@ -434,6 +434,10 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, arguments) => session.DescribeMcp(arguments).Handled());
                     break;
 
+                case "/hooks":
+                    Commands.Register(command, (session, _) => session.DescribeHooks().Handled());
+                    break;
+
                 // THE RESUME STORE IS THIS MANAGER'S, which is the whole argument for registering
                 // here. A front end listing rows and restoring one through Shared.Resume does the
                 // manager's job from outside it, with SessionsCommand already sitting in

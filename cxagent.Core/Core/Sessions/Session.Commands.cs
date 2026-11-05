@@ -58,6 +58,19 @@ public sealed partial class Session
     /// opens a browser; both are the host's and arrive as verbs. What is left needs only the
     /// toolset and the statuses, which are here.</para>
     /// </summary>
+    /// <summary><c>/hooks</c>: every hook this session has, where it came from, and whether it fires.</summary>
+    public CommandStatus DescribeHooks()
+    {
+        if (Hooks is not { } hooks)
+        {
+            Say(new Message("Hooks are not available in this session.", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+        Say(new Message(CxAgent.Core.Hooks.HookList.Describe(hooks, CxAgent.Core.Hooks.HookSources.ChangedSince(hooks.Snapshot)),
+            Severity.Info));
+        return CommandStatus.Reported;
+    }
+
     public CommandStatus DescribeMcp(string arguments)
     {
         if (Services?.Mcp is not { } toolset || Services?.McpStatuses is not { } statuses)
