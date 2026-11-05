@@ -632,27 +632,49 @@ On Linux, every shell command the model runs (its own, a sub-agent's, a backgrou
 | What | Access |
 |---|---|
 | The whole filesystem | Read-only |
-| The project: the repository root, or the working folder outside a repository. A sub-agent spawned with a folder of its own gets only that folder. | Read-write |
+| The project: the repository root, or the working folder outside a repository. A sub-agent spawned with a folder of its own gets only that folder. A dotfiles repository at your home does not count: the working folder is the project then. | Read-write |
+| Your home's top-level dot files and folders, when the project is your home itself | Read-only (the caches below are writable again after) |
+| `.git` and each submodule's git folder | Bound onto themselves, so they cannot be renamed and rebuilt |
 | A linked worktree's shared `.git` in the main repository | Read-write, its `hooks` and `config` read-only |
 | The temp folder, and `~/.cache`, `~/.nuget/packages`, `~/.npm`, `~/.cargo/registry`, `~/.cargo/git`, `~/go/pkg/mod`, `~/.m2/repository`, `~/.gradle/caches`, `~/.local/share/pnpm`, `~/.yarn` where they exist | Read-write |
 | `writable` | Read-write |
-| Inside the project: `.git/hooks`, `.git/config`, each submodule's and each worktree's git config, `.cxagent`, `.vscode`, `.claude`, `.idea`, `.github`, `.husky`, `.envrc`, `.devcontainer` | Read-only: what is in them runs later, outside the sandbox |
-| `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.azure`, `~/.kube`, `~/.docker/config.json`, `~/.netrc`, `~/.git-credentials`, `~/.config/gh`, cxagent's config folder, `$XDG_RUNTIME_DIR`, and `hidden` | Seen empty |
+| Inside the project: `.git/hooks`, `.git/config`, each submodule's and each worktree's git config, a `core.hooksPath` folder, `.cxagent`, `.vscode`, `.claude`, `.idea`, `.github`, `.husky`, `.envrc`, `.devcontainer` | Read-only: what is in them runs later, outside the sandbox |
+| cxagent's own folder and the folder a single-file build extracts its native libraries to | Read-only |
+| `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.azure`, `~/.kube`, `~/.docker/config.json`, `~/.netrc`, `~/.git-credentials`, `~/.config/gh`, `~/.config/hub`, `~/.config/gcloud`, `~/.npmrc`, `~/.pypirc`, `~/.pgpass`, `~/.my.cnf`, `~/.vault-token`, `~/.password-store`, `~/.cargo/credentials(.toml)`, `~/.nuget/NuGet/NuGet.Config`, agent credential files, cxagent's config folder, and `hidden` | Seen empty |
+| `$XDG_RUNTIME_DIR` and `/run/user/<uid>`, `/tmp/tmux-<uid>`, `/tmp/.X11-unix`, the Docker and Podman sockets | Seen empty: a read-only folder does not stop a connection to a socket, and these let a command run things outside the sandbox |
 | The agent's own log folder, inside the config folder | Read-only, so a command reads an earlier one's long output |
 
 The writable root comes from the agent's folder, never from where a call asks to run: a `working_dir`
-of your home does not make your home writable.
+of your home does not make your home writable. `writable` and `hidden` entries must start with `/` or
+`~`; a relative one is ignored with a warning, since it would mean a different folder on each launch.
+In F8 they are typed one per line.
 
-**The environment** loses `DBUS_SESSION_BUS_ADDRESS`, `SSH_AUTH_SOCK`, every name matching
-`*_API_KEY`, `*_APIKEY`, `*_TOKEN`, `*_SECRET*`, `*_PASSWORD` or `AWS_*` (case ignored), every
-variable `config.json` reads with `{env:NAME}`, and `hiddenEnv`. `passEnv` keeps a name back. A
-variable the call sets in its own `env` is kept, since the call asked for it.
+**The environment** loses `DBUS_SESSION_BUS_ADDRESS`, `SSH_AUTH_SOCK`, `TMUX`, `TMUX_PANE`, `DISPLAY`,
+`WAYLAND_DISPLAY`, every name matching `*_API_KEY`, `*_APIKEY`, `*_KEY`, `*_TOKEN`, `*_SECRET*`,
+`*PASSWORD*`, `*_PWD`, `*_CREDENTIALS`, `AWS_*` or `DATABASE_URL` (case ignored), every variable
+`config.json` reads with `{env:NAME}`, and `hiddenEnv`. `passEnv` keeps a name back. They are removed
+from bubblewrap itself, not only from the command, since bubblewrap's own environment is readable from
+inside. A variable the call sets in its own `env` is kept, since the call asked for it, and is set
+inside the sandbox, never on bubblewrap.
 
 **The prompt.** A contained command runs without asking in a trusted folder under Accept edits or
 `auto` (and `auto` does not consult the classifier for it). Under Always ask, or in a folder that is
 not trusted, it asks as any command does. A command can ask to run outside with `unsandboxed: true`
 and a `reason`: that always prompts, offers no Always, and no rule, hook or mode can approve it.
 Headless refuses it, and `--dangerously-skip-permissions` runs it with a line on stderr.
+
+**What mounts cannot hold.** A contained command can write `.git/commondir` or rewrite a `.git` pointer
+to send git to a config it planted, and it can create a protected folder the project does not have yet
+(`.cxagent`, `.github`): a folder that does not exist cannot be held read-only without creating it in your
+repository. So these are checked before and after every contained command. A change is said in the
+session and on the row (`git files changed`), and from then on contained commands ask, until you have
+looked and run `/sandbox review`. A legitimate `git init` or `mkdir .github` trips it too. cxagent's own
+git calls (the status panel, `/diff`) run with the repository's fsmonitor and hooks turned off, so the
+app is never what runs a redirected command.
+
+**bubblewrap itself** is found once, when cxagent starts, on `PATH`, and only a copy a contained command
+could not have written is used: not under your home or the temp folder, not writable by others. A
+`bwrap` in `~/.local/bin` is passed over; install the bubblewrap package system-wide.
 
 **Where it cannot run:**
 
@@ -663,11 +685,13 @@ Headless refuses it, and `--dangerously-skip-permissions` runs it with a line on
 | bubblewrap not installed, or not Linux | Commands run as before, through the normal prompts; the session says so once |
 
 **What it does not cover.** With `network` on, a contained command can send out anything it can
-read. Your own shell tabs and `!` lines, hooks, MCP servers, plugins and the file tools run as before.
-A protected folder the project does not have yet (no `.github`) can be created by a contained command,
-because a folder that does not exist cannot be held read-only; nor is a nested repository's own
-`.git/hooks` held, unless it is a submodule. A command still writes anywhere in the project:
-commit before you let it loose, and `git` is the undo.
+read, and can reach abstract sockets (some X11 and D-Bus setups use them); only `network: false` closes
+those. Other sockets in the shared `/tmp` than the ones listed above stay reachable. The package caches
+are writable, and some hold code that runs later (NuGet build targets, pre-commit hooks, downloaded
+browsers), just as the project's own scripts do. A nested repository that is not a submodule keeps its
+own `.git/hooks` writable. Your own shell tabs and `!` lines, hooks, MCP servers, plugins and the file
+tools run as before. A command still writes anywhere in the project: commit before you let it loose,
+and `git` is the undo.
 
 Only your own config sets the sandbox. Nothing in a repository's `.cxagent` folder can turn it off or
 widen it. In the library, `AgentConfig.Sandbox` is null, so off, unless set.

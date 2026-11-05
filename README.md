@@ -331,9 +331,11 @@ A contained command can write only in the project (the repository root, or the w
 a repository), the temp folder and package caches like `~/.cache`, `~/.nuget/packages` and `~/.npm`.
 It sees `~/.ssh`, `~/.aws`, `~/.gnupg`, cxagent's own config folder and the other usual credential
 places as empty, loses credential-shaped variables (`*_API_KEY`, `*_TOKEN`, `AWS_*` and the like),
-and cannot reach your session's sockets, so no D-Bus, no SSH agent. Inside the project, git's hooks
-and config and folders like `.cxagent`, `.vscode` and `.github` stay read-only, because what is in
-them runs later, outside the sandbox.
+and cannot reach your session's sockets, so no D-Bus, no SSH agent, no tmux server, no X11, no Docker.
+Inside the project, git's hooks and config and folders like `.cxagent`, `.vscode` and `.github` stay
+read-only, because what is in them runs later, outside the sandbox. What a mount cannot hold (a
+redirected `.git`, a new `.github`) is checked after every command: the session says so, and contained
+commands ask until you run `/sandbox review`.
 
 **A contained command skips the prompt where a write would.** In a trusted folder under Accept edits
 or `auto`, it runs without asking, and `auto` does not ask the classifier about it either. Under
@@ -345,10 +347,9 @@ rule, hook or mode can approve it. Rows that ran outside are marked `uncontained
 
 **What it does not do.** With the network on (the default) a contained command can still send out
 whatever it can read, which is everything outside the hidden list. `sandbox.network: false` closes
-that and breaks installs and pushes with it. Your own shell tabs, hooks, MCP servers and plugins are
-not sandboxed; the file tools are not either, because the permission rules already see their paths.
-A repository without a `.github` folder can have one created by a contained command, since a folder
-that does not exist cannot be held read-only.
+that and breaks installs and pushes with it. Package caches stay writable, and some hold code that runs
+later. Your own shell tabs, hooks, MCP servers and plugins are not sandboxed; the file tools are not
+either, because the permission rules already see their paths.
 
 On by default where bubblewrap starts. Where it is not installed, or this is not Linux, commands run as
 before and the session says so once. Where it is installed but will not start (user namespaces

@@ -35,6 +35,7 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/hooks review` | Apply hooks files that changed since the session read them |
 | `/sandbox` | Show whether the model's commands run contained, and what they may write, read and reach |
 | `/sandbox on` / `/sandbox off` | Save the setting and apply it to this tab at once |
+| `/sandbox review` | After a contained command changed git's files or created a config folder: let contained commands run without asking again |
 | `/sandbox edit` | Set what the sandbox allows (F8 › General) |
 | `/mcp` | List MCP servers, or inspect one |
 | `/mcp reload` | Re-read config and reconnect |
