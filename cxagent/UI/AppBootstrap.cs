@@ -818,6 +818,20 @@ public static class AppBootstrap
         manager.Commands.RegisterVerb("/mcp",
             new CommandArgument("edit", "add, edit or remove MCP servers"),
             (_, _) => { ConfigDialog.Show(configHost, ConfigTab.Mcp); return true; });
+        manager.Commands.RegisterVerb("/hooks",
+            new CommandArgument("edit", "add, edit or remove hooks"),
+            (_, _) => { ConfigDialog.Show(configHost, ConfigTab.Hooks); return true; });
+        // REVIEW IS A WORD, NOT ONLY A SAVE IN F8: a hooks file changed by a pull is accepted here in one line,
+        // after reading /hooks, without opening a dialog to save something unedited.
+        manager.Commands.RegisterVerb("/hooks",
+            new CommandArgument("review", "apply hooks files changed since this session read them"),
+            (s, _) =>
+            {
+                var user = ProvidersFile.Read(paths, env).Settings?.Hooks ?? Core.Hooks.HooksSettings.None;
+                s.ReviewHooks(user);
+                s.Notify("Hooks re-read: this session runs the files as they are now.");
+                return true;
+            });
         manager.Commands.RegisterVerb("/agents",
             new CommandArgument("edit", "add agent types, or set where the built-ins run"),
             (_, _) => { ConfigDialog.Show(configHost, ConfigTab.Agents); return true; });

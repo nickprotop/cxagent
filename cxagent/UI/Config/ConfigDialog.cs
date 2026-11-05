@@ -11,7 +11,7 @@ namespace CxAgent.UI.Config;
 /// The dialog's tabs, IN THEIR ORDER: a tab's index is its value, so the tabs are added in this order and nothing
 /// maps one to the other by hand. General first — the settings that shape every tab.
 /// </summary>
-public enum ConfigTab { General, Providers, Mcp, Agents }
+public enum ConfigTab { General, Providers, Mcp, Agents, Hooks }
 
 /// <summary>What the dialog needs from the app: where to draw, how a save becomes live, and who is in front.</summary>
 /// <param name="System">The window system.</param>
@@ -59,6 +59,7 @@ public static class ConfigDialog
     private static ProvidersTab? _providers;
     private static McpTab? _mcp;
     private static AgentsTab? _agents;
+    private static HooksTab? _hooks;
     private static ConfigDialogHost? _host;
     private static Action? _onClosed;
 
@@ -122,6 +123,8 @@ public static class ConfigDialog
         _tabs.AddTab("MCP servers", WithPath(_mcp.Content));
         _agents = new AgentsTab(host, () => _window);
         _tabs.AddTab("Agents", WithPath(_agents.Content));
+        _hooks = new HooksTab(host, () => _window);
+        _tabs.AddTab("Hooks", WithPath(_hooks.Content));
         window.AddControl(_tabs);
 
         // ONE FOOTER FOR THE DIALOG, HOSTING THE TAB IN FRONT: its own Revert and Save — their text, their
@@ -178,6 +181,7 @@ public static class ConfigDialog
                 case ConfigTab.General: _general?.SaveFromKey(); break;
                 case ConfigTab.Mcp: _mcp?.SaveFromKey(); break;
                 case ConfigTab.Agents: _agents?.SaveFromKey(); break;
+                case ConfigTab.Hooks: _hooks?.SaveFromKey(); break;
                 default: _providers?.SaveFromKey(); break;
             }
             e.Handled = true;
@@ -195,6 +199,7 @@ public static class ConfigDialog
             _providers = null;
             _mcp = null;
             _agents = null;
+            _hooks = null;
             var closed = _onClosed;
             _onClosed = null;
             closed?.Invoke();
@@ -211,7 +216,7 @@ public static class ConfigDialog
         if (firstRun) _providers.ShowGallery("cxagent needs one provider to start. Pick where your model runs.");
         // GENERAL HAS NO LIST TO FOCUS: its first choice takes the keyboard as Tab reaches it.
         else if (Active != ConfigTab.General)
-            window.FocusManager.SetFocus(Active switch { ConfigTab.Mcp => _mcp.Rail, ConfigTab.Agents => _agents.Rail, _ => _providers.Rail }, FocusReason.Programmatic);
+            window.FocusManager.SetFocus(Active switch { ConfigTab.Mcp => _mcp.Rail, ConfigTab.Agents => _agents.Rail, ConfigTab.Hooks => _hooks.Rail, _ => _providers.Rail }, FocusReason.Programmatic);
     }
 
     /// <summary>
@@ -235,6 +240,7 @@ public static class ConfigDialog
             if (_providers?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _providers.SelectedName!); return true; }
             if (_mcp?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _mcp.SelectedName!); return true; }
             if (_agents?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _agents.SelectedName!); return true; }
+            if (_hooks?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, "hooks"); return true; }
         }
         window.Close();
         return true;
@@ -255,6 +261,7 @@ public static class ConfigDialog
         ConfigTab.General => _general?.Actions ?? [],
         ConfigTab.Mcp => _mcp?.Actions ?? [],
         ConfigTab.Agents => _agents?.Actions ?? [],
+        ConfigTab.Hooks => _hooks?.Actions ?? [],
         _ => _providers?.Actions ?? [],
     };
 
@@ -265,6 +272,7 @@ public static class ConfigDialog
             case ConfigTab.General: _general?.MarkSave(); break;
             case ConfigTab.Mcp: _mcp?.MarkSave(); break;
             case ConfigTab.Agents: _agents?.MarkSave(); break;
+            case ConfigTab.Hooks: _hooks?.MarkSave(); break;
             default: _providers?.MarkSave(); break;
         }
     }

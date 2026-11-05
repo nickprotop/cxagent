@@ -1,0 +1,355 @@
+using CxAgent.Core.Hooks;
+using SharpConsoleUI;
+using SharpConsoleUI.Builders;
+using SharpConsoleUI.Controls;
+using SharpConsoleUI.Layout;
+using SharpConsoleUI.Parsing;
+
+namespace CxAgent.UI.Config;
+
+/// <summary>
+/// The Hooks tab: every hook this folder has — the user's, the repository's shared file and its local one —
+/// in one list, each with whether it fires here and why not.
+///
+/// <para>THE SAME SHELL AS MCP SERVERS — rail, hand-placed fields, Save and Revert in the footer — so the
+/// tabs read as one dialog.</para>
+///
+/// <para>WHERE A HOOK IS SAVED IS A FIELD, NOT A TAB. The user's hooks and the repository's are the same
+/// kind of thing that differ only in which file holds them; moving one between files is changing that
+/// field and saving.</para>
+///
+/// <para>SAVING IS THE REVIEW. A hooks file changed outside a running session is not applied until the
+/// user looks; a save here is that look, and makes what was saved the hooks the session runs.</para>
+/// </summary>
+public sealed class HooksTab
+{
+    private const int RailCells = 32;
+
+    private readonly ConfigDialogHost _host;
+    private readonly Func<Window?> _window;
+    private readonly GridControl _root;
+    private readonly ListControl _rail;
+    private readonly ScrollablePanelControl _detail;
+    private readonly MarkupControl _status;
+    private readonly MarkupControl _trust;
+    private readonly ButtonControl _save;
+    private readonly ButtonControl _revert;
+
+    private HooksDraft? _draft;
+    private HookEntry? _selected;
+    private bool _saving;
+    private int _lastIndex = -1;
+
+    public HooksTab(ConfigDialogHost host, Func<Window?> window)
+    {
+        _host = host;
+        _window = window;
+
+        _root = new GridControl { VerticalAlignment = VerticalAlignment.Fill, HorizontalAlignment = HorizontalAlignment.Stretch };
+        _root.ColumnDefinitions.Add(GridLength.Cells(RailCells, min: 24));
+        _root.ColumnDefinitions.Add(GridLength.Star(1));
+        _root.RowDefinitions.Add(GridLength.Cells(1));   // the toolbar
+        _root.RowDefinitions.Add(GridLength.Cells(1));   // a rule closing the toolbar off from the list
+        _root.RowDefinitions.Add(GridLength.Star(1));    // rail | detail
+        _root.RowDefinitions.Add(GridLength.Cells(2));   // the folder's trust | status
+
+        var toolbar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
+        toolbar.AddItem(Controls.Button(" + Add hook ").OnClick((_, _) => AddHook()).Build());
+        _root.Place(toolbar, 0, 0, colSpan: 2);
+        _root.Place(DialogLook.Rule(), 1, 0, colSpan: 2);
+
+        _rail = new ListControl { VerticalAlignment = VerticalAlignment.Fill, HorizontalAlignment = HorizontalAlignment.Stretch };
+        _rail.SelectedIndexChanged += OnRailSelectionChanged;
+        ListDetail.StyleRail(_rail);
+        _root.Place(_rail, 2, 0);
+        ListDetail.Divider(_root);
+
+        _detail = new ScrollablePanelControl { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Fill, Margin = ListDetail.DetailInset };
+        _root.Place(_detail, 2, 1);
+
+        // THE FOLDER'S TRUST UNDER THE RAIL, because it decides whether half the rail fires at all.
+        _trust = new MarkupControl([""]) { Wrap = true };
+        _root.Place(_trust, 3, 0);
+        _status = new MarkupControl([""]) { Wrap = true, Margin = ListDetail.DetailInset };
+        _root.Place(_status, 3, 1);
+
+        _revert = Controls.Button(" Revert ").OnClick((_, _) => Reload()).Build();
+        _save = DialogLook.MainButton(Controls.Button(" Save ").OnClick((_, _) => _ = SaveAsync()).Build(), main: false);
+
+        Reload();
+    }
+
+    private int PaneWidth() => ListDetail.PaneWidth(_window()?.Width ?? Console.WindowWidth, RailCells);
+
+    public IWindowControl Content => _root;
+
+    /// <summary>The footer's buttons while this tab is in front.</summary>
+    public IReadOnlyList<ButtonControl> Actions => [_revert, _save];
+
+    public ListControl Rail => _rail;
+    public bool HasUnsaved => _draft?.IsDirty == true;
+    public string? SelectedName => _selected?.ToDefinition().DisplayName;
+    public void SaveFromKey() => _ = SaveAsync();
+    public void MarkSave() => DialogLook.MainButton(_save, _draft?.IsDirty == true);
+
+    private Core.Sessions.Session Session => _host.ActiveSession();
+    private bool Trusted => Session.Policy?.FolderTrusted == true;
+
+    /// <summary>Re-reads the three files and rebuilds the rail.</summary>
+    public void Reload()
+    {
+        _draft = HooksFile.Load(_host.Apply.Paths, _host.Apply.Env, Session.WorkingDirectory);
+        _selected = _draft.Entries.FirstOrDefault();
+        FillRail();
+        SayTrust();
+    }
+
+    private void SayTrust()
+    {
+        var muted = ColorScheme.MutedMarkup;
+        _trust.SetContent([_draft?.RepoRoot is null
+            ? $"[{muted}]No repository here: only your own hooks.[/]"
+            : Trusted
+                ? $"[{ColorScheme.AffirmativeMarkup}]Folder trusted[/] [{muted}]· project hooks run[/]"
+                : $"[{ColorScheme.CautionMarkup}]Folder not trusted[/] [{muted}]· project hooks do not run; /trust[/]"]);
+    }
+
+    private void FillRail()
+    {
+        _rail.ClearItems();
+        if (_draft is null) return;
+        var rows = Ordered();
+        foreach (var e in rows) _rail.AddItem(new ListItem(RowText(e)) { Tag = e });
+
+        var index = _selected is null ? -1 : rows.IndexOf(_selected);
+        if (index < 0 && rows.Count > 0) { index = 0; _selected = rows[0]; }
+        _lastIndex = index;
+        if (index >= 0)
+        {
+            _rail.SelectedIndex = index;
+            BuildDetail(_selected!);
+        }
+        else
+        {
+            _detail.ClearContents();
+            _detail.AddControl(ListDetail.Empty("No hooks yet", "+ Add hook runs a command on an event"));
+            SetStatus("");
+        }
+        ListDetail.Mark(_rail);
+        MarkSave();
+    }
+
+    /// <summary>In the contract's event order, then by file: the rail reads as "what happens when".</summary>
+    private List<HookEntry> Ordered() =>
+        [.. _draft!.Entries.OrderBy(e => EventIndex(e.Event)).ThenBy(e => e.Source)];
+
+    private static int EventIndex(string ev)
+    {
+        var i = HookEvents.All.ToList().IndexOf(ev);
+        return i < 0 ? int.MaxValue : i;
+    }
+
+    private string RowText(HookEntry e)
+    {
+        var def = e.ToDefinition();
+        var state = HookList.State(def, Trusted);
+        var (glyph, colour) = state switch
+        {
+            "active" => ("●", ColorScheme.AffirmativeMarkup),
+            "not supported here" => ("◌", ColorScheme.MutedMarkup),
+            _ => ("○", ColorScheme.CautionMarkup),
+        };
+        var name = e.Name is { Length: > 0 } n ? n : FirstWords(e.Command ?? e.Type);
+        return $"[bold]{MarkupParser.Escape(name)}[/] [{colour}]{glyph}[/]\n"
+               + $"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(e.Event)}{(e.Matcher is { Length: > 0 } m ? " · " + MarkupParser.Escape(m) : "")} · {HookList.SourceTag(e.Source)}[/]";
+    }
+
+    private static string FirstWords(string text) =>
+        string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Take(2));
+
+    private void OnRailSelectionChanged(object? sender, int index)
+    {
+        if (index < 0 || index == _lastIndex) return;
+        if (_rail.Items.ElementAtOrDefault(index)?.Tag is not HookEntry entry) return;
+        _lastIndex = index;
+        _selected = entry;
+        BuildDetail(entry);
+    }
+
+    private void BuildDetail(HookEntry e)
+    {
+        _detail.ClearContents();
+        var def = e.ToDefinition();
+        _detail.AddControl(ListDetail.Header(def.DisplayName, $"{e.Type} hook · {HooksFile.Label(e.Source)}", PaneWidth(),
+            Controls.Button(" Duplicate ").OnClick((_, _) => Duplicate(e)).Build(),
+            Controls.Button(" Remove ").OnClick((_, _) => Remove(e)).Build()).Control);
+
+        var state = HookList.State(def, Trusted);
+        var colour = state == "active" ? ColorScheme.AffirmativeMarkup
+            : state == "not supported here" ? ColorScheme.MutedMarkup : ColorScheme.CautionMarkup;
+        _detail.AddControl(new MarkupControl([$"[{colour}]{MarkupParser.Escape(state)}[/]", ""]) { Wrap = true });
+
+        var when = new FieldGrid();
+        var events = HookEvents.All.ToList();
+        var eventBox = new DropdownControl("", events) { HorizontalAlignment = HorizontalAlignment.Left };
+        eventBox.SelectedIndex = Math.Max(0, events.IndexOf(e.Event));
+        eventBox.SelectedValueChanged += (_, v) => { if (v is not null) { e.Event = v; Changed(); } };
+        when.Add("Event", HookEvents.Fires(e.Event)
+            ? "When it runs."
+            : "When it runs. This event does not fire in cxagent yet; the hook is kept for when it does.", eventBox);
+
+        var matcher = ListDetail.Input(new PromptControl { Input = e.Matcher ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
+        matcher.InputChanged += (_, text) => { e.Matcher = text; Changed(); };
+        when.Add("Matcher", "Which tools, as a pattern: run_shell, write_file|replace_in_file. Empty is every tool.", matcher);
+
+        var what = new FieldGrid();
+        if (e.Editable)
+        {
+            var command = ListDetail.Input(new PromptControl { Input = e.Command ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
+            command.InputChanged += (_, text) => { e.Command = text; Changed(); };
+            what.Add("Command", "Run in a shell with the event's JSON on stdin. Exit 2 blocks, with stderr as the reason.", command);
+
+            var name = ListDetail.Input(new PromptControl { Input = e.Name ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
+            name.InputChanged += (_, text) => { e.Name = text; Changed(); };
+            what.Add("Name", "What messages and this list call it. Optional.", name);
+
+            var block = new CheckboxControl("Block when it fails", e.OnFailureBlock);
+            block.CheckedChanged += (_, on) => { e.OnFailureBlock = on; Changed(); };
+            what.Add("On failure", HookEvents.CanBlock(e.Event)
+                ? "A hook that crashes or times out lets the action through, unless this is on."
+                : "This event cannot block, so a failure is only reported.", block);
+        }
+        else
+        {
+            what.AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]A {MarkupParser.Escape(e.Type)} hook is not run in cxagent yet. It is kept exactly as written, and its event, matcher and file can still be changed here.[/]"]) { Wrap = true });
+        }
+
+        var where = new FieldGrid();
+        var sources = HooksDraft.Editable.Where(_draft!.CanSaveTo).ToList();
+        var labels = sources.Select(SourceLabel).ToList();
+        var sourceBox = new DropdownControl("", labels) { HorizontalAlignment = HorizontalAlignment.Left };
+        sourceBox.SelectedIndex = Math.Max(0, sources.IndexOf(e.Source));
+        sourceBox.SelectedValueChanged += (_, v) =>
+        {
+            var i = labels.IndexOf(v ?? "");
+            if (i < 0 || sources[i] == e.Source) return;
+            e.Source = sources[i];
+            Changed();
+            if (e.Source == HookSource.Project)
+                SetStatus($"[{ColorScheme.CautionMarkup}]Saved in .cxagent/hooks.json, it is committed with the repository and runs for everyone who trusts it.[/]");
+        };
+        where.Add("Saved in", _draft.RepoRoot is null
+            ? "No repository here, so only your own config."
+            : "Your config runs everywhere; the project's shared file travels with the repository; the local one stays on this machine.",
+            sourceBox);
+
+        var more = new FieldGrid();
+        if (e.Editable)
+        {
+            var timeout = ListDetail.Input(new PromptControl { Input = e.TimeoutSeconds?.ToString() ?? "", InputWidth = 8 });
+            timeout.InputChanged += (_, text) => { e.TimeoutSeconds = int.TryParse(text.Trim(), out var n) && n > 0 ? n : null; Changed(); };
+            more.Add("Timeout", $"Seconds it may run; empty is {HookProcess.DefaultTimeoutSeconds}.", timeout);
+
+            var shells = new List<string> { "default", "bash", "powershell" };
+            var shellBox = new DropdownControl("", shells) { HorizontalAlignment = HorizontalAlignment.Left };
+            shellBox.SelectedIndex = Math.Max(0, shells.IndexOf(e.Shell ?? "default"));
+            shellBox.SelectedValueChanged += (_, v) => { e.Shell = v is null or "default" ? null : v; Changed(); };
+            more.Add("Shell", "bash everywhere; on Windows without Git Bash, PowerShell.", shellBox);
+        }
+
+        _detail.AddControl(ListDetail.Section("When", when.Control));
+        _detail.AddControl(ListDetail.Gap());
+        _detail.AddControl(ListDetail.Section("What", what.Control));
+        _detail.AddControl(ListDetail.Gap());
+        _detail.AddControl(ListDetail.Section("Where", where.Control));
+        if (e.Editable)
+        {
+            _detail.AddControl(ListDetail.Gap());
+            _detail.AddControl(ListDetail.Folded("Advanced", more.Control));
+        }
+    }
+
+    private static string SourceLabel(HookSource s) => s switch
+    {
+        HookSource.User => "You, all projects (config.json)",
+        HookSource.Project => "This project, shared (.cxagent/hooks.json)",
+        _ => "This project, only me (.cxagent/hooks.local.json)",
+    };
+
+    private void AddHook()
+    {
+        if (_draft is null) return;
+        _selected = _draft.Add(HookSource.User);
+        FillRail();
+        SetStatus($"[{ColorScheme.MutedMarkup}]Not saved yet. Set its command, then Save.[/]");
+    }
+
+    private void Duplicate(HookEntry e)
+    {
+        if (_draft is null) return;
+        var copy = new HookEntry
+        {
+            Source = e.Source, Event = e.Event, Matcher = e.Matcher, Type = e.Type, Command = e.Command, Shell = e.Shell,
+            TimeoutSeconds = e.TimeoutSeconds, OnFailureBlock = e.OnFailureBlock,
+            Name = e.Name is { Length: > 0 } n ? n + " copy" : null, Raw = e.Raw?.DeepClone().AsObject(),
+        };
+        _draft.Entries.Add(copy);
+        _selected = copy;
+        FillRail();
+    }
+
+    private void Remove(HookEntry e)
+    {
+        _draft?.Remove(e);
+        _selected = null;
+        FillRail();
+        SetStatus($"[{ColorScheme.MutedMarkup}]Removed from the draft. Save to write it.[/]");
+    }
+
+    private void Changed()
+    {
+        // THE RAIL'S ROW FOLLOWS THE FIELDS, so a name or event typed here shows where the hook now sits.
+        if (_rail.Items.ElementAtOrDefault(_lastIndex) is { Tag: HookEntry e } item) item.Text = RowText(e);
+        MarkSave();
+    }
+
+    private void SetStatus(string markup) => _status.SetContent([markup]);
+
+    private async Task SaveAsync()
+    {
+        if (_saving || _draft is not { } draft) return;
+        if (!draft.IsDirty) { SetStatus($"[{ColorScheme.MutedMarkup}]Nothing to save.[/]"); return; }
+        if (draft.Entries.FirstOrDefault(e => e.Editable && string.IsNullOrWhiteSpace(e.Command)) is { } empty)
+        {
+            _selected = empty;
+            FillRail();
+            SetStatus($"[{ColorScheme.CautionMarkup}]A command hook needs a command.[/]");
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var written = draft.Changed.Select(HooksFile.Label).ToList();
+            var errors = await Task.Run(() => HooksFile.Save(draft, _host.Apply.Paths, _host.Apply.Env));
+            _host.System.EnqueueOnUIThread(() =>
+            {
+                if (errors.Count > 0)
+                {
+                    SetStatus(string.Join("\n", errors.Select(m => $"[{ColorScheme.DangerMarkup}]✖ {MarkupParser.Escape(m)}[/]")));
+                    return;
+                }
+                // EVERY OPEN TAB RUNS WHAT WAS SAVED, from the files as they are now — the save is the review.
+                var user = ProvidersFile.Read(_host.Apply.Paths, _host.Apply.Env).Settings?.Hooks ?? HooksSettings.None;
+                foreach (var s in _host.Apply.Manager.Sessions) s.ReviewHooks(user);
+                var keep = _selected;
+                Reload();
+                if (keep is not null)
+                    _selected = _draft!.Entries.FirstOrDefault(x => x.Event == keep.Event && x.Command == keep.Command && x.Source == keep.Source) ?? _selected;
+                FillRail();
+                SetStatus($"[{ColorScheme.AffirmativeMarkup}]✔ Saved {MarkupParser.Escape(string.Join(", ", written))}.[/] [{ColorScheme.MutedMarkup}]Open tabs run these hooks now.[/]");
+            }, "hooksTab.Saved");
+        }
+        finally { _saving = false; }
+    }
+}
