@@ -20,12 +20,28 @@ public sealed class HookEntry
     public int? TimeoutSeconds { get; set; }
     public bool OnFailureBlock { get; set; }
     public string? Name { get; set; }
+    public string? Prompt { get; set; }
+    public string? Model { get; set; }
+    public bool ContinueOnBlock { get; set; }
+    public string? Url { get; set; }
+    public string? Server { get; set; }
+    public string? Tool { get; set; }
 
     /// <summary>The hook's JSON as read; null for a hook added here.</summary>
     public JsonObject? Raw { get; init; }
 
-    /// <summary>Whether this entry is one the tab edits field by field: a command hook. Others are shown and kept.</summary>
-    public bool Editable => Type == "command";
+    /// <summary>Whether this entry is one the tab edits field by field: any of the five types. An unknown type is shown and kept.</summary>
+    public bool Editable => HookDefinition.TypeRuns(Type);
+
+    /// <summary>The keys each type is written with — and so the keys a change of type leaves behind.</summary>
+    private static readonly Dictionary<string, string[]> TypeKeys = new()
+    {
+        ["command"] = ["command", "shell"],
+        ["prompt"] = ["prompt", "model", "continueOnBlock"],
+        ["agent"] = ["prompt", "model"],
+        ["http"] = ["url", "headers", "allowedEnvVars"],
+        ["mcp_tool"] = ["server", "tool", "input"],
+    };
 
     internal static HookEntry From(HookDefinition h) => new()
     {
@@ -38,6 +54,12 @@ public sealed class HookEntry
         TimeoutSeconds = h.TimeoutSeconds,
         OnFailureBlock = h.OnFailureBlock,
         Name = h.Name,
+        Prompt = h.Prompt,
+        Model = h.Model,
+        ContinueOnBlock = h.ContinueOnBlock,
+        Url = h.Url,
+        Server = h.Server,
+        Tool = h.Tool,
         Raw = h.Raw is { } raw ? JsonNode.Parse(raw.GetRawText()) as JsonObject : null,
     };
 
@@ -46,6 +68,7 @@ public sealed class HookEntry
         new(Event, string.IsNullOrWhiteSpace(Matcher) ? null : Matcher, Type, Source)
         {
             Name = Name, Command = Command, Shell = Shell, TimeoutSeconds = TimeoutSeconds, OnFailureBlock = OnFailureBlock,
+            Prompt = Prompt, Model = Model, ContinueOnBlock = ContinueOnBlock, Url = Url, Server = Server, Tool = Tool,
         };
 
     /// <summary>The hook's object as it will be written: what was read, with the edited fields laid over it.</summary>
@@ -54,9 +77,30 @@ public sealed class HookEntry
         var o = Raw?.DeepClone().AsObject() ?? new JsonObject();
         o["type"] = Type;
         if (!Editable) return o;
-        Set(o, "command", Command);
-        Set(o, "shell", Shell);
+        // ANOTHER TYPE'S KEYS GO when the type changes: a command left on an http hook would read as a mistake to
+        // the next person editing the file, and to any tool that checks it.
+        foreach (var key in TypeKeys.Where(kv => kv.Key != Type).SelectMany(kv => kv.Value).Except(TypeKeys[Type]))
+            o.Remove(key);
         Set(o, "name", Name);
+        switch (Type)
+        {
+            case "command":
+                Set(o, "command", Command);
+                Set(o, "shell", Shell);
+                break;
+            case "prompt" or "agent":
+                Set(o, "prompt", Prompt);
+                Set(o, "model", Model);
+                if (Type == "prompt" && ContinueOnBlock) o["continueOnBlock"] = true; else o.Remove("continueOnBlock");
+                break;
+            case "http":
+                Set(o, "url", Url);
+                break;
+            case "mcp_tool":
+                Set(o, "server", Server);
+                Set(o, "tool", Tool);
+                break;
+        }
         if (TimeoutSeconds is { } t) o["timeout"] = t; else o.Remove("timeout");
         if (OnFailureBlock) o["onFailure"] = "block"; else o.Remove("onFailure");
         return o;
@@ -81,8 +125,9 @@ public sealed class HooksDraft
     private readonly Dictionary<HookSource, string> _original = [];
 
     internal HooksDraft(IEnumerable<HookEntry> entries, string? repoRoot, IReadOnlySet<HookSource> unreadable,
-        IReadOnlyDictionary<string, string>? loaded = null)
+        IReadOnlyDictionary<string, string>? loaded = null, string? defaultModel = null)
     {
+        DefaultModel = _originalDefault = defaultModel;
         Loaded = loaded ?? new Dictionary<string, string>();
         Entries = [.. entries];
         RepoRoot = repoRoot;
@@ -94,6 +139,11 @@ public sealed class HooksDraft
     public static IReadOnlyList<HookSource> Editable { get; } = [HookSource.User, HookSource.Project, HookSource.Local];
 
     public List<HookEntry> Entries { get; }
+
+    /// <summary><c>hooks.defaultModel</c> in the system config: the model prompt and agent hooks ask when they name none.</summary>
+    public string? DefaultModel { get; set; }
+
+    private readonly string? _originalDefault;
 
     /// <summary>Each project file's fingerprint when this draft was read — what the user was shown.</summary>
     public IReadOnlyDictionary<string, string> Loaded { get; }
@@ -120,7 +170,9 @@ public sealed class HooksDraft
     public void Remove(HookEntry entry) => Entries.Remove(entry);
 
     /// <summary>The sources whose file would change on save.</summary>
-    public IReadOnlyList<HookSource> Changed => [.. Editable.Where(s => Block(s).ToJsonString() != _original[s])];
+    public IReadOnlyList<HookSource> Changed =>
+        [.. Editable.Where(s => Block(s).ToJsonString() != _original[s]
+                                || (s == HookSource.User && DefaultModel != _originalDefault))];
 
     public bool IsDirty => Changed.Count > 0;
 

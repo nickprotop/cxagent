@@ -198,4 +198,62 @@ public class HooksDraftTests : IDisposable
         Assert.Empty(Save(d));
         Assert.True(HooksFile.SafeToApply(d));
     }
+
+    [Fact]
+    public void Prompt_and_mcp_hooks_round_trip()
+    {
+        var d = Load();
+        var p = d.Add(HookSource.Project);
+        p.Event = "Stop";
+        p.Type = "prompt";
+        p.Prompt = "Done? $ARGUMENTS";
+        p.Model = "cheap";
+        p.ContinueOnBlock = true;
+        var m = d.Add(HookSource.Project);
+        m.Event = "PreToolUse";
+        m.Type = "mcp_tool";
+        m.Server = "scan";
+        m.Tool = "check";
+        Assert.Empty(Save(d));
+
+        var again = Load();
+        var prompt = again.Entries.Single(e => e.Type == "prompt");
+        Assert.Equal("Done? $ARGUMENTS", prompt.Prompt);
+        Assert.Equal("cheap", prompt.Model);
+        Assert.True(prompt.ContinueOnBlock);
+        Assert.Null(prompt.Command);
+        var mcp = again.Entries.Single(e => e.Type == "mcp_tool");
+        Assert.Equal(("scan", "check"), (mcp.Server, mcp.Tool));
+        Assert.False(again.IsDirty);
+    }
+
+    [Fact]
+    public void Changing_type_drops_the_old_types_keys()
+    {
+        var d = Load();
+        var h = d.Add(HookSource.Project);
+        h.Event = "Stop";
+        h.Command = "true";
+        Assert.Empty(Save(d));
+        var again = Load();
+        var e = again.Entries[0];
+        e.Type = "http";
+        e.Url = "http://localhost:9/h";
+        Assert.Empty(Save(again));
+        var hook = Read(ProjectPath)["hooks"]!["Stop"]![0]!["hooks"]![0]!;
+        Assert.Null(hook["command"]);
+        Assert.Equal("http://localhost:9/h", (string?)hook["url"]);
+    }
+
+    [Fact]
+    public void Default_model_is_saved_in_the_system_config()
+    {
+        var d = Load();
+        Assert.Null(d.DefaultModel);
+        d.DefaultModel = "x";
+        Assert.True(d.IsDirty);
+        Assert.Empty(Save(d));
+        Assert.Equal("x", (string?)Read(ConfigPath)["hooks"]!["defaultModel"]);
+        Assert.Equal("x", Load().DefaultModel);
+    }
 }

@@ -36,7 +36,7 @@ public static class HooksFile
                         || p.Message.StartsWith("needs a top-level", StringComparison.Ordinal))
             .Select(p => p.Source).ToHashSet();
         return new HooksDraft(snapshot.Hooks.Where(h => h.Source != HookSource.Library).Select(HookEntry.From),
-            snapshot.RepoRoot, unreadable, snapshot.Fingerprints);
+            snapshot.RepoRoot, unreadable, snapshot.Fingerprints, user.DefaultModel);
     }
 
     /// <summary>Writes every source whose file changed. Returns what went wrong, empty when all were written.</summary>
@@ -53,7 +53,7 @@ public static class HooksFile
             }
             var block = draft.Block(source);
             var before = errors.Count;
-            if (source == HookSource.User) SaveUser(block, paths, env, errors);
+            if (source == HookSource.User) SaveUser(block, draft.DefaultModel, paths, env, errors);
             else SaveProject(HookSources.ProjectFile(draft.RepoRoot, source)!, block, errors);
             if (errors.Count == before) draft.Written.Add(source);
         }
@@ -79,15 +79,16 @@ public static class HooksFile
         _ => "the app",
     };
 
-    private static void SaveUser(JsonObject block, AppPaths paths, IReadOnlyDictionary<string, string> env, List<string> errors)
+    private static void SaveUser(JsonObject block, string? defaultModel, AppPaths paths, IReadOnlyDictionary<string, string> env, List<string> errors)
     {
         var result = ConfigFile.TryApply(new ConfigTarget(Path.Combine(paths.ConfigDir, "config.json"), env), root =>
         {
-            // THE BLOCK'S SETTINGS STAY: defaultModel is not an event and the editor does not show it.
+            // THE BLOCK'S OTHER SETTINGS STAY — any key that is not an event and not one this editor owns.
             var merged = new JsonObject();
             if (root["hooks"] is JsonObject old)
-                foreach (var kv in old.Where(kv => !HookEvents.Known(kv.Key) && kv.Value is not JsonArray))
+                foreach (var kv in old.Where(kv => !HookEvents.Known(kv.Key) && kv.Value is not JsonArray && kv.Key != "defaultModel"))
                     merged[kv.Key] = kv.Value?.DeepClone();
+            if (!string.IsNullOrWhiteSpace(defaultModel)) merged["defaultModel"] = defaultModel;
             foreach (var kv in block) merged[kv.Key] = kv.Value?.DeepClone();
             if (merged.Count == 0) root.Remove("hooks"); else root["hooks"] = merged;
         });

@@ -40,6 +40,8 @@ public sealed class HooksTab
     private bool _saving;
     private int _lastIndex = -1;
     private IFocusableControl? _firstField;
+    private readonly DropdownControl _defaultModel;
+    private bool _fillingDefault;
 
     public HooksTab(ConfigDialogHost host, Func<Window?> window)
     {
@@ -56,6 +58,17 @@ public sealed class HooksTab
 
         var toolbar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         toolbar.AddItem(Controls.Button(" + Add hook ").OnClick((_, _) => AddHook()).Build());
+        // THE MODEL PROMPT AND AGENT HOOKS ASK WHEN THEY NAME NONE. Here, beside Add, because it is a setting of
+        // the whole list rather than of one hook; "none" means such a hook must name its own.
+        toolbar.AddItem(new MarkupControl([$"[{ColorScheme.MutedMarkup}]Default model:[/]"]));
+        _defaultModel = new DropdownControl("", ["none"]) { HorizontalAlignment = HorizontalAlignment.Left };
+        _defaultModel.SelectedValueChanged += (_, v) =>
+        {
+            if (_draft is null || _fillingDefault) return;
+            _draft.DefaultModel = v is null or "none" ? null : v;
+            MarkSave();
+        };
+        toolbar.AddItem(_defaultModel);
         _root.Place(toolbar, 0, 0, colSpan: 2);
         _root.Place(DialogLook.Rule(), 1, 0, colSpan: 2);
 
@@ -100,9 +113,22 @@ public sealed class HooksTab
     public void Reload()
     {
         _draft = HooksFile.Load(_host.Apply.Paths, _host.Apply.Env, Session.WorkingDirectory);
+        FillDefaultModel();
         _selected = _draft.Entries.FirstOrDefault();
         FillRail();
         SayTrust();
+    }
+
+    private void FillDefaultModel()
+    {
+        var names = new List<string> { "none" };
+        names.AddRange(ProvidersFile.Read(_host.Apply.Paths, _host.Apply.Env).Settings?.Providers.Keys.Order() ?? Enumerable.Empty<string>());
+        if (_draft?.DefaultModel is { } d && !names.Contains(d)) names.Add(d);
+        _fillingDefault = true;
+        _defaultModel.ClearItems();
+        foreach (var n in names) _defaultModel.AddItem(n);
+        _defaultModel.SelectedIndex = Math.Max(0, names.IndexOf(_draft?.DefaultModel ?? "none"));
+        _fillingDefault = false;
     }
 
     private void SayTrust()
@@ -212,9 +238,65 @@ public sealed class HooksTab
         var what = new FieldGrid();
         if (e.Editable)
         {
-            var command = ListDetail.Input(new PromptControl { Input = e.Command ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
-            command.InputChanged += (_, text) => { e.Command = text; Changed(); };
-            what.Add("Command", "Run in a shell with the event's JSON on stdin. Exit 2 blocks, with stderr as the reason.", command);
+            var types = new List<string> { "command", "prompt", "agent", "http", "mcp_tool" };
+            var typeBox = new DropdownControl("", types) { HorizontalAlignment = HorizontalAlignment.Left };
+            typeBox.SelectedIndex = Math.Max(0, types.IndexOf(e.Type));
+            typeBox.SelectedValueChanged += (_, v) =>
+            {
+                if (v is null || v == e.Type) return;
+                e.Type = v;
+                Changed();
+                // THE FIELDS FOLLOW THE TYPE, so the pane is rebuilt for the one chosen.
+                _host.System.EnqueueOnUIThread(() => BuildDetail(e), "hooksTab.Type");
+            };
+            what.Add("Type", e.Type switch
+            {
+                "prompt" => "Asks a model a yes-or-no question about the event.",
+                "agent" => "A read-only agent looks at the project, then answers yes or no.",
+                "http" => "Posts the event's JSON to a URL and reads the answer.",
+                "mcp_tool" => "Calls a tool on one of your MCP servers.",
+                _ => "Runs a command with the event's JSON on stdin.",
+            }, typeBox);
+
+            switch (e.Type)
+            {
+                case "command":
+                {
+                    var command = ListDetail.Input(new PromptControl { Input = e.Command ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
+                    command.InputChanged += (_, text) => { e.Command = text; Changed(); };
+                    what.Add("Command", "Run in a shell with the event's JSON on stdin. Exit 2 blocks, with stderr as the reason.", command);
+                    break;
+                }
+                case "prompt" or "agent":
+                {
+                    var prompt = ListDetail.Input(new PromptControl { Input = e.Prompt ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
+                    prompt.InputChanged += (_, text) => { e.Prompt = text; Changed(); };
+                    what.Add("Prompt", "The question. $ARGUMENTS stands for the event's JSON; without it, the JSON is added after.", prompt);
+                    what.Add("Model", "Which of your providers answers. Default uses the default model set above.", ModelPicker(e));
+                    if (e.Type == "prompt")
+                    {
+                        var carry = new CheckboxControl("Carry on when it says no", e.ContinueOnBlock);
+                        carry.CheckedChanged += (_, on) => { e.ContinueOnBlock = on; Changed(); };
+                        what.Add("On a no", "Off: a no on a tool call or prompt ends the turn. On: the reason goes back to the model and it carries on.", carry);
+                    }
+                    break;
+                }
+                case "http":
+                {
+                    var url = ListDetail.Input(new PromptControl { Input = e.Url ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
+                    url.InputChanged += (_, text) => { e.Url = text; Changed(); };
+                    what.Add("URL", "Receives a POST with the event's JSON. Headers are edited in the file.", url);
+                    break;
+                }
+                case "mcp_tool":
+                {
+                    what.Add("Server", "One of your MCP servers. A repository's hook cannot bring its own.", ServerPicker(e));
+                    var tool = ListDetail.Input(new PromptControl { Input = e.Tool ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
+                    tool.InputChanged += (_, text) => { e.Tool = text; Changed(); };
+                    what.Add("Tool", "The tool to call. Its input is edited in the file; ${tool_input.path} reads from the event.", tool);
+                    break;
+                }
+            }
 
             var name = ListDetail.Input(new PromptControl { Input = e.Name ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
             name.InputChanged += (_, text) => { e.Name = text; Changed(); };
@@ -223,12 +305,12 @@ public sealed class HooksTab
             var block = new CheckboxControl("Block when it fails", e.OnFailureBlock);
             block.CheckedChanged += (_, on) => { e.OnFailureBlock = on; Changed(); };
             what.Add("On failure", HookEvents.CanBlock(e.Event)
-                ? "A hook that crashes or times out lets the action through, unless this is on."
+                ? "A hook that crashes, times out or cannot reach its model or server lets the action through, unless this is on."
                 : "This event cannot block, so a failure is only reported.", block);
         }
         else
         {
-            what.AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]A {MarkupParser.Escape(e.Type)} hook is not run in cxagent yet. It is kept exactly as written, and its event, matcher and file can still be changed here.[/]"]) { Wrap = true });
+            what.AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]A {MarkupParser.Escape(e.Type)} hook is not a type cxagent knows. It is kept exactly as written, and its event, matcher and file can still be changed here.[/]"]) { Wrap = true });
         }
 
         var where = new FieldGrid();
@@ -255,13 +337,16 @@ public sealed class HooksTab
         {
             var timeout = ListDetail.Input(new PromptControl { Input = e.TimeoutSeconds?.ToString() ?? "", InputWidth = 8 });
             timeout.InputChanged += (_, text) => { e.TimeoutSeconds = int.TryParse(text.Trim(), out var n) && n > 0 ? n : null; Changed(); };
-            more.Add("Timeout", $"Seconds it may run; empty is the default for its type (600 for a command).", timeout);
+            more.Add("Timeout", $"Seconds it may run; empty is {HookDispatch.TimeoutSeconds(def with { TimeoutSeconds = null })} for this type and event.", timeout);
 
+            if (e.Type == "command")
+            {
             var shells = new List<string> { "default", "bash", "powershell" };
             var shellBox = new DropdownControl("", shells) { HorizontalAlignment = HorizontalAlignment.Left };
             shellBox.SelectedIndex = Math.Max(0, shells.IndexOf(e.Shell ?? "default"));
             shellBox.SelectedValueChanged += (_, v) => { e.Shell = v is null or "default" ? null : v; Changed(); };
             more.Add("Shell", "bash everywhere; on Windows without Git Bash, PowerShell.", shellBox);
+            }
         }
 
         _detail.AddControl(ListDetail.Section("When", when.Control));
@@ -282,6 +367,31 @@ public sealed class HooksTab
         HookSource.Project => "This project, shared (.cxagent/hooks.json)",
         _ => "This project, only me (.cxagent/hooks.local.json)",
     };
+
+    /// <summary>A pick of your configured providers by name, with "default" for hooks.defaultModel.</summary>
+    private IWindowControl ModelPicker(HookEntry e)
+    {
+        var names = new List<string> { "default" };
+        names.AddRange(ProvidersFile.Read(_host.Apply.Paths, _host.Apply.Env).Settings?.Providers.Keys.Order() ?? Enumerable.Empty<string>());
+        if (e.Model is { } m && !names.Contains(m)) names.Add(m);
+        var box = new DropdownControl("", names) { HorizontalAlignment = HorizontalAlignment.Left };
+        box.SelectedIndex = Math.Max(0, names.IndexOf(e.Model ?? "default"));
+        box.SelectedValueChanged += (_, v) => { e.Model = v is null or "default" ? null : v; Changed(); };
+        return box;
+    }
+
+    /// <summary>A pick of your configured MCP servers by name.</summary>
+    private IWindowControl ServerPicker(HookEntry e)
+    {
+        var names = (ProvidersFile.Read(_host.Apply.Paths, _host.Apply.Env).Settings?.McpServers.Keys.Order() ?? Enumerable.Empty<string>()).ToList();
+        if (e.Server is { } sv && !names.Contains(sv)) names.Add(sv);
+        if (names.Count == 0) return new MarkupControl([$"[{ColorScheme.CautionMarkup}]No MCP servers are configured. Add one on the MCP servers tab.[/]"]) { Wrap = true };
+        var box = new DropdownControl("", names) { HorizontalAlignment = HorizontalAlignment.Left };
+        box.SelectedIndex = Math.Max(0, names.IndexOf(e.Server ?? ""));
+        if (e.Server is null) e.Server = names[0];
+        box.SelectedValueChanged += (_, v) => { e.Server = v; Changed(); };
+        return box;
+    }
 
     private void AddHook()
     {
@@ -324,15 +434,25 @@ public sealed class HooksTab
 
     private void SetStatus(string markup) => _status.SetContent([markup]);
 
+    /// <summary>What a hook of its type cannot be saved without, or null.</summary>
+    private static string? MissingField(HookEntry e) => !e.Editable ? null : e.Type switch
+    {
+        "command" when string.IsNullOrWhiteSpace(e.Command) => "A command hook needs a command.",
+        "prompt" or "agent" when string.IsNullOrWhiteSpace(e.Prompt) => $"A {e.Type} hook needs a prompt.",
+        "http" when string.IsNullOrWhiteSpace(e.Url) => "An http hook needs a URL.",
+        "mcp_tool" when string.IsNullOrWhiteSpace(e.Server) || string.IsNullOrWhiteSpace(e.Tool) => "An mcp_tool hook needs a server and a tool.",
+        _ => null,
+    };
+
     private async Task SaveAsync()
     {
         if (_saving || _draft is not { } draft) return;
         if (!draft.IsDirty) { SetStatus($"[{ColorScheme.MutedMarkup}]Nothing to save.[/]"); return; }
-        if (draft.Entries.FirstOrDefault(e => e.Editable && string.IsNullOrWhiteSpace(e.Command)) is { } empty)
+        if (draft.Entries.Select(e => (Entry: e, Missing: MissingField(e))).FirstOrDefault(x => x.Missing is not null) is { Entry: { } empty } bad)
         {
             _selected = empty;
             FillRail();
-            SetStatus($"[{ColorScheme.CautionMarkup}]A command hook needs a command.[/]");
+            SetStatus($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(bad.Missing!)}[/]");
             return;
         }
 
