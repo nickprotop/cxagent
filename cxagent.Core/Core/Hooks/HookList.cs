@@ -36,7 +36,7 @@ public static class HookList
         {
             sb.Append("| event | matcher | hook | from | state |\n|---|---|---|---|---|\n");
             foreach (var h in snapshot.Hooks.OrderBy(h => HookEventOrder(h.Event)).ThenBy(h => h.Source))
-                sb.Append($"| {h.Event} | {h.Matcher ?? "any"} | {Cell(h.DisplayName)} | {SourceTag(h.Source)} | {State(h, trusted)} |\n");
+                sb.Append($"| {h.Event} | {Cell(h.Matcher ?? "any")} | {Cell(h.DisplayName)} | {SourceTag(h.Source)} | {State(h, trusted)} |\n");
             if (runner.Handlers.Count > 0)
                 sb.Append($"\n{runner.Handlers.Count} handler(s) registered by the app.\n");
         }
@@ -54,5 +54,10 @@ public static class HookList
         return i < 0 ? int.MaxValue : i;
     }
 
-    private static string Cell(string text) => text.Replace("|", "\\|");
+    /// <summary>
+    /// A cell's text with its pipes swapped for a broken bar. An escaped pipe is not honoured by every
+    /// renderer this reaches, and a matcher like <c>write_file|replace_in_file</c> would split its row into
+    /// extra columns; the broken bar reads the same and splits nothing.
+    /// </summary>
+    private static string Cell(string text) => text.Replace('|', '¦');
 }

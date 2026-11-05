@@ -49,4 +49,15 @@ public class HookListTests
     {
         Assert.Contains(SessionCommands.All, c => c.Name == "/hooks");
     }
+
+    [Fact]
+    public void A_pipe_in_a_matcher_or_command_does_not_split_the_table()
+    {
+        var text = HookList.Describe(Runner(true,
+            new HookDefinition("PostToolUse", "write_file|replace_in_file", "command", HookSource.User) { Command = "a | b" }), []);
+        foreach (var row in text.Split('\n').Where(l => l.StartsWith('|')))
+            Assert.Equal(6, row.Count(c => c == '|'));
+        Assert.Contains("write_file", text);
+        Assert.Contains("replace_in_file", text);
+    }
 }
