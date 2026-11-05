@@ -3077,6 +3077,7 @@ public sealed class Agent
         // with an envelope or a receipt, both carrying a state; one the spawner refused (no prompt, an
         // unknown type, a provider its type does not offer) answers with plain text and no child.
         string? spawned = null;
+        Hooks.HookVerdict? pre = null;
         try
         {
             // SPAWN FIRST, then MCP, then the built-ins — each returning null for a name it does not
@@ -3109,7 +3110,19 @@ public sealed class Agent
             // how they come to disagree about a selection composed once.
             var allowedBuiltins = AllowedBuiltins(_turnTools);
 
-            if (Withheld(call.Name) is { } refusal) outcome = refusal;
+            // PRE-TOOL HOOKS, BEFORE ANY LINK OF THE CHAIN. Every source — built-ins, MCP, injected and
+            // plugin tools, spawns — passes this one line, so a guard cannot be stepped around by calling a
+            // tool from another source, nor by delegating to a sub-agent, which dispatches here too.
+            pre = await PreToolHooksAsync(call, ctx, ct);
+            if (pre?.UpdatedInput is { } rewritten)
+            {
+                // THE REWRITTEN CALL IS THE CALL from here on: what the permission prompt shows, what runs,
+                // and what the row and the model's transcript of it say.
+                call = call with { Arguments = JsonSerializer.SerializeToElement(rewritten) };
+            }
+
+            if (pre?.Stops == true) outcome = HookRefusal(pre);
+            else if (Withheld(call.Name) is { } refusal) outcome = refusal;
             else
             outcome = Text(spawned = CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id, _turnTools) : null)
                 // REACHING A KEPT CHILD, beside the tool that made it. The token is THIS turn's, not
@@ -3320,6 +3333,10 @@ public sealed class Agent
         // the error message, the envelope's state, the recorded length.
         var result = outcome.Text;
 
+        // POST-TOOL HOOKS, ON WHAT THE MODEL IS ABOUT TO READ. Their context and their objections are
+        // appended to the result, which is the one channel that reaches the model at this point.
+        if (pre?.Stops != true) result = await PostToolHooksAsync(call, outcome, result, ct);
+
         // TWO FAILURES THIS CAN SEE, both calls that never ran. A permission refusal: the gate set
         // PermissionDenied, so that is a fact rather than a reading of the answer, and the badge says
         // auto-denied off this state. A refused spawn: no child ran, and that is read off the
@@ -3411,6 +3428,75 @@ public sealed class Agent
     /// "this source does not own the name, try the next link". An empty string is a source that
     /// answered with nothing, which is a different fact.</para>
     /// </summary>
+    /// <summary>The input every hook this agent fires starts from: the session's fields, and who this agent is.</summary>
+    private Hooks.HookEventContext HookContext(Hooks.HookRunner hooks)
+    {
+        var session = hooks.Session();
+        return _isSubAgent
+            ? session with
+            {
+                Agent = $"{_requesterLabel ?? "sub-agent"} {Id}",
+                AgentId = Id,
+                AgentType = _requesterRunsOn is { } on && on.IndexOf(" on ", StringComparison.Ordinal) is var at and > 0
+                    ? on[..at] : _requesterLabel,
+            }
+            : session;
+    }
+
+    /// <summary>Runs this call's PreToolUse hooks and hands their allow or ask to the permission gate; null when none listen.</summary>
+    private async Task<Hooks.HookVerdict?> PreToolHooksAsync(ToolCall call, JobContext ctx, CancellationToken ct)
+    {
+        if (_policy?.Hooks is not { } hooks || !hooks.Listens(Hooks.HookEvents.PreToolUse)) return null;
+        var verdict = await hooks.RunAsync(Hooks.HookEvents.PreToolUse, call.Name,
+            Hooks.HookPayload.ForTool(HookContext(hooks), Hooks.HookEvents.PreToolUse, call), ct);
+
+        // ONLY ALLOW AND ASK TRAVEL ON. A deny is settled here, before anything is asked; a defer means
+        // "leave it to the usual rules", which is what no answer already does.
+        ctx.HookDecision = verdict.Decision is "allow" or "ask" ? verdict.Decision : null;
+        ctx.HookDecidedBy = verdict.DecidedBy;
+        return verdict;
+    }
+
+    /// <summary>
+    /// What the model reads for a call a hook refused. Worded as a refusal by configuration, not by the user,
+    /// so the model does not plead with a person who was never asked.
+    /// </summary>
+    private static ToolOutcome HookRefusal(Hooks.HookVerdict verdict)
+    {
+        var text = $"blocked by hook '{verdict.DecidedBy}'"
+                   + (verdict.Reason is { Length: > 0 } r ? $": {r}" : ".")
+                   + " This is a rule configured for this project; do not retry the same call.";
+        return new ToolOutcome(text, new JobResult
+        {
+            Success = false, ExitCode = -1, PermissionDenied = true, DecidedBy = "hook", ErrorMessage = text,
+        });
+    }
+
+    /// <summary>Runs PostToolUse (or PostToolUseFailure) and returns the result with whatever the hooks said for the model.</summary>
+    private async Task<string> PostToolHooksAsync(ToolCall call, ToolOutcome outcome, string result, CancellationToken ct)
+    {
+        if (_policy?.Hooks is not { } hooks) return result;
+        var failed = outcome.Result is { Success: false } || result.StartsWith("error:", StringComparison.Ordinal);
+        var ev = failed ? Hooks.HookEvents.PostToolUseFailure : Hooks.HookEvents.PostToolUse;
+        if (!hooks.Listens(ev)) return result;
+
+        var input = failed
+            ? Hooks.HookPayload.ForTool(HookContext(hooks), ev, call, error: outcome.Result?.ErrorMessage ?? result)
+            : Hooks.HookPayload.ForTool(HookContext(hooks), ev, call, response: new System.Text.Json.Nodes.JsonObject { ["output"] = result });
+
+        Hooks.HookVerdict verdict;
+        try { verdict = await hooks.RunAsync(ev, call.Name, input, ct); }
+        // A TURN STOPPED WHILE A POST HOOK RAN still has a result to record, or the call is left without
+        // one — the orphan that breaks every later request. The hook's word is lost; the result is not.
+        catch (OperationCanceledException) { return result; }
+
+        var sb = new StringBuilder(result);
+        foreach (var context in verdict.Context) sb.Append($"\n\n[hook] {context}");
+        if (verdict.Stops && verdict.Reason is { Length: > 0 } reason)
+            sb.Append($"\n\n[hook '{verdict.DecidedBy}'] {reason}");
+        return sb.ToString();
+    }
+
     private static ToolOutcome? Text(string? text) => text is null ? null : new ToolOutcome(text);
 
     private async Task<LlmResponse> StreamTurnAsync(List<ChatMessage> messages,

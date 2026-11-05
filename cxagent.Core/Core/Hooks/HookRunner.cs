@@ -69,6 +69,13 @@ public sealed class HookRunner
     /// <summary>Whether the repository's hooks may run right now.</summary>
     public bool ProjectTrusted => _deps.ProjectTrusted();
 
+    /// <summary>
+    /// Who the session is, for the common fields of every hook's input. Set by whoever builds the session;
+    /// an agent fills in its own identity on top (<see cref="HookEventContext.Agent"/>).
+    /// </summary>
+    public Func<HookEventContext> Session { get; set; } =
+        () => new("", "", Environment.CurrentDirectory, "default", "main");
+
     /// <summary>Swaps in a reviewed set of hooks — F8's save, or the user accepting a changed file.</summary>
     public void Replace(HookSnapshot reviewed) => _snapshot = reviewed;
 
