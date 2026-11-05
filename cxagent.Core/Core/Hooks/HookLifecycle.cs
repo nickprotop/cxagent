@@ -120,11 +120,11 @@ public static class HookLifecycle
     /// Fires MessageDisplay for a reply as it is shown, without waiting. The reply is shown once it is whole, so
     /// this fires once per reply with <c>final</c> true and the whole text as <c>delta</c>.
     /// </summary>
-    public static void MessageDisplayed(HookRunner runner, HookEventContext ctx, string text)
+    public static void MessageDisplayed(HookRunner runner, HookEventContext ctx, HookMessage message)
     {
         if (!runner.Listens(HookEvents.MessageDisplay)) return;
         _ = Task.Run(() => runner.RunAsync(HookEvents.MessageDisplay, null, HookPayload.For(ctx, HookEvents.MessageDisplay,
-            new JsonObject { ["turn_id"] = ctx.SessionId, ["message_id"] = Guid.NewGuid().ToString("N"), ["index"] = 0, ["final"] = true, ["delta"] = text }),
+            new JsonObject { ["turn_id"] = message.TurnId, ["message_id"] = Guid.NewGuid().ToString("N"), ["index"] = 0, ["final"] = true, ["delta"] = message.Text }),
             CancellationToken.None));
     }
 
@@ -148,9 +148,19 @@ public static class HookLifecycle
     /// </summary>
     public static async Task<HookVerdict?> TasksAsync(HookRunner runner, HookEventContext ctx, HookTasks tasks, CancellationToken ct)
     {
-        var before = tasks.Before.ToDictionary(i => i.Text, i => i.Status, StringComparer.Ordinal);
+        // NOTHING LISTENING, NOTHING TO DO — and the list's own rules (duplicates allowed) are not this code's to
+        // trip over on a session that has no task hooks.
+        if (!runner.Listens(HookEvents.TaskCreated) && !runner.Listens(HookEvents.TaskCompleted)) return null;
+
+        // DUPLICATES COUNT AS ONE ITEM: the list may hold the same text twice, and the hook is told of a task, not
+        // of each copy. Done if any copy is done.
+        var before = new Dictionary<string, Agents.TodoStatus>(StringComparer.Ordinal);
+        foreach (var i in tasks.Before)
+            if (!before.TryGetValue(i.Text, out var seen) || i.Status == Agents.TodoStatus.Completed) before[i.Text] = seen == Agents.TodoStatus.Completed ? seen : i.Status;
+        var told = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in tasks.After)
         {
+            if (!told.Add(item.Text)) continue;
             var ev = !before.TryGetValue(item.Text, out var was) ? HookEvents.TaskCreated
                 : item.Status == Agents.TodoStatus.Completed && was != Agents.TodoStatus.Completed ? HookEvents.TaskCompleted
                 : null;
@@ -160,7 +170,7 @@ public static class HookLifecycle
                 ["task_id"] = TaskId(item.Text),
                 ["task_subject"] = item.Text,
             }), ct);
-            if (verdict.Stops) return verdict;
+            if (verdict.Stops || verdict.Halt is not null) return verdict.Stops ? verdict : verdict with { Decision = "deny", Reason = verdict.Halt };
         }
         return null;
     }
@@ -295,23 +305,28 @@ public static class HookLifecycle
 
     /// <summary>
     /// Runs an event from a synchronous caller: on the thread pool, waited for at most the slowest matching hook's
-    /// deadline. A hook that does not answer in time counts as a block, as the contract has it for a switch.
+    /// deadline. Hooks that do not answer in time have failed, by the rule every failure follows — reported, and
+    /// blocking only when one of them says <c>onFailure: "block"</c>.
     /// </summary>
     private static HookVerdict RunBounded(HookRunner runner, string ev, string? matchOn, JsonObject input)
     {
-        var budget = runner.Snapshot.Hooks.Where(h => h.Event == ev && h.Runs)
-            .Select(HookDispatch.TimeoutSeconds).DefaultIfEmpty(30).Max();
+        var hooks = runner.Snapshot.Hooks.Where(h => h.Event == ev && h.Runs).ToList();
+        var budget = hooks.Select(HookDispatch.TimeoutSeconds).DefaultIfEmpty(10).Max();
         var task = Task.Run(() => runner.RunAsync(ev, matchOn, input, CancellationToken.None));
+        string failure;
         try
         {
-            return task.Wait(TimeSpan.FromSeconds(budget + 1))
-                ? task.Result
-                : new HookVerdict("block", "its hooks did not answer in time", null, [], ev);
+            if (task.Wait(TimeSpan.FromSeconds(budget + 1))) return task.Result;
+            failure = "its hooks did not answer in time";
         }
         catch (AggregateException ex)
         {
-            return new HookVerdict("block", ex.InnerException?.Message ?? ex.Message, null, [], ev);
+            failure = ex.InnerException?.Message ?? ex.Message;
         }
+        runner.Report(new($"{ev} hooks failed: {failure}", IsError: true));
+        return hooks.Any(h => h.OnFailureBlock)
+            ? new HookVerdict("block", failure, null, [], ev)
+            : HookVerdict.None;
     }
 
     /// <summary>Fires PermissionDenied after auto mode's reviewer refused a call; a hook's <c>retry</c> tells the model it may try again.</summary>
@@ -347,3 +362,6 @@ public sealed record HookExpansion(string Name, string Arguments, string Source,
 
 /// <summary>A model switch: from which model to which, what was asked for, and how much context it re-sends.</summary>
 public sealed record HookModelSwitch(string From, string To, string? Requested, int ContextTokens);
+
+/// <summary>A reply as it is shown, and the turn it belongs to.</summary>
+public sealed record HookMessage(string Text, string TurnId);

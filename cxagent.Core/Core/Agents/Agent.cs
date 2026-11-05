@@ -1980,6 +1980,11 @@ public sealed class Agent
                 // STOP HOOKS MAY SEND THE AGENT BACK TO WORK — "the tests still fail" — but only so many
                 // times in one turn. The session's own agent fires Stop; a sub-agent fires SubagentStop, matched
                 // on its type, which may send it back the same way.
+                // THE REPLY IS ON SCREEN NOW — the session's, not a sub-agent's, which nobody is shown — whether or not
+                // a Stop hook then sends the agent on.
+                if (!_isSubAgent && _hooks is { } shown && !string.IsNullOrEmpty(text))
+                    Hooks.HookLifecycle.MessageDisplayed(shown, HookContext(shown) , new Hooks.HookMessage(text, $"{Id}:{_turn}"));
+
                 var stopEvent = _isSubAgent ? Hooks.HookEvents.SubagentStop : Hooks.HookEvents.Stop;
                 if (_hooks is { } stopHooks && stopHooks.Listens(stopEvent))
                 {
@@ -2033,8 +2038,6 @@ public sealed class Agent
                     return new SendResult(text, SendOutcome.Silent, why);
                 }
 
-                if (_hooks is { } shown && !string.IsNullOrEmpty(text))
-                    Hooks.HookLifecycle.MessageDisplayed(shown, HookContext(shown), text);
                 return new SendResult(text, SendOutcome.Completed);
             }
 
@@ -3572,13 +3575,21 @@ public sealed class Agent
     /// <summary>Runs this call's PreToolUse hooks and hands their allow or ask to the permission gate; null when none listen.</summary>
     private async Task<Hooks.HookVerdict?> PreToolHooksAsync(ToolCall call, JobContext ctx, CancellationToken ct)
     {
-        // THE TO-DO LIST'S OWN EVENTS, before PreToolUse: an item a hook refuses to create, or to close, refuses the
-        // whole call, so the list the model sees afterwards is the one it had.
-        if (call.Name == Jobs.Tool.TodoWrite && _hooks is { } todoHooks
+        var pre = await PreToolUseHooksAsync(call, ctx, ct);
+
+        // THE TO-DO LIST'S OWN EVENTS, after PreToolUse and only for a write that will happen: a refused or withheld
+        // call creates and closes nothing. An item a hook refuses to create, or to close, refuses the whole write, so
+        // the list the model sees afterwards is the one it had.
+        if (pre?.Stops != true && call.Name == Jobs.Tool.TodoWrite && Withheld(call.Name) is null && _hooks is { } todoHooks
             && await Hooks.HookLifecycle.TasksAsync(todoHooks, HookContext(todoHooks),
                 new Hooks.HookTasks(_todos.Items, TodoParse(call)), ct) is { Stops: true } refused)
             return refused;
+        return pre;
+    }
 
+    /// <summary>The PreToolUse hooks proper — see <see cref="PreToolHooksAsync"/>.</summary>
+    private async Task<Hooks.HookVerdict?> PreToolUseHooksAsync(ToolCall call, JobContext ctx, CancellationToken ct)
+    {
         if (_hooks is not { } hooks || !hooks.Listens(Hooks.HookEvents.PreToolUse)) return null;
         var verdict = await hooks.RunAsync(Hooks.HookEvents.PreToolUse, call.Name,
             Hooks.HookPayload.ForTool(HookContext(hooks), Hooks.HookEvents.PreToolUse, call), ct);

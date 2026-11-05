@@ -270,4 +270,68 @@ public class HookTypesTests
         Assert.Equal(HookOutcomeKind.Failed, r.Kind);
         Assert.Contains("nope", r.Reason);
     }
+
+    private sealed class Throwing : ILlmProvider
+    {
+        public string ProviderId => "t";
+        public string ModelId => "t";
+        public string DisplayName => "t";
+        public bool SupportsToolCalling => false;
+        public bool SupportsStreaming => false;
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct) =>
+            throw new HttpRequestException("401 unauthorized");
+        public IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct) =>
+            throw new NotSupportedException();
+    }
+
+    [Fact]
+    public async Task A_model_that_throws_is_a_hook_failure_not_an_exception()
+    {
+        var r = await Run(Parse("""{ "type": "prompt", "prompt": "x", "model": "m" }"""), new HookServices { Model = _ => new Throwing() });
+        Assert.Equal(HookOutcomeKind.Failed, r.Kind);
+        Assert.Contains("401", r.Reason);
+    }
+
+    [Fact]
+    public async Task A_bad_url_is_a_hook_failure()
+    {
+        var r = await Run(Parse("""{ "type": "http", "url": "not a url" }"""), new HookServices());
+        Assert.Equal(HookOutcomeKind.Failed, r.Kind);
+    }
+
+    [Fact]
+    public async Task An_agent_that_runs_out_of_time_says_so()
+    {
+        var r = await Run(Parse("""{ "type": "agent", "prompt": "x", "model": "m", "timeout": 1 }"""), new HookServices
+        {
+            Model = _ => new Throwing(),
+            Agent = async (_, ct) => { try { await Task.Delay(5000, ct); } catch (OperationCanceledException) { } return ""; },
+        });
+        Assert.Equal(HookOutcomeKind.Failed, r.Kind);
+        Assert.Contains("timed out", r.Reason);
+    }
+
+    [Fact]
+    public void A_model_hook_on_PermissionRequest_does_not_run()
+    {
+        Assert.False(Parse("""{ "type": "prompt", "prompt": "x" }""", "PermissionRequest").Runs);
+        Assert.True(Parse("""{ "type": "command", "command": "x" }""", "PermissionRequest").Runs);
+    }
+
+    [Fact]
+    public async Task Impossible_lets_a_SubagentStop_end_too()
+    {
+        var r = await Run(Parse("""{ "type": "prompt", "prompt": "Done?", "model": "m" }""", "SubagentStop"),
+            new HookServices { Model = _ => new Answering("""{"ok": false, "reason": "x", "impossible": true}""") });
+        Assert.Null(r.Decision);
+    }
+
+    [Fact]
+    public async Task An_agent_no_on_PostToolBatch_is_context_not_a_stop()
+    {
+        var r = await Run(Parse("""{ "type": "agent", "prompt": "Still green?", "model": "m" }""", "PostToolBatch"),
+            new HookServices { Model = _ => new Answering(""), Agent = (_, _) => Task.FromResult("""{"ok": false, "reason": "2 tests fail now"}""") });
+        Assert.Null(r.Decision);
+        Assert.Equal("2 tests fail now", r.AdditionalContext);
+    }
 }

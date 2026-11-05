@@ -19,7 +19,7 @@ public static class HookList
     /// repository hook in a folder that is not trusted.
     /// </summary>
     public static string State(HookDefinition hook, bool trusted) =>
-        !HookEvents.Fires(hook.Event) || !HookDefinition.TypeRuns(hook.Type) ? "not supported here"
+        !hook.Runs ? "not supported here"
         : hook.Source is HookSource.Project or HookSource.Local && !trusted ? "not running: folder not trusted"
         : "active";
 

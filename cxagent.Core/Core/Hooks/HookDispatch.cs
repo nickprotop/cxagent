@@ -84,6 +84,12 @@ public static class HookDispatch
         {
             return HookReply.Failed($"timed out after {TimeoutSeconds(run.Hook)} s");
         }
+        // ANYTHING ELSE A MODEL, A URL OR A SERVER THROWS is this hook failing — a refused key, a bad address, a dropped
+        // connection — and fails by the same rule as a crashed command: reported, and blocking only with onFailure.
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return HookReply.Failed(ex.Message);
+        }
     }
 
     // --- prompt and agent: a model's yes or no -------------------------------------------------------------
@@ -131,6 +137,8 @@ public static class HookDispatch
         if (model is null) return HookReply.Failed(error!);
         if (services.Agent is not { } agent) return HookReply.Failed("agent hooks cannot run here");
         var text = await agent(new HookAgentRequest(model, Question(run) + "\n\n" + AnswerShape, run.ProjectDir), ct);
+        // A VERIFIER STOPPED BY ITS DEADLINE returns what it had rather than throwing; that is a timeout, not an answer.
+        ct.ThrowIfCancellationRequested();
         // AN AGENT HOOK ALWAYS CARRIES ON when it blocks, as the contract has it: it looked before it answered,
         // and its reason is worth handing back.
         return FromAnswer(run.Hook, text, carryOn: true);
@@ -151,8 +159,16 @@ public static class HookDispatch
         var impossible = answer["impossible"] is JsonValue iv && iv.TryGetValue<bool>(out var imp) && imp;
         // WHERE A NO HAS NO MEANING, it is no objection: a permission request is answered by command hooks, and
         // a Stop that can never be satisfied lets the turn end.
-        if (hook.Event == HookEvents.PermissionRequest || (impossible && hook.Event == HookEvents.Stop))
+        if (hook.Event == HookEvents.PermissionRequest || (impossible && hook.Event is HookEvents.Stop or HookEvents.SubagentStop))
             return new(HookOutcomeKind.Ok, null, null, text, "");
+
+        // AFTER A BATCH, A NO THAT CARRIES ON IS WORD FOR THE MODEL, not a stop: "the tests fail now" should reach it
+        // before its next call, as the contract has it for an agent hook or a prompt hook set to carry on.
+        if (carryOn && hook.Event == HookEvents.PostToolBatch)
+            return new(HookOutcomeKind.Ok, null, new JsonObject
+            {
+                ["hookSpecificOutput"] = new JsonObject { ["hookEventName"] = hook.Event, ["additionalContext"] = reason },
+            }, text, "");
 
         var json = new JsonObject { ["decision"] = "block", ["reason"] = reason };
         var endsTurn = !carryOn && hook.Event is HookEvents.PreToolUse or HookEvents.PostToolUse or HookEvents.UserPromptSubmit;

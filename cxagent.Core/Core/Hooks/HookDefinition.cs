@@ -63,7 +63,10 @@ public sealed record HookDefinition(string Event, string? Matcher, string Type, 
     public static bool TypeRuns(string type) => type is "command" or "prompt" or "agent" or "http" or "mcp_tool";
 
     /// <summary>Whether this hook fires: its event is wired and its type is one cxagent runs.</summary>
-    public bool Runs => HookEvents.Fires(Event) && TypeRuns(Type);
+    /// <para>A MODEL'S YES OR NO ANSWERS NO PERMISSION REQUEST — the contract gives that event's decision to command
+    /// hooks — so a prompt or agent hook on it is kept and shown as not supported here rather than run for nothing.</para>
+    public bool Runs => HookEvents.Fires(Event) && TypeRuns(Type)
+                        && !(Event == HookEvents.PermissionRequest && Type is "prompt" or "agent");
 
     /// <summary>
     /// What messages and F8 call this hook: its <c>name</c>, else its event, matcher and the start of what

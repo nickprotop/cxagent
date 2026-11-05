@@ -163,4 +163,46 @@ public class HookMoreEventsTests : IDisposable
         Assert.Equal("hello there", (string?)input["delta"]);
         Assert.True((bool)input["final"]!);
     }
+
+    [Fact]
+    public async Task Duplicate_todo_items_do_not_break_the_list()
+    {
+        // NO TASK HOOKS AT ALL — the case every user is in.
+        var (policy, _) = Hooks(H("Stop"));
+        var provider = new ScriptedProvider(
+            Calls(Todo("t1", ("run tests", "pending"), ("fix x", "pending"), ("run tests", "pending"))),
+            Calls(Todo("t2", ("run tests", "completed"), ("fix x", "pending"), ("run tests", "pending"))),
+            Answer("fin"));
+        await AgentWith(provider, policy).SendAsync("go", CancellationToken.None);
+        Assert.DoesNotContain("error", provider.ResultOf(2, "t2"));
+    }
+
+    [Fact]
+    public async Task Duplicate_new_items_fire_TaskCreated_once()
+    {
+        var (policy, fake) = Hooks(H("TaskCreated"));
+        var provider = new ScriptedProvider(Calls(Todo("t1", ("a", "pending"), ("a", "pending"))), Answer("fin"));
+        await AgentWith(provider, policy).SendAsync("go", CancellationToken.None);
+        Assert.Single(fake.Of("TaskCreated"));
+    }
+
+    [Fact]
+    public async Task Task_hooks_do_not_hear_of_a_write_PreToolUse_refused()
+    {
+        var (policy, fake) = Hooks(H("TaskCreated"), H("PreToolUse", "todowrite"));
+        fake.Answer = r => r.Hook.Event == "PreToolUse" ? Block("no lists") : Json("{}");
+        var provider = new ScriptedProvider(Calls(Todo("t1", ("a", "pending"))), Answer("fin"));
+        await AgentWith(provider, policy).SendAsync("go", CancellationToken.None);
+        Assert.Empty(fake.Of("TaskCreated"));
+    }
+
+    [Fact]
+    public async Task MessageDisplay_does_not_fire_for_a_sub_agent()
+    {
+        var (policy, fake) = Hooks(H("MessageDisplay"));
+        await AgentWith(new ScriptedProvider(Answer("child says hi")), policy, child: true, label: "x")
+            .SendAsync("go", CancellationToken.None, mailFirst: true);
+        await Task.Delay(300);
+        Assert.Empty(fake.Of("MessageDisplay"));
+    }
 }

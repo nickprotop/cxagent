@@ -256,4 +256,18 @@ public class HookSessionEventsTests : IDisposable
         Assert.Equal("write_file", (string?)input["tool_name"]);
         Assert.Contains("build script", (string?)input["reason"]);
     }
+
+    [Fact]
+    public void A_switch_hook_that_never_answers_is_a_failure_not_a_veto()
+    {
+        var runs = new List<HookRun>();
+        var runner = new HookRunner(new HookRunnerDeps(new HookSnapshot(
+            [new HookDefinition("PreModelSwitch", null, "command", HookSource.User) { Command = "h", Name = "slow", TimeoutSeconds = 1 }],
+            [], null, new Dictionary<string, string>()), new HookHandlers(), () => true, _ => { })
+        {
+            Run = async (r, _) => { await Task.Delay(10_000); return new HookReply(HookOutcomeKind.Ok, null, null, "", ""); },
+        });
+        var verdict = HookLifecycle.ModelSwitch(runner, "PreModelSwitch", new HookModelSwitch("a", "b", null, 0));
+        Assert.Null(verdict.Decision);
+    }
 }
