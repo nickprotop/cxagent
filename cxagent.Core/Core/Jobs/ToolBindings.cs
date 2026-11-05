@@ -221,7 +221,8 @@ public static class ToolBindings
         // that was meant to be offered. When adding a parameter, add it to both.
         (BuiltinTool.RunShell, new ToolBinding("run_shell", "shell", null,
             Params: ["command", "working_dir", "timeout_seconds", "env",
-                     Builtin.ShellArguments.Background],
+                     Builtin.ShellArguments.Background, Builtin.ShellArguments.Unsandboxed,
+                     Builtin.ShellArguments.Reason],
             Required: ["command"])),
         (BuiltinTool.HttpRequest, new ToolBinding("http_request", "http", null,
             Params: ["url", "method", "headers", "body"], Required: ["url"])),

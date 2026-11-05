@@ -171,6 +171,21 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// where its relative paths are judged from. Null for none, or one that could not be resolved.</summary>
     public string? ShellRunFolder { get; init; }
 
+    /// <summary>
+    /// A shell command that will run inside the sandbox. It may then skip the prompt where the folder is trusted
+    /// and the edit mode lets writes inside it be silent: what it can touch is bounded by the kernel, not by what
+    /// its text says.
+    /// </summary>
+    public bool Contained { get; init; }
+
+    /// <summary>Why the sandbox would not start, for a shell command that would otherwise have run in it. The
+    /// prompt asks whether to run it uncontained; nothing answers that but the user.</summary>
+    public string? SandboxFailure { get; init; }
+
+    /// <summary>The model's reason for asking to run this command outside the sandbox. Only the user answers it:
+    /// no rule, hook allow or mode.</summary>
+    public string? UnsandboxedReason { get; init; }
+
     /// <summary>What a person is shown: <see cref="Display"/> — and for an action on a link's entry, the link and
     /// what it points at (<c>link → target</c>), since what is removed is the link and what is judged is where it
     /// points.</summary>

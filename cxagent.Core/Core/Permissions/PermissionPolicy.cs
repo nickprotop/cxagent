@@ -194,7 +194,7 @@ public class PermissionPolicy
 
     /// <summary>
     /// This session's sandbox, or null for none. Read by the gate and by the shell executor, which must reach
-    /// the same answer — see <c>ShellSandbox</c>. A sub-agent's policy reads its parent's.
+    /// the same answer — see <see cref="Sandbox.ShellSandbox"/>. A sub-agent's policy reads its parent's.
     /// </summary>
     public Sandbox.SandboxState? Sandbox
     {

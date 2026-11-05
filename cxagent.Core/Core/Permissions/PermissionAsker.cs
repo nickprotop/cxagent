@@ -15,6 +15,11 @@ namespace CxAgent.Core.Permissions;
 /// </summary>
 internal sealed class PermissionAsker(IPermissionGate gate, PermissionPolicy? policy)
 {
+    /// <summary>The policy a request from this context is judged against: the caller's own first — see
+    /// <see cref="Execution.JobContext.Policy"/> — then the one this asker was built with. One expression, so the
+    /// sandbox decision is made against the same policy the question goes to.</summary>
+    public PermissionPolicy? PolicyFor(IJobContext context) => (context as Execution.JobContext)?.Policy ?? policy;
+
     /// <summary>The gate's answer. The caller decides what a refusal means for its job.</summary>
     public async Task<PermissionOutcome> AskAsync(PermissionRequest request, IJobContext context, CancellationToken ct)
     {
@@ -34,7 +39,7 @@ internal sealed class PermissionAsker(IPermissionGate gate, PermissionPolicy? po
                     // THE ID TOO, from the concrete context: IJobContext is published and carries no agent id.
                     RequesterAgentId = (context as Execution.JobContext)?.AgentId,
                     // THE CALLER'S POLICY FIRST — see JobContext.Policy.
-                    Policy = (context as Execution.JobContext)?.Policy ?? policy,
+                    Policy = PolicyFor(context),
                     OnReviewing = context.ReportReviewing,
                     HookDecision = (context as Execution.JobContext)?.HookDecision,
                     HookDecidedBy = (context as Execution.JobContext)?.HookDecidedBy,

@@ -59,6 +59,15 @@ public sealed class PermissionGatedExecutor : IJobExecutor
         string? decidedBy = null;
 
         var requests = PermissionPolicy.RequestsFor(_inner.TypeName, parameters, context.WorkingDirectory);
+
+        // THE SANDBOX DECISION, MADE HERE ONCE for a shell call: the request is asked about as contained, escaping or
+        // blocked, and the executor is handed the same answer below — see ShellSandbox for why there is one reader.
+        Sandbox.SandboxDecision? sandbox = null;
+        if (_inner.TypeName == "shell")
+        {
+            sandbox = Sandbox.ShellSandbox.Decide(_asker.PolicyFor(context), parameters);
+            requests = [.. requests.Select(r => Sandbox.ShellSandbox.Stamp(r, sandbox))];
+        }
         foreach (var request in requests)
         {
             // STAMPED AT THE ASK, not built into RequestsFor. That method is a pure policy function over
@@ -100,10 +109,13 @@ public sealed class PermissionGatedExecutor : IJobExecutor
 
         // WHAT WAS JUDGED, handed to the executor, which acts on it instead of resolving the spellings again.
         if (context is Execution.JobContext concrete)
+        {
+            concrete.JudgedSandbox = sandbox;
             concrete.JudgedPaths = requests
                 .Where(r => r.Spelling is not null && r.ActsOn is not null)
                 .GroupBy(r => r.Spelling!, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First().ActsOn!, StringComparer.Ordinal);
+        }
 
         // EVERY GATE HAS CLEARED — the work starts now. Before this line the elapsed time is the
         // user reading a prompt, which belongs to nobody's stopwatch.

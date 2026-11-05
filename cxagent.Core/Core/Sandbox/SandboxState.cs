@@ -5,7 +5,7 @@ namespace CxAgent.Core.Sandbox;
 /// need, and again when a command's own start fails.
 ///
 /// <para>ON THE PERMISSION POLICY, like the hooks, because the gate and the shell executor both reach the policy
-/// and must reach the same answer from it — see <c>ShellSandbox</c>. A sub-agent's policy reads its
+/// and must reach the same answer from it — see <see cref="ShellSandbox"/>. A sub-agent's policy reads its
 /// parent's.</para>
 /// </summary>
 public sealed class SandboxState

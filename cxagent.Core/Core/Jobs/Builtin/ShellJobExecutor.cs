@@ -86,6 +86,11 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
             + "not spent waiting. The result carries the pid and a file path, NOT the output: "
             + "nothing has been printed yet. You will be told when it exits, with its exit code, "
             + "and can read the file with read_file at any time."),
+        new JobParamSpec(ShellArguments.Unsandboxed, "boolean", Required: false,
+            "Ask the user to run this command outside the sandbox. Use it only after the same command "
+            + "failed because the sandbox blocked it, and say why in 'reason'."),
+        new JobParamSpec(ShellArguments.Reason, "string", Required: false,
+            "Why the command needs to run outside the sandbox; shown to the user."),
     });
 
     public JobValidation Validate(JobParameters parameters)

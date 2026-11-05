@@ -111,6 +111,16 @@ internal sealed class JobContext : IJobHostContext
     public IReadOnlyDictionary<string, string>? JudgedPaths { get; set; }
 
     /// <summary>
+    /// Whether the gate judged this shell call contained, escaping, or blocked by a sandbox that will not start —
+    /// handed to the executor, which runs it that way instead of deciding again. Null when no gate ran.
+    ///
+    /// <para>DECIDED ONCE. A second decision at the executor would read the sandbox's status again, and a status
+    /// that changed between the question and the run — a re-probe after a failed start — would run a command
+    /// differently from how the user was asked about it.</para>
+    /// </summary>
+    public Sandbox.SandboxDecision? JudgedSandbox { get; set; }
+
+    /// <summary>
     /// Where to tell the agent that made this call something it should read later.
     ///
     /// <para>BESIDE <see cref="Requester"/> AND <see cref="WorkingDirectory"/> BECAUSE IT IS THE SAME

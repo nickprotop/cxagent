@@ -33,4 +33,24 @@ internal static class ShellArguments
     /// </summary>
     public static bool IsBackground(JobParameters parameters) =>
         parameters.Get(Background, false);
+
+    /// <summary>The argument's name, so no caller has to spell it.</summary>
+    public const string Unsandboxed = "unsandboxed";
+
+    /// <summary>The argument's name, so no caller has to spell it.</summary>
+    public const string Reason = "reason";
+
+    /// <summary>
+    /// Whether this call asked to run outside the sandbox.
+    ///
+    /// <para>HERE FOR THE REASON <see cref="IsBackground"/> IS: the gate decides what to ask from this, and a
+    /// spelling the gate missed (<c>"true"</c>, <c>1</c>) would run a command outside the sandbox while the gate
+    /// judged it contained — the one reading that must never come out permissive.</para>
+    /// </summary>
+    public static bool IsUnsandboxed(JobParameters parameters) =>
+        parameters.Get(Unsandboxed, false);
+
+    /// <summary>Why the call asked to leave the sandbox, or null.</summary>
+    public static string? UnsandboxedReason(JobParameters parameters) =>
+        parameters.Get<string?>(Reason, null) is { Length: > 0 } reason ? reason.Trim() : null;
 }
