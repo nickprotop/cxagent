@@ -51,7 +51,7 @@ public sealed record HookAnswer
 public sealed class HookHandlers
 {
     private readonly List<(string Event, Func<HookInput, CancellationToken, Task<HookAnswer>> Handle)> _handlers = [];
-    private readonly Lock _lock = new();
+    private readonly object _lock = new();
 
     /// <summary>Registers a handler for any event by its contract name.</summary>
     public HookHandlers On(string eventName, Func<HookInput, CancellationToken, Task<HookAnswer>> handle)

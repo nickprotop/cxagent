@@ -169,6 +169,12 @@ public sealed record AgentConfig
     public Jobs.Builtin.WebSearchSettings? WebSearch { get; init; }
 
     /// <summary>
+    /// Hooks for this app's sessions: the <c>hooks</c> block a hooks file holds, typed handlers, or both. The
+    /// repository's own hooks files are read beside them, as in the app. See <see cref="Hooks.HooksConfig"/>.
+    /// </summary>
+    public Hooks.HooksConfig? Hooks { get; init; }
+
+    /// <summary>
     /// Builds what the runtime consumes.
     ///
     /// <para>THE ERRORS COME BACK AS A VALUE, exactly as ConfigResolver's do — a model named as
@@ -191,6 +197,8 @@ public sealed record AgentConfig
 
         if (Classifier is { } classifier && !Models.ContainsKey(classifier))
             errors.Add($"classifier '{classifier}' is not among the configured models.");
+
+        var hooks = Hooks?.ToSettings(errors);
 
         // SAME CHECK config.json GETS — see ProviderConfigLoader.ValidatePluginCollisions — and the same lookup,
         // so a plugin in its own folder or a store's is checked here too. An embedder's PluginPaths are searched
@@ -247,7 +255,7 @@ public sealed record AgentConfig
                 Orchestrator: new OrchestratorSettings(MaxTurns, CompressAbove),
                 MaxConcurrentAgents: chosen.MaxConcurrentAgents,
                 ClassifierInstance: Classifier)
-            { PluginPaths = PluginPaths, WebSearch = WebSearch },
+            { PluginPaths = PluginPaths, WebSearch = WebSearch, Hooks = hooks },
             [],
             Warnings: warnings,
             Entries: new PluginEntries(Plugins));

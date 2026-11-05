@@ -632,6 +632,7 @@ var resolution = new AgentConfig
 | `Agents` | sub-agent types, merged with the shipped ones rather than replacing them |
 | `Mcp` | MCP servers, stdio or HTTP |
 | `WebSearch` | `new WebSearchSettings(tavilyKey)` sends `web_search` to Tavily; null (or a null key) uses DuckDuckGo, which needs no account. The key is used as given |
+| `Hooks` | a `HooksConfig`: `Json` takes the same `hooks` block as a hooks file, and `OnPreToolUse`, `OnPostToolUse`, `OnUserPromptSubmit`, `OnStop`, `OnSessionStart`, `OnSessionEnd`, `OnNotification` (or `On(eventName, …)`) register handlers in code. Both run in any folder, without folder trust; the repository's `.cxagent/hooks.json` is still read beside them and still needs trust. See [Hooks](#hooks-from-code) |
 
 | `ModelConfig(Kind, Model)` | |
 |---|---|
@@ -647,6 +648,29 @@ var resolution = new AgentConfig
 **The same settings, the same model.** A `ModelConfig` builds its provider the way a `config.json` entry does, so every key the file documents behaves identically here.
 
 **Mistakes come back as errors, never exceptions** — `resolution.Errors` with `HasProvider` false.
+
+### Hooks from code
+
+```csharp
+var hooks = new HooksConfig
+{
+    Json = File.ReadAllText("hooks.json"),          // optional: the files' shape, command hooks
+};
+hooks.OnPreToolUse(call =>
+    call.ToolName == "run_shell" && ((string?)call.ToolInput?["command"])?.StartsWith("rm ") == true
+        ? HookAnswer.Deny("not on this machine")
+        : HookAnswer.None);
+hooks.OnStop(_ => TestsPass() ? HookAnswer.None : HookAnswer.Block("the tests still fail"));
+
+var resolution = new AgentConfig { /* models */ Hooks = hooks }.Resolve();
+```
+
+A handler reads a `HookInput`: the event's name and the same JSON a command hook reads on stdin, with
+`ToolName`, `ToolInput`, `Prompt` and `Agent` read from it. It answers a `HookAnswer`: `None`,
+`Allow(reason)`, `Deny(reason)`, `Ask(reason)`, `Block(reason)`, `WithInput(arguments)` to rewrite a
+tool call, or `AddContext(text)` for the model. Handlers run after the command hooks, see their
+rewrites, and are combined with them by the same rules: deny beats ask beats allow, and an allow never
+answers a write into a protected folder.
 
 ## From a file
 
