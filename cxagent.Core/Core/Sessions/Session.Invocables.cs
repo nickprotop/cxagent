@@ -56,7 +56,7 @@ public sealed partial class Session
 
     /// <summary>
     /// Runs a typed command as a turn whose first step is its expansion — or holds it, when a turn is
-    /// already running (see <see cref="Hold"/>).
+    /// already running (see <see cref="Hold(HeldLine)"/>).
     /// </summary>
     public SubmitOutcome RunCommand(TypedCommand command)
     {

@@ -37,6 +37,8 @@ public sealed record HookProblem(HookSource Source, string File, string Message)
 /// </summary>
 /// <param name="RepoRoot">The repository's top folder, or null when no repository encloses the working folder.</param>
 /// <param name="Fingerprints">Each project file's path and its content hash at read time ("absent" when missing).</param>
+/// <param name="Hooks">Every hook read, each tagged with its source.</param>
+/// <param name="Problems">What could not be read, and why.</param>
 public sealed record HookSnapshot(IReadOnlyList<HookDefinition> Hooks, IReadOnlyList<HookProblem> Problems,
     string? RepoRoot, IReadOnlyDictionary<string, string> Fingerprints)
 {

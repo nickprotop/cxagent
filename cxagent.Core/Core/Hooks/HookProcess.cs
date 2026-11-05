@@ -7,6 +7,8 @@ namespace CxAgent.Core.Hooks;
 
 /// <summary>One command hook to run, with the input it reads on stdin.</summary>
 /// <param name="ProjectDir">The repository (or working folder) the hook runs in and is told about.</param>
+/// <param name="Hook">The hook to run.</param>
+/// <param name="Input">What it reads on stdin.</param>
 public sealed record HookRun(HookDefinition Hook, JsonObject Input, string ProjectDir);
 
 /// <summary>

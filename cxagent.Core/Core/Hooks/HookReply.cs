@@ -19,6 +19,9 @@ public enum HookOutcomeKind
 /// </summary>
 /// <param name="Reason">For <see cref="HookOutcomeKind.Block"/> its stderr, for <see cref="HookOutcomeKind.Failed"/> what went wrong.</param>
 /// <param name="Json">Its stdout as a JSON object, when it printed one.</param>
+/// <param name="Kind">How the run ended.</param>
+/// <param name="Stdout">What it printed, as read.</param>
+/// <param name="Stderr">What it printed to stderr, as read.</param>
 public sealed record HookReply(HookOutcomeKind Kind, string? Reason, JsonObject? Json, string Stdout, string Stderr)
 {
     public static HookReply Failed(string reason) => new(HookOutcomeKind.Failed, reason, null, "", "");

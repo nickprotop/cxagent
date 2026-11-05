@@ -10,6 +10,8 @@ namespace CxAgent.Core.Hooks;
 /// <param name="TranscriptPath">The session's <c>history.jsonl</c>.</param>
 /// <param name="PermissionMode">The session's edit mode, in the contract's words.</param>
 /// <param name="Agent"><c>main</c>, or the sub-agent's type and id.</param>
+/// <param name="SessionId">The session's id.</param>
+/// <param name="Cwd">The folder the session works in.</param>
 public sealed record HookEventContext(string SessionId, string TranscriptPath, string Cwd, string PermissionMode, string Agent)
 {
     /// <summary>The sub-agent's id; null for the session's own agent.</summary>
@@ -45,6 +47,9 @@ public static class HookPayload
     /// <summary>A tool event's input: the call as the model made it, with the contract's argument names beside cxagent's.</summary>
     /// <param name="response">What the tool returned, for <c>PostToolUse</c>; null otherwise.</param>
     /// <param name="error">Why the tool failed, for <c>PostToolUseFailure</c>; null otherwise.</param>
+    /// <param name="ctx">Who and where.</param>
+    /// <param name="eventName">The event's name.</param>
+    /// <param name="call">The tool call as the model made it.</param>
     public static JsonObject ForTool(HookEventContext ctx, string eventName, ToolCall call,
         JsonObject? response = null, string? error = null)
     {

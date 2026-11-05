@@ -27,6 +27,7 @@ public static class HookList
     /// <summary>The <c>/hooks</c> listing, as markdown.</summary>
     /// <param name="changed">Project hooks files that differ from what the session runs.</param>
     /// <param name="onDisk">Those files as they are now, so the listing can show what a review would apply.</param>
+    /// <param name="runner">The session's hooks.</param>
     public static string Describe(HookRunner runner, IReadOnlyList<string> changed, HookSnapshot? onDisk = null)
     {
         var snapshot = runner.Snapshot;
@@ -84,7 +85,7 @@ public static class HookList
             ["server"] = h.Server, ["tool"] = h.Tool,
         };
         o.Remove("name");
-        return Sorted(o).ToJsonString();
+        return Sorted(o)!.ToJsonString();
     }
 
     private static JsonNode? Sorted(JsonNode? node) => node switch

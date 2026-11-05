@@ -52,6 +52,7 @@ public sealed class AgentMailbox
     /// neither extends a running turn nor starts one — see <see cref="HasWaking"/>.
     /// </param>
     /// <param name="from">Who sent it, for the agent's history; null when nobody said.</param>
+    /// <param name="images">Pictures sent with the message; null for none.</param>
     public bool TryEnqueue(string message, out string? refusal, bool wakes = true, Incoming? from = null,
         IReadOnlyList<Models.AttachedImage>? images = null) =>
         TryEnqueue(new Entry(message, wakes, null, from, images), out refusal);

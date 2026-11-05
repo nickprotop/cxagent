@@ -8,10 +8,15 @@ namespace CxAgent.Core.Sessions;
 /// <param name="Trust">The folder's trust, which decides whether the repository's hooks run.</param>
 /// <param name="Catalog">Skills and command files found, of every scope; the project's are picked out.</param>
 /// <param name="Hooks">The hooks the session read, of every source; the project's are picked out.</param>
+/// <param name="WorkingDirectory">The folder the session works in.</param>
 public sealed record ProjectFacts(string WorkingDirectory, TrustState Trust, InvocableCatalogResult Catalog, HookSnapshot Hooks);
 
 /// <summary>One kind of thing a repository brings, how many, and where they live.</summary>
 /// <param name="State">A word about whether these take effect here, or null when they always do.</param>
+/// <param name="Kind">What these are: instruction files, skills, commands, plugins or hooks.</param>
+/// <param name="Count">How many.</param>
+/// <param name="Folder">Where they live.</param>
+/// <param name="Names">Their names or paths.</param>
 public sealed record ProjectItem(string Kind, int Count, string Folder, IReadOnlyList<string> Names, string? State);
 
 /// <summary>

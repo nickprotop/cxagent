@@ -33,6 +33,9 @@ public sealed record HookVerdict(string? Decision, string? Reason, JsonObject? U
 
 /// <summary>What a session's runner is built from.</summary>
 /// <param name="ProjectTrusted">Whether the folder is trusted NOW — asked at every event, never cached.</param>
+/// <param name="Snapshot">The hooks as read when the session started.</param>
+/// <param name="Handlers">The embedding app's in-process handlers.</param>
+/// <param name="Notice">Where failures and a hook's own messages are told to the user.</param>
 internal sealed record HookRunnerDeps(HookSnapshot Snapshot, HookHandlers Handlers, Func<bool> ProjectTrusted, Action<HookNotice> Notice)
 {
     /// <summary>What hooks other than command reach — models, MCP servers, the network, an agent.</summary>
@@ -149,11 +152,18 @@ public sealed class HookRunner
     /// </summary>
     /// <param name="matchOn">What a matcher is tested against: the tool name on tool events, the event's own
     /// subtype elsewhere (a session start's source); null where the event takes no matcher.</param>
+    /// <param name="eventName">The event to fire.</param>
+    /// <param name="input">The event's JSON, as every hook reads it.</param>
+    /// <param name="ct">Cancels the hooks.</param>
     public Task<HookVerdict> RunAsync(string eventName, string? matchOn, JsonObject input, CancellationToken ct) =>
         RunAsync(eventName, matchOn, input, only: null, ct);
 
     /// <param name="only">Which hooks may run, or null for all — the repository's alone, for a start that
     /// caught up once the folder was trusted.</param>
+    /// <param name="eventName">The event to fire.</param>
+    /// <param name="matchOn">What a matcher is tested against; null where the event takes none.</param>
+    /// <param name="input">The event's JSON, as every hook reads it.</param>
+    /// <param name="ct">Cancels the hooks.</param>
     internal async Task<HookVerdict> RunAsync(string eventName, string? matchOn, JsonObject input,
         Func<HookDefinition, bool>? only, CancellationToken ct)
     {

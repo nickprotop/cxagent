@@ -816,7 +816,7 @@ public sealed class Agent
     /// <summary>
     /// This agent's conversation, for its whole life — the thing that makes it self-contained.
     ///
-    /// <para>A field rather than a local inside <see cref="SendAsync(string, CancellationToken, Jobs.ToolSelection?, string?, IReadOnlyList{PastedText}?)"/> because a context that
+    /// <para>A field rather than a local inside <see cref="SendAsync(string, CancellationToken, Jobs.ToolSelection?, string?, Attachments?)"/> because a context that
     /// exists only for the duration of one method cannot be owned by anything: not by a readout that
     /// wants to report real occupancy, not by a <c>/compress</c> that wants a single meaningful
     /// target, and not by an agent that is supposed to carry what it learned into its next task. A
@@ -1399,7 +1399,7 @@ public sealed class Agent
     private readonly record struct AsTyped(string? Shown, Attachments? Attachments);
 
     /// <summary>
-    /// <see cref="SendAsync(string, CancellationToken, Jobs.ToolSelection?, string?, IReadOnlyList{PastedText}?)"/>, choosing where
+    /// <see cref="SendAsync(string, CancellationToken, Jobs.ToolSelection?, string?, Attachments?)"/>, choosing where
     /// mail already waiting goes relative to the prompt.
     /// </summary>
     /// <param name="prompt">What the agent is asked.</param>

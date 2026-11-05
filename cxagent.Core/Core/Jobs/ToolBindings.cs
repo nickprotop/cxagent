@@ -77,6 +77,8 @@ public static class ToolBindings
     /// A sentence naming ANOTHER tool, appended only when that tool is also offered. See
     /// <see cref="ToolCrossReference"/>.
     /// </param>
+    /// <param name="AlsoSee">A pointer from this tool to another, in its description.</param>
+    /// <param name="AlsoReads">Argument names the tool also accepts, kept out of the unknown-argument note.</param>
     private sealed record ToolBinding(string Name, string JobType, string? PinnedAction,
         string[] Params, string[] Required,
         IReadOnlyDictionary<string, object?>? Pinned = null,

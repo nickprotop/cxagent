@@ -29,6 +29,8 @@ public static class HookLifecycle
     /// first prompt this session sends — the earliest point anything reaches the model.
     /// </summary>
     /// <param name="source"><c>startup</c>, <c>resume</c> or <c>clear</c>.</param>
+    /// <param name="runner">The session's hooks.</param>
+    /// <param name="ct">Cancels the hooks.</param>
     public static async Task SessionStartAsync(HookRunner runner, string source, CancellationToken ct)
     {
         if (!runner.Listens(HookEvents.SessionStart)) return;
@@ -69,6 +71,7 @@ public static class HookLifecycle
     /// which kills their processes; the session closes regardless.
     /// </summary>
     /// <param name="reason"><c>exit</c>, <c>clear</c> or <c>other</c>.</param>
+    /// <param name="runner">The session's hooks.</param>
     public static async Task SessionEndAsync(HookRunner runner, string reason)
     {
         if (!runner.Listens(HookEvents.SessionEnd)) return;
@@ -240,6 +243,9 @@ public static class HookLifecycle
 
     /// <param name="input">The whole input, common fields included.</param>
     /// <param name="only">Which hooks run; null for all.</param>
+    /// <param name="runner">The session's hooks.</param>
+    /// <param name="ev">The event to fire.</param>
+    /// <param name="matchOn">What its matchers test, or null for every hook of the event.</param>
     private static void Notify(HookRunner runner, string ev, string? matchOn, JsonObject input, Func<HookDefinition, bool>? only)
     {
         if (!runner.Listens(ev)) return;
@@ -256,6 +262,8 @@ public static class HookLifecycle
 
     /// <summary>Fires InstructionsLoaded for an instruction file the session read. Observability only.</summary>
     /// <param name="memoryType"><c>Project</c> for a repository's file, <c>User</c> for the one in the config folder.</param>
+    /// <param name="runner">The session's hooks.</param>
+    /// <param name="file">The instruction file read.</param>
     public static void InstructionsLoaded(HookRunner runner, string file, string memoryType) =>
         Notify(runner, HookEvents.InstructionsLoaded, "session_start", new JsonObject
         {
@@ -271,6 +279,8 @@ public static class HookLifecycle
     /// <summary>Fires PreCompact; a block skips the compaction.</summary>
     /// <param name="trigger"><c>manual</c> for <c>/compress</c>, <c>auto</c> otherwise.</param>
     /// <param name="ctx">The compacting agent — a sub-agent compacts its own conversation; null for the session's.</param>
+    /// <param name="runner">The session's hooks.</param>
+    /// <param name="ct">Cancels the hooks.</param>
     public static Task<HookVerdict> PreCompactAsync(HookRunner runner, string trigger, HookEventContext? ctx, CancellationToken ct) =>
         runner.RunAsync(HookEvents.PreCompact, trigger, HookPayload.For(ctx ?? runner.Session(), HookEvents.PreCompact,
             new JsonObject { ["trigger"] = trigger, ["custom_instructions"] = null }), ct);
@@ -357,6 +367,8 @@ public static class HookLifecycle
 
 /// <summary>What a Stop hook is told: who is stopping, what they last said, and whether a Stop hook already sent them back.</summary>
 /// <param name="Active">Whether this turn already went on because a Stop hook said so — the contract's guard against loops.</param>
+/// <param name="Context">Who is stopping.</param>
+/// <param name="LastMessage">What they last said.</param>
 public sealed record HookStop(HookEventContext Context, string? LastMessage, bool Active)
 {
     /// <summary><c>Stop</c> for the session's agent, <c>SubagentStop</c> for a sub-agent.</summary>
@@ -374,6 +386,9 @@ internal sealed record HookTool(string Name, JsonObject Input);
 
 /// <summary>A <c>/command</c> or skill about to become a prompt.</summary>
 /// <param name="Source"><c>project</c> or <c>user</c>: where its file came from.</param>
+/// <param name="Name">The command or skill's name.</param>
+/// <param name="Arguments">What was typed after it.</param>
+/// <param name="Prompt">The prompt it expanded to.</param>
 public sealed record HookExpansion(string Name, string Arguments, string Source, string Prompt);
 
 /// <summary>A model switch: from which model to which, what was asked for, and how much context it re-sends.</summary>

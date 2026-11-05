@@ -586,7 +586,7 @@ public sealed partial class Session
     /// Starts a lap for text just queued behind a turn that has released the conversation since this sender
     /// found it owned.
     ///
-    /// <para>STORE, THEN LOOK AGAIN — what <see cref="Hold"/> does for a command. Losing the swap and queueing
+    /// <para>STORE, THEN LOOK AGAIN — what <see cref="Hold(HeldLine)"/> does for a command. Losing the swap and queueing
     /// are two steps, and the owner can release and run its whole tail between them; its tail then finds
     /// nothing, and the text would wait in the mailbox or the steer queue until the user next typed. Looked
     /// at AFTER storing, so one of the two always sees it: either the tail's check comes later and finds it,
