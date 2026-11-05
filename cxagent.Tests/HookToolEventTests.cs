@@ -247,4 +247,24 @@ public class HookToolEventTests : IDisposable
             return Task.FromResult(PermissionOutcome.ByUser);
         }
     }
+
+    [Fact]
+    public async Task PostToolUse_continue_false_ends_the_turn()
+    {
+        var (agent, provider, fake) = Make(H("PostToolUse"));
+        fake.Answer = _ => Json("""{"continue":false,"stopReason":"budget exceeded"}""");
+        var result = await agent.SendAsync("go", CancellationToken.None);
+        Assert.Equal(1, provider.Calls);
+        Assert.Contains("budget exceeded", result.Text);
+    }
+
+    [Fact]
+    public async Task PreToolUse_continue_false_stops_the_call_and_the_turn()
+    {
+        var (agent, provider, fake) = Make(H("PreToolUse"));
+        fake.Answer = _ => Json("""{"continue":false,"stopReason":"maintenance window"}""");
+        var result = await agent.SendAsync("go", CancellationToken.None);
+        Assert.Equal(1, provider.Calls);
+        Assert.Contains("maintenance window", result.Text);
+    }
 }

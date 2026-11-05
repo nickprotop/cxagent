@@ -118,6 +118,16 @@ public class HookTurnEventTests : IDisposable
     }
 
     [Fact]
+    public async Task Stop_continue_false_wins_over_a_block()
+    {
+        var (policy, _, fake) = Hooks(H("Stop"));
+        fake.Answer = (_, _) => Task.FromResult(Ok("""{"decision":"block","reason":"more","continue":false,"stopReason":"enough"}"""));
+        var provider = new ScriptedProvider(Answer("done"), Answer("again"));
+        await AgentWith(provider, policy).SendAsync("go", CancellationToken.None);
+        Assert.Equal(1, provider.Calls);
+    }
+
+    [Fact]
     public async Task Stop_block_is_bounded()
     {
         var (policy, _, fake) = Hooks(H("Stop"));

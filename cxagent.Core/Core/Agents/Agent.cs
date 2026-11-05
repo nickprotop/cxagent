@@ -345,6 +345,12 @@ public sealed class Agent
     /// <summary>The gate a hook's <c>ask</c> is put to for a tool that does not reach it on its own.</summary>
     private readonly Permissions.IPermissionGate? _gate;
 
+    /// <summary>
+    /// Set when a tool hook answers <c>continue: false</c>: the turn ends once this lap's results are recorded —
+    /// not before, or a call would be left without its result.
+    /// </summary>
+    private string? _hookHalt;
+
     /// <summary>The speculation handle — see <see cref="AgentGuards.Classifier"/>. Null wherever no
     /// classifier is reachable, in which case every call site below is a no-op by construction
     /// (each checks this for null before calling Speculate).</summary>
@@ -1413,6 +1419,7 @@ public sealed class Agent
     {
         // A NEW RUN, SO NO EMPTY REPLY YET: the reason describes the run that had one, never a later one.
         LastEmptyReply = null;
+        Volatile.Write(ref _hookHalt, null);
 
         // HELD FOR THE TURN so the dispatch site can see what the offer site showed.
         //
@@ -1947,7 +1954,9 @@ public sealed class Agent
                 if (!_isSubAgent && _hooks is { } stopHooks && stopHooks.Listens(Hooks.HookEvents.Stop))
                 {
                     var verdict = await Hooks.HookLifecycle.StopAsync(stopHooks, HookContext(stopHooks), text, stopBlocks > 0, ct);
-                    if (verdict.Stops)
+                    // CONTINUE: FALSE OUTRANKS A BLOCK: one hook asking the agent to carry on and another
+                    // asking everything to stop resolves to stopping.
+                    if (verdict.Stops && verdict.Halt is null)
                     {
                         if (stopBlocks < Hooks.HookLifecycle.MaxStopBlocks)
                         {
@@ -2333,6 +2342,13 @@ public sealed class Agent
                     $"stopped: {stuckOn} was called with the same arguments {stuckTimes} times and "
                     + "returned the same result each time. The run was not making progress.", Severity.Error));
                 return new SendResult(text, SendOutcome.Stuck);
+            }
+
+            // A HOOK SAID STOP. Every result of this lap is recorded above, so nothing is left orphaned.
+            if (Interlocked.Exchange(ref _hookHalt, null) is { } stopped)
+            {
+                _sink.Said(new Message(stopped, Severity.Warning));
+                return new SendResult(stopped, SendOutcome.Completed);
             }
         }
     }
@@ -3517,6 +3533,13 @@ public sealed class Agent
 
         // ONLY ALLOW AND ASK TRAVEL ON. A deny is settled here, before anything is asked; a defer means
         // "leave it to the usual rules", which is what no answer already does.
+        if (verdict.Halt is { } halt)
+        {
+            // CONTINUE: FALSE STOPS EVERYTHING, this call first.
+            Volatile.Write(ref _hookHalt, $"hook '{verdict.DecidedBy ?? verdict.Fired.FirstOrDefault()}' stopped the turn: {halt}");
+            return verdict with { Decision = "deny", Reason = halt };
+        }
+
         ctx.HookDecision = verdict.Decision is "allow" or "ask" ? verdict.Decision : null;
         ctx.HookDecidedBy = verdict.DecidedBy;
 
@@ -3580,6 +3603,9 @@ public sealed class Agent
         // A TURN STOPPED WHILE A POST HOOK RAN still has a result to record, or the call is left without
         // one — the orphan that breaks every later request. The hook's word is lost; the result is not.
         catch (OperationCanceledException) { return result; }
+
+        if (verdict.Halt is { } halt)
+            Volatile.Write(ref _hookHalt, $"hook '{verdict.DecidedBy ?? verdict.Fired.FirstOrDefault()}' stopped the turn: {halt}");
 
         var sb = new StringBuilder(result);
         foreach (var context in verdict.Context) sb.Append($"\n\n[hook] {context}");
