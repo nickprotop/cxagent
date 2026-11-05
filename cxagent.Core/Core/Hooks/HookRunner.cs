@@ -81,6 +81,12 @@ public sealed class HookRunner
 
     private readonly List<string> _startContext = [];
 
+    /// <summary>
+    /// Set when SessionStart fired while the folder was not trusted and the repository has SessionStart hooks
+    /// of its own: they were skipped, and run once the folder is trusted — before the next prompt is sent.
+    /// </summary>
+    internal bool StartWaitsForTrust { get; set; }
+
     /// <summary>Holds what SessionStart hooks said for the model, until the first prompt carries it.</summary>
     internal void HoldStartContext(IEnumerable<string> context)
     {
@@ -124,11 +130,18 @@ public sealed class HookRunner
     /// </summary>
     /// <param name="matchOn">What a matcher is tested against: the tool name on tool events, the event's own
     /// subtype elsewhere (a session start's source); null where the event takes no matcher.</param>
-    public async Task<HookVerdict> RunAsync(string eventName, string? matchOn, JsonObject input, CancellationToken ct)
+    public Task<HookVerdict> RunAsync(string eventName, string? matchOn, JsonObject input, CancellationToken ct) =>
+        RunAsync(eventName, matchOn, input, only: null, ct);
+
+    /// <param name="only">Which hooks may run, or null for all — the repository's alone, for a start that
+    /// caught up once the folder was trusted.</param>
+    internal async Task<HookVerdict> RunAsync(string eventName, string? matchOn, JsonObject input,
+        Func<HookDefinition, bool>? only, CancellationToken ct)
     {
         var trusted = _deps.ProjectTrusted();
         var hooks = _snapshot.Hooks
             .Where(h => h.Event == eventName && h.Runs)
+            .Where(h => only is null || only(h))
             .Where(h => h.Source is HookSource.User or HookSource.Library || trusted)
             .Where(h => matchOn is null || HookNames.Matches(h.Matcher, matchOn))
             .ToList();
@@ -141,7 +154,7 @@ public sealed class HookRunner
         foreach (var (hook, reply) in hooks.Zip(replies).OrderBy(p => p.First.Source))
             acc.Take(hook, reply, _deps.Notice);
 
-        foreach (var handle in _deps.Handlers.For(eventName))
+        foreach (var handle in only is null ? _deps.Handlers.For(eventName) : [])
         {
             var json = (JsonObject)input.DeepClone();
             if (acc.Rewrite is not null) json["tool_input"] = HookNames.WithAliases(matchOn ?? "", acc.Rewrite);

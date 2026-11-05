@@ -268,4 +268,29 @@ public class HookTurnEventTests : IDisposable
         Assert.True(asked.HookAllowedProtected);
         Assert.Equal("permissionrequest", asked.HookDecidedBy);
     }
+
+    [Fact]
+    public async Task Project_SessionStart_runs_once_trust_is_given_after_the_start()
+    {
+        var trusted = false;
+        var fake = new Fake();
+        fake.Answer = (run, _) => Task.FromResult(Ok($$$"""{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"from {{{run.Hook.Source}}}"}}"""));
+        var policy = new PermissionPolicy(_dir, new PermissionRulesStore(new AppPaths(_dir)));
+        var runner = new HookRunner(new HookRunnerDeps(new HookSnapshot(
+            [H("SessionStart"), new HookDefinition("SessionStart", null, "command", HookSource.Project) { Command = "p", Name = "proj" }],
+            [], _dir, new Dictionary<string, string>()), new HookHandlers(), () => trusted, _ => { }) { Run = fake.Run, ProjectDir = _dir });
+        policy.Hooks = runner;
+        await HookLifecycle.SessionStartAsync(runner, "startup", CancellationToken.None);
+        Assert.Single(fake.Runs);
+
+        trusted = true;
+        var provider = new ScriptedProvider(Answer("a"), Answer("b"));
+        var agent = AgentWith(provider, policy);
+        await agent.SendAsync("one", CancellationToken.None);
+        Assert.Contains("from Project", provider.Last);
+        Assert.Contains("from User", provider.Last);
+        Assert.Equal(2, fake.Runs.Count);
+        await agent.SendAsync("two", CancellationToken.None);
+        Assert.Equal(2, fake.Runs.Count);
+    }
 }

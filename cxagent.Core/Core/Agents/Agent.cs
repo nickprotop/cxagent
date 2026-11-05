@@ -1376,7 +1376,9 @@ public sealed class Agent
             }
             // THE START'S CONTEXT ONLY ONCE A PROMPT GOES THROUGH: taken before a blocked one, it would be gone
             // with it, and the session's first sent prompt would arrive without it.
-            extra.InsertRange(0, await hooks.TakeStartContextAsync(ct));
+            var start = await hooks.TakeStartContextAsync(ct);
+            await Hooks.HookLifecycle.CatchUpStartAsync(hooks, ct);
+            extra.InsertRange(0, [.. start, .. hooks.TakeStartContext()]);
             if (extra.Count > 0)
             {
                 // WHAT THE USER TYPED STAYS WHAT THE TRANSCRIPT SHOWS: the hooks' lines are for the model.

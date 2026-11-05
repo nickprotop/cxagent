@@ -35,6 +35,24 @@ public static class HookLifecycle
         var verdict = await runner.RunAsync(HookEvents.SessionStart, source,
             HookPayload.For(runner.Session(), HookEvents.SessionStart, new JsonObject { ["source"] = source }), ct);
         runner.HoldStartContext(verdict.Context);
+        runner.StartWaitsForTrust = !runner.ProjectTrusted && runner.Snapshot.Hooks.Any(IsProjectStart);
+    }
+
+    private static bool IsProjectStart(HookDefinition h) =>
+        h.Event == HookEvents.SessionStart && h.Runs && h.Source is HookSource.Project or HookSource.Local;
+
+    /// <summary>
+    /// Runs the repository's SessionStart hooks that were skipped because the folder was not trusted yet, once
+    /// it is — a folder trusted by the startup question is trusted after the start has already fired. Once.
+    /// </summary>
+    public static async Task CatchUpStartAsync(HookRunner runner, CancellationToken ct)
+    {
+        if (!runner.StartWaitsForTrust || !runner.ProjectTrusted) return;
+        runner.StartWaitsForTrust = false;
+        var verdict = await runner.RunAsync(HookEvents.SessionStart, "startup",
+            HookPayload.For(runner.Session(), HookEvents.SessionStart, new JsonObject { ["source"] = "startup" }),
+            IsProjectStart, ct);
+        runner.HoldStartContext(verdict.Context);
     }
 
     /// <summary>The time all SessionEnd hooks share: the floor, raised by the longest timeout a hook sets, up to the ceiling.</summary>
