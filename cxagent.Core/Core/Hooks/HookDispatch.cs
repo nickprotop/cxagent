@@ -47,7 +47,8 @@ public static class HookDispatch
 {
     /// <summary>
     /// A hook's deadline: its own <c>timeout</c>, else the contract's default for its type — 600 s for command,
-    /// http and mcp_tool (30 s on UserPromptSubmit, where a person is waiting on the prompt), 30 s for a
+    /// http and mcp_tool (30 s on UserPromptSubmit and model switches, where a person is waiting; 10 s on
+    /// MessageDisplay, which runs on every reply), 30 s for a
     /// prompt, 60 s for an agent.
     /// </summary>
     public static int TimeoutSeconds(HookDefinition hook) =>
@@ -55,7 +56,12 @@ public static class HookDispatch
         {
             "prompt" => 30,
             "agent" => 60,
-            _ => hook.Event == HookEvents.UserPromptSubmit ? 30 : 600,
+            _ => hook.Event switch
+            {
+                HookEvents.UserPromptSubmit or HookEvents.PreModelSwitch or HookEvents.PostModelSwitch => 30,
+                HookEvents.MessageDisplay => 10,
+                _ => 600,
+            },
         };
 
     public static async Task<HookReply> RunAsync(HookRun run, HookServices services, CancellationToken ct)

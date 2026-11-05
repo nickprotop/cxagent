@@ -221,6 +221,107 @@ public static class HookLifecycle
         request.Requester is { Length: > 0 } label
             ? runner.Session() with { Agent = $"{label} {request.RequesterAgentId}".Trim(), AgentId = request.RequesterAgentId, AgentType = label }
             : runner.Session();
+
+    // --- the session's own events ----------------------------------------------------------------------
+
+    /// <summary>Fires an event without waiting — for the ones nothing can block and nobody waits on.</summary>
+    private static void Notify(HookRunner runner, string ev, string? matchOn, JsonObject fields)
+    {
+        if (!runner.Listens(ev)) return;
+        _ = Task.Run(async () =>
+        {
+            try { await runner.RunAsync(ev, matchOn, HookPayload.For(runner.Session(), ev, fields), CancellationToken.None); }
+            catch (Exception ex) { runner.Report(new($"{ev} hook failed: {ex.Message}", IsError: true)); }
+        });
+    }
+
+    /// <summary>Fires CwdChanged when the session's folder moves (a resume of a conversation from another folder).</summary>
+    public static void CwdChanged(HookRunner runner, string oldCwd, string newCwd) =>
+        Notify(runner, HookEvents.CwdChanged, null, new JsonObject { ["old_cwd"] = oldCwd, ["new_cwd"] = newCwd });
+
+    /// <summary>Fires InstructionsLoaded for an instruction file the session read. Observability only.</summary>
+    /// <param name="memoryType"><c>Project</c> for a repository's file, <c>User</c> for the one in the config folder.</param>
+    public static void InstructionsLoaded(HookRunner runner, string file, string memoryType) =>
+        Notify(runner, HookEvents.InstructionsLoaded, "session_start", new JsonObject
+        {
+            ["file_path"] = file,
+            ["memory_type"] = memoryType,
+            ["load_reason"] = "session_start",
+        });
+
+    /// <summary>Fires PostCompact after a compaction, with the summary it made. Observability only.</summary>
+    public static void PostCompact(HookRunner runner, string trigger, string summary) =>
+        Notify(runner, HookEvents.PostCompact, trigger, new JsonObject { ["trigger"] = trigger, ["compact_summary"] = summary });
+
+    /// <summary>Fires PreCompact; a block skips the compaction.</summary>
+    /// <param name="trigger"><c>manual</c> for <c>/compress</c>, <c>auto</c> otherwise.</param>
+    public static Task<HookVerdict> PreCompactAsync(HookRunner runner, string trigger, CancellationToken ct) =>
+        runner.RunAsync(HookEvents.PreCompact, trigger, HookPayload.For(runner.Session(), HookEvents.PreCompact,
+            new JsonObject { ["trigger"] = trigger, ["custom_instructions"] = null }), ct);
+
+    /// <summary>Fires UserPromptExpansion for a <c>/command</c> or skill about to become a prompt; a block keeps it from the model.</summary>
+    public static Task<HookVerdict> ExpansionAsync(HookRunner runner, HookExpansion expansion, CancellationToken ct) =>
+        runner.RunAsync(HookEvents.UserPromptExpansion, expansion.Name, HookPayload.For(runner.Session(), HookEvents.UserPromptExpansion,
+            new JsonObject
+            {
+                ["expansion_type"] = "slash_command",
+                ["command_name"] = expansion.Name,
+                ["command_args"] = expansion.Arguments,
+                ["command_source"] = expansion.Source,
+                ["prompt"] = expansion.Prompt,
+            }), ct);
+
+    /// <summary>Fires PreModelSwitch or PostModelSwitch. Run off the caller's thread and bounded: a switch is a command a person typed.</summary>
+    public static HookVerdict ModelSwitch(HookRunner runner, string ev, HookModelSwitch change)
+    {
+        if (!runner.Listens(ev)) return HookVerdict.None;
+        var input = HookPayload.For(runner.Session(), ev, new JsonObject
+        {
+            ["from_model"] = change.From,
+            ["to_model"] = change.To,
+            ["requested_model"] = change.Requested,
+            ["source"] = "command",
+            ["context_tokens"] = change.ContextTokens,
+        });
+        return RunBounded(runner, ev, change.To, input);
+    }
+
+    /// <summary>Fires ConfigChange before a saved config reaches a session; a block keeps the session on what it had.</summary>
+    public static HookVerdict ConfigChange(HookRunner runner, string source, string? file) =>
+        runner.Listens(HookEvents.ConfigChange)
+            ? RunBounded(runner, HookEvents.ConfigChange, source,
+                HookPayload.For(runner.Session(), HookEvents.ConfigChange, new JsonObject { ["source"] = source, ["file_path"] = file }))
+            : HookVerdict.None;
+
+    /// <summary>
+    /// Runs an event from a synchronous caller: on the thread pool, waited for at most the slowest matching hook's
+    /// deadline. A hook that does not answer in time counts as a block, as the contract has it for a switch.
+    /// </summary>
+    private static HookVerdict RunBounded(HookRunner runner, string ev, string? matchOn, JsonObject input)
+    {
+        var budget = runner.Snapshot.Hooks.Where(h => h.Event == ev && h.Runs)
+            .Select(HookDispatch.TimeoutSeconds).DefaultIfEmpty(30).Max();
+        var task = Task.Run(() => runner.RunAsync(ev, matchOn, input, CancellationToken.None));
+        try
+        {
+            return task.Wait(TimeSpan.FromSeconds(budget + 1))
+                ? task.Result
+                : new HookVerdict("block", "its hooks did not answer in time", null, [], ev);
+        }
+        catch (AggregateException ex)
+        {
+            return new HookVerdict("block", ex.InnerException?.Message ?? ex.Message, null, [], ev);
+        }
+    }
+
+    /// <summary>Fires PermissionDenied after auto mode's reviewer refused a call; a hook's <c>retry</c> tells the model it may try again.</summary>
+    public static async Task<HookVerdict?> PermissionDeniedAsync(HookRunner runner, PermissionRequest request, string? reason, CancellationToken ct)
+    {
+        if (!runner.Listens(HookEvents.PermissionDenied)) return null;
+        var tool = ToolOf(request);
+        return await runner.RunAsync(HookEvents.PermissionDenied, tool.Name, HookPayload.For(runner.Session(), HookEvents.PermissionDenied,
+            new JsonObject { ["tool_name"] = tool.Name, ["tool_input"] = HookNames.WithAliases(tool.Name, tool.Input), ["reason"] = reason }), ct);
+    }
 }
 
 /// <summary>What a Stop hook is told: who is stopping, what they last said, and whether a Stop hook already sent them back.</summary>
@@ -239,3 +340,10 @@ public sealed record HookTasks(IReadOnlyList<Agents.TodoItem> Before, IReadOnlyL
 
 /// <summary>A tool by the name a hook's matcher uses, and its arguments as the hook reads them.</summary>
 internal sealed record HookTool(string Name, JsonObject Input);
+
+/// <summary>A <c>/command</c> or skill about to become a prompt.</summary>
+/// <param name="Source"><c>project</c> or <c>user</c>: where its file came from.</param>
+public sealed record HookExpansion(string Name, string Arguments, string Source, string Prompt);
+
+/// <summary>A model switch: from which model to which, what was asked for, and how much context it re-sends.</summary>
+public sealed record HookModelSwitch(string From, string To, string? Requested, int ContextTokens);

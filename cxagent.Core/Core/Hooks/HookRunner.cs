@@ -22,6 +22,9 @@ public sealed record HookVerdict(string? Decision, string? Reason, JsonObject? U
     /// <summary>The hooks that ran.</summary>
     public IReadOnlyList<string> Fired { get; init; } = [];
 
+    /// <summary>A PermissionDenied hook said the model may retry.</summary>
+    public bool Retry { get; init; }
+
     public static HookVerdict None { get; } = new(null, null, null, [], null);
 
     /// <summary>Whether the action should not happen: a deny or a block.</summary>
@@ -182,6 +185,7 @@ public sealed class HookRunner
         private string? _reason;
         private string? _decidedBy;
         private string? _halt;
+        private bool _retry;
         private readonly List<string> _context = [];
 
         public JsonObject? Rewrite { get; private set; }
@@ -215,6 +219,7 @@ public sealed class HookRunner
                 _context.Add(text);
             if (reply.SystemMessage is { Length: > 0 } msg) notice(new($"hook '{name}': {msg}", IsError: false));
             if (!reply.Continue) _halt ??= reply.StopReason ?? $"stopped by hook '{name}'";
+            _retry |= reply.Retry;
         }
 
         public void TakeAnswer(string name, HookAnswer answer)
@@ -253,6 +258,6 @@ public sealed class HookRunner
         }
 
         public HookVerdict Result(IReadOnlyList<string> fired) =>
-            new(_decision, _reason, Rewrite, _context, _decidedBy) { Halt = _halt, Fired = fired };
+            new(_decision, _reason, Rewrite, _context, _decidedBy) { Halt = _halt, Fired = fired, Retry = _retry };
     }
 }

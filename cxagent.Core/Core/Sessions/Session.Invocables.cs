@@ -82,6 +82,24 @@ public sealed partial class Session
                     // only the app's note, as if the user had sent it. Returning here also leaves that
                     // note queued for the user's next real message.
                     if (string.IsNullOrWhiteSpace(text)) return null;
+
+                    // USERPROMPTEXPANSION SEES THE COMMAND AS IT BECAME A PROMPT, before the model does: a block keeps
+                    // it back, and context rides in after it.
+                    if (Hooks is { } hooks && hooks.Listens(CxAgent.Core.Hooks.HookEvents.UserPromptExpansion))
+                    {
+                        var verdict = await CxAgent.Core.Hooks.HookLifecycle.ExpansionAsync(hooks, new CxAgent.Core.Hooks.HookExpansion(
+                            command.Entry.Name, string.Join(' ', arguments),
+                            command.Entry.Scope == Skills.InvocableScope.Project ? "project" : "user", text), ct);
+                        if (verdict.Stops || verdict.Halt is not null)
+                        {
+                            Say(new Message($"/{command.Entry.Name} blocked by hook '{verdict.DecidedBy}': "
+                                            + (verdict.Reason ?? verdict.Halt ?? "no reason given"), Severity.Warning));
+                            return null;
+                        }
+                        if (verdict.Context.Count > 0)
+                            text += "\n\n" + string.Join("\n\n", verdict.Context.Select(c => $"[hook] {c}"));
+                    }
+
                     if (command.Attachment is { Length: > 0 } attached) text += "\n\n" + attached;
 
                     // WHAT THE APP QUEUED GOES AFTER, not before: a typed skill must open with its

@@ -769,6 +769,20 @@ public sealed partial class Session
         var previousWindow = Host.Context.Window;
         var used = Host.Context.Used;
 
+        // PREMODELSWITCH MAY CANCEL THE SWITCH — a cost guard, say, refusing to re-send a large context to a
+        // dearer model. "ask" is a refusal here, as it is anywhere the switch cannot stop to ask.
+        var change = new CxAgent.Core.Hooks.HookModelSwitch(Host.ModelId, next.Provider.ModelId, requestedName ?? next.InstanceName, used ?? 0);
+        if (Hooks is { } hooks)
+        {
+            var pre = CxAgent.Core.Hooks.HookLifecycle.ModelSwitch(hooks, CxAgent.Core.Hooks.HookEvents.PreModelSwitch, change);
+            if (pre.Decision is "deny" or "block" or "ask")
+            {
+                Say(new Message($"model switch cancelled by hook '{pre.DecidedBy}'"
+                                + (pre.Reason is { Length: > 0 } why ? $": {why}" : "."), Severity.Warning));
+                return CommandStatus.Refused;
+            }
+        }
+
         SwapModel(next);
         Resolution = Resolution?.WithModel(next) ?? new ResolvedConfig(next, Llm.ProviderCatalog.Empty, []);
 
@@ -786,6 +800,14 @@ public sealed partial class Session
                 ? $"{named} {next.Provider.ModelId}"
                 : next.Provider.ModelId,
             mode: Mode.ToString());
+
+        // POSTMODELSWITCH'S WORD FOR THE MODEL goes with the next request, as SessionStart's does.
+        if (Hooks is { } after)
+            _ = Task.Run(() =>
+            {
+                var post = CxAgent.Core.Hooks.HookLifecycle.ModelSwitch(after, CxAgent.Core.Hooks.HookEvents.PostModelSwitch, change);
+                after.HoldStartContext(post.Context);
+            });
 
         Announce(SessionChangeKind.Model);
         Say(ModelSwitchNotice.For(next.InstanceName ?? next.Provider.ProviderId, next.Provider.ModelId,

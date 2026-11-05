@@ -61,6 +61,7 @@ internal static class SessionFactory
         // left, and the arriving repository's own files — under the arriving folder's trust — are what applies
         // now. The departing set is told the session ended there.
         var departing = session.Hooks is { } held && session.HooksFolder != session.WorkingDirectory ? held : null;
+        var leftFolder = departing is not null ? session.HooksFolder : null;
         if (departing is not null)
             _ = Hooks.HookLifecycle.SessionEndAsync(departing, "other");
         var firstWire = session.Hooks is null || departing is not null;
@@ -428,6 +429,13 @@ internal static class SessionFactory
             // instead (HookRunner.TakeStartContextAsync), so what it says still reaches the model first.
             hooks.PendingStart = Hooks.HookLifecycle.SessionStartAsync(hooks,
                 resumeSnapshot is null && departing is null ? "startup" : "resume", CancellationToken.None);
+            if (leftFolder is not null)
+                Hooks.HookLifecycle.CwdChanged(hooks, leftFolder, session.WorkingDirectory);
+            // THE INSTRUCTION FILES THIS SESSION READS, each said once as it starts: an audit trail of what the
+            // model was told, for whoever wants one.
+            foreach (var file in Llm.ProjectInstructions.Find(session.WorkingDirectory, shared.GlobalInstructionsDir))
+                Hooks.HookLifecycle.InstructionsLoaded(hooks, file.Path,
+                    shared.GlobalInstructionsDir is { } global && file.Path.StartsWith(global, StringComparison.Ordinal) ? "User" : "Project");
         }
         session.NoteToolSelection(toolSelection);
         session.NoteCatalog(resolution, resolution.Providers, resolution.ClassifierInstance is { Length: > 0 });

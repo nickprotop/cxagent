@@ -44,6 +44,9 @@ public sealed record HookReply(HookOutcomeKind Kind, string? Reason, JsonObject?
         ?? (Specific?["decision"] as JsonObject)?["updatedInput"] as JsonObject;
 
     public string? AdditionalContext => Str(Specific?["additionalContext"]);
+
+    /// <summary>A PermissionDenied hook's <c>retry</c>: the model may try the refused call again.</summary>
+    public bool Retry => Specific?["retry"] is JsonValue v && v.TryGetValue<bool>(out var b) && b;
     public string? SystemMessage => Str(Json?["systemMessage"]);
 
     /// <summary>False when the hook asked for the whole turn to stop (<c>continue: false</c>).</summary>

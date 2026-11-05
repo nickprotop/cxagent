@@ -40,7 +40,14 @@ internal static class CompressionRun
     /// compaction notice — naming a withheld tool sends the model to spend a turn discovering it.
     /// </param>
     internal readonly record struct CompressionWork(
-        AgentContext Context, ILlmProvider Provider, bool SkillToolOffered = true);
+        AgentContext Context, ILlmProvider Provider, bool SkillToolOffered = true)
+    {
+        /// <summary>The session's hooks, for PreCompact and PostCompact; null where there are none.</summary>
+        public Hooks.HookRunner? Hooks { get; init; }
+
+        /// <summary><c>manual</c> for <c>/compress</c>, <c>auto</c> for compaction on pressure.</summary>
+        public string Trigger { get; init; } = "auto";
+    }
 
     /// <summary>
     /// Where one compression is reported.
@@ -75,6 +82,15 @@ internal static class CompressionRun
     public static async Task<SessionCompressor.CompressResult> RunAsync(
         CompressionWork work, CompressionReport report, CancellationToken ct)
     {
+        // A PRECOMPACT HOOK MAY SKIP IT: the conversation goes on uncompacted, and what was asked for is said.
+        if (work.Hooks is { } hooks && hooks.Listens(CxAgent.Core.Hooks.HookEvents.PreCompact)
+            && await CxAgent.Core.Hooks.HookLifecycle.PreCompactAsync(hooks, work.Trigger, ct) is { Stops: true } kept)
+        {
+            hooks.Report(new($"compaction skipped: hook '{kept.DecidedBy}' blocked it"
+                             + (kept.Reason is { Length: > 0 } why ? $" ({why})" : ""), IsError: false));
+            return new SessionCompressor.CompressResult(Summarised: false, Declined: true);
+        }
+
         // A JOB ROW, not a bare system line, because compression IS work: it takes a work.Provider call of
         // its own, runs for seconds, and rewrites the conversation. As a row it gets the machinery
         // every other tool call already has — a spinner while it runs, without which seconds of
@@ -117,6 +133,9 @@ internal static class CompressionRun
             .Where(m => m.Role == "assistant")
             .Select(m => SessionCompressor.SummaryOf(m.Content))
             .FirstOrDefault(s => s is not null) ?? "";
+
+        if (result.Summarised && work.Hooks is { } after)
+            CxAgent.Core.Hooks.HookLifecycle.PostCompact(after, work.Trigger, summary);
 
         // TRUNCATION IS A FAILURE, and shows red. It means the summarising call did not answer and
         // the oldest half was dropped unread — recoverable, but the user should see that it happened

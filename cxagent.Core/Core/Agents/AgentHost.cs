@@ -720,6 +720,9 @@ public sealed class AgentHost : IDisposable
     /// <para>The same string the UI shows and the same one <c>/stats</c> groups by, so a figure in
     /// the dashboard and a name in the panel do not have to be reconciled by the reader.</para>
     /// </summary>
+    /// <summary>The model this session runs on — what a model-switch hook is told it switches from.</summary>
+    public string ModelId => _runtime.Provider.ModelId;
+
     private string SpendLabel =>
         _runtime.InstanceName is { Length: > 0 } instance
             ? $"{instance}:{_runtime.Provider.ModelId}"
@@ -887,7 +890,7 @@ public sealed class AgentHost : IDisposable
         // goal last ran would leave a /compress issued before any prompt with no goal to name, filing
         // its row under a name no log directory has.
         var result = await CompressionRun.RunAsync(
-            new CompressionRun.CompressionWork(Context, _runtime.Provider, _agent.SkillToolOffered),
+            new CompressionRun.CompressionWork(Context, _runtime.Provider, _agent.SkillToolOffered) { Hooks = _agent.HookRunner, Trigger = "manual" },
             new CompressionRun.CompressionReport(_jobPanel, _agent.Id, "compress context · requested",
                 usage =>
                 {

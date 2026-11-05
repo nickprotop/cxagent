@@ -440,7 +440,13 @@ public sealed class PermissionDecider : IPermissionGate
                 // still exists for the prompt-heading work (Task 8+); this is the return the MODEL
                 // actually reads, and it is the one place DenialMessage can tell an auto-denial from
                 // a human one.
-                return PermissionOutcome.ByClassifier(decision.Reason);
+                // PERMISSIONDENIED HOOKS HEAR OF IT. They cannot undo the refusal; a "retry" from one tells the
+                // model it may try the call again rather than abandon it.
+                var reason = decision.Reason;
+                if (policy.Hooks is { } deniedHooks
+                    && await Hooks.HookLifecycle.PermissionDeniedAsync(deniedHooks, request, decision.Reason, ct) is { Retry: true } retry)
+                    reason = (reason is { Length: > 0 } r ? r + " " : "") + $"(hook '{retry.DecidedBy ?? retry.Fired.FirstOrDefault()}' says you may retry it.)";
+                return PermissionOutcome.ByClassifier(reason);
             }
 
             // EVERYTHING ELSE PROMPTS, and that is every failure too: a timeout, a transport error,

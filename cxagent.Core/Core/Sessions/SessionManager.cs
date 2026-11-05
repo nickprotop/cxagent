@@ -168,6 +168,14 @@ public sealed class SessionManager : IDisposable
 
         foreach (var session in sessions)
         {
+            // A CONFIGCHANGE HOOK MAY KEEP THIS SESSION ON WHAT IT HAD — the new file is written either way.
+            if (session.Hooks is { } hooks
+                && Hooks.HookLifecycle.ConfigChange(hooks, "user_settings", _configDir is { } dir ? Path.Combine(dir, "config.json") : null)
+                    is { Stops: true } kept)
+            {
+                session.NotifyWarning($"config change not applied to this session: hook '{kept.DecidedBy}' blocked it.");
+                continue;
+            }
             session.AdoptCatalog(current);
             if (change.Everyone) session.RefreshWide(current);
             if (session.InstanceName is null || !change.Instances.Contains(session.InstanceName)) continue;
