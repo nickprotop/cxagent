@@ -1962,7 +1962,7 @@ public sealed class Agent
                 // to judge.
                 if (!_isSubAgent && _hooks is { } stopHooks && stopHooks.Listens(Hooks.HookEvents.Stop))
                 {
-                    var verdict = await Hooks.HookLifecycle.StopAsync(stopHooks, HookContext(stopHooks), text, stopBlocks > 0, ct);
+                    var verdict = await Hooks.HookLifecycle.StopAsync(stopHooks, new Hooks.HookStop(HookContext(stopHooks), text, stopBlocks > 0), ct);
                     // CONTINUE: FALSE OUTRANKS A BLOCK: one hook asking the agent to carry on and another
                     // asking everything to stop resolves to stopping.
                     if (verdict.Stops && verdict.Halt is null)

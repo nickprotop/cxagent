@@ -93,13 +93,12 @@ public static class HookLifecycle
             HookPayload.For(ctx, HookEvents.UserPromptSubmit, new JsonObject { ["prompt"] = prompt }), ct);
 
     /// <summary>Fires Stop as the agent is about to hand its answer back.</summary>
-    /// <param name="active">Whether this turn already went on because a Stop hook said so — the contract's guard against loops.</param>
-    public static Task<HookVerdict> StopAsync(HookRunner runner, HookEventContext ctx, string? lastMessage, bool active, CancellationToken ct) =>
+    public static Task<HookVerdict> StopAsync(HookRunner runner, HookStop stop, CancellationToken ct) =>
         runner.RunAsync(HookEvents.Stop, null,
-            HookPayload.For(ctx, HookEvents.Stop, new JsonObject
+            HookPayload.For(stop.Context, HookEvents.Stop, new JsonObject
             {
-                ["stop_hook_active"] = active,
-                ["last_assistant_message"] = lastMessage,
+                ["stop_hook_active"] = stop.Active,
+                ["last_assistant_message"] = stop.LastMessage,
             }), ct);
 
     /// <summary>Fires StopFailure without waiting: the turn has already failed, and nothing a hook says changes that.</summary>
@@ -112,15 +111,15 @@ public static class HookLifecycle
     }
 
     /// <summary>The tool a permission request is about, by the name a matcher uses, and its input.</summary>
-    internal static (string Tool, JsonObject Input) ToolOf(PermissionRequest request) => request.Kind switch
+    internal static HookTool ToolOf(PermissionRequest request) => request.Kind switch
     {
-        PermissionKind.Shell => ("run_shell", new JsonObject { ["command"] = request.What }),
-        PermissionKind.FileRead => ("read_file", new JsonObject { ["path"] = request.What }),
-        PermissionKind.FileWrite => ("write_file", new JsonObject { ["path"] = request.What }),
-        PermissionKind.Http => ("http_request", new JsonObject { ["url"] = request.What }),
-        PermissionKind.Mcp => (request.AlwaysRule is { } r && r.StartsWith("mcp:", StringComparison.Ordinal) ? r[4..] : "mcp",
+        PermissionKind.Shell => new("run_shell", new JsonObject { ["command"] = request.What }),
+        PermissionKind.FileRead => new("read_file", new JsonObject { ["path"] = request.What }),
+        PermissionKind.FileWrite => new("write_file", new JsonObject { ["path"] = request.What }),
+        PermissionKind.Http => new("http_request", new JsonObject { ["url"] = request.What }),
+        PermissionKind.Mcp => new(request.AlwaysRule is { } r && r.StartsWith("mcp:", StringComparison.Ordinal) ? r[4..] : "mcp",
             new JsonObject { ["call"] = request.Display }),
-        _ => (request.Kind.ToString().ToLowerInvariant(), new JsonObject { ["request"] = request.Display }),
+        _ => new(request.Kind.ToString().ToLowerInvariant(), new JsonObject { ["request"] = request.Display }),
     };
 
     /// <summary>
@@ -155,3 +154,10 @@ public static class HookLifecycle
             ? runner.Session() with { Agent = $"{label} {request.RequesterAgentId}".Trim(), AgentId = request.RequesterAgentId, AgentType = label }
             : runner.Session();
 }
+
+/// <summary>What a Stop hook is told: who is stopping, what they last said, and whether a Stop hook already sent them back.</summary>
+/// <param name="Active">Whether this turn already went on because a Stop hook said so — the contract's guard against loops.</param>
+public sealed record HookStop(HookEventContext Context, string? LastMessage, bool Active);
+
+/// <summary>A tool by the name a hook's matcher uses, and its arguments as the hook reads them.</summary>
+internal sealed record HookTool(string Name, JsonObject Input);

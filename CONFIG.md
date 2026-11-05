@@ -654,12 +654,18 @@ run; none overrides another. `<repo>` is the top of the git repository the folde
 repository, no project file is read.
 
 **A repository's hooks are commands from whoever wrote the repository**, so they run only once you
-trust the folder (the question at startup, `/trust`, or F8's **Project** tab). System hooks, from `config.json`, run everywhere. Trust is checked each
+trust the folder (the question at startup, `/trust`, or F8's **Project** tab). System hooks, from `config.json`, run everywhere.
+The folder whose trust counts is the one you work in: trusting `repo/docs` and working there runs the
+repository's `.cxagent/hooks.json`, which sits at its top. A folder trusted after the session opened (by
+the startup question) still gets the project's `SessionStart` hooks, once, before the next prompt is sent. Trust is checked each
 time an event fires: trusting the folder mid-session starts its hooks at once, and revoking it stops them.
 
 **Hooks are read when the session starts.** A hooks file that changes while it runs, by a `git pull`,
 another editor or the model, does not take effect on its own. cxagent says so at the next turn;
-`/hooks` shows what changed, and `/hooks review` or a save in F8 applies it.
+`/hooks` lists what a review would add and remove, `/hooks review` applies it and says what it applied,
+and F8 marks hooks that are not running yet. A save in F8 applies the files that dialog showed, in the
+tab it was opened from; if one changed on disk while it was open, only the system hooks are applied and
+the change waits for `/hooks review`. Other tabs take the system hooks only.
 
 ### Events
 
@@ -721,10 +727,10 @@ JSON on stdout says more:
   "systemMessage": "shown to you" }
 ```
 
-`permissionDecision` is `allow`, `deny`, `ask` or `defer`. A `UserPromptSubmit`, `Stop` or `PostToolUse`
+`permissionDecision` is `allow`, `deny`, `ask` or `defer`. `"continue": false` on any event stops the turn
+once the current tool results are recorded, and wins over a Stop hook's block. A `UserPromptSubmit`, `Stop` or `PostToolUse`
 hook blocks with `{ "decision": "block", "reason": "…" }`, and a `PermissionRequest` hook answers with
 `{ "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": { "behavior": "allow" } } }`.
-`"continue": false` stops the turn.
 
 **When several hooks answer one call, the strictest wins:** deny, then defer, then ask, then allow. An
 `updatedInput` replaces the tool's arguments before anything else sees them, so a permission prompt
@@ -734,7 +740,8 @@ shows what will actually run.
 
 - **`deny`** refuses the call before it is asked about. The model is told a configured rule refused it.
 - **`ask`** brings up the prompt even where nothing else would have asked: a write that accept-edits
-  would make silently, a command a stored rule allows. Under `--dangerously-skip-permissions` it is
+  would make silently, a command a stored rule allows, a tool with no permission question of its own
+  (a sub-agent spawn, a skill, the to-do list). Under `--dangerously-skip-permissions` it is
   approved, since that flag promises no prompts; in a headless run it is refused, like any prompt there.
 - **`allow`** answers a prompt that would otherwise show, and only that. It works in a headless run,
   which is what makes hooks useful in CI. It never answers:
@@ -766,9 +773,11 @@ way, with folder trust from `--trust` or the stored decision.
 | `onFailure` | `"block"`: a hook that crashes, times out or prints broken JSON blocks what it guards, instead of letting it through. Meaningful on `PreToolUse`, `PermissionRequest`, `UserPromptSubmit` and `Stop` |
 | `name` | what messages, F8 and `/hooks` call it. Optional |
 
-Hooks matching one event run at the same time. Each one's output is cut at 64 KiB. `SessionEnd` hooks
-share a budget of 1.5 seconds, raised to the longest `timeout` one of them sets, up to 60, so closing a
-tab never waits on a slow script.
+Hooks matching one event run at the same time. Each one's output is cut at 64 KiB. A hook that starts a
+process in the background (`server &`) is done when it exits: its output is read for a second more, and
+the process is left running. `SessionEnd` hooks
+share a budget of 1.5 seconds, raised to the longest `timeout` one of them sets, up to 60. Closing a tab
+starts them and does not wait; quitting waits for them within that budget, and names any it cut off.
 
 **`Stop` hooks are bounded.** A Stop hook that blocks sends the agent back to work with its reason; after
 three in one turn the turn ends anyway, and you are told which hook kept it going.
