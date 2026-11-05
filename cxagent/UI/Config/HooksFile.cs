@@ -16,6 +16,16 @@ namespace CxAgent.UI.Config;
 /// </summary>
 public static class HooksFile
 {
+    /// <summary>
+    /// Indented, and with quotes and apostrophes left as they are: these files are read and edited by hand,
+    /// and a command full of <c>\u0022</c> is valid JSON nobody can read.
+    /// </summary>
+    private static readonly JsonSerializerOptions Written = new()
+    {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
     public static HooksDraft Load(AppPaths paths, IReadOnlyDictionary<string, string> env, string workingDirectory)
     {
         // THE USER'S BLOCK AS WRITTEN, from the file — not the session's copy, which is what it read at start.
@@ -81,7 +91,7 @@ public static class HooksFile
             root["hooks"] = block;
             Directory.CreateDirectory(Path.GetDirectoryName(file)!);
             var temp = file + ".tmp";
-            File.WriteAllText(temp, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+            File.WriteAllText(temp, root.ToJsonString(Written) + "\n");
             File.Move(temp, file, overwrite: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)

@@ -157,4 +157,18 @@ public class HooksDraftTests : IDisposable
         Assert.True(errors.Count == 0, string.Join(" | ", errors));
         Assert.Equal(before, File.GetLastWriteTimeUtc(ProjectPath));
     }
+
+    [Fact]
+    public void Saved_file_keeps_quotes_readable()
+    {
+        var d = Load();
+        var h = d.Add(HookSource.Project);
+        h.Event = "PreToolUse";
+        h.Command = "echo '{\"a\":1}' && test \"$X\" != <none>";
+        Assert.Empty(Save(d));
+        var text = File.ReadAllText(ProjectPath);
+        Assert.Contains("echo '{", text);
+        Assert.DoesNotContain("\\u0027", text);
+        Assert.DoesNotContain("\\u0022", text);
+    }
 }

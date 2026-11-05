@@ -446,7 +446,7 @@ rewrite a tool call, add context, or send the agent back to work when the tests 
 }
 ```
 
-Yours live in `config.json`; a repository's in `.cxagent/hooks.json` (shared) and
+System hooks live in `config.json`; a repository's in `.cxagent/hooks.json` (shared) and
 `.cxagent/hooks.local.json` (yours alone), which run only once you trust the folder. They fire for
 sub-agents and headless runs too, so a guard cannot be stepped around. A hook's allow never reaches a
 write into `.git`, `.cxagent` and the other protected folders. F8's **Hooks** tab edits all three files;

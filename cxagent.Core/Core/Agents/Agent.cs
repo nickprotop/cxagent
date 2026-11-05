@@ -1948,6 +1948,10 @@ public sealed class Agent
                         if (stopBlocks < Hooks.HookLifecycle.MaxStopBlocks)
                         {
                             stopBlocks++;
+                            // SAID ON SCREEN TOO: the agent carrying on after it looked finished is otherwise
+                            // unexplained to the person watching.
+                            _sink.Said(new Message($"stop hook '{verdict.DecidedBy}' kept the turn going: "
+                                                   + (verdict.Reason ?? "no reason given"), Severity.Info));
                             messages.Add(Nudge($"A hook did not let this turn end yet (hook '{verdict.DecidedBy}'): "
                                                + (verdict.Reason ?? "no reason given") + " Carry on with the work."));
                             continue;
@@ -3513,9 +3517,11 @@ public sealed class Agent
     /// </summary>
     private static ToolOutcome HookRefusal(Hooks.HookVerdict verdict)
     {
+        var reason = verdict.Reason?.Trim();
         var text = $"blocked by hook '{verdict.DecidedBy}'"
-                   + (verdict.Reason is { Length: > 0 } r ? $": {r}" : ".")
-                   + " This is a rule configured for this project; do not retry the same call.";
+                   + (reason is { Length: > 0 } r ? $": {r}{(r[^1] is '.' or '!' or '?' ? "" : ".")}" : ".")
+                   // NOT "this project's rule": the hook may be the user's own, from their config.
+                   + " A configured hook refused this call; do not retry it unchanged.";
         return new ToolOutcome(text, new JobResult
         {
             Success = false, ExitCode = -1, PermissionDenied = true, DecidedBy = "hook", ErrorMessage = text,

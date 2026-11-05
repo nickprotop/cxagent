@@ -47,8 +47,10 @@ public class HookTurnEventTests : IDisposable
         return (policy, runner, fake);
     }
 
+    private RecordingSink _sink = new();
+
     private Agent AgentWith(ILlmProvider provider, PermissionPolicy policy) =>
-        new(TestAgents.Setup(provider, new(new RecordingSink(), new NullJobPanel()), 8) with
+        new(TestAgents.Setup(provider, new(_sink = new RecordingSink(), new NullJobPanel()), 8) with
         {
             Identity = new() { WorkingDir = _dir },
             Guards = new() { Policy = policy },
@@ -106,6 +108,8 @@ public class HookTurnEventTests : IDisposable
         Assert.Equal(2, provider.Calls);
         Assert.Contains("run the tests first", provider.Last);
         Assert.Equal("tests pass, done", result.Text);
+        // SAID ON SCREEN, so the user knows why the agent carried on after it looked finished.
+        Assert.Contains(_sink.Notices.Concat(_sink.Messages), n => n.Contains("stop") && n.Contains("run the tests first"));
         Assert.False((bool)fake.Runs[0].Input["stop_hook_active"]!);
         Assert.True((bool)fake.Runs[1].Input["stop_hook_active"]!);
         Assert.Equal("done", (string?)fake.Runs[0].Input["last_assistant_message"]);

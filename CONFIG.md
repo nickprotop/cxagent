@@ -645,7 +645,7 @@ the event as JSON on stdin and answers with its exit code, and optionally with J
 
 | File | Whose | Runs |
 |---|---|---|
-| `hooks` in `config.json` | yours, in every folder | always |
+| `hooks` in `config.json` | system, in every folder | always |
 | `<repo>/.cxagent/hooks.json` | the project's, committed with it | only in a trusted folder |
 | `<repo>/.cxagent/hooks.local.json` | the project's, on this machine only (add it to `.gitignore`) | only in a trusted folder |
 
@@ -654,7 +654,7 @@ run; none overrides another. `<repo>` is the top of the git repository the folde
 repository, no project file is read.
 
 **A repository's hooks are commands from whoever wrote the repository**, so they run only once you
-trust the folder (the question at startup, `/trust`, or F8's **Project** tab). Trust is checked each
+trust the folder (the question at startup, `/trust`, or F8's **Project** tab). System hooks, from `config.json`, run everywhere. Trust is checked each
 time an event fires: trusting the folder mid-session starts its hooks at once, and revoking it stops them.
 
 **Hooks are read when the session starts.** A hooks file that changes while it runs, by a `git pull`,

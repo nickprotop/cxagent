@@ -374,7 +374,7 @@ public sealed partial class Session
         foreach (var file in CxAgent.Core.Hooks.HookSources.ChangedSince(hooks.Snapshot))
             if (_hookChangesSaid.Add(file))
                 NotifyWarning($"{Path.GetFileName(file)} changed: the hooks running are the ones read at start. "
-                              + "Review them in F8 › Hooks to apply the change.");
+                              + "/hooks review applies it, or a save in F8 › Hooks.");
     }
 
     /// <summary>

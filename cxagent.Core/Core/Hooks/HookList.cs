@@ -8,7 +8,7 @@ public static class HookList
     /// <summary>Where a hook came from, as a short tag.</summary>
     public static string SourceTag(HookSource source) => source switch
     {
-        HookSource.User => "you",
+        HookSource.User => "system",
         HookSource.Project => "project",
         HookSource.Local => "local",
         _ => "app",

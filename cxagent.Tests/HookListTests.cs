@@ -24,10 +24,10 @@ public class HookListTests
             H("Setup", HookSource.User, name: "boot")), []);
         Assert.Contains("guard", text);
         Assert.Contains("run_shell", text);
-        Assert.Matches(@"guard.*you.*active", text);
+        Assert.Matches(@"guard.*system.*active", text);
         Assert.Matches(@"lint.*project.*not running: folder not trusted", text);
         Assert.Matches(@"audit.*local.*not supported here", text);
-        Assert.Matches(@"boot.*you.*not supported here", text);
+        Assert.Matches(@"boot.*system.*not supported here", text);
     }
 
     [Fact]

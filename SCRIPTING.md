@@ -65,8 +65,8 @@ stored rule or a wider mode.
 **Hooks decide before the refusal.** A `PreToolUse` or `PermissionRequest` hook that answers `allow`
 answers the prompt a headless run cannot show, so a run can let exactly the commands a project's
 hooks vouch for through, and nothing else. A hook's `ask` is refused like any prompt. The repository's
-own hooks need the folder trusted, by `--trust` or a stored decision; your `config.json` hooks always
-run. See [Hooks](CONFIG.md#hooks--commands-that-run-on-the-agents-events).
+own hooks need the folder trusted, by `--trust` or a stored decision; system hooks from `config.json`
+always run. See [Hooks](CONFIG.md#hooks--commands-that-run-on-the-agents-events).
 
 **`--dangerously-skip-permissions` still refuses one thing:** a file-tool write into a `.git`,
 `.vscode`, `.claude`, `.idea`, `.github`, `.husky`, `.devcontainer` or `.cxagent` folder, or an `.envrc`,

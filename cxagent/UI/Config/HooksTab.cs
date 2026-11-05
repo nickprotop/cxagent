@@ -39,6 +39,7 @@ public sealed class HooksTab
     private HookEntry? _selected;
     private bool _saving;
     private int _lastIndex = -1;
+    private IFocusableControl? _firstField;
 
     public HooksTab(ConfigDialogHost host, Func<Window?> window)
     {
@@ -108,7 +109,7 @@ public sealed class HooksTab
     {
         var muted = ColorScheme.MutedMarkup;
         _trust.SetContent([_draft?.RepoRoot is null
-            ? $"[{muted}]No repository here: only your own hooks.[/]"
+            ? $"[{muted}]No repository here: system hooks only.[/]"
             : Trusted
                 ? $"[{ColorScheme.AffirmativeMarkup}]Folder trusted[/] [{muted}]· project hooks run[/]"
                 : $"[{ColorScheme.CautionMarkup}]Folder not trusted[/] [{muted}]· project hooks do not run; /trust[/]"]);
@@ -200,6 +201,7 @@ public sealed class HooksTab
 
         var matcher = ListDetail.Input(new PromptControl { Input = e.Matcher ?? "", HorizontalAlignment = HorizontalAlignment.Stretch });
         matcher.InputChanged += (_, text) => { e.Matcher = text; Changed(); };
+        _firstField = matcher;
         when.Add("Matcher", "Which tools, as a pattern: run_shell, write_file|replace_in_file. Empty is every tool.", matcher);
 
         var what = new FieldGrid();
@@ -239,8 +241,8 @@ public sealed class HooksTab
                 SetStatus($"[{ColorScheme.CautionMarkup}]Saved in .cxagent/hooks.json, it is committed with the repository and runs for everyone who trusts it.[/]");
         };
         where.Add("Saved in", _draft.RepoRoot is null
-            ? "No repository here, so only your own config."
-            : "Your config runs everywhere; the project's shared file travels with the repository; the local one stays on this machine.",
+            ? "No repository here, so only the system config."
+            : "The system config runs everywhere; the project's shared file travels with the repository; the local one stays on this machine.",
             sourceBox);
 
         var more = new FieldGrid();
@@ -271,7 +273,7 @@ public sealed class HooksTab
 
     private static string SourceLabel(HookSource s) => s switch
     {
-        HookSource.User => "You, all projects (config.json)",
+        HookSource.User => "System, all projects (config.json)",
         HookSource.Project => "This project, shared (.cxagent/hooks.json)",
         _ => "This project, only me (.cxagent/hooks.local.json)",
     };
@@ -281,6 +283,8 @@ public sealed class HooksTab
         if (_draft is null) return;
         _selected = _draft.Add(HookSource.User);
         FillRail();
+        // TYPING STARTS IN THE NEW HOOK, not on the button that made it.
+        if (_firstField is not null) _window()?.FocusManager.SetFocus(_firstField, FocusReason.Programmatic);
         SetStatus($"[{ColorScheme.MutedMarkup}]Not saved yet. Set its command, then Save.[/]");
     }
 

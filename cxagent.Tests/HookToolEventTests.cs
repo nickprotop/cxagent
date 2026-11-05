@@ -67,7 +67,9 @@ public class HookToolEventTests : IDisposable
         await agent.SendAsync("go", CancellationToken.None);
         var result = provider.ResultOf(1, "c1");
         Assert.Contains("blocked by hook", result);
-        Assert.Contains("no shell today", result);
+        Assert.Contains("no shell today.", result);
+        // A USER'S HOOK IS NOT THE PROJECT'S: the refusal names neither, only that a configured hook said no.
+        Assert.DoesNotContain("project", result);
         Assert.DoesNotContain("original", result.Replace("echo original", ""));
     }
 

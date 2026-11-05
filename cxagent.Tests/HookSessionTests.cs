@@ -95,7 +95,7 @@ public class HookSessionTests : IDisposable
         ProjectHooks("""{ "Stop": [ { "hooks": [ { "type": "command", "command": "true" }, { "type": "command", "command": "false" } ] } ] }""");
         session.CheckHookChanges();
         session.CheckHookChanges();
-        Assert.Single(sink.Notices, m => m.Contains("changed"));
+        Assert.Contains("/hooks review", Assert.Single(sink.Notices, m => m.Contains("changed")));
         Assert.Equal(before, session.Hooks.Snapshot.Hooks.Count);
     }
 
