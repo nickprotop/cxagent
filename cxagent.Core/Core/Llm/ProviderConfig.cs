@@ -464,6 +464,12 @@ public record ProviderSettings(
     public Jobs.Builtin.WebSearchSettings? WebSearch { get; init; }
 
     /// <summary>
+    /// The <c>hooks</c> block, or null when the config has none. Held as written; each session parses it
+    /// beside the repository's own hooks files — see <see cref="Hooks.HookSources"/>.
+    /// </summary>
+    public Hooks.HooksSettings? Hooks { get; init; }
+
+    /// <summary>
     /// The name of the theme the terminal should start in, or null for cxagent's own.
     ///
     /// <para>A NAME RATHER THAN COLOURS. The window framework owns the theme registry and ships a
@@ -1038,6 +1044,22 @@ public static class ProviderConfigLoader
                 webSearch = new Jobs.Builtin.WebSearchSettings(string.IsNullOrWhiteSpace(tavily) ? null : tavily);
             }
 
+            // A HOOKS BLOCK OF THE WRONG SHAPE WARNS, never refuses the config: no hooks is a working
+            // setup, and taking every provider down over it would be the larger failure. Entries inside
+            // it are checked per session, where a bad one costs only itself.
+            Hooks.HooksSettings? hooks = null;
+            if (root.TryGetProperty("hooks", out var hk))
+            {
+                if (hk.ValueKind != JsonValueKind.Object)
+                    warnings.Add("hooks must be an object of event names — no hooks from config.");
+                else
+                    hooks = new Hooks.HooksSettings(hk.Clone())
+                    {
+                        DefaultModel = hk.TryGetProperty("defaultModel", out var dm) && dm.ValueKind == JsonValueKind.String
+                            ? dm.GetString() : null,
+                    };
+            }
+
             // READ AFTER `warnings` EXISTS, not beside the other llmAgent fields above: a malformed
             // term warns rather than throwing, and there is nowhere to put a warning before this.
             var llmAgentTools = root.TryGetProperty("llmAgent", out var laTools)
@@ -1345,6 +1367,7 @@ public static class ProviderConfigLoader
                 ClassifierTimeoutSeconds = classifierTimeout,
                 ShellDetachOnTimeout = shellDetachOnTimeout,
                 WebSearch = webSearch,
+                Hooks = hooks,
                 Theme = theme,
                 Plugins = plugins,
                 PluginPaths = pluginPaths,

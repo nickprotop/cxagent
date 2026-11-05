@@ -68,6 +68,9 @@ public sealed record ProviderCatalog(
     /// <see cref="ProviderSettings.WebSearch"/>. An init property for the reason the two above are.</summary>
     public Jobs.Builtin.WebSearchSettings? WebSearch { get; init; }
 
+    /// <summary>The user's <c>hooks</c> block — see <see cref="ProviderSettings.Hooks"/>.</summary>
+    public Hooks.HooksSettings? Hooks { get; init; }
+
     /// <summary>Where a plugin's <c>file</c> is searched for, in order — matching config.json's
     /// <c>pluginPaths</c>. Search paths are resolved once and stay fixed for the process, unlike the
     /// plugin entries themselves — see <see cref="PluginEntries"/> for why those moved out.</summary>
