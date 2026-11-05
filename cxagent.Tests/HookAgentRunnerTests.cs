@@ -36,4 +36,16 @@ public class HookAgentRunnerTests : IDisposable
         await HookAgentRunner.RunAsync(new HookAgentRequest(provider, "check", _dir), CancellationToken.None);
         Assert.False(File.Exists(Path.Combine(_dir, "x.txt")));
     }
+
+    [Fact]
+    public async Task The_verifier_can_glob_in_the_project()
+    {
+        File.WriteAllText(Path.Combine(_dir, "agent-ok.txt"), "ok");
+        var provider = new ScriptedProvider(
+            new LlmResponse { Text = "", StopReason = "tool_use", ToolCalls = [new ToolCall { Name = "glob", Id = "g1",
+                Arguments = JsonSerializer.SerializeToElement(new { pattern = "agent-ok.txt" }) }] },
+            new LlmResponse { Text = """{"ok": true}""", StopReason = "end_turn" });
+        await HookAgentRunner.RunAsync(new HookAgentRequest(provider, "check", _dir), CancellationToken.None);
+        Assert.Contains("agent-ok.txt", provider.ResultOf(1, "g1"));
+    }
 }
