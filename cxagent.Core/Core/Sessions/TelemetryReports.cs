@@ -64,6 +64,13 @@ public sealed record ToolCallReport(
     /// </summary>
     public string? Output { get; init; }
 
+    /// <summary>
+    /// True for a shell call that ran outside the sandbox while the sandbox is on — an escape the user allowed, a
+    /// failed start let through, a machine with none. The one a reader of a finished turn looks for, so it is
+    /// counted on the line a turn folds to. An init-only property, for the reason <see cref="Target"/> gives.
+    /// </summary>
+    public bool Uncontained { get; init; }
+
     /// <summary>How much of a call's output is kept.</summary>
     public const int OutputCap = 4096;
 

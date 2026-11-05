@@ -2573,6 +2573,7 @@ public sealed class MainWindow : IDisposable
             {
                 if (ColumnVisible || SessionPanel.Control.Visible || JobsPanel.Control.Visible)
                     RefreshSessionPanel();
+                RefreshSandboxItem();
 
                 // OUTSIDE THE VISIBILITY GUARD ABOVE, and that is the point of putting it here rather
                 // than folding it into RefreshSessionPanel. The panel is a luxury of width and hides
@@ -4398,21 +4399,32 @@ public sealed class MainWindow : IDisposable
         _ => null,
     };
 
-    /// <summary>Redraws the sandbox word for the session in front.</summary>
+    /// <summary>
+    /// Redraws the sandbox word for the session in front.
+    ///
+    /// <para>CALLED ON THE PANEL'S CLOCK as well as on a tab switch, because the window is built before the first
+    /// session's policy is wired, and the sandbox is probed after that: nothing else happens at the moment either
+    /// becomes known. It costs nothing on a tick where the word is unchanged — the label is only set when it
+    /// differs — and at most one probe is ever in flight.</para>
+    /// </summary>
     public void RefreshSandboxItem()
     {
         // NOT PROBED YET: probed off the UI thread, and drawn again when the answer is in. The bar never waits for a
         // process to start.
         if (SessionInFront?.Policy?.Sandbox is { Settings.Enabled: true, StatusIfKnown: null } pending)
         {
+            if (Interlocked.Exchange(ref _sandboxProbing, 1) == 1) return;
             _ = Task.Run(() =>
             {
                 _ = pending.Status;
+                Volatile.Write(ref _sandboxProbing, 0);
                 _system.EnqueueOnUIThread(RefreshSandboxItem, "mainWindow.sandboxItem");
             });
             return;
         }
         var text = SandboxMarkerText(SessionInFront?.Policy?.Sandbox?.StatusIfKnown);
+        if (text == _sandboxText) return;
+        _sandboxText = text;
         if (text is null)
         {
             if (_sandboxItem is not null) _sandboxItem.IsVisible = false;
@@ -4423,6 +4435,9 @@ public sealed class MainWindow : IDisposable
         if (_sandboxItem is null) _sandboxItem = StatusBar.AddRight(string.Empty, label);
         else { _sandboxItem.Label = label; _sandboxItem.IsVisible = true; }
     }
+
+    private int _sandboxProbing;
+    private string? _sandboxText;
 
     public void SetTokenTotal(int total)
     {

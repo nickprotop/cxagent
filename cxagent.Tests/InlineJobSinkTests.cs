@@ -1340,6 +1340,23 @@ public class InlineJobSinkTests
         Assert.Equal("6 calls · across 4 tools · 0.1s in tools · 1 failed · 2 denied · 1 cancelled", summary);
     }
 
+    /// <summary>
+    /// A CALL THAT RAN OUTSIDE THE SANDBOX IS COUNTED ON THE FOLDED LINE, which is what a finished turn shows: the
+    /// row header that carries the word is behind the fold. Found on a live drive — an allowed escape folded to
+    /// "echo outside > ~/x · 0.0s in tools", saying nothing about having left the sandbox.
+    /// </summary>
+    [Fact]
+    public void TheSummaryLine_CountsCallsThatRanOutsideTheSandbox()
+    {
+        var body = InlineJobSink.TimetableForTest(
+        [
+            Call("run_shell", "ls", "succeeded"),
+            Call("run_shell", "git push", "succeeded") with { Uncontained = true },
+        ]);
+
+        Assert.Equal("2 calls · across 1 tool · 0.0s in tools · 1 uncontained", body.Split('\n')[0]);
+    }
+
     [Fact]
     public void TheSummaryLine_OmitsCategoriesWithNoCalls()
     {

@@ -2445,6 +2445,10 @@ public sealed class InlineJobSink : IToolObserver
         AddCount(parts, calls, "denied", "denied");
         AddCount(parts, calls, "cancelled", "cancelled");
 
+        // OUTSIDE THE SANDBOX is not an outcome — the call may well have succeeded — so it is counted on its own.
+        if (calls.Count(c => c.Uncontained) is > 0 and var uncontained)
+            parts.Add($"{DisplayNumber.Grouped(uncontained)} uncontained");
+
         var summary = string.Join(" · ", parts);
         if (calls.Count == 0 && live?.InFlight is null) return summary;
 

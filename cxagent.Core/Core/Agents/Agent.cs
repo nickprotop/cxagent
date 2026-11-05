@@ -3545,6 +3545,9 @@ public sealed class Agent
             // surface showing what the model read takes the job's own output, which is whole; this is
             // the fallback once the job is gone.
             Output = ToolCallReport.Cap(result),
+
+            // FROM THE EXECUTOR'S OWN RESULT, which is the one place that knows how the command actually ran.
+            Uncontained = outcome.Result?.Output.GetValueOrDefault("sandbox") as string == "uncontained",
         });
 
         return result;
