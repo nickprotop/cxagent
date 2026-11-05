@@ -371,10 +371,23 @@ is left alone; it is your record, not the model's memory.
 
 ## Configuration
 
-`F8`, `/providers`, `/mcp edit` and `/agents edit` open one dialog with four tabs — **General**,
-**Providers**, **MCP servers** and **Agents**. Save writes `config.json` (only what you changed; every other
-key stays). The last three are each a list on the left and the selected entry's fields beside it, and a save
-applies at once.
+`F8`, `/providers`, `/mcp edit`, `/agents edit` and `/hooks edit` open one dialog with six tabs —
+**General**, **Providers**, **MCP servers**, **Agents**, **Hooks** and **Project**. Save writes `config.json`
+(only what you changed; every other key stays), and the Hooks tab also the repository's `.cxagent/hooks.json`
+and `hooks.local.json`. Providers, MCP servers, Agents and Hooks are each a list on the left and the selected
+entry's fields beside it, and a save applies at once.
+
+**Which session it is about** is the one the tab in front belongs to: a session tab is its own, and a shell,
+editor, job or sub-agent tab belongs to the session it was opened from. So F8 from a shell opened in a second
+project shows and edits that project.
+
+**Hooks.** Every hook this folder has — the system ones in `config.json` and the repository's two files — with
+whether each fires here. Each type's fields are edited in place, *Saved in* moves a hook between the files, and
+the default model for prompt and agent hooks sits beside **+ Add hook**. See
+[CONFIG.md](CONFIG.md#hooks--commands-that-run-on-the-agents-events).
+
+**Project.** The repository the session works in: its trust, which you can change here, and what it brings —
+instruction files, skills, commands, plugins and hooks — with counts and names.
 
 **General.** The settings every tab is opened with: what a command past its timeout gets (handed to the
 background, or killed), the turn cap per request (the default — none for you, 300 for sub-agents — no cap, or

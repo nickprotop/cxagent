@@ -567,6 +567,11 @@ a caller assembling this from its own settings wants to say what went wrong.
 Providers: `anthropic`, `openai-compatible`, `ollama`. Several at once, and a sub-agent type can name
 a different one.
 
+**Hooks** come with it: `AgentConfig.Hooks` takes the same `hooks` block a hooks file holds, and typed
+handlers registered in code — `OnPreToolUse`, `OnStop` and the rest — that deny, ask, allow or rewrite a
+call, or add context. The repository's `.cxagent/hooks.json` is read beside them, under the folder's trust.
+See [Hooks from code](docs/api.md#hooks-from-code).
+
 ---
 
 ## Watching a session work
