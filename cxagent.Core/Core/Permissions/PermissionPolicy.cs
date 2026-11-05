@@ -120,6 +120,10 @@ public class PermissionPolicy
     public static bool IsExecutableConfigFolder(string name) =>
         ExecutableConfigDirs.Contains(name, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>The names of those folders (and <c>.envrc</c>, a file), for the sandbox, which holds the same line
+    /// for a shell command that the file tools hold for a write — one list, so the two cannot drift apart.</summary>
+    public static IReadOnlyList<string> ExecutableConfigNames => ExecutableConfigDirs;
+
     /// <summary>
     /// Which session this policy belongs to, or null when nobody said.
     ///
