@@ -80,8 +80,10 @@ public sealed class HooksDraft
 {
     private readonly Dictionary<HookSource, string> _original = [];
 
-    internal HooksDraft(IEnumerable<HookEntry> entries, string? repoRoot, IReadOnlySet<HookSource> unreadable)
+    internal HooksDraft(IEnumerable<HookEntry> entries, string? repoRoot, IReadOnlySet<HookSource> unreadable,
+        IReadOnlyDictionary<string, string>? loaded = null)
     {
+        Loaded = loaded ?? new Dictionary<string, string>();
         Entries = [.. entries];
         RepoRoot = repoRoot;
         Unreadable = unreadable;
@@ -92,6 +94,12 @@ public sealed class HooksDraft
     public static IReadOnlyList<HookSource> Editable { get; } = [HookSource.User, HookSource.Project, HookSource.Local];
 
     public List<HookEntry> Entries { get; }
+
+    /// <summary>Each project file's fingerprint when this draft was read — what the user was shown.</summary>
+    public IReadOnlyDictionary<string, string> Loaded { get; }
+
+    /// <summary>The sources the last save wrote.</summary>
+    public HashSet<HookSource> Written { get; } = [];
 
     /// <summary>The repository's top, or null outside one — when the project choices are not offered.</summary>
     public string? RepoRoot { get; }

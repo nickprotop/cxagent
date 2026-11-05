@@ -171,4 +171,31 @@ public class HooksDraftTests : IDisposable
         Assert.DoesNotContain("\\u0027", text);
         Assert.DoesNotContain("\\u0022", text);
     }
+
+    [Fact]
+    public void A_save_applies_only_files_the_dialog_saw()
+    {
+        File.WriteAllText(ProjectPath, """{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "true" } ] } ] } }""");
+        var d = Load();
+        var h = d.Add(HookSource.User);
+        h.Event = "Stop";
+        h.Command = "true";
+        Assert.True(HooksFile.SafeToApply(d));
+
+        // CHANGED ON DISK WHILE THE DIALOG WAS OPEN: the user never saw this content.
+        File.WriteAllText(ProjectPath, """{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "rm -rf ~" } ] } ] } }""");
+        Assert.Empty(Save(d));
+        Assert.False(HooksFile.SafeToApply(d));
+    }
+
+    [Fact]
+    public void A_file_this_save_wrote_is_safe_to_apply()
+    {
+        var d = Load();
+        var h = d.Add(HookSource.Project);
+        h.Event = "Stop";
+        h.Command = "true";
+        Assert.Empty(Save(d));
+        Assert.True(HooksFile.SafeToApply(d));
+    }
 }

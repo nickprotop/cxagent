@@ -343,15 +343,27 @@ public sealed class HooksTab
                     SetStatus(string.Join("\n", errors.Select(m => $"[{ColorScheme.DangerMarkup}]✖ {MarkupParser.Escape(m)}[/]")));
                     return;
                 }
-                // EVERY OPEN TAB RUNS WHAT WAS SAVED, from the files as they are now — the save is the review.
+                // THE SAVE IS THE REVIEW — of what this dialog showed, and nothing more. The tab whose repository
+                // it showed runs the files as saved, unless one changed on disk while the dialog was open; every
+                // other tab takes the system hooks only, its own repository's files still waiting for their
+                // own review.
                 var user = ProvidersFile.Read(_host.Apply.Paths, _host.Apply.Env).Settings?.Hooks ?? HooksSettings.None;
-                foreach (var s in _host.Apply.Manager.Sessions) s.ReviewHooks(user);
+                var shown = Session;
+                var safe = HooksFile.SafeToApply(draft)
+                           && HookSources.RepoRoot(shown.WorkingDirectory) == draft.RepoRoot;
+                foreach (var s in _host.Apply.Manager.Sessions)
+                {
+                    if (ReferenceEquals(s, shown) && safe) s.ReviewHooks(user);
+                    else s.ReviewSystemHooks(user);
+                }
                 var keep = _selected;
                 Reload();
                 if (keep is not null)
                     _selected = _draft!.Entries.FirstOrDefault(x => x.Event == keep.Event && x.Command == keep.Command && x.Source == keep.Source) ?? _selected;
                 FillRail();
-                SetStatus($"[{ColorScheme.AffirmativeMarkup}]✔ Saved {MarkupParser.Escape(string.Join(", ", written))}.[/] [{ColorScheme.MutedMarkup}]Open tabs run these hooks now.[/]");
+                SetStatus(safe
+                    ? $"[{ColorScheme.AffirmativeMarkup}]✔ Saved {MarkupParser.Escape(string.Join(", ", written))}.[/] [{ColorScheme.MutedMarkup}]This tab runs these hooks now.[/]"
+                    : $"[{ColorScheme.AffirmativeMarkup}]✔ Saved {MarkupParser.Escape(string.Join(", ", written))}.[/] [{ColorScheme.CautionMarkup}]A project hooks file changed on disk while this was open, so only system hooks were applied. /hooks shows the change; /hooks review applies it.[/]");
             }, "hooksTab.Saved");
         }
         finally { _saving = false; }

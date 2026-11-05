@@ -171,4 +171,18 @@ public class HookSessionTests : IDisposable
         }
         finally { Directory.Delete(other, recursive: true); }
     }
+
+    [Fact]
+    public void Reviewing_system_hooks_leaves_a_changed_project_file_unapplied()
+    {
+        ProjectHooks("""{ "Stop": [ { "hooks": [ { "type": "command", "command": "true" } ] } ] }""");
+        var (session, sink) = Open();
+        ProjectHooks("""{ "Stop": [ { "hooks": [ { "type": "command", "command": "false" } ] } ] }""");
+        var block = System.Text.Json.JsonDocument.Parse("""{ "PreToolUse": [ { "hooks": [ { "type": "command", "command": "true" } ] } ] }""").RootElement.Clone();
+        session.ReviewSystemHooks(new HooksSettings(block));
+        Assert.Contains(session.Hooks!.Snapshot.Hooks, h => h.Source == HookSource.User && h.Event == "PreToolUse");
+        Assert.Equal("true", session.Hooks.Snapshot.Hooks.Single(h => h.Source == HookSource.Project).Command);
+        session.CheckHookChanges();
+        Assert.Single(sink.Notices, m => m.Contains("changed"));
+    }
 }

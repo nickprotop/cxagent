@@ -83,6 +83,22 @@ public static class HookSources
         return new(hooks, problems, root, prints);
     }
 
+    /// <summary>
+    /// The snapshot with its system (user config) hooks replaced by <paramref name="user"/>'s and everything
+    /// else kept as it was read — a config.json change applied without re-reading the repository's files,
+    /// which may have changed in ways nobody has looked at.
+    /// </summary>
+    public static HookSnapshot WithUser(HookSnapshot snapshot, HooksSettings user)
+    {
+        var parsed = user.Block is { } block ? HookConfigParser.Parse(block, user.Source) : new HookParse([], []);
+        return snapshot with
+        {
+            Hooks = [.. parsed.Hooks, .. snapshot.Hooks.Where(h => h.Source != user.Source)],
+            Problems = [.. parsed.Problems.Select(p => new HookProblem(user.Source, "config.json", p)),
+                        .. snapshot.Problems.Where(p => p.Source != user.Source)],
+        };
+    }
+
     /// <summary>The project files that differ from what <paramref name="snapshot"/> read.</summary>
     public static IReadOnlyList<string> ChangedSince(HookSnapshot snapshot) =>
         [.. snapshot.Fingerprints.Where(kv => Fingerprint(kv.Key) != kv.Value).Select(kv => kv.Key)];
@@ -124,7 +140,8 @@ public static class HookSources
         }
     }
 
-    private static string Fingerprint(string file)
+    /// <summary>A file's content hash, <c>absent</c> when it is missing — what a snapshot compares later.</summary>
+    public static string Fingerprint(string file)
     {
         try
         {

@@ -401,6 +401,17 @@ public sealed partial class Session
         ReviewHooks();
     }
 
+    /// <summary>
+    /// Applies a new system (config.json) hooks block and nothing else: the repository's files stay as this
+    /// session read them, and a change to them still waits for its own review.
+    /// </summary>
+    public void ReviewSystemHooks(Hooks.HooksSettings user)
+    {
+        if (Hooks is not { } hooks) return;
+        _hookSettings = user with { Handlers = _hookSettings.Handlers, Source = _hookSettings.Source };
+        hooks.Replace(CxAgent.Core.Hooks.HookSources.WithUser(hooks.Snapshot, _hookSettings));
+    }
+
     internal void SayHookProblems(Hooks.HookSnapshot snapshot)
     {
         foreach (var p in snapshot.Problems)

@@ -36,7 +36,7 @@ public static class HooksFile
                         || p.Message.StartsWith("needs a top-level", StringComparison.Ordinal))
             .Select(p => p.Source).ToHashSet();
         return new HooksDraft(snapshot.Hooks.Where(h => h.Source != HookSource.Library).Select(HookEntry.From),
-            snapshot.RepoRoot, unreadable);
+            snapshot.RepoRoot, unreadable, snapshot.Fingerprints);
     }
 
     /// <summary>Writes every source whose file changed. Returns what went wrong, empty when all were written.</summary>
@@ -52,11 +52,24 @@ public static class HooksFile
                 continue;
             }
             var block = draft.Block(source);
+            var before = errors.Count;
             if (source == HookSource.User) SaveUser(block, paths, env, errors);
             else SaveProject(HookSources.ProjectFile(draft.RepoRoot, source)!, block, errors);
+            if (errors.Count == before) draft.Written.Add(source);
         }
         return errors;
     }
+
+    /// <summary>
+    /// Whether the repository's files on disk are the ones the dialog showed — those this save wrote, and
+    /// the others unchanged since the draft was read. Only then is applying them a review: a file that
+    /// changed while the dialog was open (a pull, the model, another editor) is content nobody looked at.
+    /// </summary>
+    public static bool SafeToApply(HooksDraft draft) =>
+        draft.Loaded.All(kv =>
+            (kv.Key == HookSources.ProjectFile(draft.RepoRoot, HookSource.Project) && draft.Written.Contains(HookSource.Project))
+            || (kv.Key == HookSources.ProjectFile(draft.RepoRoot, HookSource.Local) && draft.Written.Contains(HookSource.Local))
+            || HookSources.Fingerprint(kv.Key) == kv.Value);
 
     public static string Label(HookSource source) => source switch
     {
