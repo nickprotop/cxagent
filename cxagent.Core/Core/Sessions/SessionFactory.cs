@@ -499,6 +499,15 @@ internal static class SessionFactory
                     : null,
                 DefaultModel = settings.DefaultModel,
                 McpServer = name => shared.Mcp?.ServerNamed(name),
+                // THE MODEL'S MCP QUESTION, under the same rule name, so an "always" given to the model's calls of a
+                // tool covers the hook's too, and the other way round.
+                AskMcp = async (call, ct) => shared.Gate is not { } gate || (await gate.RequestAsync(
+                    new Permissions.PermissionRequest(Permissions.PermissionKind.Mcp, $"{call.Server} → {call.Tool} {call.Arguments}",
+                        $"mcp:{Mcp.McpToolset.Compose(call.Server, call.Tool)}")
+                    {
+                        Requester = $"hook '{call.Hook}'",
+                        Policy = session.Policy,
+                    }, ct)).Allowed,
                 Agent = Hooks.HookAgentRunner.RunAsync,
                 // ON THE SESSION'S LEDGER AS IT IS WHEN THE HOOK RUNS: a re-wire replaces the host and its ledger.
                 Spend = (usage, label) => session.Host?.Ledger.Record(usage, label, subAgent: true),

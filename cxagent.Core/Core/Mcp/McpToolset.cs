@@ -240,7 +240,7 @@ public sealed class McpToolset
     /// must not be able to produce one. Every other character becomes an underscore rather than being
     /// dropped: dropping would silently merge "a-b" and "ab" into one name.</para>
     /// </summary>
-    private static string Compose(string server, string tool) =>
+    internal static string Compose(string server, string tool) =>
         $"{Sanitize(server)}_{Sanitize(tool)}";
 
     private static string Sanitize(string text)

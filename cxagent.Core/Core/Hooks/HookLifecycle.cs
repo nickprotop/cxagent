@@ -235,12 +235,17 @@ public static class HookLifecycle
     // --- the session's own events ----------------------------------------------------------------------
 
     /// <summary>Fires an event without waiting — for the ones nothing can block and nobody waits on.</summary>
-    private static void Notify(HookRunner runner, string ev, string? matchOn, JsonObject fields)
+    private static void Notify(HookRunner runner, string ev, string? matchOn, JsonObject fields) =>
+        Notify(runner, ev, matchOn, HookPayload.For(runner.Session(), ev, fields), only: null);
+
+    /// <param name="input">The whole input, common fields included.</param>
+    /// <param name="only">Which hooks run; null for all.</param>
+    private static void Notify(HookRunner runner, string ev, string? matchOn, JsonObject input, Func<HookDefinition, bool>? only)
     {
         if (!runner.Listens(ev)) return;
         _ = Task.Run(async () =>
         {
-            try { await runner.RunAsync(ev, matchOn, HookPayload.For(runner.Session(), ev, fields), CancellationToken.None); }
+            try { await runner.RunAsync(ev, matchOn, input, only, CancellationToken.None); }
             catch (Exception ex) { runner.Report(new($"{ev} hook failed: {ex.Message}", IsError: true)); }
         });
     }
@@ -298,22 +303,32 @@ public static class HookLifecycle
     }
 
     /// <summary>Fires ConfigChange before a saved config reaches a session; a block keeps the session on what it had.</summary>
-    public static HookVerdict ConfigChange(HookRunner runner, string source, string? file) =>
-        runner.Listens(HookEvents.ConfigChange)
-            ? RunBounded(runner, HookEvents.ConfigChange, source,
-                HookPayload.For(runner.Session(), HookEvents.ConfigChange, new JsonObject { ["source"] = source, ["file_path"] = file }))
-            : HookVerdict.None;
+    ///
+    /// <para>ONLY YOUR OWN HOOKS MAY KEEP IT OUT. A repository's ConfigChange hooks are told of the change and may log
+    /// it, but their block is not honoured: a cloned repository must not be able to veto your settings — a stricter
+    /// permission, a provider fix — from reaching the session that works in it.</para>
+    public static HookVerdict ConfigChange(HookRunner runner, string source, string? file)
+    {
+        if (!runner.Listens(HookEvents.ConfigChange)) return HookVerdict.None;
+        var input = HookPayload.For(runner.Session(), HookEvents.ConfigChange, new JsonObject { ["source"] = source, ["file_path"] = file });
+        Notify(runner, HookEvents.ConfigChange, source, input, IsRepository);
+        return RunBounded(runner, HookEvents.ConfigChange, source, input, h => !IsRepository(h));
+    }
+
+    private static bool IsRepository(HookDefinition h) => h.Source is HookSource.Project or HookSource.Local;
 
     /// <summary>
     /// Runs an event from a synchronous caller: on the thread pool, waited for at most the slowest matching hook's
     /// deadline. Hooks that do not answer in time have failed, by the rule every failure follows — reported, and
     /// blocking only when one of them says <c>onFailure: "block"</c>.
     /// </summary>
-    private static HookVerdict RunBounded(HookRunner runner, string ev, string? matchOn, JsonObject input)
+    private static HookVerdict RunBounded(HookRunner runner, string ev, string? matchOn, JsonObject input,
+        Func<HookDefinition, bool>? only = null)
     {
-        var hooks = runner.Snapshot.Hooks.Where(h => h.Event == ev && h.Runs).ToList();
+        var hooks = runner.Snapshot.Hooks.Where(h => h.Event == ev && h.Runs && (only is null || only(h))).ToList();
+        if (hooks.Count == 0 && only is not null) return HookVerdict.None;
         var budget = hooks.Select(HookDispatch.TimeoutSeconds).DefaultIfEmpty(10).Max();
-        var task = Task.Run(() => runner.RunAsync(ev, matchOn, input, CancellationToken.None));
+        var task = Task.Run(() => runner.RunAsync(ev, matchOn, input, only, CancellationToken.None));
         string failure;
         try
         {

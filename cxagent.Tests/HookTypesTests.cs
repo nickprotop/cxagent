@@ -376,4 +376,46 @@ public class HookTypesTests
         Assert.Equal(120, usage.InputTokens);
         Assert.Equal("hook:judge", label);
     }
+
+    private static HookDefinition RepoMcp() => HookConfigParser.Parse(JsonDocument.Parse("""
+        { "PostToolUse": [ { "hooks": [ { "type": "mcp_tool", "server": "scan", "tool": "check", "name": "scanner" } ] } ] }
+        """).RootElement, HookSource.Project).Hooks.Single();
+
+    [Fact]
+    public async Task A_repository_mcp_hook_asks_first_and_a_no_stops_it()
+    {
+        var server = new Server("{}");
+        HookMcpCall? asked = null;
+        var r = await Run(RepoMcp(), new HookServices
+        {
+            McpServer = _ => server,
+            AskMcp = (call, _) => { asked = call; return Task.FromResult(false); },
+        });
+        Assert.Equal(HookOutcomeKind.Failed, r.Kind);
+        Assert.Contains("declined", r.Reason);
+        Assert.Null(server.Args);
+        Assert.Equal(("scan", "check", "scanner"), (asked!.Server, asked.Tool, asked.Hook));
+    }
+
+    [Fact]
+    public async Task A_repository_mcp_hook_runs_when_allowed()
+    {
+        var server = new Server("{}");
+        var r = await Run(RepoMcp(), new HookServices { McpServer = _ => server, AskMcp = (_, _) => Task.FromResult(true) });
+        Assert.Equal(HookOutcomeKind.Ok, r.Kind);
+        Assert.NotNull(server.Args);
+    }
+
+    [Fact]
+    public async Task A_system_mcp_hook_does_not_ask()
+    {
+        var asked = false;
+        var r = await Run(Parse("""{ "type": "mcp_tool", "server": "scan", "tool": "check" }"""), new HookServices
+        {
+            McpServer = _ => new Server("{}"),
+            AskMcp = (_, _) => { asked = true; return Task.FromResult(false); },
+        });
+        Assert.Equal(HookOutcomeKind.Ok, r.Kind);
+        Assert.False(asked);
+    }
 }

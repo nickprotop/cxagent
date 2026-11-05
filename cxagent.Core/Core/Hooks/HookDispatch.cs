@@ -9,6 +9,9 @@ using CxAgent.Core.Models;
 
 namespace CxAgent.Core.Hooks;
 
+/// <summary>An MCP call a repository's hook wants to make: which server and tool, with what, for which hook.</summary>
+public sealed record HookMcpCall(string Server, string Tool, string Arguments, string Hook);
+
 /// <summary>What an <c>agent</c> hook's verifier is given: the model to run on, and the question with the event in it.</summary>
 public sealed record HookAgentRequest(ILlmProvider Model, string Prompt, string ProjectDir)
 {
@@ -42,6 +45,12 @@ public sealed record HookServices
     /// call shows in the session's spend and in /stats, rather than as money nobody can see going.
     /// </summary>
     public Action<LlmUsage, string>? Spend { get; init; }
+
+    /// <summary>
+    /// Asks whether a repository's mcp_tool hook may make its call — the same question the model's MCP calls are put —
+    /// and answers true to go ahead. Null where nothing gates, and then the call goes ahead as the model's would.
+    /// </summary>
+    public Func<HookMcpCall, CancellationToken, Task<bool>>? AskMcp { get; init; }
 
     /// <summary>Runs an agent hook's verifier and returns its final text; null where no agent can be run.</summary>
     public Func<HookAgentRequest, CancellationToken, Task<string>>? Agent { get; init; }
@@ -251,6 +260,14 @@ public static class HookDispatch
             return HookReply.Failed($"no MCP server named \"{run.Hook.Server}\" is configured and running");
 
         var args = run.Hook.Input is { } input ? Substitute(JsonNode.Parse(input.GetRawText())!, run.Input) : new JsonObject();
+
+        // A REPOSITORY'S HOOK ASKS, as the model does. Your servers act with your accounts, and a cloned repository's
+        // hooks file must not be able to drive them unasked just because its folder is trusted. Your own hooks do not
+        // ask: you wrote them.
+        if (run.Hook.Source is HookSource.Project or HookSource.Local && services.AskMcp is { } ask
+            && !await ask(new HookMcpCall(run.Hook.Server!, run.Hook.Tool!, args.ToJsonString(), run.Hook.DisplayName), ct))
+            return HookReply.Failed($"you declined its call to {run.Hook.Server}.{run.Hook.Tool}");
+
         var text = await server.CallToolAsync(run.Hook.Tool!, JsonSerializer.SerializeToElement(args), ct);
         if (text.StartsWith("error:", StringComparison.Ordinal)) return HookReply.Failed($"{run.Hook.Server}.{run.Hook.Tool}: {text[6..].Trim()}");
         // THE TOOL'S TEXT READS AS A COMMAND'S STDOUT ON EXIT 0: JSON is an answer, anything else is no objection.

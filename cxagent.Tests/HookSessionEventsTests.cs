@@ -169,14 +169,28 @@ public class HookSessionEventsTests : IDisposable
     }
 
     [Fact]
-    public void ConfigChange_block_keeps_a_session_on_its_config()
+    public async Task A_repository_ConfigChange_hook_fires_but_cannot_block()
     {
         Hook("ConfigChange", exit: 2);
         var session = Open();
         var before = session.Resolution;
         _manager.ApplyConfig(ResolvedConfig.ForTesting(new MockLlmProvider(), "test"),
             new ConfigChange(new HashSet<string> { "test" }, new Dictionary<string, string>(), Everyone: true, Note: "x"));
-        Assert.Contains("\"source\":\"user_settings\"", Logged());
+        Assert.NotSame(before, session.Resolution);
+        Assert.True(await Until(() => Logged().Contains("\"source\":\"user_settings\"")));
+    }
+
+    [Fact]
+    public void A_system_ConfigChange_hook_can_block()
+    {
+        var block = System.Text.Json.JsonDocument.Parse(
+            """{ "ConfigChange": [ { "hooks": [ { "type": "command", "command": "exit 2" } ] } ] }""").RootElement.Clone();
+        var config = ResolvedConfig.ForTesting(new MockLlmProvider());
+        config = config with { Catalog = config.Catalog with { Hooks = new HooksSettings(block) } };
+        var session = Open(config);
+        var before = session.Resolution;
+        _manager.ApplyConfig(ResolvedConfig.ForTesting(new MockLlmProvider(), "test"),
+            new ConfigChange(new HashSet<string> { "test" }, new Dictionary<string, string>(), Everyone: true, Note: "x"));
         Assert.Same(before, session.Resolution);
     }
 

@@ -690,7 +690,7 @@ the change waits for `/hooks review`. Other tabs take the system hooks only.
 | `TaskCreated` | a to-do write adds an item (a renamed item counts as new) | refuse the write |
 | `TaskCompleted` | a to-do write closes an item | keep it open, with a reason |
 | `InstructionsLoaded` | an instruction file is read at the start | (notification only) |
-| `ConfigChange` | a saved config is about to reach a session | keep that session on what it had |
+| `ConfigChange` | a saved config is about to reach a session | a system hook: keep that session on what it had. A repository's hook is told, and cannot block |
 | `CwdChanged` | a resume moves the session to another folder | (notification only) |
 | `PreCompact` | before compression, `/compress` or automatic | skip it |
 | `PostCompact` | after compression, with its summary | (notification only) |
@@ -822,7 +822,9 @@ way, with folder trust from `--trust` or the stored decision.
   header expands only for the variables listed in `allowedEnvVars`, and any other reads empty. A
   repository's http hook expands none at all: it writes its own `allowedEnvVars`, so honouring them would
   let it pick what to send.
-- **`mcp_tool`** calls a tool on one of your MCP servers; its text is read like a command's output.
+- **`mcp_tool`** calls a tool on one of your MCP servers; its text is read like a command's output. A
+  repository's mcp_tool hook asks first, with the same prompt and the same stored rules as the model's own
+  call of that tool, since your servers act with your accounts. A system hook does not ask.
 
 **Which model a prompt or agent hook asks** is its own `model`, else `hooks.defaultModel`, else nothing: the
 hook fails, and says to set one. It is never the session's own model, and a repository's hook can only
