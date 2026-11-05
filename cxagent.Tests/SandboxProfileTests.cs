@@ -385,4 +385,17 @@ public sealed class SandboxProfileTests : IDisposable
         }
         finally { Directory.Delete(Path.Combine(cwd, "sbx-relative-probe")); }
     }
+
+    /// <summary>A BUILD RUN FROM INSIDE THE PROJECT is the project's own output, which the next build replaces: held
+    /// read-only, `dotnet build` in the project would fail.</summary>
+    [Fact]
+    public void The_apps_folder_inside_the_project_stays_writable()
+    {
+        var repo = Folder("repo");
+        GitDir(repo);
+        var bin = Folder("repo", "bin", "Debug");
+        var layout = SandboxLayout.For(new SandboxLayoutRequest(repo, repo, false, null,
+            FakeHome with { AppFolders = [bin] }, SandboxSettings.AppDefault));
+        Assert.DoesNotContain(bin, layout.ReadOnly);
+    }
 }

@@ -201,8 +201,10 @@ public sealed record SandboxLayout
             else if (Directory.Exists(path) || File.Exists(path)) readOnly.Add(path);
         }
 
-        // cxagent's OWN FILES, read-only even where they sit under a writable cache.
-        readOnly.AddRange(home.AppFolders.Select(Real).OfType<string>());
+        // cxagent's OWN FILES, read-only even where they sit under a writable cache — but not a build of cxagent inside
+        // the project itself: that is the project's own output, and the next build has to replace it.
+        readOnly.AddRange(home.AppFolders.Select(Real).OfType<string>()
+            .Where(a => a != root && !a.StartsWith(root + "/", StringComparison.Ordinal)));
 
         var hiddenFolders = new List<string>();
         var hiddenFiles = new List<string>();
