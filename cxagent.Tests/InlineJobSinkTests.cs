@@ -518,6 +518,45 @@ public class InlineJobSinkTests
         Assert.Contains("auto-approved", InlineJobSink.CompactHeaderForTest(job));
     }
 
+    // ---- outside the sandbox, on the row ----------------------------------------------------------
+
+    /// <summary>A command that ran outside the sandbox while it is on — an escape the user allowed, a failed start,
+    /// a machine with none — says so on its row; that is the one a user reviewing a session looks for.</summary>
+    [Fact]
+    public void An_uncontained_shell_call_is_marked()
+    {
+        var job = TypedJob("shell", JobState.Succeeded) with
+        {
+            Result = new JobResult { Success = true, Duration = TimeSpan.Zero,
+                Output = new Dictionary<string, object?> { ["sandbox"] = "uncontained" } },
+        };
+        var header = InlineJobSink.CompactHeaderForTest(job);
+        Assert.Contains("·  uncontained  ·", header);
+    }
+
+    [Fact]
+    public void A_contained_shell_call_is_not_marked()
+    {
+        var job = TypedJob("shell", JobState.Succeeded) with
+        {
+            Result = new JobResult { Success = true, Duration = TimeSpan.Zero,
+                Output = new Dictionary<string, object?> { ["sandbox"] = "contained" } },
+        };
+        Assert.DoesNotContain("contained", InlineJobSink.CompactHeaderForTest(job));
+    }
+
+    [Fact]
+    public void Auto_approved_and_uncontained_both_show_once_each()
+    {
+        var job = TypedJob("shell", JobState.Succeeded) with
+        {
+            DecidedBy = "auto",
+            Result = new JobResult { Success = true, Duration = TimeSpan.Zero,
+                Output = new Dictionary<string, object?> { ["sandbox"] = "uncontained" } },
+        };
+        Assert.Contains("·  auto-approved  ·  uncontained  ·", InlineJobSink.CompactHeaderForTest(job));
+    }
+
     [Fact]
     public void TheBadgeIsSeparatedFromTheRestOfTheHeaderExactlyOnce()
     {

@@ -834,6 +834,33 @@ public static class AppBootstrap
                     : "Hooks re-read. This session now runs:\n" + string.Join("\n", applied.Select(c => $"- `{c}`")));
                 return true;
             });
+        // ON AND OFF ARE SAVED, AND TAKEN BY THIS TAB AT ONCE: the user typed it here and expects this tab's next
+        // command to follow it. Other tabs take it when they are opened, as with every setting saved in F8.
+        foreach (var on in new[] { true, false })
+            manager.Commands.RegisterVerb("/sandbox",
+                new CommandArgument(on ? "on" : "off", on
+                    ? "run the model's shell commands inside the sandbox"
+                    : "run the model's shell commands as you"),
+                (s, _) =>
+                {
+                    var prepared = ConfigApply.Prepare(configHost.Apply, root => GeneralDraft.SetSandboxEnabled(root, on));
+                    if (!prepared.Write.Saved || prepared.Fresh is not { } fresh)
+                    {
+                        s.NotifyError("Not saved: " + string.Join("; ", prepared.Write.Errors));
+                        return true;
+                    }
+                    ConfigApply.Commit(configHost.Apply, prepared,
+                        new Core.Config.ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), false,
+                            on ? "sandbox turned on" : "sandbox turned off"),
+                        Core.Config.CacheChoice.ApplyNow);
+                    s.UseSandbox(fresh.Sandbox);
+                    s.DescribeSandbox();
+                    mainWindow.RefreshSandboxItem();
+                    return true;
+                });
+        manager.Commands.RegisterVerb("/sandbox",
+            new CommandArgument("edit", "set what the sandbox allows (F8)"),
+            (_, _) => { ConfigDialog.Show(configHost, ConfigTab.General); return true; });
         manager.Commands.RegisterVerb("/agents",
             new CommandArgument("edit", "add agent types, or set where the built-ins run"),
             (_, _) => { ConfigDialog.Show(configHost, ConfigTab.Agents); return true; });

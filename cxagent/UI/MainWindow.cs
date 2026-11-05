@@ -791,6 +791,7 @@ public sealed class MainWindow : IDisposable
         // session's turns into a tally of its own until the user switched away and back, after
         // which the panel read zero turns for a conversation that had taken several.
         SessionPanel.Follow(_sessionTabs[0].Tally);
+        RefreshSandboxItem();
     }
 
     /// <summary>
@@ -999,6 +1000,9 @@ public sealed class MainWindow : IDisposable
     /// the token readout for the same corner.
     /// </summary>
     private StatusBarItem? _composerHint;
+
+    /// <summary>The sandbox's word on the status bar, for the session in front — see <see cref="SandboxMarkerText"/>.</summary>
+    private StatusBarItem? _sandboxItem;
 
     /// <summary>The composer's grid, promoted from a Build()-local so Show/RestorePermissionPrompt
     /// can swap the Input cell's content via ReplaceControl (GridControl.cs:381), which preserves
@@ -1982,6 +1986,7 @@ public sealed class MainWindow : IDisposable
         {
             RefreshWaitingBar();
             ShowActiveSession();
+            RefreshSandboxItem();
         };
 
         // A CLICK ON A TAB FOCUSES IT; ARROWING TO ONE DOES NOT. Selecting a tab hands focus back to
@@ -4378,8 +4383,50 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private string? _contextDelta;
 
+    /// <summary>
+    /// The status bar's word for the sandbox: "sandboxed" while the model's commands are contained, "sandbox failed"
+    /// while it is on and will not start, nothing otherwise.
+    ///
+    /// <para>NOTHING WHEN OFF OR NOT AVAILABLE. Off is the user's choice, and a machine with no sandbox was said once in
+    /// the transcript; a permanent word for either would be noise. Null before the first probe answers, too — the bar
+    /// never waits for bubblewrap.</para>
+    /// </summary>
+    public static string? SandboxMarkerText(Core.Sandbox.SandboxStatus? status) => status?.Kind switch
+    {
+        Core.Sandbox.SandboxStatusKind.Active => "sandboxed",
+        Core.Sandbox.SandboxStatusKind.Failed => "sandbox failed",
+        _ => null,
+    };
+
+    /// <summary>Redraws the sandbox word for the session in front.</summary>
+    public void RefreshSandboxItem()
+    {
+        // NOT PROBED YET: probed off the UI thread, and drawn again when the answer is in. The bar never waits for a
+        // process to start.
+        if (SessionInFront?.Policy?.Sandbox is { Settings.Enabled: true, StatusIfKnown: null } pending)
+        {
+            _ = Task.Run(() =>
+            {
+                _ = pending.Status;
+                _system.EnqueueOnUIThread(RefreshSandboxItem, "mainWindow.sandboxItem");
+            });
+            return;
+        }
+        var text = SandboxMarkerText(SessionInFront?.Policy?.Sandbox?.StatusIfKnown);
+        if (text is null)
+        {
+            if (_sandboxItem is not null) _sandboxItem.IsVisible = false;
+            return;
+        }
+        var colour = text == "sandboxed" ? ColorScheme.MutedMarkup : ColorScheme.CautionMarkup;
+        var label = $"[{colour}]{text}[/]";
+        if (_sandboxItem is null) _sandboxItem = StatusBar.AddRight(string.Empty, label);
+        else { _sandboxItem.Label = label; _sandboxItem.IsVisible = true; }
+    }
+
     public void SetTokenTotal(int total)
     {
+        RefreshSandboxItem();
         // THE PANEL IS UPDATED FIRST, and unconditionally — before the zero check below. Returning
         // early at zero hides the status-bar item, which is right, but it would take the panel
         // refresh with it: a provider that reports no usage (a local llama.cpp build often does not)

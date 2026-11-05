@@ -70,4 +70,14 @@ public sealed class SessionInFrontTests : IDisposable
         _window.AddTab("help", new MarkupControl(["?"]));
         Assert.Same(_window.SessionTabs[0].Session, _window.SessionInFront);
     }
+
+    [Fact]
+    public void Status_bar_says_sandboxed_only_when_it_is()
+    {
+        Assert.Equal("sandboxed", MainWindow.SandboxMarkerText(new Core.Sandbox.SandboxStatus(Core.Sandbox.SandboxStatusKind.Active, null)));
+        Assert.Equal("sandbox failed", MainWindow.SandboxMarkerText(new Core.Sandbox.SandboxStatus(Core.Sandbox.SandboxStatusKind.Failed, "x")));
+        Assert.Null(MainWindow.SandboxMarkerText(Core.Sandbox.SandboxStatus.Off));
+        Assert.Null(MainWindow.SandboxMarkerText(new Core.Sandbox.SandboxStatus(Core.Sandbox.SandboxStatusKind.Unavailable, "x")));
+        Assert.Null(MainWindow.SandboxMarkerText(null));
+    }
 }

@@ -827,6 +827,17 @@ public sealed class InlineJobSink : IToolObserver
     /// pieces it joins.</para>
     /// </summary>
     private static string Badge(Job job) =>
+        string.Join("  ·  ", new[] { DecisionWord(job), SandboxWord(job) }.Where(w => w.Length > 0));
+
+    /// <summary>
+    /// "uncontained" for a shell call that ran outside the sandbox while the sandbox is on, or "". A contained call is
+    /// the ordinary case and stays unbadged, like a silent allow; the one that left is what a reader looks for.
+    /// Read from the result, since the executor is what knows how the command actually ran.
+    /// </summary>
+    private static string SandboxWord(Job job) =>
+        job.Result?.Output.GetValueOrDefault("sandbox") as string == "uncontained" ? "uncontained" : "";
+
+    private static string DecisionWord(Job job) =>
         job.DecidedBy == "auto"
             ? (job.State == JobState.Failed ? "auto-denied" : "auto-approved")
             // REVIEWING TAKES OVER ONLY WHILE NO VERDICT EXISTS YET, and only on a row still

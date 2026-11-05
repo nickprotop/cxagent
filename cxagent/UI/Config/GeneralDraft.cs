@@ -38,6 +38,7 @@ public sealed class GeneralDraft
     private int? _originalCompact;
     private IReadOnlyList<string>? _originalTools;
     private string _originalTavilyKey = "";
+    private Core.Sandbox.SandboxSettings _originalSandbox = Core.Sandbox.SandboxSettings.AppDefault;
 
     private GeneralDraft() { }
 
@@ -62,6 +63,14 @@ public sealed class GeneralDraft
             Added = [.. terms.Added],
             TavilyKey = tavilyKeyAsWritten ?? "",
         };
+        var sandbox = settings.Sandbox ?? Core.Sandbox.SandboxSettings.AppDefault;
+        draft.SandboxEnabled = sandbox.Enabled;
+        draft.SandboxNetwork = sandbox.Network;
+        draft.WritableText = Joined(sandbox.Writable);
+        draft.HiddenText = Joined(sandbox.Hidden);
+        draft.HiddenEnvText = Joined(sandbox.HiddenEnv);
+        draft.PassEnvText = Joined(sandbox.PassEnv);
+        draft._originalSandbox = draft.Sandbox;
         draft._originalDetach = draft.DetachOnTimeout;
         draft._originalCap = draft.Cap;
         draft._originalCapNumber = turns;
@@ -70,6 +79,51 @@ public sealed class GeneralDraft
         draft._originalTavilyKey = draft.TavilyKey;
         return draft;
     }
+
+    /// <summary>Whether the model's shell commands run inside the sandbox where it is available.</summary>
+    public bool SandboxEnabled { get; set; } = true;
+
+    /// <summary>Whether a contained command reaches the network.</summary>
+    public bool SandboxNetwork { get; set; } = true;
+
+    /// <summary>Extra writable folders, comma-separated as typed.</summary>
+    public string WritableText { get; set; } = "";
+
+    /// <summary>Extra folders or files seen empty, comma-separated as typed.</summary>
+    public string HiddenText { get; set; } = "";
+
+    /// <summary>Extra variable names or patterns removed, comma-separated as typed.</summary>
+    public string HiddenEnvText { get; set; } = "";
+
+    /// <summary>Variable names kept despite a pattern, comma-separated as typed.</summary>
+    public string PassEnvText { get; set; } = "";
+
+    /// <summary>The sandbox settings as they would be written.</summary>
+    private Core.Sandbox.SandboxSettings Sandbox => new(SandboxEnabled, SandboxNetwork,
+        Split(WritableText), Split(HiddenText), Split(HiddenEnvText), Split(PassEnvText));
+
+    private bool SandboxChanged => !SameSandbox(Sandbox, _originalSandbox);
+
+    private static bool SameSandbox(Core.Sandbox.SandboxSettings a, Core.Sandbox.SandboxSettings b) =>
+        a.Enabled == b.Enabled && a.Network == b.Network
+        && a.Writable.SequenceEqual(b.Writable) && a.Hidden.SequenceEqual(b.Hidden)
+        && a.HiddenEnv.SequenceEqual(b.HiddenEnv) && a.PassEnv.SequenceEqual(b.PassEnv);
+
+    /// <summary>A list as one line: comma-separated, the way it is typed back.</summary>
+    private static string Joined(IReadOnlyList<string> items) => string.Join(", ", items);
+
+    /// <summary>A typed line as a list: comma-separated, blanks dropped.</summary>
+    private static IReadOnlyList<string> Split(string text) =>
+        [.. text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+
+    /// <summary>
+    /// Sets <c>sandbox.enabled</c> alone, for <c>/sandbox on</c> and <c>off</c>: on is the default, so it removes the
+    /// key (and the block, when that empties it); off writes false. Every other sandbox key is left as it is.
+    /// </summary>
+    /// <param name="root">The config's root.</param>
+    /// <param name="enabled">The new setting.</param>
+    public static void SetSandboxEnabled(JsonObject root, bool enabled) =>
+        Set(root, "sandbox", "enabled", enabled ? null : JsonValue.Create(false));
 
     /// <summary>A command past its timeout is handed to the background (true) or killed (false).</summary>
     public bool DetachOnTimeout { get; set; }
@@ -123,7 +177,7 @@ public sealed class GeneralDraft
     /// <summary>Remove the key on save, so searches use DuckDuckGo.</summary>
     public void ClearTavilyKey() => TavilyKey = "";
 
-    public bool IsDirty => DetachChanged || CapChanged || CompactChanged || ToolsChanged || TavilyKeyChanged;
+    public bool IsDirty => DetachChanged || CapChanged || CompactChanged || ToolsChanged || TavilyKeyChanged || SandboxChanged;
 
     /// <summary>
     /// What was just written becomes what the file says, so the draft is clean without being rebuilt — a rebuild
@@ -137,6 +191,7 @@ public sealed class GeneralDraft
         _originalCompact = Compact;
         _originalTools = Tools;
         _originalTavilyKey = TavilyKey;
+        _originalSandbox = Sandbox;
     }
 
     /// <summary>Why this cannot be saved as it stands, in words for the user; null when it can.</summary>
@@ -162,7 +217,23 @@ public sealed class GeneralDraft
         // EMPTY REMOVES IT, and the block with it when nothing else is left: no key is DuckDuckGo.
         if (TavilyKeyChanged)
             Set(root, "webSearch", "tavilyApiKey", TavilyKey.Trim() is { Length: > 0 } key ? JsonValue.Create(key) : null);
+
+        // EACH KEY AT ITS DEFAULT IS REMOVED, so a block back at the defaults disappears and a key this tab does not
+        // know is kept: absent is on, network on, nothing added.
+        if (SandboxChanged)
+        {
+            var s = Sandbox;
+            Set(root, "sandbox", "enabled", s.Enabled ? null : JsonValue.Create(false));
+            Set(root, "sandbox", "network", s.Network ? null : JsonValue.Create(false));
+            Set(root, "sandbox", "writable", Array(s.Writable));
+            Set(root, "sandbox", "hidden", Array(s.Hidden));
+            Set(root, "sandbox", "hiddenEnv", Array(s.HiddenEnv));
+            Set(root, "sandbox", "passEnv", Array(s.PassEnv));
+        }
     }
+
+    private static JsonArray? Array(IReadOnlyList<string> items) =>
+        items.Count == 0 ? null : new JsonArray([.. items.Select(i => (JsonNode)JsonValue.Create(i))]);
 
     /// <summary>One key in a block, or removed when <paramref name="value"/> is null — with the block, when that empties it.</summary>
     private static void Set(JsonObject root, string block, string key, JsonNode? value)

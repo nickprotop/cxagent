@@ -108,6 +108,9 @@ public sealed class GeneralTab
         _detail.AddControl(ListDetail.Section("Commands", commands.Control));
         _detail.AddControl(ListDetail.Gap());
 
+        _detail.AddControl(ListDetail.Section("Sandbox", SandboxEditor(draft, Label, Help, Blank)));
+        _detail.AddControl(ListDetail.Gap());
+
         var limits = new FieldGrid();
         var cap = new RadioGroup<TurnCap>();
         limits.AddBare(Label("Turns per request"));
@@ -148,6 +151,66 @@ public sealed class GeneralTab
         search.AddBare(Help("Empty: searches use DuckDuckGo, which needs no account but may answer with a bot check. "
             + "A free Tavily key (tavily.com, 1,000 searches a month) makes search reliable. {env:NAME} works here."));
         _detail.AddControl(ListDetail.Section("Web search", search.Control));
+    }
+
+    /// <summary>
+    /// Whether the model's shell commands are contained, and what the user adds to the built-in lists — with this
+    /// machine's answer under it, so "on" is never read as "working" on a machine where bubblewrap will not start.
+    ///
+    /// <para>THE STATUS IS PROBED OFF THE UI THREAD and filled in when it comes: starting bubblewrap takes
+    /// milliseconds, and a dialog that waits on a process to paint is the wrong trade even for that.</para>
+    /// </summary>
+    private IWindowControl SandboxEditor(GeneralDraft draft, Func<string, MarkupControl> label, Func<string, MarkupControl> help,
+        Func<MarkupControl> blank)
+    {
+        var grid = new FieldGrid();
+        var status = new MarkupControl([$"[{ColorScheme.MutedMarkup}]Checking this machine…[/]"]) { Wrap = true };
+        grid.AddBare(status);
+        grid.AddBare(blank());
+
+        var enabled = new RadioGroup<bool>();
+        grid.AddBare(label("The model's shell commands"));
+        grid.AddBare(new RadioControl<bool>(enabled, true, "Run inside the sandbox"));
+        grid.AddBare(help("They write only in the project, temp and package caches; credentials and session sockets are "
+            + "out of reach. Where the folder is trusted and the edit mode lets writes be silent, they run without asking."));
+        grid.AddBare(blank());
+        grid.AddBare(new RadioControl<bool>(enabled, false, "Run as you"));
+        grid.AddBare(help("Every command asks, as before, and can touch anything you can."));
+        enabled.SelectedValue = draft.SandboxEnabled;
+        enabled.SelectionChanged += (_, on) => { draft.SandboxEnabled = on; MarkSave(); };
+        grid.AddBare(blank());
+
+        var network = new RadioGroup<bool>();
+        grid.AddBare(label("Network, inside the sandbox"));
+        grid.AddBare(new RadioControl<bool>(network, true, "On"));
+        grid.AddBare(help("Installs and pushes work. A command can still send out what it can read."));
+        grid.AddBare(blank());
+        grid.AddBare(new RadioControl<bool>(network, false, "Off"));
+        grid.AddBare(help("Nothing leaves; installs, restores and pushes need the command to ask to leave the sandbox."));
+        network.SelectedValue = draft.SandboxNetwork;
+        network.SelectionChanged += (_, on) => { draft.SandboxNetwork = on; MarkSave(); };
+        grid.AddBare(blank());
+
+        PromptControl List(string text, Action<string> set)
+        {
+            var input = ListDetail.Input(new PromptControl { Input = text, InputWidth = 48 });
+            input.InputChanged += (_, t) => { set(t); MarkSave(); };
+            return input;
+        }
+        grid.Add("Also writable", "Folders, comma-separated. ~ is your home.", List(draft.WritableText, t => draft.WritableText = t));
+        grid.Add("Also hidden", "Folders or files seen empty, comma-separated.", List(draft.HiddenText, t => draft.HiddenText = t));
+        grid.Add("Also unset", "Variable names or patterns like MY_*, comma-separated.", List(draft.HiddenEnvText, t => draft.HiddenEnvText = t));
+        grid.Add("Keep anyway", "Variable names a credential pattern would remove.", List(draft.PassEnvText, t => draft.PassEnvText = t));
+
+        _ = Task.Run(() =>
+        {
+            var probed = Core.Sandbox.SandboxProbe.Run(Core.Sandbox.SandboxProbeRequest.ThisMachine());
+            var line = probed.Kind == Core.Sandbox.SandboxStatusKind.Active
+                ? $"[{ColorScheme.AffirmativeMarkup}]✔ bubblewrap works on this machine.[/]"
+                : $"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(probed.Reason ?? "")}[/]";
+            _host.System.EnqueueOnUIThread(() => status.SetContent([line]), "generalTab.sandboxStatus");
+        });
+        return grid.Control;
     }
 
     /// <summary>
