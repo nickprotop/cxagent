@@ -55,13 +55,23 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     /// Replays what came after <paramref name="seq"/> and, in the same step, starts sending <paramref name="live"/>
     /// everything newer — one lock, so nothing falls between the replay and the first live event.
     /// </summary>
-    public Replay Subscribe(long seq, Action<JsonObject> live, out IDisposable handle)
+    public Replay Subscribe(long seq, Action<JsonObject> live, out IDisposable handle) =>
+        Subscribe(seq, live, _ => { }, out handle);
+
+    /// <summary>
+    /// As <see cref="Subscribe(long, Action{JsonObject}, out IDisposable)"/>, handing the replay to
+    /// <paramref name="first"/> while still holding the lock — so a caller that queues it is certain the replay is
+    /// queued before any live event.
+    /// </summary>
+    public Replay Subscribe(long seq, Action<JsonObject> live, Action<Replay> first, out IDisposable handle)
     {
         lock (_gate)
         {
+            var replay = SinceLocked(seq);
+            first(replay);
             _subscribers.Add(live);
             handle = new Unsubscribe(this, live);
-            return SinceLocked(seq);
+            return replay;
         }
     }
 
