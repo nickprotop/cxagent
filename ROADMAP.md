@@ -15,5 +15,4 @@ What is next. See [README](README.md) for what cxagent does and
   Built when someone asks for it.
 - **Network allowlists in the sandbox** — today the network is on or off; letting a contained command
   reach only a package registry or a git host needs a proxy it is forced through.
-- **A web front end** — the reason the extraction was worth doing.
 - **Skill scripts** — a skill that runs, not just one that is read.

@@ -357,6 +357,39 @@ blocked), each command asks whether to run uncontained. `/sandbox` shows what a 
 `/sandbox on` and `/sandbox off` switch it, and F8 › General sets the rest. See
 [CONFIG.md](CONFIG.md#sandbox--where-the-models-commands-run).
 
+### In a browser
+
+`cxagent web` serves your sessions to a browser, with no terminal. Inside the terminal, `/web` serves
+the sessions it already has, so you can follow them and answer their prompts from a phone. One page
+fits the screen it is on: a session list beside the chat on a desktop, tabs on a tablet, and on a
+phone a list with what is waiting on you at the top, then the chat full screen.
+
+```bash
+cxagent web                       # http://localhost:5180, this machine only
+cxagent web passwd me             # store a hashed password in config.json
+cxagent web --bind 0.0.0.0 --self-signed   # reachable from the LAN, over HTTPS
+cxagent --web                     # the terminal, and its sessions in a browser as well
+```
+
+**A login is a shell on this machine.** Whoever gets in drives an agent that runs commands here,
+contained only as far as the sandbox contains them. So the server listens on localhost unless told
+otherwise, a login is required as soon as it listens anywhere else, and it refuses to start that way
+with no `web.users` set. A browser opens sessions only under `web.roots` (the folder it started in, by
+default), and a folder's trust, the permission rules and the sandbox apply exactly as in the terminal.
+
+**Prompts go to everyone looking.** A permission prompt, a trust question or the model's own question
+shows in the terminal and in every browser tab on that session, and the first answer wins. Under
+`/web`, a session the browser starts or resumes opens as a tab in the terminal too.
+
+**One process per session.** A session open in one place cannot be opened in another: the terminal and
+the browser both say where it is open. `cxagent web` stops on Ctrl+C or SIGTERM, cancelling and saving
+running turns the way closing the terminal does.
+
+**HTTPS.** `--self-signed` makes a certificate once and keeps it, so a browser's warning is accepted
+once. For a real certificate, put nginx, Caddy or Tailscale in front, and set `web.login` to `always`:
+behind a proxy every request comes from localhost, which `auto` would let in without a login. See
+[CONFIG.md](CONFIG.md#web--the-browser-front-end).
+
 ### Sub-agents
 
 **Fan-out is the default.** The agent can delegate a job to a sub-agent: a second agent with its own
@@ -678,6 +711,12 @@ whatever the model decides), but the decision to skip the prompt is still made b
 and language models are wrong sometimes. That trade is the point of the mode: fewer interruptions on the commands most likely to be
 fine, at the cost of trusting a model's judgment on the ones it approves without you seeing them
 first. If you want every shell command to ask, don't use `auto`.
+
+**`cxagent web` puts all of that behind a browser.** Whoever logs in gets an agent that edits files and
+runs commands here, just as you do at the terminal. It listens on localhost unless told otherwise, needs
+a login once it listens anywhere else, and says so loudly if you turn the login off. Plain HTTP beyond
+this machine sends passwords and replies unencrypted: use `--self-signed` or a proxy, and set
+`web.login` to `always` behind one.
 
 **It spends your money.** Every turn is a request to whichever provider you configured, and a
 sub-agent is a whole second run of turns. A single delegated search can cost several hundred thousand

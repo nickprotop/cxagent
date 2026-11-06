@@ -696,6 +696,67 @@ and `git` is the undo.
 Only your own config sets the sandbox. Nothing in a repository's `.cxagent` folder can turn it off or
 widen it. In the library, `AgentConfig.Sandbox` is null, so off, unless set.
 
+## `web` — the browser front end
+
+```json
+"web": {
+  "port": 5180,
+  "bind": "127.0.0.1",
+  "selfSigned": false,
+  "login": "auto",
+  "users": { "me": "pbkdf2:sha256:600000:…", "guest": "a plain password works too" },
+  "roots": ["~/source"],
+  "idleMinutes": 30
+}
+```
+
+Read by `cxagent web` and by `/web` in the terminal. `--port`, `--bind` and `--self-signed` override the
+first three for one run. **User config only**: nothing a repository brings can add a user or a root.
+
+| Key | Default | What it does |
+|---|---|---|
+| `port` | `5180` | The TCP port. |
+| `bind` | `127.0.0.1` | The address to listen on, as an IP address. Loopback keeps it to this machine; `0.0.0.0` is every interface. |
+| `selfSigned` | `false` | Serve HTTPS with a certificate made once and kept as `web-cert.pfx` in this directory (owner-only). Remade only when it expires or no longer names the address it serves. |
+| `login` | `"auto"` | Who must log in: see below. |
+| `users` | `{}` | User name to password. A value starting `pbkdf2:` is a hash, written by `cxagent web passwd <name>`; anything else is the password itself. |
+| `roots` | `[]` | Folders a browser may open sessions under, `/` or `~` anchored. Empty means the folder the server started in. A link under a root that points outside it does not count as under it. |
+| `idleMinutes` | `30` | How long a session nobody has open in a browser, with no turn running and nothing waiting on you, stays loaded under `cxagent web`. `0` keeps it. The terminal's own sessions never unload. |
+
+**`login`**, by where the server listens:
+
+| Mode | On localhost | Anywhere else |
+|---|---|---|
+| `auto` | No login | Login required. With no `users`, it refuses to start and says how to add one. |
+| `always` | Login required | Login required |
+| `off` | No login | No login. It starts, and says on the console and on every page that anyone who reaches the port gets an agent that runs commands on this machine. |
+
+A login lasts 30 days in that browser, or until **Log out**, which also closes that login's open
+tabs. A restart logs everyone out. Each failed login from an address makes that address wait longer
+(1, 2, 4 … 30 seconds) before its next attempt is checked at all.
+
+**Without a login, only this machine's own names are served** — `localhost`, `127.0.0.1`, the address it
+is bound to, the machine's name. A web page cannot make its own domain stand in for those, so it cannot
+reach the server through your browser.
+
+**Behind a reverse proxy, set `login` to `always`.** nginx, Caddy and Tailscale's serve all connect from
+localhost, which `auto` treats as this machine and lets in without a login. Every login attempt then
+also comes from one address, so the failed-login wait is shared by everyone behind the proxy. The proxy
+must pass WebSocket upgrades through; for nginx:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:5180;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+}
+```
+
+Caddy needs only `reverse_proxy 127.0.0.1:5180`. The login cookie is marked `Secure` only when cxagent
+itself serves HTTPS, and like every cookie it is sent to any port on the same host name.
+
 ## `webSearch` — where `web_search` looks
 
 ```json

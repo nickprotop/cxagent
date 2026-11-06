@@ -975,6 +975,24 @@ An earlier session here ended without closing (13 messages). /sessions to see it
 
 ---
 
+## `/web`
+
+Serves this terminal's sessions to a browser, at the address and with the login `web` in
+[CONFIG.md](CONFIG.md#web--the-browser-front-end) sets. The status bar says `web` while it does.
+
+```
+/web        start serving, or say where it already is
+/web off    stop; every open browser tab is told and closed
+```
+
+A browser attached this way drives the very sessions on screen: their prompts show in both places and
+the first answer counts, and a session the browser starts or resumes opens as a tab here. Quitting the
+terminal stops the serving too. Without a terminal, run `cxagent web` instead.
+
+In a browser, the slash commands that work are `/compress`, `/clear`, `/model`, `/mode`, `/stats`,
+`/sandbox` (and `/sandbox review`), `/diff` and `/help`. Anything that opens a terminal screen or
+changes config.json answers "not available on the web".
+
 ## From the shell
 
 Three flags that concern sessions, alongside `--mock`, `--mode <single|fan-out>` and
@@ -990,6 +1008,9 @@ cxagent -c                      # continue the most recent session here
 cxagent -r 5ZFAVZ               # continue that one, by id or any unambiguous abbreviation
 cxagent --resume                # start with this folder's sessions listed, to pick from
 cxagent -p "<goal>"             # one goal, no TUI — see SCRIPTING.md
+cxagent --web                   # start, and serve the sessions to a browser as /web does
+cxagent web                     # serve sessions to a browser, with no terminal
+cxagent web passwd <name>       # store a hashed password for <name> in web.users
 ```
 
 The options follow Claude Code's names (`-c`/`--continue`, `-r`/`--resume`, `-p`/`--print`), so
