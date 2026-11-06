@@ -927,6 +927,63 @@ public static class AppBootstrap
         // DECLARED HERE, NOT IN CORE'S TABLE. A library cannot end its host's process, and a
         // command Core ships but can never service is one every consumer advertises and none can
         // run. Declaring it beside the handler keeps the two from drifting.
+        // /web — THIS TERMINAL'S SESSIONS IN A BROWSER. The server runs inside this process, so a browser attaches
+        // to the very sessions on screen: their prompts race between here and there, and a session the browser
+        // starts or resumes opens as a tab here (TuiSessionOpener). The terminal keeps the locks; nothing unloads
+        // idle; quitting ends both.
+        Web.WebServerHost? webHost = null;
+        async Task StartWebAsync(Web.WebCliOptions? flags)
+        {
+            if (webHost is { } running)
+            {
+                transcript.Write(new Message($"Serving this terminal's sessions at {running.Url}"));
+                return;
+            }
+            var settings = flags is { } f ? Web.WebCli.Effective(configNow.Value.Web, f) : configNow.Value.Web;
+            var opener = new TuiSessionOpener(system, mainWindow, manager, () =>
+            {
+                var front = mainWindow.SessionInFront ?? session;
+                return new NewSessionCommand(new NewSessionCommand.Host(system, mainWindow, manager, composer,
+                    front.NewSessionResolution ?? configNow.Value, front.Mode, paths.ConfigDir));
+            });
+            try
+            {
+                webHost = await Web.WebServerHost.StartAsync(
+                    new Web.WebHostRequest(paths, settings, manager, prompts, opener, Environment.CurrentDirectory));
+            }
+            catch (Web.WebStartRefused refused)
+            {
+                transcript.Write(new Message(refused.Message, Severity.Error));
+                return;
+            }
+            transcript.Write(new Message($"Serving this terminal's sessions at {webHost.Url}"));
+            foreach (var warning in webHost.Warnings) transcript.Write(new Message(warning, Severity.Warning));
+            mainWindow.SetWebServing(true);
+        }
+
+        async Task StopWebAsync()
+        {
+            if (webHost is not { } running)
+            {
+                transcript.Write(new Message("Not serving to browsers."));
+                return;
+            }
+            webHost = null;
+            await running.Hub.DisconnectAllAsync("The terminal stopped sharing.");
+            await running.DisposeAsync();
+            mainWindow.SetWebServing(false);
+            transcript.Write(new Message("Stopped serving to browsers."));
+        }
+
+        manager.Commands.Register(
+            new SessionCommand("/web", "serve this terminal's sessions to a browser — /web off stops"),
+            (asking, arguments) =>
+            {
+                var off = string.Equals(arguments?.Trim(), "off", StringComparison.OrdinalIgnoreCase);
+                _ = off ? StopWebAsync() : StartWebAsync(null);
+                return true;
+            });
+
         manager.Commands.Register(
             new SessionCommand("/exit", "close this session, or quit when it is the last"),
             (_, _) =>
@@ -2418,7 +2475,18 @@ public static class AppBootstrap
                 transcript.Write(line);
         }
 
+        // --web: SERVE FROM THE START, once the window is up to say where.
+        if (options.Web is { } webFlags)
+            system.EnqueueOnUIThread(() => _ = StartWebAsync(webFlags), "appBootstrap.web");
+
         int code = system.Run();
+
+        // QUITTING ENDS THE SHARING TOO — every tab is told, and the port is let go before the sessions close.
+        if (webHost is { } sharing)
+        {
+            try { sharing.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5)); }
+            catch (Exception) { /* the process is ending; the sessions close below either way. */ }
+        }
 
         // ENDED PROPERLY, so do not offer it back. Reaching this line is the only evidence available
         // that the process was not killed mid-session — which is precisely what makes an unfinished

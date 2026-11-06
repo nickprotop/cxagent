@@ -117,7 +117,16 @@ public sealed class NewSessionCommand
     /// judged against the first one's directory, and what lets a decision say which session made
     /// it.</para>
     /// </summary>
-    private void Open(string folder)
+    private void Open(string folder) => OpenFolder(folder);
+
+    /// <summary>
+    /// Opens a session on a folder in a new tab — carrying on <paramref name="resume"/>'s conversation when one is
+    /// given — and returns it; null when the folder is unusable, said in the window.
+    ///
+    /// <para>THE SAME DOOR FOR A BROWSER. Under /web, a session a browser starts or resumes opens here, as a tab, so
+    /// nothing lives in this process that the terminal cannot see or close.</para>
+    /// </summary>
+    public Session? OpenFolder(string folder, SessionSnapshot? resume = null)
     {
         string full;
         try
@@ -127,7 +136,7 @@ public sealed class NewSessionCommand
         catch (Exception ex)
         {
             _host.Main.Chat.AddMessage(ChatRole.System, $"not a usable path: {ex.Message}");
-            return;
+            return null;
         }
 
         if (!Directory.Exists(full))
@@ -135,10 +144,11 @@ public sealed class NewSessionCommand
             // NAMED, NOT JUST REFUSED. A typo in a path is the likely cause, and the path as this
             // resolved it is the thing that shows the typo.
             _host.Main.Chat.AddMessage(ChatRole.System, $"no such folder: {full}");
-            return;
+            return null;
         }
 
         var session = new Session(full);
+        if (resume is not null) session.PendResume(resume);
         var tab = _host.Main.AddSessionTab(session);
 
         // THE SAME ROUTINE THE STARTUP PATH USES. Written separately, this path once subscribed two of eleven events —
@@ -147,9 +157,11 @@ public sealed class NewSessionCommand
         //
         // ITS POLICY TAKES THE CURRENT EDIT MODE, while the session is opened in the agent mode alone: that is how
         // this door has always opened a tab, and the composer keeps it rather than deciding it.
+        // A RESUMED CONVERSATION KEEPS ITS OWN EDIT MODE — absent is always-ask, never the wider default.
+        var edits = resume is null ? _host.Mode.Edits : resume.Edits ?? EditMode.AlwaysAsk;
         _host.Composer.Wire(new WireRequest(session, _host.Resolution, _host.Mode.Agent)
         {
-            Policy = new PermissionPolicy(full, _host.Composer.Services.Rules, _host.Mode.Edits)
+            Policy = new PermissionPolicy(full, _host.Composer.Services.Rules, edits)
             {
                 SessionId = session.Id,
                 LogDir = _host.Composer.Services.Paths.LogsDir,
@@ -164,6 +176,7 @@ public sealed class NewSessionCommand
         // configured. The search folders include the session's own directory, so a project-local
         // plugin belongs to the project that declares it.
         _ = TrustThenLoadPluginsAsync(session, tab);
+        return session;
     }
 
     /// <summary>

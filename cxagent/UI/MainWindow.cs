@@ -4438,6 +4438,37 @@ public sealed class MainWindow : IDisposable
 
     private int _sandboxProbing;
     private string? _sandboxText;
+    private StatusBarItem? _webItem;
+
+    /// <summary>
+    /// Shows or hides the status bar's <c>web</c> word: this terminal's sessions are being served to browsers, so
+    /// whatever it shows may be answered or typed into from elsewhere.
+    /// </summary>
+    public void SetWebServing(bool serving)
+    {
+        if (!serving)
+        {
+            if (_webItem is not null) _webItem.IsVisible = false;
+            return;
+        }
+        var label = $"[{ColorScheme.CautionMarkup}]web[/]";
+        if (_webItem is null) _webItem = StatusBar.AddRight(string.Empty, label);
+        else { _webItem.Label = label; _webItem.IsVisible = true; }
+    }
+
+    /// <summary>
+    /// Closes the tab showing <paramref name="session"/> the way /exit closes the one in front — the same confirm for
+    /// work that would go with it, the same refusal while a turn runs. False when there is no such tab or it is the
+    /// last one, which a browser cannot close out from under the terminal.
+    /// </summary>
+    public bool CloseSessionTab(Core.Sessions.Session session)
+    {
+        if (TabFor(session) is not { } tab) return false;
+        var strip = StripIndexOf(tab);
+        if (strip < 0) return false;
+        Tabs.ActiveTabIndex = strip;
+        return CloseActiveSession();
+    }
 
     public void SetTokenTotal(int total)
     {

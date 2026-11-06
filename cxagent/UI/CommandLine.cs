@@ -41,7 +41,8 @@ public readonly record struct CommandLineOptions(
     string? ConfigDir = null,
     string? Theme = null,
     bool ShowHelp = false,
-    HeadlessOptions? Headless = null);
+    HeadlessOptions? Headless = null,
+    Web.WebCliOptions? Web = null);
 
 /// <summary>Which session the command line asked to reopen, if any.</summary>
 public enum ResumeKind
@@ -154,6 +155,13 @@ public static class CommandLine
         string? instance = null;
         string? configDir = null;
         string? theme = null;
+
+        // --web AND ITS THREE: serve this terminal's sessions to browsers from the start, as /web would.
+        var web = false;
+        int? webPort = null;
+        string? webBind = null;
+        bool? webSelfSigned = null;
+        string? webOnly = null;
         var showHelp = false;
         var resume = ResumeRequest.No;
         var print = false;
@@ -226,6 +234,34 @@ public static class CommandLine
                 theme = i + 1 < args.Length && !args[i + 1].StartsWith('-') ? args[++i] : null;
                 if (string.IsNullOrWhiteSpace(theme))
                     return new(useMock, mode, "--theme needs a theme name.");
+                continue;
+            }
+
+            if (string.Equals(arg, "--web", StringComparison.Ordinal))
+            {
+                web = true;
+                continue;
+            }
+            if (string.Equals(arg, "--port", StringComparison.Ordinal))
+            {
+                webOnly ??= arg;
+                if (i + 1 >= args.Length || !int.TryParse(args[i + 1], out var p) || p is < 1 or > 65535)
+                    return new(useMock, mode, "--port needs a number from 1 to 65535.");
+                webPort = p;
+                i++;
+                continue;
+            }
+            if (string.Equals(arg, "--bind", StringComparison.Ordinal))
+            {
+                webOnly ??= arg;
+                webBind = i + 1 < args.Length && !args[i + 1].StartsWith('-') ? args[++i] : null;
+                if (webBind is null) return new(useMock, mode, "--bind needs an address, such as 127.0.0.1 or 0.0.0.0.");
+                continue;
+            }
+            if (string.Equals(arg, "--self-signed", StringComparison.Ordinal))
+            {
+                webOnly ??= arg;
+                webSelfSigned = true;
                 continue;
             }
 
@@ -447,6 +483,11 @@ public static class CommandLine
         if (print && listSessions)
             return new(useMock, mode, "--sessions prints the list and exits, so it cannot be combined with -p.");
 
+        if (webOnly is not null && !web)
+            return new(useMock, mode, $"{webOnly} only applies with --web.");
+        if (web && print)
+            return new(useMock, mode, "--web serves this terminal's sessions, so it cannot be combined with -p. `cxagent web` serves without a terminal.");
+
         HeadlessOptions? headless = print
             ? new HeadlessOptions
             {
@@ -457,6 +498,6 @@ public static class CommandLine
             : null;
 
         return new(useMock, mode, null, showVersion, instance, listSessions, resume, listAll, configDir, theme, showHelp,
-            headless);
+            headless, web ? new Web.WebCliOptions(webPort, webBind, webSelfSigned, configDir) : null);
     }
 }

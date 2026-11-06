@@ -102,6 +102,7 @@ public static class Usage
             [
                 new("web [--port N] [--bind ADDR] [--self-signed]", "Serve sessions to browsers, with no terminal. Defaults from config.json's web block: 127.0.0.1:5180, plain HTTP."),
                 new("web passwd USER", "Store a hashed password for USER in web.users."),
+                new("--web [--port N] [--bind ADDR] [--self-signed]", "Start the terminal and serve its sessions to browsers at once, as /web does."),
             ], Footer: "Inside the terminal, /web serves its own sessions; /web off stops."),
         new("PLUGIN STORES",
             "A folder of built plugins, one per subfolder, becomes the catalog and zips a web server serves as a plugin store. "
