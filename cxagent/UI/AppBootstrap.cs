@@ -416,7 +416,11 @@ public static class AppBootstrap
         // NO SESSION IN IT. The gate is the process's — a rules store and a way to ask — and every
         // decision reads the policy carried on the request instead. That is what lets one gate serve
         // any number of sessions honestly.
-        var permissionGate = WindowPermissionPrompt.Gate(system, mainWindow, permissionRules, transcript);
+        // EVERY PROMPT RACES THROUGH THE HUB — this window shows each one, and a browser served by /web can answer
+        // it first.
+        var prompts = new PromptHub();
+        prompts.Add(new TuiPromptResponder(system, mainWindow, prompts));
+        var permissionGate = WindowPermissionPrompt.Gate(mainWindow, permissionRules, transcript, prompts);
 
         // THE CLASSIFIER, WHEN ONE IS CONFIGURED. Resolved from the same registry every other
         // instance comes from, so a classifier is an ordinary provider entry and its spend is
@@ -593,7 +597,10 @@ public static class AppBootstrap
         var manager = services.Manager;
 
         // EVERY SESSION THIS PROCESS SHOWS IS WIRED THROUGH THIS — the first, every tab, every re-wire.
-        var composer = new SessionComposer(new ComposerServices(manager, paths, permissionRules, permissionGate, history));
+        var composer = new SessionComposer(new ComposerServices(manager, paths, permissionRules, permissionGate, history)
+        {
+            Prompts = prompts,
+        });
         using var httpForAuth = new HttpClient();
 
         // /mcp lives in its own type: this file decides WHAT EXISTS, not what a command does.
@@ -2246,39 +2253,16 @@ public static class AppBootstrap
         // composer cell is occupied), not a thread block.
         async Task AskTrustIfUnknownAsync()
         {
-            if (permissionRules.GetTrust(session.WorkingDirectory) != TrustState.Unknown) return;
-
-            // A FILESYSTEM ROOT IS NEVER OFFERED TRUST — see PermissionPolicy.CanBeTrusted — so it is not asked about.
-            if (session.Policy?.CanBeTrusted == false) return;
-
-            // THE FOLDER TRUSTED IS THE REAL ONE, named as such, with what it was opened as when that differs.
-            var prompt = new TrustQuestionControl(session.Policy?.TrustShown ?? session.WorkingDirectory);
-            var content = prompt.BuildContent();   // built ONCE — see PermissionPromptControl's contract
-            mainWindow.ShowPermissionPrompt(content);
-            try
-            {
-                var trusted = await prompt.Completion;
-                var state = trusted ? TrustState.Trusted : TrustState.Untrusted;
-                try
-                {
-                    permissionRules.SetTrust(session.WorkingDirectory, state);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    transcript.Write(new Message($"could not save folder trust: {ex.Message}", Severity.Warning));
-                }
-                // AFFIRMATIVE AND CAUTION THROUGH THE THEME, not two literal colours: this pair is
-                // the first thing a session prints, so it is also the first thing that looks wrong on
-                // a light ground if the green and amber are hardcoded.
-                transcript.Write(trusted
-                    ? $"[{ColorScheme.AffirmativeMarkup}]trusted this folder[/]"
-                    : $"[{ColorScheme.CautionMarkup}]not trusted — file operations in this folder "
-                      + "will ask every time[/]");
-            }
-            finally
-            {
-                mainWindow.RestoreComposer(content);
-            }
+            // THE SAME QUESTION EVERY SESSION GETS — see SessionComposer.AskTrustIfUnknownAsync — answered here or in
+            // a browser.
+            var result = await composer.AskTrustIfUnknownAsync(session, CancellationToken.None);
+            if (result.SaveError is { } error)
+                transcript.Write(new Message($"could not save folder trust: {error}", Severity.Warning));
+            if (result.Outcome == TrustOutcome.Trusted)
+                transcript.Write($"[{ColorScheme.AffirmativeMarkup}]trusted this folder[/]");
+            else if (result.Outcome == TrustOutcome.NotTrusted)
+                transcript.Write($"[{ColorScheme.CautionMarkup}]not trusted — file operations in this folder "
+                    + "will ask every time[/]");
         }
 
         if (!startup.HasProvider)

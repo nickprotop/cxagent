@@ -41,7 +41,32 @@ public sealed record ComposerServices(
     AppPaths Paths,
     PermissionRulesStore Rules,
     PermissionDecider? Gate,
-    UsageHistoryStore? History);
+    UsageHistoryStore? History)
+{
+    /// <summary>
+    /// Where the sessions' questions are raced between front ends, or null when the front end asks for itself.
+    /// </summary>
+    public PromptHub? Prompts { get; init; }
+}
+
+/// <summary>What asking about a folder's trust came to.</summary>
+public enum TrustOutcome
+{
+    /// <summary>Nothing was asked: decided already, or a folder that cannot be trusted.</summary>
+    Known,
+
+    /// <summary>Trusted now.</summary>
+    Trusted,
+
+    /// <summary>Not trusted now — everything in it asks.</summary>
+    NotTrusted,
+
+    /// <summary>The question was withdrawn before anyone answered; nothing was decided.</summary>
+    Withdrawn,
+}
+
+/// <summary>The outcome, and why the answer could not be saved when it could not.</summary>
+public sealed record TrustResult(TrustOutcome Outcome, string? SaveError = null);
 
 /// <summary>One wire: which session, on which configuration, in which mode.</summary>
 /// <param name="Session">The conversation being wired — new, or one being re-wired.</param>
@@ -93,7 +118,10 @@ public sealed class SessionComposer(ComposerServices services)
         };
 
         var sinks = frontEnd.SinksFor(session);
-        Services.Manager.Open(session, config, Ports(session, config, policy, sinks, frontEnd.AskFor(session)), mode);
+
+        // THROUGH THE HUB WHEN THERE IS ONE, so a question can be answered from any front end showing the session.
+        var ask = Services.Prompts?.AskUserFor(session.Id) ?? frontEnd.AskFor(session);
+        Services.Manager.Open(session, config, Ports(session, config, policy, sinks, ask), mode);
 
         // PERMISSION DECISIONS INTO HISTORY. Set on every wire because the session id does not exist until the
         // host does. BOTH FIELDS FROM THE REPORT, NOT THE CLOSURE: one gate serves every session, so a report can
@@ -109,6 +137,40 @@ public sealed class SessionComposer(ComposerServices services)
 
         frontEnd.Wired(session, sinks, policy);
         return policy;
+    }
+
+    /// <summary>
+    /// Asks whether to trust the session's folder, when nobody has decided yet, and saves the answer.
+    ///
+    /// <para>EVERY SESSION, NOT ONLY THE FIRST. Trust decides whether reads and read-only commands in the folder go
+    /// through silently, and whether the folder's own hooks and plugins load; a second tab in a folder nobody
+    /// decided about is the same question as the first.</para>
+    ///
+    /// <para>BEFORE PLUGINS LOAD — the caller's order. A plugin the folder declares runs code, and that is what the
+    /// answer is about.</para>
+    /// </summary>
+    public async Task<TrustResult> AskTrustIfUnknownAsync(Session session, CancellationToken ct)
+    {
+        if (Services.Prompts is not { } hub) return new(TrustOutcome.Known);
+        if (Services.Rules.GetTrust(session.WorkingDirectory) != TrustState.Unknown) return new(TrustOutcome.Known);
+
+        // A FOLDER THE POLICY SAYS CANNOT BE TRUSTED — the home directory, the filesystem root — is not offered.
+        if (session.Policy?.CanBeTrusted == false) return new(TrustOutcome.Known);
+
+        var trusted = await hub.AskTrustAsync(session.Id, session.Policy?.TrustShown ?? session.WorkingDirectory, ct);
+        if (trusted is not { } yes) return new(TrustOutcome.Withdrawn);
+
+        var outcome = yes ? TrustOutcome.Trusted : TrustOutcome.NotTrusted;
+        try
+        {
+            Services.Rules.SetTrust(session.WorkingDirectory, yes ? TrustState.Trusted : TrustState.Untrusted);
+            return new(outcome);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // DECIDED, NOT SAVED: the answer holds for this run, and the caller says it will be asked again.
+            return new(outcome, ex.Message);
+        }
     }
 
     /// <summary>

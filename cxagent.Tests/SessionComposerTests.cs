@@ -106,6 +106,60 @@ public sealed class SessionComposerTests : IDisposable
         Assert.Single(_manager.Sessions);
     }
 
+    private sealed class AnswersTrust(PromptHub hub, bool trusted) : IPromptResponder
+    {
+        public int Asked { get; private set; }
+        public bool Serves(string sessionId) => true;
+        public void Show(PendingPrompt prompt, CancellationToken resolved)
+        {
+            Asked++;
+            hub.Answer(prompt.Id, new TrustAnswer(trusted), "test");
+        }
+        public void Resolved(string promptId, Resolution resolution) { }
+    }
+
+    [Fact]
+    public async Task Unknown_trust_is_asked_through_the_hub_and_saved()
+    {
+        var hub = new PromptHub();
+        var answer = new AnswersTrust(hub, trusted: true);
+        hub.Add(answer);
+        var composer = new SessionComposer(_composer.Services with { Prompts = hub });
+        var session = composer.Create(_work, _config, AgentMode.Single, new FakeFrontEnd());
+
+        var result = await composer.AskTrustIfUnknownAsync(session, CancellationToken.None);
+
+        Assert.Equal(TrustOutcome.Trusted, result.Outcome);
+        Assert.Equal(1, answer.Asked);
+        Assert.Equal(TrustState.Trusted, new PermissionRulesStore(_paths).GetTrust(_work));
+    }
+
+    [Fact]
+    public async Task Known_trust_is_not_asked()
+    {
+        var hub = new PromptHub();
+        var answer = new AnswersTrust(hub, trusted: false);
+        hub.Add(answer);
+        _composer.Services.Rules.SetTrust(_work, TrustState.Untrusted);
+        var composer = new SessionComposer(_composer.Services with { Prompts = hub });
+        var session = composer.Create(_work, _config, AgentMode.Single, new FakeFrontEnd());
+
+        var result = await composer.AskTrustIfUnknownAsync(session, CancellationToken.None);
+
+        Assert.Equal(TrustOutcome.Known, result.Outcome);
+        Assert.Equal(0, answer.Asked);
+    }
+
+    [Fact]
+    public void Questions_go_through_the_hub_when_there_is_one()
+    {
+        var hub = new PromptHub();
+        var composer = new SessionComposer(_composer.Services with { Prompts = hub });
+        var front = new FakeFrontEnd();
+        composer.Create(_work, _config, AgentMode.Single, front);
+        Assert.Empty(front.Asked);
+    }
+
     [Fact]
     public async Task No_plugins_configured_loads_nothing_and_says_nothing()
     {

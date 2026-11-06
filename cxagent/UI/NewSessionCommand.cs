@@ -163,7 +163,23 @@ public sealed class NewSessionCommand
         // rows saying so, which is indistinguishable from a session that simply has no plugins
         // configured. The search folders include the session's own directory, so a project-local
         // plugin belongs to the project that declares it.
-        _ = LoadPluginsAsync(session, tab);
+        _ = TrustThenLoadPluginsAsync(session, tab);
+    }
+
+    /// <summary>
+    /// Asks about the folder's trust when nobody has decided yet, then loads the session's plugins — in that order,
+    /// because a plugin the folder declares runs code, which is what the trust answer is about.
+    /// </summary>
+    private async Task TrustThenLoadPluginsAsync(Session session, SessionTab tab)
+    {
+        var result = await _host.Composer.AskTrustIfUnknownAsync(session, CancellationToken.None);
+        if (result.SaveError is { } error)
+            tab.Chat.AddMessage(ChatRole.System, $"could not save folder trust: {error}");
+        if (result.Outcome == TrustOutcome.Trusted)
+            tab.Chat.AddMessage(ChatRole.System, "trusted this folder");
+        else if (result.Outcome == TrustOutcome.NotTrusted)
+            tab.Chat.AddMessage(ChatRole.System, "not trusted — file operations in this folder will ask every time");
+        await LoadPluginsAsync(session, tab);
     }
 
     /// <summary>

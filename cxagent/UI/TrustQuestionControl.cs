@@ -87,6 +87,12 @@ public sealed class TrustQuestionControl
             list.Items[i].Text = (i == list.SelectedIndex ? "▸ " : "  ") + Answers[i];
     }
 
+    /// <summary>
+    /// Takes the question down without an answer — someone answered it elsewhere. <see cref="Completion"/> ends
+    /// cancelled rather than with a trust decision nobody made here.
+    /// </summary>
+    public void Dismiss() => _tcs.TrySetCanceled();
+
     /// <summary>Takes the highlighted answer — Enter on the list.</summary>
     private void TakeHighlighted()
     {
