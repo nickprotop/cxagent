@@ -75,7 +75,6 @@ public sealed class TuiPromptResponder(ConsoleWindowSystem system, MainWindow mw
     private void ShowPermission(PermissionPending p, CancellationToken resolved)
     {
         var request = p.Request;
-        mw.NotePromptTabBySessionId(request.Policy?.SessionId);
         var prompt = new PermissionPromptControl(request, p.OfferTrust);
         var content = prompt.BuildContent();   // built ONCE — see PermissionDecider's note
 
@@ -85,8 +84,14 @@ public sealed class TuiPromptResponder(ConsoleWindowSystem system, MainWindow mw
             : (Action?)null;
         var escape = WindowPermissionPrompt.EscapeAction(request, prompt.TryCancel, stopTurn);
 
-        system.EnqueueOnUIThread(() => mw.ShowPermissionPrompt(content, escape, request.RequesterAgentId),
-            "tuiPromptResponder.Permission");
+        // THE ASKING TAB IS NAMED IN THE SAME UI-THREAD STEP THAT SHOWS THE PROMPT. The window keeps one "next
+        // prompt goes here" slot; named from another thread, a second session's prompt arriving in between would
+        // take it, and both prompts would land in whichever tab spoke last.
+        system.EnqueueOnUIThread(() =>
+        {
+            mw.NotePromptTabBySessionId(p.SessionId);
+            mw.ShowPermissionPrompt(content, escape, request.RequesterAgentId);
+        }, "tuiPromptResponder.Permission");
 
         _ = Task.Run(async () =>
         {
@@ -113,7 +118,13 @@ public sealed class TuiPromptResponder(ConsoleWindowSystem system, MainWindow mw
     {
         var prompt = new TrustQuestionControl(t.Folder);
         var content = prompt.BuildContent();   // built ONCE — see PermissionPromptControl's contract
-        system.EnqueueOnUIThread(() => mw.ShowPermissionPrompt(content), "tuiPromptResponder.Trust");
+        // ON THE ASKING SESSION'S TAB — named in the same step, as for a permission. Without it a second tab's trust
+        // question went into whichever tab last asked something.
+        system.EnqueueOnUIThread(() =>
+        {
+            mw.NotePromptTabBySessionId(t.SessionId);
+            mw.ShowPermissionPrompt(content);
+        }, "tuiPromptResponder.Trust");
         _ = Task.Run(async () =>
         {
             using var _ = resolved.Register(prompt.Dismiss);
