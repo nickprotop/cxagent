@@ -61,6 +61,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         {
             ["type"] = "hello",
             ["user"] = _who,
+            ["login"] = Token is not null,
             ["banners"] = new JsonArray([.. _hub.Banners.Select(b => (JsonNode)b)]),
             ["commands"] = new JsonArray([.. WebCommands.Allowed.Select(c => (JsonNode)c)]),
         });

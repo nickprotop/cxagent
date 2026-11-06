@@ -2,10 +2,57 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>cxagent</title>
+<link rel="stylesheet" href="/app.css">
 </head>
-<body>
-<p>cxagent</p>
+<body data-view="list">
+<div id="banners" class="banners"></div>
+<header class="topbar">
+  <button id="menu" class="icon" type="button" aria-label="Sessions">☰</button>
+  <b class="brand">cxagent</b>
+  <span id="folder" class="folder"></span>
+  <span id="model" class="pill" hidden></span>
+  <span id="mode" class="pill" hidden></span>
+  <span id="sandbox" class="pill" hidden></span>
+  <span class="spacer"></span>
+  <span id="conn" class="conn" title="Connection">●</span>
+  <button id="theme" class="icon" type="button" aria-label="Light or dark">◐</button>
+  <form method="post" action="/logout" class="logout"><button type="submit" id="logout">Log out</button></form>
+</header>
+<div class="layout">
+  <aside id="sidebar" class="sidebar">
+    <button id="new" class="new" type="button">+ New session</button>
+    <div id="sessions" class="sessions"></div>
+  </aside>
+  <main class="main">
+    <nav id="tabs" class="tabs"></nav>
+    <div class="phonebar">
+      <button id="back" class="icon" type="button" aria-label="Back to sessions">‹</button>
+      <b id="phone-title"></b>
+      <span id="phone-sandbox" class="pill" hidden></span>
+    </div>
+    <div id="chat" class="chat">
+      <div id="empty" class="empty">Pick a session, or start a new one.</div>
+    </div>
+    <div id="prompts" class="prompts"></div>
+    <form id="composer" class="composer" autocomplete="off">
+      <div id="completion" class="completion" hidden></div>
+      <textarea id="input" rows="2" placeholder="Message, or / for commands" disabled></textarea>
+      <button id="stop" type="button" class="stop" hidden>Stop</button>
+      <button id="send" type="submit" disabled>Send</button>
+    </form>
+    <footer id="statusline" class="statusline"></footer>
+  </main>
+</div>
+<div id="picker" class="picker" hidden>
+  <div class="picker-box">
+    <div class="picker-head"><b>New session in…</b><button id="picker-close" type="button" class="icon" aria-label="Close">×</button></div>
+    <div id="picker-path" class="picker-path"></div>
+    <div id="picker-list" class="picker-list"></div>
+    <div class="picker-foot"><button id="picker-up" type="button">Up</button><span class="spacer"></span><button id="picker-open" type="button">Open here</button></div>
+  </div>
+</div>
+<script type="module" src="/app.js"></script>
 </body>
 </html>

@@ -35,6 +35,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Jint" Version="4.17.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
@@ -70,12 +71,9 @@
          the way production does, through ManagedPluginLoader — and a reference is how MSBuild is
          told to build that project first. Same mechanism the fixtures above use, for the same
          reason: the reference orders the build, it does not hand over types. -->
-    <ProjectReference Include="../plugins/csharp-lsp/csharp-lsp.csproj"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../plugins/calculator/calculator.csproj"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../plugins/clone-finder/clone-finder.csproj"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../plugins/csharp-lsp/csharp-lsp.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../plugins/calculator/calculator.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../plugins/clone-finder/clone-finder.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <!-- THE PLUGIN'S OWN OUTPUT, COPIED BESIDE THE TESTS. ReferenceOutputAssembly="false" above stops
@@ -86,24 +84,21 @@
        AfterTargets="Build" and not a None item, because the DLL does not exist until that project
        has built. -->
   <Target Name="CopyCsharpLspPlugin" AfterTargets="Build">
-    <Copy SourceFiles="$(MSBuildProjectDirectory)/../plugins/csharp-lsp/bin/$(Configuration)/net10.0/csharp-lsp.dll"
-          DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../plugins/csharp-lsp/bin/$(Configuration)/net10.0/csharp-lsp.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 
   <!-- SAME REASON AS CopyCsharpLspPlugin, PLUS THE DEPENDENCY ITSELF. calculator is the first
        managed plugin with a NuGet package of its own, and Assembly.LoadFrom resolves Jace.dll from
        calculator.dll's own folder — so the test copy has to carry both, not just the plugin. -->
   <Target Name="CopyCalculatorPlugin" AfterTargets="Build">
-    <Copy SourceFiles="$(MSBuildProjectDirectory)/../plugins/calculator/bin/$(Configuration)/net10.0/calculator.dll;$(MSBuildProjectDirectory)/../plugins/calculator/bin/$(Configuration)/net10.0/Jace.dll"
-          DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../plugins/calculator/bin/$(Configuration)/net10.0/calculator.dll;$(MSBuildProjectDirectory)/../plugins/calculator/bin/$(Configuration)/net10.0/Jace.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 
   <!-- SAME REASON AS CopyCsharpLspPlugin: the reference above orders the build but hands over no
        types, so the DLL CloneFinderPluginTests loads must be copied by name. Only the plugin
        itself — clone-finder has no package dependency, so unlike calculator nothing rides along. -->
   <Target Name="CopyCloneFinderPlugin" AfterTargets="Build">
-    <Copy SourceFiles="$(MSBuildProjectDirectory)/../plugins/clone-finder/bin/$(Configuration)/net10.0/clone-finder.dll"
-          DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../plugins/clone-finder/bin/$(Configuration)/net10.0/clone-finder.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 
   <ItemGroup>
@@ -134,10 +129,8 @@
     <!-- CONTINUEONERROR: cmake can be installed with no C compiler beside it, and its configure step
          then fails. That leaves the native tests skipping, with a warning saying why, rather than
          failing dotnet build for fixtures only they need. -->
-    <Exec Condition="'$(CmakeExitCode)' == '0'" ContinueOnError="true"
-          Command="cmake -S &quot;$(MSBuildProjectDirectory)/AbiFixtures&quot; -B &quot;$(BaseIntermediateOutputPath)abi-fixtures&quot; -DFIXTURE_OUT=&quot;$(MSBuildProjectDirectory)/$(OutDir).&quot; &amp;&amp; cmake --build &quot;$(BaseIntermediateOutputPath)abi-fixtures&quot; --config Release" />
-    <Exec Condition="'$(CmakeExitCode)' != '0' And '$(OS)' != 'Windows_NT'"
-          Command="bash &quot;$(MSBuildProjectDirectory)/AbiFixtures/build.sh&quot; &quot;$(OutDir)&quot;" />
+    <Exec Condition="'$(CmakeExitCode)' == '0'" ContinueOnError="true" Command="cmake -S &quot;$(MSBuildProjectDirectory)/AbiFixtures&quot; -B &quot;$(BaseIntermediateOutputPath)abi-fixtures&quot; -DFIXTURE_OUT=&quot;$(MSBuildProjectDirectory)/$(OutDir).&quot; &amp;&amp; cmake --build &quot;$(BaseIntermediateOutputPath)abi-fixtures&quot; --config Release" />
+    <Exec Condition="'$(CmakeExitCode)' != '0' And '$(OS)' != 'Windows_NT'" Command="bash &quot;$(MSBuildProjectDirectory)/AbiFixtures/build.sh&quot; &quot;$(OutDir)&quot;" />
   </Target>
 
   <ItemGroup>
@@ -146,31 +139,21 @@
          these must land in the test binaries' own output directory, named after their DLL's own
          stem, to be found at all. -->
     <None Include="SearchFixtures/*.html" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="PluginFixtures/WellFormedPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
-          TargetPath="cxagent.Tests.PluginFixture.plugin.json" />
-    <None Include="PluginFixtures/MismatchedPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
-          TargetPath="cxagent.Tests.PluginFixture.Mismatched.plugin.json" />
-    <None Include="PluginFixtures/ThrowingPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
-          TargetPath="cxagent.Tests.PluginFixture.Throwing.plugin.json" />
-    <None Include="PluginFixtures/ClaimsClientPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
-          TargetPath="cxagent.Tests.PluginFixture.ClaimsClient.plugin.json" />
-    <None Include="PluginFixtures/DeclaresClientPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
-          TargetPath="cxagent.Tests.PluginFixture.DeclaresClient.plugin.json" />
-    <None Include="PluginFixtures/ClaimsCommandPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
-          TargetPath="cxagent.Tests.PluginFixture.ClaimsCommand.plugin.json" />
-    <None Include="PluginFixtures/HarnessPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
-          TargetPath="cxagent.Tests.PluginFixture.Harness.plugin.json" />
+    <None Include="PluginFixtures/WellFormedPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest" TargetPath="cxagent.Tests.PluginFixture.plugin.json" />
+    <None Include="PluginFixtures/MismatchedPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest" TargetPath="cxagent.Tests.PluginFixture.Mismatched.plugin.json" />
+    <None Include="PluginFixtures/ThrowingPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest" TargetPath="cxagent.Tests.PluginFixture.Throwing.plugin.json" />
+    <None Include="PluginFixtures/ClaimsClientPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest" TargetPath="cxagent.Tests.PluginFixture.ClaimsClient.plugin.json" />
+    <None Include="PluginFixtures/DeclaresClientPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest" TargetPath="cxagent.Tests.PluginFixture.DeclaresClient.plugin.json" />
+    <None Include="PluginFixtures/ClaimsCommandPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest" TargetPath="cxagent.Tests.PluginFixture.ClaimsCommand.plugin.json" />
+    <None Include="PluginFixtures/HarnessPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest" TargetPath="cxagent.Tests.PluginFixture.Harness.plugin.json" />
 
     <!-- BESIDE fixture-wellformed.so AT THE OUTPUT ROOT, not under AbiPluginFixtures/ — AbiPluginLoader
          resolves a sidecar from the LIBRARY path with ".plugin.json" swapped in for the extension,
          exactly like ManagedPluginLoader does for a managed assembly, so this must land at the same
          path the native fixture itself does (AbiFixtures/build.sh's own OUT_DIR). -->
-    <None Include="AbiPluginFixtures/fixture-wellformed.plugin.json" CopyToOutputDirectory="PreserveNewest"
-          TargetPath="fixture-wellformed.plugin.json" />
-    <None Include="AbiPluginFixtures/fixture-submits.plugin.json" CopyToOutputDirectory="PreserveNewest"
-          TargetPath="fixture-submits.plugin.json" />
-    <None Include="AbiPluginFixtures/fixture-reports.plugin.json" CopyToOutputDirectory="PreserveNewest"
-          TargetPath="fixture-reports.plugin.json" />
+    <None Include="AbiPluginFixtures/fixture-wellformed.plugin.json" CopyToOutputDirectory="PreserveNewest" TargetPath="fixture-wellformed.plugin.json" />
+    <None Include="AbiPluginFixtures/fixture-submits.plugin.json" CopyToOutputDirectory="PreserveNewest" TargetPath="fixture-submits.plugin.json" />
+    <None Include="AbiPluginFixtures/fixture-reports.plugin.json" CopyToOutputDirectory="PreserveNewest" TargetPath="fixture-reports.plugin.json" />
   </ItemGroup>
 
 </Project>
