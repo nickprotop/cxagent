@@ -38,6 +38,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     private readonly ConcurrentDictionary<string, IDisposable> _open = new();
     private readonly ConcurrentDictionary<string, PendingPrompt> _shown = new();
     private readonly CancellationTokenSource _gone = new();
+    private Task _sending = Task.CompletedTask;
 
     public WebClient(WebSessionHub hub, WebSocket socket, string? user)
     {
@@ -56,7 +57,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     public async Task RunAsync(CancellationToken ct)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _gone.Token);
-        var sending = SendLoopAsync(linked.Token);
+        var sending = _sending = SendLoopAsync(linked.Token);
         Send(new JsonObject
         {
             ["type"] = "hello",
@@ -94,11 +95,23 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         }
     }
 
-    public Task CloseAsync()
+    /// <summary>
+    /// Ends this tab: what is already queued — the banner saying why — is sent first, briefly bounded, and then the
+    /// socket is closed properly so the page knows it was told rather than dropped.
+    /// </summary>
+    public async Task CloseAsync()
     {
+        _out.Writer.TryComplete();
+        try { await _sending.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false); }
+        catch (Exception) { /* a tab that will not take its last messages is closed anyway */ }
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await _socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "closing", timeout.Token).ConfigureAwait(false);
+        }
+        catch (Exception) { }
         _gone.Cancel();
         try { _socket.Abort(); } catch (Exception) { }
-        return Task.CompletedTask;
     }
 
     public void Send(JsonObject message)
