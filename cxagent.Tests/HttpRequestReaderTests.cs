@@ -59,6 +59,24 @@ public sealed class HttpRequestReaderTests
     [InlineData("POST / HTTP/1.1\r\nHost: h\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\nab")]
     public async Task Malformed_request_is_400(string raw) => Assert.Equal(400, await RefusalOf(raw));
 
+    [Theory]
+    [InlineData("GET / HTTP/1.1\r\n\r\n")]
+    [InlineData("GET / HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n")]
+    [InlineData("GET / HTTP/1.1\r\nHost: a\r\nOrigin: x\r\nOrigin: y\r\n\r\n")]
+    [InlineData("GET / HTTP/1.1\r\nHost: a\r\nCookie: x\r\nCookie: y\r\n\r\n")]
+    [InlineData("GET / HTTP/1.1\r\nHost: a\r\nSec-WebSocket-Key: x\r\nSec-WebSocket-Key: y\r\n\r\n")]
+    [InlineData("GET / HTTP/1.1\r\nHost: a\r\nBad(Name: x\r\n\r\n")]
+    public async Task Missing_host_duplicate_identity_headers_and_bad_names_are_400(string raw) =>
+        Assert.Equal(400, await RefusalOf(raw));
+
+    [Fact]
+    public async Task An_idle_connection_that_sent_nothing_closes_quietly()
+    {
+        var reader = new HttpRequestReader(new BlockingStream(), IPAddress.Loopback,
+            new HttpLimits { ReadTimeout = TimeSpan.FromMilliseconds(100) }) { IdleIsClose = true };
+        Assert.Null(await reader.ReadAsync(CancellationToken.None));
+    }
+
     [Fact]
     public async Task Http_1_0_is_505() =>
         Assert.Equal(505, await RefusalOf("GET / HTTP/1.0\r\n\r\n"));

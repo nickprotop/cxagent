@@ -57,6 +57,27 @@ public sealed class WebSocketUpgradeTests : IAsyncLifetime
     public void Origin_must_be_this_host(string origin, string host, bool ok) =>
         Assert.Equal(ok, WebSocketUpgrade.OriginMatchesHost(Request(("Origin", origin), ("Host", host))));
 
+    // DNS REBINDING: without a login, only names that can only mean this machine are served.
+    [Theory]
+    [InlineData("localhost:5180", true)]
+    [InlineData("127.0.0.1:5180", true)]
+    [InlineData("[::1]:5180", true)]
+    [InlineData("LOCALHOST", true)]
+    [InlineData("evil.example:5180", false)]
+    [InlineData("127.0.0.1.evil.example", false)]
+    [InlineData("", false)]
+    public void Without_a_login_only_known_hosts_are_served(string host, bool ok) =>
+        Assert.Equal(ok, HostCheck.IsKnown(host, HostCheck.Known(System.Net.IPAddress.Loopback, null)));
+
+    [Fact]
+    public void A_bound_address_and_extra_names_are_known()
+    {
+        var known = HostCheck.Known(System.Net.IPAddress.Parse("192.168.1.5"), ["box"]);
+        Assert.True(HostCheck.IsKnown("192.168.1.5:5180", known));
+        Assert.True(HostCheck.IsKnown("box:5180", known));
+        Assert.False(HostCheck.IsKnown("other:5180", known));
+    }
+
     [Fact]
     public void Missing_origin_is_refused() =>
         Assert.False(WebSocketUpgrade.OriginMatchesHost(Request(("Host", "localhost:5180"))));

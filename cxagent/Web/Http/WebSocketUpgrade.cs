@@ -61,8 +61,13 @@ public static class WebSocketUpgrade
         ]).ConfigureAwait(false);
         exchange.Upgrade();
 
-        // A PING EVERY 20 SECONDS keeps a phone's connection from being dropped as idle by whatever sits in between.
-        return WebSocket.CreateFromStream(exchange.Stream,
-            new WebSocketCreationOptions { IsServer = true, KeepAliveInterval = TimeSpan.FromSeconds(20) });
+        // A PING EVERY 20 SECONDS keeps a phone's connection from being dropped as idle by whatever sits in between,
+        // and one unanswered for a minute ends a socket whose other end is gone without saying so.
+        return WebSocket.CreateFromStream(exchange.Stream, new WebSocketCreationOptions
+        {
+            IsServer = true,
+            KeepAliveInterval = TimeSpan.FromSeconds(20),
+            KeepAliveTimeout = TimeSpan.FromSeconds(60),
+        });
     }
 }

@@ -36,8 +36,28 @@ public sealed class LoginGate(WebSettings settings, bool loopbackBind, TimeProvi
     private static readonly TimeSpan Lifetime = TimeSpan.FromDays(30);
     private static readonly TimeSpan MaxWait = TimeSpan.FromSeconds(30);
 
+    private const int MaxTracked = 10_000;
+    private static readonly TimeSpan Forget = TimeSpan.FromHours(1);
+
     private readonly ConcurrentDictionary<string, (string User, DateTimeOffset Expires)> _tokens = new();
-    private readonly ConcurrentDictionary<IPAddress, (int Failures, DateTimeOffset Until)> _failures = new();
+    private readonly Dictionary<IPAddress, (int Failures, DateTimeOffset Until)> _failures = [];
+    private readonly HashSet<IPAddress> _checking = [];
+    private readonly object _gate = new();
+
+    // TWO PASSWORD CHECKS AT A TIME, WHOEVER ASKS. A hashed password costs a third of a second of CPU; with no limit,
+    // logins from many addresses at once would take every core.
+    private readonly SemaphoreSlim _hashing = new(2, 2);
+
+    // AN UNKNOWN NAME COSTS WHAT A KNOWN ONE DOES. When any user has a hash, a name that does not exist is checked
+    // against a hash too, so the time a refusal takes does not say which names are real.
+    private readonly Lazy<string> _decoy = new(() =>
+        settings.Users.Values.Any(PasswordCheck.IsHash) ? PasswordCheck.Hash(Guid.NewGuid().ToString()) : "\0no such user\0");
+
+    /// <summary>How many addresses the backoff is tracking — for tests of its forgetting.</summary>
+    public int TrackedAddresses
+    {
+        get { lock (_gate) return _failures.Count; }
+    }
 
     /// <summary>Whether a browser must log in before it gets a session.</summary>
     public bool LoginRequired => settings.Login switch
@@ -64,30 +84,72 @@ public sealed class LoginGate(WebSettings settings, bool loopbackBind, TimeProvi
     public LoginResult Login(string user, string password, IPAddress from)
     {
         var now = clock.GetUtcNow();
-        if (_failures.TryGetValue(from, out var held) && held.Until > now) return new LoginResult(null, held.Until - now);
-
-        // THE SAME WORK FOR AN UNKNOWN USER AS FOR A WRONG PASSWORD, so the time taken does not say which names exist.
-        var known = settings.Users.TryGetValue(user, out var stored);
-        var ok = PasswordCheck.Matches(known ? stored! : "\0no such user\0", password) && known;
-        if (!ok)
+        lock (_gate)
         {
-            var failures = (held.Failures) + 1;
-            var wait = TimeSpan.FromSeconds(Math.Min(Math.Pow(2, failures - 1), MaxWait.TotalSeconds));
-            _failures[from] = (failures, now + wait);
-            return new LoginResult(null, TimeSpan.Zero);
+            Sweep(now);
+
+            // ONE CHECK IN FLIGHT PER ADDRESS. Parallel guesses would otherwise all pass the wait before any of them
+            // recorded its failure.
+            if (_failures.TryGetValue(from, out var held) && held.Until > now) return new LoginResult(null, held.Until - now);
+            if (!_checking.Add(from)) return new LoginResult(null, TimeSpan.FromSeconds(1));
         }
 
-        _failures.TryRemove(from, out _);
+        bool ok;
+        try
+        {
+            if (!_hashing.Wait(0)) return new LoginResult(null, TimeSpan.FromSeconds(1));
+            try
+            {
+                var known = settings.Users.TryGetValue(user, out var stored);
+                ok = PasswordCheck.Matches(known ? stored! : _decoy.Value, password) && known;
+            }
+            finally
+            {
+                _hashing.Release();
+            }
+        }
+        finally
+        {
+            lock (_gate) _checking.Remove(from);
+        }
+
+        lock (_gate)
+        {
+            if (!ok)
+            {
+                var failures = (_failures.TryGetValue(from, out var before) ? before.Failures : 0) + 1;
+                var wait = TimeSpan.FromSeconds(Math.Min(Math.Pow(2, failures - 1), MaxWait.TotalSeconds));
+                _failures[from] = (failures, now + wait);
+                return new LoginResult(null, TimeSpan.Zero);
+            }
+            _failures.Remove(from);
+        }
+
         var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
         _tokens[token] = (user, now + Lifetime);
         return new LoginResult(token, TimeSpan.Zero);
+    }
+
+    // FORGET WHAT NO LONGER MATTERS: failures an hour past their wait, and expired tokens. Bounded either way, so an
+    // attacker rotating addresses cannot grow the table without limit.
+    private void Sweep(DateTimeOffset now)
+    {
+        foreach (var (address, f) in _failures.ToList())
+            if (f.Until + Forget < now) _failures.Remove(address);
+        if (_failures.Count > MaxTracked)
+            foreach (var address in _failures.OrderBy(f => f.Value.Until).Take(_failures.Count - MaxTracked).Select(f => f.Key).ToList())
+                _failures.Remove(address);
+        foreach (var (token, t) in _tokens)
+            if (t.Expires <= now) _tokens.TryRemove(token, out _);
     }
 
     /// <summary>The user a token belongs to; null when it is unknown or expired.</summary>
     public string? UserFor(string? token)
     {
         if (token is null || !_tokens.TryGetValue(token, out var t)) return null;
-        if (t.Expires > clock.GetUtcNow()) return t.User;
+
+        // A USER TAKEN OUT OF THE CONFIG IS LOGGED OUT, whatever their browser still holds.
+        if (t.Expires > clock.GetUtcNow() && settings.Users.ContainsKey(t.User)) return t.User;
         _tokens.TryRemove(token, out _);
         return null;
     }

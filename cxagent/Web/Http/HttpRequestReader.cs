@@ -53,7 +53,18 @@ public sealed class HttpRequestReader(Stream stream, IPAddress remote, HttpLimit
 {
     private static readonly byte[] EndOfHeaders = "\r\n\r\n"u8.ToArray();
 
+    private static readonly HashSet<string> Singular = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "host", "content-length", "origin", "cookie", "upgrade", "sec-websocket-key",
+    };
+
     private readonly byte[] _buffer = new byte[Math.Max(limits.MaxHeaderBytes, 4096) + 4096];
+
+    /// <summary>
+    /// Whether a connection that goes quiet between requests is simply closed. On for the server: an idle keep-alive
+    /// connection timing out is not a slow request, and answering it with an unasked-for 408 confuses clients.
+    /// </summary>
+    public bool IdleIsClose { get; init; }
     private int _start;
     private int _end;
 
@@ -69,6 +80,7 @@ public sealed class HttpRequestReader(Stream stream, IPAddress remote, HttpLimit
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            if (IdleIsClose && _end == _start) return null;
             throw new HttpRefused(408, "The request took too long to arrive.");
         }
     }
@@ -96,6 +108,10 @@ public sealed class HttpRequestReader(Stream stream, IPAddress remote, HttpLimit
         var headers = Headers(lines.AsSpan(1));
 
         if (headers.ContainsKey("transfer-encoding")) throw new HttpRefused(501, "Chunked bodies are not accepted.");
+
+        // A REQUEST NAMES ONE HOST. Without one there is nothing to check it against; a proxy routing on one Host while
+        // this server checks another is a classic way for the two to see different requests.
+        if (!headers.ContainsKey("host")) throw new HttpRefused(400, "Host is required.");
 
         var length = 0;
         if (headers.TryGetValue("content-length", out var declared)
@@ -142,18 +158,23 @@ public sealed class HttpRequestReader(Stream stream, IPAddress remote, HttpLimit
             // A FOLDED CONTINUATION LINE is obsolete, and two parsers disagreeing about it is a smuggling vector.
             if (line.Length == 0 || line[0] is ' ' or '\t') throw new HttpRefused(400, "Malformed header.");
             var colon = line.IndexOf(':');
-            if (colon <= 0 || line[..colon].Any(c => c <= ' ' || c > '~')) throw new HttpRefused(400, "Malformed header.");
+            if (colon <= 0 || !line[..colon].All(IsTokenChar)) throw new HttpRefused(400, "Malformed header.");
             var name = line[..colon];
             var value = line[(colon + 1)..].Trim(' ', '\t');
             if (value.Any(c => c > '~' || (c < ' ' && c != '\t'))) throw new HttpRefused(400, "Malformed header.");
 
-            // TWO LENGTHS ARE TWO ANSWERS to where this request ends; refuse rather than pick one.
-            if (headers.ContainsKey(name) && name.Equals("content-length", StringComparison.OrdinalIgnoreCase))
-                throw new HttpRefused(400, "Content-Length given twice.");
+            // TWO OF A HEADER THAT DECIDES SOMETHING are two answers — where the request ends, which host, which page,
+            // which login. Refuse rather than pick one, since whatever sits in front may have picked the other.
+            if (headers.ContainsKey(name) && Singular.Contains(name))
+                throw new HttpRefused(400, $"{name} given twice.");
             headers[name] = value;
         }
         return headers;
     }
+
+    // RFC 9110's token characters — what a header name may be made of.
+    private static bool IsTokenChar(char c) =>
+        char.IsAsciiLetterOrDigit(c) || "!#$%&'*+-.^_`|~".Contains(c);
 
     private int IndexOf(byte[] needle)
     {

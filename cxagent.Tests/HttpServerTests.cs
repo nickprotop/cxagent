@@ -69,6 +69,41 @@ public sealed class HttpServerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Close_among_other_connection_options_closes()
+    {
+        var response = await Raw("GET /nope HTTP/1.1\r\nHost: h\r\nConnection: keep-alive, close\r\n\r\nGET / HTTP/1.1\r\nHost: h\r\n\r\n");
+        Assert.DoesNotContain("200 OK", response, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Connections_beyond_the_cap_are_refused()
+    {
+        await using var server = new HttpServer(new HttpServerOptions(IPAddress.Loopback, 0),
+            x => x.RespondAsync(200, Encoding.UTF8.GetBytes("ok"))) { MaxConnections = 2 };
+        await server.StartAsync();
+        var held = new List<TcpClient>();
+        for (var i = 0; i < 2; i++)
+        {
+            var c = new TcpClient();
+            await c.ConnectAsync(IPAddress.Loopback, server.Bound.Port);
+            held.Add(c);
+        }
+        await Task.Delay(200);
+        using var third = new TcpClient();
+        await third.ConnectAsync(IPAddress.Loopback, server.Bound.Port);
+        var read = await third.GetStream().ReadAsync(new byte[16]).AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, read);
+        foreach (var c in held) c.Dispose();
+    }
+
+    [Fact]
+    public async Task A_header_value_with_a_line_break_is_never_written()
+    {
+        var x = new HttpExchange(new HttpRequest("GET", "/", "", new Dictionary<string, string>(), [], IPAddress.Loopback), new MemoryStream(), false);
+        await Assert.ThrowsAsync<ArgumentException>(() => x.RespondHeadAsync(200, [new("X-Echo", "a\r\nSet-Cookie: x=1")]));
+    }
+
+    [Fact]
     public async Task Stop_closes_open_connections()
     {
         using var client = new TcpClient();

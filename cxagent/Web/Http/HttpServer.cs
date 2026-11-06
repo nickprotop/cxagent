@@ -44,13 +44,30 @@ public sealed class HttpExchange(HttpRequest request, Stream stream, bool secure
     /// <summary>Writes the status line and headers only, for a handler that writes the rest itself (a 101).</summary>
     public async Task RespondHeadAsync(int status, IReadOnlyList<KeyValuePair<string, string>> headers)
     {
-        Responded = true;
         var head = new StringBuilder();
         head.Append("HTTP/1.1 ").Append(status).Append(' ').Append(Reason(status)).Append("\r\n");
-        foreach (var (name, value) in headers) head.Append(name).Append(": ").Append(value).Append("\r\n");
+        foreach (var (name, value) in headers)
+        {
+            // A LINE BREAK IN A HEADER IS A SECOND HEADER — or a second response. Nothing a handler puts here, however
+            // it got it, may write one.
+            if (name.AsSpan().IndexOfAny('\r', '\n') >= 0 || value.AsSpan().IndexOfAny('\r', '\n') >= 0)
+                throw new ArgumentException($"Header {name} contains a line break.", nameof(headers));
+            head.Append(name).Append(": ").Append(value).Append("\r\n");
+        }
         head.Append("\r\n");
-        await Stream.WriteAsync(Encoding.ASCII.GetBytes(head.ToString())).ConfigureAwait(false);
-        await Stream.FlushAsync().ConfigureAwait(false);
+        Responded = true;
+        await WriteTimedAsync(Encoding.ASCII.GetBytes(head.ToString())).ConfigureAwait(false);
+    }
+
+    /// <summary>How long one response may take to be taken by the client.</summary>
+    public static readonly TimeSpan WriteTimeout = TimeSpan.FromSeconds(30);
+
+    // A CLIENT THAT STOPS READING must not hold a write — and the task serving it — forever.
+    private async Task WriteTimedAsync(ReadOnlyMemory<byte> bytes)
+    {
+        using var timeout = new CancellationTokenSource(WriteTimeout);
+        await Stream.WriteAsync(bytes, timeout.Token).ConfigureAwait(false);
+        await Stream.FlushAsync(timeout.Token).ConfigureAwait(false);
     }
 
     private async Task WriteAsync(int status, ReadOnlyMemory<byte> body, string contentType,
@@ -64,8 +81,7 @@ public sealed class HttpExchange(HttpRequest request, Stream stream, bool secure
             .. extra ?? [],
         ];
         await RespondHeadAsync(status, headers).ConfigureAwait(false);
-        await Stream.WriteAsync(body).ConfigureAwait(false);
-        await Stream.FlushAsync().ConfigureAwait(false);
+        await WriteTimedAsync(body).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -115,9 +131,22 @@ public sealed class HttpServer(HttpServerOptions options, Func<HttpExchange, Tas
 {
     private readonly CancellationTokenSource _stop = new();
     private readonly List<TcpClient> _open = [];
+    private readonly Dictionary<IPAddress, int> _perAddress = [];
+
+    /// <summary>
+    /// How many connections may be open at once. Each holds a buffer and, with TLS, its state; past this a new one is
+    /// closed at once rather than letting slow clients exhaust memory or file handles.
+    /// </summary>
+    public int MaxConnections { get; init; } = 256;
+
+    /// <summary>How many of those one address may hold — a browser opens a handful, not dozens.</summary>
+    public int MaxPerAddress { get; init; } = 32;
     private readonly object _gate = new();
     private TcpListener? _listener;
     private Task? _accepting;
+
+    /// <summary>Told when a handler throws something other than a dropped connection.</summary>
+    public Action<Exception>? HandlerFailed { get; init; }
 
     /// <summary>How long a request may take to arrive — see <see cref="HttpLimits"/>.</summary>
     public HttpLimits Limits { get; init; } = new();
@@ -164,14 +193,34 @@ public sealed class HttpServer(HttpServerOptions options, Func<HttpExchange, Tas
             }
             catch (SocketException)
             {
+                // OUT OF HANDLES, MOST LIKELY: a pause, so the loop does not spin a core retrying at once.
+                try { await Task.Delay(100, _stop.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) { return; }
                 continue;
             }
-            lock (_gate) _open.Add(client);
-            _ = ServeAsync(client);
+
+            var address = (client.Client.RemoteEndPoint as IPEndPoint)?.Address ?? IPAddress.None;
+            bool admitted;
+            lock (_gate)
+            {
+                _perAddress.TryGetValue(address, out var mine);
+                admitted = _open.Count < MaxConnections && mine < MaxPerAddress;
+                if (admitted)
+                {
+                    _open.Add(client);
+                    _perAddress[address] = mine + 1;
+                }
+            }
+            if (!admitted)
+            {
+                client.Dispose();
+                continue;
+            }
+            _ = ServeAsync(client, address);
         }
     }
 
-    private async Task ServeAsync(TcpClient client)
+    private async Task ServeAsync(TcpClient client, IPAddress remote)
     {
         try
         {
@@ -188,8 +237,7 @@ public sealed class HttpServer(HttpServerOptions options, Func<HttpExchange, Tas
                 secure = true;
             }
 
-            var remote = (client.Client.RemoteEndPoint as IPEndPoint)?.Address ?? IPAddress.None;
-            var reader = new HttpRequestReader(stream, remote, Limits);
+            var reader = new HttpRequestReader(stream, remote, Limits) { IdleIsClose = true };
             while (!_stop.IsCancellationRequested)
             {
                 HttpRequest? request;
@@ -211,7 +259,9 @@ public sealed class HttpServer(HttpServerOptions options, Func<HttpExchange, Tas
                 if (exchange.Upgraded) return;
                 if (!exchange.Responded)
                     await exchange.RespondAsync(500, Encoding.UTF8.GetBytes("no response")).ConfigureAwait(false);
-                if (string.Equals(request.Header("Connection"), "close", StringComparison.OrdinalIgnoreCase)) return;
+                // "close" AMONG OTHER OPTIONS still closes: the header is a list.
+                if (request.Header("Connection")?.Split(',').Any(o => o.Trim().Equals("close", StringComparison.OrdinalIgnoreCase)) == true)
+                    return;
             }
         }
         catch (Exception e) when (e is IOException or SocketException or ObjectDisposedException
@@ -219,9 +269,19 @@ public sealed class HttpServer(HttpServerOptions options, Func<HttpExchange, Tas
         {
             // THE CLIENT WENT AWAY, OR NEVER SPOKE TLS. Nothing to answer, and nobody to answer it to.
         }
+        catch (Exception e)
+        {
+            // A HANDLER'S OWN FAILURE ends this connection and is reported, never left as an unobserved task.
+            HandlerFailed?.Invoke(e);
+        }
         finally
         {
-            lock (_gate) _open.Remove(client);
+            lock (_gate)
+            {
+                _open.Remove(client);
+                if (_perAddress.TryGetValue(remote, out var n)) _perAddress[remote] = n - 1;
+                if (_perAddress.GetValueOrDefault(remote) <= 0) _perAddress.Remove(remote);
+            }
             client.Dispose();
         }
     }
