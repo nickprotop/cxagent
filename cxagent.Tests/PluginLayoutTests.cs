@@ -1,3 +1,4 @@
+using CxAgent.Hosting;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Plugins;
 using Xunit;
@@ -167,7 +168,7 @@ public class PluginLayoutTests : IDisposable
     {
         PlacePlugin(Path.Combine(_root, "csharp-lsp"), "csharp-lsp");
 
-        var found = CxAgent.UI.PluginDiscovery.FindUnconfigured(
+        var found = CxAgent.Hosting.PluginDiscovery.FindUnconfigured(
             new Dictionary<string, PluginConfig>(), [_root]);
 
         var one = Assert.Single(found);
@@ -187,7 +188,7 @@ public class PluginLayoutTests : IDisposable
     {
         PlacePlugin(Path.Combine(_root, "csharp-lsp"), "csharp-lsp");
 
-        var found = CxAgent.UI.PluginDiscovery.FindLoadSetDirectory("csharp-lsp.dll", [_root]);
+        var found = CxAgent.Hosting.PluginDiscovery.FindLoadSetDirectory("csharp-lsp.dll", [_root]);
 
         Assert.Equal(Path.Combine(_root, "csharp-lsp"), found);
     }

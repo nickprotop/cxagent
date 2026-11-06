@@ -106,6 +106,74 @@ public sealed class PromptHubTests
     }
 
     [Fact]
+    public async Task A_question_does_not_wait_behind_a_permission_prompt()
+    {
+        var hub = new PromptHub();
+        var r = new Recorder();
+        hub.Add(r);
+
+        _ = hub.AskPermissionAsync(Request("S"), offerTrust: false, CancellationToken.None);
+        var question = hub.AskUserFor("S")([new UserQuestion("Which?")], CancellationToken.None);
+        var trust = hub.AskTrustAsync("S", "/f", CancellationToken.None);
+
+        // ONLY PERMISSION PROMPTS QUEUE PER SESSION — a background agent's permission must not stall behind the
+        // host's unanswered question, nor the other way round.
+        Assert.Equal(3, r.Shown.Count);
+        hub.Answer(r.Shown[1].Id, new QuestionAnswer(QuestionAnswers.Cancel), "x");
+        hub.Answer(r.Shown[2].Id, new TrustAnswer(true), "x");
+        await question;
+        Assert.True(await trust);
+        Assert.Single(hub.PendingFor("S"));
+    }
+
+    [Fact]
+    public async Task Screens_are_told_before_the_waiter_resumes()
+    {
+        var hub = new PromptHub();
+        Task<PromptAnswer?>? asked = null;
+        var waiterDoneWhenToldResolved = new List<bool>();
+        var tokenCancelledWhenToldResolved = new List<bool>();
+        var r = new Recorder();
+        var watcher = new Watcher(() => asked!.IsCompleted, waiterDoneWhenToldResolved, tokenCancelledWhenToldResolved);
+        hub.Add(watcher);
+
+        asked = Ask(hub, "S");
+        hub.Answer(watcher.LastShown!.Id, new TrustAnswer(true), "web");
+        await asked;
+
+        // THE OLD PROMPT COMES DOWN FIRST. A turn resumed before that can raise its next prompt into a tab whose
+        // cell is still taken, and that prompt is then never placed.
+        Assert.False(waiterDoneWhenToldResolved.Single());
+        Assert.True(tokenCancelledWhenToldResolved.Single());
+    }
+
+    private sealed class Watcher(Func<bool> waiterDone, List<bool> doneAtResolve, List<bool> cancelledAtResolve) : IPromptResponder
+    {
+        private CancellationToken _token;
+        public PendingPrompt? LastShown { get; private set; }
+        public bool Serves(string sessionId) => true;
+        public void Show(PendingPrompt prompt, CancellationToken resolved) { LastShown = prompt; _token = resolved; }
+        public void Resolved(string promptId, Resolution resolution)
+        {
+            doneAtResolve.Add(waiterDone());
+            cancelledAtResolve.Add(_token.IsCancellationRequested);
+        }
+    }
+
+    [Fact]
+    public void A_resolved_prompt_is_never_shown_to_a_late_responder()
+    {
+        var hub = new PromptHub();
+        _ = Ask(hub, "S");
+        var id = hub.PendingFor("S").Single().Id;
+        hub.Answer(id, new TrustAnswer(true), "x");
+
+        var late = new Recorder();
+        hub.Add(late);
+        Assert.Empty(late.Shown);
+    }
+
+    [Fact]
     public async Task Cancel_resolves_for_everyone()
     {
         var hub = new PromptHub();

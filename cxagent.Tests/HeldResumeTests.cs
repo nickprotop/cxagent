@@ -71,7 +71,7 @@ public sealed class HeldResumeTests : IDisposable
         using (var claim = SessionLock.TryAcquire(_paths.LocksDir, Held, LockHolder.Web))
             session.ListSessions("resume " + Held);
 
-        Assert.Contains("That session is already open in this window.", said.Transcript, StringComparison.Ordinal);
+        Assert.Contains("That session is open on the web.", said.Transcript, StringComparison.Ordinal);
         Assert.Equal(before, session.SessionId);
     }
 
@@ -98,8 +98,12 @@ public sealed class HeldResumeTests : IDisposable
         var target = Startup.FindResumeTarget(store, _work, new ResumeRequest(ResumeKind.Continue, null));
 
         Assert.Null(target.Snapshot);
-        Assert.Equal("That session is already open in this window.", target.Problem);
+        Assert.Equal("That session is open in another process.", target.Problem);
     }
+
+    [Fact]
+    public void A_web_lock_held_by_this_process_still_says_web() =>
+        Assert.Equal("open on the web", SessionLock.HeldMessage(new HeldBy(LockHolder.Web, Environment.ProcessId)));
 
     [Fact]
     public void Held_by_this_process_says_it_is_open_here() =>

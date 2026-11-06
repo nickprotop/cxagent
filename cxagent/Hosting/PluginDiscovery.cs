@@ -6,7 +6,7 @@ using CxAgent.Core.Plugins.Abi;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Sessions;
 
-namespace CxAgent.UI;
+namespace CxAgent.Hosting;
 
 /// <summary>
 /// Finds a configured plugin's entry-point file on disk and loads it into a session — the piece the
@@ -132,7 +132,7 @@ public static class PluginDiscovery
                 // THE FILENAME, NOT THE MANIFEST NAME: PluginResolver.Resolve looks a target up in
                 // config first and otherwise treats it as a FILE. A STORE'S PLUGIN BY ITS store/name,
                 // which is the only spelling that reaches into a store's folder.
-                + $"    Or `/plugin load {PluginManagerRows.LoadTarget(only.Name, only.File, only.Folder)}` to try it for this session — {Caveat}";
+                + $"    Or `/plugin load {UI.PluginManagerRows.LoadTarget(only.Name, only.File, only.Folder)}` to try it for this session — {Caveat}";
         }
 
         const int Shown = 6;

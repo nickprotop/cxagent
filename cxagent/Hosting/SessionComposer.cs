@@ -1,7 +1,7 @@
+using CxAgent.Hosting;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Permissions;
-using CxAgent.UI;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
 

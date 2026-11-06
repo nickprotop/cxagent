@@ -1,3 +1,4 @@
+using CxAgent.Hosting;
 using Xunit;
 using CxAgent.UI;
 

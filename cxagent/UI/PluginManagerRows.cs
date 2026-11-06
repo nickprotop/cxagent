@@ -1,3 +1,4 @@
+using CxAgent.Hosting;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Plugins;
 

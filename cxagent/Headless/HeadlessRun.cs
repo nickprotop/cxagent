@@ -1,3 +1,4 @@
+using CxAgent.Hosting;
 using System.Diagnostics;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Commands;

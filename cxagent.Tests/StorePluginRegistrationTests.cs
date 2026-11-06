@@ -1,3 +1,4 @@
+using CxAgent.Hosting;
 using System.Text.Json;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Jobs;

@@ -60,8 +60,11 @@ public interface IPromptResponder
 /// Every question an agent waits on, raced between every front end showing its session: the first answer wins,
 /// and everyone else's copy goes away.
 ///
-/// <para>ONE AT A TIME PER SESSION, oldest first. Two prompts for one conversation on screen at once let an answer
-/// meant for one land on the other, and a stack of them is a wall the user clicks through unread.</para>
+/// <para>PERMISSION PROMPTS ONE AT A TIME PER SESSION, oldest first: they share the session's composer cell, and two
+/// at once let an answer meant for one land on the other. A trust question queues only behind other trust questions,
+/// and a model's question behind nothing — a session's sub-agents and background agents share its id, and a
+/// background agent's permission prompt must not stall behind a question the host asked while the user was
+/// away.</para>
 ///
 /// <para>A PROMPT NOBODY SERVES STILL WAITS. A browser user who closed the tab comes back to find it — the
 /// session list shows the session as waiting — rather than a turn that silently gave up.</para>
@@ -71,6 +74,14 @@ public sealed class PromptHub
     private sealed class Entry(PendingPrompt prompt)
     {
         public PendingPrompt Prompt { get; } = prompt;
+
+        /// <summary>Which line this prompt waits in — see the class remarks.</summary>
+        public string Queue { get; } = prompt switch
+        {
+            PermissionPending => prompt.SessionId,
+            TrustPending => prompt.SessionId + "\0trust",
+            _ => prompt.Id,
+        };
         public TaskCompletionSource<Resolution> Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public CancellationTokenSource Gone { get; } = new();
     }
@@ -92,7 +103,8 @@ public sealed class PromptHub
             heads = [.. _queues.Values.Where(q => q.Count > 0).Select(q => q[0])];
         }
         foreach (var head in heads)
-            if (responder.Serves(head.Prompt.SessionId)) responder.Show(head.Prompt, head.Gone.Token);
+            if (!head.Gone.IsCancellationRequested && responder.Serves(head.Prompt.SessionId))
+                responder.Show(head.Prompt, head.Gone.Token);
         return new Removal(this, responder);
     }
 
@@ -100,13 +112,13 @@ public sealed class PromptHub
     public IReadOnlyList<PendingPrompt> PendingFor(string sessionId)
     {
         lock (_gate)
-            return _queues.TryGetValue(sessionId, out var q) ? [.. q.Select(e => e.Prompt)] : [];
+            return [.. _queues.Values.SelectMany(q => q).Select(e => e.Prompt).Where(p => p.SessionId == sessionId)];
     }
 
     /// <summary>Whether anything is waiting for <paramref name="sessionId"/>.</summary>
     public bool IsWaiting(string sessionId)
     {
-        lock (_gate) return _queues.TryGetValue(sessionId, out var q) && q.Count > 0;
+        lock (_gate) return _queues.Values.Any(q => q.Any(e => e.Prompt.SessionId == sessionId));
     }
 
     /// <summary>
@@ -123,7 +135,7 @@ public sealed class PromptHub
         bool head;
         lock (_gate)
         {
-            if (!_queues.TryGetValue(prompt.SessionId, out var q)) _queues[prompt.SessionId] = q = [];
+            if (!_queues.TryGetValue(entry.Queue, out var q)) _queues[entry.Queue] = q = [];
             q.Add(entry);
             head = q.Count == 1;
         }
@@ -168,11 +180,13 @@ public sealed class PromptHub
             responders = [.. _responders];
         }
 
-        // THE WAITER FIRST, then the screens: the turn should not wait on a slow front end tidying up.
-        done.Done.TrySetResult(resolution);
+        // THE SCREENS FIRST, then the waiter. A front end takes its copy down when told (it only queues the work), and
+        // a turn resumed before that can raise its next prompt into a cell the old one still holds — where it is
+        // never placed, and the turn waits on a prompt nobody can see.
         done.Gone.Cancel();
         foreach (var r in responders)
             if (r.Serves(done.Prompt.SessionId)) r.Resolved(promptId, resolution);
+        done.Done.TrySetResult(resolution);
         if (next is not null) Present(next);
         return true;
     }
@@ -180,7 +194,15 @@ public sealed class PromptHub
     private void Present(Entry entry)
     {
         IPromptResponder[] responders;
-        lock (_gate) responders = [.. _responders];
+        lock (_gate)
+        {
+            // STILL WAITING AND STILL FIRST IN ITS LINE. Two answers racing can each hand on a "next"; only the one
+            // that is actually at the head now is shown, so a stale prompt never takes a cell after its successor.
+            if (entry.Gone.IsCancellationRequested
+                || !_queues.TryGetValue(entry.Queue, out var q) || q.Count == 0 || !ReferenceEquals(q[0], entry))
+                return;
+            responders = [.. _responders];
+        }
         foreach (var r in responders)
             if (r.Serves(entry.Prompt.SessionId)) r.Show(entry.Prompt, entry.Gone.Token);
     }

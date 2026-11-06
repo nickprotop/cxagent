@@ -172,15 +172,31 @@ public sealed class NewSessionCommand
     /// </summary>
     private async Task TrustThenLoadPluginsAsync(Session session, SessionTab tab)
     {
-        var result = await _host.Composer.AskTrustIfUnknownAsync(session, CancellationToken.None);
-        if (result.SaveError is { } error)
-            tab.Chat.AddMessage(ChatRole.System, $"could not save folder trust: {error}");
-        if (result.Outcome == TrustOutcome.Trusted)
-            tab.Chat.AddMessage(ChatRole.System, "trusted this folder");
-        else if (result.Outcome == TrustOutcome.NotTrusted)
-            tab.Chat.AddMessage(ChatRole.System, "not trusted — file operations in this folder will ask every time");
+        // A FAILED QUESTION IS SAID AND THE PLUGINS STILL LOAD: an unreadable permissions file must not leave a tab
+        // with no plugins and nothing saying why. Fire-and-forget, so nothing above would ever see the exception.
+        try
+        {
+            var result = await _host.Composer.AskTrustIfUnknownAsync(session, CancellationToken.None);
+            if (result.SaveError is { } error)
+                Say(tab, $"[{ColorScheme.CautionMarkup}]could not save folder trust: {SharpConsoleUI.Parsing.MarkupParser.Escape(error)}[/]");
+
+            // THE SAME LINES, IN THE SAME COLOURS, AS THE FIRST SESSION'S.
+            if (result.Outcome == TrustOutcome.Trusted)
+                Say(tab, $"[{ColorScheme.AffirmativeMarkup}]trusted this folder[/]");
+            else if (result.Outcome == TrustOutcome.NotTrusted)
+                Say(tab, $"[{ColorScheme.CautionMarkup}]not trusted — file operations in this folder will ask every time[/]");
+        }
+        catch (Exception ex)
+        {
+            Say(tab, $"[{ColorScheme.CautionMarkup}]could not ask about this folder's trust: {SharpConsoleUI.Parsing.MarkupParser.Escape(ex.Message)}[/]");
+        }
         await LoadPluginsAsync(session, tab);
     }
+
+    private void Say(SessionTab tab, string markup) =>
+        _host.System.EnqueueOnUIThread(
+            () => ChatTranscriptSink.Post(tab.Chat, new ChatTranscriptSink.SystemRow(markup, false)),
+            "newSessionCommand.Say");
 
     /// <summary>
     /// Loads this session's plugins, reporting into its own transcript.
