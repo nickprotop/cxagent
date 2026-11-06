@@ -131,6 +131,12 @@
                       LogicalName="template/c/cxp/%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- THE WEB PAGE, EMBEDDED and served from memory by `cxagent web` and /web — the release stays one file, and a
+       page that is part of the binary cannot drift from the server that speaks to it. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Web/Assets/**" LogicalName="web/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="cxagent.Tests" />
   </ItemGroup>
