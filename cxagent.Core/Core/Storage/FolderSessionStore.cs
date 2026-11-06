@@ -34,6 +34,9 @@ public sealed class FolderSessionStore(AppPaths paths)
         int InputTokens, int OutputTokens, string? WorkingDir = null, EditMode? Edits = null,
         string? Thinking = null);
 
+    /// <summary>Which process has <paramref name="agentId"/>'s session open, or null when none does.</summary>
+    public HeldBy? HolderOf(string agentId) => SessionLock.Probe(paths.LocksDir, agentId);
+
     /// <summary>The five-argument form kept for callers that have no mode to record.</summary>
     public void SaveTurn(string agentId, IReadOnlyList<ChatMessage> context,
         int inputTokens, int outputTokens, string? workingDir = null) =>
@@ -217,7 +220,8 @@ public sealed class FolderSessionStore(AppPaths paths)
         {
             if (!all && (h.WorkingDir is null || !PathsMatch(h.WorkingDir, workingDir))) continue;
             rows.Add(new SessionInfo(h.AgentId, h.Title, h.WorkingDir, h.InputTokens,
-                h.OutputTokens, h.State != SessionEndState.Running, h.UpdatedAt));
+                h.OutputTokens, h.State != SessionEndState.Running, h.UpdatedAt,
+                h.State == SessionEndState.Superseded, HolderOf(h.AgentId)));
         }
         return rows;
     }
@@ -354,6 +358,11 @@ public sealed class FolderSessionStore(AppPaths paths)
 /// <param name="OutputTokens">Tokens generated across the session.</param>
 /// <param name="UpdatedAt">When it last did anything — what orders a resume list.</param>
 /// <param name="Uid">The agent's id, which is what a listing prints and what /sessions resume takes.</param>
+/// <param name="Superseded">
+/// Resumed into a newer session already. Still listed — a conversation stays reachable by its old id — but a
+/// listing that shows one row per conversation hides it.
+/// </param>
+/// <param name="Holder">Which process has this session open right now, or null when none does.</param>
 public sealed record SessionInfo(
     string Uid,
     string? Title,
@@ -361,7 +370,9 @@ public sealed record SessionInfo(
     int InputTokens,
     int OutputTokens,
     bool Finished,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    bool Superseded = false,
+    HeldBy? Holder = null);
 
 /// <summary>What a uid lookup found. Ambiguity is REPORTED, never resolved to the newest match —
 /// silently picking is how someone restores the wrong conversation and does not notice.</summary>

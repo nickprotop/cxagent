@@ -195,6 +195,14 @@ public sealed partial class Session
                 return CommandStatus.Reported;
             }
 
+            // ONE WRITER PER SESSION. Open in another process — or in another tab of this one — it is refused rather
+            // than resumed beside itself: both would write the same folder.
+            if (store.HolderOf(snapshot.AgentId) is { } held)
+            {
+                Say(new Message($"That session is {Storage.SessionLock.HeldMessage(held)}.", Severity.Warning));
+                return CommandStatus.Reported;
+            }
+
             // ASKED FIRST WHEN THERE IS SOMETHING TO LOSE. Resuming REPLACES this conversation, and
             // a session that has taken a turn — or was itself restored — has history the user would
             // not get back. One that has said nothing has nothing to protect, and a confirmation

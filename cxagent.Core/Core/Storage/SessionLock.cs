@@ -93,6 +93,17 @@ public sealed class SessionLock : IDisposable
         catch (UnauthorizedAccessException) { return ReadHolder(HolderPath(locksDir, agentId)); }
     }
 
+    /// <summary>
+    /// What to tell a user who tried to open a session <paramref name="held"/> has: where it is open, and for
+    /// a terminal, how to reach it from a browser anyway.
+    /// </summary>
+    public static string HeldMessage(HeldBy held) => held.Kind switch
+    {
+        LockHolder.Terminal => "open in terminal · run /web there to share it",
+        LockHolder.Web => "open on the web",
+        _ => "open in another process",
+    };
+
     /// <summary>Lets the session go: the folder can be opened by any process again.</summary>
     public void Dispose()
     {

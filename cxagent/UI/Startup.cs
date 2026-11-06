@@ -151,7 +151,7 @@ public static partial class Startup
             // its files and decisions.
             case ResumeKind.Continue:
                 return store.LoadLatestUncontinued(workingDir) is { } latest
-                    ? new(latest, null)
+                    ? Unless(Held(store, latest), latest)
                     : new(null, "Nothing to continue in this folder.");
         }
 
@@ -165,6 +165,18 @@ public static partial class Startup
         // FOUND BY ID REGARDLESS OF FOLDER, unlike -c. Naming a specific session is an explicit act:
         // someone who copied an id out of `--sessions all` meant that session, and the folder scope
         // exists to stop an unasked-for session appearing, not to stop a named one being opened.
-        return found.Session is null ? new(null, $"No session matches '{uid}'.") : new(found.Session, null);
+        return found.Session is null ? new(null, $"No session matches '{uid}'.") : Unless(Held(store, found.Session), found.Session);
     }
+
+    // ONE WRITER PER SESSION. A session open in another process is refused here rather than resumed beside it:
+    // both would write the same folder, and the second would replay a conversation the first is still adding to.
+    // -c does not fall back to an older session either — continuing something other than the latest is a
+    // surprise the user did not ask for.
+    private static string? Held(FolderSessionStore store, SessionSnapshot snapshot) =>
+        store.HolderOf(snapshot.AgentId) is { } held
+            ? $"That session is {SessionLock.HeldMessage(held)}."
+            : null;
+
+    private static ResumeTarget Unless(string? problem, SessionSnapshot snapshot) =>
+        problem is null ? new(snapshot, null) : new(null, problem);
 }
