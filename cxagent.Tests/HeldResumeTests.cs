@@ -71,7 +71,7 @@ public sealed class HeldResumeTests : IDisposable
         using (var claim = SessionLock.TryAcquire(_paths.LocksDir, Held, LockHolder.Web))
             session.ListSessions("resume " + Held);
 
-        Assert.Contains("open on the web", said.Transcript, StringComparison.Ordinal);
+        Assert.Contains("That session is already open in this window.", said.Transcript, StringComparison.Ordinal);
         Assert.Equal(before, session.SessionId);
     }
 
@@ -85,7 +85,7 @@ public sealed class HeldResumeTests : IDisposable
         var target = Startup.FindResumeTarget(store, _work, new ResumeRequest(ResumeKind.ById, Held));
 
         Assert.Null(target.Snapshot);
-        Assert.Contains("open in terminal", target.Problem, StringComparison.Ordinal);
+        Assert.Equal("That session is already open in this window.", target.Problem);
     }
 
     [Fact]
@@ -98,8 +98,13 @@ public sealed class HeldResumeTests : IDisposable
         var target = Startup.FindResumeTarget(store, _work, new ResumeRequest(ResumeKind.Continue, null));
 
         Assert.Null(target.Snapshot);
-        Assert.Contains("open in another process", target.Problem, StringComparison.Ordinal);
+        Assert.Equal("That session is already open in this window.", target.Problem);
     }
+
+    [Fact]
+    public void Held_by_this_process_says_it_is_open_here() =>
+        Assert.Equal("already open in this window",
+            SessionLock.HeldMessage(new HeldBy(LockHolder.Terminal, Environment.ProcessId)));
 
     [Theory]
     [InlineData(LockHolder.Terminal, "open in terminal · run /web there to share it")]

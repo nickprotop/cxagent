@@ -4,6 +4,7 @@ using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
+using CxAgent.Hosting;
 using SharpConsoleUI;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Dialogs;
@@ -29,7 +30,7 @@ public sealed class NewSessionCommand
     /// <param name="System">The window system, for the picker and the sinks.</param>
     /// <param name="Main">The window that will hold the tab.</param>
     /// <param name="Manager">Opens the session and holds it beside the others.</param>
-    /// <param name="Rules">The permission store every session's policy is scoped against.</param>
+    /// <param name="Composer">Wires the session the way every other door does.</param>
     /// <param name="Resolution">The configuration a new session resolves against.</param>
     /// <param name="Mode">The working mode a new session starts in.</param>
     /// <param name="ConfigDir">Where plugins are discovered and their child processes recorded.</param>
@@ -37,7 +38,7 @@ public sealed class NewSessionCommand
         ConsoleWindowSystem System,
         MainWindow Main,
         SessionManager Manager,
-        PermissionRulesStore Rules,
+        SessionComposer Composer,
         ResolvedConfig Resolution,
         WorkingMode Mode,
         string ConfigDir);
@@ -140,37 +141,20 @@ public sealed class NewSessionCommand
         var session = new Session(full);
         var tab = _host.Main.AddSessionTab(session);
 
-        // THE SAME ROUTINE THE STARTUP PATH USES. Written separately, this path subscribed two of
-        // eleven events — no tool rows, no turn recording, no compression notice, no child tracking
-        // — because nothing on this side lists what the other side wires. See SessionWiring.
-        var wiring = new SessionWiring.Wiring(
-            System: _host.System,
-            Main: _host.Main,
-            Tab: tab,
-            Session: session,
-            Manager: _host.Manager,
-            Resolution: _host.Resolution,
-            Mode: _host.Mode,
-
-            // JUDGED BY ITS OWN ROOT, AND SAYING WHICH SESSION IT IS. The root stops this session
-            // being measured against another's folder, and the id is what a permission decision is
-            // filed under.
-            // AND THE LOG TREE, so a backgrounded command's output — which the app writes there and
-            // then tells the model to read — does not cost a prompt. Derived through AppPaths rather
-            // than combined here, so there is one definition of where logs live.
-            Policy: new PermissionPolicy(full, _host.Rules, _host.Mode.Edits)
+        // THE SAME ROUTINE THE STARTUP PATH USES. Written separately, this path once subscribed two of eleven events —
+        // no tool rows, no turn recording, no compression notice, no child tracking — because nothing on this side
+        // listed what the other side wires.
+        //
+        // ITS POLICY TAKES THE CURRENT EDIT MODE, while the session is opened in the agent mode alone: that is how
+        // this door has always opened a tab, and the composer keeps it rather than deciding it.
+        _host.Composer.Wire(new WireRequest(session, _host.Resolution, _host.Mode.Agent)
+        {
+            Policy = new PermissionPolicy(full, _host.Composer.Services.Rules, _host.Mode.Edits)
             {
                 SessionId = session.Id,
-                LogDir = new AppPaths(_host.ConfigDir).LogsDir,
+                LogDir = _host.Composer.Services.Paths.LogsDir,
             },
-            ConfigDir: _host.ConfigDir);
-
-        var (sink, jobs) = SessionWiring.Sinks(_host.System, tab);
-
-        _host.Manager.Open(session, _host.Resolution,
-            SessionWiring.Ports(wiring, sink, jobs), _host.Mode.Agent);
-
-        SessionWiring.Subscribe(wiring, jobs);
+        }, new TuiFrontEnd(new TuiTab(_host.System, _host.Main, tab, _host.Manager, _host.Resolution, _host.Mode, _host.ConfigDir)));
 
         tab.Chat.AddMessage(ChatRole.System, $"session opened in {full}");
 
@@ -189,23 +173,7 @@ public sealed class NewSessionCommand
     /// and a command handler is synchronous. The task is discarded rather than awaited, so a failure
     /// is reported into the tab rather than thrown at a caller that has already returned.</para>
     /// </summary>
-    private async Task LoadPluginsAsync(Session session, SessionTab tab)
-    {
-        if (_host.Resolution.Plugins.Count == 0) return;
-
-        try
-        {
-            var folders = PluginDiscovery.SearchFolders(
-                _host.Resolution.PluginPaths, session.WorkingDirectory, _host.ConfigDir);
-
-            await PluginDiscovery.LoadConfiguredAsync(session, _host.Resolution.Plugins, folders,
-                _host.ConfigDir,
-                message => tab.Chat.AddMessage(ChatRole.System, message),
-                CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            tab.Chat.AddMessage(ChatRole.System, $"could not load plugins: {ex.Message}");
-        }
-    }
+    private Task LoadPluginsAsync(Session session, SessionTab tab) =>
+        _host.Composer.LoadPluginsAsync(session, _host.Resolution,
+            message => tab.Chat.AddMessage(ChatRole.System, message), CancellationToken.None);
 }

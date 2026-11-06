@@ -3,6 +3,7 @@ using CxAgent.Core.Helpers;
 using System.Reflection;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
+using CxAgent.Hosting;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Jobs;
@@ -590,6 +591,9 @@ public static class AppBootstrap
         var mcp = services.Mcp;
         var mcpTokens = services.McpTokens;
         var manager = services.Manager;
+
+        // EVERY SESSION THIS PROCESS SHOWS IS WIRED THROUGH THIS — the first, every tab, every re-wire.
+        var composer = new SessionComposer(new ComposerServices(manager, paths, permissionRules, permissionGate, history));
         using var httpForAuth = new HttpClient();
 
         // /mcp lives in its own type: this file decides WHAT EXISTS, not what a command does.
@@ -712,7 +716,7 @@ public static class AppBootstrap
                     // where a re-wire updates them. THE MODEL BUT NOT ITS LEVEL: a /think without
                     // --save is this tab's, so the new one starts at the instance's saved level.
                     (current, arguments) => new NewSessionCommand(new NewSessionCommand.Host(
-                        system, mainWindow, manager, permissionRules,
+                        system, mainWindow, manager, composer,
                         current.NewSessionResolution ?? configNow.Value, current.Mode, paths.ConfigDir))
                         .Run(current, NewSessionCommand.FolderFrom(arguments)));
 
@@ -1094,8 +1098,6 @@ public static class AppBootstrap
             // its sinks at whatever tab happened to be in front.
             var wiringTab = mainWindow.TabForSession(wired) ?? mainWindow.ActiveTab;
 
-            var (sink, jobPanelSink) = SessionWiring.Sinks(
-                system, wiringTab, beforeUserTurn: RemoveQueuedBlock);
             // The row and the agent must agree from the first frame — a status line that is right
             // only after the user touches something is a status line nobody trusts.
             // THE WIRED TAB'S ROW. The window's own mode line is the tab in front, so painting it from a
@@ -1123,78 +1125,30 @@ public static class AppBootstrap
                     transcript.Write(new Message(line, Severity.Info));
                 pluginReapReported = true;
             }
-            // THROUGH THE MANAGER, not SessionFactory directly. Wiring outside it left the manager's
-            // collection empty while a session was plainly running, which Adopt() was added to paper
-            // over — the session went in afterwards, and nothing checked that what the root wired
-            // matched what the manager would have. One routine now does both, so the collection
-            // cannot disagree with reality. Idempotent on re-wire: /model and resume call this again
-            // with the same Session, and Open adds it only if it is not already there.
-            // THROUGH THE MANAGER, not SessionFactory directly. Wiring outside it left the manager's
-            // collection empty while a session was plainly running. Idempotent on re-wire: /model and
-            // resume call this again with the same Session, and Open adds it only if it is not
-            // already there.
-            var wiring = new SessionWiring.Wiring(
-                System: system,
-                Main: mainWindow,
-                Tab: wiringTab,
-                Session: wired,
-                Manager: manager,
-                Resolution: res,
-                Mode: mode,
-                // THIS SESSION'S OWN, not the one built at startup. A policy carries the root it
-                // judges against and the id decisions are filed under, so re-wiring session B with
-                // session A's policy would judge B's file operations against A's folder.
-                // AND REBUILT WHEN THE FOLDER MOVED UNDER IT. A resume can now carry the session to
-                // the folder its conversation came from, and the startup policy was built once, at
-                // launch, against the folder the app opened in — reusing it would judge the arriving
-                // project's file operations against the departing one's root and trust, which is the
-                // direction that grants more than the user gave.
-                Policy: kept.Policy ?? (ReferenceEquals(wired, session)
-                        && string.Equals(permissionPolicy.Root, wired.WorkingDirectory,
-                                         StringComparison.Ordinal)
+            // THROUGH THE COMPOSER, which every door uses — this one, /sessions new, and a session a browser opens.
+            // It opens the session through the manager (idempotent on re-wire: /model and resume call this again
+            // with the same Session), gives it its ports, and files its permission decisions.
+            composer.Wire(new WireRequest(wired, res, mode)
+            {
+                // THIS SESSION'S OWN, not the one built at startup. A policy carries the root it judges against
+                // and the id decisions are filed under, so re-wiring session B with session A's policy would judge
+                // B's file operations against A's folder. AND REBUILT WHEN THE FOLDER MOVED UNDER IT: a resume can
+                // carry the session to the folder its conversation came from, and the startup policy was built
+                // against the folder the app opened in. Null builds a fresh one for the session's own folder.
+                Policy = kept.Policy ?? (ReferenceEquals(wired, session)
+                        && string.Equals(permissionPolicy.Root, wired.WorkingDirectory, StringComparison.Ordinal)
                     ? permissionPolicy
-                    : new PermissionPolicy(wired.WorkingDirectory, permissionRules, mode.Edits)
-                      {
-                          SessionId = wired.Id,
-                          LogDir = paths.LogsDir,
-                      }),
-                ConfigDir: paths.ConfigDir);
-
-            manager.Open(wired, res,
-                SessionWiring.Ports(wiring, sink, jobPanelSink), mode);
+                    : null),
+            }, new TuiFrontEnd(new TuiTab(system, mainWindow, wiringTab, manager, res, mode, paths.ConfigDir)
+            {
+                BeforeUserTurn = RemoveQueuedBlock,
+            }));
 
             // Non-fatal config complaints — a server entry we could not read. Said once, here,
             // because a skipped server the user never hears about is indistinguishable from one
             // that is merely slow to connect.
             foreach (var warning in res.Warnings ?? [])
                 transcript.Write(new Message(warning, Severity.Warning));
-
-            // PERMISSION DECISIONS INTO HISTORY. Set here rather than at the gate's construction
-            // because the session id does not exist until the host does — and reassigned on every
-            // re-wire (a re-wire changes provider), so the hook reads the session lazily rather than closing
-            // over the id of a host that has since been replaced.
-            // THE REPORT'S SESSION, NOT THE ONE THIS CLOSURE WAS BUILT OVER. One gate serves every
-            // session, so a report can arrive from any of them; reading `session` here would file
-            // every row against whichever session happened to wire the callback. The fallback to
-            // this session's id covers a request that carried no policy, which is the only case
-            // where the report cannot say.
-            // PERMISSION DECISIONS INTO HISTORY. Set here rather than at the gate's construction
-            // because the session id does not exist until the host does.
-            //
-            // BOTH FIELDS FROM THE REPORT, NOT THE CLOSURE. One gate serves every session, so a
-            // report can arrive from any of them — and taking the id from the report while taking
-            // the FOLDER from `session` filed rows naming session B beside session A's directory.
-            // The fallbacks cover a request that carried no policy, the only case where the report
-            // cannot say.
-            permissionGate.OnDecision = report =>
-                history.SavePermission(new PermissionRecord(
-                    report.SessionId ?? wired.Id, DateTimeOffset.UtcNow,
-                    report.Kind.ToString(), report.Decision, report.Requester,
-                    report.Root ?? wired.WorkingDirectory, report.Subject, report.Flagged));
-
-            // EVERY READOUT, ADDRESSED TO THIS SESSION'S TAB — the same call /sessions new makes,
-            // which is the point: written separately, that path wired two of these eleven.
-            SessionWiring.Subscribe(wiring, jobPanelSink);
 
             // ONCE, AT WIRE-UP, and this half stays here: the panel's session id is the WINDOW's
             // readout of whichever tab is in front, and at startup that is this one.

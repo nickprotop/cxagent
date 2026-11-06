@@ -96,8 +96,11 @@ public sealed class SessionLock : IDisposable
     /// <summary>
     /// What to tell a user who tried to open a session <paramref name="held"/> has: where it is open, and for
     /// a terminal, how to reach it from a browser anyway.
+    ///
+    /// <para>THIS PROCESS IS NAMED AS HERE. "Open in terminal, run /web there" said to someone sitting in that
+    /// terminal sends them looking for another window.</para>
     /// </summary>
-    public static string HeldMessage(HeldBy held) => held.Kind switch
+    public static string HeldMessage(HeldBy held) => held.Pid == Environment.ProcessId ? "already open in this window" : held.Kind switch
     {
         LockHolder.Terminal => "open in terminal · run /web there to share it",
         LockHolder.Web => "open on the web",

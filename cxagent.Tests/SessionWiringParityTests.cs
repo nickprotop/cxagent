@@ -86,7 +86,7 @@ public class SessionWiringParityTests
     [Fact]
     public void TheSharedWiringGivesEachSessionItsOwnClassifier()
     {
-        var source = Read("cxagent/UI/SessionWiring.cs");
+        var source = Read("cxagent/Hosting/SessionComposer.cs");
 
         Assert.Contains("Policy = Reviewing(", source);
         Assert.Contains("PermissionDecider.ClassifierFor(", source);
@@ -142,8 +142,18 @@ public class SessionWiringParityTests
     {
         var source = Read(file);
 
+        Assert.Contains("Composer.Wire(", source, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("new TuiFrontEnd(", source);
+    }
+
+    /// <summary>AND THE TERMINAL'S FRONT END IS WHAT SUBSCRIBES AND BUILDS THE SINKS, so routing both paths through
+    /// the composer still gives every tab all eleven readouts.</summary>
+    [Fact]
+    public void TheTerminalFrontEndUsesTheSharedSinksAndSubscriptions()
+    {
+        var source = Read("cxagent/UI/TuiFrontEnd.cs");
+
         Assert.Contains("SessionWiring.Subscribe(", source);
-        Assert.Contains("SessionWiring.Ports(", source);
         Assert.Contains("SessionWiring.Sinks(", source);
     }
 }
