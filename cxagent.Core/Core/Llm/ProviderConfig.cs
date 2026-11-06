@@ -476,6 +476,12 @@ public record ProviderSettings(
     public Sandbox.SandboxSettings? Sandbox { get; init; }
 
     /// <summary>
+    /// The <c>web</c> block — <see cref="Web.WebSettings.Default"/> when config.json names none, and null only
+    /// for settings built in code, which then use the default too.
+    /// </summary>
+    public Web.WebSettings? Web { get; init; }
+
+    /// <summary>
     /// The name of the theme the terminal should start in, or null for cxagent's own.
     ///
     /// <para>A NAME RATHER THAN COLOURS. The window framework owns the theme registry and ships a
@@ -1067,6 +1073,7 @@ public static class ProviderConfigLoader
             }
 
             var sandbox = CxAgent.Core.Sandbox.SandboxSettings.Read(root, warnings);
+            var web = CxAgent.Core.Web.WebSettings.Read(root, warnings);
 
             // READ AFTER `warnings` EXISTS, not beside the other llmAgent fields above: a malformed
             // term warns rather than throwing, and there is nowhere to put a warning before this.
@@ -1377,6 +1384,7 @@ public static class ProviderConfigLoader
                 WebSearch = webSearch,
                 Hooks = hooks,
                 Sandbox = sandbox,
+                Web = web,
                 Theme = theme,
                 Plugins = plugins,
                 PluginPaths = pluginPaths,

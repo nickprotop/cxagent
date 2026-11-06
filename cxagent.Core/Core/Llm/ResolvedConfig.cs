@@ -114,6 +114,9 @@ public sealed record ResolvedConfig(
     /// config.json's own absent block has already become the app default by the time it gets here.</summary>
     public Sandbox.SandboxSettings Sandbox => Catalog.Sandbox ?? CxAgent.Core.Sandbox.SandboxSettings.Off;
 
+    /// <summary>The web server settings. Never null — none configured is <see cref="Web.WebSettings.Default"/>.</summary>
+    public Web.WebSettings Web => Catalog.Web ?? CxAgent.Core.Web.WebSettings.Default;
+
     /// <summary>The theme name from config, or null for cxagent's own. Resolved at startup, where
     /// an unknown name falls back rather than failing — the registry does not exist here.</summary>
     public string? Theme => Catalog.Theme;
@@ -198,7 +201,8 @@ public static class ConfigResolver
                   ShellDetachOnTimeout = settings.ShellDetachOnTimeout,
                   WebSearch = settings.WebSearch,
                   Hooks = settings.Hooks,
-                  Sandbox = settings.Sandbox },
+                  Sandbox = settings.Sandbox,
+                  Web = settings.Web },
                 [],
                 settings.Warnings,
                 Entries: new PluginEntries(settings.Plugins));
@@ -312,7 +316,8 @@ public static class ConfigResolver
                   ShellDetachOnTimeout = settings.ShellDetachOnTimeout,
                   WebSearch = settings.WebSearch,
                   Hooks = settings.Hooks,
-                  Sandbox = settings.Sandbox },
+                  Sandbox = settings.Sandbox,
+                  Web = settings.Web },
                 [],
                 settings.Warnings,
                 Entries: new PluginEntries(settings.Plugins));

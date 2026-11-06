@@ -115,6 +115,13 @@
     "               \"hiddenEnv\": [], \"passEnv\": [] }",
     "/sandbox shows what a command may touch; F8's General tab edits it; CONFIG.md has the lists."
   ],
+  "//web": [
+    "THE BROWSER FRONT END: `cxagent web`, or /web inside the terminal. Every key is optional:",
+    "  \"web\": { \"port\": 5180, \"bind\": \"127.0.0.1\", \"selfSigned\": false, \"login\": \"auto\",",
+    "           \"users\": { \"me\": \"a password, or a hash from: cxagent web passwd me\" },",
+    "           \"roots\": [\"~/source\"], \"idleMinutes\": 30 }",
+    "A login is a shell on this machine. CONFIG.md has the modes and the safety notes."
+  ],
   "//hooks": [
     "COMMANDS ON THE AGENT'S EVENTS, before or after a tool call, when a prompt is sent, when a turn",
     "ends. Left as a comment here: a live block would run its command for whoever copies this file.",
