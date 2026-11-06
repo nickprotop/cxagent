@@ -38,6 +38,15 @@ public class AppPaths
     /// </summary>
     public string LogsDir => Path.Combine(ConfigDir, "logs");
 
+    /// <summary>
+    /// Where a process claims the sessions it has open — see <see cref="SessionLock"/>.
+    ///
+    /// <para>NOT INSIDE A SESSION'S OWN FOLDER. A held lock cannot be opened by anything else in .NET, not even
+    /// to read, so a lock file among a session's logs breaks every reader that walks that folder — hashing it,
+    /// copying it, listing what is in it.</para>
+    /// </summary>
+    public string LocksDir => Path.Combine(ConfigDir, "locks");
+
     public AppPaths(string? overrideDir = null)
     {
         if (overrideDir is not null)

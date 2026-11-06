@@ -20,9 +20,18 @@ public class PluginStartLimitTests : IDisposable
     private readonly string _dir =
         Path.Combine(Path.GetTempPath(), "plugin-start-" + Guid.NewGuid().ToString("N"));
 
+    // THE CONFIG DIRECTORY BESIDE THE PLUGIN FOLDER, NOT IT. A load set's identity hashes every file under the
+    // plugin's folder, and the config directory holds the locks of the sessions it opens, which nothing else
+    // can open while they are held. A real plugin folder never contains the config directory.
+    private string _cfg => _dir + "-cfg";
+
     public PluginStartLimitTests() => Directory.CreateDirectory(_dir);
 
-    public void Dispose() => TempDirectory.Delete(_dir);
+    public void Dispose()
+    {
+        TempDirectory.Delete(_dir);
+        TempDirectory.Delete(_cfg);
+    }
 
     private static PluginManifest Manifest() =>
         new("stuck", "1.0.0", Instructions: null, Spawns: false,
@@ -48,7 +57,7 @@ public class PluginStartLimitTests : IDisposable
     public async Task APluginThatNeverStarts_IsUnloadedAtTheLimit_AndSaysWhy()
     {
         var chat = new BufferedChatSink();
-        var manager = SessionManager.Create(new AppPaths(_dir));
+        var manager = SessionManager.Create(new AppPaths(_cfg));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
             new SessionPorts { Observer = chat, ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
         session.PluginStartLimit = TimeSpan.FromMilliseconds(200);

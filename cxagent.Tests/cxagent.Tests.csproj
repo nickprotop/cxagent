@@ -60,6 +60,7 @@
     <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture.DeclaresClient/cxagent.Tests.PluginFixture.DeclaresClient.csproj" />
     <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture.ClaimsCommand/cxagent.Tests.PluginFixture.ClaimsCommand.csproj" />
     <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture.Harness/cxagent.Tests.PluginFixture.Harness.csproj" />
+    <ProjectReference Include="fixtures/cxagent.Tests.LockHolder/cxagent.Tests.LockHolder.csproj" />
 
     <!-- THE REAL LSP PLUGIN, AS A BUILD DEPENDENCY ONLY. ReferenceOutputAssembly="false" is the
          whole point: this project must not compile against a plugin's types, or the core suite

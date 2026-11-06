@@ -20,6 +20,11 @@ public class PluginCommandRegistrationTests : IDisposable
     private readonly string _dir =
         Path.Combine(Path.GetTempPath(), "plugin-cmd-" + Guid.NewGuid().ToString("N"));
 
+    // THE CONFIG DIRECTORY BESIDE THE PLUGIN FOLDER, NOT IT. A load set's identity hashes every file under the
+    // plugin's folder, and the config directory holds the locks of the sessions it opens, which nothing else
+    // can open while they are held. A real plugin folder never contains the config directory.
+    private string _cfg => _dir + "-cfg";
+
     public PluginCommandRegistrationTests() => Directory.CreateDirectory(_dir);
 
     /// <summary>
@@ -30,7 +35,11 @@ public class PluginCommandRegistrationTests : IDisposable
     /// teardown — "Directory not empty", for a defect that does not exist. Retried, then ignored, as
     /// AgentDeliveryTests.Dispose does: this is a temp folder the OS reaps anyway.</para>
     /// </summary>
-    public void Dispose() => TempDirectory.Delete(_dir);
+    public void Dispose()
+    {
+        TempDirectory.Delete(_dir);
+        TempDirectory.Delete(_cfg);
+    }
 
     private static JsonElement EmptySchema() => JsonSerializer.SerializeToElement(new { type = "object" });
 
@@ -69,7 +78,7 @@ public class PluginCommandRegistrationTests : IDisposable
 
     private Session Wired(out SessionManager manager)
     {
-        manager = SessionManager.Create(new AppPaths(_dir));
+        manager = SessionManager.Create(new AppPaths(_cfg));
         return manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
             new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);

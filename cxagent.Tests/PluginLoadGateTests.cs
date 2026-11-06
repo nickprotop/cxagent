@@ -22,8 +22,17 @@ public class PluginLoadGateTests : IDisposable
     private readonly string _dir =
         Path.Combine(Path.GetTempPath(), "plugin-load-gate-" + Guid.NewGuid().ToString("N"));
 
+    // THE CONFIG DIRECTORY BESIDE THE PLUGIN FOLDER, NOT IT. A load set's identity hashes every file under the
+    // plugin's folder, and the config directory holds the locks of the sessions it opens, which nothing else
+    // can open while they are held. A real plugin folder never contains the config directory.
+    private string _cfg => _dir + "-cfg";
+
     public PluginLoadGateTests() => Directory.CreateDirectory(_dir);
-    public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
+    public void Dispose()
+    {
+        if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
+        if (Directory.Exists(_cfg)) Directory.Delete(_cfg, recursive: true);
+    }
 
     private static JsonElement EmptySchema() => JsonSerializer.SerializeToElement(new { type = "object" });
 
@@ -256,7 +265,7 @@ public class PluginLoadGateTests : IDisposable
     {
         manager = SessionManager.Create(new ProcessSetup
         {
-            Paths = new AppPaths(_dir),
+            Paths = new AppPaths(_cfg),
             BuildGate = _ => gate,
         });
         return manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
@@ -513,7 +522,7 @@ public class PluginLoadGateTests : IDisposable
         var sink = new BufferedChatSink();
         using var manager = SessionManager.Create(new ProcessSetup
         {
-            Paths = new AppPaths(_dir),
+            Paths = new AppPaths(_cfg),
             BuildGate = _ => new ScriptedGate(PermissionOutcome.Allow),
             Mcp = mcp,
         });
@@ -620,7 +629,7 @@ public class PluginLoadGateTests : IDisposable
     [Fact]
     public async Task WithNoGateWiredLoadingProceedsUnasked()
     {
-        var manager = SessionManager.Create(new AppPaths(_dir));
+        var manager = SessionManager.Create(new AppPaths(_cfg));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
             new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
@@ -644,11 +653,11 @@ public class PluginLoadGateTests : IDisposable
     [Fact]
     public async Task APluginsToolsAreGated()
     {
-        var manager = SessionManager.Create(new AppPaths(_dir));
+        var manager = SessionManager.Create(new AppPaths(_cfg));
         using var __ = manager;
 
         var gate = new LoadsButDeclinesCallsGate();
-        var policy = new PermissionPolicy(_dir, new PermissionRulesStore(new AppPaths(_dir)));
+        var policy = new PermissionPolicy(_dir, new PermissionRulesStore(new AppPaths(_cfg)));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
             new SessionPorts
             {

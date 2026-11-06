@@ -39,6 +39,7 @@ public sealed class SessionManager : IDisposable
 {
     private readonly List<Session> _sessions = [];
     private readonly object _gate = new();
+    private readonly Dictionary<Session, SessionLock> _locks = [];
     private readonly bool _ownsServices;
 
     /// <summary>The directory a relative <c>pluginPaths</c> entry resolves against — AddPlugin's
@@ -362,6 +363,12 @@ public sealed class SessionManager : IDisposable
     /// the errors with it, and "no provider" without "why" is worse than no answer.</para>
     /// </summary>
     public ResolvedConfig Config { get; private set; }
+
+    /// <summary>
+    /// What this process is, as other processes see it when they find one of its sessions open: "open in
+    /// terminal", "open on the web". Set by the host before it opens anything; a terminal unless said.
+    /// </summary>
+    public LockHolder Holder { get; set; } = LockHolder.Terminal;
 
     private SessionManager(SharedServices shared, PermissionRulesStore? rules, bool ownsServices,
         ResolvedConfig? config = null)
@@ -797,6 +804,8 @@ public sealed class SessionManager : IDisposable
         // four steps of a resume only work together — see Resume.
         session.NoteManager(this);
 
+        HoldCurrentFolder(session);
+
         return session;
     }
 
@@ -1171,7 +1180,54 @@ public sealed class SessionManager : IDisposable
         // shows up in `/sessions` and in --resume's picker as an unfinished conversation to return
         // to; picking it restores a transcript whose host is gone.
         session.MarkFinished();
+        Release(session);
         return true;
+    }
+
+    /// <summary>
+    /// Claims the folder of the session's current agent, and lets go of the one it held before.
+    ///
+    /// <para>NEW BEFORE OLD. A re-wire or a resume gives the conversation a new agent id and a new folder; taking
+    /// the new one first means there is no moment when the conversation's newest folder is unclaimed and a
+    /// second process could resume it.</para>
+    ///
+    /// <para>A REFUSED CLAIM IS SAID, NOT THROWN. Every door that resumes a session asks first whether it is
+    /// held, so only a race lands here — and refusing to wire at this point would leave the user with a dead
+    /// tab instead of a warning.</para>
+    /// </summary>
+    private void HoldCurrentFolder(Session session)
+    {
+        if (Shared.Logs is not { } logs || session.SessionId is not { } agentId) return;
+
+        SessionLock? previous;
+        lock (_gate) _locks.TryGetValue(session, out previous);
+        if (previous?.AgentId == agentId) return;
+
+        var claimed = SessionLock.TryAcquire(logs.LocksDir, agentId, Holder);
+        if (claimed is null)
+        {
+            session.NotifyWarning("This session is open in another process. Changes here are not saved.");
+            return;
+        }
+
+        lock (_gate) _locks[session] = claimed;
+        previous?.Dispose();
+    }
+
+    private void Release(Session session)
+    {
+        SessionLock? held;
+        lock (_gate)
+        {
+            if (!_locks.Remove(session, out held)) return;
+        }
+        held.Dispose();
+    }
+
+    /// <summary>The lock this manager holds for <paramref name="session"/>, or null.</summary>
+    public SessionLock? LockOf(Session session)
+    {
+        lock (_gate) return _locks.GetValueOrDefault(session);
     }
 
     /// <summary>
@@ -1245,6 +1301,12 @@ public sealed class SessionManager : IDisposable
 
         try { Task.WaitAll(pending, stopWindow); }
         catch (Exception) { /* a teardown's own failure is logged where it happened. */ }
+
+        // EVERY LOCK GOES, including a busy session's that Close refused: the process is ending, and a session it
+        // still claimed would read as "open elsewhere" to the next process until this one's pid was gone.
+        List<SessionLock> held;
+        lock (_gate) { held = [.. _locks.Values]; _locks.Clear(); }
+        foreach (var l in held) l.Dispose();
 
         // AND KILL WHAT THE WINDOW DID NOT END — this run's own records only, so a neighbour
         // window's language server is left running. Without this it outlives the app until the

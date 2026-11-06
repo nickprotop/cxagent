@@ -49,6 +49,9 @@ public class LogFileManager
     /// exists before writing, rather than recreating it.</summary>
     public string LogsDir => _paths.LogsDir;
 
+    /// <summary>Where this process's session locks live — see <see cref="AppPaths.LocksDir"/>.</summary>
+    public string LocksDir => _paths.LocksDir;
+
     /// <summary>The directory an agent's logs go to — its ancestry, then its own id.</summary>
     public string DirFor(string agentId) => Path.Combine(_paths.LogsDir, Path.Combine([.. _ancestry, agentId]));
 
