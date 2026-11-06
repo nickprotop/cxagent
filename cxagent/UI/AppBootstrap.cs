@@ -96,6 +96,11 @@ public static class AppBootstrap
         // THE PLUGIN AUTHOR'S COMMANDS, BEFORE ANYTHING ELSE: they use no config folder, no terminal UI
         // and no model, and the session's own parser would refuse "plugin" as an argument without -p.
         // `store` is the same kind of command: it builds a plugin store's catalog from a folder.
+        // THE WEB SERVER WITH NO TERMINAL: its own flags, its own config folder handling, decided on the first word
+        // like the plugin commands, so its options never reach the session's parser.
+        if (args.Length > 0 && args[0] == "web")
+            return Web.WebCli.RunAsync(args[1..]).GetAwaiter().GetResult();
+
         if (args.Length > 0 && (args[0] == "plugin" || args[0] == "store"))
         {
             var command = args[0];

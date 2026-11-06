@@ -97,6 +97,12 @@ public static class Usage
             new("--trust", "Trust this folder for this run only."),
             new("--plugin NAME", "Load that configured plugin for this run, even one with enabled: false (repeatable, or comma-separated); --plugin none loads none."),
         ], Footer: "Exit: 0 answered, 1 failed, 2 usage, 3 turn limit, 130/143 interrupted."),
+        new("WEB",
+            "Use cxagent from a browser. A login there drives an agent that runs commands on this machine.",
+            [
+                new("web [--port N] [--bind ADDR] [--self-signed]", "Serve sessions to browsers, with no terminal. Defaults from config.json's web block: 127.0.0.1:5180, plain HTTP."),
+                new("web passwd USER", "Store a hashed password for USER in web.users."),
+            ], Footer: "Inside the terminal, /web serves its own sessions; /web off stops."),
         new("PLUGIN STORES",
             "A folder of built plugins, one per subfolder, becomes the catalog and zips a web server serves as a plugin store. "
             + "Users then run /plugin store add <name> <base-url>/catalog.json.",

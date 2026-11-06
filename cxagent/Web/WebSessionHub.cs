@@ -49,12 +49,26 @@ public sealed class WebSessionHub(WebHubServices services)
 
     private sealed record LogEntry(SessionEventLog Log, IDisposable Observers, IDisposable Tools);
 
+    private IReadOnlyList<string> _banners = services.Banners;
+
     internal WebHubServices Services => services;
 
+    /// <summary>What every tab shows at the top.</summary>
+    internal IReadOnlyList<string> Banners => _banners;
+
+    /// <summary>Sets the lines every tab shows at the top — known only once the server knows where it listens.</summary>
+    public void SetBanners(IReadOnlyList<string> banners) => _banners = banners;
+
     /// <summary>Serves one tab until its socket closes. <paramref name="user"/> is who logged in, or null without login.</summary>
-    public async Task ServeAsync(WebSocket socket, string? user, CancellationToken ct)
+    public Task ServeAsync(WebSocket socket, string? user, CancellationToken ct) => ServeAsync(socket, user, null, ct);
+
+    /// <summary>
+    /// Serves one tab until its socket closes, remembering the login <paramref name="token"/> it came with so that
+    /// logging out closes it — a session that survived its own logout would be a stolen one that never ends.
+    /// </summary>
+    public async Task ServeAsync(WebSocket socket, string? user, string? token, CancellationToken ct)
     {
-        var client = new WebClient(this, socket, user);
+        var client = new WebClient(this, socket, user) { Token = token };
         _clients[client] = 0;
         using var registration = services.Prompts.Add(client);
         try
@@ -80,6 +94,12 @@ public sealed class WebSessionHub(WebHubServices services)
     {
         Broadcast(new JsonObject { ["type"] = "banner", ["text"] = reason });
         foreach (var c in _clients.Keys) await c.CloseAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>Closes every tab that came with <paramref name="token"/> — its login was just logged out.</summary>
+    public async Task DisconnectTokenAsync(string token)
+    {
+        foreach (var c in _clients.Keys.Where(c => c.Token == token)) await c.CloseAsync().ConfigureAwait(false);
     }
 
     /// <summary>Tells every tab the session list changed.</summary>

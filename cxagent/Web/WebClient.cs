@@ -48,6 +48,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
 
     private WebHubServices S => _hub.Services;
 
+    /// <summary>The login this tab came with, or null without one.</summary>
+    public string? Token { get; init; }
+
     public bool HasOpen(string sessionId) => _open.ContainsKey(sessionId);
 
     public async Task RunAsync(CancellationToken ct)
@@ -58,7 +61,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         {
             ["type"] = "hello",
             ["user"] = _who,
-            ["banners"] = new JsonArray([.. S.Banners.Select(b => (JsonNode)b)]),
+            ["banners"] = new JsonArray([.. _hub.Banners.Select(b => (JsonNode)b)]),
             ["commands"] = new JsonArray([.. WebCommands.Allowed.Select(c => (JsonNode)c)]),
         });
         Send(new JsonObject { ["type"] = "sessions", ["rows"] = _hub.Rows() });

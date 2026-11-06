@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cxagent · log in</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body class="login">
+<form class="login-form" method="post" action="/login">
+  <h1>cxagent</h1>
+  <p class="login-error" id="login-error" hidden></p>
+  <label>User <input name="user" autocomplete="username" required autofocus></label>
+  <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+  <button type="submit">Log in</button>
+</form>
+<script src="/login.js"></script>
+</body>
+</html>
