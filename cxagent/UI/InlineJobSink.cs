@@ -1648,6 +1648,13 @@ public sealed class InlineJobSink : IToolObserver
             // reading, and the reader should not go looking for a decision they just made.
             if (calls.Any(c => c.Outcome is "denied" or "failed")) _chat.SetExpanded(id, true);
         }
+        else
+        {
+            // A ROW WITH NOTHING OF ITS OWN GOES. A round whose only call was a spawn claims one when a burst — a
+            // restored session — has already recorded the next rounds' calls by the time the claim runs; its boundary
+            // says none of them were its own, and an empty "Tools" row would sit there with nothing to show.
+            _chat.RemoveMessage(id);
+        }
 
         _lastSettledAt = upTo ?? CountFor(settling.AgentId ?? _parentAgentId);
         _round = null;

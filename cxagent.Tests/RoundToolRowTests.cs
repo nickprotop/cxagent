@@ -256,6 +256,45 @@ public class EmptyRoundRowTests
 
         Assert.Single(chat.MessageIds);
     }
+
+    // ROUNDS THAT ARRIVE FASTER THAN THE UI DRAINS STILL GET A ROW EACH. A restored session replays every round in
+    // one burst, before the UI thread runs any of the queued boundaries; a round window measured when the queue drained
+    // took every call of the burst into the first row, and the rounds after it drew none.
+    [Fact]
+    public void RoundsRecordedBeforeTheQueueDrainsKeepTheirOwnRows()
+    {
+        var system = SinkFixture.SystemForTest();
+        var chat = new ChatTranscriptControl();
+        var sink = new InlineJobSink(system, chat);
+
+        sink.TurnBegan();
+        sink.RecordToolCall(Call("run_shell", "shell"));
+        sink.RoundEnded();
+        sink.RecordToolCall(Call("agent_send", "file"));
+        sink.RoundEnded();
+        system.ProcessOnce();
+
+        Assert.Equal(2, chat.MessageIds.Count(id => chat.GetRole(id) == ChatRole.Tool));
+    }
+
+    // A ROUND WHOSE ONLY CALL WAS A SPAWN KEEPS NO ROW, burst or not. Its row is claimed when the queue drains and the
+    // burst's later calls are already there to count; once its boundary says they were not its own, the row is empty.
+    [Fact]
+    public void ASpawnOnlyRoundInABurstLeavesNoEmptyRow()
+    {
+        var system = SinkFixture.SystemForTest();
+        var chat = new ChatTranscriptControl();
+        var sink = new InlineJobSink(system, chat);
+
+        sink.TurnBegan();
+        sink.RecordToolCall(Call("agent", "llm_agent"));
+        sink.RoundEnded();
+        sink.RecordToolCall(Call("read_file", "file"));
+        sink.RoundEnded();
+        system.ProcessOnce();
+
+        Assert.Single(chat.MessageIds, id => chat.GetRole(id) == ChatRole.Tool);
+    }
 }
 
 /// <summary>A round that made one call names it, and shows what it returned.</summary>
@@ -357,25 +396,5 @@ public class SingleCallRowTests
         sink.PaintRoundForTest();
 
         Assert.Contains("| tool |", sink.RoundBodyForTest());
-    }
-
-    // ROUNDS THAT ARRIVE FASTER THAN THE UI DRAINS STILL GET A ROW EACH. A restored session replays every round in
-    // one burst, before the UI thread runs any of the queued boundaries; a round window measured when the queue drained
-    // took every call of the burst into the first row, and the rounds after it drew none.
-    [Fact]
-    public void RoundsRecordedBeforeTheQueueDrainsKeepTheirOwnRows()
-    {
-        var system = SinkFixture.SystemForTest();
-        var chat = new ChatTranscriptControl();
-        var sink = new InlineJobSink(system, chat);
-
-        sink.TurnBegan();
-        sink.RecordToolCall(Call("parent", "run_shell"));
-        sink.RoundEnded();
-        sink.RecordToolCall(Call("parent", "agent_send"));
-        sink.RoundEnded();
-        system.ProcessOnce();
-
-        Assert.Equal(2, chat.MessageIds.Count(id => chat.GetRole(id) == ChatRole.Tool));
     }
 }
