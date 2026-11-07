@@ -78,11 +78,57 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
   </div>
 </div>
 
+<section id="start" class="minute">
+  <div class="section-label"><span>//</span> Start</div>
+  <h2>Your first minute</h2>
+  <p class="section-sub">From an install line to a team at work and the same session on your phone — what you type,
+  and what it answers. Every line here is from a real run.</p>
+  <ol class="track">
+      <li class="step">
+        <div class="tick"><i></i><span>0:00</span></div>
+        <h3>Install</h3>
+        <div class="term"><span class="in">curl -fsSL …/install.sh | bash</span><span class="out ok">✓ cxagent <span data-cxagent-version></span> installed!</span></div>
+        <p>One line. No .NET needed.</p>
+      </li>
+      <li class="step">
+        <div class="tick"><i></i><span>0:10</span></div>
+        <h3>Start, and trust</h3>
+        <div class="term"><span class="in">cd ~/source/invoice &amp;&amp; cxagent</span><span class="out">Trust this folder?</span><span class="out acc">▸ Trust this folder</span></div>
+        <p>Reads stop asking. Writes still ask, until you say.</p>
+      </li>
+      <li class="step">
+        <div class="tick"><i></i><span>0:20</span></div>
+        <h3>Ask</h3>
+        <div class="term"><span class="in">run the tests and give me the count</span><span class="out run">▸ run_shell · python3 -m unittest</span><span class="out">5 tests ran, 4 passed, 1 failed.</span></div>
+        <p>Plain language, and every step on screen.</p>
+      </li>
+  </ol>
+  <ol class="track">
+      <li class="step">
+        <div class="tick"><i></i><span>0:35</span></div>
+        <h3>Put a team on it</h3>
+        <div class="term"><span class="in">map the folders, review the last commit</span><span class="out run">⣿ Worker explore · Explore project folders</span><span class="out ok">✓ Worker review · Review last commit diff · 17s</span></div>
+        <p>Workers in the background, kept for the next question.</p>
+      </li>
+      <li class="step">
+        <div class="tick"><i></i><span>0:45</span></div>
+        <h3>It remembers you</h3>
+        <div class="term"><span class="in">remember: tests use xUnit, plain Assert</span><span class="out run">▸ memory · write · test-framework-preferences</span><span class="out">Memory  1 system · 0 project</span></div>
+        <p>The next session already knows.</p>
+      </li>
+      <li class="step">
+        <div class="tick"><i></i><span>1:00</span></div>
+        <h3>Carry on from your phone</h3>
+        <div class="term"><span class="in">/web</span><span class="out">Serving this terminal's sessions at</span><span class="out acc">http://localhost:5180/</span></div>
+        <p>The same live session, on any screen.</p>
+      </li>
+  </ol>
+  <p class="feature-links"><a href="docs/#quickstart">The whole guide, with pictures →</a></p>
+</section>
+
 <section id="features" class="features">
   <div class="section-label"><span>//</span> Features</div>
   <h2>Four things it is built around</h2>
-  <p class="section-sub">Every capture is from a real session. Nothing is staged, and the mistakes
-  are still in the pictures.</p>
 
   <div class="feature">
     <div class="feature-text">
@@ -199,19 +245,6 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
   <p class="note"><a href="docs/walkthrough.html">The full walkthrough, with every capture →</a></p>
 </section>
 
-<section id="start" class="start-strip">
-  <div class="section-label"><span>//</span> Start</div>
-  <h2>A first session, in a minute</h2>
-  <ol class="steps">
-    <li><b>Install</b> — the one line above.</li>
-    <li><b>Start it in a project</b> with your work committed, and trust the folder.</li>
-    <li><b>Ask</b> for something, in plain language.</li>
-    <li><b>Put a team on it</b> — workers that stay for the next question.</li>
-    <li><b>It remembers you</b>, from one session to the next.</li>
-    <li><b>Carry on from your phone</b>, in the same session.</li>
-  </ol>
-  <p class="feature-links"><a href="docs/#quickstart">The whole guide, with pictures →</a></p>
-</section>
 
 <section id="why">
   <div class="section-label"><span>//</span> And</div>

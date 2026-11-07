@@ -586,16 +586,33 @@ body.landing { max-width: none; }
   .inset { left: -6px; width: 62%; }
 }
 
-/* THE FIRST SESSION, as six short steps: the page's promise that it is a minute's work, with the guide
-   one link away. Numbered because the order is real. */
-.start-strip .steps { counter-reset: step; list-style: none; padding: 0; margin: 1.2rem 0;
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 28px; }
-.start-strip .steps li { counter-increment: step; position: relative; padding-left: 2.1rem; color: var(--fg-dim); }
-.start-strip .steps li::before { content: counter(step); position: absolute; left: 0; top: 0;
-  font: 600 0.85rem var(--mono, monospace); color: var(--accent, var(--fg-bright)); }
-.start-strip .steps b { color: var(--fg-bright); font-weight: 600; }
-@media (max-width: 52rem) { .start-strip .steps { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 34rem) { .start-strip .steps { grid-template-columns: 1fr; } }
+/* THE FIRST MINUTE, as a timeline: each step what you type and the line cxagent answers with, taken from real runs.
+   TWO ROWS OF THREE, because six across left too little room for a terminal line to show whole. On a phone a row
+   becomes cards that swipe sideways, and nothing widens the page. */
+.minute .track { position: relative; list-style: none; padding: 0; margin: 1.6rem 0 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.minute .track::before { content: ""; position: absolute; left: 0; right: 0; top: 13px; height: 2px; opacity: .7;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-dim) 70%, var(--border) 100%); }
+.minute .tick { position: relative; display: flex; align-items: center; gap: 8px; height: 28px; margin-bottom: 10px; }
+.minute .tick i { width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 2px solid var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-bg); }
+.minute .tick span { font: 12px var(--font-mono); color: var(--accent); background: var(--bg); padding: 0 6px; }
+.minute .step h3 { font-size: 1rem; margin: 0 0 8px; color: var(--fg-bright); }
+.minute .term { display: flex; flex-direction: column; gap: 2px; background: var(--bg-code); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; font: 12.5px/1.5 var(--font-mono); color: var(--fg-dim); min-height: 5.6em; }
+.minute .term .in { color: var(--fg-bright); overflow-wrap: anywhere; }
+.minute .term .in::before { content: "› "; color: var(--accent); }
+.minute .term .out { overflow-wrap: anywhere; }
+.minute .term .ok { color: var(--ok); }
+.minute .term .run { color: #6cb6ff; }
+.minute .term .acc { color: var(--accent); }
+.minute .step p { margin: 8px 0 0; font-size: .9rem; color: var(--fg-dim); line-height: 1.45; }
+.minute .feature-links { margin-top: 1.6rem; }
+@media (max-width: 52rem) {
+  .minute .track { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 80%;
+    overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 8px; }
+  .minute .step { scroll-snap-align: start; }
+}
 
 /* A PICTURE INSIDE A QUICKSTART STEP: the figure the docs use, with less air around it inside a list. */
 li > figure.step-shot { margin: 0.8rem 0 1.4rem; }

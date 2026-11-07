@@ -145,6 +145,8 @@
         // only fills the label -- and a value from a fetched file never becomes markup.
         versionSlot.textContent = "v" + version + " — what changed →";
         versionSlot.hidden = false;
+        // AND EVERY OTHER PLACE THE PAGE QUOTES IT — the first minute's install line — from the same fetch.
+        document.querySelectorAll("[data-cxagent-version]").forEach(function (el) { el.textContent = "v" + version; });
       })
       .catch(function () { /* a footer line is not worth an error message */ });
   }
