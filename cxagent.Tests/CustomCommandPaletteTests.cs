@@ -20,7 +20,7 @@ public class CustomCommandPaletteTests
         Assert.Equal("/review", row.Name);
         Assert.Contains("does review", row.Summary);
         Assert.Contains("frontend", row.Summary);
-        Assert.Equal("[[pr]]", row.Hint);
+        Assert.Equal("[pr]", row.Hint);   // shown as written, not bracketed again
     }
 
     [Fact]
