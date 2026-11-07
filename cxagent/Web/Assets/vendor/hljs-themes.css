@@ -1,0 +1,55 @@
+/* highlight.js 11.11.1 themes (BSD-3-Clause), scoped to the page's resolved mode: data-mode on <html>. */
+/*!
+  Theme: GitHub Dark
+  Description: Dark theme as seen on github.com
+  Author: github.com
+  Maintainer: @Hirse
+  Updated: 2021-05-15
+
+  Outdated base version: https://github.com/primer/github-syntax-dark
+  Current colors taken from GitHub's CSS
+*/
+:root[data-mode="dark"] pre code.hljs{display:block;overflow-x:auto;padding:1em}
+:root[data-mode="dark"] code.hljs{padding:3px 5px}
+:root[data-mode="dark"] .hljs{color:#c9d1d9;background:#0d1117}
+:root[data-mode="dark"] .hljs-doctag,:root[data-mode="dark"] .hljs-keyword,:root[data-mode="dark"] .hljs-meta .hljs-keyword,:root[data-mode="dark"] .hljs-template-tag,:root[data-mode="dark"] .hljs-template-variable,:root[data-mode="dark"] .hljs-type,:root[data-mode="dark"] .hljs-variable.language_{color:#ff7b72}
+:root[data-mode="dark"] .hljs-title,:root[data-mode="dark"] .hljs-title.class_,:root[data-mode="dark"] .hljs-title.class_.inherited__,:root[data-mode="dark"] .hljs-title.function_{color:#d2a8ff}
+:root[data-mode="dark"] .hljs-attr,:root[data-mode="dark"] .hljs-attribute,:root[data-mode="dark"] .hljs-literal,:root[data-mode="dark"] .hljs-meta,:root[data-mode="dark"] .hljs-number,:root[data-mode="dark"] .hljs-operator,:root[data-mode="dark"] .hljs-selector-attr,:root[data-mode="dark"] .hljs-selector-class,:root[data-mode="dark"] .hljs-selector-id,:root[data-mode="dark"] .hljs-variable{color:#79c0ff}
+:root[data-mode="dark"] .hljs-meta .hljs-string,:root[data-mode="dark"] .hljs-regexp,:root[data-mode="dark"] .hljs-string{color:#a5d6ff}
+:root[data-mode="dark"] .hljs-built_in,:root[data-mode="dark"] .hljs-symbol{color:#ffa657}
+:root[data-mode="dark"] .hljs-code,:root[data-mode="dark"] .hljs-comment,:root[data-mode="dark"] .hljs-formula{color:#8b949e}
+:root[data-mode="dark"] .hljs-name,:root[data-mode="dark"] .hljs-quote,:root[data-mode="dark"] .hljs-selector-pseudo,:root[data-mode="dark"] .hljs-selector-tag{color:#7ee787}
+:root[data-mode="dark"] .hljs-subst{color:#c9d1d9}
+:root[data-mode="dark"] .hljs-section{color:#1f6feb;font-weight:700}
+:root[data-mode="dark"] .hljs-bullet{color:#f2cc60}
+:root[data-mode="dark"] .hljs-emphasis{color:#c9d1d9;font-style:italic}
+:root[data-mode="dark"] .hljs-strong{color:#c9d1d9;font-weight:700}
+:root[data-mode="dark"] .hljs-addition{color:#aff5b4;background-color:#033a16}
+:root[data-mode="dark"] .hljs-deletion{color:#ffdcd7;background-color:#67060c}
+/*!
+  Theme: GitHub
+  Description: Light theme as seen on github.com
+  Author: github.com
+  Maintainer: @Hirse
+  Updated: 2021-05-15
+
+  Outdated base version: https://github.com/primer/github-syntax-light
+  Current colors taken from GitHub's CSS
+*/
+:root[data-mode="light"] pre code.hljs{display:block;overflow-x:auto;padding:1em}
+:root[data-mode="light"] code.hljs{padding:3px 5px}
+:root[data-mode="light"] .hljs{color:#24292e;background:#fff}
+:root[data-mode="light"] .hljs-doctag,:root[data-mode="light"] .hljs-keyword,:root[data-mode="light"] .hljs-meta .hljs-keyword,:root[data-mode="light"] .hljs-template-tag,:root[data-mode="light"] .hljs-template-variable,:root[data-mode="light"] .hljs-type,:root[data-mode="light"] .hljs-variable.language_{color:#d73a49}
+:root[data-mode="light"] .hljs-title,:root[data-mode="light"] .hljs-title.class_,:root[data-mode="light"] .hljs-title.class_.inherited__,:root[data-mode="light"] .hljs-title.function_{color:#6f42c1}
+:root[data-mode="light"] .hljs-attr,:root[data-mode="light"] .hljs-attribute,:root[data-mode="light"] .hljs-literal,:root[data-mode="light"] .hljs-meta,:root[data-mode="light"] .hljs-number,:root[data-mode="light"] .hljs-operator,:root[data-mode="light"] .hljs-selector-attr,:root[data-mode="light"] .hljs-selector-class,:root[data-mode="light"] .hljs-selector-id,:root[data-mode="light"] .hljs-variable{color:#005cc5}
+:root[data-mode="light"] .hljs-meta .hljs-string,:root[data-mode="light"] .hljs-regexp,:root[data-mode="light"] .hljs-string{color:#032f62}
+:root[data-mode="light"] .hljs-built_in,:root[data-mode="light"] .hljs-symbol{color:#e36209}
+:root[data-mode="light"] .hljs-code,:root[data-mode="light"] .hljs-comment,:root[data-mode="light"] .hljs-formula{color:#6a737d}
+:root[data-mode="light"] .hljs-name,:root[data-mode="light"] .hljs-quote,:root[data-mode="light"] .hljs-selector-pseudo,:root[data-mode="light"] .hljs-selector-tag{color:#22863a}
+:root[data-mode="light"] .hljs-subst{color:#24292e}
+:root[data-mode="light"] .hljs-section{color:#005cc5;font-weight:700}
+:root[data-mode="light"] .hljs-bullet{color:#735c0f}
+:root[data-mode="light"] .hljs-emphasis{color:#24292e;font-style:italic}
+:root[data-mode="light"] .hljs-strong{color:#24292e;font-weight:700}
+:root[data-mode="light"] .hljs-addition{color:#22863a;background-color:#f0fff4}
+:root[data-mode="light"] .hljs-deletion{color:#b31d28;background-color:#ffeef0}

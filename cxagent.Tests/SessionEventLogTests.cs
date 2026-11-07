@@ -130,6 +130,67 @@ public sealed class SessionEventLogTests
     }
 
     [Fact]
+    public void A_tool_that_streamed_nothing_ends_with_its_result_and_its_own_duration()
+    {
+        // A REPLAY ARRIVES IN ONE BURST, so a duration the page times itself reads 0.0s; and most tools never stream,
+        // so without the result on the end their row opens on "(no output)".
+        var log = new SessionEventLog("S");
+        var start = DateTimeOffset.UtcNow.AddSeconds(-20);
+        var job = new Job { Id = "J1", AgentId = "A", JobType = "read_file", DisplayName = "read_file · a.txt", State = JobState.Running, StartedAt = start };
+        log.ToolsChanged([job]);
+        job.State = JobState.Succeeded;
+        job.CompletedAt = start.AddSeconds(20);
+        job.Result = new JobResult { Success = true, Output = { ["content"] = "hello" } };
+        log.ToolUpdated(job);
+
+        var ended = log.Since(0).Events.Single(e => e["kind"]!.GetValue<string>() == "toolEnded");
+        Assert.Equal("hello", ended["output"]!.GetValue<string>());
+        Assert.Equal(20_000, ended["ms"]!.GetValue<long>());
+    }
+
+    [Fact]
+    public void A_tool_that_streamed_its_output_does_not_send_it_twice()
+    {
+        var log = new SessionEventLog("S");
+        var job = new Job { Id = "J1", AgentId = "A", JobType = "shell", DisplayName = "run_shell · ls", State = JobState.Running };
+        log.ToolsChanged([job]);
+        log.ToolOutputAppended("J1", "a\nb\n");
+        job.State = JobState.Succeeded;
+        job.Result = new JobResult { Success = true, Output = { ["content"] = "a\nb\n" } };
+        log.ToolUpdated(job);
+
+        var ended = log.Since(0).Events.Single(e => e["kind"]!.GetValue<string>() == "toolEnded");
+        Assert.Null(ended["output"]);
+    }
+
+    [Fact]
+    public void A_worker_event_keeps_its_type_apart_from_the_message_type()
+    {
+        var log = new SessionEventLog("S");
+        log.Worker("W1", "agent-1", "planner", "general", "find tests");
+        var e = log.Since(0).Events.Single();
+        Assert.Equal("event", e["type"]!.GetValue<string>());
+        Assert.Equal("general", e["workerType"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void A_worker_row_that_ends_says_its_last_progress()
+    {
+        // A BACKGROUND WORKER'S ROW ENDS AT LAUNCH, its line set to "started in background" with no progress call
+        // between; without it on the end the card keeps whatever it said before — "starting…".
+        var log = new SessionEventLog("S");
+        var job = new Job { Id = "W1", AgentId = "A", JobType = "llm_agent", DisplayName = "planner", State = JobState.Running,
+            ProgressMessage = "starting…" };
+        log.ToolsChanged([job]);
+        job.ProgressMessage = "started in background · planner";
+        job.State = JobState.Succeeded;
+        log.ToolUpdated(job);
+
+        var ended = log.Since(0).Events.Single(e => e["kind"]!.GetValue<string>() == "toolEnded");
+        Assert.Equal("started in background · planner", ended["progress"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void The_log_counts_turns_and_tool_calls()
     {
         var log = Streamed(1);

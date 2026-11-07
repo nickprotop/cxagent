@@ -416,6 +416,18 @@ public sealed class WebSessionHubTests : IAsyncLifetime
     }
 
     [Fact]
+    // "auto" is offered only with a classifier configured, and models only with a catalog; this host has neither.
+    public async Task The_panel_offers_the_models_and_edit_modes_to_pick_from()
+    {
+        var (tab, _) = await CreatedAsync();
+        await using var __ = tab;
+        var choices = (await tab.NextAsync(Type("panel")))["choices"]!;
+        var modes = choices["modes"]!.AsArray().Select(m => m!["name"]!.GetValue<string>()).ToList();
+        Assert.Contains("always-ask", modes);
+        Assert.Contains("accept-edits", modes);
+    }
+
+    [Fact]
     public async Task The_panel_follows_a_turn()
     {
         _model.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn", Usage = new LlmUsage { InputTokens = 1200, OutputTokens = 30 } });

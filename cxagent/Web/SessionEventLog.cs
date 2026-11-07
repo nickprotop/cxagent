@@ -130,9 +130,12 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         }
     }
 
-    /// <summary>A worker started for the row <paramref name="job"/>: who it is, so its card can name it and open it.</summary>
+    /// <summary>
+    /// A worker started for the row <paramref name="job"/>: who it is, so its card can name it and open it. Its type
+    /// goes out as "workerType": every event already has a "type", which says it is an event.
+    /// </summary>
     public void Worker(string job, string agentId, string name, string? type, string? task) =>
-        Append("worker", new JsonObject { ["job"] = job, ["agentId"] = agentId, ["name"] = name, ["type"] = type, ["task"] = task });
+        Append("worker", new JsonObject { ["job"] = job, ["agentId"] = agentId, ["name"] = name, ["workerType"] = type, ["task"] = task });
 
     /// <inheritdoc/>
     public void UserTurnAdded(ChatMessageId id, string text)
@@ -249,8 +252,19 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
 
     private void Ended(Job job)
     {
-        lock (_gate) _toolCalls++;
+        bool streamed;
+        lock (_gate)
+        {
+            _toolCalls++;
+            streamed = _toolOutput.GetValueOrDefault(job.Id) > 0;
+        }
         var output = job.Result?.Output;
+
+        // THE RESULT, WHEN NOTHING STREAMED. Most tools (a read, a grep, a quick command) never stream, and their row
+        // would open on nothing; this is the terminal's own expanded body, capped like streamed output. Not for a
+        // worker: its result is prose its own tab shows whole.
+        var body = streamed || job.JobType == "llm_agent" ? null : UI.InlineJobSink.BodyFor(job);
+        if (body is { Length: > MaxToolOutput }) body = body[..MaxToolOutput] + "\n… output continues in the session's logs";
         Append("toolEnded", new JsonObject
         {
             ["job"] = job.Id,
@@ -258,6 +272,13 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
             ["sandbox"] = output?.GetValueOrDefault("sandbox") as string,
             ["sandboxWarning"] = output?.ContainsKey("sandbox_warning") == true,
             ["error"] = job.Result?.ErrorMessage,
+            ["output"] = body,
+            // THE JOB'S OWN TIMES, not the page's: a replay delivers a whole session in one burst.
+            ["ms"] = job is { StartedAt: { } from, CompletedAt: { } to } ? (long)(to - from).TotalMilliseconds : null,
+            // THE LAST LINE, AS IT ENDS. A worker sent to the background ends its row at launch with "started in
+            // background" set and no progress call between, so the end is the only place that line arrives.
+            ["progress"] = job.ProgressMessage,
+            ["body"] = job.ProgressBody,
         });
     }
 

@@ -16,11 +16,12 @@ public sealed class WebAssetsTests
         return Encoding.UTF8.GetString(body.Span);
     }
 
-    // THE MODULE RUN AS A SCRIPT: Jint evaluates plain script, and the module's exports are only `export function`.
+    // THE MODULE RUN AS A SCRIPT, after the vendored highlighter as the page loads it: Jint evaluates plain script, and
+    // the module's exports are only `export function`.
     private static Engine Markdown()
     {
         var engine = new Engine();
-        engine.Execute(Regex.Replace(Asset("highlight.js"), @"^\s*export\s+", "", RegexOptions.Multiline));
+        engine.Execute(Asset("vendor/highlight.min.js"));
         engine.Execute(Regex.Replace(Regex.Replace(Asset("markdown.js"), @"^\s*import .*$", "", RegexOptions.Multiline),
             @"^\s*export\s+", "", RegexOptions.Multiline));
         return engine;
@@ -52,13 +53,45 @@ public sealed class WebAssetsTests
         Assert.DoesNotContain("<i>", html, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Markdown_renders_code_fence_with_language_class()
+    [Theory]
+    [InlineData("csharp", "var x = \"a<b\";")]
+    [InlineData("c#", "public class A { }")]
+    [InlineData("rust", "fn main() { let x = 1; }")]
+    [InlineData("go", "func main() { var x int }")]
+    [InlineData("yaml", "key: value")]
+    [InlineData("sql", "SELECT * FROM t WHERE a < 1")]
+    public void Markdown_highlights_every_common_language(string lang, string code)
     {
-        var html = Render("```csharp\nvar x = \"a<b\";\n```");
-        Assert.Contains("<pre><code class=\"lang-csharp\">", html, StringComparison.Ordinal);
-        Assert.Contains("a&lt;b", html, StringComparison.Ordinal);
-        Assert.Contains("tok-k", html, StringComparison.Ordinal);
+        var html = Render("```" + lang + "\n" + code + "\n```");
+        Assert.Contains("<pre><code class=\"hljs language-", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"hljs-", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"copy\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_fence_indented_in_a_list_is_still_code()
+    {
+        var html = Render("1. Run it:\n   ```bash\n   dotnet test\n   ```\n2. Done");
+        Assert.Contains("language-bash", html, StringComparison.Ordinal);
+        Assert.Contains("dotnet", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("```", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_unclosed_fence_while_streaming_is_code_to_the_end()
+    {
+        var html = Render("Here:\n```python\ndef f():\n    return 1");
+        Assert.Contains("language-python", html, StringComparison.Ordinal);
+        Assert.Contains("hljs-keyword", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Code_text_is_escaped_inside_highlighting()
+    {
+        var html = Render("```html\n<script>alert(1)</script>\n```");
+        Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("&lt;", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -86,7 +119,8 @@ public sealed class WebAssetsTests
     [InlineData("/", "text/html")]
     [InlineData("/app.js", "text/javascript")]
     [InlineData("/markdown.js", "text/javascript")]
-    [InlineData("/highlight.js", "text/javascript")]
+    [InlineData("/vendor/highlight.min.js", "text/javascript")]
+    [InlineData("/vendor/hljs-themes.css", "text/css")]
     [InlineData("/app.css", "text/css")]
     [InlineData("/login.html", "text/html")]
     [InlineData("/login.js", "text/javascript")]

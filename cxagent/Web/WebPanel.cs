@@ -105,10 +105,12 @@ internal static class WebPanel
                 ["status"] = sandbox?.StatusIfKnown?.Kind.ToString(),
                 ["enabled"] = sandbox?.Settings.Enabled ?? false,
             },
+            // THE SESSION ANSWERS FOR THESE, not the manager: models and edit modes are per session (its config, its
+            // agent), and the manager returns an empty list for any set it does not own.
             ["choices"] = new JsonObject
             {
-                ["models"] = new JsonArray([.. manager.Values(Core.Commands.ValueSources.Providers).Select(v => (JsonNode)new JsonObject { ["name"] = v.Name, ["summary"] = v.Summary })]),
-                ["modes"] = new JsonArray([.. manager.Values(Core.Commands.ValueSources.EditModes).Select(v => (JsonNode)new JsonObject { ["name"] = v.Name, ["summary"] = v.Summary })]),
+                ["models"] = new JsonArray([.. session.Values(Core.Commands.ValueSources.Providers).Select(v => (JsonNode)new JsonObject { ["name"] = v.Name, ["summary"] = v.Summary })]),
+                ["modes"] = new JsonArray([.. session.Values(Core.Commands.ValueSources.EditModes).Select(v => (JsonNode)new JsonObject { ["name"] = v.Name, ["summary"] = v.Summary })]),
             },
         };
     }
