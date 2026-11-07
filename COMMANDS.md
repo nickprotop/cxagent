@@ -1118,9 +1118,14 @@ The browser has the terminal's tabs and commands:
 - **Workers and commands:** a tab per worker, with its messages, Stop and Background; a background
   command's **Open** in the Tasks panel shows its output as it is written, with Kill and Copy to
   transcript.
+- **The composer:** the terminal's. `/` lists commands with what each does, then their verbs and
+  values — `/memory open ` lists your notes, `/model ` your instances — and `@` completes a path,
+  inside the web folders. ↑/↓ walk what you sent in that session, Esc stops a running turn, and
+  Shift+Tab cycles the edit mode.
 - **Commands:** `/compress`, `/clear`, `/model`, `/mode`, `/think`, `/btw`, `/stats`, `/sandbox`
   (and `/sandbox review`), `/diff`, `/agents`, `/skills`, `/memory`, `/commands`, `/mcp`, `/hooks`, `/tasks`,
-  `/sessions` (the list; a session is resumed from the sidebar), `/open`, `/export` and `/help`.
+  `/sessions` (the list; a session is resumed from the sidebar), `/open`, `/export` and `/help` —
+  and your own: a project's command files and skills run as typed, as in the terminal.
 - **`/open`**, or **Open a file** in the session panel: a file in an editor tab, highlighted, saved
   with Ctrl+S keeping its byte-order mark and line endings, the model told afterwards that you edited
   it. Unedited, the tab follows the file on disk; edited, a change on disk is said, with See theirs

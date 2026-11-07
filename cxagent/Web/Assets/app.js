@@ -117,7 +117,6 @@ function send(message) {
 function handle(m) {
   switch (m.type) {
     case "hello":
-      state.commands = m.commands || [];
       state.access = m.access || null;
       document.querySelector(".logout").hidden = !m.login;
       showBanners(m.banners || []);
@@ -149,6 +148,7 @@ function handle(m) {
     }
     case "confirmClose": confirmClose(m); break;
     case "confirmForget": confirmForget(m); break;
+    case "completions": if (m.n === completeN && m.sessionId === activeSessionId()) completion(m.rows); break;
     case "closed": closed(m.sessionId); break;
     case "gone":
       // NO LONGER THERE — unloaded, or from a server since restarted. Back to the list, where it can be resumed.
@@ -2173,54 +2173,149 @@ $("composer").addEventListener("submit", (e) => {
     drawAttachments();
   }
   send(message);
+  remember(text);
   input.value = "";
   completion(false);
   resize();
 });
 
+// ---- the composer: the terminal's completions, history and keys -------------------------------------------------------
+
+// WHAT THE COMPOSER OFFERS IS THE TERMINAL'S: the server builds the rows with the same call the terminal's menu does —
+// commands with their summaries, then their verbs and values, and paths after an @ — less what a browser may not run.
+// Each row carries the whole line choosing it gives, and where the caret goes. Numbered, so a late answer to an earlier
+// keystroke is dropped rather than drawn over a newer one.
+let completeN = 0, completeTimer = null, shown = [];
+
+function wantsCompletion(text, caret) {
+  if (text.startsWith("/") && !text.includes("\n")) return true;
+  let s = caret;
+  while (s > 0 && !/\s/.test(text[s - 1])) s--;
+  return s < caret && text[s] === "@";
+}
+
+function requestCompletion() {
+  clearTimeout(completeTimer);
+  // A WORKER TAKES MESSAGES, NOT COMMANDS — no list in its tab.
+  const view = state.views.get(state.active);
+  const text = input.value, caret = input.selectionStart ?? text.length;
+  if (!view || view.kind === "worker" || !wantsCompletion(text, caret)) { completion(false); return; }
+  const n = ++completeN;
+  // A SHORT PAUSE, as the terminal's walk waits: a typed word costs one request, not one per letter.
+  completeTimer = setTimeout(() => send({ type: "complete", sessionId: activeSessionId(), text, caret, n }), 80);
+}
+
+function completion(rows) {
+  const list = $("completion");
+  if (rows === false || !rows || !rows.length) { shown = []; list.hidden = true; if (rows === false) completeN++; return; }
+  shown = rows;
+  // A ROW WITH NO TEXT IS SHOWN, NOT CHOSEN: a value the user types themselves, which the list names so it can be found.
+  const first = rows.findIndex((r) => r.text != null);
+  list.replaceChildren(...rows.map((r, i) => {
+    const d = el("div", (r.text == null ? "hint" : "") + (i === first ? " on" : ""));
+    d.append(el("span", "label", r.label));
+    if (r.summary) d.append(el("span", "summary", r.summary));
+    if (r.text != null) d.addEventListener("mousedown", (e) => { e.preventDefault(); choose(r); });
+    return d;
+  }));
+  list.hidden = false;
+}
+
+function choose(row) {
+  input.value = row.text;
+  input.focus();
+  input.setSelectionRange(row.caret, row.caret);
+  completion(false);
+  resize();
+  // NOT FINISHED, SO THE LIST GOES ON: a verb that takes a value ("/memory open ") or a folder ("@src/") offers what
+  // comes next, as the terminal's does.
+  const head = row.text.slice(0, row.caret);
+  if (head.endsWith(" ") || head.endsWith("/")) requestCompletion();
+}
+
+function selected() {
+  const items = [...$("completion").children];
+  const on = items.findIndex((i) => i.classList.contains("on"));
+  return on >= 0 ? shown[on] : null;
+}
+
+function move(by) {
+  const items = [...$("completion").children];
+  let i = items.findIndex((x) => x.classList.contains("on"));
+  for (let step = 0; step < items.length; step++) {
+    i = (i + by + items.length) % items.length;
+    if (shown[i] && shown[i].text != null) break;
+  }
+  items.forEach((x, n) => x.classList.toggle("on", n === i));
+  items[i]?.scrollIntoView({ block: "nearest" });
+}
+
+// ↑/↓ WALK WHAT WAS SENT, as the terminal's composer does — per session, from the line the caret is on: ↑ only from the
+// first line, ↓ only from the last, so moving through a multi-line message still works.
+function remember(text) {
+  const view = state.views.get(state.active);
+  if (!view || !text.trim()) return;
+  view.history = view.history || [];
+  if (view.history[view.history.length - 1] !== text) view.history.push(text);
+  view.recall = view.history.length;
+}
+
+function recall(by) {
+  const view = state.views.get(state.active);
+  const h = view?.history;
+  if (!h || !h.length) return false;
+  const at = view.recall ?? h.length;
+  const next = Math.min(Math.max(at + by, 0), h.length);
+  if (next === at) return false;
+  if (at === h.length) view.draft = input.value;
+  view.recall = next;
+  input.value = next === h.length ? (view.draft || "") : h[next];
+  input.setSelectionRange(input.value.length, input.value.length);
+  resize();
+  return true;
+}
+
 input.addEventListener("keydown", (e) => {
   const list = $("completion");
   if (!list.hidden && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
     e.preventDefault();
-    const items = [...list.children];
-    const on = items.findIndex((i) => i.classList.contains("on"));
-    const next = (on + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
-    items.forEach((i, n) => i.classList.toggle("on", n === next));
+    move(e.key === "ArrowDown" ? 1 : -1);
     return;
   }
-  if (!list.hidden && (e.key === "Tab" || (e.key === "Enter" && list.querySelector(".on")))) {
-    e.preventDefault();
-    const pick = list.querySelector(".on") || list.firstChild;
-    if (pick) { input.value = pick.textContent + " "; completion(false); }
-    return;
+  if (!list.hidden && (e.key === "Tab" && !e.shiftKey || e.key === "Enter" && !e.shiftKey)) {
+    const pick = selected();
+    // A LINE THAT IS ALREADY WHAT THE ROW GIVES IS RUN, not chosen again: Enter on "/clear" sends it.
+    if (pick && !(e.key === "Enter" && pick.text.trim() === input.value.trim())) {
+      e.preventDefault();
+      choose(pick);
+      return;
+    }
+    completion(false);
   }
   if (e.key === "Escape") {
     if (!list.hidden) { completion(false); return; }
-    if (document.body.classList.contains("in-aside")) { e.preventDefault(); leaveAside(); }
+    if (document.body.classList.contains("in-aside")) { e.preventDefault(); leaveAside(); return; }
+    // ESCAPE STOPS A RUNNING TURN, as in the terminal; what was queued comes back to the composer from the server.
+    if (!$("stop").hidden) { e.preventDefault(); send({ type: "stop", sessionId: activeSessionId() }); }
     return;
   }
+  // SHIFT+TAB CYCLES THE EDIT MODE, as in the terminal: always ask, accept edits, auto when a classifier reviews writes.
+  if (e.key === "Tab" && e.shiftKey && state.views.get(state.active)?.kind !== "worker") {
+    e.preventDefault();
+    send({ type: "cycleMode", sessionId: activeSessionId() });
+    return;
+  }
+  if (e.key === "ArrowUp" && !input.value.slice(0, input.selectionStart).includes("\n") && recall(-1)) { e.preventDefault(); return; }
+  if (e.key === "ArrowDown" && !input.value.slice(input.selectionEnd).includes("\n") && recall(1)) { e.preventDefault(); return; }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("composer").requestSubmit(); }
 });
 
 input.addEventListener("input", () => {
   resize();
-  const text = input.value;
-  // A WORKER TAKES MESSAGES, NOT COMMANDS — no completion list in its tab.
-  const worker = state.views.get(state.active)?.kind === "worker";
-  completion(!worker && text.startsWith("/") && !text.includes(" ") ? text : false);
+  const view = state.views.get(state.active);
+  if (view) view.recall = view.history?.length;
+  requestCompletion();
 });
-
-function completion(prefix) {
-  const list = $("completion");
-  if (prefix === false) { list.hidden = true; return; }
-  const matches = state.commands.filter((c) => c.startsWith(prefix));
-  list.replaceChildren(...matches.map((c) => {
-    const d = el("div", null, c);
-    d.addEventListener("mousedown", (e) => { e.preventDefault(); input.value = c + " "; completion(false); input.focus(); });
-    return d;
-  }));
-  list.hidden = matches.length === 0;
-}
 
 function resize() {
   input.style.height = "auto";

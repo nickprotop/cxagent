@@ -554,6 +554,23 @@ public sealed partial class Session
     /// </summary>
     public WorkingMode Mode => Host?.Mode ?? WorkingMode.Default;
 
+    /// <summary>
+    /// Shift+Tab: the next edit mode — always ask, accept edits, then auto when a classifier reviews writes, and back.
+    /// The delegation axis is left as it is: what a turn may spend is /mode's decision, not a keystroke's.
+    /// </summary>
+    public CommandStatus CycleEditMode()
+    {
+        if (Host is null) return CommandStatus.Refused;
+        var next = Mode.Edits switch
+        {
+            EditMode.AlwaysAsk => EditMode.AcceptEdits,
+            // THE SESSION'S CLASSIFIER, ON ITS POLICY — not the gate's, a process-wide fallback cxagent never binds.
+            EditMode.AcceptEdits when Policy?.Classifier is not null => EditMode.Auto,
+            _ => EditMode.AlwaysAsk,
+        };
+        return SetMode(Mode with { Edits = next });
+    }
+
     public CommandStatus SetMode(WorkingMode mode)
     {
         if (Host is null || RefusedWhileBusy()) return CommandStatus.Refused;

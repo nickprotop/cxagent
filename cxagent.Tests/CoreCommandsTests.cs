@@ -174,4 +174,25 @@ public class ModePersistenceTests : IDisposable
         Assert.Equal(CommandStatus.Changed, session.SetMode(new WorkingMode(AgentMode.Single, EditMode.AcceptEdits)));
         Assert.Equal(EditMode.AcceptEdits, manager.Rules!.GetEditMode(_work));
     }
+
+    /// <summary>
+    /// SHIFT+TAB'S CYCLE, IN CORE, so the terminal's key and the browser's run one rule: always ask → accept edits →
+    /// auto, which only a session with a classifier offers → always ask.
+    /// </summary>
+    [Fact]
+    public void CycleEditMode_StepsThroughTheModes_SkippingAutoWithoutAClassifier()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_cfg));
+        var session = manager.Open(_work,
+            ResolvedConfig.ForTesting(new MockLlmProvider("m")),
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+            AgentMode.Single);
+        session.NotePolicy(new PermissionPolicy(_work, manager.Rules!, EditMode.AlwaysAsk));
+        session.SetMode(new WorkingMode(AgentMode.Single, EditMode.AlwaysAsk));
+
+        session.CycleEditMode();
+        Assert.Equal(EditMode.AcceptEdits, session.Mode.Edits);
+        session.CycleEditMode();
+        Assert.Equal(EditMode.AlwaysAsk, session.Mode.Edits);
+    }
 }

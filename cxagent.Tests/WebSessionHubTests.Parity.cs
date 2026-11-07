@@ -759,6 +759,85 @@ public sealed partial class WebSessionHubTests
         finally { await server.StopAsync(); }
     }
 
+    // ---- the composer: the terminal's completions, history keys and Shift+Tab ------------------------------------------
+
+    private static async Task<JsonArray> CompletionsAsync(Tab tab, string id, string text, int? caret = null, int n = 1)
+    {
+        await tab.SendAsync(Msg("complete", ("sessionId", id), ("text", text), ("caret", caret ?? text.Length), ("n", n)));
+        var reply = await tab.NextAsync(m => m["type"]?.GetValue<string>() == "completions" && m["n"]?.GetValue<int>() == n);
+        return reply["rows"]!.AsArray();
+    }
+
+    private static List<string> Labels(JsonArray rows) => [.. rows.Select(r => r!["label"]!.GetValue<string>())];
+
+    [Fact]
+    public async Task Completion_offers_commands_with_summaries_their_verbs_and_values()
+    {
+        new CxAgent.Core.Memory.MemoryStore(_paths.ConfigDir, Work).Write(new("deploy-target", "d", CxAgent.Core.Memory.MemoryScope.Project, "b"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+
+        var commands = await CompletionsAsync(tab, id, "/memo");
+        var memory = Assert.Single(commands, r => r!["label"]!.GetValue<string>() == "/memory")!;
+        Assert.False(string.IsNullOrEmpty(memory["summary"]!.GetValue<string>()));
+
+        Assert.Contains("open <name>", Labels(await CompletionsAsync(tab, id, "/memory ", n: 2)));
+        var note = Assert.Single(await CompletionsAsync(tab, id, "/memory open ", n: 3))!;
+        Assert.Equal("/memory open deploy-target", note["text"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Completion_leaves_out_what_a_browser_may_not_run()
+    {
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        Assert.DoesNotContain("edit", Labels(await CompletionsAsync(tab, id, "/mcp ")));
+        Assert.DoesNotContain("/trust", Labels(await CompletionsAsync(tab, id, "/tr", n: 2)));
+    }
+
+    [Fact]
+    public async Task An_at_completes_paths_inside_the_folders_this_server_opens_only()
+    {
+        Directory.CreateDirectory(Path.Combine(Work, "src"));
+        File.WriteAllText(Path.Combine(Work, "src", "Parser.cs"), "");
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+
+        var file = Assert.Single(await CompletionsAsync(tab, id, "fix @src/Pa"))!;
+        Assert.Equal("fix src/Parser.cs", file["text"]!.GetValue<string>());
+        Assert.Empty(await CompletionsAsync(tab, id, "read @" + Outside + "/", n: 2));
+        Assert.Empty(await CompletionsAsync(tab, id, "read @" + _paths.ConfigDir + "/", n: 3));
+    }
+
+    [Fact]
+    public async Task A_custom_command_is_offered_and_runs_from_a_browser()
+    {
+        Directory.CreateDirectory(Path.Combine(Work, ".cxagent", "commands"));
+        File.WriteAllText(Path.Combine(Work, ".cxagent", "commands", "greet.md"), "Say hello.");
+        _model.EnqueueResponse(Reply("hello"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+
+        Assert.Contains("/greet", Labels(await CompletionsAsync(tab, id, "/gre")));
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/greet")));
+        await TurnDoneAsync(tab);
+        Assert.DoesNotContain(tab.Seen, m => m["type"]?.GetValue<string>() == "notice"
+            && m["text"]!.GetValue<string>().Contains("not available on the web", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Shift_tab_cycles_the_edit_mode_as_in_the_terminal()
+    {
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        var session = _manager.Sessions.Single(s => s.Id == id);
+        var before = session.Mode.Edits;
+
+        await tab.SendAsync(Msg("cycleMode", ("sessionId", id)));
+        await tab.NextAsync(m => m["type"]?.GetValue<string>() == "panel" && m["mode"]?.GetValue<string>() != before.ToString());
+        Assert.NotEqual(before, session.Mode.Edits);
+    }
+
     // ---- memory -----------------------------------------------------------------------------------------------------
 
     private CxAgent.Core.Memory.MemoryStore Memory => new(_paths.ConfigDir, Work);

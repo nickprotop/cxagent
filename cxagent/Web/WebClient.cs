@@ -215,6 +215,19 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "say":
                 Say(Str(m, "sessionId"), Str(m, "text"), m["images"] as JsonArray);
                 break;
+            case "complete":
+                if (LiveSession(Str(m, "sessionId")) is { } typing)
+                    Complete(typing, Str(m, "text") ?? "", m["caret"]?.GetValue<int>() ?? 0, m["n"]?.GetValue<int>() ?? 0);
+                break;
+            case "cycleMode":
+                // SHIFT+TAB, AS IN THE TERMINAL — Session.CycleEditMode, the one rule both keys run. The panel is sent at
+                // once so the picker under the message box shows the new mode without waiting for the next push.
+                if (LiveSession(Str(m, "sessionId")) is { } cycling)
+                {
+                    cycling.CycleEditMode();
+                    if (_hub.PanelFor(cycling.Id) is { } panel) SendPanel(cycling.Id, panel);
+                }
+                break;
             case "leaveAside":
                 LeaveAside(Str(m, "sessionId"));
                 break;
@@ -612,7 +625,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         text ??= "";
         if (text.TrimStart().StartsWith('/'))
         {
-            if (WebCommands.Refusal(text, S.Allow) is { } refused) { Notice(session.Id, refused, "Warning"); return; }
+            if (WebCommands.Refusal(text, S.Allow, t => session.FindTyped(t) is not null) is { } refused) { Notice(session.Id, refused, "Warning"); return; }
             if (WebCommands.IsHelp(text)) { Notice(session.Id, WebCommands.Help(S.Allow), "Info"); return; }
             if (OwnCommand(session, text)) return;
         }
@@ -641,6 +654,48 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 break;
         }
         _hub.ListChanged();
+    }
+
+    /// <summary>
+    /// What the composer offers for what is typed — the terminal's own rows, from <see cref="CxAgent.UI.ComposerCompletion"/>,
+    /// less what a browser may not run: a refused command or verb is not offered, and an <c>@</c> path only inside the
+    /// folders this server opens (anywhere with <c>openAnywhere</c>), never in cxagent's own folder — a directory
+    /// listing is as much a read as opening a file. Answered with the number the page sent, so a late reply to an
+    /// earlier keystroke is told apart and dropped.
+    /// </summary>
+    private void Complete(Session session, string text, int caret, int n)
+    {
+        var manager = S.Manager;
+        bool Custom(string line) => session.FindTyped(line) is not null;
+        var sources = new CxAgent.UI.ComposerSources(manager.Commands,
+            set =>
+            {
+                var values = session.Values(set);
+                if (values.Count == 0) values = manager.Values(set, session.WorkingDirectory);
+                return [.. values.Select(v => new Core.Commands.CommandArgument(v.Name, v.Summary))];
+            },
+            [.. Core.Commands.SessionCommands.FromCatalog(session.Catalog(), manager.Commands.IsRegistered),
+             .. WebCommands.OwnCommands(S.Allow, manager.Commands.IsRegistered)],
+            session.WorkingDirectory) { CommandsOff = session.InAside };
+
+        var paths = CxAgent.UI.AtToken.At(text, caret) is not null;
+        var rows = CxAgent.UI.ComposerCompletion.For(text, caret, sources)
+            .Where(r => paths ? Reachable(r.Label) : r.Text is null || WebCommands.Refusal(r.Text, S.Allow, Custom) is null);
+        Send(new JsonObject
+        {
+            ["type"] = "completions", ["sessionId"] = session.Id, ["n"] = n,
+            ["rows"] = new JsonArray([.. rows.Select(r => (JsonNode)new JsonObject
+            {
+                ["label"] = r.Label, ["summary"] = r.Summary, ["text"] = r.Text, ["caret"] = r.Caret,
+            })]),
+        });
+
+        bool Reachable(string label)
+        {
+            var full = Path.GetFullPath(Path.Combine(session.WorkingDirectory, label));
+            if (WebSessionHub.Resolved(full, [S.Paths.ConfigDir]) is not null) return false;
+            return S.Allow.OpenAnywhere || WebSessionHub.Resolved(full, S.Roots) is not null;
+        }
     }
 
     /// <summary>

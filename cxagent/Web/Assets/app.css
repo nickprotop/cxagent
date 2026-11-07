@@ -239,6 +239,12 @@ body.no-panel .panel { display: none; }
   padding: 4px; min-width: 240px; max-height: 40vh; overflow-y: auto; box-shadow: var(--shadow); }
 .completion div { padding: 5px 10px; cursor: pointer; border-radius: 6px; font: 13px var(--mono); }
 .completion div.on, .completion div:hover { background: var(--raised); }
+.completion div { display: flex; gap: 14px; align-items: baseline; }
+.completion .label { white-space: nowrap; }
+.completion .summary { color: var(--muted); font: 12px var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A VALUE THE USER TYPES THEMSELVES: named so it can be found, not chosen. */
+.completion div.hint { cursor: default; opacity: .65; }
+.completion div.hint:hover { background: transparent; }
 .statusline { display: none; gap: 14px; padding: 5px 14px; border-top: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 12px; flex: none;
   overflow: hidden; white-space: nowrap; }
 

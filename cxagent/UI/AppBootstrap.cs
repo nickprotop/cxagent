@@ -1721,27 +1721,10 @@ public static class AppBootstrap
                     // THE CYCLE SKIPS AUTO WHEN NO CLASSIFIER IS CONFIGURED, so Shift+Tab never lands on
                 // a mode that would do nothing. With one, the order runs strict -> permissive ->
                 // reviewed, which reads as increasing autonomy.
-                var nextEdits = cycling.Mode.Edits switch
-                {
-                    EditMode.AlwaysAsk => EditMode.AcceptEdits,
-                    // THE SESSION'S CLASSIFIER, NOT THE GATE'S. One gate serves every session, so its
-                    // own Classifier is a process-wide FALLBACK that cxagent never binds — see
-                    // PermissionDecider.BindClassifier, which says so and points here. A session's
-                    // classifier rides on its policy, set on every re-wire. Asking the gate meant the
-                    // cycle skipped `auto` for everybody: config named a classifier, one was built and
-                    // handed to the policy, and shift+tab still offered two modes out of three.
-                    EditMode.AcceptEdits when cycling.Policy?.Classifier is not null => EditMode.Auto,
-                    _ => EditMode.AlwaysAsk,
-                };
-
-                // SAME ONE CALL AS /mode. Shift+Tab and the command are the same decision reached
-                // two ways, and the pair of lines this replaced is the pair that gets copied with
-                // the policy half missing.
-                // NO REPAINT HERE. SetMode announces, and the subscription above follows — the
-                // no repaint here: a repaint line beside it is the line a new command forgets.
-                // ONE CALL, NOT TWO. SetMode remembers the preference itself, so there is no second
-                // line here to be copied without its partner.
-                cycling.SetMode(cycling.Mode with { Edits = nextEdits });
+                // THE SESSION'S OWN CYCLE — Session.CycleEditMode — so a browser's Shift+Tab runs the same rule. It reads the
+                // SESSION'S classifier, on its policy, not the gate's process-wide fallback, which cxagent never binds;
+                // and it goes through SetMode, which announces and remembers, so there is nothing to repaint here.
+                cycling.CycleEditMode();
 
                 // SAID OUT LOUD, because a keystroke that changes what runs without asking must not
                 // be silent itself — and the composer line alone is easy to miss mid-flow.

@@ -64,7 +64,11 @@ public static class WebCommands
     public static string? Refusal(string text) => Refusal(text, WebAccess.Default);
 
     /// <summary>Why <paramref name="text"/> may not run from a browser under <paramref name="allow"/>, or null.</summary>
-    public static string? Refusal(string text, WebAccess allow)
+    /// <param name="text">What was typed.</param>
+    /// <param name="allow">The browser's switches.</param>
+    /// <param name="isCustom">Whether the line runs one of the session's command files or skills — a prompt the user
+    /// keeps in a file, which a browser runs as the terminal does. Null for none.</param>
+    public static string? Refusal(string text, WebAccess allow, Func<string, bool>? isCustom = null)
     {
         var parts = text.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var name = parts.Length > 0 ? parts[0].ToLowerInvariant() : "";
@@ -72,7 +76,8 @@ public static class WebCommands
 
         if (Gated.FirstOrDefault(g => g.Name == name) is { Name: not null } gated && !gated.On(allow))
             return Off(name, gated.Switch);
-        if (!Allowed.Contains(name) && !Gated.Any(g => g.Name == name)) return $"{name} is {NotOnTheWeb}.";
+        if (!Allowed.Contains(name) && !Gated.Any(g => g.Name == name))
+            return isCustom?.Invoke(text) == true ? null : $"{name} is {NotOnTheWeb}.";
 
         var verb = args.Split(' ', 2)[0].ToLowerInvariant();
         if (Verbs.FirstOrDefault(v => v.Name == name && v.Verb == verb) is { Name: not null } held)
@@ -115,18 +120,30 @@ public static class WebCommands
         var text = new StringBuilder("| Command | What it does |\n|---|---|\n");
         foreach (var name in AllowedWith(allow))
         {
-            var summary = name switch
-            {
-                "/open" => "open a file in a tab beside the conversation",
-                "/export" => "download this conversation as markdown",
-                "/shell" => "a real terminal in a tab",
-                "/config" => "edit config.json — not the browser's own access, users or folders",
-                _ => SessionCommands.All.Where(c => c.Name == name).Select(c => (string?)c.Summary).FirstOrDefault(),
-            };
+            var summary = OwnSummary(name)
+                ?? SessionCommands.All.Where(c => c.Name == name).Select(c => (string?)c.Summary).FirstOrDefault();
             if (summary is not null) text.Append("| `").Append(name).Append("` | ").Append(Md.EscapeCell(summary)).Append(" |\n");
         }
         return text.ToString();
     }
+
+    /// <summary>
+    /// The commands a browser answers itself that the session's registry may not hold — <c>cxagent web</c> run on its
+    /// own registers no terminal commands — so its composer offers them as the terminal's offers /open and /export.
+    /// </summary>
+    public static IReadOnlyList<SessionCommand> OwnCommands(WebAccess allow, Func<string, bool> isRegistered) =>
+        [.. new[] { "/open", "/export", "/shell", "/config" }
+            .Where(n => !isRegistered(n) && Refusal(n, allow) is null)
+            .Select(n => new SessionCommand(n, OwnSummary(n)!))];
+
+    private static string? OwnSummary(string name) => name switch
+    {
+        "/open" => "open a file in a tab beside the conversation",
+        "/export" => "download this conversation as markdown",
+        "/shell" => "a real terminal in a tab",
+        "/config" => "edit config.json — not the browser's own access, users or folders",
+        _ => null,
+    };
 
     /// <summary>The help with the switches at their defaults.</summary>
     public static string Help() => Help(WebAccess.Default);
