@@ -661,46 +661,9 @@ public sealed class SessionPanel
     /// is explicitly not. Same bounded, never-throwing shape as <see cref="GitBranch"/>: git may be
     /// absent, the tree may be huge, and neither is worth a frozen panel.</para>
     /// </summary>
-    private static string? GitStatus(string? dir = null, TimeSpan? limit = null, string program = "git")
-    {
-        try
-        {
-            // HARDENED: this runs on its own, outside any sandbox, and must not be what runs a repository's fsmonitor.
-            using var p = Process.Start(Core.Sandbox.GitSafe.Harden(new ProcessStartInfo(program, "status --porcelain")
-            {
-                WorkingDirectory = dir ?? "",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            }));
-            if (p is null) return null;
-
-            // READ BEFORE WAITING. Past a pipe's worth of status — about 1,500 files — git blocks until someone
-            // drains it, so waiting first timed out and the tree showed clean.
-            var output = p.StandardOutput.ReadToEndAsync();
-            if (!p.WaitForExit(limit ?? TimeSpan.FromMilliseconds(500))) { try { p.Kill(true); } catch (Exception) { } return "too slow to count"; }
-            if (p.ExitCode != 0) return "status unknown";
-
-            int changed = 0, untracked = 0;
-            foreach (var line in output.GetAwaiter().GetResult().Split('\n'))
-            {
-                if (line.Length < 2) continue;
-                if (line.StartsWith("??", StringComparison.Ordinal)) untracked++;
-                else changed++;
-            }
-
-            if (changed == 0 && untracked == 0) return null;
-
-            var parts = new List<string>(2);
-            if (changed > 0) parts.Add($"{changed} changed");
-            if (untracked > 0) parts.Add($"{untracked} untracked");
-            return string.Join(" · ", parts);
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
+    // THE TREE'S SHAPE IS GitTree's, so a browser's panel reads it the same way.
+    private static string? GitStatus(string? dir = null, TimeSpan? limit = null, string program = "git") =>
+        GitTree.Status(dir, limit, program);
 
     /// <summary>Short form for a token count: 94,102 becomes "94.1k". The panel is 24 columns and
     /// two full counts on one line would not fit — and at these magnitudes the exact digits are

@@ -760,6 +760,18 @@ public sealed partial class WebSessionHubTests
     }
 
     [Fact]
+    public async Task The_panel_shows_the_working_trees_shape_beside_the_branch()
+    {
+        Directory.CreateDirectory(Path.Combine(Work, ".git"));
+        File.WriteAllText(Path.Combine(Work, ".git", "HEAD"), "ref: refs/heads/main\n");
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        var panel = _hub.PanelFor(id)!;
+        Assert.Equal("main", panel["here"]!["git"]!.GetValue<string>());
+        Assert.True(panel["here"]!.AsObject().ContainsKey("gitTree"));
+    }
+
+    [Fact]
     public async Task The_panel_counts_turns_and_tool_calls_as_the_terminal_does()
     {
         File.WriteAllText(Path.Combine(Work, "notes.txt"), "hello");

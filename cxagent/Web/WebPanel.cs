@@ -99,6 +99,9 @@ internal static class WebPanel
             {
                 ["folder"] = session.WorkingDirectory,
                 ["git"] = GitBranch(session.WorkingDirectory),
+                // THE TREE'S SHAPE, as the terminal's panel shows it under the branch — GitTree's cached reading, so a
+                // panel built every second runs git at most once per five seconds.
+                ["gitTree"] = GitBranch(session.WorkingDirectory) is null ? null : CxAgent.UI.GitTree.Cached(session.WorkingDirectory),
                 ["skills"] = session.LoadedSkills.Count,
                 ["permissions"] = manager.Rules?.RulesFor(session.WorkingDirectory).Rules.Count ?? 0,
                 ["turnCap"] = Core.Agents.AgentHost.SessionCeilingFor(res?.Orchestrator?.MaxTurns),

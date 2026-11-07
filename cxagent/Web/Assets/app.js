@@ -1934,7 +1934,10 @@ function drawSessionPane(p) {
   const folder = kv("Folder", shortFolder(p.here.folder));
   folder.title = p.here.folder;
   pane.append(folder);
-  if (p.here.git) pane.append(kv("Branch", p.here.git));
+  if (p.here.git) {
+    pane.append(kv("Branch", p.here.git));
+    pane.append(kv("Working tree", p.here.gitTree || "clean"));
+  }
   pane.append(kv("Skills loaded", String(p.here.skills)));
   pane.append(kv("Always-allow rules", String(p.here.permissions)));
   pane.append(kv("Turn limit", String(p.here.turnCap)));
