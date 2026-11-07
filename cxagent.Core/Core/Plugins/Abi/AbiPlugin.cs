@@ -154,11 +154,18 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
     /// <see cref="IPlugin.Start"/> returns <see cref="Task"/>, not a result type, so a managed
     /// plugin that fails to start already signals it by throwing; this mirrors that rather than
     /// inventing a second failure channel a managed plugin's own callers do not expect.</exception>
+    /// <summary>
+    /// A failed reply, worded for whoever reads it: which plugin, what it was doing, and its own reason — or that it
+    /// gave none. A native plugin may answer <c>{"ok":false}</c> alone, and "it failed" with no name or call is no use.
+    /// </summary>
+    internal static string Failure(string plugin, string what, string? error) =>
+        $"plugin '{plugin}' {what}: {(string.IsNullOrEmpty(error) ? "it gave no reason." : error)}";
+
     public async Task Start(CancellationToken ct)
     {
         var reply = await _host.Start(_workingDirectory, _settings, ct).ConfigureAwait(false);
         if (!reply.Ok)
-            throw new InvalidOperationException($"plugin '{_manifest.Name}' failed to start: {reply.Error}");
+            throw new InvalidOperationException(Failure(_manifest.Name, "failed to start", reply.Error));
     }
 
     /// <summary>
@@ -181,7 +188,7 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
         // log lines, streamed text — reaches the row this call is drawn in.
         var reply = await _host.Invoke(toolName, arguments, ct, context).ConfigureAwait(false);
         if (!reply.Ok)
-            return new JobResult { Success = false, ErrorMessage = reply.Error ?? $"plugin '{_manifest.Name}' call to '{toolName}' failed." };
+            return new JobResult { Success = false, ErrorMessage = Failure(_manifest.Name, $"call to '{toolName}' failed", reply.Error) };
 
         if (reply.Result is null)
             return new JobResult
@@ -211,7 +218,7 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandle
         var reply = await _host.Command(name, arguments, ct).ConfigureAwait(false);
         if (!reply.Ok)
             return new CommandResult(
-                $"plugin '{_manifest.Name}' could not run '/{name}': {reply.Error}", PluginCommandOutcome.Refused);
+                Failure(_manifest.Name, $"could not run '/{name}'", reply.Error), PluginCommandOutcome.Refused);
 
         if (reply.Command is null)
             return new CommandResult(

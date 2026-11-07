@@ -339,7 +339,7 @@ a v2 plugin may add a diagnostic field a v1 host does not read.
 | Native returns | Host behaviour |
 | --- | --- |
 | `{"ok":false,"error":"..."}` | the call fails; `error` becomes the tool's `ErrorMessage` |
-| `{"ok":false}` — no `error`, or an empty one | fails with the generic message `plugin call failed (no error message given).`; a failed `start` is prefixed with the plugin's name |
+| `{"ok":false}` — no `error`, or an empty one | fails as `plugin '<name>' call to '<tool>' failed: it gave no reason.` — the plugin's name and what it was doing (`failed to start`, `could not run '/<command>'`) are always said, and a given `error` takes the reason's place |
 | `{"ok":true,"result":{...}}` from `invoke`, valid `JobResult` shape | the `JobResult`, verbatim |
 | `{"ok":true}` from `start`/`stop` | success, no result to read |
 | `{"ok":true}` from `invoke` (missing `result`) | fails — `invoke` promises a `JobResult` and did not send one |

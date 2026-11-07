@@ -259,13 +259,25 @@ public class AbiCodecTests
         Assert.Equal("not running.", toolFailedResult.Value.ErrorMessage);
     }
 
+    /// <summary>
+    /// NO MESSAGE IS INVENTED HERE: the codec does not know which plugin or which call it is reading, so a failure
+    /// with no error is left for the caller, which does, to word.
+    /// </summary>
     [Fact]
-    public void OkFalseWithNoErrorFieldGetsAGeneratedMessage()
+    public void OkFalseWithNoErrorFieldLeavesTheErrorForTheCallerToWord()
     {
         var envelope = AbiCodec.ParseEnvelope("""{"ok":false}""");
         Assert.True(envelope.IsSuccess);
-        Assert.False(string.IsNullOrEmpty(envelope.Value.Error));
+        Assert.False(envelope.Value.Ok);
+        Assert.Null(envelope.Value.Error);
     }
+
+    [Theory]
+    [InlineData(null, "plugin 'acme/lsp' call to 'hover' failed: it gave no reason.")]
+    [InlineData("", "plugin 'acme/lsp' call to 'hover' failed: it gave no reason.")]
+    [InlineData("no such file", "plugin 'acme/lsp' call to 'hover' failed: no such file")]
+    public void A_failure_names_the_plugin_and_what_it_was_doing(string? error, string expected) =>
+        Assert.Equal(expected, AbiPlugin.Failure("acme/lsp", "call to 'hover' failed", error));
 
     [Fact]
     public void VoidOkTrueEnvelopeSucceedsForStartAndStop()

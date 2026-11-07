@@ -291,10 +291,10 @@ public static class AbiCodec
                 var error = root.TryGetProperty("error", out var errEl) && errEl.ValueKind == JsonValueKind.String
                     ? errEl.GetString()
                     : null;
+                // NO MESSAGE INVENTED: this does not know which plugin or which call it is reading, and the
+                // caller, which does, words the failure — see AbiPlugin.Failure.
                 return AbiParseResult<AbiResultEnvelope>.Success(
-                    new AbiResultEnvelope(false, null, string.IsNullOrEmpty(error)
-                        ? "plugin call failed (no error message given)."
-                        : error));
+                    new AbiResultEnvelope(false, null, string.IsNullOrEmpty(error) ? null : error));
             }
 
             AbiJobResult? result = null;
