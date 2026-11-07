@@ -470,6 +470,11 @@ internal static class SessionFactory
         // line's -c and -r, the session picker, and a headless continue alike.
         if (resumeSnapshot?.Thinking is { } thinking) session.RestoreThinking(thinking);
 
+        // A RESUMED SESSION IS SAVED AT ONCE, not at its first turn. Every resume retires the row it continues, so a
+        // continuation left unsaved until it took a turn was listed nowhere: opened, looked at and closed — or its
+        // process gone — and the conversation could no longer be found, and the next -c took an older one.
+        if (resumeSnapshot is not null) host.SaveSettings();
+
         // THE TRANSCRIPT KEYS ON THE SESSION AND ITS FILE LIVES IN THE AGENT'S FOLDER, so the store
         // is told the mapping here — the first point where both ids are in hand, since SessionId
         // reads through Host and ReplaceHost is what sets it. Re-bound on every wire, because a

@@ -374,6 +374,25 @@ public sealed class WebSessionHubTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_session_opened_and_closed_without_a_turn_is_still_listed()
+    {
+        // OPENING RETIRES THE ROW IT CONTINUES, so the continuation must be saved at once: closed before a turn, it
+        // would otherwise leave neither row listed and the conversation unreachable.
+        new FolderSessionStore(_paths).SaveTurn(new FolderSessionStore.ResumeTurn("SAVED", [new ChatMessage { Role = "user", Content = "a" }], 1, 1, Work));
+        await using var tab = await Tab.OpenAsync(_server.Bound.Port);
+        await tab.SendAsync(Msg("open", ("id", "SAVED")));
+        await tab.NextAsync(Type("opened"));
+        var successor = _manager.Sessions.Single().SessionId;
+        Assert.True(_manager.Close(_manager.Sessions.Single()));
+
+        await tab.SendAsync(Msg("list"));
+        var rows = (await tab.NextAsync(m => m["type"]?.GetValue<string>() == "sessions" && m["rows"]!.AsArray().Count > 0))["rows"]!.AsArray();
+        var row = Assert.Single(rows)!;
+        Assert.Equal(successor, row["agentId"]!.GetValue<string>());
+        Assert.Equal("a", row["title"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task A_session_closed_elsewhere_tells_its_tabs()
     {
         var (tab, id) = await CreatedAsync();
