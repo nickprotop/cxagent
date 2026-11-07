@@ -1002,7 +1002,9 @@ Serves this terminal's sessions to a browser, at the address and with the login 
 
 A browser attached this way drives the very sessions on screen: their prompts show in both places and
 the first answer counts, and a session the browser starts or resumes opens as a tab here. Quitting the
-terminal stops the serving too. Without a terminal, run `cxagent web` instead.
+terminal stops the serving too. Without a terminal, run `cxagent web` instead. `cxagent web --daemon` runs it in the
+background, `cxagent web status` says whether one is running and where, and `cxagent web stop` stops it
+as Ctrl+C would.
 
 ### What a browser can do
 

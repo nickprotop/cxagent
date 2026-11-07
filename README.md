@@ -374,7 +374,14 @@ cxagent web                       # http://localhost:5180, this machine only
 cxagent web passwd me             # store a hashed password in config.json
 cxagent web --bind 0.0.0.0 --self-signed   # reachable from the LAN, over HTTPS
 cxagent --web                     # the terminal, and its sessions in a browser as well
+cxagent web --daemon              # in the background: prints where, and returns
+cxagent web status                # is one running, where, since when
+cxagent web stop                  # stop it as Ctrl+C would: running turns cancelled and saved
 ```
+
+It starts on a short summary: every address it can be reached at — the machine's network addresses
+too when it listens on `0.0.0.0` — who must log in, the folders it opens, the model, and the browser
+access switches. One server runs per config folder; `--daemon` writes its output to `web.log` there.
 
 The page draws a turn as the terminal does: markdown with highlighted code, each round of tool calls
 folded into a row you can open, and each worker as a card that opens its own tab with its own

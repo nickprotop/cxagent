@@ -12,7 +12,11 @@ using CxAgent.Web.Auth;
 namespace CxAgent.Web;
 
 /// <summary>What <c>cxagent web</c> was given on its command line; null means "as config.json says".</summary>
-public sealed record WebCliOptions(int? Port, string? Bind, bool? SelfSigned, string? ConfigDir);
+public sealed record WebCliOptions(int? Port, string? Bind, bool? SelfSigned, string? ConfigDir)
+{
+    /// <summary>Run in the background: start, print where, and return — <c>cxagent web status</c> and <c>stop</c> find it.</summary>
+    public bool Daemon { get; init; }
+}
 
 /// <summary>
 /// <c>cxagent web</c> — the web server with no terminal — and <c>cxagent web passwd &lt;user&gt;</c>.
@@ -28,6 +32,7 @@ public static class WebCli
         int? port = null;
         string? bind = null, configDir = null;
         bool? selfSigned = null;
+        var daemon = false;
         for (var i = 0; i < args.Length; i++)
         {
             string? Value()
@@ -55,13 +60,16 @@ public static class WebCli
                 case "--self-signed":
                     selfSigned = true;
                     break;
+                case "--daemon" or "-d":
+                    daemon = true;
+                    break;
                 default:
-                    error = $"unknown option '{args[i]}'. cxagent web takes --port, --bind, --self-signed and --config-dir.";
+                    error = $"unknown option '{args[i]}'. cxagent web takes --port, --bind, --self-signed, --daemon and --config-dir.";
                     return null;
             }
         }
         error = null;
-        return new WebCliOptions(port, bind, selfSigned, configDir);
+        return new WebCliOptions(port, bind, selfSigned, configDir) { Daemon = daemon };
     }
 
     /// <summary>config.json's settings with the command line's on top: a flag given wins.</summary>
@@ -112,12 +120,20 @@ public static class WebCli
     public static async Task<int> RunAsync(string[] args)
     {
         if (args.Length > 0 && args[0] == "passwd") return Passwd(args[1..]);
+        if (args.Length > 0 && args[0] is "status" or "stop") return Control(args[0], args[1..]);
 
         var options = Parse(args, out var error);
         if (options is null) return Fail(error!);
 
         var paths = new AppPaths(options.ConfigDir);
         paths.EnsureCreated();
+
+        // ONE SERVER PER CONFIG FOLDER: a second would fight the first for the port and for every session's lock.
+        var child = Environment.GetEnvironmentVariable(WebDaemon.ChildVariable) == "1";
+        if (!child && WebDaemon.Running(paths.ConfigDir) is { } already)
+            return Fail($"one is already running for this config folder: {already.Url} (pid {already.Pid}). cxagent web stop ends it.");
+        if (options.Daemon && !child) return StartDaemon(paths, args);
+        if (child) WebDaemon.Detach(paths.ConfigDir);
         var resolution = Startup.Resolve(paths, Startup.Env(), useMock: false, instance: null);
         if (resolution is null || !resolution.HasProvider) return Fail("no model is configured. Run cxagent once to set one up.");
         foreach (var warning in resolution.Warnings ?? []) Console.Error.WriteLine($"cxagent: {warning}");
@@ -178,12 +194,24 @@ public static class WebCli
 
             await using (host)
             {
-                Console.WriteLine($"cxagent web: serving at {host.Url}");
-                foreach (var warning in host.Warnings) Console.Error.WriteLine($"cxagent: {warning}");
-                Console.WriteLine("Press Ctrl+C to stop.");
-                try { await Task.Delay(Timeout.Infinite, stop.Token); }
-                catch (OperationCanceledException) { }
-                Console.WriteLine("cxagent web: stopping — running turns are cancelled and saved.");
+                WebDaemon.Record(paths.ConfigDir, new WebRunning(Environment.ProcessId, host.Url.ToString(), DateTimeOffset.Now, child));
+                try
+                {
+                    var facts = new WebBannerFacts(Version(), host.Url,
+                        WebBanner.NetworkAddresses(settings.Bind, host.Url.Scheme, host.Url.Port), settings,
+                        WebSessionHub.ExpandRoots(settings.Roots, Environment.CurrentDirectory), resolution.InstanceName, host.Warnings);
+                    WebBanner.Write(WebBanner.Lines(facts, child
+                        ? $"running in the background · cxagent web stop ends it · started {DateTimeOffset.Now:yyyy-MM-dd HH:mm}"
+                        : "Ctrl+C to stop · running turns are cancelled and saved"));
+                    _ = WebDaemon.WatchForStopAsync(paths.ConfigDir, stop);
+                    try { await Task.Delay(Timeout.Infinite, stop.Token); }
+                    catch (OperationCanceledException) { }
+                    Console.WriteLine("cxagent web: stopping — running turns are cancelled and saved.");
+                }
+                finally
+                {
+                    WebDaemon.Forget(paths.ConfigDir, Environment.ProcessId);
+                }
             }
             return 0;
         }
@@ -197,6 +225,83 @@ public static class WebCli
             try { await services.Mcp.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5)); }
             catch (Exception) { }
         }
+    }
+
+    private static string Version() =>
+        System.Reflection.Assembly.GetEntryAssembly()
+            ?.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()
+            ?.InformationalVersion.Split('+')[0]
+        ?? "unknown";
+
+    /// <summary>
+    /// <c>--daemon</c>: this command again in the background, and back to the shell once it says where it serves —
+    /// or with what it said when it could not start.
+    /// </summary>
+    private static int StartDaemon(AppPaths paths, string[] args)
+    {
+        var log = WebDaemon.LogPath(paths.ConfigDir);
+        var from = File.Exists(log) ? new FileInfo(log).Length : 0;
+        System.Diagnostics.Process child;
+        try { child = WebDaemon.StartChild(paths.ConfigDir, args); }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { return Fail(e.Message); }
+
+        // ITS RECORD MEANS IT IS SERVING; ITS EXIT MEANS IT WILL NOT — and the log says why.
+        var until = DateTime.UtcNow.AddSeconds(30);
+        while (DateTime.UtcNow < until)
+        {
+            if (WebDaemon.Running(paths.ConfigDir) is { Pid: var pid } running && pid == child.Id)
+            {
+                var colour = !Console.IsOutputRedirected && Environment.GetEnvironmentVariable("NO_COLOR") is null;
+                Console.WriteLine(colour ? "\u001b[32m●\u001b[0m cxagent web is running in the background" : "cxagent web is running in the background");
+                Console.WriteLine($"  {running.Url}   pid {running.Pid}");
+                Console.WriteLine($"  log   {log}");
+                Console.WriteLine("  stop  cxagent web stop" + (paths.ConfigDir == new AppPaths(null).ConfigDir ? "" : $" --config-dir {paths.ConfigDir}"));
+                return 0;
+            }
+            if (child.HasExited)
+            {
+                var said = File.Exists(log) ? ReadFrom(log, from) : "";
+                return Fail("the background server did not start." + (said.Length > 0 ? "\n" + said.TrimEnd() : ""));
+            }
+            Thread.Sleep(200);
+        }
+        return Fail($"the background server has not said where it serves after 30 seconds; its log is {log}.");
+    }
+
+    private static string ReadFrom(string path, long offset)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        stream.Seek(Math.Min(offset, stream.Length), SeekOrigin.Begin);
+        return new StreamReader(stream).ReadToEnd();
+    }
+
+    /// <summary><c>cxagent web status</c> and <c>cxagent web stop</c>, for the server of a config folder.</summary>
+    private static int Control(string verb, string[] args)
+    {
+        string? configDir = null;
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] == "--config-dir" && i + 1 < args.Length) configDir = args[++i];
+            else return Fail($"unexpected '{args[i]}'. Usage: cxagent web {verb} [--config-dir <folder>]");
+        }
+        var paths = new AppPaths(configDir);
+        if (WebDaemon.Running(paths.ConfigDir) is not { } running)
+        {
+            Console.WriteLine("○ cxagent web is not running" + (verb == "stop" ? " — nothing to stop." : "."));
+            return verb == "stop" ? 0 : 3;
+        }
+        if (verb == "status")
+        {
+            Console.WriteLine($"● running  {running.Url}  pid {running.Pid}  up {WebDaemon.Uptime(running.Started)}{(running.Daemon ? "  in the background" : "")}");
+            if (running.Daemon) Console.WriteLine($"  log  {WebDaemon.LogPath(paths.ConfigDir)}");
+            return 0;
+        }
+        Console.WriteLine($"Stopping cxagent web (pid {running.Pid})… running turns are cancelled and saved.");
+        if (!WebDaemon.Stop(paths.ConfigDir, running, TimeSpan.FromSeconds(30)))
+            return Fail($"it has not stopped after 30 seconds. kill {running.Pid} ends it at once, without saving.");
+        Console.WriteLine("Stopped.");
+        return 0;
     }
 
     private static int Passwd(string[] args)
