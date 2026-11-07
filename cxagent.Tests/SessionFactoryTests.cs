@@ -90,6 +90,35 @@ public class SessionFactoryTests
     }
 
     /// <summary>
+    /// A CLEARED CONVERSATION IS EMPTY, AND SAYS SO: the model's count of the request before the clear is not what the
+    /// context holds after it, and a browser's gauge reads this, not the terminal's own.
+    /// </summary>
+    [Fact]
+    public async Task Clearing_forgets_the_last_reported_context_size()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxagent-factory-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var session = new Session(dir);
+            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new AnswersWithUsageProvider(8_500)),
+                new SharedServices(),
+                new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+                AgentMode.Single);
+            await session.SendAndWait("go");
+            Assert.Equal(8_500, session.ContextUsed);
+
+            session.ClearContext();
+
+            Assert.Null(session.ContextUsed);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// WIRING TWICE REPLACES, and disposes what it replaced — an F5 provider change builds a fresh
     /// host over the same conversation. Session.ReplaceHost owns the disposal, which is the step a
     /// caller forgets when the host is a bare local.

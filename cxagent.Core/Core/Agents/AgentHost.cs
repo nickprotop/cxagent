@@ -549,7 +549,14 @@ public sealed class AgentHost : IDisposable
     }
 
     /// <summary>Marks a /clear in the agent's history, before the context it clears is gone.</summary>
-    internal void NoteCleared() => _agent.History?.NoteCleared();
+    internal void NoteCleared()
+    {
+        _agent.History?.NoteCleared();
+
+        // THE LAST COUNT WAS OF A CONVERSATION THAT IS GONE. Kept, every gauge that reads it — a browser's, the
+        // panel's — would go on showing the size of what /clear just emptied until the next reply.
+        LastReportedInput = null;
+    }
 
     /// <summary>Labels the next prompt this host's agent is sent — see <see cref="Incoming"/>.</summary>
     internal void NoteIncoming(Incoming from) => _agent.History?.NoteIncoming(from);
