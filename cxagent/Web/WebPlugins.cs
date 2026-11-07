@@ -21,7 +21,7 @@ namespace CxAgent.Web;
 /// everything it would load and asks before any of it runs, and a download still asks first, both as prompts the
 /// browser answers.</para>
 /// </summary>
-internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
+internal sealed class WebPlugins(AppPaths paths, SessionManager manager, string? catalogUrl = null)
 {
     private readonly PluginInstaller _installer = new();
     private CatalogSet? _catalog;
@@ -36,7 +36,8 @@ internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
     private async Task<CatalogSet> CatalogAsync(bool refresh)
     {
         if (_catalog is { } read && !refresh) return read;
-        var url = Environment.GetEnvironmentVariable("CXAGENT_PLUGIN_CATALOG") is { Length: > 0 } custom ? custom : CatalogReader.PublishedUrl;
+        var url = catalogUrl
+            ?? (Environment.GetEnvironmentVariable("CXAGENT_PLUGIN_CATALOG") is { Length: > 0 } custom ? custom : CatalogReader.PublishedUrl);
         var set = await CatalogSources.ReadAllAsync(
             new CatalogSetRequest(PluginStores.ReadFile(ConfigPath), paths.ConfigDir, url), CancellationToken.None).ConfigureAwait(false);
         _catalog = set;

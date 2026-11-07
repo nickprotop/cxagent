@@ -816,7 +816,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     // ---- the plugin marketplace: F2, behind web.allow.plugins ---------------------------------------------------------
 
     private WebPlugins? _pluginsOrNull;
-    private WebPlugins Plugins => _pluginsOrNull ??= new WebPlugins(S.Paths, S.Manager);
+    private WebPlugins Plugins => _pluginsOrNull ??= new WebPlugins(S.Paths, S.Manager, S.CatalogUrl);
 
     private const string PluginsOff =
         "Plugins are off for browsers. They are turned on in the terminal: F8 › Web › Browser access (plugins), or web.allow.plugins in config.json.";

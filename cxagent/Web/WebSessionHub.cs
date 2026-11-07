@@ -27,6 +27,10 @@ public sealed record WebHubServices(
     /// <summary>Minutes a session nobody is looking at stays loaded; 0 keeps it. Only when the opener unloads at all.</summary>
     public int IdleMinutes { get; init; } = 30;
 
+    /// <summary>The official plugin catalog's address, or null for <c>CXAGENT_PLUGIN_CATALOG</c> and then the published
+    /// one. Per hub rather than read from the environment alone, so two servers in one process can differ.</summary>
+    public string? CatalogUrl { get; init; }
+
     /// <summary>
     /// Told the config a browser's save made live, for a host that keeps its own copy — the terminal, whose new tabs are
     /// built from it. Null under <c>cxagent web</c>, whose sessions are built from the manager's.

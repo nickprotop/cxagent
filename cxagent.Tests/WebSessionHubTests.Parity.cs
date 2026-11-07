@@ -407,7 +407,8 @@ public sealed partial class WebSessionHubTests
     // ---- the shell ------------------------------------------------------------------------------------------------
 
     /// <summary>A second server over the same sessions, with the switches <paramref name="allow"/> sets.</summary>
-    private async Task<(HttpServer Server, WebSessionHub Hub)> ServerWithAsync(Core.Web.WebAccess allow, string? root = null)
+    private async Task<(HttpServer Server, WebSessionHub Hub)> ServerWithAsync(Core.Web.WebAccess allow, string? root = null,
+        string? catalogUrl = null)
     {
         var composer = new SessionComposer(new ComposerServices(_manager, _paths, new PermissionRulesStore(_paths), null, null) { Prompts = _prompts });
         // MEMORY ON, as the app has it and as the shared harness does.
@@ -416,6 +417,7 @@ public sealed partial class WebSessionHubTests
         var hub = new WebSessionHub(new WebHubServices(_manager, _prompts, new FolderSessionStore(_paths), _paths, [root ?? Projects], opener, _clock)
         {
             Allow = allow,
+            CatalogUrl = catalogUrl,
         });
         var server = new HttpServer(new HttpServerOptions(System.Net.IPAddress.Loopback, 0), async x =>
         {
@@ -903,13 +905,23 @@ public sealed partial class WebSessionHubTests
     [Fact]
     public async Task The_panel_shows_the_working_trees_shape_beside_the_branch()
     {
-        Directory.CreateDirectory(Path.Combine(Work, ".git"));
-        File.WriteAllText(Path.Combine(Work, ".git", "HEAD"), "ref: refs/heads/main\n");
+        void Git(params string[] args)
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("git") { WorkingDirectory = Work, RedirectStandardOutput = true, RedirectStandardError = true };
+            foreach (var a in args) psi.ArgumentList.Add(a);
+            using var p = System.Diagnostics.Process.Start(psi)!;
+            p.WaitForExit();
+        }
+        Git("init", "-q", "-b", "main");
+        File.WriteAllText(Path.Combine(Work, "loose.txt"), "untracked");
         var (tab, id) = await CreatedAsync();
         await using var _ = tab;
-        var panel = _hub.PanelFor(id)!;
-        Assert.Equal("main", panel["here"]!["git"]!.GetValue<string>());
-        Assert.True(panel["here"]!.AsObject().ContainsKey("gitTree"));
+
+        // THE FIRST READING IS TAKEN OFF THE PANEL'S THREAD, so the tree's shape arrives on a later panel.
+        JsonNode? tree = null;
+        Assert.True(await Poll.Until(() => (tree = _hub.PanelFor(id)!["here"]!["gitTree"]) is not null), "the tree's shape never arrived");
+        Assert.Equal("main", _hub.PanelFor(id)!["here"]!["git"]!.GetValue<string>());
+        Assert.Equal("1 untracked", tree!.GetValue<string>());
     }
 
     /// <summary>THE SIDEBAR LISTS WHAT /sessions LISTS — every saved session but one a resume replaced — each with the id and
@@ -968,7 +980,15 @@ public sealed partial class WebSessionHubTests
     [Fact]
     public async Task The_marketplace_cards_carry_f2s_facts()
     {
-        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Plugins = true });
+        // THE CATALOG FROM ITS CACHE: a URL nothing answers, so the read falls back to the copy written here — the
+        // network is not part of this test.
+        File.WriteAllText(Path.Combine(_paths.ConfigDir, "catalog-cache.json"), """
+            { "schemaVersion": 2, "plugins": [{ "name": "probe", "displayName": "Probe", "version": "1.2.3",
+              "description": "d", "publisher": "p", "license": "MIT", "file": "probe.dll", "kind": "managed",
+              "compatibility": { "pluginContract": 2, "platforms": ["any"] },
+              "tools": [{ "name": "probe_one", "gated": "never" }] }] }
+            """);
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Plugins = true }, catalogUrl: "http://127.0.0.1:9/catalog.json");
         try
         {
             await using var tab = await Tab.OpenAsync(server.Bound.Port);
@@ -976,8 +996,11 @@ public sealed partial class WebSessionHubTests
             var id = (await tab.NextAsync(Type("opened")))["sessionId"]!.GetValue<string>();
             await tab.SendAsync(Msg("plugins", ("sessionId", id)));
             var list = await tab.NextAsync(Type("plugins"));
-            foreach (var row in list["rows"]!.AsArray())
-                Assert.Contains(row!["facts"]!.AsArray(), f => f!["key"]!.GetValue<string>() == "STATE");
+            var probe = Assert.Single(list["rows"]!.AsArray(), r => r!["name"]?.GetValue<string>() == "probe")!;
+            var facts = probe["facts"]!.AsArray().ToDictionary(f => f!["key"]!.GetValue<string>(), f => f!["value"]!.GetValue<string>());
+            Assert.Equal("not installed", facts["STATE"]);
+            Assert.Equal("2", facts["CONTRACT"]);
+            Assert.Equal("1, never asks", facts["TOOLS"]);
         }
         finally { await server.StopAsync(); }
     }
