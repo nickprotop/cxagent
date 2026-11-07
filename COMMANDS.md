@@ -302,8 +302,8 @@ Usage · last 7 days
 ```
 
 **The worker share is the number fan-out users want.** Children share the parent's ledger and usually
-its model, so nothing else distinguishes their spend — before this existed, a session that sent 86%
-of its tokens to sub-agents looked identical to one that spawned nothing.
+its model, so nothing else distinguishes their spend: without this line, a session that sends most
+of its tokens to sub-agents looks just like one that spawns none.
 
 **"What fills the context" is the section that explains an expensive session.** Tools are ranked by
 characters returned, not by call count, because a turn re-sends everything before it: a tool that
