@@ -229,6 +229,14 @@ event Action<SessionChangeKind>? Changed;
 `SessionChangeKind`: `Mode`, `Model`, `Resumed`, `TurnCancelled`, `ContextCleared`, `Aside`.
 
 ```csharp
+event Action<ExportSource>? Restored;        // a wire restored a saved conversation; its history, read once
+event Action<SpawnedChild>? WorkerSpawned;   // a worker was built, whichever host spawned it
+```
+
+`Restored` and `WorkerSpawned` are the session's own and **survive a re-wire**, for a watcher that
+subscribes once. `ChildSpawned` belongs to the host and goes with it.
+
+```csharp
 TokenLedger? Ledger        // spend by model and by agent, cache rates, cost. Null before wiring
 (int, int)   OwnSpend      // this agent alone, excluding children
 string?      SpendLabel    // "instance:model"
@@ -407,6 +415,25 @@ before the first wire.
 `MarkFinished` matters because reaching it is the only evidence the process was not killed
 mid-session — that is what makes an unfinished row mean something.
 
+**A restore saves the new copy at once, brings back the workers and shows the past.** On a wire that
+restored a conversation (not one that carried it across a settings change), the session is saved
+straight away, each worker its history spawned is rebuilt into `SubAgents` under its old name and id,
+and `SessionPorts.Restored` and then `Session.Restored` are handed the history. Draw it with
+`SessionReplay`:
+
+```csharp
+SessionReplay.Play(past, new ReplayTarget(observer, toolObserver)
+{
+    MaxTurns = 100,                 // the newest turns drawn; the rest are counted in a line
+    Worker = w => …,                // each past worker, as its row starts
+    Called = report => …,           // each call as it ends, for a view built from call reports
+});
+```
+
+The events are the ones a live session raises. Replayed rows carry `Job.Replayed`, calls
+`ToolCallReport.Untimed` and thinking `ThinkingSummary.Untimed`: history keeps no times, so a view
+shows none rather than zero.
+
 ## Changing config while sessions run
 
 `CxAgent.Core.Config` edits `config.json` and the manager applies the result to running sessions.
@@ -460,6 +487,7 @@ new SessionPorts { Observer = …, ToolObserver = … }
 | `Ask` | no | `AskUser` — how the model asks the user something. Null when there is nobody to ask |
 | `Policy` | with a gate | `PermissionPolicy` — the folder and edit mode requests are judged against. **A gate without one refuses everything** |
 | `Tools` | no | `IReadOnlyList<IAgentTool>` — your own tools, offered beside the built-ins. Empty by default. See [tools.md](tools.md) |
+| `Restored` | no | `Action<ExportSource>` — called on a wire that restored a saved conversation, to draw its past into this wire's observers. See [Resume and shutdown](#resume-and-shutdown) |
 
 **`ToolObserver` was called `Tools` before injected tools existed.** The observer yielded the name
 because injected tools have the better claim on it: they ARE the tools, the observer only watches

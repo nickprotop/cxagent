@@ -287,6 +287,11 @@ starts from what the main agent knows answers in its own block, under this sessi
 can only read. Enter keeps the side thread going; `Esc` stops an answer, then leaves. See
 [COMMANDS.md](COMMANDS.md#btw).
 
+**A conversation comes back whole.** `cxagent -c`, `/sessions resume` and a session opened in a
+browser all draw its whole past again — every turn, tool call and worker, back through earlier
+resumes — and bring its workers back, so the model can carry on with them. See
+[COMMANDS.md](COMMANDS.md#sessions).
+
 **Any conversation exports as markdown.** `F12` or `/export` writes this one (readable for a person, or full
 for another agent to continue from) to a file or the clipboard, as a timeline with each sub-agent's work where it
 happened. `/sessions export` does the same for an earlier session from any folder, without resuming it. See
@@ -370,6 +375,12 @@ cxagent web passwd me             # store a hashed password in config.json
 cxagent web --bind 0.0.0.0 --self-signed   # reachable from the LAN, over HTTPS
 cxagent --web                     # the terminal, and its sessions in a browser as well
 ```
+
+The page draws a turn as the terminal does: markdown with highlighted code, each round of tool calls
+folded into a row you can open, and each worker as a card that opens its own tab with its own
+transcript. A side panel shows the session (context, turns, tokens, folder) and its tasks, with
+workers and background commands you can open or stop. The model, the edit mode and the sandbox are
+chosen under the message box.
 
 **A login is a shell on this machine.** Whoever gets in drives an agent that runs commands here,
 contained only as far as the sandbox contains them. So the server listens on localhost unless told

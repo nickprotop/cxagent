@@ -219,7 +219,8 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
       <div class="u-num">10</div>
       <p class="u-title">A conversation you can come back to</p>
       <p class="u-body">Every session in a folder is recorded and listed, with the goal that started it —
-      <code>/sessions resume 2</code>, or by id from the command line. <code>/compress</code>
+      <code>/sessions resume 2</code>, or by id from the command line. It comes back whole: every turn,
+      tool call and worker drawn again, and its workers ready for more work. <code>/compress</code>
       summarises a full one in place, and <code>F12</code> exports any of them as markdown, with each
       sub-agent's work where it happened.</p>
     </div>
@@ -274,6 +275,8 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
       <p class="u-title">Your sessions in a browser</p>
       <p class="u-body"><code>cxagent web</code> serves sessions to a browser with no terminal, and <code>/web</code>
       shares the terminal's own: follow a turn and answer its prompts from a phone, first answer wins.
+      Highlighted markdown, tool rounds you can open, a tab per worker, and the model, mode and sandbox
+      picked under the message box.
       One binary, no extra runtime, a login required as soon as it listens beyond this machine.</p>
     </div>
   </div>

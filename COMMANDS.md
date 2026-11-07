@@ -734,6 +734,19 @@ newer: silently restoring the wrong conversation is not something you find out a
 
 **Refused while a turn is running.** Restoring replaces the agent the running turn is writing into.
 
+**A restored session comes back whole.** Its transcript is drawn again, back through every earlier
+resume: your messages, the answers and thinking, each tool call with its result, and the workers it
+spawned. The newest 100 turns are drawn, with a line saying how many earlier ones `/export` holds. Its
+workers come back too, under the names the model knows them by and with their conversations, so they
+are in the Tasks list (`F7`), their tabs show their briefs, calls and answers, and the model can send
+them more work. The history keeps what happened but not how long it took, so restored rows and
+thinking show no durations.
+
+**A worker comes back idle.** One that was running when the process ended is not resumed; the model
+can send it the work again. One whose type, provider or folder is no longer allowed stays in the
+transcript and is named in a notice. A worker you deleted comes back, because deleting one is not
+recorded in the history it is restored from.
+
 Sessions are listed for the folder you are in — `/sessions all` widens it, and adds the folder to
 each row. **The retention window is stated in the output** because these rows are deleted on a
 schedule, and a policy nobody mentioned is one you discover by losing something.
