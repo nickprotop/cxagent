@@ -381,6 +381,10 @@ internal static class WebProtocol
             ["id"] = p.Id,
             ["sessionId"] = p.SessionId,
             ["kind"] = "permission",
+
+            // THE TERMINAL'S OWN WORDS for this request — which kind, inside or outside the folder, the sandbox's
+            // two special questions — so a browser asks exactly what the terminal would.
+            ["heading"] = CxAgent.UI.PermissionPromptControl.HeadingFor(p.Request, p.OfferTrust),
             ["what"] = p.Request.Kind.ToString(),
             ["display"] = p.Request.Display,
             ["requester"] = p.Request.Requester,

@@ -309,6 +309,10 @@ public sealed class WebSessionHubTests : IAsyncLifetime
         var prompt = await tab.NextAsync(Type("prompt"));
         Assert.False(prompt["offerAlways"]!.GetValue<bool>());
 
+        // THE TERMINAL'S OWN HEADING, so both front ends ask the same question in the same words.
+        Assert.Equal(CxAgent.UI.PermissionPromptControl.HeadingFor(new PermissionRequest(PermissionKind.Shell, "rm x", null) { Policy = policy }),
+            prompt["heading"]!.GetValue<string>());
+
         await tab.SendAsync(Msg("answer", ("promptId", prompt["id"]!.GetValue<string>()), ("choice", "always")));
         await tab.NextAsync(Type("error"));
         Assert.False(asked.IsCompleted);

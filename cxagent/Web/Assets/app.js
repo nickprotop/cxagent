@@ -483,12 +483,9 @@ function promptNode(m) {
     send(Object.assign({ type: "answer", promptId: m.id }, fields));
   };
   if (m.kind === "permission") {
-    const heading = m.sandboxFailure ? "Sandbox could not start: " + m.sandboxFailure + ". Run this uncontained?"
-      : m.unsandboxedReason ? "Run this outside the sandbox?"
-      : m.what === "Shell" ? "Run shell command?" : "Allow this?";
+    const heading = m.heading || "Allow this?";
     box.append(el("div", "q", heading), el("div", "what", m.display));
     if (m.requester) box.append(el("div", "why", "asked by " + m.requester));
-    if (m.unsandboxedReason) box.append(el("div", "why", "reason: " + m.unsandboxedReason));
     const btns = el("div", "btns");
     btns.append(button("Allow once", "yes", () => answer({ choice: "once" })));
     if (m.offerAlways) btns.append(button("Always allow" + (m.alwaysCovers ? " (" + m.alwaysCovers + ")" : ""), null, () => answer({ choice: "always" })));
