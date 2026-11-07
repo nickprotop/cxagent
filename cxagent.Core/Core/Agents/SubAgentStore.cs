@@ -233,6 +233,9 @@ public sealed class SubAgentStore
     /// model's next agent_send would name a worker that is not there. A handle already taken — a worker of this run,
     /// or one the user dismissed — is not taken again.</para>
     /// </summary>
+    /// <param name="name">The handle it had — the one the model's history uses.</param>
+    /// <param name="agent">The worker, rebuilt from its history.</param>
+    /// <param name="description">What it was spawned to do, as its spawn described it.</param>
     /// <param name="ended">How its last run ended — what a list shows for it, which lists only workers that have run.</param>
     public bool Restore(string name, SubAgent agent, string? description, AgentEnd ended)
     {
