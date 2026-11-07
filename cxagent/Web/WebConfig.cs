@@ -189,6 +189,21 @@ internal sealed class WebConfig(AppPaths paths, SessionManager manager, Action<R
     }
 
     /// <summary>
+    /// A form's save: the edit written through the one config writer, judged by the loader, then made live as a
+    /// text save is — <paramref name="change"/> says which sessions it moves, as the F8 tab that owns the form says.
+    /// </summary>
+    public WebConfigSave Commit(Action<JsonObject> edit, ConfigChange change, CacheChoice choice)
+    {
+        var write = ConfigFile.TryApply(new ConfigTarget(ConfigPath, CxAgent.UI.Startup.Env()), edit);
+        if (!write.Saved) return new WebConfigSave(false, write.Errors);
+        var fresh = ConfigResolver.Resolve(paths, CxAgent.UI.Startup.Env(), useMock: false);
+        if (!fresh.HasProvider) return new WebConfigSave(true, fresh.Errors);
+        manager.ApplyConfig(fresh, change, choice);
+        saved?.Invoke(fresh);
+        return new WebConfigSave(true, []);
+    }
+
+    /// <summary>
     /// What the save changed, as F8's tabs say it: every instance whose entry differs is edited, and one whose kind,
     /// model or endpoint differs has changed model — its sessions lose their prompt cache when they move.
     /// </summary>

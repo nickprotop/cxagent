@@ -153,6 +153,8 @@ function handle(m) {
     case "openedFile": openedFile(m); break;
     case "openedShell": openedShell(m); break;
     case "config": openedConfig(m); break;
+    case "configForm": openedConfigForm(m); break;
+    case "configConfirm": configConfirm(m); break;
     case "plugins": openedPlugins(m); break;
     case "pluginResult": pluginResult(m); break;
     case "configAsk": configAsk(m); break;
@@ -369,7 +371,7 @@ function activate(id) {
   const conversation = !!view && (view.kind === "session" || view.kind === "worker");
   $("input").disabled = !conversation;
   $("send").disabled = !conversation;
-  document.body.classList.toggle("editing", !!view && (view.kind === "file" || view.kind === "shell" || view.kind === "config"));
+  document.body.classList.toggle("editing", !!view && (view.kind === "file" || view.kind === "shell" || (view.kind === "config" && view.tab === "json")));
   // AND NO MESSAGE BOX AT ALL there: one that cannot send is room taken from the shell, the file or the output.
   document.body.classList.toggle("no-composer", !!view && !conversation);
   $("input").placeholder = view && view.kind === "worker" ? "Message " + view.name + "…" : "Message, or / for commands";
@@ -731,20 +733,197 @@ function drawShellHead(view, head) {
 // not in the text at all.
 const CONFIG_ID = "config:";
 
-function openedConfig(m) {
+// THE SESSION THE CONFIG PAGE CAME FROM: its folder holds the project's and local hooks files.
+function configSession() {
+  const v = state.views.get(CONFIG_ID);
+  return (v && v.parent) || activeSessionId();
+}
+
+function configView() {
   let view = state.views.get(CONFIG_ID);
-  const fresh = !view;
-  if (!view) {
-    view = newView(CONFIG_ID, "config");
-    Object.assign(view, { parent: activeSessionId(), language: "json", title: "config.json", dirty: false, folder: "" });
-    buildEditor(view);
-    view.save = () => saveConfig(view, null);
-  }
+  if (view) return { view, fresh: false };
+  view = newView(CONFIG_ID, "config");
+  Object.assign(view, { parent: activeSessionId(), language: "json", title: "config.json", dirty: false, folder: "", tab: "general", tabs: [] });
+  view.formBox = el("div", "config-form");
+  view.log.append(view.formBox);
+  buildEditor(view);
+  view.save = () => saveConfig(view, null);
+  return { view, fresh: true };
+}
+
+function showConfigTab(view, tab) {
+  view.tab = tab;
+  view.formBox.hidden = tab === "json";
+  view.ed.hidden = tab !== "json";
+  document.body.classList.toggle("editing", state.active === CONFIG_ID && tab === "json");
+}
+
+function openedConfig(m) {
+  const { view, fresh } = configView();
+  showConfigTab(view, "json");
   setBuffer(view, m.text);
   view.baseline = m.text;
   // THE RELOAD THAT FOLLOWS A SAVE keeps the save's bar; any other reload starts clean.
   if (view.keepBar) view.keepBar = false; else view.bar = null;
   if (fresh || state.active !== CONFIG_ID) activate(CONFIG_ID); else drawWorkerHead();
+  showConfigTab(view, "json");
+}
+
+// ---- F8's tabs as forms: drawn from what the server describes, saved through the tab's own draft --------------------
+
+function openedConfigForm(m) {
+  const { view, fresh } = configView();
+  view.tabs = m.tabs || view.tabs;
+  if (view.keepBar) view.keepBar = false; else view.bar = null;
+  view.formDirty = false;
+  drawConfigForm(view, m);
+  showConfigTab(view, m.tab);
+  if (fresh || state.active !== CONFIG_ID) activate(CONFIG_ID); else drawWorkerHead();
+  showConfigTab(view, m.tab);
+}
+
+function drawConfigForm(view, m) {
+  const outer = view.formBox;
+  outer.replaceChildren();
+  view.fields = [];
+  view.item = m.item || null;
+  view.formActions = m.actions || [];
+  view.readOnly = !!m.readOnly;
+  // A LIST TAB: its items on the left, the chosen one's fields beside them — F8's list and detail.
+  let box = outer;
+  if (m.items) {
+    outer.classList.add("has-items");
+    const list = el("nav", "config-items");
+    for (const it of m.items) {
+      const b = el("button", "config-item" + (it.id === m.item ? " on" : ""));
+      b.type = "button";
+      b.append(el("b", null, it.label));
+      if (it.sub) b.append(el("small", null, it.sub));
+      b.addEventListener("click", () => send({ type: "configForm", sessionId: configSession(), tab: m.tab, item: it.id }));
+      list.append(b);
+    }
+    if (m.addLabel) {
+      const add = el("button", "config-item add" + (m.item === "+new" ? " on" : ""), "+ " + m.addLabel);
+      add.type = "button";
+      add.addEventListener("click", () => send({ type: "configForm", sessionId: configSession(), tab: m.tab, item: "+new" }));
+      list.append(add);
+    }
+    box = el("div", "config-detail");
+    outer.append(list, box);
+  } else outer.classList.remove("has-items");
+  const dirty = () => { if (!view.formDirty) { view.formDirty = true; drawWorkerHead(); } };
+  for (const sec of m.sections) {
+    const s = el("section", "form-section");
+    s.append(el("h3", null, sec.title));
+    if (sec.help) s.append(el("p", "none", sec.help));
+    for (const f of sec.fields) {
+      const row = el("div", "form-field " + f.kind);
+      if (f.kind !== "radio" && f.kind !== "checks") row.append(el("label", "form-label", f.label));
+      let read;
+      if (f.kind === "radio") {
+        const fs = el("fieldset");
+        fs.append(el("legend", "form-label", f.label));
+        const name = "f-" + f.id;
+        for (const o of f.options) {
+          const l = el("label", "form-choice");
+          const i = el("input");
+          i.type = "radio"; i.name = name; i.value = o.value; i.checked = String(f.value) === o.value;
+          i.addEventListener("change", dirty);
+          l.append(i, el("span", null, o.label));
+          if (o.help) l.append(el("small", null, o.help));
+          fs.append(l);
+        }
+        row.append(fs);
+        read = () => (fs.querySelector("input:checked") || {}).value;
+      } else if (f.kind === "checks") {
+        row.append(el("div", "form-label", f.label));
+        const grid = el("div", "form-checks");
+        const on = new Set(f.value || []);
+        for (const o of f.options) {
+          const l = el("label", "form-check");
+          const i = el("input");
+          i.type = "checkbox"; i.value = o.value; i.checked = on.has(o.value);
+          i.addEventListener("change", dirty);
+          l.append(i, el("span", null, o.label));
+          grid.append(l);
+        }
+        row.append(grid);
+        read = () => [...grid.querySelectorAll("input:checked")].map((i) => i.value);
+      } else if (f.kind === "lines") {
+        const t = el("textarea", "form-input");
+        t.rows = 3; t.value = f.value || ""; t.spellcheck = false;
+        t.addEventListener("input", dirty);
+        row.append(t);
+        read = () => t.value;
+      } else if (f.kind === "secret") {
+        // NEVER THE KEY ITSELF: whether one is set, and its last four characters. Empty keeps it; Clear removes it.
+        const i = el("input", "form-input");
+        i.type = "password"; i.autocomplete = "new-password";
+        i.placeholder = f.saved && f.saved !== "none" ? f.saved + " — type to replace" : "none";
+        i.addEventListener("input", dirty);
+        const clear = el("label", "form-check");
+        const c = el("input"); c.type = "checkbox";
+        c.addEventListener("change", dirty);
+        clear.append(c, el("span", null, "Clear"));
+        row.append(i, clear);
+        read = () => i.value;
+        view.fields.push({ id: f.id + "Clear", read: () => c.checked });
+      } else if (f.kind === "select") {
+        const sel = el("select", "form-input");
+        for (const o of f.options) sel.append(new Option(o.label, o.value));
+        sel.value = f.value ?? "";
+        sel.addEventListener("change", dirty);
+        row.append(sel);
+        read = () => sel.value;
+      } else if (f.kind === "bool") {
+        row.firstChild.remove();
+        const l = el("label", "form-check");
+        const c = el("input"); c.type = "checkbox"; c.checked = !!f.value;
+        c.addEventListener("change", dirty);
+        l.append(c, el("span", "form-label", f.label));
+        row.append(l);
+        read = () => c.checked;
+      } else if (f.kind === "info") {
+        row.append(el("div", "form-info", String(f.value ?? "")));
+        read = null;
+      } else {
+        const i = el("input", "form-input");
+        i.type = f.kind === "number" ? "text" : "text";
+        i.inputMode = f.kind === "number" ? "numeric" : "text";
+        i.value = f.value ?? "";
+        i.addEventListener("input", dirty);
+        row.append(i);
+        read = () => i.value;
+      }
+      if (f.help && f.kind !== "radio") row.append(el("small", "form-help", f.help));
+      if (read) view.fields.push({ id: f.id, read });
+      s.append(row);
+    }
+    box.append(s);
+  }
+  if (view.formActions.length) {
+    const acts = el("div", "btns form-actions");
+    for (const a of view.formActions)
+      acts.append(button(a.label, a.danger ? "danger" : null, () => send({ type: "configFormAction", sessionId: configSession(), tab: view.tab, item: view.item, action: a.id })));
+    box.append(acts);
+  }
+  if (view.readOnly) box.querySelectorAll("input, textarea, select").forEach((i) => { i.disabled = true; });
+}
+
+// F8 ASKS BEFORE IT DELETES: the server's sentence says what else changes, and nothing is written until it is confirmed.
+function configConfirm(m) {
+  const view = state.views.get(CONFIG_ID);
+  if (!view) return;
+  view.bar = { kind: "confirm", text: m.text, tab: m.tab, item: m.item, action: m.action };
+  drawWorkerHead();
+}
+
+function saveConfigForm(view, choice) {
+  const values = {};
+  for (const f of view.fields) values[f.id] = f.read();
+  view.saving = true;
+  send({ type: "configFormSave", sessionId: configSession(), tab: view.tab, item: view.item, values, choice });
+  drawWorkerHead();
 }
 
 function saveConfig(view, choice) {
@@ -777,30 +956,41 @@ function configSaved(m) {
   view.dirty = false;
   view.bar = (m.warnings || []).length ? { kind: "warned", errors: m.warnings } : { kind: "saved" };
   view.keepBar = true;
-  // THE TEXT AGAIN FROM THE FILE, so a hidden secret just typed is hidden here too.
-  send({ type: "getConfig" });
+  view.formDirty = false;
+  // THE TEXT AGAIN FROM THE FILE, so a hidden secret just typed is hidden here too. A form's save sends its form back.
+  if (view.tab === "json") send({ type: "getConfig" });
   drawTabs();
 }
 
 function drawConfigHead(view, head) {
   head.hidden = false;
   head.replaceChildren();
-  head.append(el("span", "tag", "Configuration"), el("b", null, "config.json" + (view.dirty ? " •" : "")));
-  head.append(el("span", "meta", "secrets are hidden · the browser's own access, users and folders are the terminal's"));
-  head.append(el("span", "spacer"));
+  head.append(el("span", "tag", "Configuration"));
+  const strip = el("div", "config-tabs");
+  for (const t of view.tabs.length ? view.tabs : [{ id: "general", title: "General" }, { id: "json", title: "config.json" }]) {
+    const b = button(t.title, "config-tab" + (t.id === view.tab ? " on" : ""), () => send(t.id === "json" ? { type: "getConfig" } : { type: "configForm", sessionId: configSession(), tab: t.id }));
+    strip.append(b);
+  }
+  head.append(strip, el("span", "spacer"));
   if (view.parent) head.append(button("Back to session", "ghost", () => activate(view.parent)));
-  head.append(button("Reload", null, () => send({ type: "getConfig" })));
-  const save = button(view.saving ? "Saving…" : "Save", "primary", () => saveConfig(view, null));
-  save.title = "Ctrl+S";
-  save.disabled = !view.dirty || view.saving;
+  const json = view.tab === "json";
+  head.append(button("Reload", null, () => send(json ? { type: "getConfig" } : { type: "configForm", sessionId: configSession(), tab: view.tab })));
+  const save = button(view.saving ? "Saving…" : "Save", "primary", () => (json ? saveConfig(view, null) : saveConfigForm(view, null)));
+  save.title = json ? "Ctrl+S" : "";
+  save.disabled = (json ? !view.dirty : !view.formDirty) || view.saving || !!view.readOnly;
   head.append(save);
   if (!view.bar) return;
   const bar = el("div", "file-bar" + (view.bar.kind === "saved" ? " good" : ""));
   if (view.bar.kind === "saved") bar.append(el("span", null, "Saved, and live: new sessions use it, and open ones on a changed model follow it."));
-  else if (view.bar.kind === "ask") {
+  else if (view.bar.kind === "confirm") {
+    const b = view.bar;
+    bar.append(el("span", null, b.text), el("span", "spacer"),
+      button("Yes", "danger", () => { view.bar = null; send({ type: "configFormAction", sessionId: configSession(), tab: b.tab, item: b.item, action: b.action, confirmed: true }); }),
+      button("No", null, () => { view.bar = null; drawWorkerHead(); }));
+  } else if (view.bar.kind === "ask") {
     bar.append(el("span", null, "Running sessions on " + view.bar.instances.join(", ") + " change model. Their conversation is re-sent:"), el("span", "spacer"));
     for (const [label, choice] of [["Now", "ApplyNow"], ["Compress first", "CompressThenApply"], ["At the next clear", "AtNextClearOrCompression"], ["New sessions only", "NewTabsOnly"]])
-      bar.append(button(label, null, () => { view.bar = null; saveConfig(view, choice); }));
+      bar.append(button(label, null, () => { view.bar = null; if (view.tab === "json") saveConfig(view, choice); else saveConfigForm(view, choice); }));
   } else {
     const list = el("div", "errors");
     list.append(el("b", null, view.bar.kind === "warned" ? "Saved, but not live:" : "Not saved:"));
@@ -842,6 +1032,7 @@ function drawPlugins(view) {
   const m = view.data;
   const box = el("div", "plugins");
   if (m.error) box.append(el("div", "said Warning", "The catalog could not be read: " + m.error + " — what is cached is shown."));
+  box.append(pluginSources(view, m));
   for (const n of m.notes || []) box.append(el("div", "said", n));
   const f = view.filter.toLowerCase();
   for (const section of ["Updates", "NeedsAttention", "Installed", "Available"]) {
@@ -852,6 +1043,45 @@ function drawPlugins(view) {
   }
   if (!m.rows.length) box.append(el("p", "none", "No plugins installed, and none offered."));
   view.log.replaceChildren(box);
+}
+
+// F2'S "Stores and folders": catalogs beside the official one, and the folders searched for plugins, in order.
+function pluginSources(view, m) {
+  const d = el("details", "plugin-sources");
+  d.open = !!view.sourcesOpen;
+  d.addEventListener("toggle", () => { view.sourcesOpen = d.open; });
+  d.append(el("summary", null, "Stores and folders · " + (m.stores || []).length + " stores · " + (m.folders || []).length + " folders"));
+  const act = (name, action, values) => {
+    view.busy = action.replace(/([A-Z])/g, " $1").toLowerCase() + "…";
+    drawWorkerHead();
+    send({ type: "pluginAction", sessionId: view.parent, name, action, values });
+  };
+  d.append(el("h4", null, "Stores"));
+  for (const st of m.stores || []) {
+    const row = el("div", "source-row");
+    row.append(el("b", null, st.name), el("code", null, st.url), el("span", "spacer"), button("Remove", "danger", () => act(st.name, "removeStore")));
+    d.append(row);
+  }
+  const addStore = el("form", "source-add");
+  const sn = el("input", "form-input"); sn.placeholder = "name";
+  const su = el("input", "form-input"); su.placeholder = "catalog URL";
+  addStore.append(sn, su, button("Add store", null, () => addStore.requestSubmit()));
+  addStore.addEventListener("submit", (e) => { e.preventDefault(); act(sn.value.trim(), "addStore", { url: su.value.trim() }); });
+  d.append(addStore);
+  d.append(el("h4", null, "Folders searched, in order"));
+  (m.folders || []).forEach((f, i) => {
+    const row = el("div", "source-row");
+    row.append(el("code", null, f), el("span", "spacer"));
+    if (i > 0) row.append(button("↑", null, () => act(f, "moveFolderUp")));
+    row.append(button("Remove", "danger", () => act(f, "removeFolder")));
+    d.append(row);
+  });
+  const addFolder = el("form", "source-add");
+  const fi = el("input", "form-input"); fi.placeholder = "/path/or/~/folder";
+  addFolder.append(fi, button("Add folder", null, () => addFolder.requestSubmit()));
+  addFolder.addEventListener("submit", (e) => { e.preventDefault(); act(fi.value.trim(), "addFolder"); });
+  d.append(addFolder);
+  return d;
 }
 
 function pluginCard(view, r) {
@@ -878,6 +1108,38 @@ function pluginCard(view, r) {
     card.append(tools);
   }
   if (r.cannotUpdate) card.append(el("div", "said Warning", r.cannotUpdate));
+  // F2'S DETAILS: the plugin's own README, from beside its binary.
+  if (r.readme) {
+    const d = el("details", "plugin-more");
+    d.append(el("summary", null, "README"));
+    const md = el("div", "md");
+    md.innerHTML = render(r.readme);
+    d.append(md);
+    card.append(d);
+  }
+  // F2'S SETTINGS TAB: each key the catalog names, its sentence, and what config holds; Save writes them.
+  if (r.settings) {
+    const d = el("details", "plugin-more");
+    d.append(el("summary", null, "Settings"));
+    const inputs = [];
+    for (const st of r.settings) {
+      const row = el("div", "form-field");
+      row.append(el("label", "form-label", st.key), el("small", "form-help", st.prose));
+      const t = el("textarea", "form-input");
+      t.rows = 2; t.value = st.value; t.spellcheck = false;
+      row.append(t);
+      inputs.push([st.key, t]);
+      d.append(row);
+    }
+    d.append(button("Save settings", "primary", () => {
+      const values = {};
+      for (const [k, t] of inputs) values[k] = t.value;
+      view.busy = r.name + " · saving settings…";
+      drawWorkerHead();
+      send({ type: "pluginAction", sessionId: view.parent, name: r.name, action: "saveSettings", values });
+    }));
+    card.append(d);
+  }
   const acts = el("div", "btns");
   for (const a of r.actions) {
     if (a === "install") {
@@ -1592,7 +1854,7 @@ function drawSessionPane(p) {
   if (state.access && state.access.config) {
     pane.append(el("h3", null, "Configuration"));
     const cf = el("div", "btns export");
-    cf.append(button("Edit config.json", null, () => { send({ type: "getConfig" }); if (!wide()) setPanel(false); }));
+    cf.append(button("Settings", null, () => { send({ type: "configForm", sessionId: configSession(), tab: "general" }); if (!wide()) setPanel(false); }));
     pane.append(cf);
   }
 

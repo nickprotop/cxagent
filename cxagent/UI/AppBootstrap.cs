@@ -957,6 +957,7 @@ public static class AppBootstrap
                     {
                         // A BROWSER'S CONFIG SAVE IS THIS TERMINAL'S TOO: its new tabs are built from this copy.
                         ConfigSaved = configNow.Replace,
+                        McpReload = servers => mcp.ReloadAsync(servers, CancellationToken.None),
                     });
             }
             catch (Web.WebStartRefused refused)

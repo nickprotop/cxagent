@@ -64,12 +64,30 @@ internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
             ["readAt"] = _readAt.ToString("O"),
             ["error"] = catalog.OfficialError,
             ["notes"] = new JsonArray([.. catalog.Notes.Select(n => (JsonNode)n)]),
+            // THE SOURCES, F2'S "Stores and folders": catalogs beside the official one, and the folders searched.
+            ["stores"] = new JsonArray([.. PluginStores.ReadFile(ConfigPath).Select(x => (JsonNode)new JsonObject { ["name"] = x.Name, ["url"] = x.Url })]),
+            ["folders"] = new JsonArray([.. manager.Config.PluginPaths.Select(f => (JsonNode)f)]),
             ["destinations"] = new JsonArray([.. Destinations(session).Select(d => (JsonNode)new JsonObject { ["label"] = d.Label, ["folder"] = d.Folder })]),
-            ["rows"] = new JsonArray([.. rows.Select(r => (JsonNode)Row(r, inputs, loaded.Contains(r.Name, StringComparer.Ordinal)))]),
+            ["rows"] = new JsonArray([.. rows.Select(r => (JsonNode)Row(r, inputs, loaded.Contains(r.Name, StringComparer.Ordinal), ReadmeOf(r, inputs, session)))]),
         };
     }
 
-    private static JsonObject Row(PluginRow row, PluginManagerInputs inputs, bool loaded)
+    /// <summary>
+    /// An installed plugin's own README, from beside its binary — what F2's Details shows. A plugin without one, or
+    /// one only in the catalog, shows the catalog's description instead.
+    /// </summary>
+    private string? ReadmeOf(PluginRow row, PluginManagerInputs inputs, Session session)
+    {
+        if (HomeOf(row, inputs, session) is not { } home) return null;
+        try
+        {
+            var readme = Path.Combine(home, "README.md");
+            return File.Exists(readme) ? ReadmeTitle.Drop(File.ReadAllText(readme), row.Name) : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    private static JsonObject Row(PluginRow row, PluginManagerInputs inputs, bool loaded, string? readme)
     {
         var actions = new JsonArray();
         switch (row.Section)
@@ -101,6 +119,15 @@ internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
             ["loaded"] = loaded,
             ["autoLoad"] = row.Configured?.Enabled,
             ["actions"] = actions,
+            ["readme"] = readme,
+
+            // F2'S SETTINGS TAB: what the catalog says a configured plugin takes, in the author's order, and what
+            // config holds for each — a string as itself, anything else as its JSON.
+            ["settings"] = row.Configured is null || e is null || e.Settings.Count == 0 ? null
+                : new JsonArray([.. e.Settings.Select(kv => (JsonNode)new JsonObject
+                {
+                    ["key"] = kv.Key, ["prose"] = kv.Value, ["value"] = SettingText(row, kv.Key),
+                })]),
             ["catalog"] = e is null ? null : new JsonObject
             {
                 ["title"] = e.DisplayName, ["version"] = e.Version, ["description"] = e.Description, ["publisher"] = e.Publisher,
@@ -110,6 +137,11 @@ internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
             },
         };
     }
+
+    private static string SettingText(PluginRow row, string key) =>
+        row.Configured?.Settings is { ValueKind: System.Text.Json.JsonValueKind.Object } settings && settings.TryGetProperty(key, out var value)
+            ? value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString() ?? "" : value.GetRawText()
+            : "";
 
     // CONFIG'S WORD FOR A CONFIGURED ROW, THE SIDECAR'S FOR ONE FOUND ON DISK.
     private static string? FileOf(PluginRow row, PluginManagerInputs inputs) =>
@@ -134,8 +166,46 @@ internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
     /// One action on one row, answered with a sentence for the page. Every action re-reads the state first: the page's
     /// rows may be seconds old, and an action on a row that has since changed is refused rather than guessed at.
     /// </summary>
-    public async Task<string> ActAsync(Session session, string name, string action, string? folder)
+    public async Task<string> ActAsync(Session session, string name, string action, string? folder, JsonObject? values = null)
     {
+        // THE SOURCES ARE NOT A ROW'S: stores and folders are changed whatever plugin is selected.
+        switch (action)
+        {
+            case "addStore":
+            {
+                var url = (values?["url"] as JsonValue)?.GetValue<string>()?.Trim() ?? "";
+                if (name.Trim().Length == 0 || url.Length == 0) return "Type the store's name and its catalog URL.";
+                if (name.Any(char.IsWhiteSpace) || url.Any(char.IsWhiteSpace)) return "A store's name and URL have no spaces.";
+                var added = await StoreAsync($"store add {name.Trim()} {url}", session).ConfigureAwait(false);
+                _catalog = null;
+                return added;
+            }
+            case "removeStore":
+            {
+                var removed = await StoreAsync($"store remove {name}", session).ConfigureAwait(false);
+                _catalog = null;
+                return removed;
+            }
+            case "addFolder":
+            {
+                var listed = manager.Config.PluginPaths;
+                if (PluginFolders.Problem(name, listed) is { } problem) return problem;
+                return Folders(session, [.. listed, PluginFolders.Clean(name)]) ?? $"{PluginFolders.Clean(name)} added to the folders searched.";
+            }
+            case "removeFolder":
+                return Folders(session, [.. manager.Config.PluginPaths.Where(f => f != name)]) ?? $"{name} is no longer searched.";
+            case "moveFolderUp":
+            {
+                var list = manager.Config.PluginPaths.ToList();
+                var at = list.IndexOf(name);
+                if (at <= 0) return "It is already first.";
+                (list[at - 1], list[at]) = (list[at], list[at - 1]);
+                return Folders(session, list) ?? $"{name} is searched earlier now.";
+            }
+            case "saveSettings":
+                return await SaveSettingsAsync(session, name, values ?? []).ConfigureAwait(false);
+        }
+
         var (inputs, rows, catalog) = await StateAsync(session, refresh: false).ConfigureAwait(false);
         if (rows.FirstOrDefault(r => r.Name == name) is not { } row) return $"'{name}' is no longer listed.";
         switch (action)
@@ -236,6 +306,65 @@ internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
             InstallResult.Refused(var reason) => $"Not installed: {reason} Nothing was written.",
             _ => "Not installed.",
         };
+    }
+
+    private async Task<string> StoreAsync(string arguments, Session session)
+    {
+        try
+        {
+            var reply = await PluginStoreCommand.RunAsync(new StoreCommandRequest(arguments, ConfigPath, paths.ConfigDir)
+                { ProjectDirectory = session.WorkingDirectory }, CancellationToken.None).ConfigureAwait(false);
+            return reply.Text;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            return $"config.json could not be written: {e.Message}";
+        }
+    }
+
+    /// <summary>The folders searched for plugins, written and made live as F2 sets them; null when it worked.</summary>
+    private string? Folders(Session session, IReadOnlyList<string> folders)
+    {
+        _ = session;
+        try { PluginConfigWriter.SetPluginPaths(ConfigPath, folders); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            return $"config.json could not be written: {e.Message}";
+        }
+        manager.SetPluginPaths(folders);
+        return null;
+    }
+
+    /// <summary>
+    /// F2's settings Save: the catalog's keys from what the page sent — JSON where it reads as JSON, else the text —
+    /// keys the catalog does not list kept as they were, and nothing at all clearing the entry's settings.
+    /// </summary>
+    private async Task<string> SaveSettingsAsync(Session session, string name, JsonObject values)
+    {
+        var (_, rows, _) = await StateAsync(session, refresh: false).ConfigureAwait(false);
+        if (rows.FirstOrDefault(r => r.Name == name) is not { Configured: { } configured, Catalog: { } entry }) return $"'{name}' has no settings to save.";
+        var settings = new JsonObject();
+        if (configured.Settings is { ValueKind: System.Text.Json.JsonValueKind.Object } existing)
+            foreach (var property in existing.EnumerateObject())
+                if (!entry.Settings.ContainsKey(property.Name)) settings[property.Name] = JsonNode.Parse(property.Value.GetRawText());
+        foreach (var key in entry.Settings.Keys)
+        {
+            var text = ((values[key] as JsonValue)?.GetValue<string>() ?? "").Trim();
+            if (text.Length == 0) continue;
+            JsonNode value;
+            try { value = JsonNode.Parse(text) ?? JsonValue.Create(text)!; }
+            catch (System.Text.Json.JsonException) { value = JsonValue.Create(text)!; }
+            settings[key] = value;
+        }
+        PluginChangeResult result;
+        if (settings.Count == 0) result = manager.SetPluginSettings(session, name, null);
+        else
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(settings.ToJsonString());
+            result = manager.SetPluginSettings(session, name, document.RootElement.Clone());
+        }
+        if (result is PluginChangeResult.Refused refused) return refused.Reason;
+        return PluginConfigPersistence.TrySync(ConfigPath, manager.Config.Plugins) ?? $"'{name}' settings saved.";
     }
 
     /// <summary>A /plugin verb, as F2 runs it: and only a verb that changes an entry writes config.json.</summary>

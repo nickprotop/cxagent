@@ -168,6 +168,7 @@ public static class WebCli
                 host = await WebServerHost.StartAsync(new WebHostRequest(paths, settings, manager, prompts, opener, Environment.CurrentDirectory)
                 {
                     ConfigSaved = opener.Adopt,
+                    McpReload = servers => services.Mcp.ReloadAsync(servers, CancellationToken.None),
                 });
             }
             catch (WebStartRefused refused)

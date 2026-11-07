@@ -239,7 +239,20 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 await PluginsAsync(Str(m, "sessionId"), m["refresh"] is JsonValue rv && rv.TryGetValue<bool>(out var refresh) && refresh).ConfigureAwait(false);
                 break;
             case "pluginAction":
-                await PluginActionAsync(Str(m, "sessionId"), Str(m, "name"), Str(m, "action"), Str(m, "folder")).ConfigureAwait(false);
+                await PluginActionAsync(Str(m, "sessionId"), Str(m, "name"), Str(m, "action"), Str(m, "folder"), m["values"] as JsonObject).ConfigureAwait(false);
+                break;
+            case "configForm":
+                _configFor = Str(m, "sessionId") ?? _configFor;
+                ConfigForm(Str(m, "tab") ?? "general", Str(m, "item"));
+                break;
+            case "configFormSave":
+                _configFor = Str(m, "sessionId") ?? _configFor;
+                ConfigFormSave(Str(m, "tab") ?? "", m["values"] as JsonObject ?? [], Str(m, "choice"), Str(m, "item"));
+                break;
+            case "configFormAction":
+                _configFor = Str(m, "sessionId") ?? _configFor;
+                ConfigFormAction(Str(m, "tab") ?? "", Str(m, "item"), Str(m, "action") ?? "",
+                    m["confirmed"] is JsonValue cv && cv.TryGetValue<bool>(out var confirmed) && confirmed);
                 break;
             case "getConfig":
                 GetConfig();
@@ -621,7 +634,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 OpenShell(session);
                 return true;
             case "/config":
-                GetConfig();
+                ConfigForm("general");
                 return true;
             default:
                 return false;
@@ -668,14 +681,14 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     /// One action on one plugin row. Long ones — a download waits on its permission prompt, which this same tab
     /// answers — run beside the message loop, so the answer can arrive while the action waits for it.
     /// </summary>
-    private async Task PluginActionAsync(string? sessionId, string? name, string? action, string? folder)
+    private async Task PluginActionAsync(string? sessionId, string? name, string? action, string? folder, JsonObject? values)
     {
         if (!S.Allow.Plugins) { Error(PluginsOff); return; }
         if (LiveSession(sessionId) is not { } session || name is null || action is null) { Error("Which plugin?"); return; }
         _ = Task.Run(async () =>
         {
             string said;
-            try { said = await Plugins.ActAsync(session, name, action, folder).ConfigureAwait(false); }
+            try { said = await Plugins.ActAsync(session, name, action, folder, values).ConfigureAwait(false); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or HttpRequestException)
             {
                 said = $"'{name}': {e.Message}";
@@ -697,6 +710,355 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         if (Config.Read(out var why) is { } text) Send(new JsonObject { ["type"] = "config", ["text"] = text });
         else Error(why ?? "config.json could not be read.");
     }
+
+    /// <summary>One of F8's tabs as a form, from the file as it is now.</summary>
+    private void ConfigForm(string tab, string? item = null)
+    {
+        if (!S.Allow.Config) { Error(ConfigOff); return; }
+        if (tab == "json") { GetConfig(); return; }
+        var read = CxAgent.UI.Config.ProvidersFile.Read(S.Paths, CxAgent.UI.Startup.Env());
+        if (read.Settings is not { } settings) { Error(string.Join(" ", read.Errors)); return; }
+        JsonObject form;
+        switch (tab)
+        {
+            case "general":
+                form = new JsonObject { ["sections"] = WebConfigForms.General(CxAgent.UI.Config.GeneralDraft.From(settings, read.TavilyKeyAsWritten)) };
+                break;
+            case "providers":
+                form = WebConfigForms.Providers(settings, item);
+                break;
+            case "mcp":
+                form = WebConfigForms.Mcp(settings, item);
+                break;
+            case "agents":
+                form = WebConfigForms.Agents(settings, item);
+                break;
+            case "hooks":
+                if (HooksDraft() is not { } hooks) return;
+                form = WebConfigForms.Hooks(hooks, item);
+                break;
+            case "web":
+                form = WebConfigForms.Web(settings.Web ?? Core.Web.WebSettings.Default);
+                break;
+            default:
+                Error($"No such configuration tab: {tab}.");
+                return;
+        }
+        form["type"] = "configForm";
+        form["tab"] = tab;
+        form["tabs"] = new JsonArray([.. WebConfigForms.Tabs.Select(t => (JsonNode)new JsonObject { ["id"] = t.Id, ["title"] = t.Title })]);
+        Send(form);
+    }
+
+    /// <summary>
+    /// A form's save: the tab's draft, built from the file as it is now, set from what the page sent, checked by the
+    /// draft's own rules, and written by its own Apply — as the terminal's tab saves it.
+    /// </summary>
+    private void ConfigFormSave(string tab, JsonObject values, string? choice, string? item)
+    {
+        if (!S.Allow.Config) { Error(ConfigOff); return; }
+        var read = CxAgent.UI.Config.ProvidersFile.Read(S.Paths, CxAgent.UI.Startup.Env());
+        if (read.Settings is not { } settings) { Refused(read.Errors); return; }
+        Core.Config.CacheChoice? picked = choice is not null && Enum.TryParse<Core.Config.CacheChoice>(choice, true, out var c) ? c : null;
+        WebConfigSave result;
+        switch (tab)
+        {
+            case "general":
+            {
+                var draft = CxAgent.UI.Config.GeneralDraft.From(settings, read.TavilyKeyAsWritten);
+                WebConfigForms.SetGeneral(draft, values);
+                if (draft.Problem is { } problem) { Refused([problem]); return; }
+                if (!draft.IsDirty) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return; }
+                result = Config.Commit(draft.Apply, new Core.Config.ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), false, "general settings saved"),
+                    Core.Config.CacheChoice.ApplyNow);
+                break;
+            }
+            case "providers":
+            {
+                if (ProvidersSave(settings, values, item, picked) is not { } done) return;
+                (result, item) = done;
+                break;
+            }
+            case "mcp":
+            {
+                if (WebConfigForms.NumberProblem(values, "timeoutMs") is { } bad) { Refused([bad]); return; }
+                var isNew = item == WebConfigForms.NewItem;
+                var name = isNew ? ((values["name"] as JsonValue)?.GetValue<string>() ?? "").Trim() : item ?? "";
+                if (name.Length == 0) { Refused(["A server needs a name."]); return; }
+                var cfg = isNew ? new Core.Llm.McpServerConfig([]) : settings.McpServers.TryGetValue(name, out var had) ? had : null;
+                if (cfg is null) { Refused([$"There is no server '{name}'."]); return; }
+                var draft = WebConfigForms.SetMcp(name, cfg, isNew, values);
+                if (isNew && string.IsNullOrWhiteSpace(draft.CommandLine) && !draft.IsRemote) { Refused(["A server needs a command or a URL."]); return; }
+                if (!draft.IsDirty) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return; }
+                var fields = draft.ToFields();
+                result = McpCommit(isNew ? root => Core.Config.McpEdits.Add(root, name, fields) : root => Core.Config.McpEdits.Update(root, name, fields));
+                item = name;
+                break;
+            }
+            case "hooks":
+            {
+                if (WebConfigForms.NumberProblem(values, "timeoutSeconds") is { } bad) { Refused([bad]); return; }
+                if (HooksDraft() is not { } hooks) return;
+                if (item == WebConfigForms.NewItem)
+                {
+                    var source = Enum.TryParse<Core.Hooks.HookSource>((values["source"] as JsonValue)?.GetValue<string>(), out var src) ? src : Core.Hooks.HookSource.User;
+                    if (!hooks.CanSaveTo(source)) { Refused([$"There is no {CxAgent.UI.Config.HooksFile.Label(source)} to save to here."]); return; }
+                    var added = hooks.Add(source);
+                    WebConfigForms.SetHook(added, values);
+                    item = (hooks.Entries.Count - 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+                else if (int.TryParse(item, out var index) && index >= 0 && index < hooks.Entries.Count)
+                {
+                    if (!hooks.Entries[index].Editable) { Refused(["This hook's type is not one cxagent runs; it is kept as it is."]); return; }
+                    WebConfigForms.SetHook(hooks.Entries[index], values);
+                }
+                else { Refused(["That hook is no longer there."]); return; }
+                if (HooksSave(hooks) is not { } saved) return;
+                result = saved;
+                break;
+            }
+            case "agents":
+            {
+                if (WebConfigForms.NumberProblem(values, "maxTurns") is { } bad) { Refused([bad]); return; }
+                var draft = WebConfigForms.SetAgent(WebConfigForms.DraftFor(settings, item ?? Core.Agents.AgentTypeCatalog.DefaultTypeName), values);
+                if (draft.IsNew && draft.Name.Length == 0) { Refused(["A type needs a name."]); return; }
+                if (draft.ProviderProblem is { } problem) { Refused([problem]); return; }
+                if (!draft.IsDirty) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return; }
+                var fields = draft.ToFields();
+                var name = draft.Name;
+                Action<JsonObject> edit = draft.IsGeneral ? root => Core.Config.AgentEdits.SetGeneral(root, fields)
+                    : draft.IsBuiltin ? root => Core.Config.AgentEdits.SetOverride(root, name, fields)
+                    : draft.IsNew ? root => Core.Config.AgentEdits.AddType(root, name, fields)
+                    : root => Core.Config.AgentEdits.UpdateType(root, name, fields);
+                // AN AGENT TYPE TOUCHES NO PROMPT CACHE: every session is refreshed in place, as F8's Agents tab does.
+                result = Config.Commit(edit, new Core.Config.ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true, $"{name} saved"),
+                    Core.Config.CacheChoice.ApplyNow);
+                item = name;
+                break;
+            }
+            default:
+                Error($"No such configuration tab: {tab}.");
+                return;
+        }
+        if (!result.Saved) { Refused(result.Errors); return; }
+        Send(new JsonObject { ["type"] = "configSaved", ["tab"] = tab, ["warnings"] = new JsonArray([.. result.Errors.Select(e => (JsonNode)e)]) });
+        ConfigForm(tab, item);
+    }
+
+    /// <summary>
+    /// The Providers tab's save: the defaults, and one instance — new or edited — through F8's InstanceDraft, which
+    /// decides what changed and which sessions it moves. Null when it answered the page itself: a refusal, nothing to
+    /// save, or the question a model change asks first.
+    /// </summary>
+    private (WebConfigSave, string?)? ProvidersSave(Core.Llm.ProviderSettings settings, JsonObject values, string? item, Core.Config.CacheChoice? choice)
+    {
+        var edits = new List<Action<JsonObject>>();
+        var instances = new HashSet<string>(StringComparer.Ordinal);
+        var moved = new HashSet<string>(StringComparer.Ordinal);
+        var everyone = false;
+        var notes = new List<string>();
+
+        var newDefault = (values["defaultProvider"] as JsonValue)?.GetValue<string>();
+        if (newDefault is { Length: > 0 } && newDefault != settings.DefaultProvider)
+        {
+            edits.Add(root => Core.Config.ProviderEdits.SetDefault(root, newDefault));
+            everyone = true;
+            notes.Add($"{newDefault} is now the default");
+        }
+        var reviewer = (values["classifier"] as JsonValue)?.GetValue<string>();
+        if (reviewer is not null && (reviewer.Length == 0 ? null : reviewer) != settings.Classifier)
+        {
+            edits.Add(root => Core.Config.ProviderEdits.SetReviewer(root, reviewer.Length == 0 ? null : reviewer));
+            everyone = true;
+            notes.Add(reviewer.Length == 0 ? "no reviewer" : $"{reviewer} reviews auto mode");
+        }
+
+        if (WebConfigForms.NumberProblem(values, "contextWindow", "maxConcurrentAgents") is { } bad) { Refused([bad]); return null; }
+        if (item == WebConfigForms.NewItem)
+        {
+            var name = ((values["name"] as JsonValue)?.GetValue<string>() ?? "").Trim();
+            var kind = (values["kind"] as JsonValue)?.GetValue<string>() ?? "openai-compatible";
+            var model = ((values["model"] as JsonValue)?.GetValue<string>() ?? "").Trim();
+            if (name.Length == 0 || model.Length == 0) { Refused(["A new provider needs a name and a model."]); return null; }
+            var draft = WebConfigForms.SetInstance(name, new Core.Llm.ProviderInstanceConfig(kind, model, null, null, null), values);
+            var fresh = new CxAgent.UI.Config.InstanceDraft(name, new Core.Llm.ProviderInstanceConfig(kind, model, null, null, null)) { IsNew = true };
+            fresh.BaseUrl = draft.BaseUrl;
+            fresh.NewApiKey = draft.NewApiKey;
+            var fields = fresh.ToFields();
+            edits.Add(root => Core.Config.ProviderEdits.Add(root, name, fields));
+            var added = fresh.AddChange(settings);
+            everyone |= added.Everyone;
+            notes.Add(added.Note);
+            item = name;
+        }
+        else if (item is not null && settings.Providers.TryGetValue(item, out var cfg))
+        {
+            var draft = WebConfigForms.SetInstance(item, cfg, values);
+            if (draft.IsDirty)
+            {
+                var fields = draft.ToFields();
+                var name = item;
+                edits.Add(root => Core.Config.ProviderEdits.Update(root, name, fields));
+                var change = draft.ChangeFor(settings);
+                instances.UnionWith(change.Instances);
+                moved.UnionWith(change.ModelChanged);
+                everyone |= change.Everyone;
+                notes.Add(change.Note);
+            }
+        }
+        if (edits.Count == 0) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return null; }
+
+        // F8'S QUESTION: a session on an instance whose model or endpoint changed re-sends its conversation when it moves.
+        if (choice is null && S.Manager.Sessions.Any(x => x.InstanceName is { } i && moved.Contains(i)))
+        {
+            Send(new JsonObject { ["type"] = "configAsk", ["instances"] = new JsonArray([.. moved.Select(i => (JsonNode)i)]) });
+            return null;
+        }
+        var all = new Core.Config.ConfigChange(instances, new Dictionary<string, string>(), everyone, string.Join("; ", notes)) { ModelChanged = moved };
+        return (Config.Commit(root => { foreach (var e in edits) e(root); }, all, choice ?? Core.Config.CacheChoice.ApplyNow), item);
+    }
+
+    /// <summary>An action on one item of a list tab — remove a provider — asked about first when F8 asks.</summary>
+    private void ConfigFormAction(string tab, string? item, string action, bool confirmed)
+    {
+        if (!S.Allow.Config) { Error(ConfigOff); return; }
+        var read = CxAgent.UI.Config.ProvidersFile.Read(S.Paths, CxAgent.UI.Startup.Env());
+        if (read.Settings is not { } settings || item is null) { Refused(read.Errors); return; }
+        switch ((tab, action))
+        {
+            case ("providers", "remove"):
+            {
+                var using_ = S.Manager.Sessions.Where(x => x.InstanceName == item).Select(x => System.IO.Path.GetFileName(x.WorkingDirectory)).ToList();
+                var plan = CxAgent.UI.Config.ProviderRemovalPlan.For(settings, item, using_);
+                if (plan.Refused) { Refused(plan.Lines); return; }
+                if (!confirmed)
+                {
+                    Send(new JsonObject
+                    {
+                        ["type"] = "configConfirm", ["tab"] = tab, ["item"] = item, ["action"] = action,
+                        ["text"] = $"Remove '{item}'?" + (plan.Lines.Count > 0 ? " " + string.Join("; ", plan.Lines) + "." : ""),
+                    });
+                    return;
+                }
+                var result = Config.Commit(root => Core.Config.ProviderEdits.Remove(root, item),
+                    new Core.Config.ConfigChange(new HashSet<string> { item }, new Dictionary<string, string>(), true, $"{item} was removed"),
+                    Core.Config.CacheChoice.ApplyNow);
+                if (!result.Saved) { Refused(result.Errors); return; }
+                Send(new JsonObject { ["type"] = "configSaved", ["tab"] = tab, ["warnings"] = new JsonArray() });
+                ConfigForm(tab);
+                return;
+            }
+            case ("mcp", "enable" or "disable" or "remove"):
+            {
+                if (action == "remove" && !confirmed)
+                {
+                    Send(new JsonObject { ["type"] = "configConfirm", ["tab"] = tab, ["item"] = item, ["action"] = action, ["text"] = $"Remove the MCP server '{item}'? Its tools leave every session." });
+                    return;
+                }
+                var result = McpCommit(action switch
+                {
+                    "remove" => root => Core.Config.McpEdits.Remove(root, item),
+                    _ => root => Core.Config.McpEdits.SetEnabled(root, item, action == "enable"),
+                });
+                if (!result.Saved) { Refused(result.Errors); return; }
+                Send(new JsonObject { ["type"] = "configSaved", ["tab"] = tab, ["warnings"] = new JsonArray([.. result.Errors.Select(e => (JsonNode)e)]) });
+                ConfigForm(tab, action == "remove" ? null : item);
+                return;
+            }
+            case ("hooks", "remove"):
+            {
+                if (HooksDraft() is not { } hooks) return;
+                if (!int.TryParse(item, out var index) || index < 0 || index >= hooks.Entries.Count) { Refused(["That hook is no longer there."]); return; }
+                if (!confirmed)
+                {
+                    var e = hooks.Entries[index];
+                    Send(new JsonObject { ["type"] = "configConfirm", ["tab"] = tab, ["item"] = item, ["action"] = action,
+                        ["text"] = $"Remove the {e.Event} hook{(e.Name is { } n ? $" '{n}'" : "")} from {CxAgent.UI.Config.HooksFile.Label(e.Source)}?" });
+                    return;
+                }
+                hooks.Remove(hooks.Entries[index]);
+                if (HooksSave(hooks) is not { } result) return;
+                if (!result.Saved) { Refused(result.Errors); return; }
+                Send(new JsonObject { ["type"] = "configSaved", ["tab"] = tab, ["warnings"] = new JsonArray([.. result.Errors.Select(e => (JsonNode)e)]) });
+                ConfigForm(tab);
+                return;
+            }
+            case ("agents", "reset" or "remove"):
+            {
+                if (!confirmed)
+                {
+                    Send(new JsonObject
+                    {
+                        ["type"] = "configConfirm", ["tab"] = tab, ["item"] = item, ["action"] = action,
+                        ["text"] = action == "reset" ? $"Reset '{item}' to what cxagent ships? Your changes to it are removed." : $"Remove the agent type '{item}'?",
+                    });
+                    return;
+                }
+                var result = Config.Commit(action == "reset" ? root => Core.Config.AgentEdits.ResetBuiltin(root, item) : root => Core.Config.AgentEdits.RemoveType(root, item),
+                    new Core.Config.ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true, $"{item} {(action == "reset" ? "reset to shipped" : "removed")}"),
+                    Core.Config.CacheChoice.ApplyNow);
+                if (!result.Saved) { Refused(result.Errors); return; }
+                Send(new JsonObject { ["type"] = "configSaved", ["tab"] = tab, ["warnings"] = new JsonArray() });
+                ConfigForm(tab, action == "reset" ? item : null);
+                return;
+            }
+            default:
+                Error("Unknown action.");
+                return;
+        }
+    }
+
+    // THE SESSION THE CONFIG PAGE WAS OPENED FROM: its folder is where the project's and local hooks files are.
+    private string? _configFor;
+
+    private CxAgent.UI.Config.HooksDraft? HooksDraft()
+    {
+        var session = LiveSession(_configFor) ?? OpenSessions.Select(LiveSession).FirstOrDefault(x => x is not null);
+        if (session is null) { Error("Open a session first: its folder holds the project's hooks."); return null; }
+        _configFor = session.Id;
+        return CxAgent.UI.Config.HooksFile.Load(S.Paths, CxAgent.UI.Startup.Env(), session.WorkingDirectory);
+    }
+
+    /// <summary>
+    /// The Hooks tab's save, as F8's: every hook checked for the field its type needs, the files written, and the
+    /// hooks applied — the session this page came from runs the files as saved; every other takes this machine's only,
+    /// its own repository's still waiting for its own review.
+    /// </summary>
+    private WebConfigSave? HooksSave(CxAgent.UI.Config.HooksDraft draft)
+    {
+        if (draft.Entries.Select(CxAgent.UI.Config.HooksTab.MissingField).FirstOrDefault(x => x is not null) is { } missing) { Refused([missing]); return null; }
+        if (!draft.IsDirty) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return null; }
+        var errors = CxAgent.UI.Config.HooksFile.Save(draft, S.Paths, CxAgent.UI.Startup.Env());
+        if (errors.Count > 0) return new WebConfigSave(false, errors);
+        var user = CxAgent.UI.Config.ProvidersFile.Read(S.Paths, CxAgent.UI.Startup.Env()).Settings?.Hooks ?? Core.Hooks.HooksSettings.None;
+        var shown = LiveSession(_configFor);
+        var safe = shown is not null && CxAgent.UI.Config.HooksFile.SafeToApply(draft)
+                   && Core.Hooks.HookSources.RepoRoot(shown.WorkingDirectory) == draft.RepoRoot;
+        foreach (var x in S.Manager.Sessions)
+        {
+            if (ReferenceEquals(x, shown) && safe) x.ReviewHooks(user);
+            else x.ReviewSystemHooks(user);
+        }
+        return new WebConfigSave(true, safe ? [] : ["A project hooks file changed on disk while this was open, so only this machine's hooks were applied. /hooks review applies it."]);
+    }
+
+    /// <summary>
+    /// An MCP save: written like any config save, then the servers reconnected to what was written — the host's own
+    /// manager, as F8's MCP tab reloads. Where the host has none, the change takes effect at the next start, and says so.
+    /// </summary>
+    private WebConfigSave McpCommit(Action<JsonObject> edit)
+    {
+        var result = Config.Commit(edit, new Core.Config.ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true, "MCP servers changed"),
+            Core.Config.CacheChoice.ApplyNow);
+        if (!result.Saved) return result;
+        if (S.McpReload is not { } reload) return result with { Errors = [.. result.Errors, "Saved; MCP servers reconnect at the next start."] };
+        var servers = CxAgent.UI.Config.ProvidersFile.Read(S.Paths, CxAgent.UI.Startup.Env()).Settings?.McpServers;
+        if (servers is not null) _ = Task.Run(() => reload(servers));
+        return result;
+    }
+
+    private void Refused(IEnumerable<string> errors) =>
+        Send(new JsonObject { ["type"] = "configRefused", ["errors"] = new JsonArray([.. errors.Select(e => (JsonNode)e)]) });
 
     private const string ConfigOff =
         "Configuration is off for browsers. It is turned on in the terminal: F8 › Web › Browser access (config), or web.allow.config in config.json.";

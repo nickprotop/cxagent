@@ -421,3 +421,44 @@ body.no-composer .composer { display: none; }
 .plugin-card select { font: 12.5px var(--sans); padding: 5px 6px; border-radius: 7px; border: 1px solid var(--line); background: var(--sunken); color: var(--text); max-width: 360px; }
 .plugin-filter { font: 12.5px var(--sans); padding: 4px 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--sunken); color: var(--text); width: 160px; }
 .plugin-head .badge { background: var(--raised); border-color: var(--line); color: var(--muted); }
+
+/* ---- F8's tabs as forms ---------------------------------------------------------------------------------------- */
+.config-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.config-tab { padding: 4px 10px; font-size: 12.5px; background: transparent; }
+.config-tab.on { background: var(--raised); border-color: var(--accent); color: var(--accent); }
+.config-form { padding: 12px 24px 40px; max-width: 860px; }
+.form-section { margin: 0 0 22px; }
+.form-section h3 { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 14px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); }
+.form-field { margin: 0 0 14px; display: flex; flex-direction: column; gap: 5px; }
+.form-label { font-weight: 600; color: var(--strong); font-size: 13px; }
+.form-help { color: var(--muted); font-size: 12.5px; }
+.form-input { font: 13px var(--mono); padding: 6px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--sunken);
+  color: var(--text); max-width: 520px; }
+textarea.form-input { resize: vertical; }
+.form-field fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.form-choice { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: baseline; cursor: pointer; }
+.form-choice small { grid-column: 2; color: var(--muted); font-size: 12.5px; }
+.form-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 12px; }
+.form-check { display: inline-flex; align-items: center; gap: 6px; font: 12.5px var(--mono); cursor: pointer; }
+.form-field.secret { flex-direction: column; }
+.form-info { font: 13px var(--mono); color: var(--text); }
+.config-form.has-items { display: grid; grid-template-columns: 220px 1fr; gap: 22px; max-width: 1100px; }
+.config-items { display: flex; flex-direction: column; gap: 4px; padding-top: 14px; }
+.config-item { text-align: left; display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; background: transparent; border-color: transparent; }
+.config-item small { color: var(--muted); font-weight: 400; font-size: 11.5px; }
+.config-item.on { background: var(--raised); border-color: var(--line); }
+.config-item.add { color: var(--accent); }
+.form-actions { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+@media (max-width: 760px) { .config-form.has-items { grid-template-columns: 1fr; } .config-items { flex-direction: row; flex-wrap: wrap; } }
+.plugin-more { margin-top: 8px; border-top: 1px solid var(--line-soft); padding-top: 6px; }
+.plugin-more > summary, .plugin-sources > summary { cursor: pointer; color: var(--accent); font-size: 12.5px; }
+.plugin-sources { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 8px 0 4px; background: var(--surface); }
+.plugin-sources h4 { font: 600 11px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 12px 0 6px; }
+.source-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; font-size: 13px; }
+.source-row code { font: 12px var(--mono); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-add { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+.source-add .form-input { flex: 1; min-width: 140px; }
+/* THE LIST STAYS WHERE IT IS while a long form scrolls beside it. */
+.config-items { position: sticky; top: 0; align-self: start; }
+.form-field.bool .form-check, .form-field.bool .form-label { font-family: var(--sans); }

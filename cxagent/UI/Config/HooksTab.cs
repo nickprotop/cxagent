@@ -435,7 +435,7 @@ public sealed class HooksTab
     private void SetStatus(string markup) => _status.SetContent([markup]);
 
     /// <summary>What a hook of its type cannot be saved without, or null.</summary>
-    private static string? MissingField(HookEntry e) => !e.Editable ? null : e.Type switch
+    internal static string? MissingField(HookEntry e) => !e.Editable ? null : e.Type switch
     {
         "command" when string.IsNullOrWhiteSpace(e.Command) => "A command hook needs a command.",
         "prompt" or "agent" when string.IsNullOrWhiteSpace(e.Prompt) => $"A {e.Type} hook needs a prompt.",

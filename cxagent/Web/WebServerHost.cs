@@ -29,6 +29,9 @@ public sealed record WebHostRequest(
 
     /// <summary>Told the config a browser's save made live, for the host's own copy of it.</summary>
     public Action<Core.Llm.ResolvedConfig>? ConfigSaved { get; init; }
+
+    /// <summary>Reconnects the MCP servers to what a browser's save just wrote — the host's own manager, as F8's MCP saves use.</summary>
+    public Func<IReadOnlyDictionary<string, Core.Llm.McpServerConfig>, Task>? McpReload { get; init; }
 }
 
 /// <summary>The server will not start as configured; the message says what to change.</summary>
@@ -96,6 +99,7 @@ public sealed class WebServerHost : IAsyncDisposable
             IdleMinutes = s.IdleMinutes,
             Allow = s.Allow,
             ConfigSaved = r.ConfigSaved,
+            McpReload = r.McpReload,
         });
         var host = new WebServerHost(r, gate, known, hub);
 

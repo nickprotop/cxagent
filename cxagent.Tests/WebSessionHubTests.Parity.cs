@@ -460,4 +460,219 @@ public sealed partial class WebSessionHubTests
         }
         finally { await server.StopAsync(); }
     }
+
+    // ---- the config page as F8's forms ----------------------------------------------------------------------------
+
+    private const string ConfigWithTavily = """
+        {
+          "providers": { "local": { "kind": "openai-compatible", "model": "m1", "baseUrl": "http://127.0.0.1:9/v1" } },
+          "defaultProvider": "local",
+          "webSearch": { "tavilyApiKey": "tvly-secret-9876" }
+        }
+        """;
+
+    private async Task<(Tab Tab, HttpServer Server)> ConfigTabAsync(string config)
+    {
+        File.WriteAllText(ConfigPath, config);
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Config = true });
+        return (await Tab.OpenAsync(server.Bound.Port), server);
+    }
+
+    [Fact]
+    public async Task The_general_form_shows_f8_s_fields_and_hides_the_search_key()
+    {
+        var (tab, server) = await ConfigTabAsync(ConfigWithTavily);
+        try
+        {
+            await tab.SendAsync(Msg("configForm", ("tab", "general")));
+            var form = await tab.NextAsync(Type("configForm"));
+            var text = form.ToJsonString();
+            Assert.Contains("Hand it to the background", text, StringComparison.Ordinal);
+            Assert.Contains("Session tools", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("tvly-secret-9876", text, StringComparison.Ordinal);
+            Assert.Contains("9876", text, StringComparison.Ordinal);
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task A_general_save_writes_what_changed_and_keeps_the_key_it_never_sent()
+    {
+        var (tab, server) = await ConfigTabAsync(ConfigWithTavily);
+        try
+        {
+            await tab.SendAsync(Msg("configFormSave", ("tab", "general"), ("values", new JsonObject { ["detach"] = "false", ["tavily"] = "" })));
+            await tab.NextAsync(Type("configSaved"));
+            var saved = JsonNode.Parse(File.ReadAllText(ConfigPath))!.AsObject();
+            Assert.False(saved["shellDetachOnTimeout"]!.GetValue<bool>());
+            Assert.Equal("tvly-secret-9876", saved["webSearch"]!["tavilyApiKey"]!.GetValue<string>());
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task A_general_save_the_draft_refuses_writes_nothing()
+    {
+        var (tab, server) = await ConfigTabAsync(ConfigWithTavily);
+        var before = File.ReadAllText(ConfigPath);
+        try
+        {
+            await tab.SendAsync(Msg("configFormSave", ("tab", "general"), ("values", new JsonObject { ["cap"] = "Number", ["capText"] = "lots" })));
+            Assert.Contains("whole number", (await tab.NextAsync(Type("configRefused")))["errors"]!.ToJsonString(), StringComparison.Ordinal);
+            Assert.Equal(before, File.ReadAllText(ConfigPath));
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    private const string TwoProviders = """
+        {
+          "providers": {
+            "local": { "kind": "openai-compatible", "model": "m1", "baseUrl": "http://127.0.0.1:9/v1", "apiKey": "sk-secret-1234" },
+            "spare": { "kind": "openai-compatible", "model": "s1", "baseUrl": "http://127.0.0.1:9/v1" }
+          },
+          "defaultProvider": "local"
+        }
+        """;
+
+    [Fact]
+    public async Task The_providers_form_lists_each_provider_and_hides_its_key()
+    {
+        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        try
+        {
+            await tab.SendAsync(Msg("configForm", ("tab", "providers"), ("item", "local")));
+            var form = await tab.NextAsync(Type("configForm"));
+            Assert.Equal(["local", "spare"], form["items"]!.AsArray().Select(i => i!["id"]!.GetValue<string>()));
+            Assert.DoesNotContain("sk-secret-1234", form.ToJsonString(), StringComparison.Ordinal);
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task A_provider_edit_writes_through_f8_s_draft_and_keeps_its_key()
+    {
+        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        try
+        {
+            await tab.SendAsync(Msg("configFormSave", ("tab", "providers"), ("item", "spare"),
+                ("values", new JsonObject { ["description"] = "the spare one", ["apiKey"] = "" })));
+            await tab.NextAsync(Type("configSaved"));
+            var saved = JsonNode.Parse(File.ReadAllText(ConfigPath))!.AsObject();
+            Assert.Equal("the spare one", saved["providers"]!["spare"]!["description"]!.GetValue<string>());
+            Assert.Equal("sk-secret-1234", saved["providers"]!["local"]!["apiKey"]!.GetValue<string>());
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task A_new_provider_is_added_and_removing_one_asks_first()
+    {
+        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        try
+        {
+            await tab.SendAsync(Msg("configFormSave", ("tab", "providers"), ("item", "+new"),
+                ("values", new JsonObject { ["name"] = "third", ["kind"] = "ollama", ["model"] = "q3", ["baseUrl"] = "http://127.0.0.1:11434" })));
+            await tab.NextAsync(Type("configSaved"));
+            Assert.Equal("q3", JsonNode.Parse(File.ReadAllText(ConfigPath))!["providers"]!["third"]!["model"]!.GetValue<string>());
+
+            await tab.SendAsync(Msg("configFormAction", ("tab", "providers"), ("item", "third"), ("action", "remove")));
+            await tab.NextAsync(Type("configConfirm"));
+            Assert.NotNull(JsonNode.Parse(File.ReadAllText(ConfigPath))!["providers"]!["third"]);
+            await tab.SendAsync(Msg("configFormAction", ("tab", "providers"), ("item", "third"), ("action", "remove"), ("confirmed", true)));
+            await tab.NextAsync(Type("configSaved"));
+            Assert.Null(JsonNode.Parse(File.ReadAllText(ConfigPath))!["providers"]!["third"]);
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task An_mcp_server_is_added_turned_off_and_removed_after_a_confirmation()
+    {
+        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        try
+        {
+            await tab.SendAsync(Msg("configFormSave", ("tab", "mcp"), ("item", "+new"),
+                ("values", new JsonObject { ["name"] = "files", ["command"] = "npx -y some-server /tmp" })));
+            await tab.NextAsync(Type("configSaved"));
+            var mcp = () => JsonNode.Parse(File.ReadAllText(ConfigPath))!["mcp"]?["files"];
+            Assert.Equal("npx", mcp()!["command"]![0]!.GetValue<string>());
+
+            await tab.SendAsync(Msg("configFormAction", ("tab", "mcp"), ("item", "files"), ("action", "disable")));
+            await tab.NextAsync(Type("configSaved"));
+            Assert.False(mcp()!["enabled"]!.GetValue<bool>());
+
+            await tab.SendAsync(Msg("configFormAction", ("tab", "mcp"), ("item", "files"), ("action", "remove")));
+            await tab.NextAsync(Type("configConfirm"));
+            await tab.SendAsync(Msg("configFormAction", ("tab", "mcp"), ("item", "files"), ("action", "remove"), ("confirmed", true)));
+            await tab.NextAsync(Type("configSaved"));
+            Assert.Null(mcp());
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task An_agent_type_of_your_own_is_added_and_a_shipped_one_is_changed_and_reset()
+    {
+        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        try
+        {
+            await tab.SendAsync(Msg("configFormSave", ("tab", "agents"), ("item", "+new"),
+                ("values", new JsonObject { ["name"] = "researcher", ["description"] = "reads papers", ["briefing"] = "Read carefully.", ["runsOn"] = "Session" })));
+            await tab.NextAsync(Type("configSaved"));
+            var types = () => JsonNode.Parse(File.ReadAllText(ConfigPath))!["agents"];
+            Assert.Equal("reads papers", types()!["researcher"]!["description"]!.GetValue<string>());
+
+            await tab.SendAsync(Msg("configFormSave", ("tab", "agents"), ("item", "explore"), ("values", new JsonObject { ["maxTurns"] = "12" })));
+            await tab.NextAsync(Type("configSaved"));
+            Assert.Equal(12, types()!["explore"]!["maxTurns"]!.GetValue<int>());
+
+            await tab.SendAsync(Msg("configFormAction", ("tab", "agents"), ("item", "explore"), ("action", "reset"), ("confirmed", true)));
+            await tab.NextAsync(Type("configSaved"));
+            Assert.Null(types()?["explore"]);
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task A_hook_is_added_where_it_is_saved_and_one_missing_its_command_is_refused()
+    {
+        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        try
+        {
+            await tab.SendAsync(Msg("create", ("folder", Work)));
+            var id = (await tab.NextAsync(Type("opened")))["sessionId"]!.GetValue<string>();
+
+            await tab.SendAsync(Msg("configFormSave", ("tab", "hooks"), ("item", "+new"), ("sessionId", id),
+                ("values", new JsonObject { ["source"] = "User", ["event"] = "PreToolUse", ["type"] = "command", ["command"] = "" })));
+            Assert.Contains("needs a command", (await tab.NextAsync(Type("configRefused")))["errors"]!.ToJsonString(), StringComparison.Ordinal);
+
+            await tab.SendAsync(Msg("configFormSave", ("tab", "hooks"), ("item", "+new"), ("sessionId", id),
+                ("values", new JsonObject { ["source"] = "User", ["event"] = "PreToolUse", ["type"] = "command", ["command"] = "echo guarded", ["matcher"] = "run_shell" })));
+            await tab.NextAsync(Type("configSaved"));
+            await tab.SendAsync(Msg("configForm", ("tab", "hooks"), ("sessionId", id)));
+            var form = await tab.NextAsync(Type("configForm"));
+            Assert.Contains(form["items"]!.AsArray(), i => i!["sub"]!.GetValue<string>().Contains("run_shell", StringComparison.Ordinal));
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task The_web_tab_is_read_only_and_shows_no_password()
+    {
+        var (tab, server) = await ConfigTabAsync("""
+            { "providers": { "local": { "kind": "ollama", "model": "m" } }, "defaultProvider": "local",
+              "web": { "users": { "me": "hunter2" }, "allow": { "config": true } } }
+            """);
+        try
+        {
+            await tab.SendAsync(Msg("configForm", ("tab", "web")));
+            var form = await tab.NextAsync(Type("configForm"));
+            Assert.True(form["readOnly"]!.GetValue<bool>());
+            Assert.Contains("me", form.ToJsonString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("hunter2", form.ToJsonString(), StringComparison.Ordinal);
+            await tab.SendAsync(Msg("configFormSave", ("tab", "web"), ("values", new JsonObject { ["login"] = "off" })));
+            await tab.NextAsync(Type("error"));
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
 }

@@ -33,6 +33,9 @@ public sealed record WebHubServices(
     /// </summary>
     public Action<Core.Llm.ResolvedConfig>? ConfigSaved { get; init; }
 
+    /// <summary>Reconnects the MCP servers after a browser's MCP save; null where the host has none to reconnect.</summary>
+    public Func<IReadOnlyDictionary<string, Core.Llm.McpServerConfig>, Task>? McpReload { get; init; }
+
     /// <summary>What a browser may do beyond the conversation — read when the server starts, never changed by a browser.</summary>
     public Core.Web.WebAccess Allow { get; init; } = Core.Web.WebAccess.Default;
 
