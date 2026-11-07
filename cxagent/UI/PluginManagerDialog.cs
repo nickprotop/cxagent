@@ -985,26 +985,11 @@ public static class PluginManagerDialog
     /// labels.</summary>
     private static IEnumerable<string> FactLines(PluginRow row)
     {
-        yield return Fact("STATE", StateLine(row));
-
-        if (row.Catalog is { RequiresDescription: { Length: > 0 } needs } entry)
-        {
-            yield return Fact("NEEDS", needs);
-            if (entry.RequiresInstall is { Length: > 0 } install)
-                yield return Continuation(install);
-
-            // ONLY WHEN THE DESCRIPTION DOES NOT ALREADY NAME IT — csharp-lsp's own description is
-            // "csharp-ls on PATH", and printing "default: csharp-ls" under that is a stutter.
-            if (entry.RequiresDefault is { Length: > 0 } fallback
-                && !needs.Contains(fallback, StringComparison.Ordinal))
-                yield return Continuation($"default: {fallback}");
-        }
-
-        if (ContractOf(row) is { } contract)
-            yield return Fact("CONTRACT", contract.ToString());
-
-        if (row.Catalog is { } catalogued && ToolsLine(catalogued.Tools) is { } tools)
-            yield return Fact("TOOLS", tools);
+        // THE FACTS ARE PluginFacts', so a browser's marketplace says the same; this draws them, a continuation
+        // indented under the value column so the key column stays a column.
+        if (_inputs is not { } inputs) yield break;
+        foreach (var f in PluginFacts.For(row, inputs))
+            yield return f.Key.Length == 0 ? Continuation(f.Value) : Fact(f.Key, f.Value);
     }
 
     private static string Fact(string key, string value) =>
@@ -1015,41 +1000,10 @@ public static class PluginManagerDialog
     private static string Continuation(string value) =>
         $"{new string(' ', 10)}[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(value)}[/]";
 
-    /// <summary>State · folder · what config says — the whole placement story in one line, because
-    /// each third can surprise independently: a loaded plugin can be disabled in config for the
-    /// next start, and a project copy can shadow a global one.</summary>
-    private static string StateLine(PluginRow row)
-    {
-        var parts = new List<string>();
-        if (row.State.Length > 0) parts.Add(row.State);
-        if (row.Folder is { } folder) parts.Add(folder);
-        // WHAT THE ENTRY SAYS, NOT "enabled"/"disabled". `enabled` decides auto-load and nothing
-        // else — it no longer forbids a hand load — so calling the plugin "disabled" describes a
-        // veto that does not exist.
-        //
-        // AND SAID FOR AN UNCONFIGURED PLUGIN TOO. Having no entry is a different situation from
-        // having one that says no, and the line went silent on exactly the case where "there is no
-        // entry" is what the reader needs — leaving two different rows reading identically.
-        // Folder is the "it is on disk here" fact, so it is also the test for whether a config
-        // line is worth printing: a catalog-only row has nothing to say about config yet.
-        //
-        // NOT SAID TWICE. An unconfigured row's State already ends in "not in config" (the rail
-        // shows the same text), so appending it again printed "not in config · global · not in
-        // config". The suffix is only added where State has not already said it.
-        if (row.Folder is not null)
-        {
-            if (row.Configured is { } config)
-                parts.Add(config.Enabled ? "in config, auto-load" : "in config, no auto-load");
-            else if (!row.State.Contains("not in config", StringComparison.Ordinal))
-                parts.Add("not in config");
-        }
-
-        return parts.Count > 0 ? string.Join(" · ", parts) : "not installed";
-    }
 
     /// <summary>The state line for a row, as the details pane shows it. Public because this
     /// assembly grants no InternalsVisibleTo; tests reach the private formatter through here.</summary>
-    public static string StateLineForTest(PluginRow row) => StateLine(row);
+    public static string StateLineForTest(PluginRow row) => PluginFacts.StateLine(row);
 
     /// <summary>
     /// Markdown with its hand-made line breaks removed, so the pane's wrap is the only wrap.
@@ -1110,42 +1064,7 @@ public static class PluginManagerDialog
         || line.StartsWith('>') || line.StartsWith('|')
         || (line.Length > 2 && char.IsDigit(line[0]) && line[1] is '.' or ')');
 
-    /// <summary>The installed sidecar's contract when there is one, else the catalog's claim —
-    /// the sidecar wins because it describes the binary actually on disk.</summary>
-    private static int? ContractOf(PluginRow row)
-    {
-        if (_inputs is { } inputs && inputs.InstalledContracts.TryGetValue(row.Name, out var installed))
-            return installed;
 
-        return row.Catalog is { PluginContract: > 0 } entry ? entry.PluginContract : null;
-    }
-
-    /// <summary>
-    /// The tool summary, one line — so gating is visible without opening anything. A user who never
-    /// looks further still learns whether these tools ask before running.
-    /// </summary>
-    private static string? ToolsLine(IReadOnlyList<CatalogTool> tools)
-    {
-        if (tools.Count == 0) return null;
-
-        var asks = tools.Count(t => string.Equals(t.Gated, "true", StringComparison.OrdinalIgnoreCase));
-        var decides = tools.Count(t => string.Equals(t.Gated, "dynamic", StringComparison.OrdinalIgnoreCase));
-        var never = tools.Count - asks - decides;
-
-        if (decides == tools.Count)
-            return tools.Count == 1 ? "1, decides per call whether to ask"
-                                    : $"{tools.Count}, all decide per call whether to ask";
-        if (asks == tools.Count)
-            return tools.Count == 1 ? "1, asks before running" : $"{tools.Count}, all ask before running";
-        if (never == tools.Count)
-            return tools.Count == 1 ? "1, never asks" : $"{tools.Count}, none ask before running";
-
-        var parts = new List<string>();
-        if (asks > 0) parts.Add($"{asks} ask first");
-        if (decides > 0) parts.Add($"{decides} decide per call");
-        if (never > 0) parts.Add($"{never} never ask");
-        return $"{tools.Count} · {string.Join(" · ", parts)}";
-    }
 
     /// <summary>
     /// The body, and it differs by state because the sources genuinely differ: an installed plugin

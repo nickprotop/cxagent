@@ -468,3 +468,8 @@ textarea.form-input { resize: vertical; }
 /* THE LIST STAYS WHERE IT IS while a long form scrolls beside it. */
 .config-items { position: sticky; top: 0; align-self: start; }
 .form-field.bool .form-check, .form-field.bool .form-label { font-family: var(--sans); }
+
+/* F2'S FACTS on a plugin card: a key column, as its details pane aligns them. */
+.plugin-facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 8px 0; font-size: 12px; }
+.plugin-facts dt { color: var(--muted); font-weight: 600; letter-spacing: .04em; }
+.plugin-facts dd { margin: 0; }

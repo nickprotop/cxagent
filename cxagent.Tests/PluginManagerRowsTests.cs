@@ -37,6 +37,24 @@ public class PluginManagerRowsTests
             unreadable ?? new HashSet<string>(),
             folders ?? new Dictionary<string, string>());
 
+    /// <summary>
+    /// THE DETAIL'S FACTS, ONE SOURCE: STATE, CONTRACT and TOOLS — "1, never asks" — as F2 shows them and a browser's
+    /// marketplace now does, which showed none of them.
+    /// </summary>
+    [Fact]
+    public void The_facts_name_the_state_the_contract_and_whether_the_tools_ask()
+    {
+        var entry = Entry("calculator", contract: 2) with { Tools = [new CatalogTool("calc_eval", "false")] };
+        var inputs = Inputs(catalog: [entry]);
+        var row = Row(PluginManagerRows.Build(inputs), "calculator");
+
+        var facts = PluginFacts.For(row, inputs);
+        Assert.Equal(["STATE", "CONTRACT", "TOOLS"], facts.Select(f => f.Key));
+        Assert.Equal("not installed", facts[0].Value);
+        Assert.Equal("2", facts[1].Value);
+        Assert.Equal("1, never asks", facts[2].Value);
+    }
+
     [Fact]
     public void AStoresPlugin_IsAvailableUnderItsQualifiedName_BesideTheOfficialOne()
     {

@@ -120,6 +120,8 @@ internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
             ["autoLoad"] = row.Configured?.Enabled,
             ["actions"] = actions,
             ["readme"] = readme,
+            // F2'S FACTS — STATE, NEEDS, CONTRACT, TOOLS — from the source its details pane reads.
+            ["facts"] = new JsonArray([.. CxAgent.UI.PluginFacts.For(row, inputs).Select(f => (JsonNode)new JsonObject { ["key"] = f.Key, ["value"] = f.Value })]),
 
             // F2'S SETTINGS TAB: what the catalog says a configured plugin takes, in the author's order, and what
             // config holds for each — a string as itself, anything else as its JSON.

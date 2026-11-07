@@ -771,6 +771,25 @@ public sealed partial class WebSessionHubTests
         Assert.True(panel["here"]!.AsObject().ContainsKey("gitTree"));
     }
 
+    /// <summary>F2'S FACTS ON EACH CARD — the state, the contract, whether the tools ask — from PluginFacts, the source
+    /// the terminal's details pane reads.</summary>
+    [Fact]
+    public async Task The_marketplace_cards_carry_f2s_facts()
+    {
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Plugins = true });
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("create", ("folder", Work)));
+            var id = (await tab.NextAsync(Type("opened")))["sessionId"]!.GetValue<string>();
+            await tab.SendAsync(Msg("plugins", ("sessionId", id)));
+            var list = await tab.NextAsync(Type("plugins"));
+            foreach (var row in list["rows"]!.AsArray())
+                Assert.Contains(row!["facts"]!.AsArray(), f => f!["key"]!.GetValue<string>() == "STATE");
+        }
+        finally { await server.StopAsync(); }
+    }
+
     [Fact]
     public async Task The_panel_counts_turns_and_tool_calls_as_the_terminal_does()
     {

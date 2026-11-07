@@ -385,7 +385,10 @@ function activate(id) {
   // AND NO MESSAGE BOX AT ALL there: one that cannot send is room taken from the shell, the file or the output.
   document.body.classList.toggle("no-composer", !!view && !conversation);
   $("input").placeholder = view && view.kind === "worker" ? "Message " + view.name + "…" : "Message, or / for commands";
-  $("crumb").textContent = view ? view.folder : "";
+  // THE FOLDER STAYS IN THE HEADER on a page that is not a conversation — the marketplace, the config page: theirs is
+  // the session they were opened from, as the terminal's title keeps its folder whatever dialog is open.
+  const where = view && !view.folder && view.parent ? state.views.get(view.parent) : view;
+  $("crumb").textContent = where ? where.folder || "" : "";
   $("phone-title").textContent = view ? (view.kind === "worker" ? "⤷ " + view.name : view.kind === "command" ? "▭ " + view.title : view.title) : "";
   if (view && (view.kind === "file" || view.kind === "config")) setTimeout(() => view.ta.focus(), 0);
   if (view && view.kind === "shell") setTimeout(() => { if (view.fit) view.fit.fit(); if (view.term) view.term.focus(); }, 0);
@@ -1068,8 +1071,10 @@ function drawPlugins(view) {
   const f = view.filter.toLowerCase();
   for (const section of ["Updates", "NeedsAttention", "Installed", "Available"]) {
     const rows = m.rows.filter((r) => r.section === section && (!f || (r.name + " " + (r.catalog?.description || "")).toLowerCase().includes(f)));
-    if (!rows.length) continue;
+    // INSTALLED IS ALWAYS SAID, as F2 says "Nothing installed yet": an empty list of installed plugins is an answer.
+    if (!rows.length && !(section === "Installed" && !f)) continue;
     box.append(el("h3", null, SECTION_TITLES[section] + " · " + rows.length));
+    if (!rows.length) box.append(el("p", "none", "Nothing installed yet."));
     for (const r of rows) box.append(pluginCard(view, r));
   }
   if (!m.rows.length) box.append(el("p", "none", "No plugins installed, and none offered."));
@@ -1126,9 +1131,15 @@ function pluginCard(view, r) {
   if (c?.store) head.append(el("span", "badge", c.store));
   card.append(head);
   if (c?.description) card.append(el("p", null, c.description));
-  const facts = [r.state, r.detail, c?.publisher && "by " + c.publisher, c?.license, r.folder && "in " + r.folder].filter(Boolean);
-  if (facts.length) card.append(el("div", "meta", facts.join(" · ")));
-  if (c?.requires) card.append(el("div", "meta", "needs " + c.requires + (c.requiresInstall ? " — " + c.requiresInstall : "")));
+  const meta = [r.detail, c?.publisher && "by " + c.publisher, c?.license].filter(Boolean);
+  if (meta.length) card.append(el("div", "meta", meta.join(" · ")));
+  // F2'S FACTS — STATE, NEEDS, CONTRACT, TOOLS ("1, never asks") — as its details pane lists them, from the same source;
+  // a fact with no key is a second line under the one before.
+  if (r.facts && r.facts.length) {
+    const dl = el("dl", "plugin-facts");
+    for (const f of r.facts) dl.append(el("dt", null, f.key), el("dd", null, f.value));
+    card.append(dl);
+  }
   if (c?.tools?.length) {
     const tools = el("div", "plugin-tools");
     for (const t of c.tools) {
@@ -1218,7 +1229,7 @@ function drawPluginsHead(view, head) {
   filter.value = view.filter;
   filter.addEventListener("input", () => { view.filter = filter.value; drawPlugins(view); });
   head.append(filter);
-  head.append(el("span", "meta", view.busy || ("catalog read " + ago(view.data.readAt))));
+  head.append(el("span", "meta", view.busy || ("catalog fetched " + ago(view.data.readAt))));
   head.append(el("span", "spacer"));
   head.append(button("Back to session", "ghost", () => activate(view.parent)));
   head.append(button("Refresh", null, () => { view.bar = null; openPlugins(true); }));
