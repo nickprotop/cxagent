@@ -371,7 +371,9 @@ function activeSessionId() {
 
 function activate(id) {
   const view = id ? state.views.get(id) : null;
+  const arriving = view && state.active !== id;
   state.active = view ? id : null;
+  if (arriving && view.kind === "plugins") setTimeout(relistPlugins, 0);
   $("chat").replaceChildren(view ? view.log : $("empty"));
   document.body.dataset.view = view ? "chat" : "list";
   // A COMMAND'S TAB TAKES NO MESSAGES: it is the command's output, and the terminal's tab has no composer either.
@@ -1021,6 +1023,9 @@ const ACTION_LABELS = { install: "Install", update: "Update", activate: "Activat
 function openPlugins(refresh) {
   const sid = activeSessionId();
   if (!sid) { flash("Open a session first: plugins load into a session."); return; }
+  // ASKED FOR, SO SHOWN when it comes back — see openedPlugins: a reconnect re-requests it too, and that one must not
+  // pull the page in front of whatever the user is reading.
+  state.pluginsWanted = true;
   send({ type: "plugins", sessionId: sid, refresh: !!refresh });
 }
 
@@ -1032,10 +1037,27 @@ function openedPlugins(m) {
     Object.assign(view, { parent: m.sessionId, folder: "", filter: "" });
   }
   view.parent = m.sessionId;
+  // A RE-LIST THAT FOUND NOTHING NEW draws nothing, so the filter being typed into keeps its focus.
+  const same = !fresh && view.data && JSON.stringify(view.data.rows) === JSON.stringify(m.rows)
+    && JSON.stringify(view.data.stores) === JSON.stringify(m.stores) && JSON.stringify(view.data.folders) === JSON.stringify(m.folders);
   view.data = m;
-  drawPlugins(view);
-  if (fresh) activate(PLUGINS_ID); else if (state.active === view.id) drawWorkerHead();
+  if (!same) drawPlugins(view);
+  // IN FRONT WHEN THE USER ASKED FOR IT, not only the first time: after "Back to session" the view still exists, and
+  // Marketplace refreshed it out of sight — the button looked dead until the page was reloaded.
+  const wanted = fresh || state.pluginsWanted;
+  state.pluginsWanted = false;
+  if (wanted) activate(PLUGINS_ID); else if (state.active === view.id) drawWorkerHead();
 }
+
+// WHAT IS INSTALLED CHANGES FROM ELSEWHERE — the terminal's F2, another tab — and the page re-reads it while it is in
+// front: from the catalog already read (no network), only what is on disk is read again. Every few seconds, and as it
+// comes into view, so a plugin the terminal just installed is not still offered for Install here.
+function relistPlugins() {
+  const view = state.views.get(PLUGINS_ID);
+  if (!view || state.active !== PLUGINS_ID || view.busy || !view.parent || document.hidden) return;
+  send({ type: "plugins", sessionId: view.parent, refresh: false });
+}
+setInterval(relistPlugins, 4000);
 
 function drawPlugins(view) {
   const m = view.data;
