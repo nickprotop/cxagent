@@ -11,7 +11,7 @@
 try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
 <title>Install — cxagent</title>
-<meta name="description" content="Install cxagent: the one-line installers, the six platform binaries, the .NET tool, uninstalling, and verifying a download against SHA256SUMS.">
+<meta name="description" content="Install cxagent: the one-line installers, the six platform binaries, the .NET tool, building from source, updating, uninstalling, and verifying a download against SHA256SUMS.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Install — cxagent">
@@ -45,40 +45,108 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
 <pre><code>curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/install.sh | bash
 cxagent</code></pre>
 
-<p>The script picks the binary matching your platform, puts it in <code>~/.local/bin</code>, and
-adds that directory to your <code>PATH</code> if it is not already there. No .NET is required — the
-binary carries its own runtime. It also places the <code>csharp-lsp</code> plugin in your plugins
-folder and <em>stops there</em>: cxagent will tell you the plugin is present and wait to be told to
-load it. See <a href="plugins.html">Plugins</a>.</p>
+<p>The script picks the binary matching your platform and puts it in <code>~/.local/bin</code> as
+<code>cxagent</code>, with <code>cxagent-uninstall.sh</code> beside it and a
+<code>plugin-host</code> folder that native plugins run in. No .NET is required — the binary carries
+its own runtime — though on Linux it loads the system's ICU library (<code>libicu</code>) at start,
+which most distributions already have. If <code>~/.local/bin</code> is not on your <code>PATH</code>, it adds an
+<code>export</code> line to <code>~/.zshrc</code>, or to <code>~/.bashrc</code> when there is no
+<code>~/.zshrc</code>; with neither file it changes nothing, and you add the directory yourself. Open a
+new shell afterwards, or <code>source</code> the file it names.</p>
+
+<p>It installs no plugins. The plugin manager (<kbd>F2</kbd>) fetches them, and nothing it fetches
+loads until you say so. See <a href="plugins.html">Plugins</a>.</p>
+
+<h3>Reading the script first</h3>
+
+<p>Piping a script into a shell runs whatever it says. To read it before it runs:</p>
+
+<pre><code>curl -fsSLO https://raw.githubusercontent.com/nickprotop/cxagent/master/install.sh
+less install.sh
+bash install.sh</code></pre>
 
 <h2>Windows</h2>
 
-<pre><code>irm https://raw.githubusercontent.com/nickprotop/cxagent/master/install.ps1 | iex</code></pre>
+<pre><code>irm https://raw.githubusercontent.com/nickprotop/cxagent/master/install.ps1 | iex
+cxagent</code></pre>
+
+<p>Run it in PowerShell. It puts <code>cxagent.exe</code> in <code>%LOCALAPPDATA%\cxagent</code>,
+with <code>cxagent-uninstall.ps1</code> and the <code>plugin-host</code> folder beside it, and adds
+that directory to your <em>user</em> <code>PATH</code> — open a new terminal before typing
+<code>cxagent</code>. No .NET is required, and, as on Linux and macOS, no plugins are installed.</p>
+
+<p>To read the script before it runs:</p>
+
+<pre><code>irm https://raw.githubusercontent.com/nickprotop/cxagent/master/install.ps1 -OutFile install.ps1
+notepad install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1</code></pre>
 
 <h2>As a .NET tool</h2>
 
-<p>Requires the .NET 10 SDK or runtime. Unlike the binaries this one is framework-dependent — it
-uses the .NET you already have rather than carrying its own.</p>
+<p>Requires the .NET 10 SDK: <code>dotnet tool install</code> is an SDK command, and a machine with
+only the runtime does not have it. Unlike the binaries this one is framework-dependent — it uses the
+.NET you already have rather than carrying its own.</p>
 
 <pre><code>dotnet tool install -g cxagent
 cxagent</code></pre>
 
-<p>Update it with <code>dotnet tool update -g cxagent</code>.</p>
-
 <h2>From source</h2>
 
-<p>Requires the .NET 10 SDK.</p>
+<p>Requires the .NET 10 SDK. On Linux, <code>build-and-install.sh</code> publishes a self-contained
+binary and copies it to <code>~/.local/bin/cxagent</code>, adding that directory to your
+<code>PATH</code> the way the install script does:</p>
 
 <pre><code>git clone https://github.com/nickprotop/cxagent.git
 cd cxagent
 ./build-and-install.sh</code></pre>
+
+<p>The script knows Linux only — it names a Linux runtime, so it does not build for macOS or
+Windows. There, publish for your platform yourself and put the result on your <code>PATH</code>.
+On Windows, in PowerShell:</p>
+
+<pre><code>git clone https://github.com/nickprotop/cxagent.git
+cd cxagent
+dotnet publish cxagent/cxagent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish\win-x64
+.\publish\win-x64\cxagent.exe</code></pre>
+
+<p>Use <code>win-arm64</code> on ARM, and on macOS <code>osx-arm64</code> or <code>osx-x64</code>,
+which writes <code>publish/&lt;runtime&gt;/cxagent</code>. A source build leaves out the plugin host
+the install scripts add, so native plugins do not load from it; managed ones do.</p>
+
+<h2>Updating</h2>
+
+<p>There is no update command inside cxagent. <code>cxagent --version</code> says which one you
+have, and the <a href="https://github.com/nickprotop/cxagent/releases/latest">latest release</a>
+says what is current.</p>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>Installed with</th><th>To update</th></tr></thead>
+<tbody>
+<tr><td>The install script</td><td>Run the same one-liner again. It fetches the latest release and
+replaces the binary and the plugin host; your configuration is not touched. On Windows, quit
+cxagent first — a running <code>cxagent.exe</code> cannot be overwritten.</td></tr>
+<tr><td>A downloaded binary</td><td>Download the new one and put it where the old one was.</td></tr>
+<tr><td>The .NET tool</td><td><code>dotnet tool update -g cxagent</code></td></tr>
+<tr><td>Source</td><td><code>git pull</code>, then build again as above.</td></tr>
+</tbody>
+</table>
+</div>
 
 <h2>The binaries</h2>
 
 <p>Every release publishes six. If you would rather not pipe a script into a shell, download the one
 for your platform from the
 <a href="https://github.com/nickprotop/cxagent/releases/latest">latest release</a>, make it
-executable, and put it somewhere on your <code>PATH</code>.</p>
+executable, and put it somewhere on your <code>PATH</code>:</p>
+
+<pre><code>chmod +x cxagent-linux-x64
+mv cxagent-linux-x64 ~/.local/bin/cxagent</code></pre>
+
+<p>A binary on its own runs every managed plugin. Native (<code>.so</code>/<code>.dylib</code>)
+plugins also need the <code>cxagent-plugin-host-&lt;platform&gt;.zip</code> from the same release,
+unpacked into a <code>plugin-host</code> folder beside the binary — the install scripts do this for
+you — and a .NET 10 runtime, which that host runs on.</p>
 
 <div class="table-scroll">
 <table>
@@ -113,6 +181,19 @@ sha256sum --check --ignore-missing SHA256SUMS</code></pre>
 <p>This check proves the file you downloaded is the file that release published — it catches a
 corrupted or truncated download. It does not prove who built it.</p>
 
+<h2>macOS: Gatekeeper</h2>
+
+<p>The binaries are not notarised by Apple. A file fetched with <code>curl</code>, which is what the
+install script does, carries no quarantine flag and runs as it is. One downloaded with a browser is
+flagged, and macOS refuses to open it from an unidentified developer. Clear the flag on that one
+file:</p>
+
+<pre><code>xattr -d com.apple.quarantine ./cxagent-osx-arm64</code></pre>
+
+<p>or try to run it once, then allow it under <strong>System Settings → Privacy &amp; Security</strong>
+with <strong>Open Anyway</strong>. Check the download against <code>SHA256SUMS</code> first: either
+step tells macOS to stop asking about that file.</p>
+
 <h2>First run</h2>
 
 <p><strong>You do not need to write any configuration to start.</strong> With no config file, or
@@ -121,27 +202,53 @@ model can run — Anthropic, OpenRouter, OpenAI, Ollama, llama.cpp or any OpenAI
 lists the models that endpoint serves, and writes the file for you. After that, <code>F8</code> opens
 the same dialog.</p>
 
-<p>The file lands in <code>~/.config/cxagent/config.json</code> on Linux
-(<code>$XDG_CONFIG_HOME</code> when set), <code>%APPDATA%\cxagent\config.json</code> on Windows, and
-<code>~/Library/Application Support/cxagent/config.json</code> on macOS. The same directory holds
-your session history, logs and plugins. <a href="docs/config.html">Every configuration key →</a></p>
+<p>The file lands in <code>~/.config/cxagent/config.json</code> on Linux and macOS
+(<code>$XDG_CONFIG_HOME/cxagent</code> when that is set), and in
+<code>%APPDATA%\cxagent\config.json</code> on Windows. The same directory holds your session
+history, logs and plugins. <code>--config-dir</code> points one run at another directory.
+<a href="docs/config.html">Every configuration key →</a></p>
 
 <h2>Uninstalling</h2>
 
-<p>However you installed it:</p>
+<p>Installed with the script, on Linux or macOS — the uninstaller sits beside the binary:</p>
 
-<pre><code># the install script (Linux/macOS)
-curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.sh | bash
+<pre><code>cxagent-uninstall.sh
+# or, if that is gone:
+curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.sh | bash</code></pre>
 
-# the .NET tool
-dotnet tool uninstall -g cxagent</code></pre>
+<p>It removes <code>~/.local/bin/cxagent</code>, the uninstaller and the <code>plugin-host</code>
+folder, and on Linux the <code>PATH</code> line the installer added. On macOS, look for that line in
+<code>~/.zshrc</code> or <code>~/.bashrc</code> afterwards and delete it yourself. A Linux build from source landed in the
+same place, so the same command removes it.</p>
+
+<p>Installed with the script, on Windows, in PowerShell:</p>
 
 <pre><code>irm https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.ps1 | iex</code></pre>
 
-<p>Your configuration and session history are left alone. They live in
-<code>$XDG_CONFIG_HOME/cxagent</code> (<code>%APPDATA%\cxagent</code> on Windows,
-<code>~/Library/Application Support/cxagent</code> on macOS) — delete that directory to remove them
-too.</p>
+<p>It removes <code>cxagent.exe</code>, the uninstaller and the <code>plugin-host</code> folder from
+<code>%LOCALAPPDATA%\cxagent</code>, the folder itself once empty, and the entry it added to your
+user <code>PATH</code>.</p>
+
+<p>The .NET tool:</p>
+
+<pre><code>dotnet tool uninstall -g cxagent</code></pre>
+
+<p>A binary you downloaded, or published from source, yourself: delete the file, and the
+<code>plugin-host</code> folder if you made one.</p>
+
+<p><strong>None of these touches your configuration or session history</strong> — it holds your API
+keys and your past sessions, and an uninstall should not lose either. Delete the directory to remove
+them too, along with any plugins installed into it:</p>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>OS</th><th>Directory</th></tr></thead>
+<tbody>
+<tr><td>Linux, macOS</td><td><code>~/.config/cxagent</code>, or <code>$XDG_CONFIG_HOME/cxagent</code> when that is set</td></tr>
+<tr><td>Windows</td><td><code>%APPDATA%\cxagent</code></td></tr>
+</tbody>
+</table>
+</div>
 
 </main>
 <footer>
