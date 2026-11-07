@@ -10,14 +10,14 @@
    rather than after a flash of the other one. site.js owns the toggle; this only applies the choice. */
 try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
-<title>cxagent — a multi-agent coding workbench for the terminal</title>
-<meta name="description" content="A multi-agent coding workbench for the terminal: several agents in tabs, sub-agents in the background, an editor and a real shell beside the conversation. Bring your own model.">
+<title>cxagent — a multi-agent coding workbench for the terminal and the browser</title>
+<meta name="description" content="A multi-agent coding workbench for the terminal and the browser: several agents in tabs, workers in the background you can steer, an editor and a real shell beside the conversation. Bring your own model.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fragment+Mono&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
-<meta property="og:title" content="cxagent — a multi-agent coding workbench for the terminal">
+<meta property="og:title" content="cxagent — a multi-agent coding workbench for the terminal and the browser">
 <meta property="og:url" content="https://nickprotop.github.io/cxagent/">
 <meta property="og:image" content="https://nickprotop.github.io/cxagent/screenshots/og.png">
 <meta property="og:site_name" content="cxagent">
@@ -37,10 +37,11 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
 
 <div class="hero-split">
   <div class="hero-text">
-    <h1>Many agents.<br>One <em>terminal</em>.</h1>
-    <p class="tagline">A multi-agent coding workbench for the terminal. Several agents at once,
-    each in its own tab; sub-agents working in the background while you watch and steer them; an
-    editor and a real shell beside the conversation. Bring your own model.</p>
+    <h1>Many agents.<br>One <em>session</em>, any screen.</h1>
+    <p class="tagline">A multi-agent coding workbench for your terminal, and for your browser when
+    you are away from it. Several agents at once, each in its own tab; workers in the background
+    that you watch and steer; an editor and a real shell beside the conversation. Bring your own
+    model.</p>
 
     <div class="pills">
       <span class="pill">licence <b>MIT</b></span>
