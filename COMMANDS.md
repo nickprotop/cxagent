@@ -53,6 +53,9 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/memory` | List the notes the agent keeps across sessions |
 | `/memory open <name>` | Open a note in a tab, to read or edit |
 | `/memory forget <name>` | Delete a note, after confirming |
+| `/colleagues` | List the colleagues kept across sessions |
+| `/colleagues keep <worker> [name]` | Keep a worker of this session as a colleague |
+| `/colleagues bring <name> <task>` | Bring a colleague in to work on a task |
 | `/commands` | List your custom commands, and any file that was shadowed or skipped |
 | `/commands <name>` | Show that command's file, as it will be sent |
 | `/<name> [args]` | Run a custom command, or a skill by name — see [`/commands`](#commands) |
@@ -598,6 +601,34 @@ your next message.
 
 A sub-agent reads notes but never writes them. A note that looks like a key, token or password is
 refused. Turn memory off in F8 › General, or with [`memory.enabled`](CONFIG.md#memory--notes-across-sessions) in config.json.
+
+---
+
+## `/colleagues`
+
+A colleague is a worker you chose to keep. It lives in cxagent's own folder, belongs to no session, and
+keeps learning: everything it does is kept word for word as its past, and when each task it was given
+ends, that round is distilled into its **experience** — what it knows about how it works and about each
+codebase it has worked in. Brought into any session, in any folder, it starts from that experience.
+
+`/colleagues` lists them, with what each is good at and the folders it knows. `/colleagues keep <worker>
+[name]` keeps one of this session's workers — typing it is your yes; without a name, one is taken from
+what the worker was doing. From then on the worker *is* the colleague: its conversation so far is the
+first round of its past, and every later task it finishes is another. `/colleagues bring <name> <task>`
+starts it here as a worker on that task, in the background; the agent is told with your next message
+and gets its report when it finishes.
+
+The agent does the same with its `colleague` tool, and its prompt lists the colleagues — taken when the
+conversation begins and kept as it is until `/clear` or a compaction. A colleague kept or grown since is
+said in one line at the front of your next message. When the agent wants to keep a worker it asks you,
+**Keep** or **Don't keep**, every time.
+
+A colleague can be in several sessions at once. Each runs as an ordinary worker — `/agents`, its tab and
+`agent_send` reach it — and resumes with its session. Rounds from every session are distilled one at a
+time; one that grew elsewhere while it worked here is told so in a line at the start of its next task.
+
+It runs on the model it was kept on, which must have at least a 128k window. Turn colleagues off in F8 ›
+General, or with [`colleagues.enabled`](CONFIG.md#colleagues--workers-kept-across-sessions) in config.json.
 
 ---
 

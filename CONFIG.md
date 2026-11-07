@@ -856,6 +856,28 @@ Notes live in this folder, under `memory/` — see [What else lives in that dire
 
 An application built on cxagent.Core has memory **off** unless it sets `AgentConfig.Memory = true`.
 
+## `colleagues` — workers kept across sessions
+
+```json
+"colleagues": { "enabled": false }
+```
+
+F8's **General** tab sets it too, in its *Colleagues* section, and so does the browser's config page.
+
+**On when absent.** The session's agent gets the `colleague` tool — list, bring one in, keep a worker,
+which asks you first — and, when there are any, a list of the colleagues in its system prompt.
+`false` removes both; colleagues already kept stay on disk. A value that is not `true` or `false`
+warns at startup and leaves colleagues on.
+
+A colleague runs only on a model with a context window of at least 128k tokens, and starts with a
+quarter of that window (at most 100k) of its experience. A provider entry whose window cxagent cannot
+learn needs `contextWindow` set for a colleague to run on it.
+
+Colleagues live in this folder, under `colleagues/` — see [What else lives in that directory](#what-else-lives-in-that-directory).
+[`/colleagues`](COMMANDS.md#colleagues) lists them, keeps a worker and brings one in.
+
+An application built on cxagent.Core has colleagues **off** unless it sets `AgentConfig.Colleagues = true`.
+
 ## `hooks` — commands that run on the agent's events
 
 ```json
@@ -1361,6 +1383,7 @@ commands may link anywhere.
 | `CXAGENT.md` | Your global instructions, if you wrote any. |
 | `memory/system/<name>.md` | System notes: what the agent keeps about you, read in every folder. Markdown with a `name` and `description` up front; edit or delete them freely. |
 | `memory/projects/<folder>-<hash>/` | One project's notes, beside a `path` file naming the folder they belong to. The hash is of the folder's full path, so two folders of one name keep separate notes. |
+| `colleagues/<name>/` | One colleague: `colleague.json` (who it is, where it has worked), `experience/core.md` and one `experience/<codebase>.md` per codebase it knows, and `past.jsonl` — every round it worked, word for word, appended and never edited. `distilling.lock` beside them lets one process distil at a time. |
 
 ### A folder is a session
 

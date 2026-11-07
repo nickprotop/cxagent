@@ -121,6 +121,20 @@ public sealed class GeneralTab
         _detail.AddControl(ListDetail.Section("Memory", notes.Control));
         _detail.AddControl(ListDetail.Gap());
 
+        // THE SAME WORDS AS THE BROWSER'S CONFIG PAGE (WebConfigForms.General) — both write GeneralDraft.ColleaguesEnabled.
+        var kept = new FieldGrid();
+        var colleagues = new RadioGroup<bool>();
+        kept.AddBare(Label("Workers kept across sessions"));
+        kept.AddBare(new RadioControl<bool>(colleagues, true, "Keep colleagues"));
+        kept.AddBare(Help(GeneralDraft.ColleaguesOnHelp));
+        kept.AddBare(Blank());
+        kept.AddBare(new RadioControl<bool>(colleagues, false, "No colleagues"));
+        kept.AddBare(Help(GeneralDraft.ColleaguesOffHelp));
+        colleagues.SelectedValue = draft.ColleaguesEnabled;
+        colleagues.SelectionChanged += (_, on) => { draft.ColleaguesEnabled = on; MarkSave(); };
+        _detail.AddControl(ListDetail.Section("Colleagues", kept.Control));
+        _detail.AddControl(ListDetail.Gap());
+
         _detail.AddControl(ListDetail.Section("Sandbox", SandboxEditor(draft, Label, Help, Blank)));
         _detail.AddControl(ListDetail.Gap());
 

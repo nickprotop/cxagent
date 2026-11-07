@@ -200,6 +200,7 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `skill` | Load a skill's instructions on demand |
 | `todowrite` | Keep a task list across a long job |
 | `memory` | Keep notes across sessions — system-wide, and about this project — and read them back; sub-agents read only |
+| `colleague` | List colleagues — workers kept across sessions, learning from each task — bring one in, or keep a worker (asks you first) |
 | `ask_user` | Ask the user questions: options with descriptions, several per call |
 | `agent` | Delegate a job to a sub-agent (fan-out mode), in the background by default (`background`) |
 | `agent_send` | Ask a sub-agent you already spawned for more; it still has its own context |

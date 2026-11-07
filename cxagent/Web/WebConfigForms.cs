@@ -58,6 +58,11 @@ internal static class WebConfigForms
             Radio("memory", "Notes across sessions", d.MemoryEnabled ? "true" : "false",
                 ("true", "Keep them", "The agent writes what it learns about you and the project to cxagent's folder, and reads it in later sessions. /memory lists them."),
                 ("false", "Do not keep any", "No memory tool and no notes in the prompt. Notes already kept stay on disk."))),
+        // AND F8's COLLEAGUES SECTION, word for word — both write GeneralDraft.ColleaguesEnabled.
+        Section("Colleagues",
+            Radio("colleagues", "Workers kept across sessions", d.ColleaguesEnabled ? "true" : "false",
+                ("true", "Keep colleagues", UI.Config.GeneralDraft.ColleaguesOnHelp),
+                ("false", "No colleagues", UI.Config.GeneralDraft.ColleaguesOffHelp))),
         Section("Sandbox",
             Radio("sandboxEnabled", "The model's shell commands", d.SandboxEnabled ? "true" : "false",
                 ("true", "Run inside the sandbox", "Writes only in the project, temp and package caches; credentials seen empty."),
@@ -111,6 +116,7 @@ internal static class WebConfigForms
     {
         if (Bool(v, "detach") is { } detach) d.DetachOnTimeout = detach;
         if (Bool(v, "memory") is { } memory) d.MemoryEnabled = memory;
+        if (Bool(v, "colleagues") is { } colleagues) d.ColleaguesEnabled = colleagues;
         if (Bool(v, "sandboxEnabled") is { } on) d.SandboxEnabled = on;
         if (Bool(v, "sandboxNetwork") is { } net) d.SandboxNetwork = net;
         if (Str(v, "writable") is { } w) d.WritableText = w;
