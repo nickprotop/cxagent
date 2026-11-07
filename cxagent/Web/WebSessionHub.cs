@@ -390,7 +390,9 @@ public sealed class WebSessionHub
     internal JsonArray Rows()
     {
         var live = services.Manager.Sessions;
-        var saved = services.Store.List(all: true);
+        // /sessions' OWN RULE — Core.Commands.SessionsCommand.Offered: every saved session but one a resume replaced.
+        var saved = Core.Commands.SessionsCommand.Offered(services.Store.List(all: true));
+        var savedById = saved.ToDictionary(i => i.Uid, StringComparer.Ordinal);
         var titles = saved.ToDictionary(i => i.Uid, i => i.Title, StringComparer.Ordinal);
         var rows = new JsonArray();
         var shown = new HashSet<string>(StringComparer.Ordinal);
@@ -403,6 +405,9 @@ public sealed class WebSessionHub
                 ["id"] = s.Id,
                 ["agentId"] = s.SessionId,
                 ["title"] = s.SessionId is { } id && titles.GetValueOrDefault(id) is { } t ? t : "",
+                // THE ID AND TOKENS /sessions SHOWS, so a row here can be told apart and named there.
+                ["short"] = s.SessionId is { } sid ? Core.Commands.SessionsCommand.Short(sid) : null,
+                ["tokens"] = s.SessionId is { } tid && savedById.TryGetValue(tid, out var had) ? Core.Commands.SessionsCommand.TokensOf(had) : null,
                 ["folder"] = s.WorkingDirectory,
                 ["state"] = services.Prompts.IsWaiting(s.Id) ? "waiting" : s.IsBusy ? "working" : "idle",
                 ["updatedAt"] = services.Clock.GetUtcNow().ToString("O"),
@@ -410,13 +415,15 @@ public sealed class WebSessionHub
         }
         foreach (var info in saved)
         {
-            if (info.Superseded || shown.Contains(info.Uid) || info.WorkingDir is not { } dir || !InsideRoots(dir, services.Roots))
+            if (shown.Contains(info.Uid) || info.WorkingDir is not { } dir || !InsideRoots(dir, services.Roots))
                 continue;
             rows.Add(new JsonObject
             {
                 ["id"] = info.Uid,
                 ["agentId"] = info.Uid,
                 ["title"] = info.Title ?? "",
+                ["short"] = Core.Commands.SessionsCommand.Short(info.Uid),
+                ["tokens"] = Core.Commands.SessionsCommand.TokensOf(info),
                 ["folder"] = dir,
                 ["state"] = info.Holder is null ? "recent" : "held",
                 ["heldBy"] = info.Holder is { } h ? SessionLock.HeldMessage(h) : null,

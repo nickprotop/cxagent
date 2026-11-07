@@ -259,7 +259,7 @@ function sessionRow(r) {
   const t = el("div", "t");
   t.append(el("b", null, title(r)));
   const sub = r.state === "held" ? r.heldBy : r.state === "waiting" ? "waiting on you" : r.state === "working" ? "working"
-    : narrow() ? shortFolder(r.folder) : ago(r.updatedAt);
+    : narrow() ? shortFolder(r.folder) : [ago(r.updatedAt), r.short, r.tokens && r.tokens + " tokens"].filter(Boolean).join(" · ");
   t.append(el("small", null, sub));
   row.append(t);
   if (r.state === "idle" || r.state === "working" || r.state === "waiting") {

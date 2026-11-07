@@ -224,4 +224,22 @@ public class SessionsCommandTests
     // --- the startup line, which replaced the resume dialog ---
 
 
+
+    /// <summary>
+    /// A SESSION A RESUME REPLACED IS NOT OFFERED, as the store says of it ("kept, but never offered again"): resuming it
+    /// a second time forks the conversation. /sessions listed them while a browser's list left them out.
+    /// </summary>
+    [Fact]
+    public void A_superseded_session_is_not_listed()
+    {
+        var rows = new[] { Row("AAAAAA1"), Row("BBBBBB2") with { Superseded = true } };
+        var reply = SessionsCommand.Decide("", rows, Week).Reply.Text;
+        Assert.Contains("AAAAAA", reply, StringComparison.Ordinal);
+        Assert.DoesNotContain("BBBBBB", reply, StringComparison.Ordinal);
+        Assert.Equal(["AAAAAA1"], SessionsCommand.Offered(rows).Select(r => r.Uid));
+    }
+
+    [Fact]
+    public void Tokens_read_as_the_listing_shows_them() =>
+        Assert.Equal("12k", SessionsCommand.TokensOf(Row("A") with { InputTokens = 11_500, OutputTokens = 900 }));
 }

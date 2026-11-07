@@ -44,6 +44,8 @@ public static class SessionsCommand
     public static SessionsCommandResult Decide(
         string argument, IReadOnlyList<SessionInfo> sessions, TimeSpan retention, bool all = false)
     {
+        // ONLY WHAT MAY BE OFFERED — numbered and resolved alike, so "resume 3" names the third row shown.
+        sessions = Offered(sessions);
         var words = argument.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         if (words.Length >= 1 && words[0].Equals("resume", StringComparison.OrdinalIgnoreCase))
@@ -207,6 +209,16 @@ public static class SessionsCommand
     /// place an id is shown.</para>
     /// </summary>
     public static string Short(string uid) => uid.Length <= 6 ? uid : uid[..6];
+
+    /// <summary>
+    /// The sessions a listing offers: every one but those a resume replaced — "kept, but never offered again", since
+    /// resuming one a second time forks the conversation. One rule for /sessions and a browser's list.
+    /// </summary>
+    public static IReadOnlyList<SessionInfo> Offered(IReadOnlyList<SessionInfo> sessions) =>
+        [.. sessions.Where(s => !s.Superseded)];
+
+    /// <summary>A session's tokens as the listing shows them — "12k", "1.4M".</summary>
+    public static string TokensOf(SessionInfo s) => Tokens(s);
 
     /// <summary>
     /// Does what the user typed name this session?

@@ -771,6 +771,24 @@ public sealed partial class WebSessionHubTests
         Assert.True(panel["here"]!.AsObject().ContainsKey("gitTree"));
     }
 
+    /// <summary>THE SIDEBAR LISTS WHAT /sessions LISTS — every saved session but one a resume replaced — each with the id and
+    /// tokens /sessions shows.</summary>
+    [Fact]
+    public void The_session_list_offers_what_sessions_offers_with_ids_and_tokens()
+    {
+        foreach (var (id, state) in new[] { ("KEPT01ABCDEF", 1), ("SUPER1ABCDEF", 2) })
+        {
+            var folder = new SessionFolder(_paths, id);
+            Directory.CreateDirectory(folder.Dir);
+            SessionHeader.Write(folder, new SessionHeader(id, "t " + id, Work, 11_500, 900, state, DateTimeOffset.UtcNow));
+        }
+        var rows = _hub.Rows();
+        var kept = rows.Single(r => r!["id"]!.GetValue<string>() == "KEPT01ABCDEF")!;
+        Assert.Equal("KEPT01", kept["short"]!.GetValue<string>());
+        Assert.Equal("12k", kept["tokens"]!.GetValue<string>());
+        Assert.DoesNotContain(rows, r => r!["id"]!.GetValue<string>() == "SUPER1ABCDEF");
+    }
+
     /// <summary>F8'S PROVIDERS RAIL AND SENTENCE: an instance with open tabs says so in its row — "1 tab" — and its form says
     /// what a save does to them, from ProviderRows, the source F8 reads.</summary>
     [Fact]
