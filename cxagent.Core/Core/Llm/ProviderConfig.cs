@@ -844,6 +844,9 @@ public static class ProviderConfigLoader
     public static ProviderSettings Parse(string json, IReadOnlyDictionary<string, string> env, string? configDir = null)
     {
         var errors = new List<string>();
+        // ONE LIST FOR THE WHOLE LOAD, declared first: a provider's apiKey placeholder warns, and
+        // providers are read before the orchestrator, MCP and every other block that appends to it.
+        var warnings = new List<string>();
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); }
         catch (JsonException ex) { throw new ProviderConfigException(new[] { $"config.json is not valid JSON: {ex.Message}" }); }
@@ -861,6 +864,18 @@ public static class ProviderConfigLoader
                     string kind = o.TryGetProperty("kind", out var k) ? k.GetString() ?? "" : "";
                     string model = o.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "";
                     string? apiKey = o.TryGetProperty("apiKey", out var a) && a.ValueKind == JsonValueKind.String ? a.GetString() : null;
+                    // {env:NAME} AND {file:path}, as the config form tells the user they may write — so a key
+                    // need not sit in this file. Expanded here, at load, so a placeholder is never what reaches
+                    // an endpoint. An unset one warns and leaves no key: an empty Authorization is refused
+                    // plainly by the endpoint, where the placeholder sent as a key would be a confusing 401.
+                    if (apiKey is not null)
+                    {
+                        var before = warnings.Count;
+                        apiKey = ConfigVariable.Substitute(apiKey, warnings, env);
+                        for (var i = before; i < warnings.Count; i++)
+                            warnings[i] = $"provider '{name}' apiKey: {warnings[i]}";
+                        if (apiKey.Length == 0) apiKey = null;
+                    }
                     string? baseUrl = o.TryGetProperty("baseUrl", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() : null;
                     int? contextWindow = o.TryGetProperty("contextWindow", out var cw) && cw.ValueKind == JsonValueKind.Number
                         ? cw.GetInt32() : null;
@@ -1001,10 +1016,6 @@ public static class ProviderConfigLoader
                     }
 
             }
-
-            // HOISTED ABOVE THE ORCHESTRATOR BLOCK, which now warns about removed keys and about a
-            // negative cap. One list for the whole load; the MCP block below appends to the same one.
-            var warnings = new List<string>();
 
             // A WARNING, NOT AN ERROR, and the default is kept. This is an optional tuning knob for
             // one mode — the MCP block's reasoning applies exactly: a typo here must not take

@@ -41,7 +41,7 @@ trailing newline in a key file is the classic silent 401), with a leading `~` me
 | `mcp.<server>.headers` values | `{env:NAME}`, `{file:path}` | A warning at startup naming the key; the header is sent with an empty value and the server still connects |
 | `mcp.<server>.env` values | `{env:NAME}`, `{file:path}` | The same: a warning, and the variable is set empty |
 | `webSearch.tavilyApiKey` | `{env:NAME}`, `{file:path}` | A warning, and search stays on DuckDuckGo |
-| A provider's `apiKey` | No placeholder — the text is sent as written. The variable `CXAGENT_PROVIDER_<NAME>_APIKEY` (the instance's name in capitals) replaces it when set and not empty | — |
+| A provider's `apiKey` | `{env:NAME}`, `{file:path}`. The variable `CXAGENT_PROVIDER_<NAME>_APIKEY` (the instance's name in capitals) replaces the whole key when set and not empty | A warning naming the provider, and no key is sent |
 | An `http` hook's `headers` | `$NAME` or `${NAME}`, for names listed in its `allowedEnvVars`, in system hooks only ([below](#the-five-types)) | Read as empty, without a warning |
 | An `mcp_tool` hook's `input` | `${tool_input.path}` — a field of the event, not a variable | — |
 
@@ -135,11 +135,11 @@ again with the notes and the model is treated as `false` from then on. Set `fals
 a text-only model to skip that first refused try. The Providers tab in `/config` sets it, and shows what
 the endpoint itself says beside your choice.
 
-**`apiKey` can stay out of the file.** Set `CXAGENT_PROVIDER_<NAME>_APIKEY` — the instance's name in
-capitals, `CXAGENT_PROVIDER_LOCAL_APIKEY` for the one above — and it replaces whatever `apiKey` says.
-`apiKey` itself takes no placeholder: [`{env:NAME}`](#envname-and-filepath--secrets-kept-out-of-the-file)
-there is sent as written. A key written literally is guarded only by the file's own permissions; the
-variable is the version that survives the file being shared.
+**`apiKey` can stay out of the file.** Write it as [`{env:NAME}` or `{file:path}`](#envname-and-filepath--secrets-kept-out-of-the-file)
+— `"apiKey": "{env:OPENROUTER_API_KEY}"` — or set `CXAGENT_PROVIDER_<NAME>_APIKEY`, the instance's name in
+capitals (`CXAGENT_PROVIDER_LOCAL_APIKEY` for the one above), which replaces whatever `apiKey` says. A
+key written literally is guarded only by the file's own permissions; a placeholder or the variable is
+the version that survives the file being shared.
 
 **`maxConcurrentAgents` bounds how many sub-agents may call this endpoint at once.** Absent or `0`
 means unlimited, which is the default — the same convention `maxTurns` uses.
