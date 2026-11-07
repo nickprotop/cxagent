@@ -27,6 +27,9 @@ public sealed record WebHubServices(
     /// <summary>Minutes a session nobody is looking at stays loaded; 0 keeps it. Only when the opener unloads at all.</summary>
     public int IdleMinutes { get; init; } = 30;
 
+    /// <summary>What a browser may do beyond the conversation — read when the server starts, never changed by a browser.</summary>
+    public Core.Web.WebAccess Allow { get; init; } = Core.Web.WebAccess.Default;
+
     /// <summary>Lines every tab shows at the top — no login, plain HTTP beyond this machine.</summary>
     public IReadOnlyList<string> Banners { get; init; } = [];
 }

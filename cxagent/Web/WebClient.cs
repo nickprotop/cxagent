@@ -59,8 +59,12 @@ internal sealed class WebClient : IPromptResponder, IDisposable
 
     private readonly ConcurrentDictionary<string, string> _panels = new();
 
+    // THE FILES THIS TAB HAS OPEN IN ITS EDITOR.
+    private WebFiles? _filesOrNull;
+    private WebFiles _files => _filesOrNull ??= new WebFiles(Send);
+
     /// <summary>The sessions this tab has open — not the workers' own views, which have no panel of their own.</summary>
-    public IEnumerable<string> OpenSessions => _open.Keys.Where(k => !k.Contains('~') && !k.Contains('#'));
+    public IEnumerable<string> OpenSessions => _open.Keys.Where(k => !k.Contains('~') && !k.Contains('#') && !k.Contains('@'));
 
     /// <summary>Sends a session's panel, when it differs from the last one this tab was sent.</summary>
     public void SendPanel(string sessionId, JsonObject panel)
@@ -81,7 +85,15 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             ["user"] = _who,
             ["login"] = Token is not null,
             ["banners"] = new JsonArray([.. _hub.Banners.Select(b => (JsonNode)b)]),
-            ["commands"] = new JsonArray([.. WebCommands.Allowed.Select(c => (JsonNode)c)]),
+            ["commands"] = new JsonArray([.. WebCommands.AllowedWith(S.Allow).Select(c => (JsonNode)c)]),
+
+            // THE SWITCHES, FOR THE PAGE TO SHOW. Read-only there: only the terminal's F8 changes them.
+            ["access"] = new JsonObject
+            {
+                ["shell"] = S.Allow.Shell, ["config"] = S.Allow.Config,
+                ["plugins"] = S.Allow.Plugins, ["openAnywhere"] = S.Allow.OpenAnywhere,
+                ["roots"] = new JsonArray([.. S.Roots.Select(r => (JsonNode)r)]),
+            },
         });
         Send(new JsonObject { ["type"] = "sessions", ["rows"] = _hub.Rows() });
         try
@@ -153,6 +165,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
 
     public void Dispose()
     {
+        _filesOrNull?.Dispose();
         foreach (var sub in _open.Values) sub.Dispose();
         _open.Clear();
     }
@@ -220,6 +233,17 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 break;
             case "stopCommand":
                 StopCommand(Str(m, "sessionId"), Long(m, "pid"));
+                break;
+            case "openFile":
+                if (LiveSession(Str(m, "sessionId")) is { } opening) OpenFile(opening, Str(m, "path") ?? "");
+                else Error("No such open session.");
+                break;
+            case "saveFile":
+                await _files.SaveAsync(Str(m, "sessionId") ?? "", Str(m, "text") ?? "",
+                    m["force"] is JsonValue fv && fv.TryGetValue<bool>(out var force) && force).ConfigureAwait(false);
+                break;
+            case "reloadFile":
+                _files.Reload(Str(m, "sessionId") ?? "");
                 break;
             case "openCommand":
                 OpenCommand(Str(m, "sessionId"), Long(m, "pid"));
@@ -480,6 +504,8 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     private void Leave(string? sessionId)
     {
         if (sessionId is null) return;
+        if (WebFiles.IsFileKey(sessionId)) { _filesOrNull?.Close(sessionId); return; }
+        _filesOrNull?.CloseSession(sessionId);
         if (_open.TryRemove(sessionId, out var sub)) sub.Dispose();
 
         // ITS PROMPTS GO WITH IT: no longer served, they would never hear they were answered.
@@ -513,8 +539,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         text ??= "";
         if (text.TrimStart().StartsWith('/'))
         {
-            if (WebCommands.Refusal(text) is { } refused) { Notice(session.Id, refused, "Warning"); return; }
-            if (WebCommands.IsHelp(text)) { Notice(session.Id, WebCommands.Help(), "Info"); return; }
+            if (WebCommands.Refusal(text, S.Allow) is { } refused) { Notice(session.Id, refused, "Warning"); return; }
+            if (WebCommands.IsHelp(text)) { Notice(session.Id, WebCommands.Help(S.Allow), "Info"); return; }
+            if (OwnCommand(session, text)) return;
         }
         Core.Models.Attachments? attached = null;
         if (images is { Count: > 0 })
@@ -541,6 +568,48 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 break;
         }
         _hub.ListChanged();
+    }
+
+    /// <summary>
+    /// The commands a browser answers itself, because the terminal answers them with a window or a tab of its own:
+    /// they reach this page as a download or a tab, never the session's registry, which under /web is the terminal's.
+    /// </summary>
+    private bool OwnCommand(Session session, string text)
+    {
+        var parts = text.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var args = parts.Length > 1 ? parts[1].Trim() : "";
+        switch (parts[0].ToLowerInvariant())
+        {
+            case "/export":
+                Export(session.Id, args.Equals("full", StringComparison.OrdinalIgnoreCase));
+                return true;
+            case "/open":
+                OpenFile(session, args);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// <c>/open</c>: a file in a tab of its own. Under the web roots always; anywhere the terminal's /open reaches only
+    /// with <c>web.allow.openAnywhere</c> — a login reading and writing any file the user can is a decision, not a
+    /// default.
+    /// </summary>
+    private void OpenFile(Session session, string argument)
+    {
+        var target = CxAgent.UI.OpenTarget.For(argument, session.WorkingDirectory);
+        if (target.Path is not { } path) { Notice(session.Id, "Name the file: /open <path>.", "Info"); return; }
+        var allowed = WebSessionHub.Resolved(path, S.Roots)
+            ?? (S.Allow.OpenAnywhere ? WebSessionHub.Resolved(path, [Path.GetPathRoot(path) ?? "/"]) : null);
+        if (allowed is null)
+        {
+            Notice(session.Id, File.Exists(path) || Directory.Exists(path)
+                ? $"{path} is outside the folders this server opens. Opening files anywhere is turned on in the terminal: F8 › Web › Browser access, or web.allow.openAnywhere in config.json."
+                : $"There is no file {path}.", "Warning");
+            return;
+        }
+        if (_files.Open(session, path, allowed) is { } refused) Notice(session.Id, refused, "Warning");
     }
 
     // ONE NUMBERING PER SESSION FOR THIS TAB, as the terminal's composer numbers its tokens for its life.

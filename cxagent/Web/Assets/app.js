@@ -81,6 +81,7 @@ function connect() {
     for (const [id, view] of state.views) {
       if (view.kind === "worker") send({ type: "openWorker", sessionId: view.parent, agentId: view.agentId, since: view.seq });
       else if (view.kind === "command") send({ type: "openCommand", sessionId: view.parent, pid: view.pid });
+      else if (view.kind === "file") send({ type: "openFile", sessionId: view.parent, path: view.path });
       else send({ type: "open", id, since: view.seq });
     }
   });
@@ -108,6 +109,7 @@ function handle(m) {
   switch (m.type) {
     case "hello":
       state.commands = m.commands || [];
+      state.access = m.access || null;
       document.querySelector(".logout").hidden = !m.login;
       showBanners(m.banners || []);
       break;
@@ -146,6 +148,10 @@ function handle(m) {
     case "folders": drawFolders(m); break;
     case "export": download(m.name, m.markdown); break;
     case "openedCommand": openedCommand(m); break;
+    case "openedFile": openedFile(m); break;
+    case "fileSaved": fileSaved(m); break;
+    case "fileConflict": fileConflict(m); break;
+    case "fileChanged": fileChanged(m); break;
     case "commandOutput": commandOutput(m); break;
     case "commandState": commandState(m); break;
     case "error": flash(m.message); break;
@@ -263,14 +269,16 @@ function drawTabs() {
   for (const [id, view] of state.views) {
     const worker = view.kind === "worker";
     const command = view.kind === "command";
-    const sub = worker || command;
+    const file = view.kind === "file";
+    const sub = worker || command || file;
     const row = sub ? null : state.rows.find((r) => r.id === id);
     const w = worker ? workerRunning(view) : null;
     const tab = el("button", "tab" + (id === state.active ? " on" : "") + (sub ? " worker" : ""));
     tab.type = "button";
-    const dot = command ? (view.running ? "working" : "") : worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle");
+    const dot = file ? (view.dirty ? "waiting" : "") : command ? (view.running ? "working" : "") : worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle");
     tab.append(el("span", "dot " + dot),
-      document.createTextNode(command ? "▭ " + view.title : worker ? "⤷ " + view.name : view.title || "session"));
+      document.createTextNode(file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? "⤷ " + view.name : view.title || "session"));
+    if (file) tab.title = view.path;
     tab.addEventListener("click", () => activate(id));
     if (sub) {
       // A WORKER'S TAB CLOSES ON THE PAGE ONLY — the worker carries on, and its card still opens it again.
@@ -334,7 +342,7 @@ function openWorker(sessionId, agentId) {
 // THE SESSION BEHIND THE ACTIVE VIEW: a worker's tab shows its parent's panel, model and prompts.
 function activeSessionId() {
   const v = state.views.get(state.active);
-  return v ? (v.kind === "worker" || v.kind === "command" ? v.parent : v.id) : null;
+  return v ? (v.kind === "worker" || v.kind === "command" || v.kind === "file" ? v.parent : v.id) : null;
 }
 
 function activate(id) {
@@ -343,11 +351,13 @@ function activate(id) {
   $("chat").replaceChildren(view ? view.log : $("empty"));
   document.body.dataset.view = view ? "chat" : "list";
   // A COMMAND'S TAB TAKES NO MESSAGES: it is the command's output, and the terminal's tab has no composer either.
-  $("input").disabled = !view || view.kind === "command";
-  $("send").disabled = !view || view.kind === "command";
+  $("input").disabled = !view || view.kind === "command" || view.kind === "file";
+  $("send").disabled = !view || view.kind === "command" || view.kind === "file";
+  document.body.classList.toggle("editing", !!view && view.kind === "file");
   $("input").placeholder = view && view.kind === "worker" ? "Message " + view.name + "…" : "Message, or / for commands";
   $("crumb").textContent = view ? view.folder : "";
   $("phone-title").textContent = view ? (view.kind === "worker" ? "⤷ " + view.name : view.kind === "command" ? "▭ " + view.title : view.title) : "";
+  if (view && view.kind === "file") setTimeout(() => view.ta.focus(), 0);
   drawWorkerHead();
   drawPrompts();
   drawSessions();
@@ -361,7 +371,7 @@ function activate(id) {
 function dropView(id) {
   const view = state.views.get(id);
   // A COMMAND'S TAB STOPS ITS FOLLOWING ON THE SERVER; the command itself carries on, as closing the terminal's tab leaves it.
-  if (view && view.kind === "command") send({ type: "leave", sessionId: id });
+  if (view && (view.kind === "command" || view.kind === "file")) send({ type: "leave", sessionId: id });
   state.views.delete(id);
   if (state.active === id) activate(state.views.keys().next().value || null);
   else drawTabs();
@@ -371,6 +381,7 @@ function drawWorkerHead() {
   const view = state.views.get(state.active);
   const head = $("worker-head");
   if (view && view.kind === "command") { drawCommandHead(view, head); return; }
+  if (view && view.kind === "file") { drawFileHead(view, head); return; }
   if (!view || view.kind !== "worker") { head.hidden = true; return; }
   head.hidden = false;
   head.replaceChildren();
@@ -450,6 +461,154 @@ function openCommand(sessionId, pid) {
   if (state.views.has(key)) activate(key);
   else send({ type: "openCommand", sessionId, pid });
 }
+
+// ---- the editor -----------------------------------------------------------------------------------------------------
+
+// THE TERMINAL'S /open: a file in a tab, highlighted, saved with the bytes it was read with. A textarea over a highlighted
+// copy of its text — the page already carries highlight.js, and a textarea keeps the browser's own editing, undo and
+// input methods, which a hand-built editor would get wrong.
+const HIGHLIGHT_LIMIT = 300000;
+
+function openedFile(m) {
+  let view = state.views.get(m.sessionId);
+  const fresh = !view;
+  if (!view) {
+    view = newView(m.sessionId, "file");
+    Object.assign(view, { parent: m.parent, path: m.path, title: m.name, language: m.language, dirty: false,
+      folder: (state.views.get(m.parent) || {}).folder || "" });
+    buildEditor(view);
+  }
+  // A RECONNECT OPENS IT AGAIN. Unedited, the buffer takes what is there now; edited, the edits stay, and a disk that
+  // moved on meanwhile is said, as the terminal says it.
+  if (!view.dirty) { setBuffer(view, m.text); view.baseline = m.text; view.bar = null; }
+  else if (m.text !== view.baseline) { view.baseline = m.text; view.bar = { kind: "changed", text: m.text }; }
+  if (fresh || state.active === m.sessionId) activate(m.sessionId);
+  else { drawTabs(); if (state.active === view.id) drawWorkerHead(); }
+}
+
+function buildEditor(view) {
+  const ed = el("div", "editor");
+  const gutter = el("pre", "ed-gutter");
+  const wrap = el("div", "ed-wrap");
+  const hl = el("pre", "ed-hl");
+  const code = el("code", "hljs");
+  hl.append(code);
+  const ta = el("textarea", "ed-text");
+  ta.spellcheck = false;
+  ta.setAttribute("autocapitalize", "off");
+  ta.setAttribute("autocomplete", "off");
+  ta.wrap = "off";
+  wrap.append(hl, ta);
+  ed.append(gutter, wrap);
+  view.log.append(ed);
+  Object.assign(view, { ed, gutter, hl, code, ta });
+  ta.addEventListener("input", () => {
+    const was = view.dirty;
+    view.dirty = ta.value !== view.baseline;
+    paintEditor(view);
+    if (was !== view.dirty) { drawTabs(); drawWorkerHead(); }
+  });
+  ta.addEventListener("scroll", () => { hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; gutter.scrollTop = ta.scrollTop; });
+  ta.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveFile(view, false); return; }
+    if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+      // INDENT AS THE FILE DOES: a tab where it indents with tabs, four spaces otherwise.
+      e.preventDefault();
+      const unit = /^\t/m.test(ta.value) ? "\t" : "    ";
+      document.execCommand("insertText", false, unit);
+    }
+  });
+}
+
+function setBuffer(view, text) {
+  view.ta.value = text;
+  view.dirty = false;
+  paintEditor(view);
+}
+
+function paintEditor(view) {
+  if (view.painting) return;
+  view.painting = true;
+  requestAnimationFrame(() => {
+    view.painting = false;
+    const text = view.ta.value;
+    const lines = text.split("\n").length;
+    view.gutter.textContent = Array.from({ length: lines }, (_, i) => String(i + 1)).join("\n");
+    // A TRAILING NEWLINE, so the copy is as tall as the textarea and the last line lines up.
+    const shown = text + "\n";
+    const lang = view.language && window.hljs && hljs.getLanguage(view.language) ? view.language : null;
+    if (lang && text.length < HIGHLIGHT_LIMIT) {
+      // ESCAPED BY highlight.js, which builds its markup from the text it is given and escapes every character of it.
+      const safe = hljs.highlight(shown, { language: lang, ignoreIllegals: true }).value;
+      view.code.innerHTML = safe;
+    } else view.code.textContent = shown;
+    view.hl.scrollTop = view.ta.scrollTop;
+    view.hl.scrollLeft = view.ta.scrollLeft;
+  });
+}
+
+function saveFile(view, force) {
+  view.saving = true;
+  send({ type: "saveFile", sessionId: view.id, text: view.ta.value, force });
+  drawWorkerHead();
+}
+
+function fileSaved(m) {
+  const view = state.views.get(m.sessionId);
+  if (!view) return;
+  view.saving = false;
+  view.baseline = view.ta.value;
+  view.dirty = false;
+  view.bar = null;
+  drawTabs();
+  if (state.active === view.id) drawWorkerHead();
+}
+
+function fileConflict(m) {
+  const view = state.views.get(m.sessionId);
+  if (!view) return;
+  view.saving = false;
+  view.bar = { kind: "conflict", text: m.text, deleted: m.deleted };
+  if (state.active !== view.id) activate(view.id); else drawWorkerHead();
+}
+
+function fileChanged(m) {
+  const view = state.views.get(m.sessionId);
+  if (!view) return;
+  // UNEDITED, IT FOLLOWS THE FILE, as the terminal's tab does; edited, the edits are kept and the bar says so.
+  if (!view.dirty && !m.deleted) { setBuffer(view, m.text); view.baseline = m.text; send({ type: "reloadFile", sessionId: view.id }); return; }
+  view.bar = { kind: "changed", text: m.text, deleted: m.deleted };
+  if (state.active === view.id) drawWorkerHead();
+}
+
+function drawFileHead(view, head) {
+  head.hidden = false;
+  head.replaceChildren();
+  head.append(el("span", "tag", "File"));
+  const name = el("b", null, view.title + (view.dirty ? " •" : ""));
+  name.title = view.path;
+  head.append(name, el("span", "meta", view.language || "text"));
+  head.append(el("span", "spacer"));
+  head.append(button("Back to session", "ghost", () => activate(view.parent)));
+  const save = button(view.saving ? "Saving…" : "Save", "primary", () => saveFile(view, false));
+  save.title = "Ctrl+S";
+  save.disabled = !view.dirty || view.saving;
+  head.append(save);
+  if (view.bar) {
+    const bar = el("div", "file-bar");
+    const said = view.bar.kind === "conflict"
+      ? (view.bar.deleted ? "Deleted on disk since you opened it." : "Changed on disk since you opened it — saving would overwrite that.")
+      : (view.bar.deleted ? "Deleted on disk — Save recreates it." : "Changed on disk. Your edits are kept here.");
+    bar.append(el("span", null, said), el("span", "spacer"));
+    if (!view.bar.deleted) bar.append(button("See theirs", null, () => { $("theirs-text").textContent = view.bar.text || ""; $("theirs").hidden = false; }));
+    if (!view.bar.deleted) bar.append(button("Reload", null, () => { view.dirty = false; view.bar = null; send({ type: "reloadFile", sessionId: view.id }); }));
+    if (view.bar.kind === "conflict") bar.append(button("Save anyway", "danger", () => { view.bar = null; saveFile(view, true); }));
+    head.append(bar);
+  }
+}
+
+$("theirs-close").addEventListener("click", () => { $("theirs").hidden = true; });
+$("theirs").addEventListener("click", (e) => { if (e.target === $("theirs")) $("theirs").hidden = true; });
 
 // ---- export ---------------------------------------------------------------------------------------------------------
 
@@ -1041,7 +1200,9 @@ function drawPanel() {
     $("pane-tasks").replaceChildren(el("p", "none", "Open a session to see its workers and commands."));
     return;
   }
-  drawSessionPane(panel);
+  // NOT WHILE SOMETHING IN IT HAS THE KEYBOARD: the panel arrives every second, and rebuilding the pane would throw
+  // away the path being typed into "Open a file".
+  if (!$("pane-session").contains(document.activeElement)) drawSessionPane(panel);
   drawTasksPane(panel, sid);
 }
 
@@ -1087,6 +1248,31 @@ function drawSessionPane(p) {
     button("Full", null, () => send({ type: "export", sessionId: activeSessionId(), full: true })));
   exp.title = "Download this conversation as markdown";
   pane.append(exp);
+
+  pane.append(el("h3", null, "Open a file"));
+  const of = el("form", "open-file");
+  const ofIn = el("input");
+  ofIn.placeholder = "path, relative to the folder";
+  ofIn.setAttribute("aria-label", "File to open");
+  of.append(ofIn, button("Open", null, () => of.requestSubmit()));
+  of.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (ofIn.value.trim()) send({ type: "openFile", sessionId: activeSessionId(), path: ofIn.value.trim() });
+    if (!wide()) setPanel(false);
+  });
+  pane.append(of);
+
+  // THE SWITCHES, READ-ONLY: what a browser may do beyond the conversation. Only the terminal changes them.
+  if (state.access) {
+    pane.append(el("h3", null, "Browser access"));
+    const a = state.access;
+    for (const [label, on] of [["Plugins", a.plugins], ["Open files anywhere", a.openAnywhere], ["Shell", a.shell], ["Configuration", a.config]])
+      pane.append(kv(label, on ? "on" : "off", on ? null : "off"));
+    const roots = kv("Folders", (a.roots || []).map(shortFolder).join(", ") || "—");
+    roots.title = (a.roots || []).join("\n");
+    pane.append(roots);
+    pane.append(el("p", "none", "Changed in the terminal: F8 › Web › Browser access."));
+  }
 
   pane.append(el("h3", null, "Here"));
   const folder = kv("Folder", shortFolder(p.here.folder));

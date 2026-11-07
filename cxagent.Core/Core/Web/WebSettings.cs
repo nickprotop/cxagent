@@ -41,6 +41,9 @@ public sealed record WebSettings(
     IReadOnlyList<string> Roots,
     int IdleMinutes)
 {
+    /// <summary>What a browser may do beyond the conversation: see <see cref="WebAccess"/>.</summary>
+    public WebAccess Allow { get; init; } = WebAccess.Default;
+
     /// <summary>What config.json without a <c>web</c> block means: this machine only, port 5180, no users.</summary>
     public static readonly WebSettings Default =
         new(5180, "127.0.0.1", false, LoginMode.Auto, new Dictionary<string, string>(), [], 30);
@@ -68,7 +71,26 @@ public sealed record WebSettings(
             ReadLogin(block, warnings),
             ReadUsers(block, warnings),
             ReadRoots(block, warnings),
-            Minutes(block, warnings, d.IdleMinutes));
+            Minutes(block, warnings, d.IdleMinutes))
+        {
+            Allow = ReadAllow(block, warnings),
+        };
+    }
+
+    private static WebAccess ReadAllow(JsonElement block, List<string> warnings)
+    {
+        var d = WebAccess.Default;
+        if (!block.TryGetProperty("allow", out var allow)) return d;
+        if (allow.ValueKind != JsonValueKind.Object)
+        {
+            warnings.Add("web.allow must be an object of switches — using the defaults.");
+            return d;
+        }
+        return new WebAccess(
+            Flag(allow, "shell", warnings, d.Shell, "web.allow"),
+            Flag(allow, "config", warnings, d.Config, "web.allow"),
+            Flag(allow, "plugins", warnings, d.Plugins, "web.allow"),
+            Flag(allow, "openAnywhere", warnings, d.OpenAnywhere, "web.allow"));
     }
 
     private static int ReadPort(JsonElement block, List<string> warnings, int fallback)
@@ -95,11 +117,11 @@ public sealed record WebSettings(
         return fallback;
     }
 
-    private static bool Flag(JsonElement block, string name, List<string> warnings, bool fallback)
+    private static bool Flag(JsonElement block, string name, List<string> warnings, bool fallback, string under = "web")
     {
         if (!block.TryGetProperty(name, out var v)) return fallback;
         if (v.ValueKind is JsonValueKind.True or JsonValueKind.False) return v.GetBoolean();
-        warnings.Add($"web.{name} must be true or false — using {(fallback ? "true" : "false")}.");
+        warnings.Add($"{under}.{name} must be true or false — using {(fallback ? "true" : "false")}.");
         return fallback;
     }
 
@@ -156,4 +178,24 @@ public sealed record WebSettings(
         }
         return roots;
     }
+}
+
+/// <summary>
+/// What a browser may do beyond the conversation — the terminal's own tools that reach further than the agent does.
+///
+/// <para>EACH ITS OWN SWITCH, because the risks differ: a shell runs as you outside the sandbox and its prompts, a
+/// config edit can change providers and their keys, a plugin is code you install, and an editor beyond the web roots
+/// reads and writes any file you can. Wanting the editor on a phone is no reason to let it rewrite config.</para>
+///
+/// <para>NEVER CHANGED FROM A BROWSER. Even with <see cref="Config"/> on, the page shows these, the users and the
+/// roots read-only: a login must not be able to widen its own access.</para>
+/// </summary>
+/// <param name="Shell">A real terminal in a browser tab — <c>/shell</c>.</param>
+/// <param name="Config">The configuration page — the terminal's F8, and the commands that write config.json.</param>
+/// <param name="Plugins">The plugin marketplace — F2 and <c>/plugin</c>. Each plugin still asks before it loads.</param>
+/// <param name="OpenAnywhere">The editor beyond the web roots: any path the terminal's <c>/open</c> accepts.</param>
+public sealed record WebAccess(bool Shell, bool Config, bool Plugins, bool OpenAnywhere)
+{
+    /// <summary>Plugins on, as the marketplace's load prompt still guards each one; everything else off.</summary>
+    public static readonly WebAccess Default = new(Shell: false, Config: false, Plugins: true, OpenAnywhere: false);
 }

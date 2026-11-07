@@ -104,4 +104,45 @@ public sealed class WebSettingsTests
         var resolved = ResolvedConfig.ForTesting(new MockLlmProvider());
         Assert.Equal(WebSettings.Default, resolved.Web);
     }
+
+    // ---- web.allow: what a browser may do beyond the conversation ---------------------------------------------------
+
+    [Fact]
+    public void Without_an_allow_block_plugins_are_on_and_the_rest_off()
+    {
+        var a = Read("{}").Settings.Allow;
+        Assert.Equal(new WebAccess(Shell: false, Config: false, Plugins: true, OpenAnywhere: false), a);
+    }
+
+    [Fact]
+    public void Each_switch_is_read_and_one_left_out_keeps_its_default()
+    {
+        var (s, w) = Read("""{ "web": { "allow": { "shell": true, "openAnywhere": true } } }""");
+        Assert.Empty(w);
+        Assert.Equal(new WebAccess(Shell: true, Config: false, Plugins: true, OpenAnywhere: true), s.Allow);
+    }
+
+    [Fact]
+    public void Plugins_can_be_turned_off()
+    {
+        Assert.False(Read("""{ "web": { "allow": { "plugins": false } } }""").Settings.Allow.Plugins);
+    }
+
+    [Fact]
+    public void A_switch_of_the_wrong_shape_warns_and_stays_at_its_default()
+    {
+        // OFF, NOT ON, for the three that widen what a login reaches: a typo must not be what opens a shell.
+        var (s, w) = Read("""{ "web": { "allow": { "shell": "yes", "config": 1 } } }""");
+        Assert.False(s.Allow.Shell);
+        Assert.False(s.Allow.Config);
+        Assert.Equal(2, w.Count);
+    }
+
+    [Fact]
+    public void An_allow_that_is_not_an_object_warns_and_keeps_the_defaults()
+    {
+        var (s, w) = Read("""{ "web": { "allow": true } }""");
+        Assert.Equal(WebAccess.Default, s.Allow);
+        Assert.Single(w);
+    }
 }

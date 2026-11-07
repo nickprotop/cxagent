@@ -490,7 +490,7 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/help")));
         var help = (await tab.NextAsync(Type("notice")))["text"]!.GetValue<string>();
         Assert.Contains("/compress", help, StringComparison.Ordinal);
-        Assert.DoesNotContain("/plugin", help, StringComparison.Ordinal);
+        Assert.DoesNotContain("/shell", help, StringComparison.Ordinal);
 
         await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/sandbox")));
         await tab.NextAsync(Kind("said"));

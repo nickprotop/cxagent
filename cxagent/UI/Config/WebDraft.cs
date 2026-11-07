@@ -45,6 +45,10 @@ public sealed class WebDraft
             Login = web.Login,
             RootsText = string.Join("\n", web.Roots),
             IdleText = web.IdleMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            AllowShell = web.Allow.Shell,
+            AllowConfig = web.Allow.Config,
+            AllowPlugins = web.Allow.Plugins,
+            AllowOpenAnywhere = web.Allow.OpenAnywhere,
         };
         foreach (var (name, stored) in web.Users) draft._users[name] = stored;
         draft.Saved();
@@ -68,6 +72,20 @@ public sealed class WebDraft
 
     /// <summary>Minutes a session nobody looks at stays loaded, as typed.</summary>
     public string IdleText { get; set; } = "30";
+
+    /// <summary>A browser may open a real terminal — <c>/shell</c>.</summary>
+    public bool AllowShell { get; set; }
+
+    /// <summary>A browser may change configuration — never these switches, the users or the roots.</summary>
+    public bool AllowConfig { get; set; }
+
+    /// <summary>A browser may use the plugin marketplace; each plugin still asks before it loads.</summary>
+    public bool AllowPlugins { get; set; } = true;
+
+    /// <summary>A browser's editor may open files outside the folders above.</summary>
+    public bool AllowOpenAnywhere { get; set; }
+
+    private WebAccess Access => new(AllowShell, AllowConfig, AllowPlugins, AllowOpenAnywhere);
 
     /// <summary>The users, in name order.</summary>
     public IReadOnlyList<WebUser> Users =>
@@ -111,7 +129,7 @@ public sealed class WebDraft
     public bool IsDirty =>
         Port != _original.Port || Bind.Trim() != _original.Bind || SelfSigned != _original.SelfSigned
         || Login != _original.Login || Idle != _original.IdleMinutes
-        || string.Join("\n", Roots) != _originalRoots || UsersChanged;
+        || string.Join("\n", Roots) != _originalRoots || UsersChanged || Access != _original.Allow;
 
     /// <summary>
     /// Why this cannot be saved as it stands, in words for the user; null when it can. Each is something the server
@@ -138,7 +156,7 @@ public sealed class WebDraft
     public void Saved()
     {
         _original = new WebSettings(Port ?? WebSettings.Default.Port, Bind.Trim(), SelfSigned, Login,
-            new Dictionary<string, string>(), Roots, Idle ?? WebSettings.Default.IdleMinutes);
+            new Dictionary<string, string>(), Roots, Idle ?? WebSettings.Default.IdleMinutes) { Allow = Access };
         _originalRoots = string.Join("\n", Roots);
         _originalUsers = new Dictionary<string, string>(_users, StringComparer.Ordinal);
     }
@@ -154,6 +172,7 @@ public sealed class WebDraft
         if (Idle != _original.IdleMinutes) Set(root, "idleMinutes", Idle == d.IdleMinutes ? null : JsonValue.Create(Idle!.Value));
         if (string.Join("\n", Roots) != _originalRoots)
             Set(root, "roots", Roots.Count == 0 ? null : new JsonArray([.. Roots.Select(r => (JsonNode)JsonValue.Create(r))]));
+        if (Access != _original.Allow) ApplyAccess(root);
         if (UsersChanged)
         {
             JsonObject? users = null;
@@ -164,6 +183,25 @@ public sealed class WebDraft
             }
             Set(root, "users", users);
         }
+    }
+
+    // EACH SWITCH AT ITS DEFAULT IS LEFT OUT, and the allow block with them when none is set: the file says only what
+    // somebody chose, and a default changed later reaches everyone who never chose.
+    private void ApplyAccess(JsonObject root)
+    {
+        var d = WebAccess.Default;
+        var allow = (root["web"] as JsonObject)?["allow"] as JsonObject ?? [];
+        void One(string key, bool value, bool fallback)
+        {
+            if (value == fallback) allow.Remove(key);
+            else allow[key] = value;
+        }
+        One("shell", AllowShell, d.Shell);
+        One("config", AllowConfig, d.Config);
+        One("plugins", AllowPlugins, d.Plugins);
+        One("openAnywhere", AllowOpenAnywhere, d.OpenAnywhere);
+        if (allow.Parent is JsonObject) ((JsonObject)allow.Parent).Remove("allow");
+        Set(root, "allow", allow.Count == 0 ? null : allow);
     }
 
     // ONE KEY IN THE web BLOCK, or removed when null — with the block when that empties it.

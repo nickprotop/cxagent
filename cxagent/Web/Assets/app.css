@@ -362,3 +362,36 @@ body.in-aside .composer-box { border-color: var(--warn-line); }
 .worker-head code.cmd { font: 12.5px var(--mono); color: var(--strong); max-width: 50ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .btns.export { display: flex; gap: 8px; margin: 2px 0 6px; }
+
+/* ---- the editor ------------------------------------------------------------------------------------------------ */
+
+/* THE TEXTAREA SITS OVER ITS HIGHLIGHTED COPY: same font, size, padding and wrapping, so each character lands on its
+   coloured twin; the textarea's own text is transparent and only its caret and selection show. */
+body.editing .chat { padding: 0; }
+.editor { display: flex; height: 100%; min-height: 0; background: var(--sunken); font: 13px/1.55 var(--mono); }
+.ed-gutter { margin: 0; padding: 12px 8px 12px 12px; color: var(--faint); text-align: right; user-select: none; overflow: hidden;
+  border-right: 1px solid var(--line-soft); min-width: 3ch; font: inherit; }
+.ed-wrap { position: relative; flex: 1; min-width: 0; }
+.ed-hl, .ed-text { position: absolute; inset: 0; margin: 0; padding: 12px 14px; font: inherit; white-space: pre; tab-size: 4;
+  overflow: auto; border: 0; }
+.ed-hl { pointer-events: none; color: var(--text); background: transparent; }
+.ed-hl code.hljs { background: transparent; padding: 0; font: inherit; }
+.ed-text { color: transparent; caret-color: var(--strong); background: transparent; resize: none; outline: none; }
+.ed-text::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: transparent; }
+.ed-hl { scrollbar-width: none; }
+.ed-hl::-webkit-scrollbar { display: none; }
+.file-bar { flex-basis: 100%; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px;
+  background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn); font-size: 12.5px; }
+.theirs-box { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; width: min(960px, 92vw); max-height: 84vh;
+  display: flex; flex-direction: column; cursor: auto; }
+.theirs-head { display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--strong); }
+.theirs-box pre { margin: 0; padding: 12px 14px; overflow: auto; font: 12.5px/1.5 var(--mono); color: var(--text); }
+.open-file { display: flex; gap: 6px; margin: 2px 0 6px; }
+.open-file input { flex: 1; min-width: 0; font: 12.5px var(--mono); padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line);
+  background: var(--sunken); color: var(--text); }
+.kv.off b { color: var(--faint); }
+body.editing .chat { overflow: hidden; }
+body.editing .chat > .view { height: 100%; }
+/* THE THEME PADS code.hljs FOR A CODE BLOCK; in the editor that padding would shift every coloured line off its
+   textarea twin and its line number. */
+.editor .ed-hl > code.hljs { display: inline; padding: 0 !important; background: transparent !important; }

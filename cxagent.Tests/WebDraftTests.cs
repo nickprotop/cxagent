@@ -159,4 +159,47 @@ public sealed class WebDraftTests
         draft.Login = LoginMode.Always;
         Assert.Contains("user", draft.Problem, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ---- Browser access: the four switches -----------------------------------------------------------------------
+
+    [Fact]
+    public void The_switches_show_their_defaults_and_writing_nothing_keeps_them()
+    {
+        var draft = Draft();
+        Assert.False(draft.AllowShell);
+        Assert.False(draft.AllowConfig);
+        Assert.True(draft.AllowPlugins);
+        Assert.False(draft.AllowOpenAnywhere);
+        Assert.Null(Saved(draft)["web"]);
+    }
+
+    [Fact]
+    public void A_switch_turned_on_is_written_and_read_back()
+    {
+        var draft = Draft();
+        draft.AllowShell = true;
+        draft.AllowOpenAnywhere = true;
+        Assert.True(draft.IsDirty);
+        var root = Saved(draft);
+        Assert.True(root["web"]!["allow"]!["shell"]!.GetValue<bool>());
+        Assert.Null(root["web"]!["allow"]!["config"]);
+        var back = WebDraft.From(ProviderConfigLoader.Parse(root.ToJsonString(), NoEnv));
+        Assert.True(back.AllowShell);
+        Assert.True(back.AllowOpenAnywhere);
+        Assert.False(back.AllowConfig);
+    }
+
+    [Fact]
+    public void Plugins_turned_off_is_written_and_turned_back_on_leaves_no_allow_block()
+    {
+        var draft = Draft();
+        draft.AllowPlugins = false;
+        var root = Saved(draft);
+        Assert.False(root["web"]!["allow"]!["plugins"]!.GetValue<bool>());
+
+        var again = WebDraft.From(ProviderConfigLoader.Parse(root.ToJsonString(), NoEnv));
+        again.AllowPlugins = true;
+        again.Apply(root);
+        Assert.Null(root["web"]);
+    }
 }

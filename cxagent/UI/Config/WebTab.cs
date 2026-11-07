@@ -151,6 +151,31 @@ public sealed class WebTab
         idle.InputChanged += (_, t) => { draft.IdleText = t; MarkSave(); };
         folders.Add("Unload after (minutes)", "A session no tab has open, with no turn running and nothing waiting on you. 0 keeps it. cxagent web only; the terminal's own sessions never unload.", idle);
         _detail.AddControl(ListDetail.Section("Sessions", folders.Control));
+        _detail.AddControl(ListDetail.Gap());
+
+        // ---- browser access -------------------------------------------------------------------------------------
+        // HERE AND ONLY HERE: a browser shows these read-only and can never change them, even with config on, so a
+        // login cannot widen its own access.
+        var access = new FieldGrid();
+        access.AddBare(new MarkupControl([$"[{ColorScheme.MutedMarkup}]What a browser may do beyond the conversation. A browser shows these but can never change them.[/]"]) { Wrap = true });
+        access.AddBare(Blank());
+        void Switch(string label, string help, bool on, Action<bool> set)
+        {
+            var box = new CheckboxControl(label, on);
+            box.CheckedChanged += (_, value) => { set(value); MarkSave(); };
+            access.AddBare(box);
+            access.AddBare(Help(help));
+            access.AddBare(Blank());
+        }
+        Switch("Plugins", "The marketplace: browse, install, load. Each plugin still asks before it loads, showing what it would run.",
+            draft.AllowPlugins, v => draft.AllowPlugins = v);
+        Switch("Open files anywhere", "The editor beyond the folders above: any file you can read and write.",
+            draft.AllowOpenAnywhere, v => draft.AllowOpenAnywhere = v);
+        Switch("Shell", "A real terminal in a browser tab. It runs as you, outside the sandbox, with no prompts.",
+            draft.AllowShell, v => draft.AllowShell = v);
+        Switch("Configuration", "Providers, MCP servers, agent types and settings — not these switches, the users or the folders.",
+            draft.AllowConfig, v => draft.AllowConfig = v);
+        _detail.AddControl(ListDetail.Section("Browser access", access.Control));
     }
 
     /// <summary>Where the browser front end is right now — so a save is read against what is running.</summary>

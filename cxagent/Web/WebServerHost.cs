@@ -91,6 +91,7 @@ public sealed class WebServerHost : IAsyncDisposable
         var hub = new WebSessionHub(new WebHubServices(r.Manager, r.Prompts, new FolderSessionStore(r.Paths), r.Paths, roots, r.Opener, r.Clock)
         {
             IdleMinutes = s.IdleMinutes,
+            Allow = s.Allow,
         });
         var host = new WebServerHost(r, gate, known, hub);
 

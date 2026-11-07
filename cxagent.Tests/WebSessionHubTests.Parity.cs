@@ -122,4 +122,138 @@ public sealed partial class WebSessionHubTests
         await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/think ultra")));
         await tab.NextAsync(Kind("said"));
     }
+
+    // ---- the switches ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void A_command_behind_an_off_switch_is_refused_and_the_refusal_says_where_to_turn_it_on()
+    {
+        var refusal = CxAgent.Web.WebCommands.Refusal("/shell");
+        Assert.NotNull(refusal);
+        Assert.Contains("web.allow.shell", refusal, StringComparison.Ordinal);
+        Assert.Contains("F8", refusal, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_switch_turned_on_lets_its_commands_through()
+    {
+        var all = new Core.Web.WebAccess(Shell: true, Config: true, Plugins: true, OpenAnywhere: true);
+        Assert.Null(CxAgent.Web.WebCommands.Refusal("/shell", all));
+        Assert.Null(CxAgent.Web.WebCommands.Refusal("/trust", all));
+        Assert.Null(CxAgent.Web.WebCommands.Refusal("/think high --save", all));
+    }
+
+    [Fact]
+    public void Plugins_are_on_by_default_and_config_is_not()
+    {
+        Assert.Null(CxAgent.Web.WebCommands.Refusal("/plugin"));
+        Assert.NotNull(CxAgent.Web.WebCommands.Refusal("/trust"));
+        Assert.NotNull(CxAgent.Web.WebCommands.Refusal("/think high --save"));
+        Assert.Contains("/plugin", CxAgent.Web.WebCommands.AllowedWith(Core.Web.WebAccess.Default));
+        Assert.DoesNotContain("/shell", CxAgent.Web.WebCommands.AllowedWith(Core.Web.WebAccess.Default));
+    }
+
+    [Fact]
+    public async Task The_page_is_told_the_switches_and_the_roots()
+    {
+        await using var tab = await Tab.OpenAsync(_server.Bound.Port);
+        var hello = await tab.NextAsync(Type("hello"));
+        Assert.False(hello["access"]!["shell"]!.GetValue<bool>());
+        Assert.True(hello["access"]!["plugins"]!.GetValue<bool>());
+        Assert.Equal(Projects, hello["access"]!["roots"]!.AsArray().Single()!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Export_typed_as_a_command_downloads_too()
+    {
+        _model.EnqueueResponse(Reply("the answer"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "the question")));
+        await TurnDoneAsync(tab);
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/export full")));
+        Assert.Contains("the question", (await tab.NextAsync(Type("export")))["markdown"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    // ---- the editor -----------------------------------------------------------------------------------------------
+
+    private async Task<(Tab Tab, string SessionId, JsonObject File)> OpenedFileAsync(string name, string content)
+    {
+        File.WriteAllText(Path.Combine(Work, name), content);
+        var (tab, id) = await CreatedAsync();
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/open " + name)));
+        return (tab, id, await tab.NextAsync(Type("openedFile")));
+    }
+
+    [Fact]
+    public async Task Open_under_the_roots_sends_the_file_s_text_and_language()
+    {
+        var (tab, _, file) = await OpenedFileAsync("a.cs", "class A {}\n");
+        await using var __ = tab;
+        Assert.Equal("class A {}\n", file["text"]!.GetValue<string>());
+        Assert.Equal(Path.Combine(Work, "a.cs"), file["path"]!.GetValue<string>());
+        Assert.False(string.IsNullOrEmpty(file["language"]?.GetValue<string>()));
+    }
+
+    [Fact]
+    public async Task Open_outside_the_roots_is_refused_and_names_the_switch()
+    {
+        var outside = Path.Combine(Outside, "secret.txt");
+        File.WriteAllText(outside, "no");
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/open " + outside)));
+        var notice = (await tab.NextAsync(Type("notice")))["text"]!.GetValue<string>();
+        Assert.Contains("openAnywhere", notice, StringComparison.Ordinal);
+        Assert.DoesNotContain(tab.Seen, m => m["type"]?.GetValue<string>() == "openedFile");
+    }
+
+    [Fact]
+    public async Task Save_keeps_the_file_s_conventions_and_tells_the_model()
+    {
+        File.WriteAllBytes(Path.Combine(Work, "b.txt"), [0xEF, 0xBB, 0xBF, .. "one\r\ntwo\r\n"u8.ToArray()]);
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/open b.txt")));
+        var key = (await tab.NextAsync(Type("openedFile")))["sessionId"]!.GetValue<string>();
+
+        await tab.SendAsync(Msg("saveFile", ("sessionId", key), ("text", "one\ntwo\nthree\n")));
+        await tab.NextAsync(Type("fileSaved"));
+        var bytes = File.ReadAllBytes(Path.Combine(Work, "b.txt"));
+        Assert.Equal([0xEF, 0xBB, 0xBF], bytes[..3]);
+        Assert.Equal("one\r\ntwo\r\nthree\r\n", System.Text.Encoding.UTF8.GetString(bytes[3..]));
+
+        _model.EnqueueResponse(Reply("noted"));
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "go on")));
+        await TurnDoneAsync(tab);
+        Assert.Contains(_model.LastMessages!, m => m.Content.Contains("the user edited b.txt", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Save_over_a_change_made_on_disk_asks_first_and_a_forced_save_writes()
+    {
+        var (tab, _, file) = await OpenedFileAsync("c.txt", "mine\n");
+        await using var __ = tab;
+        var key = file["sessionId"]!.GetValue<string>();
+        File.WriteAllText(Path.Combine(Work, "c.txt"), "the agent's\n");
+
+        await tab.SendAsync(Msg("saveFile", ("sessionId", key), ("text", "mine, edited\n")));
+        Assert.Equal("the agent's\n", (await tab.NextAsync(Type("fileConflict")))["text"]!.GetValue<string>());
+        Assert.Equal("the agent's\n", File.ReadAllText(Path.Combine(Work, "c.txt")));
+
+        await tab.SendAsync(Msg("saveFile", ("sessionId", key), ("text", "mine, edited\n"), ("force", true)));
+        await tab.NextAsync(Type("fileSaved"));
+        Assert.Equal("mine, edited\n", File.ReadAllText(Path.Combine(Work, "c.txt")));
+    }
+
+    [Fact]
+    public async Task A_change_made_on_disk_while_open_is_sent_to_the_tab()
+    {
+        var (tab, _, file) = await OpenedFileAsync("d.txt", "before\n");
+        await using var __ = tab;
+        File.WriteAllText(Path.Combine(Work, "d.txt"), "after\n");
+        var changed = await tab.NextAsync(Type("fileChanged"));
+        Assert.Equal(file["sessionId"]!.GetValue<string>(), changed["sessionId"]!.GetValue<string>());
+        Assert.Equal("after\n", changed["text"]!.GetValue<string>());
+    }
 }
