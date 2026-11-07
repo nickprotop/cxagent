@@ -73,6 +73,22 @@ public sealed partial class ColleagueStore(string configDir)
         File.Move(temp, path, overwrite: true);
     }
 
+    /// <summary>
+    /// Changes a colleague's identity under its own lock and answers the result, or null when there is no such colleague.
+    ///
+    /// <para>READ, CHANGED AND WRITTEN UNDER ONE HOLD: a distiller bumping the version and a session noting a workplace
+    /// both rewrite the whole file, and without the hold the second writer would silently undo the first.</para>
+    /// </summary>
+    public ColleagueRecord? Update(string name, Func<ColleagueRecord, ColleagueRecord> change)
+    {
+        if (NameRefusal(name) is not null || !Directory.Exists(FolderOf(name))) return null;
+        using var held = Hold(Path.Combine(FolderOf(name), "colleague.lock"));
+        if (Find(name) is not { } now) return null;
+        var changed = change(now);
+        Save(changed);
+        return changed;
+    }
+
     /// <summary>Appends one whole round to the past and returns the place it was given.</summary>
     public long Append(string name, PastRound round)
     {
