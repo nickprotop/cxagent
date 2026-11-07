@@ -239,6 +239,10 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "exportForm":
                 ExportForm(Str(m, "sessionId"), Core.Commands.ExportPrefill.None);
                 break;
+            // THE FORM CLOSED: what it read is let go, so the next export reads the session as it is then.
+            case "exportClosed":
+                if (Str(m, "sessionId") is { } closedFor) _exporting.TryRemove(closedFor, out _);
+                break;
             case "exportPreview":
                 ExportPreview(Str(m, "sessionId"), m);
                 break;
@@ -604,6 +608,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     private void Leave(string? sessionId)
     {
         if (sessionId is null) return;
+        _exporting.TryRemove(sessionId, out _);
         if (WebFiles.IsFileKey(sessionId)) { _filesOrNull?.Close(sessionId); return; }
         if (_shells.TryRemove(sessionId, out var shell)) { shell.Dispose(); return; }
         foreach (var key in _shells.Keys.Where(k => k.StartsWith(sessionId + "$", StringComparison.Ordinal)))

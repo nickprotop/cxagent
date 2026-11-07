@@ -1399,6 +1399,7 @@ function exportForm(m) {
   const size = el("span", "export-size", "…");
   const go = button("Export", "primary", () => {
     if (!f.preview || f.preview.messages === 0) return;
+    f.sent = true;
     send({ type: "export", sessionId: f.sessionId, scope: f.scope, turns: f.turns, parts: f.parts });
   });
   go.disabled = true;
@@ -1460,6 +1461,9 @@ async function exported(m) {
 
 function closeExportForm() {
   clearTimeout(exporting.timer);
+  // THE SERVER LETS GO of the conversation it read for the form — unless the form closed because it exported, which
+  // let go already.
+  if (exporting.form && !exporting.form.sent) send({ type: "exportClosed", sessionId: exporting.form.sessionId });
   exporting.form = null;
   const d = $("export-dialog");
   if (d) d.remove();

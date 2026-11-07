@@ -159,6 +159,27 @@ public sealed partial class WebSessionHubTests
             preview["notes"]!.AsArray().Select(n => n!.GetValue<string>()));
     }
 
+    /// <summary>A CLOSED FORM LETS GO OF ITS CONVERSATION: the next export reads the session as it is now, not as it was
+    /// when a form long since closed was opened.</summary>
+    [Fact]
+    public async Task Closing_the_export_form_lets_go_of_the_conversation_it_read()
+    {
+        _model.EnqueueResponse(Reply("first answer"));
+        _model.EnqueueResponse(Reply("second answer"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "first question")));
+        await TurnDoneAsync(tab);
+        await tab.SendAsync(Msg("exportForm", ("sessionId", id)));
+        await tab.NextAsync(Type("exportForm"));
+        await tab.SendAsync(Msg("exportClosed", ("sessionId", id)));
+
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "second question")));
+        await TurnDoneAsync(tab);
+        await tab.SendAsync(Msg("export", ("sessionId", id), ("parts", (int)Core.Export.ExportParts.ToolCalls)));
+        Assert.Contains("second question", (await tab.NextAsync(Type("export")))["markdown"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task An_export_of_the_last_turn_leaves_the_earlier_ones_out()
     {
