@@ -396,6 +396,7 @@ internal static class SessionFactory
                 Tools = new AgentTools(executors)
                 {
                     Memory = session.Memory,
+                    Colleagues = session.Colleagues,
                     // The toolset, but NOT the servers: ownership stays with the session. Handing
                     // those over would let a re-wire dispose them, killing every server on a
                     // provider change and leaving the new host with a toolset over dead pipes.

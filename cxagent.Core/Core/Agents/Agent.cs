@@ -305,6 +305,9 @@ public sealed class Agent
     /// <summary>The notes kept across sessions, or null when memory is off. Read-only for a sub-agent.</summary>
     private readonly Memory.MemoryTool? _memoryTool;
 
+    /// <summary>The lead's colleague tool, or null for a sub-agent and when colleagues are off.</summary>
+    private readonly Colleagues.ColleagueTool? _colleagueTool;
+
     /// <summary>
     /// What the prompt's memory index lists — the session's snapshot, or one read when this agent was built. Never the
     /// live files: see <see cref="AgentBrief.MemoryIndex"/> for why the index must not move under a conversation.
@@ -1216,6 +1219,12 @@ public sealed class Agent
         // the guarantee holds for any construction path.
         _askUser = askUser is not null && !isSubAgent ? new AskUserTool(askUser) : null;
 
+        // THE LEAD'S ONLY, decided here like _askUser: a worker never keeps or brings workers, whatever path built it.
+        // Keeping asks through the same question as ask_user — and with no one to ask, it is refused.
+        _colleagueTool = setup.Tools.Colleagues is { } desk && !isSubAgent
+            ? new Colleagues.ColleagueTool(desk, askUser, () => Id)
+            : null;
+
         // A CHILD KEEPS THESE, EXCEPT THE ONES THAT NEED A SCREEN. Injected tools are inherited by
         // default — a child edits files exactly as its parent does — but a tool whose output is for
         // a PERSON cannot work here: a child's rows go to a BufferedJobPanel that nothing displays,
@@ -1324,6 +1333,8 @@ public sealed class Agent
             .Concat(new[] { _todoTool.Definition })
             // MEMORY, when there is a store — off in config, or a library caller that set none, is no tool at all.
             .Concat(_memoryTool is not null ? new[] { _memoryTool.Definition } : [])
+            // COLLEAGUES, for the lead when they are on — with an empty library too: keeping the first needs it.
+            .Concat(_colleagueTool is not null ? new[] { _colleagueTool.Definition } : [])
             // ONLY WHEN THERE IS SOMEONE TO ASK. Withheld from a child and from any host with no UI
             // — the same mechanism that makes "no sub-agents of sub-agents" structural: not a rule
             // the agent is asked to follow, a tool it was never given.
@@ -3316,6 +3327,8 @@ public sealed class Agent
                 ?? Text(TryUpdateTodos(call))
                 // Memory answers from its store, like the plan from its list: agent-owned, no executor.
                 ?? Text(_memoryTool?.TryInvoke(call))
+                // Colleagues answer from the session's desk, like memory from its store.
+                ?? Text(_colleagueTool is null ? null : await _colleagueTool.TryInvokeAsync(call, ct))
                 // Null when there is no user — the call then falls through to "no such tool", which
                 // is the honest answer for a tool this agent was never offered.
                 ?? Text(_askUser is null ? null : await _askUser.TryInvokeAsync(call, ct))
@@ -3679,7 +3692,7 @@ public sealed class Agent
     /// <summary>Tools that raise no permission request of their own — where a hook's ask must be asked by the agent.</summary>
     private bool Ungated(string name) =>
         name is Jobs.Tool.AgentSend or Jobs.Tool.TaskList or Jobs.Tool.TaskStop or Jobs.Tool.TaskOutput
-            or Jobs.Tool.TodoWrite or Jobs.Tool.AskUser or Jobs.Tool.Skill or Jobs.Tool.Memory
+            or Jobs.Tool.TodoWrite or Jobs.Tool.AskUser or Jobs.Tool.Skill or Jobs.Tool.Memory or Jobs.Tool.Colleague
         || (_spawner is not null && name == _spawner.ToolName);
 
     /// <summary>

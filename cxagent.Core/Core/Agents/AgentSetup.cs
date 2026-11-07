@@ -143,6 +143,12 @@ public sealed record AgentTools(JobRegistry Executors)
     /// the prompt. A sub-agent given one may list and read, never write: see <see cref="Memory.MemoryTool"/>.
     /// </summary>
     public Memory.MemoryStore? Memory { get; init; }
+
+    /// <summary>
+    /// The session's desk for colleagues, or null when they are off — then there is no <c>colleague</c> tool. A
+    /// sub-agent given one is not offered the tool: bringing and keeping colleagues is the lead's.
+    /// </summary>
+    public Colleagues.ColleagueDesk? Colleagues { get; init; }
 }
 
 /// <summary>What checks an agent's actions.</summary>

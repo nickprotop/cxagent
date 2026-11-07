@@ -88,6 +88,9 @@ public static class Tool
     /// <summary>Keep and read notes across sessions. Offered when memory is on; read-only for a sub-agent.</summary>
     public const string Memory = "memory";
 
+    /// <summary>List, bring in and keep colleagues. The lead's only, offered when colleagues are on.</summary>
+    public const string Colleague = "colleague";
+
     /// <summary>
     /// Every name this build ships, for telling "withheld" apart from "no such tool".
     ///
@@ -107,7 +110,7 @@ public static class Tool
     private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
     {
         ReadFile, WriteFile, ReplaceInFile, Glob, Grep, RunShell, HttpRequest, WebFetch, WebSearch,
-        Agent, AgentSend, TaskList, TaskStop, TaskOutput, TodoWrite, AskUser, Skill, Memory,
+        Agent, AgentSend, TaskList, TaskStop, TaskOutput, TodoWrite, AskUser, Skill, Memory, Colleague,
     };
 
     /// <summary>
@@ -133,6 +136,7 @@ public static class Tool
         public const string AskUser = "-" + Tool.AskUser;
         public const string Skill = "-" + Tool.Skill;
         public const string Memory = "-" + Tool.Memory;
+        public const string Colleague = "-" + Tool.Colleague;
     }
 
     /// <summary>
@@ -159,5 +163,6 @@ public static class Tool
         public const string AskUser = "+" + Tool.AskUser;
         public const string Skill = "+" + Tool.Skill;
         public const string Memory = "+" + Tool.Memory;
+        public const string Colleague = "+" + Tool.Colleague;
     }
 }

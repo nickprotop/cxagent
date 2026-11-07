@@ -428,7 +428,7 @@ which cxagent cannot know.
 
 `read_file` · `write_file` · `replace_in_file` · `glob` · `grep` · `run_shell` · `web_fetch` ·
 `web_search` · `http_request` · `todowrite` · `ask_user` · `agent` · `agent_send` ·
-`task_list` · `task_stop` · `task_output` · `skill` · `memory`
+`task_list` · `task_stop` · `task_output` · `skill` · `memory` · `colleague`
 
 A name that matches nothing is not an error and not a warning: names arrive late — a skill appears,
 an application injects a tool — so a term matching nothing today may match tomorrow, and an
