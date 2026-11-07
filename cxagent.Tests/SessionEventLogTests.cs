@@ -203,6 +203,25 @@ public sealed class SessionEventLogTests
     }
 
     [Fact]
+    public void A_seeded_past_is_not_counted_with_this_run()
+    {
+        // THE COUNTS ARE THIS RUN'S, as the terminal's are: the transcript keeps no tool calls, so counting its turns
+        // while its calls read zero would put "3 turns · 0 tool calls" on a session that ran four.
+        var file = Path.Combine(Directory.CreateTempSubdirectory("seed-").FullName, "transcript.jsonl");
+        File.WriteAllLines(file,
+        [
+            """{"s":"x","q":1,"at":"2026-11-06T05:10:36Z","k":"user","r":"User","b":"ls /"}""",
+            """{"s":"x","q":4,"at":"2026-11-06T05:10:37Z","k":"assistant","r":"Assistant","b":"bin boot"}""",
+        ]);
+        var log = new SessionEventLog("S");
+        log.Seed(file);
+        Assert.Equal(0, log.Turns);
+
+        log.UserTurnAdded(new ChatMessageId(9), "again");
+        Assert.Equal(1, log.Turns);
+    }
+
+    [Fact]
     public void Seeding_from_a_transcript_replays_it_first()
     {
         var file = Path.Combine(Directory.CreateTempSubdirectory("seed-").FullName, "transcript.jsonl");

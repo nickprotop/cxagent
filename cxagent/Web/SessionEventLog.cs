@@ -42,7 +42,11 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     /// <summary>The session these events belong to (<c>Session.Id</c>).</summary>
     public string SessionId { get; } = sessionId;
 
-    /// <summary>User turns this log has seen, its seeded past included — the panel's "turns".</summary>
+    /// <summary>
+    /// User turns taken since this log began — the panel's "turns". A seeded past is not counted: the transcript
+    /// keeps no tool calls, so counting its turns would pair them with a tool-call count of zero, and the terminal
+    /// counts a resumed session from its reopening too.
+    /// </summary>
     public int Turns
     {
         get { lock (_gate) return _turns; }
@@ -114,7 +118,6 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
             switch (kind)
             {
                 case "user":
-                    lock (_gate) _turns++;
                     Append("user", new JsonObject { ["text"] = body });
                     break;
                 case "assistant":
