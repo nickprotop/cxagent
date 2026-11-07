@@ -348,4 +348,95 @@ public sealed partial class WebSessionHubTests
             await server.StopAsync();
         }
     }
+
+    // ---- the config page ------------------------------------------------------------------------------------------
+
+    private const string ConfigWithSecrets = """
+        {
+          "providers": { "local": { "kind": "openai-compatible", "model": "m1", "baseUrl": "http://127.0.0.1:9/v1", "apiKey": "sk-secret-1234" } },
+          "defaultProvider": "local",
+          "web": { "users": { "me": "pw" }, "roots": ["/srv"], "allow": { "config": true } }
+        }
+        """;
+
+    private string ConfigPath => Path.Combine(_paths.ConfigDir, "config.json");
+
+    [Fact]
+    public async Task The_config_page_is_refused_while_its_switch_is_off()
+    {
+        await using var tab = await Tab.OpenAsync(_server.Bound.Port);
+        await tab.SendAsync(Msg("getConfig"));
+        Assert.Contains("web.allow.config", (await tab.NextAsync(Type("error")))["message"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_config_page_shows_the_file_without_its_secrets_or_the_browser_s_own_limits()
+    {
+        File.WriteAllText(ConfigPath, ConfigWithSecrets);
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Config = true });
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("getConfig"));
+            var text = (await tab.NextAsync(Type("config")))["text"]!.GetValue<string>();
+            Assert.Contains("\"model\": \"m1\"", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("sk-secret-1234", text, StringComparison.Ordinal);
+            Assert.Contains("1234", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"users\"", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"roots\"", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"allow\"", text, StringComparison.Ordinal);
+        }
+        finally { await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task A_save_writes_the_edit_and_keeps_the_hidden_secret_and_the_browser_s_limits()
+    {
+        File.WriteAllText(ConfigPath, ConfigWithSecrets);
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Config = true });
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("getConfig"));
+            var text = (await tab.NextAsync(Type("config")))["text"]!.GetValue<string>();
+
+            // AN EDIT, AND AN ATTEMPT TO WIDEN ITS OWN ACCESS: the second is ignored.
+            var edited = JsonNode.Parse(text)!.AsObject();
+            edited["providers"]!["local"]!["model"] = "m2";
+            edited["web"] ??= new JsonObject();
+            edited["web"]!["allow"] = new JsonObject { ["shell"] = true };
+            edited["web"]!["users"] = new JsonObject { ["intruder"] = "x" };
+            await tab.SendAsync(Msg("saveConfig", ("text", edited.ToJsonString())));
+            await tab.NextAsync(Type("configSaved"));
+
+            var saved = JsonNode.Parse(File.ReadAllText(ConfigPath))!.AsObject();
+            Assert.Equal("m2", saved["providers"]!["local"]!["model"]!.GetValue<string>());
+            Assert.Equal("sk-secret-1234", saved["providers"]!["local"]!["apiKey"]!.GetValue<string>());
+            Assert.Null(saved["web"]!["allow"]!["shell"]);
+            Assert.True(saved["web"]!["allow"]!["config"]!.GetValue<bool>());
+            Assert.Equal("pw", saved["web"]!["users"]!["me"]!.GetValue<string>());
+            Assert.Null(saved["web"]!["users"]!["intruder"]);
+        }
+        finally { await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task A_save_the_loader_refuses_writes_nothing_and_says_why()
+    {
+        File.WriteAllText(ConfigPath, ConfigWithSecrets);
+        var before = File.ReadAllText(ConfigPath);
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Config = true });
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("getConfig"));
+            await tab.NextAsync(Type("config"));
+            await tab.SendAsync(Msg("saveConfig", ("text", """{ "providers": { "local": { "kind": "no-such-kind", "model": "m" } }, "defaultProvider": "local" }""")));
+            Assert.NotEmpty((await tab.NextAsync(Type("configRefused")))["errors"]!.AsArray());
+            await tab.SendAsync(Msg("saveConfig", ("text", "{ not json")));
+            await tab.NextAsync(Type("configRefused"));
+            Assert.Equal(before, File.ReadAllText(ConfigPath));
+        }
+        finally { await server.StopAsync(); }
+    }
 }

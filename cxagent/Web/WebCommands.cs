@@ -28,6 +28,7 @@ public static class WebCommands
         ("/plugin", a => a.Plugins, "plugins"),
         ("/trust", a => a.Config, "config"),
         ("/init", a => a.Config, "config"),
+        ("/config", a => a.Config, "config"),
     ];
 
     /// <summary>What the refusal says.</summary>
@@ -94,6 +95,7 @@ public static class WebCommands
                 "/open" => "open a file in a tab beside the conversation",
                 "/export" => "download this conversation as markdown",
                 "/shell" => "a real terminal in a tab",
+                "/config" => "edit config.json — not the browser's own access, users or folders",
                 _ => SessionCommands.All.Where(c => c.Name == name).Select(c => (string?)c.Summary).FirstOrDefault(),
             };
             if (summary is not null) text.Append("| `").Append(name).Append("` | ").Append(Md.EscapeCell(summary)).Append(" |\n");

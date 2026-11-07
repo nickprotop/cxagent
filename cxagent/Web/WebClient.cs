@@ -235,6 +235,12 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "stopCommand":
                 StopCommand(Str(m, "sessionId"), Long(m, "pid"));
                 break;
+            case "getConfig":
+                GetConfig();
+                break;
+            case "saveConfig":
+                SaveConfig(Str(m, "text") ?? "", Str(m, "choice"));
+                break;
             case "openShell":
                 if (LiveSession(Str(m, "sessionId")) is { } shellFor) OpenShell(shellFor);
                 else Error("No such open session.");
@@ -608,6 +614,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "/shell":
                 OpenShell(session);
                 return true;
+            case "/config":
+                GetConfig();
+                return true;
             default:
                 return false;
         }
@@ -632,6 +641,44 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             return;
         }
         if (_files.Open(session, path, allowed) is { } refused) Notice(session.Id, refused, "Warning");
+    }
+
+    // ---- the config page: config.json, behind web.allow.config ------------------------------------------------------
+
+    private WebConfig? _configOrNull;
+    private WebConfig Config => _configOrNull ??= new WebConfig(S.Paths, S.Manager, S.ConfigSaved);
+
+    private void GetConfig()
+    {
+        if (!S.Allow.Config) { Error(WebCommands.Refusal("/config", S.Allow) ?? ConfigOff); return; }
+        if (Config.Read(out var why) is { } text) Send(new JsonObject { ["type"] = "config", ["text"] = text });
+        else Error(why ?? "config.json could not be read.");
+    }
+
+    private const string ConfigOff =
+        "Configuration is off for browsers. It is turned on in the terminal: F8 › Web › Browser access (config), or web.allow.config in config.json.";
+
+    /// <summary>
+    /// A save from the page. When it would move a running session to another model or endpoint, the page is asked how
+    /// first — the question F8 asks, because the move re-sends the conversation — unless it already said.
+    /// </summary>
+    private void SaveConfig(string text, string? choice)
+    {
+        if (!S.Allow.Config) { Error(ConfigOff); return; }
+        Core.Config.CacheChoice? picked = choice is not null && Enum.TryParse<Core.Config.CacheChoice>(choice, ignoreCase: true, out var c) ? c : null;
+        if (picked is null && Config.Moved(text) is { Count: > 0 } moved)
+        {
+            Send(new JsonObject { ["type"] = "configAsk", ["instances"] = new JsonArray([.. moved.Select(i => (JsonNode)i)]) });
+            return;
+        }
+        var result = Config.Save(text, picked ?? Core.Config.CacheChoice.ApplyNow);
+        if (!result.Saved)
+        {
+            Send(new JsonObject { ["type"] = "configRefused", ["errors"] = new JsonArray([.. result.Errors.Select(e => (JsonNode)e)]) });
+            return;
+        }
+        Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray([.. result.Errors.Select(e => (JsonNode)e)]) });
+        _hub.ListChanged();
     }
 
     // ---- the shell: /shell, a real terminal in a tab, behind web.allow.shell -----------------------------------------

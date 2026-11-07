@@ -35,9 +35,15 @@ public interface ISessionOpener
 public sealed class ComposerSessionOpener : ISessionOpener
 {
     private readonly SessionComposer _composer;
-    private readonly ResolvedConfig _config;
+    private ResolvedConfig _config;
     private readonly WorkingMode _mode;
     private readonly IFrontEnd _front = new HeadlessFrontEnd();
+
+    /// <summary>
+    /// A config saved since — from a browser's config page — for the sessions opened after it, as the terminal's new
+    /// tabs take the config F8 last saved.
+    /// </summary>
+    public void Adopt(ResolvedConfig config) => _config = config;
 
     /// <summary>Opens sessions on <paramref name="config"/> in <paramref name="mode"/>, and installs the re-wire a
     /// <c>/model</c> switch needs when the process has no other front end to do it.</summary>

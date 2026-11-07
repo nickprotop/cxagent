@@ -953,7 +953,11 @@ public static class AppBootstrap
             try
             {
                 webHost = await Web.WebServerHost.StartAsync(
-                    new Web.WebHostRequest(paths, settings, manager, prompts, opener, Environment.CurrentDirectory));
+                    new Web.WebHostRequest(paths, settings, manager, prompts, opener, Environment.CurrentDirectory)
+                    {
+                        // A BROWSER'S CONFIG SAVE IS THIS TERMINAL'S TOO: its new tabs are built from this copy.
+                        ConfigSaved = configNow.Replace,
+                    });
             }
             catch (Web.WebStartRefused refused)
             {

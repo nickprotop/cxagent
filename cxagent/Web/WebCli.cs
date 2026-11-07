@@ -165,7 +165,10 @@ public static class WebCli
             WebServerHost host;
             try
             {
-                host = await WebServerHost.StartAsync(new WebHostRequest(paths, settings, manager, prompts, opener, Environment.CurrentDirectory));
+                host = await WebServerHost.StartAsync(new WebHostRequest(paths, settings, manager, prompts, opener, Environment.CurrentDirectory)
+                {
+                    ConfigSaved = opener.Adopt,
+                });
             }
             catch (WebStartRefused refused)
             {

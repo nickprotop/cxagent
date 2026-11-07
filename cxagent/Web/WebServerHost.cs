@@ -26,6 +26,9 @@ public sealed record WebHostRequest(
 {
     /// <summary>Time, for login tokens and idle unloading.</summary>
     public TimeProvider Clock { get; init; } = TimeProvider.System;
+
+    /// <summary>Told the config a browser's save made live, for the host's own copy of it.</summary>
+    public Action<Core.Llm.ResolvedConfig>? ConfigSaved { get; init; }
 }
 
 /// <summary>The server will not start as configured; the message says what to change.</summary>
@@ -92,6 +95,7 @@ public sealed class WebServerHost : IAsyncDisposable
         {
             IdleMinutes = s.IdleMinutes,
             Allow = s.Allow,
+            ConfigSaved = r.ConfigSaved,
         });
         var host = new WebServerHost(r, gate, known, hub);
 

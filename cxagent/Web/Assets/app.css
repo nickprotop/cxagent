@@ -397,6 +397,11 @@ body.editing .chat > .view { height: 100%; }
 .editor .ed-hl > code.hljs { display: inline; padding: 0 !important; background: transparent !important; }
 
 /* ---- the shell ------------------------------------------------------------------------------------------------- */
-.shell { height: 100%; padding: 8px 10px; background: #0b0e14; box-sizing: border-box; }
+/* ROOM BELOW THE LAST ROW: the terminal sizes itself to this box, and a prompt flush against the window's edge reads
+   as cut off. */
+.shell { height: 100%; padding: 10px 12px 22px; background: #0b0e14; box-sizing: border-box; }
 .shell .xterm { height: 100%; }
 body.no-composer .composer { display: none; }
+.file-bar.good { background: color-mix(in srgb, var(--good, #3fb950) 14%, transparent); border-color: color-mix(in srgb, var(--good, #3fb950) 40%, transparent); color: var(--text); }
+.file-bar .errors { display: flex; flex-direction: column; gap: 2px; font: 12px var(--mono); }
+.file-bar .errors b { font: 600 12.5px var(--sans); }

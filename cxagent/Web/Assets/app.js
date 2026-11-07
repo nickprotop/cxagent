@@ -152,6 +152,10 @@ function handle(m) {
     case "openedCommand": openedCommand(m); break;
     case "openedFile": openedFile(m); break;
     case "openedShell": openedShell(m); break;
+    case "config": openedConfig(m); break;
+    case "configAsk": configAsk(m); break;
+    case "configRefused": configRefused(m); break;
+    case "configSaved": configSaved(m); break;
     case "shellOutput": { const v = state.views.get(m.sessionId); if (v && v.term) v.term.write(bytes(m.data)); else if (v) (v.pending = v.pending || []).push(m.data); break; }
     case "shellExited": { const v = state.views.get(m.sessionId); if (v) shellEnded(v, m.exitCode); break; }
     case "fileSaved": fileSaved(m); break;
@@ -276,14 +280,15 @@ function drawTabs() {
     const command = view.kind === "command";
     const file = view.kind === "file";
     const shell = view.kind === "shell";
-    const sub = worker || command || file || shell;
+    const config = view.kind === "config";
+    const sub = worker || command || file || shell || config;
     const row = sub ? null : state.rows.find((r) => r.id === id);
     const w = worker ? workerRunning(view) : null;
     const tab = el("button", "tab" + (id === state.active ? " on" : "") + (sub ? " worker" : ""));
     tab.type = "button";
-    const dot = shell ? (view.ended ? "" : "working") : file ? (view.dirty ? "waiting" : "") : command ? (view.running ? "working" : "") : worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle");
+    const dot = config ? (view.dirty ? "waiting" : "") : shell ? (view.ended ? "" : "working") : file ? (view.dirty ? "waiting" : "") : command ? (view.running ? "working" : "") : worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle");
     tab.append(el("span", "dot " + dot),
-      document.createTextNode(shell ? "❯ " + view.title : file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? "⤷ " + view.name : view.title || "session"));
+      document.createTextNode(config ? "⚙ config.json" + (view.dirty ? " •" : "") : shell ? "❯ " + view.title : file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? "⤷ " + view.name : view.title || "session"));
     if (file) tab.title = view.path;
     tab.addEventListener("click", () => activate(id));
     if (sub) {
@@ -361,13 +366,13 @@ function activate(id) {
   const conversation = !!view && (view.kind === "session" || view.kind === "worker");
   $("input").disabled = !conversation;
   $("send").disabled = !conversation;
-  document.body.classList.toggle("editing", !!view && (view.kind === "file" || view.kind === "shell"));
+  document.body.classList.toggle("editing", !!view && (view.kind === "file" || view.kind === "shell" || view.kind === "config"));
   // AND NO MESSAGE BOX AT ALL there: one that cannot send is room taken from the shell, the file or the output.
   document.body.classList.toggle("no-composer", !!view && !conversation);
   $("input").placeholder = view && view.kind === "worker" ? "Message " + view.name + "…" : "Message, or / for commands";
   $("crumb").textContent = view ? view.folder : "";
   $("phone-title").textContent = view ? (view.kind === "worker" ? "⤷ " + view.name : view.kind === "command" ? "▭ " + view.title : view.title) : "";
-  if (view && view.kind === "file") setTimeout(() => view.ta.focus(), 0);
+  if (view && (view.kind === "file" || view.kind === "config")) setTimeout(() => view.ta.focus(), 0);
   if (view && view.kind === "shell") setTimeout(() => { if (view.fit) view.fit.fit(); if (view.term) view.term.focus(); }, 0);
   drawWorkerHead();
   drawPrompts();
@@ -395,6 +400,7 @@ function drawWorkerHead() {
   if (view && view.kind === "command") { drawCommandHead(view, head); return; }
   if (view && view.kind === "file") { drawFileHead(view, head); return; }
   if (view && view.kind === "shell") { drawShellHead(view, head); return; }
+  if (view && view.kind === "config") { drawConfigHead(view, head); return; }
   if (!view || view.kind !== "worker") { head.hidden = true; return; }
   head.hidden = false;
   head.replaceChildren();
@@ -523,7 +529,7 @@ function buildEditor(view) {
   });
   ta.addEventListener("scroll", () => { hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; gutter.scrollTop = ta.scrollTop; });
   ta.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveFile(view, false); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); if (view.save) view.save(); else saveFile(view, false); return; }
     if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
       // INDENT AS THE FILE DOES: a tab where it indents with tabs, four spaces otherwise.
       e.preventDefault();
@@ -712,6 +718,92 @@ function drawShellHead(view, head) {
   head.append(button("Back to session", "ghost", () => activate(view.parent)));
   head.append(button("Copy to transcript", null, () => reportShell(view, view.ended ? view.exitCode : null)));
   head.append(button(view.ended ? "Close" : "End shell", "danger", () => dropView(view.id)));
+}
+
+// ---- the config page --------------------------------------------------------------------------------------------------
+
+// F8 FOR A BROWSER, behind web.allow.config: config.json as text, judged by the loader startup runs before anything is
+// written. The server keeps the secrets — shown as their last four characters — and the browser's own limits, which are
+// not in the text at all.
+const CONFIG_ID = "config:";
+
+function openedConfig(m) {
+  let view = state.views.get(CONFIG_ID);
+  const fresh = !view;
+  if (!view) {
+    view = newView(CONFIG_ID, "config");
+    Object.assign(view, { parent: activeSessionId(), language: "json", title: "config.json", dirty: false, folder: "" });
+    buildEditor(view);
+    view.save = () => saveConfig(view, null);
+  }
+  setBuffer(view, m.text);
+  view.baseline = m.text;
+  // THE RELOAD THAT FOLLOWS A SAVE keeps the save's bar; any other reload starts clean.
+  if (view.keepBar) view.keepBar = false; else view.bar = null;
+  if (fresh || state.active !== CONFIG_ID) activate(CONFIG_ID); else drawWorkerHead();
+}
+
+function saveConfig(view, choice) {
+  view.saving = true;
+  send({ type: "saveConfig", text: view.ta.value, choice });
+  drawWorkerHead();
+}
+
+// THE QUESTION F8 ASKS when a save moves running tabs to another model: the move re-sends the conversation.
+function configAsk(m) {
+  const view = state.views.get(CONFIG_ID);
+  if (!view) return;
+  view.saving = false;
+  view.bar = { kind: "ask", instances: m.instances };
+  drawWorkerHead();
+}
+
+function configRefused(m) {
+  const view = state.views.get(CONFIG_ID);
+  if (!view) return;
+  view.saving = false;
+  view.bar = { kind: "refused", errors: m.errors || [] };
+  drawWorkerHead();
+}
+
+function configSaved(m) {
+  const view = state.views.get(CONFIG_ID);
+  if (!view) return;
+  view.saving = false;
+  view.dirty = false;
+  view.bar = (m.warnings || []).length ? { kind: "warned", errors: m.warnings } : { kind: "saved" };
+  view.keepBar = true;
+  // THE TEXT AGAIN FROM THE FILE, so a hidden secret just typed is hidden here too.
+  send({ type: "getConfig" });
+  drawTabs();
+}
+
+function drawConfigHead(view, head) {
+  head.hidden = false;
+  head.replaceChildren();
+  head.append(el("span", "tag", "Configuration"), el("b", null, "config.json" + (view.dirty ? " •" : "")));
+  head.append(el("span", "meta", "secrets are hidden · the browser's own access, users and folders are the terminal's"));
+  head.append(el("span", "spacer"));
+  if (view.parent) head.append(button("Back to session", "ghost", () => activate(view.parent)));
+  head.append(button("Reload", null, () => send({ type: "getConfig" })));
+  const save = button(view.saving ? "Saving…" : "Save", "primary", () => saveConfig(view, null));
+  save.title = "Ctrl+S";
+  save.disabled = !view.dirty || view.saving;
+  head.append(save);
+  if (!view.bar) return;
+  const bar = el("div", "file-bar" + (view.bar.kind === "saved" ? " good" : ""));
+  if (view.bar.kind === "saved") bar.append(el("span", null, "Saved, and live: new sessions use it, and open ones on a changed model follow it."));
+  else if (view.bar.kind === "ask") {
+    bar.append(el("span", null, "Running sessions on " + view.bar.instances.join(", ") + " change model. Their conversation is re-sent:"), el("span", "spacer"));
+    for (const [label, choice] of [["Now", "ApplyNow"], ["Compress first", "CompressThenApply"], ["At the next clear", "AtNextClearOrCompression"], ["New sessions only", "NewTabsOnly"]])
+      bar.append(button(label, null, () => { view.bar = null; saveConfig(view, choice); }));
+  } else {
+    const list = el("div", "errors");
+    list.append(el("b", null, view.bar.kind === "warned" ? "Saved, but not live:" : "Not saved:"));
+    for (const e of view.bar.errors) list.append(el("div", null, e));
+    bar.append(list);
+  }
+  head.append(bar);
 }
 
 // ---- export ---------------------------------------------------------------------------------------------------------
@@ -1358,6 +1450,13 @@ function drawSessionPane(p) {
     const sh = el("div", "btns export");
     sh.append(button("Open a shell", null, () => { send({ type: "openShell", sessionId: activeSessionId() }); if (!wide()) setPanel(false); }));
     pane.append(sh);
+  }
+
+  if (state.access && state.access.config) {
+    pane.append(el("h3", null, "Configuration"));
+    const cf = el("div", "btns export");
+    cf.append(button("Edit config.json", null, () => { send({ type: "getConfig" }); if (!wide()) setPanel(false); }));
+    pane.append(cf);
   }
 
   pane.append(el("h3", null, "Open a file"));
