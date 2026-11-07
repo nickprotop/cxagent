@@ -2048,9 +2048,10 @@ function promptNode(m) {
     if (m.offerTrust) btns.append(button("Trust folder", null, () => answer({ choice: "trust" })));
     btns.append(button("Deny", "danger", () => answer({ choice: "deny" })));
   } else if (m.kind === "trust") {
-    box.append(el("div", "q", "Trust this folder?"), el("div", "what", m.folder),
-      el("div", "why", "Trusted folders allow reads and read-only commands without asking."));
-    btns.append(button("Trust this folder", "good", () => answer({ trusted: true })), button("Don't trust", "danger", () => answer({ trusted: false })));
+    // THE TERMINAL'S WORDS AND ORDER, sent by the server: the cautious answer first, as the one Enter would take.
+    box.append(el("div", "q", "Trust this folder?"), el("div", "what", m.folder));
+    for (const line of m.lines || []) box.append(el("div", "why", line));
+    for (const a of m.answers || []) btns.append(button(a.label, a.trusted ? "danger" : "good", () => answer({ trusted: a.trusted })));
   } else if (m.kind === "question") {
     const answers = [];
     for (const q of m.questions) {

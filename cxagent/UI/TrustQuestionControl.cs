@@ -38,13 +38,8 @@ public sealed class TrustQuestionControl
         var markup = Ctl.Markup();
         markup.AddLine("[bold]Trust this folder?[/]");
         markup.AddLine(SharpConsoleUI.Parsing.MarkupParser.Escape(_workingDir));
-        // WHAT TRUST ACTUALLY BUYS, kept current and true in every mode. A consent screen that
-        // overstates its own restraint is the worst kind to leave stale: the user grants something
-        // broader than the words they read. It must not overpromise either: an in-folder write
-        // passes silently only under accept-edits — always-ask still asks for it, trusted or not.
-        markup.AddLine("Trusted folders allow file reads, and commands that only read — ls, cat, grep — "
-            + "without asking; writes inside this folder go through without asking in accept-edits mode.");
-        markup.AddLine("Commands that can write, and anything outside this folder, still ask.");
+        // WHAT TRUST BUYS, in TrustQuestion's words — the browser's prompt says the same.
+        foreach (var line in TrustQuestion.Lines) markup.AddLine(SharpConsoleUI.Parsing.MarkupParser.Escape(line));
         panel.AddControl(markup.WithMargin(1, 1, 1, 1).Build());
 
         // THE CAUTIOUS ANSWER FIRST, because the list opens with the first answer highlighted and in
@@ -79,11 +74,11 @@ public sealed class TrustQuestionControl
         return panel;
     }
 
-    private static readonly string[] Answers = ["Don't trust — ask before everything", "Trust this folder"];
+    private static IReadOnlyList<string> Answers => TrustQuestion.Answers;
 
     private static void MarkChosen(ListControl list)
     {
-        for (var i = 0; i < Answers.Length; i++)
+        for (var i = 0; i < Answers.Count; i++)
             list.Items[i].Text = (i == list.SelectedIndex ? "▸ " : "  ") + Answers[i];
     }
 

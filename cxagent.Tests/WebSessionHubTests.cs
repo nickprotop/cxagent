@@ -313,6 +313,22 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         Assert.Equal("tester", resolved["by"]!.GetValue<string>());
     }
 
+    /// <summary>THE TERMINAL'S WORDS AND ORDER: what trust buys, and the cautious answer first — the one a stray Enter
+    /// takes.</summary>
+    [Fact]
+    public async Task The_trust_prompt_says_what_the_terminal_says_with_the_cautious_answer_first()
+    {
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+
+        var asking = _prompts.AskTrustAsync(id, Work, CancellationToken.None);
+        var prompt = await tab.NextAsync(Type("prompt"));
+        Assert.Equal(CxAgent.UI.TrustQuestion.Lines, prompt["lines"]!.AsArray().Select(l => l!.GetValue<string>()));
+        var answers = prompt["answers"]!.AsArray();
+        Assert.Equal(CxAgent.UI.TrustQuestion.Answers, answers.Select(a => a!["label"]!.GetValue<string>()));
+        Assert.False(answers[0]!["trusted"]!.GetValue<bool>());
+    }
+
     [Fact]
     public async Task A_permission_answer_cannot_choose_a_button_the_prompt_did_not_offer()
     {

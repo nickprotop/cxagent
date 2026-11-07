@@ -1551,6 +1551,9 @@ internal static class WebProtocol
             ["sessionId"] = t.SessionId,
             ["kind"] = "trust",
             ["folder"] = t.Folder,
+            // THE TERMINAL'S WORDS AND ORDER, from TrustQuestion: the cautious answer first.
+            ["lines"] = new JsonArray([.. CxAgent.UI.TrustQuestion.Lines.Select(l => (JsonNode)l)]),
+            ["answers"] = new JsonArray([.. CxAgent.UI.TrustQuestion.Answers.Select((a, i) => (JsonNode)new JsonObject { ["label"] = a, ["trusted"] = i == 1 })]),
         },
         _ => new JsonObject { ["type"] = "prompt", ["id"] = prompt.Id, ["sessionId"] = prompt.SessionId, ["kind"] = "unknown" },
     };
