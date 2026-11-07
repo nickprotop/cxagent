@@ -270,9 +270,32 @@ def render_body(markdown: str, resolve) -> str:
                 and not ITEM.match(lines[i]):
             para.append(lines[i])
             i += 1
+        if len(para) > 1 and all(SHOT.match(p.strip()) for p in para):
+            out.append(shots(para, resolve, len(out)))
+            continue
         out.append(f"<p>{link_up(inline(' '.join(para)), resolve)}</p>")
 
     return "\n".join(out)
+
+
+# AN IMAGE WITH A TITLE, ALONE ON ITS LINE: `![alt](path "Terminal")`. Two or more alone in one paragraph are one
+# picture seen from several sides -- the same session in the terminal and in a browser -- and become tabs.
+SHOT = re.compile(r'^!\[([^\]]*)\]\(([^)\s]+)\s+"([^"]+)"\)$')
+
+
+def shots(lines: list, resolve, n: int) -> str:
+    """A tab per titled image, its title the label: CSS ONLY, radio inputs and labels, so the tabs work with
+    scripts off and a keyboard moves between them as between any radio buttons. GitHub, which shows the same
+    markdown, stacks the images instead -- which reads as well."""
+    group = f"shots-{n}"
+    tabs, panes = [], []
+    for i, line in enumerate(lines):
+        alt, target, title = SHOT.match(line.strip()).groups()
+        tab = f"{group}-{i}"
+        tabs.append(f'<input type="radio" name="{group}" id="{tab}"{" checked" if i == 0 else ""}>'
+                    f'<label for="{tab}">{inline(title)}</label>')
+        panes.append(f'<div class="shot">{link_up(inline(f"![{alt}]({target})"), resolve)}</div>')
+    return f'<div class="shots">{"".join(tabs)}{"".join(panes)}</div>'
 
 
 def link_up(text: str, resolve) -> str:
@@ -283,19 +306,21 @@ def link_up(text: str, resolve) -> str:
     an anchor wrapping the alt text, and the image never renders at all.
     """
     def image(match):
-        alt, target = match.group(1), match.group(2)
+        alt, target, title = match.group(1), match.group(2), match.group(3)
         # LAZY, because the walkthrough carries seventeen full-window terminal captures and a reader
         # arriving at the top should not wait for the ones they may never scroll to.
         # THE ALT IS AN ATTRIBUTE, so its double quotes are escaped here: `inline` leaves quotes
         # alone for the text it produces, and an unescaped `"` would end the attribute early.
         alt = alt.replace('"', "&quot;")
-        return (f'<img src="{html.escape(resolve(target))}" alt="{alt}" loading="lazy">')
+        # A TITLE IS ITS OWN ATTRIBUTE, never part of the path: `![a](x.png "Terminal")` names x.png.
+        titled = f' title="{title.replace(chr(34), "&quot;")}"' if title else ""
+        return (f'<img src="{html.escape(resolve(target))}" alt="{alt}"{titled} loading="lazy">')
 
     def one(match):
         label, target = match.group(1), match.group(2)
         return f'<a href="{html.escape(resolve(target))}">{label}</a>'
 
-    text = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", image, text)
+    text = re.sub(r'!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)', image, text)
     return re.sub(r"\[([^\]]+)\]\(([^)]+)\)", one, text)
 
 

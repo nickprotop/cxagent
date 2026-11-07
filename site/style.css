@@ -843,6 +843,23 @@ main.doc-wide > ol,
 main.doc-wide > blockquote { max-width: 78ch; }
 main.doc-wide > p:has(> img) { max-width: none; }
 
+/* ONE PICTURE FROM SEVERAL SIDES -- the same session in the terminal and in a browser -- as tabs. CSS ONLY: a radio
+   input per tab, its label the tab, and the pane whose position matches the checked input shown. No script, so it
+   works with scripts off, and a keyboard moves between tabs as between radio buttons. Written by render_docs.py from
+   titled images that share a paragraph; GitHub stacks the same images instead. */
+.shots { display: flex; flex-wrap: wrap; gap: 4px; margin: 1.2em 0; }
+.shots > input { position: absolute; opacity: 0; pointer-events: none; }
+.shots > label { padding: 5px 14px; border: 1px solid var(--border); border-bottom: none; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  color: var(--fg-dim); cursor: pointer; font-size: 0.9em; }
+.shots > input:checked + label { color: var(--fg-bright); background: var(--bg-raised); border-color: var(--accent-dim); }
+.shots > input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shots > .shot { display: none; flex-basis: 100%; margin-top: -1px; }
+.shots > input:nth-of-type(1):checked ~ .shot:nth-of-type(1),
+.shots > input:nth-of-type(2):checked ~ .shot:nth-of-type(2),
+.shots > input:nth-of-type(3):checked ~ .shot:nth-of-type(3),
+.shots > input:nth-of-type(4):checked ~ .shot:nth-of-type(4),
+.shots > input:nth-of-type(5):checked ~ .shot:nth-of-type(5) { display: block; }
+
 /* A ROW OF ITS OWN, forced rather than left to chance. Wrapping naturally it sat beside `models` at
    1440px, alone at 1100px and alone again at 900px -- landing wherever there was room, which reads
    as an accident. `.pills` wraps, so a full-width spacer before this pill breaks the line every

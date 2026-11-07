@@ -244,6 +244,71 @@ public class DocRendererTests
         }
     }
 
+    /// <summary>
+    /// Renders <paramref name="markdown"/> as the walkthrough in a fake tree that holds the images it names, and returns
+    /// walkthrough.html.
+    /// </summary>
+    private static string RenderWalkthrough(string markdown, params string[] images)
+    {
+        var fake = Directory.CreateTempSubdirectory("doc-shots-").FullName;
+        var outDir = Directory.CreateTempSubdirectory("doc-shots-out-").FullName;
+        try
+        {
+            foreach (var rel in new[] { "COMMANDS.md", "CONFIG.md", "SCRIPTING.md",
+                         "cxagent.Core/docs/plugins.md", "cxagent.Core/sdk/README.md",
+                         "cxagent.Core/sdk/docs/plugins.md", "cxagent.Core/sdk/docs/testing.md",
+                         "cxagent.Core/sdk/docs/c-sdk.md", "cxagent.Core/sdk/docs/publishing.md",
+                         "cxagent.Core/sdk/docs/cli.md", "cxagent.Core/sdk/c/ABI.md" })
+            {
+                var path = Path.Combine(fake, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, "# X\n\nNothing here.\n");
+            }
+            Directory.CreateDirectory(Path.Combine(fake, "docs", "screenshots"));
+            foreach (var image in images) File.WriteAllBytes(Path.Combine(fake, "docs", "screenshots", image), [0x89, 0x50]);
+            File.WriteAllText(Path.Combine(fake, "docs", "screenshots", "README.md"), markdown);
+
+            var (exit, stderr) = Render(outDir, root: fake);
+            Assert.True(exit == 0, $"renderer failed: {stderr}");
+            Assert.All(images, i => Assert.True(File.Exists(Path.Combine(outDir, "docs", "assets", i)), i + " was not copied"));
+            return File.ReadAllText(Path.Combine(outDir, "docs", "walkthrough.html"));
+        }
+        finally
+        {
+            Directory.Delete(fake, recursive: true);
+            Directory.Delete(outDir, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// TITLED IMAGES ALONE IN A PARAGRAPH ARE ONE PICTURE SEEN FROM SEVERAL SIDES — the same session in the terminal and
+    /// in a browser — and the site shows them as tabs, the titles as their labels. The markdown stays plain: GitHub
+    /// stacks them, which reads as well.
+    /// </summary>
+    [Fact]
+    public void Titled_images_alone_in_a_paragraph_become_tabs()
+    {
+        var html = RenderWalkthrough(
+            "# W\n\n![The session in the terminal](a.png \"Terminal\")\n![The same session in a browser](b.png \"Browser\")\n",
+            "a.png", "b.png");
+
+        Assert.Contains("class=\"shots\"", html);
+        Assert.Contains(">Terminal</label>", html);
+        Assert.Contains(">Browser</label>", html);
+        Assert.Contains("<img src=\"assets/a.png\" alt=\"The session in the terminal\"", html);
+        Assert.Contains("<img src=\"assets/b.png\"", html);
+        Assert.Contains("checked", html);
+        Assert.DoesNotContain("Terminal\"", html[html.IndexOf("src=", StringComparison.Ordinal)..]);
+    }
+
+    [Fact]
+    public void A_single_titled_image_is_an_image_and_its_title_stays_out_of_the_path()
+    {
+        var html = RenderWalkthrough("# W\n\n![One](a.png \"Terminal\")\n", "a.png");
+        Assert.DoesNotContain("class=\"shots\"", html);
+        Assert.Contains("<img src=\"assets/a.png\" alt=\"One\" title=\"Terminal\"", html);
+    }
+
     /// <summary>A `\|` in a table cell is a literal pipe — a flag's `allow\|deny` — not a column break.</summary>
     [Fact]
     public void AnEscapedPipe_StaysInItsCell()
