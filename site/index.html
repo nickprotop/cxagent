@@ -68,12 +68,17 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
   </div>
 
   <div class="hero-media">
-    <div class="win">
+    <div class="win ends">
+      <!-- ONE SESSION, BOTH ENDS: the same moment in the terminal and in a browser, switched in the title bar. -->
+      <input type="radio" name="hero-end" id="end-terminal" checked aria-label="Show the terminal">
+      <input type="radio" name="hero-end" id="end-browser" aria-label="Show the browser">
       <div class="win-bar">
         <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
         <span class="tl-title">cxagent — ~/source/cxgpu</span>
+        <span class="ends-switch"><label for="end-terminal">terminal</label><label for="end-browser">browser</label></span>
       </div>
-      <img src="screenshots/hero.png" alt="cxagent on a GPU monitoring tool after three workers reported: the lead's summary of the commit review, the 230 passing tests and the alert engine, and the session panel splitting the tokens the workers spent from the lead's own">
+      <img class="end-terminal" src="screenshots/hero.png" alt="cxagent in the terminal on a GPU monitoring tool after three workers reported: the lead's summary of the alert engine, the last commit and 230 passing tests, and the session panel splitting the tokens the workers spent from the lead's own">
+      <img class="end-browser" src="screenshots/hero-browser.png" alt="The same session at the same moment in a browser: the same report with its commit and test tables, and the session panel with the same turns, tokens and the workers' share">
     </div>
   </div>
 </div>

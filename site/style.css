@@ -518,6 +518,20 @@ body.landing { max-width: none; }
 }
 .win > img { display: block; width: 100%; height: auto; }
 
+/* THE HERO FROM BOTH ENDS: one session, the terminal and a browser, switched in the window's own title bar. CSS only —
+   two radios before everything they govern, so a click needs no script and a keyboard moves between them. */
+.win.ends { position: relative; }
+.win.ends > input { position: absolute; top: 0; left: 0; opacity: 0; pointer-events: none; }
+.ends-switch { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 7px; }
+.ends-switch label { font: 0.68rem var(--font-mono); letter-spacing: 0.04em; color: var(--fg-dim); padding: 2px 9px;
+  border-radius: 5px; cursor: pointer; }
+.win.ends > .end-browser { display: none; }
+.win.ends > #end-browser:checked ~ .end-terminal { display: none; }
+.win.ends > #end-browser:checked ~ .end-browser { display: block; }
+.win.ends > #end-terminal:checked ~ .win-bar label[for="end-terminal"],
+.win.ends > #end-browser:checked ~ .win-bar label[for="end-browser"] { color: var(--fg-bright); background: var(--accent-bg); }
+.win.ends > input:focus-visible ~ .win-bar .ends-switch { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* section markers */
 .section-label {
   display: block;
