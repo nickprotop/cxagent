@@ -16,9 +16,6 @@
   <span class="brand">cxagent</span>
   <span id="crumb" class="crumb"></span>
   <span class="spacer"></span>
-  <label class="pick" id="pick-model" hidden><span class="pick-dot"></span><select id="model" aria-label="Model"></select></label>
-  <label class="pick" id="pick-mode" hidden><select id="mode" aria-label="Edit mode"></select></label>
-  <label class="pick" id="pick-sandbox" hidden><select id="sandbox" aria-label="Sandbox"></select></label>
   <span id="conn" class="conn" title="Connected"></span>
   <button id="panel-toggle" class="icon" type="button" aria-label="Side panel" title="Side panel">◧</button>
   <button id="theme" class="icon" type="button" aria-label="Light or dark" title="Light or dark">◐</button>
@@ -49,6 +46,11 @@
       <textarea id="input" rows="1" placeholder="Message, or / for commands" disabled></textarea>
       <button id="stop" type="button" class="stop" hidden>Stop</button>
       <button id="send" type="submit" class="send" disabled>Send</button>
+      <div class="composer-picks">
+        <label class="pick" id="pick-model" hidden><span class="pick-dot"></span><select id="model" aria-label="Model"></select></label>
+        <label class="pick" id="pick-mode" hidden><select id="mode" aria-label="Edit mode"></select></label>
+        <label class="pick" id="pick-sandbox" hidden><select id="sandbox" aria-label="Sandbox"></select></label>
+      </div>
     </form>
     <footer id="statusline" class="statusline"></footer>
   </main>

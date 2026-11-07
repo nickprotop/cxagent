@@ -226,6 +226,13 @@ body.no-panel .panel { display: none; }
 .composer textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 .composer .send { height: 40px; padding: 0 16px; background: var(--accent); color: var(--accent-ink); border: none; font-weight: 600; border-radius: 10px; }
 .composer .stop { height: 40px; padding: 0 14px; border-radius: 10px; background: var(--bad-bg); color: var(--bad); border-color: var(--bad-line); }
+/* THE PICKERS SIT UNDER THE MESSAGE BOX, on their own wrapped line: the box is on screen at every width, where the top
+   bar has no room on a phone, and it is where the choice matters — just before a message goes. */
+.composer { flex-wrap: wrap; }
+.composer-picks { flex-basis: 100%; display: flex; gap: 6px; min-width: 0; }
+.composer-picks .pick { min-width: 0; flex: 0 1 auto; }
+.composer-picks .pick select { min-width: 0; }
+.composer-picks:not(:has(.pick:not([hidden]))) { display: none; }
 .completion { position: absolute; left: 16px; bottom: 100%; margin-bottom: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 9px;
   padding: 4px; min-width: 240px; max-height: 40vh; overflow-y: auto; box-shadow: var(--shadow); }
 .completion div { padding: 5px 10px; cursor: pointer; border-radius: 6px; font: 13px var(--mono); }
@@ -285,7 +292,7 @@ body.no-panel .panel { display: none; }
 
 /* ---- C: phones ------------------------------------------------------------------------------------------------- */
 @media (max-width: 699px) {
-  .tabs, .statusline, .pick, .logout, #panel-toggle { display: none !important; }
+  .tabs, .statusline, .logout, #panel-toggle { display: none !important; }
   body[data-view="list"] .sidebar { display: block; position: static; width: 100%; box-shadow: none; border: none; }
   body[data-view="list"] .main { display: none; }
   body[data-view="chat"] .phonebar { display: flex; }
