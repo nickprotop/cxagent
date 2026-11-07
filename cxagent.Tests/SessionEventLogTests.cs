@@ -303,4 +303,20 @@ public sealed class SessionEventLogTests
         Assert.Equal(("CHILD", "counter", "general"), (worker["agentId"]!.GetValue<string>(), worker["name"]!.GetValue<string>(),
             worker["workerType"]!.GetValue<string>()));
     }
+
+    [Fact]
+    public void A_clear_drops_what_was_kept_and_is_itself_the_first_event_a_late_tab_sees()
+    {
+        var log = Streamed(3);
+        log.Cleared();
+        log.UserTurnAdded(new ChatMessageId(9), "after");
+
+        var all = log.Since(0).Events;
+        Assert.Equal(["cleared", "user"], all.Select(e => e["kind"]!.GetValue<string>()));
+
+        // A TAB THAT SAW THE OLD CONVERSATION is told to redraw from the clear on.
+        var back = log.Since(3);
+        Assert.True(back.Reset);
+        Assert.Equal("cleared", back.Events[0]["kind"]!.GetValue<string>());
+    }
 }

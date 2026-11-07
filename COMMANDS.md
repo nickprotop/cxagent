@@ -385,9 +385,9 @@ Empties the agent's context — the messages the model is sent on every turn —
 model and mode. A `/btw` aside ends with it, since what it was forked from is gone, and a held custom
 command is dropped and named as not run.
 
-**What the screen does is the front end's call.** The terminal clears that tab's transcript and its
-context gauge with it; a browser keeps the transcript above and the line below it. Either way the
-session's `history.jsonl` keeps everything, so `/export` still has the whole session.
+**The transcript empties too**, in the terminal's tab and in every browser showing the session, and
+the context gauge with it. The session's `history.jsonl` keeps everything, so `/export` still has the
+whole session.
 
 Declined while a turn is running: emptying the list a turn is appending to would leave it writing
 into a conversation nobody reads.

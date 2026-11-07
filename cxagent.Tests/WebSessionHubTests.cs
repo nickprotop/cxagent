@@ -225,6 +225,19 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Clear_tells_every_tab_to_empty_the_transcript_as_the_terminal_does()
+    {
+        _model.EnqueueResponse(new LlmResponse { Text = "hello there", StopReason = "end_turn" });
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "hi")));
+        await TurnDoneAsync(tab);
+
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/clear")));
+        await tab.NextAsync(Kind("cleared"));
+    }
+
+    [Fact]
     public async Task Say_streams_events_in_order_with_increasing_seq()
     {
         _model.EnqueueResponse(new LlmResponse { Text = "hello there", StopReason = "end_turn" });

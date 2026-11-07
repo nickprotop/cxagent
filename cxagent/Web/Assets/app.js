@@ -1502,6 +1502,14 @@ function event(m) {
   if (!view || m.seq <= view.seq) return;
   view.seq = m.seq;
   switch (m.kind) {
+    // /clear: THE TRANSCRIPT EMPTIES, as the terminal's tab does. resetView, but the count is kept: this event is part
+    // of the stream, and what follows it continues from here.
+    case "cleared": {
+      const seq = view.seq;
+      resetView(view);
+      view.seq = seq;
+      break;
+    }
     case "user": {
       const u = el("div", "user", m.text);
       u.dataset.turn = String(m.turn);

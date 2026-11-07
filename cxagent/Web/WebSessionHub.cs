@@ -64,6 +64,7 @@ public sealed class WebSessionHub
     private readonly SemaphoreSlim _resuming = new(1, 1);
     private readonly ConcurrentDictionary<string, Action<Core.Agents.SpawnedChild>> _spawns = new();
     private readonly ConcurrentDictionary<string, Action<Core.Export.ExportSource>> _restores = new();
+    private readonly ConcurrentDictionary<string, Action<SessionChangeKind>> _clears = new();
     private int _listPending;
 
     /// <summary>A hub over <paramref name="services"/>, told whenever the manager closes a session.</summary>
@@ -168,6 +169,9 @@ public sealed class WebSessionHub
         foreach (var (id, restore) in _restores)
             if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.Restored -= restore;
         _restores.Clear();
+        foreach (var (id, clear) in _clears)
+            if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.Changed -= clear;
+        _clears.Clear();
     }
 
     /// <summary>
@@ -230,6 +234,7 @@ public sealed class WebSessionHub
         foreach (var key in _logs.Keys.Where(k => k.StartsWith(session.Id + "~", StringComparison.Ordinal)).ToList()) Drop(key);
         if (_spawns.TryRemove(session.Id, out var spawn)) session.WorkerSpawned -= spawn;
         if (_restores.TryRemove(session.Id, out var restore)) session.Restored -= restore;
+        if (_clears.TryRemove(session.Id, out var clear)) session.Changed -= clear;
         foreach (var c in _clients.Keys) c.SessionClosed(session.Id);
         ListChanged();
     }
@@ -362,6 +367,10 @@ public sealed class WebSessionHub
             // what the tab already has, as the terminal does.
             Action<Core.Export.ExportSource> restored = past => log.Replay(past);
             if (_restores.TryAdd(session.Id, restored)) session.Restored += restored;
+            // /clear EMPTIES THE TRANSCRIPT HERE AS IN THE TERMINAL — the session announces the clear before it says
+            // "Conversation cleared.", so that line lands after the wipe, not under it.
+            Action<SessionChangeKind> cleared = kind => { if (kind is SessionChangeKind.ContextCleared) log.Cleared(); };
+            if (_clears.TryAdd(session.Id, cleared)) session.Changed += cleared;
             // ITS ASIDES TOO — /btw answered beside the conversation — as a watcher beside the terminal's own.
             var asides = session.WatchAsides(log);
             return new LogEntry(log, new Both(observers, asides), tools);

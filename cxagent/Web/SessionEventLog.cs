@@ -346,6 +346,20 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     private static bool IsDone(JobState state) =>
         state is JobState.Succeeded or JobState.Failed or JobState.Cancelled or JobState.Skipped;
 
+    /// <summary>
+    /// The conversation was cleared: what was kept goes, and a <c>cleared</c> event takes its place — so a tab watching
+    /// empties its transcript as the terminal's does, a tab joining later starts from the clear, and one that saw the
+    /// old conversation is told to redraw rather than keep it.
+    /// </summary>
+    public void Cleared()
+    {
+        lock (_gate)
+        {
+            _events.Clear();
+            Append("cleared", new JsonObject());
+        }
+    }
+
     private void Append(string kind, JsonObject fields)
     {
         lock (_gate)
