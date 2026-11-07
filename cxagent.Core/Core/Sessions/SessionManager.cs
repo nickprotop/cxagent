@@ -440,6 +440,12 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, _) => session.ListSkills().Handled());
                     break;
 
+                // LISTING ONLY, like /skills. Open and forget are verbs each front end registers: one opens a tab, the
+                // other asks before it deletes, and asking needs somebody to ask.
+                case "/memory":
+                    Commands.Register(command, (session, _) => session.ListMemory().Handled());
+                    break;
+
                 case "/commands":
                     Commands.Register(command, (session, arguments) => session.ListCommands(arguments).Handled());
                     break;

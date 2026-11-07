@@ -107,6 +107,10 @@ public sealed record ResolvedConfig(
     /// <summary>What web_search may use. Never null — no block means no key, and DuckDuckGo.</summary>
     public Jobs.Builtin.WebSearchSettings WebSearch => Catalog.WebSearch ?? Jobs.Builtin.WebSearchSettings.None;
 
+    /// <summary>Whether sessions have the memory tool and its index. Off unless something turned it on: config.json's
+    /// absent key is the app's on, an <see cref="AgentConfig"/> says for itself.</summary>
+    public bool Memory => Catalog.Memory ?? false;
+
     /// <summary>The user's hooks block. Never null — no block is no user hooks.</summary>
     public Hooks.HooksSettings Hooks => Catalog.Hooks ?? CxAgent.Core.Hooks.HooksSettings.None;
 
@@ -200,6 +204,8 @@ public static class ConfigResolver
                   // switch and not on launch.
                   ShellDetachOnTimeout = settings.ShellDetachOnTimeout,
                   WebSearch = settings.WebSearch,
+                  // THE APP'S DEFAULT IS ON: a config.json that says nothing about memory has it.
+                  Memory = settings.Memory ?? true,
                   Hooks = settings.Hooks,
                   Sandbox = settings.Sandbox,
                   Web = settings.Web },
@@ -315,6 +321,8 @@ public static class ConfigResolver
                   // switch and not on launch.
                   ShellDetachOnTimeout = settings.ShellDetachOnTimeout,
                   WebSearch = settings.WebSearch,
+                  // THE APP'S DEFAULT IS ON: a config.json that says nothing about memory has it.
+                  Memory = settings.Memory ?? true,
                   Hooks = settings.Hooks,
                   Sandbox = settings.Sandbox,
                   Web = settings.Web },

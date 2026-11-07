@@ -662,6 +662,7 @@ var resolution = new AgentConfig
 | `Agents` | sub-agent types, merged with the shipped ones rather than replacing them |
 | `Mcp` | MCP servers, stdio or HTTP |
 | `WebSearch` | `new WebSearchSettings(tavilyKey)` sends `web_search` to Tavily; null (or a null key) uses DuckDuckGo, which needs no account. The key is used as given |
+| `Memory` | true gives the session's agent the `memory` tool — notes kept across sessions, about the user and about the project — and an index of them in its prompt; sub-agents read only. Off by default here, unlike the app. Notes go under the config folder's `memory/`, so a host with no config folder keeps none. See [CONFIG.md](../../CONFIG.md#memory--notes-across-sessions) |
 | `Sandbox` | a `SandboxSettings`, or null (the default) for none. `SandboxSettings.AppDefault` runs the agent's shell commands inside bubblewrap as the app does: writes only in the agent's folder, temp and package caches; credentials and session sockets out of reach. Off by default here, unlike the app, since many hosts cannot start bubblewrap. See [CONFIG.md](../../CONFIG.md#sandbox--where-the-models-commands-run) |
 | `Hooks` | a `HooksConfig`: `Json` takes the same `hooks` block as a hooks file, and `OnPreToolUse`, `OnPostToolUse`, `OnUserPromptSubmit`, `OnStop`, `OnSessionStart`, `OnSessionEnd`, `OnNotification` (or `On(eventName, …)`) register handlers in code. Both run in any folder, without folder trust; the repository's `.cxagent/hooks.json` is still read beside them and still needs trust. See [Hooks](#hooks-from-code) |
 
@@ -735,8 +736,8 @@ there, rather than summarised here where the two copies would drift.
 
 ## Tool selection
 
-Which tools an agent is offered, narrowed at four levels. Absent, an agent gets all twelve and
-nothing changes.
+Which tools an agent is offered, narrowed at four levels. Absent, an agent gets every one it can use,
+and nothing changes.
 
 ```csharp
 using CxAgent.Core.Jobs;

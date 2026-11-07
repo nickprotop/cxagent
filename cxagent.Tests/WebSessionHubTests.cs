@@ -48,7 +48,9 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         rules.SetTrust(Work, TrustState.Trusted);
         var composer = new SessionComposer(new ComposerServices(_manager, _paths, rules, null, null) { Prompts = _prompts });
         _model = new MockLlmProvider("m");
-        var opener = new ComposerSessionOpener(composer, ResolvedConfig.ForTesting(_model), AgentMode.Single);
+        // MEMORY ON, as the app has it by default — so the browser's /memory and its panel rows have notes to show.
+        var resolved = ResolvedConfig.ForTesting(_model);
+        var opener = new ComposerSessionOpener(composer, resolved with { Catalog = resolved.Catalog with { Memory = true } }, AgentMode.Single);
         _hub = new WebSessionHub(new WebHubServices(_manager, _prompts, new FolderSessionStore(_paths), _paths, [Projects], opener, _clock)
         {
             IdleMinutes = 30,

@@ -55,6 +55,27 @@ public class SessionPanelTests
         Assert.DoesNotContain("%", panel.RenderedText, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Memory_IsCountedByWhoseItIs_AndAbsentWhenOff()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "",
+            MemoryNotes =
+            [
+                new("a", "d", CxAgent.Core.Memory.MemoryScope.Global, ""),
+                new("b", "d", CxAgent.Core.Memory.MemoryScope.Global, ""),
+                new("c", "d", CxAgent.Core.Memory.MemoryScope.Project, ""),
+            ],
+        });
+        Assert.Contains("2 about you", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("1 about this project", panel.RenderedText, StringComparison.Ordinal);
+
+        panel.Refresh(new SessionPanel.SessionPanelState { Endpoint = "", MemoryNotes = null });
+        Assert.DoesNotContain("Memory", panel.RenderedText, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// The spend is still shown — it is a real number and "what has this session cost" is a real
     /// question. It just is not the percentage, and it is not labelled as context.

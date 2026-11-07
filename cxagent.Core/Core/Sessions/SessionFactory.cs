@@ -196,10 +196,19 @@ internal static class SessionFactory
         // ONE BRIEF FOR THE SESSION'S AGENT AND EVERY CHILD: OUR config folder, so a user-level CXAGENT.md applies
         // wherever they work, and THE SESSION'S DAY, so a re-wire on a later day builds the same system prompt and a
         // child spawned after midnight is dated as its parent is.
+        // MEMORY IN CXAGENT'S OWN FOLDER, never the project's — so with no config folder (a bare test host) there is none.
+        // Set on every wire, so turning it off in config, or a resume into another folder, takes effect.
+        session.UseMemory(resolution.Memory && shared.GlobalInstructionsDir is { } memoryRoot
+            ? new Memory.MemoryStore(memoryRoot, session.WorkingDirectory)
+            : null);
+
         var brief = new AgentBrief
         {
             GlobalInstructionsDir = shared.GlobalInstructionsDir,
             StartedOn = session.StartedOn,
+            // THE SESSION'S SNAPSHOT, for the reason StartedOn is the session's day: an agent rebuilt by a re-wire, and
+            // every child, lists the same notes, so the system prompt — the head of the cache — does not move.
+            MemoryIndex = session.MemoryIndex,
         };
 
         var childFactory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
@@ -245,6 +254,7 @@ internal static class SessionFactory
             WorkingDir = session.WorkingDirectory,
             Tools = new AgentTools(executors)
             {
+                Memory = session.Memory,
                 // INHERITED WHOLE (and already gated): a child that edits files needs the same way to
                 // show the result as its parent, or the showing is silently skipped.
                 Injected = agentTools,
@@ -359,6 +369,7 @@ internal static class SessionFactory
                 Delivery = delivery,
                 Tools = new AgentTools(executors)
                 {
+                    Memory = session.Memory,
                     // The toolset, but NOT the servers: ownership stays with the session. Handing
                     // those over would let a re-wire dispose them, killing every server on a
                     // provider change and leaving the new host with a toolset over dead pipes.
@@ -464,6 +475,7 @@ internal static class SessionFactory
         // A COMPACTED CONVERSATION REBUILDS THE CACHE ANYWAY — automatic or /compress — so a config change
         // waiting for that applies now. On the new host, every wire, so a re-wire does not lose the hook.
         host.ContextCompressed += (_, _) => session.OnContextFresh();
+        host.MemoryWritten += session.NoteAgentWroteMemory;
 
         // THE LEVEL THE RESUMED SESSION WAS AT, the one place every resume passes — the command
         // line's -c and -r, the session picker, and a headless continue alike.

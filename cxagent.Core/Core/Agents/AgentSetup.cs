@@ -137,6 +137,12 @@ public sealed record AgentTools(JobRegistry Executors)
 
     /// <summary>Which tools this agent is offered, or null for all of them. See <see cref="ToolSelection"/>.</summary>
     public ToolSelection? Selection { get; init; }
+
+    /// <summary>
+    /// The notes kept across sessions, or null for no memory — then there is no <c>memory</c> tool and no index in
+    /// the prompt. A sub-agent given one may list and read, never write: see <see cref="Memory.MemoryTool"/>.
+    /// </summary>
+    public Memory.MemoryStore? Memory { get; init; }
 }
 
 /// <summary>What checks an agent's actions.</summary>
@@ -191,6 +197,17 @@ public sealed record AgentBrief
 
     /// <summary>The day the session began, for the system prompt; null is the day the agent is built.</summary>
     public DateOnly? StartedOn { get; init; }
+
+    /// <summary>
+    /// The notes the prompt's memory index lists, or null to read the store once, when the agent is built.
+    ///
+    /// <para>THE SESSION'S SNAPSHOT, NOT THE FILES: the index sits in the system prompt, the head of the cached prefix,
+    /// and a note written mid-session — by this agent or another session — must not change one byte of it. A long
+    /// conversation would be re-sent uncached for it. A session passes the snapshot it took when it began, so an agent
+    /// rebuilt by <c>/model</c> lists exactly what its predecessor did; it is retaken only when the conversation is
+    /// cleared or compacted, when the cache is rebuilt anyway.</para>
+    /// </summary>
+    public Func<IReadOnlyList<Memory.MemoryNote>>? MemoryIndex { get; init; }
 }
 
 /// <summary>How far an agent may go.</summary>

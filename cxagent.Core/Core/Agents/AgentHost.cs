@@ -303,6 +303,13 @@ public sealed class AgentHost : IDisposable
     /// forty-turn run would otherwise not reach the panel until the whole turn ended, and "what is
     /// it doing right now" is exactly the question the panel is being asked in the meantime.</para>
     /// </summary>
+    /// <summary>A note the agent wrote or deleted — see <see cref="Agent.MemoryWritten"/>.</summary>
+    public event Action<string>? MemoryWritten
+    {
+        add => _agent.MemoryWritten += value;
+        remove => _agent.MemoryWritten -= value;
+    }
+
     public event Action? TodosChanged
     {
         add => _agent.TodosChanged += value;

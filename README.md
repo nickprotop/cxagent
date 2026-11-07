@@ -199,6 +199,7 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `web_search` | Find pages: Tavily with a key, DuckDuckGo without one (best effort); asks before each search |
 | `skill` | Load a skill's instructions on demand |
 | `todowrite` | Keep a task list across a long job |
+| `memory` | Keep notes across sessions — about you, and about this project — and read them back; sub-agents read only |
 | `ask_user` | Ask the user questions: options with descriptions, several per call |
 | `agent` | Delegate a job to a sub-agent (fan-out mode), in the background by default (`background`) |
 | `agent_send` | Ask a sub-agent you already spawned for more; it still has its own context |

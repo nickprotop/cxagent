@@ -302,6 +302,15 @@ public sealed class Agent
 
     private readonly TodoTool _todoTool;
 
+    /// <summary>The notes kept across sessions, or null when memory is off. Read-only for a sub-agent.</summary>
+    private readonly Memory.MemoryTool? _memoryTool;
+
+    /// <summary>
+    /// What the prompt's memory index lists — the session's snapshot, or one read when this agent was built. Never the
+    /// live files: see <see cref="AgentBrief.MemoryIndex"/> for why the index must not move under a conversation.
+    /// </summary>
+    private readonly Func<IReadOnlyList<Memory.MemoryNote>> _memoryIndex = () => [];
+
     /// <summary>
     /// Asks the user a question, when there is a user to ask. Null for a sub-agent and for any host
     /// that has no UI — see <see cref="AskUserTool"/> for why a child must never have this.
@@ -643,6 +652,9 @@ public sealed class Agent
 
     /// <summary>Raised when the model rewrites its plan, so a panel can follow along.</summary>
     public event Action? TodosChanged;
+
+    /// <summary>A note this agent wrote or deleted, by name — what the model knows without being told.</summary>
+    public event Action<string>? MemoryWritten;
 
     /// <summary>
     /// Whether this agent works alone or may delegate — SETTABLE, and the only mutable thing about
@@ -1178,6 +1190,19 @@ public sealed class Agent
         // the loader cannot find.
         _todoTool = new TodoTool(_todos);
 
+        // READ-ONLY FOR A CHILD, decided here like _askUser below: whatever path built it, a sub-agent never writes.
+        if (setup.Tools.Memory is { } memory)
+        {
+            _memoryTool = new Memory.MemoryTool(memory, readOnly: isSubAgent, written: name => MemoryWritten?.Invoke(name));
+            if (setup.Brief.MemoryIndex is { } index) _memoryIndex = index;
+            else
+            {
+                // NO SESSION TO HOLD A SNAPSHOT (a library caller, a test): read once, now, and keep it for this agent's life.
+                var once = memory.List();
+                _memoryIndex = () => once;
+            }
+        }
+
         // NEVER FOR A SUB-AGENT, whatever the caller passed. A child has no user: its output goes to
         // its parent, and a child blocking on a question nobody can see is a hang that ends only
         // when the parent's turn is cancelled. Enforced here rather than trusted to the factory, so
@@ -1290,6 +1315,8 @@ public sealed class Agent
             // always have work worth tracking, and the list starting empty is the normal state
             // rather than a reason to withhold the tool.
             .Concat(new[] { _todoTool.Definition })
+            // MEMORY, when there is a store — off in config, or a library caller that set none, is no tool at all.
+            .Concat(_memoryTool is not null ? new[] { _memoryTool.Definition } : [])
             // ONLY WHEN THERE IS SOMEONE TO ASK. Withheld from a child and from any host with no UI
             // — the same mechanism that makes "no sub-agents of sub-agents" structural: not a rule
             // the agent is asked to follow, a tool it was never given.
@@ -1584,6 +1611,8 @@ public sealed class Agent
                     CanPlan = SelectionAllows(Jobs.Tool.TodoWrite, turnTools),
                     CanEdit = SelectionAllows(Jobs.Tool.ReplaceInFile, turnTools),
                     CanSearch = SelectionAllows(Jobs.Tool.WebSearch, turnTools),
+                    // THE SNAPSHOT, never the files: a note written this session must not move the cached prefix.
+                    Memory = _memoryTool is not null && SelectionAllows(Jobs.Tool.Memory, turnTools) ? _memoryIndex() : null,
                     ModelFacingCommands = _modelFacingCommands?.Invoke() ?? [],
                 })
                 // AFTER the general prompt, so a project can override it.
@@ -3276,6 +3305,8 @@ public sealed class Agent
                 // The plan is this agent's own state, so it resolves here rather than in an executor —
                 // and the event fires only on a real write, not on every call that missed.
                 ?? Text(TryUpdateTodos(call))
+                // Memory answers from its store, like the plan from its list: agent-owned, no executor.
+                ?? Text(_memoryTool?.TryInvoke(call))
                 // Null when there is no user — the call then falls through to "no such tool", which
                 // is the honest answer for a tool this agent was never offered.
                 ?? Text(_askUser is null ? null : await _askUser.TryInvokeAsync(call, ct))
@@ -3639,7 +3670,7 @@ public sealed class Agent
     /// <summary>Tools that raise no permission request of their own — where a hook's ask must be asked by the agent.</summary>
     private bool Ungated(string name) =>
         name is Jobs.Tool.AgentSend or Jobs.Tool.TaskList or Jobs.Tool.TaskStop or Jobs.Tool.TaskOutput
-            or Jobs.Tool.TodoWrite or Jobs.Tool.AskUser or Jobs.Tool.Skill
+            or Jobs.Tool.TodoWrite or Jobs.Tool.AskUser or Jobs.Tool.Skill or Jobs.Tool.Memory
         || (_spawner is not null && name == _spawner.ToolName);
 
     /// <summary>
@@ -4085,6 +4116,10 @@ public sealed class Agent
         // which is the same argument that keeps a worker's report open.
         "todowrite" => "todo",
 
+        // ITS OWN TYPE, not the `file` an unknown name falls to: a note is in cxagent's folder, not the project's, and
+        // a row calling it a file operation would send a reader looking for it in the tree.
+        "memory" => "memory",
+
         // An MCP tool is none of the three, and the `_ => "file"` below would label it a file
         // operation — a row claiming a third-party server call was a local file read. "mcp" is the
         // honest label; the server's own name is already in DisplayName.
@@ -4154,6 +4189,16 @@ public sealed class Agent
             return current is null
                 ? $"plan · {done}/{items.Count}"
                 : $"plan · {done}/{items.Count} · {Clip(current.Text, 44)}";
+        }
+
+        // A MEMORY CALL IS NAMED BY WHAT IT DID AND TO WHICH NOTE — "memory · write · deploy-target" — so a write, which
+        // runs without a prompt, is plain on its row.
+        if (string.Equals(call.Name, "memory", StringComparison.Ordinal))
+        {
+            var action = ReadArg(call, "action")?.Trim();
+            var note = ReadArg(call, "name")?.Trim();
+            return string.IsNullOrEmpty(action) ? "memory"
+                : string.IsNullOrEmpty(note) ? $"memory · {action}" : $"memory · {action} · {note}";
         }
 
         // THE TOOLS A READER SEES MOST, named by the one argument that matters. The generic branch

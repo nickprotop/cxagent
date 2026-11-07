@@ -76,6 +76,7 @@ public class NoProviderCommandTests
     [InlineData("/mode")]
     [InlineData("/mcp")]
     [InlineData("/skills")]
+    [InlineData("/memory")]      // files in the config folder, not the model
     [InlineData("/agents")]
     [InlineData("/tasks")]       // the process-wide registry and the session store, not the model
     [InlineData("/diff")]        // git, not the model
@@ -110,7 +111,7 @@ public class NoProviderCommandTests
         // counts diverge.
         var commands = SessionCommands.All;
 
-        Assert.Equal(20, commands.Count);
+        Assert.Equal(21, commands.Count);
         Assert.All(commands, c => Assert.NotNull(SessionCommands.Match(c.Name)));
     }
 

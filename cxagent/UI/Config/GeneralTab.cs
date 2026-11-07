@@ -108,6 +108,19 @@ public sealed class GeneralTab
         _detail.AddControl(ListDetail.Section("Commands", commands.Control));
         _detail.AddControl(ListDetail.Gap());
 
+        var notes = new FieldGrid();
+        var memory = new RadioGroup<bool>();
+        notes.AddBare(Label("Notes across sessions"));
+        notes.AddBare(new RadioControl<bool>(memory, true, "Keep them"));
+        notes.AddBare(Help("The agent writes what it learns about you and the project to cxagent's folder, and reads it in later sessions. /memory lists them."));
+        notes.AddBare(Blank());
+        notes.AddBare(new RadioControl<bool>(memory, false, "Do not keep any"));
+        notes.AddBare(Help("No memory tool and no notes in the prompt. Notes already kept stay on disk."));
+        memory.SelectedValue = draft.MemoryEnabled;
+        memory.SelectionChanged += (_, on) => { draft.MemoryEnabled = on; MarkSave(); };
+        _detail.AddControl(ListDetail.Section("Memory", notes.Control));
+        _detail.AddControl(ListDetail.Gap());
+
         _detail.AddControl(ListDetail.Section("Sandbox", SandboxEditor(draft, Label, Help, Blank)));
         _detail.AddControl(ListDetail.Gap());
 

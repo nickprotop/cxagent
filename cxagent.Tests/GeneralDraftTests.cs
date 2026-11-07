@@ -57,6 +57,28 @@ public class GeneralDraftTests
         Assert.Equal(["run_shell"], draft.Removed);
     }
 
+    [Fact]
+    public void Memory_ReadsAsOnWhenAbsent_AndTurningItOffWritesTheBlock()
+    {
+        const string MemoryOff = "\"memory\": { \"enabled\": false }";
+        Assert.True(GeneralDraft.From(Settings()).MemoryEnabled);
+        Assert.False(GeneralDraft.From(Settings(MemoryOff)).MemoryEnabled);
+
+        var root = Root();
+        var draft = GeneralDraft.From(Settings());
+        draft.MemoryEnabled = false;
+        Assert.True(draft.IsDirty);
+        draft.Apply(root);
+        Assert.False(root["memory"]!["enabled"]!.GetValue<bool>());
+
+        // ON IS THE DEFAULT, so turning it back on removes the key — and the block, with nothing else in it.
+        var off = Root(MemoryOff);
+        var back = GeneralDraft.From(Settings(MemoryOff));
+        back.MemoryEnabled = true;
+        back.Apply(off);
+        Assert.Null(off["memory"]);
+    }
+
     /// <summary>
     /// ONLY WHAT CHANGED IS WRITTEN. A key the user did not touch keeps its exact form in the file — an explicit
     /// default stays explicit — and so does everything else in it.

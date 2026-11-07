@@ -290,6 +290,15 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "shellReport":
                 ShellReport(Str(m, "sessionId"), m["lines"] as JsonArray, (int?)Long(m, "exitCode"));
                 break;
+            case "memoryOpen":
+                if (LiveSession(Str(m, "sessionId")) is { } reading) OpenMemory(reading, Str(m, "name") ?? "");
+                else Error("No such open session.");
+                break;
+            case "memoryForget":
+                if (LiveSession(Str(m, "sessionId")) is { } forgetting)
+                    ForgetMemory(forgetting, Str(m, "name") ?? "", m["confirm"]?.GetValue<bool>() == true);
+                else Error("No such open session.");
+                break;
             case "openFile":
                 if (LiveSession(Str(m, "sessionId")) is { } opening) OpenFile(opening, Str(m, "path") ?? "");
                 else Error("No such open session.");
@@ -656,6 +665,14 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "/config":
                 ConfigForm("general");
                 return true;
+            // THE VERBS ONLY: the bare listing is Core's and runs as typed. These would otherwise reach the terminal's
+            // verbs, which open its tab and ask in its window.
+            case "/memory" when args.StartsWith("open", StringComparison.OrdinalIgnoreCase):
+                OpenMemory(session, args[4..]);
+                return true;
+            case "/memory" when args.StartsWith("forget", StringComparison.OrdinalIgnoreCase):
+                ForgetMemory(session, args[6..], confirmed: false);
+                return true;
             default:
                 return false;
         }
@@ -688,6 +705,34 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             return;
         }
         if (_files.Open(session, path, allowed) is { } refused) Notice(session.Id, refused, "Warning");
+    }
+
+    /// <summary>
+    /// <c>/memory open</c>: a note in the editor, BY NAME ONLY. The one thing in cxagent's own folder a browser opens —
+    /// the user's notes are theirs to read and correct wherever they work, as in the terminal. A name, never a path: the
+    /// store resolves it inside the memory folder, and a name is a kebab-case slug, so nothing else there is reachable.
+    /// </summary>
+    private void OpenMemory(Session session, string name)
+    {
+        name = name.Trim();
+        if (session.Memory is not { } store) { Notice(session.Id, "Memory is off. It is turned on in the terminal: F8 › General, or memory.enabled in config.json.", "Info"); return; }
+        if (store.PathOf(name) is not { } path) { Notice(session.Id, $"There is no note called '{name}'. /memory lists them.", "Warning"); return; }
+        if (_files.Open(session, path, path) is { } refused) Notice(session.Id, refused, "Warning");
+    }
+
+    /// <summary><c>/memory forget</c>: asked first, as the terminal asks, then deleted.</summary>
+    private void ForgetMemory(Session session, string name, bool confirmed)
+    {
+        var ask = session.AskForgetMemory(name);
+        if (ask.Note is not { } note) { Notice(session.Id, ask.Text, "Warning"); return; }
+        if (!confirmed)
+        {
+            Send(new JsonObject { ["type"] = "confirmForget", ["sessionId"] = session.Id, ["name"] = note.Name, ["text"] = ask.Text });
+            return;
+        }
+        try { session.ForgetMemory(note.Name); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notice(session.Id, $"Could not delete: {e.Message}", "Warning"); }
+        if (_hub.PanelFor(session.Id) is { } panel) SendPanel(session.Id, panel);
     }
 
     // ---- the plugin marketplace: F2, behind web.allow.plugins ---------------------------------------------------------

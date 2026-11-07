@@ -184,6 +184,13 @@ public sealed record AgentConfig
     public Jobs.Builtin.WebSearchSettings? WebSearch { get; init; }
 
     /// <summary>
+    /// Whether sessions keep notes across sessions — the <c>memory</c> tool and its index in the prompt. OFF unless
+    /// set, unlike the app: an embedder's agent writing files into a config folder is something it should choose.
+    /// Notes go under the session's config folder, the one that holds its logs.
+    /// </summary>
+    public bool Memory { get; init; }
+
+    /// <summary>
     /// Hooks for this app's sessions: the <c>hooks</c> block a hooks file holds, typed handlers, or both. The
     /// repository's own hooks files are read beside them, as in the app. See <see cref="Hooks.HooksConfig"/>.
     /// </summary>
@@ -278,7 +285,7 @@ public sealed record AgentConfig
                 MaxConcurrentAgents: chosen.MaxConcurrentAgents,
                 ClassifierInstance: Classifier)
             {
-                PluginPaths = PluginPaths, WebSearch = WebSearch, Hooks = hooks, Sandbox = Sandbox,
+                PluginPaths = PluginPaths, WebSearch = WebSearch, Memory = Memory, Hooks = hooks, Sandbox = Sandbox,
                 ClassifierTimeoutSeconds = ClassifierTimeoutSeconds, ShellDetachOnTimeout = ShellDetachOnTimeout,
             },
             [],

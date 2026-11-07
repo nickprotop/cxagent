@@ -68,6 +68,10 @@ public sealed record ProviderCatalog(
     /// <see cref="ProviderSettings.WebSearch"/>. An init property for the reason the two above are.</summary>
     public Jobs.Builtin.WebSearchSettings? WebSearch { get; init; }
 
+    /// <summary>Whether sessions keep notes across sessions — see <see cref="ProviderSettings.Memory"/>. Null is off:
+    /// config.json's absent key has already become the app's default, on, by the time it gets here.</summary>
+    public bool? Memory { get; init; }
+
     /// <summary>The user's <c>hooks</c> block — see <see cref="ProviderSettings.Hooks"/>.</summary>
     public Hooks.HooksSettings? Hooks { get; init; }
 

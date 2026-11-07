@@ -1120,6 +1120,56 @@ public static class AppBootstrap
                 return true;
             });
 
+        // A NOTE BY NAME, IN /open's TAB. The editor's own save writes it, and the model hears of the edit with the next
+        // message — see Session.TakeMemoryNote — so nothing here has to tell it.
+        manager.Commands.RegisterVerb("/memory",
+            new CommandArgument("open <name>", "open a note to read or edit", Completes: false, Values: ValueSources.MemoryNotes),
+            (current, arguments) =>
+            {
+                // THE VERB'S OWN WORD, STRIPPED: RegisterVerb hands over everything typed, "open" included.
+                var name = ((arguments ?? "").Split(' ', 2) is [_, var rest] ? rest : "").Trim();
+                if (current.Memory?.PathOf(name) is { } note) OpenPath(new EditorHost(system, mainWindow, current), note);
+                else current.Notify(current.Memory is null
+                    ? "Memory is off. It is turned on in F8 › General, or with memory.enabled in config.json."
+                    : $"There is no note called '{name}'. /memory lists them.");
+                return true;
+            });
+
+        // ASKS IN THE CONVERSATION, with the buttons /stats clear has: a deleted note cannot be brought back.
+        manager.Commands.RegisterVerb("/memory",
+            new CommandArgument("forget <name>", "delete a note, after confirming", Completes: false, Values: ValueSources.MemoryNotes),
+            (current, arguments) =>
+            {
+                var ask = current.AskForgetMemory((arguments ?? "").Split(' ', 2) is [_, var rest] ? rest : "");
+                var id = mainWindow.Chat.AddMessage(ChatRole.System, ask.Text);
+                if (ask.Note is not { } note) return true;
+                mainWindow.Chat.SetActions(id,
+                [
+                    new ChatMessageAction
+                    {
+                        Id = "forget", Label = "Forget it", Variant = ChatActionVariant.Danger, AfterPress = ChatActionAfterPress.Hide,
+                        OnClick = ctx =>
+                        {
+                            try
+                            {
+                                current.ForgetMemory(note.Name);
+                                ctx.SetStatus($"'{note.Name}' forgotten", SharpConsoleUI.Core.NotificationSeverity.Success);
+                            }
+                            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                            {
+                                ctx.SetStatus($"could not delete: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+                            }
+                        },
+                    },
+                    new ChatMessageAction
+                    {
+                        Id = "keep", Label = "Keep", AfterPress = ChatActionAfterPress.Hide,
+                        OnClick = ctx => ctx.SetStatus("kept", SharpConsoleUI.Core.NotificationSeverity.Info),
+                    },
+                ]);
+                return true;
+            });
+
         // ASYNC VOID AT THE EDGE, deliberately: the command handler is synchronous and the picker is
         // a dialog that resolves whenever the user is done with it. Everything inside is in a try —
         // an async void that throws reaches no caller and takes the app with it.

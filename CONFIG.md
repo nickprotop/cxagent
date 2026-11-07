@@ -350,7 +350,7 @@ saying which it should have:
 That is a session that reads and searches but never writes or shells out. Absent, nothing is
 narrowed — the default is unchanged and this key is one you can ignore entirely.
 
-F8's **General** tab edits `llmAgent.tools` — the session's agent — as a base and the seventeen tools as
+F8's **General** tab edits `llmAgent.tools` — the session's agent — as a base and the eighteen tools as
 boxes; the **Agents** tab does the same for each type's `tools`.
 
 ### The terms
@@ -391,11 +391,11 @@ A shipped type may set `tools` even though it may not set `briefing`. The two ar
 thing: a briefing is text the code depends on, while a toolset is a property of **your** deployment,
 which cxagent cannot know.
 
-### The seventeen names
+### The eighteen names
 
 `read_file` · `write_file` · `replace_in_file` · `glob` · `grep` · `run_shell` · `web_fetch` ·
 `web_search` · `http_request` · `todowrite` · `ask_user` · `agent` · `agent_send` ·
-`task_list` · `task_stop` · `task_output` · `skill`
+`task_list` · `task_stop` · `task_output` · `skill` · `memory`
 
 A name that matches nothing is not an error and not a warning: names arrive late — a skill appears,
 an application injects a tool — so a term matching nothing today may match tomorrow, and an
@@ -793,6 +793,24 @@ The model may name an engine for a call. When it does not, Tavily is used if the
 failed Tavily search (a refused key, a used-up quota) is retried on DuckDuckGo, saying so in the
 result. Every search asks first, like `web_fetch`, and *always allow* covers one engine: allowing
 DuckDuckGo does not allow sending queries to Tavily.
+
+## `memory` — notes across sessions
+
+```json
+"memory": { "enabled": false }
+```
+
+F8's **General** tab sets it too, in its *Memory* section.
+
+**On when absent.** The session's agent gets the `memory` tool and an index of its notes in the system
+prompt; sub-agents get the index and may read, never write. `false` removes both. Notes already kept
+stay on disk, and come back when it is turned on again. A value that is not `true` or `false` warns at
+startup and leaves memory on.
+
+Notes live in this folder, under `memory/` — see [What else lives in that directory](#what-else-lives-in-that-directory).
+[`/memory`](COMMANDS.md#memory) lists, opens and forgets them.
+
+An application built on cxagent.Core has memory **off** unless it sets `AgentConfig.Memory = true`.
 
 ## `hooks` — commands that run on the agent's events
 
@@ -1297,6 +1315,8 @@ commands may link anywhere.
 | `history.db` | Usage history for `/stats`. An archive: append-only, never pruned. `/stats clear` empties it. |
 | `logs/<agent-id>/` | Everything about one agent: its session, its context, its transcript, and its logs. A sub-agent's directory nests **inside** its parent's, so the tree mirrors who spawned whom. |
 | `CXAGENT.md` | Your global instructions, if you wrote any. |
+| `memory/global/<name>.md` | Notes the agent keeps about you, read in every folder. Markdown with a `name` and `description` up front; edit or delete them freely. |
+| `memory/projects/<folder>-<hash>/` | One project's notes, beside a `path` file naming the folder they belong to. The hash is of the folder's full path, so two folders of one name keep separate notes. |
 
 ### A folder is a session
 

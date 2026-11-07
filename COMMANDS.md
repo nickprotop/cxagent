@@ -42,6 +42,9 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/mcp edit` | Add, edit or remove MCP servers |
 | `/mcp login <server>` | Authorise a server that needs OAuth |
 | `/skills` | List available skills, and any `SKILL.md` that was skipped |
+| `/memory` | List the notes the agent keeps across sessions |
+| `/memory open <name>` | Open a note in a tab, to read or edit |
+| `/memory forget <name>` | Delete a note, after confirming |
 | `/commands` | List your custom commands, and any file that was shadowed or skipped |
 | `/commands <name>` | Show that command's file, as it will be sent |
 | `/<name> [args]` | Run a custom command, or a skill by name — see [`/commands`](#commands) |
@@ -501,6 +504,28 @@ It is also **not a refresh.** Skills are re-read from disk every turn, so a skil
 already live on the next one — there is nothing to apply.
 
 See [CONFIG.md](CONFIG.md#skills) for where skills live and what a `SKILL.md` looks like.
+
+---
+
+## `/memory`
+
+The agent keeps notes across sessions with its `memory` tool: corrections and preferences you state,
+how you like to work, and facts about the project the code does not say. **About you** notes are read in
+every folder; **about this project** notes only in this one. Each is a markdown file in cxagent's own
+folder — never in the repository.
+
+`/memory` lists both sets, with the folder each lives in. `/memory open <name>` opens a note in a tab;
+save it there to correct it. `/memory forget <name>` shows the note and asks before deleting it. The
+session panel counts them, and in a browser lists each with **Open** and **Forget**.
+
+**The prompt holds an index, not the notes**: names and one-line descriptions, taken when the
+conversation begins and kept as it is until `/clear` or a compaction, so a note written mid-session
+never re-sends a long conversation uncached. A note changed anywhere but by the model's own tool —
+forgotten here, edited in a tab, written by another session — is said in one line at the front of
+your next message.
+
+A sub-agent reads notes but never writes them. A note that looks like a key, token or password is
+refused. Turn memory off in F8 › General, or with [`memory.enabled`](CONFIG.md#memory) in config.json.
 
 ---
 

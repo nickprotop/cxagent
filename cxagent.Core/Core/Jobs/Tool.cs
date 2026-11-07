@@ -85,6 +85,9 @@ public static class Tool
     /// <summary>Load a skill. Offered only when the catalog is non-empty.</summary>
     public const string Skill = "skill";
 
+    /// <summary>Keep and read notes across sessions. Offered when memory is on; read-only for a sub-agent.</summary>
+    public const string Memory = "memory";
+
     /// <summary>
     /// Every name this build ships, for telling "withheld" apart from "no such tool".
     ///
@@ -104,7 +107,7 @@ public static class Tool
     private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
     {
         ReadFile, WriteFile, ReplaceInFile, Glob, Grep, RunShell, HttpRequest, WebFetch, WebSearch,
-        Agent, AgentSend, TaskList, TaskStop, TaskOutput, TodoWrite, AskUser, Skill,
+        Agent, AgentSend, TaskList, TaskStop, TaskOutput, TodoWrite, AskUser, Skill, Memory,
     };
 
     /// <summary>
@@ -129,6 +132,7 @@ public static class Tool
         public const string TodoWrite = "-" + Tool.TodoWrite;
         public const string AskUser = "-" + Tool.AskUser;
         public const string Skill = "-" + Tool.Skill;
+        public const string Memory = "-" + Tool.Memory;
     }
 
     /// <summary>
@@ -154,5 +158,6 @@ public static class Tool
         public const string TodoWrite = "+" + Tool.TodoWrite;
         public const string AskUser = "+" + Tool.AskUser;
         public const string Skill = "+" + Tool.Skill;
+        public const string Memory = "+" + Tool.Memory;
     }
 }

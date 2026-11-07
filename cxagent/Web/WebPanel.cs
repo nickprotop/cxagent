@@ -103,6 +103,16 @@ internal static class WebPanel
                 ["mcp"] = new JsonArray([.. (manager.Shared.McpStatuses?.Invoke() ?? [])
                     .Select(m => (JsonNode)new JsonObject { ["name"] = m.Name, ["tools"] = m.ToolCount, ["failed"] = m.Error is not null })]),
             },
+            // THE NOTES AS THE FILES HAVE THEM, for the Memory section's rows; null when memory is off, so the page
+            // leaves the section out rather than saying "none" about a feature that is not on.
+            ["memory"] = session.Memory is { } memory
+                ? new JsonArray([.. memory.List().Select(n => (JsonNode)new JsonObject
+                {
+                    ["name"] = n.Name,
+                    ["scope"] = n.Scope == Core.Memory.MemoryScope.Global ? "global" : "project",
+                    ["description"] = n.Description,
+                })])
+                : null,
             ["model"] = res?.InstanceName,
             ["thinking"] = new JsonObject
             {

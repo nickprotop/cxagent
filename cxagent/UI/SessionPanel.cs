@@ -269,6 +269,9 @@ public sealed class SessionPanel
         public int SkillCount { get; init; }
         public IReadOnlyList<string>? LoadedSkills { get; init; }
 
+        /// <summary>The notes kept across sessions, as the files have them now; null when memory is off.</summary>
+        public IReadOnlyList<Core.Memory.MemoryNote>? MemoryNotes { get; init; }
+
         /// <summary>
         /// The folder to show — what the session was given, or the process's own when it was given
         /// nothing.
@@ -398,6 +401,19 @@ public sealed class SessionPanel
             lines.Add(Muted($"{state.SkillCount} available"));
             foreach (var skill in state.LoadedSkills ?? [])
                 lines.Add(Value(skill));
+        }
+
+        // MEMORY: HOW MANY NOTES, AND WHOSE. Counts, not names — a column this narrow cannot hold a list worth reading,
+        // and /memory is one command away. FROM THE FILES, not the prompt's snapshot: this answers what is kept, and a
+        // note the user just forgot must leave the panel at once. Absent entirely when memory is off.
+        if (state.MemoryNotes is { } notes)
+        {
+            Section(lines, "Memory");
+            var mine = notes.Count(n => n.Scope == Core.Memory.MemoryScope.Global);
+            var project = notes.Count - mine;
+            if (notes.Count == 0) lines.Add(Muted("no notes yet"));
+            if (mine > 0) lines.Add(Value($"{mine} about you"));
+            if (project > 0) lines.Add(Value($"{project} about this project"));
         }
 
         // THE MODEL'S PLAN IS NOT HERE, DELIBERATELY. It was, briefly, and the panel is the wrong

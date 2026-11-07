@@ -128,6 +128,15 @@ internal readonly record struct SystemPromptContext(
     public bool CanSearch { get; init; }
 
     /// <summary>
+    /// The notes the memory index lists, or null when this agent has no <c>memory</c> tool — then no section at all.
+    /// Empty still renders the section: the guidance on what to keep matters most before the first note exists.
+    ///
+    /// <para>A SNAPSHOT, handed in rather than read here: this text is the head of the cached prefix, and the notes on
+    /// disk change mid-session. See <c>AgentBrief.MemoryIndex</c>.</para>
+    /// </summary>
+    public IReadOnlyList<Memory.MemoryNote>? Memory { get; init; }
+
+    /// <summary>
     /// The commands that asked to be named to the model — name and one-line summary each.
     ///
     /// <para>EMPTY IS THE NORMAL CASE and renders nothing: almost every command is the user's to
@@ -556,6 +565,7 @@ internal static class SystemPrompt
             AppendMcpInstructions(sb, ctx);
             AppendPluginInstructions(sb, ctx);
             AppendSkills(sb, ctx);
+            AppendMemory(sb, ctx);
             return sb.ToString();
         }
 
@@ -617,8 +627,45 @@ internal static class SystemPrompt
         AppendMcpInstructions(sb, ctx);
         AppendPluginInstructions(sb, ctx);
         AppendSkills(sb, ctx);
+        AppendMemory(sb, ctx);
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// What the agent kept from earlier sessions: how to use it, then the index — names and descriptions, never bodies.
+    ///
+    /// <para>LAST, after the skills, so the sections that change least come first; the index itself only changes when a
+    /// session begins, is cleared or compacts.</para>
+    ///
+    /// <para>A CHILD READS ONLY, and is told so: a sub-agent sees a slice of the work and has no user to learn from.</para>
+    /// </summary>
+    private static void AppendMemory(StringBuilder sb, SystemPromptContext ctx)
+    {
+        if (ctx.Memory is not { } notes) return;
+        sb.AppendLine();
+        sb.AppendLine("# Memory");
+        sb.AppendLine();
+        if (ctx.IsSubAgent)
+        {
+            sb.AppendLine("Notes kept from earlier sessions are listed below by name. Read one with the memory tool "
+                        + "before relying on what its description suggests. You cannot write notes; if you learn "
+                        + "something worth keeping, say so in your report.");
+        }
+        else
+        {
+            sb.AppendLine("You keep notes across sessions with the memory tool, the way a colleague remembers. Keep "
+                        + "corrections and preferences the user states, how they like to work, and facts about this "
+                        + "project that the code and its history do not say — with the reason, so a later session can "
+                        + "judge it. Update or delete a note rather than letting it go stale. Do not keep secrets, what "
+                        + "the code, git or README already records, or what only matters to this conversation.");
+            sb.AppendLine();
+            sb.AppendLine("The list below was taken when this conversation began; notes written since are not in it. "
+                        + "Read a note before relying on what its description suggests.");
+        }
+        var index = CxAgent.Core.Memory.MemoryIndex.Render(notes, CxAgent.Core.Memory.MemoryIndex.DefaultCap);
+        sb.AppendLine();
+        sb.Append(index.Length > 0 ? index : "No notes yet.\n");
     }
 
     /// <summary>

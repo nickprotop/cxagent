@@ -144,4 +144,7 @@ public static class ValueSources
 
     /// <summary>Kept sub-agents and live background commands, for <c>/tasks stop</c> and <c>/tasks output</c>.</summary>
     public const string Tasks = Core.Sessions.CompletionSets.Tasks;
+
+    /// <summary>The notes this session sees, for <c>/memory</c>.</summary>
+    public const string MemoryNotes = Core.Sessions.CompletionSets.MemoryNotes;
 }

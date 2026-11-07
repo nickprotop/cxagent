@@ -511,6 +511,21 @@ public sealed partial class WebSessionHubTests
     }
 
     [Fact]
+    public async Task The_general_form_offers_memory_and_turning_it_off_writes_what_F8_writes()
+    {
+        var (tab, server) = await ConfigTabAsync(ConfigWithTavily);
+        try
+        {
+            await tab.SendAsync(Msg("configFormSave", ("tab", "general"), ("values", new JsonObject { ["memory"] = "false" })));
+            await tab.NextAsync(Type("configSaved"));
+            Assert.False(JsonNode.Parse(File.ReadAllText(ConfigPath))!["memory"]!["enabled"]!.GetValue<bool>());
+            Assert.Contains("Notes across sessions", WebConfigForms.General(CxAgent.UI.Config.GeneralDraft.From(
+                ProviderConfigLoader.Parse(File.ReadAllText(ConfigPath), new Dictionary<string, string>()))).ToJsonString(), StringComparison.Ordinal);
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    [Fact]
     public async Task A_general_save_the_draft_refuses_writes_nothing()
     {
         var (tab, server) = await ConfigTabAsync(ConfigWithTavily);
@@ -695,6 +710,70 @@ public sealed partial class WebSessionHubTests
             Assert.DoesNotContain(tab.Seen, m => m["type"]?.GetValue<string>() == "openedFile");
         }
         finally { await server.StopAsync(); }
+    }
+
+    // ---- memory -----------------------------------------------------------------------------------------------------
+
+    private CxAgent.Core.Memory.MemoryStore Memory => new(_paths.ConfigDir, Work);
+
+    [Fact]
+    public async Task A_note_opens_by_name_though_its_folder_is_cxagent_s_own_and_never_by_path()
+    {
+        Memory.Write(new("deploy-target", "Where it deploys", CxAgent.Core.Memory.MemoryScope.Project, "fly.io"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/memory open deploy-target")));
+        var file = await tab.NextAsync(Type("openedFile"));
+        Assert.Contains("fly.io", file["text"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        // THE SAME FILE BY ITS PATH is still refused: the name is the only way in.
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/open " + Memory.PathOf("deploy-target"))));
+        await tab.NextAsync(Type("notice"));
+        Assert.Single(tab.Seen, m => m["type"]?.GetValue<string>() == "openedFile");
+    }
+
+    [Theory]
+    [InlineData("../../config")]
+    [InlineData("config.json")]
+    public async Task A_name_that_is_not_a_note_reaches_nothing(string name)
+    {
+        File.WriteAllText(ConfigPath, TwoProviders);
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("memoryOpen", ("sessionId", id), ("name", name)));
+        Assert.Contains("no note", (await tab.NextAsync(Type("notice")))["text"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.DoesNotContain(tab.Seen, m => m["type"]?.GetValue<string>() == "openedFile");
+    }
+
+    [Fact]
+    public async Task Forgetting_a_note_asks_and_deletes_only_when_confirmed()
+    {
+        Memory.Write(new("old-fact", "Wrong now", CxAgent.Core.Memory.MemoryScope.Global, "x"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/memory forget old-fact")));
+        var ask = await tab.NextAsync(Type("confirmForget"));
+        Assert.Contains("Wrong now", ask["text"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.NotNull(Memory.Find("old-fact"));
+
+        await tab.SendAsync(Msg("memoryForget", ("sessionId", id), ("name", "old-fact"), ("confirm", true)));
+        await tab.NextAsync(m => m["type"]?.GetValue<string>() == "panel" && m["memory"] is JsonArray { Count: 0 });
+        Assert.Null(Memory.Find("old-fact"));
+    }
+
+    [Fact]
+    public async Task The_panel_lists_the_notes_by_name_scope_and_description()
+    {
+        Memory.Write(new("prefers-tabs", "Indentation", CxAgent.Core.Memory.MemoryScope.Global, "tabs"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        var panel = await tab.NextAsync(m => m["type"]?.GetValue<string>() == "panel" && m["memory"] is JsonArray { Count: > 0 });
+        var note = panel["memory"]![0]!;
+        Assert.Equal("prefers-tabs", note["name"]!.GetValue<string>());
+        Assert.Equal("global", note["scope"]!.GetValue<string>());
+        Assert.Equal("Indentation", note["description"]!.GetValue<string>());
     }
 
     [Fact]

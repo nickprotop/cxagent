@@ -33,6 +33,7 @@ public enum TurnCap
 public sealed class GeneralDraft
 {
     private bool _originalDetach;
+    private bool _originalMemory;
     private TurnCap _originalCap;
     private int? _originalCapNumber;
     private int? _originalCompact;
@@ -53,6 +54,7 @@ public sealed class GeneralDraft
         var draft = new GeneralDraft
         {
             DetachOnTimeout = settings.ShellDetachOnTimeout ?? true,
+            MemoryEnabled = settings.Memory ?? true,
             Cap = turns switch { null => TurnCap.Default, 0 => TurnCap.None, _ => TurnCap.Number },
             // A CAP OF 300 TO START FROM when there is none: the sub-agents' built-in ceiling, the number most
             // likely to be wanted by someone choosing "Cap at".
@@ -72,6 +74,7 @@ public sealed class GeneralDraft
         draft.PassEnvText = Joined(sandbox.PassEnv);
         draft._originalSandbox = draft.Sandbox;
         draft._originalDetach = draft.DetachOnTimeout;
+        draft._originalMemory = draft.MemoryEnabled;
         draft._originalCap = draft.Cap;
         draft._originalCapNumber = turns;
         draft._originalCompact = settings.Orchestrator.ContextCompressThreshold;
@@ -129,6 +132,9 @@ public sealed class GeneralDraft
     /// <summary>A command past its timeout is handed to the background (true) or killed (false).</summary>
     public bool DetachOnTimeout { get; set; }
 
+    /// <summary>Whether the agent keeps notes across sessions — config's <c>memory.enabled</c>, on when absent.</summary>
+    public bool MemoryEnabled { get; set; } = true;
+
     public TurnCap Cap { get; set; }
 
     /// <summary>The cap's number as typed; read only when <see cref="Cap"/> is <see cref="TurnCap.Number"/>.</summary>
@@ -157,6 +163,7 @@ public sealed class GeneralDraft
     private IReadOnlyList<string>? Tools => ToolBoxes.Written(Base, Removed, Added);
 
     private bool DetachChanged => DetachOnTimeout != _originalDetach;
+    private bool MemoryChanged => MemoryEnabled != _originalMemory;
     private bool CapChanged => Cap != _originalCap || (Cap == TurnCap.Number && CapNumber != _originalCapNumber);
     private bool CompactChanged => Compact != _originalCompact || (Compact is null && CompactText.Trim().Length > 0);
     private bool ToolsChanged => !ToolBoxes.Same(Tools, _originalTools);
@@ -178,7 +185,7 @@ public sealed class GeneralDraft
     /// <summary>Remove the key on save, so searches use DuckDuckGo.</summary>
     public void ClearTavilyKey() => TavilyKey = "";
 
-    public bool IsDirty => DetachChanged || CapChanged || CompactChanged || ToolsChanged || TavilyKeyChanged || SandboxChanged;
+    public bool IsDirty => DetachChanged || MemoryChanged || CapChanged || CompactChanged || ToolsChanged || TavilyKeyChanged || SandboxChanged;
 
     /// <summary>
     /// What was just written becomes what the file says, so the draft is clean without being rebuilt — a rebuild
@@ -187,6 +194,7 @@ public sealed class GeneralDraft
     public void Saved()
     {
         _originalDetach = DetachOnTimeout;
+        _originalMemory = MemoryEnabled;
         _originalCap = Cap;
         _originalCapNumber = CapNumber;
         _originalCompact = Compact;
@@ -212,6 +220,9 @@ public sealed class GeneralDraft
             if (DetachOnTimeout) root.Remove("shellDetachOnTimeout");
             else root["shellDetachOnTimeout"] = false;
         }
+
+        // ON IS THE DEFAULT, so on removes the key, and the block with it when nothing else is there.
+        if (MemoryChanged) Set(root, "memory", "enabled", MemoryEnabled ? null : JsonValue.Create(false));
 
         if (CapChanged) Set(root, "orchestrator", "maxTurns", CapNumber is { } n ? JsonValue.Create(n) : null);
         if (CompactChanged) Set(root, "orchestrator", "contextCompressThreshold", Compact is { } c ? JsonValue.Create(c) : null);

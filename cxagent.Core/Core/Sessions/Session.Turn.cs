@@ -996,6 +996,14 @@ public sealed partial class Session
                         text = note + "\n\n" + text;
                     }
 
+                    // NOTES CHANGED WHERE THE MODEL DID NOT SEE IT — /memory forget, the editor, another session — said
+                    // the same way: at the front of this message, never in the index, whose bytes head the cache.
+                    if (TakeMemoryNote() is { } memoryNote)
+                    {
+                        echo ??= text;
+                        text = memoryNote + "\n\n" + text;
+                    }
+
                     // WHAT THE TRANSCRIPT SHOWED goes with the message when it differs from what is
                     // sent, so the session list can name the session by it — see ChatMessage.Shown.
                     sent = await Host!.RunAsync(text, scope.Token, tools,

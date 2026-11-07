@@ -148,6 +148,7 @@ function handle(m) {
       break;
     }
     case "confirmClose": confirmClose(m); break;
+    case "confirmForget": confirmForget(m); break;
     case "closed": closed(m.sessionId); break;
     case "gone":
       // NO LONGER THERE — unloaded, or from a server since restarted. Back to the list, where it can be resumed.
@@ -1908,6 +1909,20 @@ function drawSessionPane(p) {
   pane.append(kv("Always-allow rules", String(p.here.permissions)));
   pane.append(kv("Turn limit", String(p.here.turnCap)));
   for (const s of p.here.mcp) pane.append(kv("MCP · " + s.name, s.failed ? "failed" : s.tools + " tools", s.failed ? "bad" : null));
+
+  // THE NOTES THE AGENT KEEPS, as the files have them now — absent when memory is off. Open is the editor, by name;
+  // Forget asks first, on the server's sentence.
+  if (p.memory) {
+    pane.append(el("h3", null, "Memory"));
+    if (!p.memory.length) pane.append(el("p", "none", "No notes yet. The agent keeps them as it learns about you and this project."));
+    for (const n of p.memory) {
+      const acts = [
+        button("Open", null, () => { send({ type: "memoryOpen", sessionId: activeSessionId(), name: n.name }); if (!wide()) setPanel(false); }),
+        button("Forget", "danger", () => send({ type: "memoryForget", sessionId: activeSessionId(), name: n.name })),
+      ];
+      pane.append(taskRow("", el("b", null, n.name), [n.scope === "global" ? "about you" : "this project", n.description].filter(Boolean).join(" · "), acts));
+    }
+  }
 }
 
 function taskRow(dot, head, sub, actions) {
@@ -2038,6 +2053,18 @@ function promptNode(m) {
   }
   box.append(btns);
   return box;
+}
+
+// A DELETED NOTE CANNOT BE BROUGHT BACK, so forgetting one asks — the terminal's Forget it / Keep buttons, here.
+function confirmForget(m) {
+  if (activeSessionId() !== m.sessionId) activate(m.sessionId);
+  const box = el("div", "prompt");
+  box.append(el("div", "q", m.text));
+  const btns = el("div", "btns");
+  btns.append(button("Forget it", "danger", () => { box.remove(); send({ type: "memoryForget", sessionId: m.sessionId, name: m.name, confirm: true }); }),
+    button("Keep", null, () => box.remove()));
+  box.append(btns);
+  $("prompts").append(box);
 }
 
 function confirmClose(m) {

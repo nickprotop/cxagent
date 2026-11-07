@@ -42,6 +42,9 @@ public sealed partial class Session
     /// <summary>The conversation was cleared or compacted: a change waiting for that, now.</summary>
     internal void OnContextFresh()
     {
+        // THE MEMORY INDEX CATCHES UP HERE AND NOWHERE ELSE: the prefix is being rebuilt anyway, so the notes written
+        // since the session began cost nothing to list now.
+        RefreshMemoryIndex();
         if (Interlocked.Exchange(ref _pendingFresh, null) is not { } apply) return;
         Announce(SessionChangeKind.Model);
         apply();

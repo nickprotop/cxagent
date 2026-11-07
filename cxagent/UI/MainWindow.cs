@@ -3321,6 +3321,7 @@ public sealed class MainWindow : IDisposable
             // child's: a child reports its skills on its own row and is gone by the next turn.
             SkillCount = SkillCount,
             LoadedSkills = LoadedSkills,
+            MemoryNotes = ActiveSession?.Memory?.List(),
         });
     }
 

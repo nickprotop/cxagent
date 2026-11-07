@@ -53,6 +53,11 @@ internal static class WebConfigForms
             Radio("detach", "When a command passes its timeout", d.DetachOnTimeout ? "true" : "false",
                 ("true", "Hand it to the background", "The call returns the pid and where its output goes; the agent is told the exit code when it arrives."),
                 ("false", "Kill it at the timeout", "No command outlives its call — and what it printed before the kill is lost."))),
+        // THE SAME CHOICES, WORDS AND KEY AS F8's MEMORY SECTION — both front ends write GeneralDraft.MemoryEnabled.
+        Section("Memory",
+            Radio("memory", "Notes across sessions", d.MemoryEnabled ? "true" : "false",
+                ("true", "Keep them", "The agent writes what it learns about you and the project to cxagent's folder, and reads it in later sessions. /memory lists them."),
+                ("false", "Do not keep any", "No memory tool and no notes in the prompt. Notes already kept stay on disk."))),
         Section("Sandbox",
             Radio("sandboxEnabled", "The model's shell commands", d.SandboxEnabled ? "true" : "false",
                 ("true", "Run inside the sandbox", "Writes only in the project, temp and package caches; credentials seen empty."),
@@ -105,6 +110,7 @@ internal static class WebConfigForms
     public static void SetGeneral(GeneralDraft d, JsonObject v)
     {
         if (Bool(v, "detach") is { } detach) d.DetachOnTimeout = detach;
+        if (Bool(v, "memory") is { } memory) d.MemoryEnabled = memory;
         if (Bool(v, "sandboxEnabled") is { } on) d.SandboxEnabled = on;
         if (Bool(v, "sandboxNetwork") is { } net) d.SandboxNetwork = net;
         if (Str(v, "writable") is { } w) d.WritableText = w;

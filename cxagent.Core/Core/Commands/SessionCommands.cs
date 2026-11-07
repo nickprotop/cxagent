@@ -54,6 +54,13 @@ public static class SessionCommands
         // NO SUBCOMMANDS — it lists, it does not load, and it is not a refresh: skills are re-read
         // every turn, so an edited one is already live.
         new("/skills", "list available skills, and any SKILL.md that was skipped"),
+        // THE USER'S HALF OF THE MODEL'S memory TOOL: what it kept, opened to read or edit, or deleted. Open is the front
+        // end's — a tab of its own — and forget asks first, in each front end's way; the bare listing is Core's.
+        new("/memory", "list the notes the agent keeps across sessions",
+        [
+            new("open <name>", "open a note to read or edit", Completes: false, Values: ValueSources.MemoryNotes),
+            new("forget <name>", "delete a note, after confirming", Completes: false, Values: ValueSources.MemoryNotes),
+        ]),
         // THE TYPEABLE HALF OF WHAT /skills SHOWS THE MODEL'S HALF OF. A bare listing, or one file by
         // name — what /review will actually send, readable before it is run.
         new("/commands", "list custom commands, and any file that was shadowed or skipped",

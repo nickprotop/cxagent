@@ -464,6 +464,13 @@ public record ProviderSettings(
     public Jobs.Builtin.WebSearchSettings? WebSearch { get; init; }
 
     /// <summary>
+    /// <c>memory.enabled</c>, or null when config says nothing — which the app reads as on. Null rather than true here
+    /// for the reason <see cref="ShellDetachOnTimeout"/> is: "the user said on" and "the user said nothing" are
+    /// different facts, and only the reader decides what nothing means.
+    /// </summary>
+    public bool? Memory { get; init; }
+
+    /// <summary>
     /// The <c>hooks</c> block, or null when the config has none. Held as written; each session parses it
     /// beside the repository's own hooks files — see <see cref="Hooks.HookSources"/>.
     /// </summary>
@@ -1056,6 +1063,20 @@ public static class ProviderConfigLoader
                 webSearch = new Jobs.Builtin.WebSearchSettings(string.IsNullOrWhiteSpace(tavily) ? null : tavily);
             }
 
+            // A MEMORY BLOCK OF THE WRONG SHAPE WARNS AND KEEPS THE DEFAULT, like every switch here: refusing the config over
+            // it would take every provider down for a setting that has a safe default.
+            bool? memory = null;
+            if (root.TryGetProperty("memory", out var mem))
+            {
+                if (mem.ValueKind != JsonValueKind.Object)
+                    warnings.Add("memory must be an object, like { \"enabled\": false } — memory stays on.");
+                else if (mem.TryGetProperty("enabled", out var on))
+                {
+                    if (on.ValueKind is JsonValueKind.True or JsonValueKind.False) memory = on.GetBoolean();
+                    else warnings.Add("memory.enabled must be true or false — memory stays on.");
+                }
+            }
+
             // A HOOKS BLOCK OF THE WRONG SHAPE WARNS, never refuses the config: no hooks is a working
             // setup, and taking every provider down over it would be the larger failure. Entries inside
             // it are checked per session, where a bad one costs only itself.
@@ -1382,6 +1403,7 @@ public static class ProviderConfigLoader
                 ClassifierTimeoutSeconds = classifierTimeout,
                 ShellDetachOnTimeout = shellDetachOnTimeout,
                 WebSearch = webSearch,
+                Memory = memory,
                 Hooks = hooks,
                 Sandbox = sandbox,
                 Web = web,
