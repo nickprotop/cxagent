@@ -656,6 +656,8 @@ var resolution = new AgentConfig
 | `Models` | every model, by the name a user types at `/model` |
 | `DefaultModel` | which one a session starts on. Null takes the single entry when there is exactly one |
 | `Classifier` | which model reviews writes in `Auto`. **Null means Auto is not offered at all** |
+| `ClassifierTimeoutSeconds` | how long each of the classifier's two stages may take; null takes the default. Raise it for a local classifier that shares its model with the agent — a missed deadline asks rather than allows |
+| `ShellDetachOnTimeout` | null or true hands a shell command still running at its timeout back alive; false kills it, for unattended hosts whose commands must not outlive the call |
 | `MaxTurns` · `CompressAbove` | turn ceiling and compaction threshold; null derives both. A set ceiling binds the session's own agent and its sub-agents; unset, the session's agent has no cap and sub-agents keep a built-in 300 |
 | `Agents` | sub-agent types, merged with the shipped ones rather than replacing them |
 | `Mcp` | MCP servers, stdio or HTTP |

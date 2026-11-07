@@ -313,4 +313,17 @@ public class AgentConfigTests
     [Fact]
     public void No_web_search_in_code_means_no_key() =>
         Assert.Null(Machine.Resolve().WebSearch.TavilyApiKey);
+
+    // ---- the settings config.json has that code had no way to set ------------------------------------------------
+
+    [Fact]
+    public void The_classifier_timeout_in_code_reaches_the_resolved_config() =>
+        Assert.Equal(40, (Machine with { ClassifierTimeoutSeconds = 40 }).Resolve().ClassifierTimeoutSeconds);
+
+    [Fact]
+    public void Shell_detach_on_timeout_in_code_reaches_the_resolved_config()
+    {
+        Assert.True(Machine.Resolve().ShellDetachOnTimeout);
+        Assert.False((Machine with { ShellDetachOnTimeout = false }).Resolve().ShellDetachOnTimeout);
+    }
 }

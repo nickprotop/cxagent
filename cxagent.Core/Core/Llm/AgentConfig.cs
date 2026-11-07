@@ -127,6 +127,21 @@ public sealed record AgentConfig
     /// </summary>
     public string? Classifier { get; init; }
 
+    /// <summary>
+    /// How long each of the classifier's two stages may take, in seconds; null takes the default. A local classifier
+    /// shares its model with the agent and waits behind its work, so the deadline a hosted one needs is too short for
+    /// it — and the classifier fails closed, so a deadline missed turns auto mode into asking. config.json's
+    /// <c>classifierTimeoutSeconds</c>.
+    /// </summary>
+    public int? ClassifierTimeoutSeconds { get; init; }
+
+    /// <summary>
+    /// Whether a shell command still running at its timeout is handed back alive rather than killed; null takes the
+    /// default, which is true. False is for a host running unattended work whose commands must not outlive the call
+    /// that started them. config.json's <c>shellDetachOnTimeout</c>.
+    /// </summary>
+    public bool? ShellDetachOnTimeout { get; init; }
+
     /// <summary>Turns one request may take before it is stopped. Null is unbounded.</summary>
     public int? MaxTurns { get; init; }
 
@@ -262,7 +277,10 @@ public sealed record AgentConfig
                 Orchestrator: new OrchestratorSettings(MaxTurns, CompressAbove),
                 MaxConcurrentAgents: chosen.MaxConcurrentAgents,
                 ClassifierInstance: Classifier)
-            { PluginPaths = PluginPaths, WebSearch = WebSearch, Hooks = hooks, Sandbox = Sandbox },
+            {
+                PluginPaths = PluginPaths, WebSearch = WebSearch, Hooks = hooks, Sandbox = Sandbox,
+                ClassifierTimeoutSeconds = ClassifierTimeoutSeconds, ShellDetachOnTimeout = ShellDetachOnTimeout,
+            },
             [],
             Warnings: warnings,
             Entries: new PluginEntries(Plugins));
