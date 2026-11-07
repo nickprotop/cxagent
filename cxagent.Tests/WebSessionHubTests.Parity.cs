@@ -1,5 +1,11 @@
 using System.Text.Json.Nodes;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Models;
+using CxAgent.Core.Permissions;
+using CxAgent.Core.Storage;
+using CxAgent.Hosting;
+using CxAgent.Web;
+using CxAgent.Web.Http;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -255,5 +261,91 @@ public sealed partial class WebSessionHubTests
         var changed = await tab.NextAsync(Type("fileChanged"));
         Assert.Equal(file["sessionId"]!.GetValue<string>(), changed["sessionId"]!.GetValue<string>());
         Assert.Equal("after\n", changed["text"]!.GetValue<string>());
+    }
+
+    // ---- the shell ------------------------------------------------------------------------------------------------
+
+    /// <summary>A second server over the same sessions, with the switches <paramref name="allow"/> sets.</summary>
+    private async Task<(HttpServer Server, WebSessionHub Hub)> ServerWithAsync(Core.Web.WebAccess allow)
+    {
+        var composer = new SessionComposer(new ComposerServices(_manager, _paths, new PermissionRulesStore(_paths), null, null) { Prompts = _prompts });
+        var opener = new ComposerSessionOpener(composer, ResolvedConfig.ForTesting(_model), AgentMode.Single);
+        var hub = new WebSessionHub(new WebHubServices(_manager, _prompts, new FolderSessionStore(_paths), _paths, [Projects], opener, _clock)
+        {
+            Allow = allow,
+        });
+        var server = new HttpServer(new HttpServerOptions(System.Net.IPAddress.Loopback, 0), async x =>
+        {
+            if (await WebSocketUpgrade.AcceptAsync(x) is { } ws) await hub.ServeAsync(ws, "tester", CancellationToken.None);
+        });
+        await server.StartAsync();
+        return (server, hub);
+    }
+
+    [Fact]
+    public async Task A_shell_is_refused_while_its_switch_is_off()
+    {
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/shell")));
+        Assert.Contains("web.allow.shell", (await tab.NextAsync(Type("notice")))["text"]!.GetValue<string>(), StringComparison.Ordinal);
+        await tab.SendAsync(Msg("openShell", ("sessionId", id)));
+        Assert.Contains("web.allow.shell", (await tab.NextAsync(Type("notice")))["text"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task With_its_switch_on_a_shell_runs_in_the_session_s_folder_and_answers_what_is_typed()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Shell = true });
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("create", ("folder", Work)));
+            var id = (await tab.NextAsync(Type("opened")))["sessionId"]!.GetValue<string>();
+            await tab.SendAsync(Msg("openShell", ("sessionId", id)));
+            var key = (await tab.NextAsync(Type("openedShell")))["sessionId"]!.GetValue<string>();
+
+            await tab.SendAsync(Msg("shellInput", ("sessionId", key), ("data", "echo shell-$((40+2)) && pwd\r")));
+            var seen = new System.Text.StringBuilder();
+            while (!seen.ToString().Contains("shell-42", StringComparison.Ordinal) || !seen.ToString().Contains(Work, StringComparison.Ordinal))
+            {
+                var output = await tab.NextAsync(Type("shellOutput"));
+                seen.Append(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(output["data"]!.GetValue<string>())));
+            }
+
+            await tab.SendAsync(Msg("shellInput", ("sessionId", key), ("data", "exit 3\r")));
+            Assert.Equal(3, (await tab.NextAsync(Type("shellExited")))["exitCode"]!.GetValue<int>());
+        }
+        finally
+        {
+            await server.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task What_the_shell_showed_reaches_the_model_with_the_next_message()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Shell = true });
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("create", ("folder", Work)));
+            var id = (await tab.NextAsync(Type("opened")))["sessionId"]!.GetValue<string>();
+            await tab.SendAsync(Msg("openShell", ("sessionId", id)));
+            var key = (await tab.NextAsync(Type("openedShell")))["sessionId"]!.GetValue<string>();
+
+            // THE PAGE HOLDS THE SCREEN, so it sends the lines it shows.
+            await tab.SendAsync(Msg("shellReport", ("sessionId", key), ("lines", new JsonArray("$ make", "build ok")), ("exitCode", 0)));
+            _model.EnqueueResponse(Reply("seen"));
+            await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "what happened?")));
+            await TurnDoneAsync(tab);
+            Assert.Contains(_model.LastMessages!, m => m.Content.Contains("build ok", StringComparison.Ordinal));
+        }
+        finally
+        {
+            await server.StopAsync();
+        }
     }
 }

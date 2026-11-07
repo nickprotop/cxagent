@@ -395,3 +395,7 @@ body.editing .chat > .view { height: 100%; }
 /* THE THEME PADS code.hljs FOR A CODE BLOCK; in the editor that padding would shift every coloured line off its
    textarea twin and its line number. */
 .editor .ed-hl > code.hljs { display: inline; padding: 0 !important; background: transparent !important; }
+
+/* ---- the shell ------------------------------------------------------------------------------------------------- */
+.shell { height: 100%; padding: 8px 10px; background: #0b0e14; box-sizing: border-box; }
+.shell .xterm { height: 100%; }

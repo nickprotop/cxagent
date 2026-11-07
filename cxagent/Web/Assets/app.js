@@ -82,6 +82,8 @@ function connect() {
       if (view.kind === "worker") send({ type: "openWorker", sessionId: view.parent, agentId: view.agentId, since: view.seq });
       else if (view.kind === "command") send({ type: "openCommand", sessionId: view.parent, pid: view.pid });
       else if (view.kind === "file") send({ type: "openFile", sessionId: view.parent, path: view.path });
+      // A SHELL DOES NOT SURVIVE ITS CONNECTION: the server ended it when the socket went, as closing the tab would.
+      else if (view.kind === "shell") shellEnded(view, null, "the connection dropped, so the shell ended");
       else send({ type: "open", id, since: view.seq });
     }
   });
@@ -149,6 +151,9 @@ function handle(m) {
     case "export": download(m.name, m.markdown); break;
     case "openedCommand": openedCommand(m); break;
     case "openedFile": openedFile(m); break;
+    case "openedShell": openedShell(m); break;
+    case "shellOutput": { const v = state.views.get(m.sessionId); if (v && v.term) v.term.write(bytes(m.data)); else if (v) (v.pending = v.pending || []).push(m.data); break; }
+    case "shellExited": { const v = state.views.get(m.sessionId); if (v) shellEnded(v, m.exitCode); break; }
     case "fileSaved": fileSaved(m); break;
     case "fileConflict": fileConflict(m); break;
     case "fileChanged": fileChanged(m); break;
@@ -270,14 +275,15 @@ function drawTabs() {
     const worker = view.kind === "worker";
     const command = view.kind === "command";
     const file = view.kind === "file";
-    const sub = worker || command || file;
+    const shell = view.kind === "shell";
+    const sub = worker || command || file || shell;
     const row = sub ? null : state.rows.find((r) => r.id === id);
     const w = worker ? workerRunning(view) : null;
     const tab = el("button", "tab" + (id === state.active ? " on" : "") + (sub ? " worker" : ""));
     tab.type = "button";
-    const dot = file ? (view.dirty ? "waiting" : "") : command ? (view.running ? "working" : "") : worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle");
+    const dot = shell ? (view.ended ? "" : "working") : file ? (view.dirty ? "waiting" : "") : command ? (view.running ? "working" : "") : worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle");
     tab.append(el("span", "dot " + dot),
-      document.createTextNode(file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? "⤷ " + view.name : view.title || "session"));
+      document.createTextNode(shell ? "❯ " + view.title : file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? "⤷ " + view.name : view.title || "session"));
     if (file) tab.title = view.path;
     tab.addEventListener("click", () => activate(id));
     if (sub) {
@@ -342,7 +348,7 @@ function openWorker(sessionId, agentId) {
 // THE SESSION BEHIND THE ACTIVE VIEW: a worker's tab shows its parent's panel, model and prompts.
 function activeSessionId() {
   const v = state.views.get(state.active);
-  return v ? (v.kind === "worker" || v.kind === "command" || v.kind === "file" ? v.parent : v.id) : null;
+  return v ? (v.kind === "session" ? v.id : v.parent) : null;
 }
 
 function activate(id) {
@@ -351,13 +357,16 @@ function activate(id) {
   $("chat").replaceChildren(view ? view.log : $("empty"));
   document.body.dataset.view = view ? "chat" : "list";
   // A COMMAND'S TAB TAKES NO MESSAGES: it is the command's output, and the terminal's tab has no composer either.
-  $("input").disabled = !view || view.kind === "command" || view.kind === "file";
-  $("send").disabled = !view || view.kind === "command" || view.kind === "file";
-  document.body.classList.toggle("editing", !!view && view.kind === "file");
+  // A TAB THAT IS NOT A CONVERSATION TAKES NO MESSAGES: a command's output, a file, a shell — the keys go to it.
+  const conversation = !!view && (view.kind === "session" || view.kind === "worker");
+  $("input").disabled = !conversation;
+  $("send").disabled = !conversation;
+  document.body.classList.toggle("editing", !!view && (view.kind === "file" || view.kind === "shell"));
   $("input").placeholder = view && view.kind === "worker" ? "Message " + view.name + "…" : "Message, or / for commands";
   $("crumb").textContent = view ? view.folder : "";
   $("phone-title").textContent = view ? (view.kind === "worker" ? "⤷ " + view.name : view.kind === "command" ? "▭ " + view.title : view.title) : "";
   if (view && view.kind === "file") setTimeout(() => view.ta.focus(), 0);
+  if (view && view.kind === "shell") setTimeout(() => { if (view.fit) view.fit.fit(); if (view.term) view.term.focus(); }, 0);
   drawWorkerHead();
   drawPrompts();
   drawSessions();
@@ -371,7 +380,8 @@ function activate(id) {
 function dropView(id) {
   const view = state.views.get(id);
   // A COMMAND'S TAB STOPS ITS FOLLOWING ON THE SERVER; the command itself carries on, as closing the terminal's tab leaves it.
-  if (view && (view.kind === "command" || view.kind === "file")) send({ type: "leave", sessionId: id });
+  if (view && (view.kind === "command" || view.kind === "file" || view.kind === "shell")) send({ type: "leave", sessionId: id });
+  if (view && view.term) view.term.dispose();
   state.views.delete(id);
   if (state.active === id) activate(state.views.keys().next().value || null);
   else drawTabs();
@@ -382,6 +392,7 @@ function drawWorkerHead() {
   const head = $("worker-head");
   if (view && view.kind === "command") { drawCommandHead(view, head); return; }
   if (view && view.kind === "file") { drawFileHead(view, head); return; }
+  if (view && view.kind === "shell") { drawShellHead(view, head); return; }
   if (!view || view.kind !== "worker") { head.hidden = true; return; }
   head.hidden = false;
   head.replaceChildren();
@@ -609,6 +620,97 @@ function drawFileHead(view, head) {
 
 $("theirs-close").addEventListener("click", () => { $("theirs").hidden = true; });
 $("theirs").addEventListener("click", (e) => { if (e.target === $("theirs")) $("theirs").hidden = true; });
+
+// ---- the shell ------------------------------------------------------------------------------------------------------
+
+// THE TERMINAL'S /shell: a real terminal, the user's own shell on a pseudo-terminal in the session's folder. xterm.js is
+// loaded the first time one opens — most pages never need it.
+let xtermReady = null;
+function loadXterm() {
+  if (xtermReady) return xtermReady;
+  const css = el("link");
+  css.rel = "stylesheet";
+  css.href = "/vendor/xterm.css";
+  document.head.append(css);
+  const script = (src) => new Promise((ok, bad) => { const s = el("script"); s.src = src; s.onload = ok; s.onerror = bad; document.head.append(s); });
+  xtermReady = script("/vendor/xterm.js").then(() => Promise.all([script("/vendor/xterm-addon-fit.js"), script("/vendor/xterm-addon-canvas.js")]));
+  return xtermReady;
+}
+
+function bytes(b64) {
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function openedShell(m) {
+  const view = newView(m.sessionId, "shell");
+  Object.assign(view, { parent: m.parent, title: m.shell, shellName: m.shell, folder: m.folder, ended: false });
+  const box = el("div", "shell");
+  view.log.append(box);
+  view.box = box;
+  activate(m.sessionId);
+  loadXterm().then(() => {
+    const mono = getComputedStyle(document.documentElement).getPropertyValue("--mono").trim() || "monospace";
+    const term = new Terminal({ cursorBlink: true, fontFamily: mono, fontSize: 13,
+      theme: { background: "#0b0e14", foreground: "#d9dee6" }, scrollback: 5000, convertEol: false });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    // THE CANVAS RENDERER, NOT THE DOM ONE, and loaded before open so the DOM one is never made: it colours text through
+    // <style> elements it adds to the page, which the page's policy refuses — text arrived uncoloured and barely visible.
+    term.loadAddon(new CanvasAddon.CanvasAddon());
+    term.open(box);
+    view.term = term;
+    view.fit = fit;
+    term.onData((data) => { if (!view.ended) send({ type: "shellInput", sessionId: view.id, data }); });
+    term.onResize(({ rows, cols }) => send({ type: "shellResize", sessionId: view.id, rows, cols }));
+    new ResizeObserver(() => { if (state.active === view.id) fit.fit(); }).observe(box);
+    for (const d of view.pending || []) term.write(bytes(d));
+    view.pending = null;
+    fit.fit();
+    send({ type: "shellResize", sessionId: view.id, rows: term.rows, cols: term.cols });
+    if (state.active === view.id) term.focus();
+  }, () => flash("The terminal could not load."));
+}
+
+// WHAT THE SCREEN SHOWS, as the terminal's tab sends it: the buffer's lines, trailing blanks dropped.
+function screenLines(term) {
+  const buf = term.buffer.active;
+  const lines = [];
+  for (let i = 0; i < buf.length; i++) lines.push(buf.getLine(i)?.translateToString(true) ?? "");
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return lines.slice(-400);
+}
+
+function reportShell(view, exitCode) {
+  if (!view.term) return;
+  send({ type: "shellReport", sessionId: view.id, lines: screenLines(view.term), exitCode });
+}
+
+function shellEnded(view, exitCode, why) {
+  if (view.ended) return;
+  view.ended = true;
+  view.exitCode = exitCode;
+  if (view.term) view.term.write("\r\n\x1b[2m[" + (why || ("exited" + (exitCode != null ? " " + exitCode : ""))) + "]\x1b[0m\r\n");
+  // TOLD ON EXIT, as the terminal's tab copies back when its shell ends: queued for the next message, no turn of its own.
+  if (!why) reportShell(view, exitCode);
+  drawTabs();
+  if (state.active === view.id) drawWorkerHead();
+}
+
+function drawShellHead(view, head) {
+  head.hidden = false;
+  head.replaceChildren();
+  head.append(view.ended ? el("span", view.exitCode === 0 ? "mark-ok" : "mark-bad", view.exitCode === 0 ? "✓" : "✗") : el("span", "spin small"));
+  head.append(el("span", "tag", "Shell"), el("b", null, view.shellName));
+  const where = el("span", "meta", shortFolder(view.folder) + (view.ended ? " · ended" : ""));
+  where.title = view.folder;
+  head.append(where, el("span", "spacer"));
+  head.append(button("Back to session", "ghost", () => activate(view.parent)));
+  head.append(button("Copy to transcript", null, () => reportShell(view, view.ended ? view.exitCode : null)));
+  head.append(button(view.ended ? "Close" : "End shell", "danger", () => dropView(view.id)));
+}
 
 // ---- export ---------------------------------------------------------------------------------------------------------
 
@@ -1249,6 +1351,13 @@ function drawSessionPane(p) {
   exp.title = "Download this conversation as markdown";
   pane.append(exp);
 
+  if (state.access && state.access.shell) {
+    pane.append(el("h3", null, "Shell"));
+    const sh = el("div", "btns export");
+    sh.append(button("Open a shell", null, () => { send({ type: "openShell", sessionId: activeSessionId() }); if (!wide()) setPanel(false); }));
+    pane.append(sh);
+  }
+
   pane.append(el("h3", null, "Open a file"));
   const of = el("form", "open-file");
   const ofIn = el("input");
@@ -1454,7 +1563,7 @@ function drawAttachments() {
     const x = el("button", "x icon", "×");
     x.type = "button";
     x.title = "Remove this image";
-    x.addEventListener("click", () => { URL.revokeObjectURL(a.url); attached.splice(i, 1); drawAttachments(); });
+    x.addEventListener("click", () => { attached.splice(i, 1); drawAttachments(); });
     chip.append(img, el("span", null, a.name), x);
     return chip;
   }));
@@ -1467,8 +1576,9 @@ function attachFiles(files) {
     if (f.size > MAX_IMAGE_BYTES) { flash(f.name + " is too large to send."); continue; }
     const reader = new FileReader();
     reader.onload = () => {
-      const data = String(reader.result).split(",")[1] || "";
-      attached.push({ name: f.name || "pasted image", data, url: URL.createObjectURL(f) });
+      // A DATA URL FOR THE THUMBNAIL, not a blob: one — the page's policy lets images come from itself and data: only.
+      const url = String(reader.result);
+      attached.push({ name: f.name || "pasted image", data: url.split(",")[1] || "", url });
       drawAttachments();
     };
     reader.readAsDataURL(f);
@@ -1498,7 +1608,6 @@ $("composer").addEventListener("submit", (e) => {
   const message = { type: "say", sessionId: state.active, text };
   if (attached.length) {
     message.images = attached.map((a) => ({ name: a.name, data: a.data }));
-    for (const a of attached) URL.revokeObjectURL(a.url);
     attached.length = 0;
     drawAttachments();
   }

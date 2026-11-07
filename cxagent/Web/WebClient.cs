@@ -64,7 +64,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     private WebFiles _files => _filesOrNull ??= new WebFiles(Send);
 
     /// <summary>The sessions this tab has open — not the workers' own views, which have no panel of their own.</summary>
-    public IEnumerable<string> OpenSessions => _open.Keys.Where(k => !k.Contains('~') && !k.Contains('#') && !k.Contains('@'));
+    public IEnumerable<string> OpenSessions => _open.Keys.Where(k => !k.Contains('~') && !k.Contains('#') && !k.Contains('@') && !k.Contains('$'));
 
     /// <summary>Sends a session's panel, when it differs from the last one this tab was sent.</summary>
     public void SendPanel(string sessionId, JsonObject panel)
@@ -166,6 +166,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     public void Dispose()
     {
         _filesOrNull?.Dispose();
+        foreach (var key in _shells.Keys) if (_shells.TryRemove(key, out var shell)) shell.Dispose();
         foreach (var sub in _open.Values) sub.Dispose();
         _open.Clear();
     }
@@ -233,6 +234,21 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 break;
             case "stopCommand":
                 StopCommand(Str(m, "sessionId"), Long(m, "pid"));
+                break;
+            case "openShell":
+                if (LiveSession(Str(m, "sessionId")) is { } shellFor) OpenShell(shellFor);
+                else Error("No such open session.");
+                break;
+            case "shellInput":
+                if (_shells.TryGetValue(Str(m, "sessionId") ?? "", out var typedInto) && Str(m, "data") is { } typed)
+                    typedInto.Pty.Write(Encoding.UTF8.GetBytes(typed));
+                break;
+            case "shellResize":
+                if (_shells.TryGetValue(Str(m, "sessionId") ?? "", out var resized))
+                    resized.Pty.Resize((int)(Long(m, "rows") ?? 24), (int)(Long(m, "cols") ?? 80));
+                break;
+            case "shellReport":
+                ShellReport(Str(m, "sessionId"), m["lines"] as JsonArray, (int?)Long(m, "exitCode"));
                 break;
             case "openFile":
                 if (LiveSession(Str(m, "sessionId")) is { } opening) OpenFile(opening, Str(m, "path") ?? "");
@@ -505,6 +521,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     {
         if (sessionId is null) return;
         if (WebFiles.IsFileKey(sessionId)) { _filesOrNull?.Close(sessionId); return; }
+        if (_shells.TryRemove(sessionId, out var shell)) { shell.Dispose(); return; }
+        foreach (var key in _shells.Keys.Where(k => k.StartsWith(sessionId + "$", StringComparison.Ordinal)))
+            if (_shells.TryRemove(key, out var left)) left.Dispose();
         _filesOrNull?.CloseSession(sessionId);
         if (_open.TryRemove(sessionId, out var sub)) sub.Dispose();
 
@@ -586,6 +605,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "/open":
                 OpenFile(session, args);
                 return true;
+            case "/shell":
+                OpenShell(session);
+                return true;
             default:
                 return false;
         }
@@ -610,6 +632,76 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             return;
         }
         if (_files.Open(session, path, allowed) is { } refused) Notice(session.Id, refused, "Warning");
+    }
+
+    // ---- the shell: /shell, a real terminal in a tab, behind web.allow.shell -----------------------------------------
+
+    private sealed record OpenShellTab(Session Session, WebPty Pty) : IDisposable
+    {
+        public void Dispose() => Pty.Dispose();
+    }
+
+    private readonly ConcurrentDictionary<string, OpenShellTab> _shells = new();
+    private int _shellCount;
+
+    /// <summary>
+    /// The terminal's /shell, in a browser tab: the user's own shell on a pseudo-terminal, in the session's folder, as
+    /// them — outside the sandbox and its prompts, which is why it waits on a switch only the terminal turns on.
+    /// </summary>
+    private void OpenShell(Session session)
+    {
+        if (!S.Allow.Shell)
+        {
+            Notice(session.Id, WebCommands.Refusal("/shell", S.Allow) ?? "The shell is off for browsers.", "Warning");
+            return;
+        }
+        if (!OperatingSystem.IsLinux())
+        {
+            Notice(session.Id, "A shell in the browser needs Linux for now; the terminal's /shell works here.", "Warning");
+            return;
+        }
+        var key = $"{session.Id}${Interlocked.Increment(ref _shellCount)}";
+        var shell = Environment.GetEnvironmentVariable("SHELL") is { Length: > 0 } sh && File.Exists(sh) ? sh : "/bin/sh";
+        WebPty pty;
+        try { pty = new WebPty(shell, session.WorkingDirectory, 24, 80); }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
+        {
+            Notice(session.Id, $"The shell could not start: {e.Message}", "Warning");
+            return;
+        }
+        _shells[key] = new OpenShellTab(session, pty);
+        Send(new JsonObject
+        {
+            ["type"] = "openedShell", ["sessionId"] = key, ["parent"] = session.Id,
+            ["shell"] = Path.GetFileName(shell), ["folder"] = session.WorkingDirectory,
+        });
+
+        // A THREAD OF ITS OWN, because a PTY read blocks until the shell writes; base64 because a read can end inside a
+        // UTF-8 character, and the page's terminal decodes the stream itself.
+        new Thread(() =>
+        {
+            var buffer = new byte[16 * 1024];
+            while (!_gone.IsCancellationRequested)
+            {
+                var n = pty.Read(buffer);
+                if (n <= 0) break;
+                Send(new JsonObject { ["type"] = "shellOutput", ["sessionId"] = key, ["data"] = Convert.ToBase64String(buffer, 0, n) });
+            }
+            pty.WaitForExit(500);
+            if (_shells.ContainsKey(key)) Send(new JsonObject { ["type"] = "shellExited", ["sessionId"] = key, ["exitCode"] = pty.ExitCode });
+        }) { IsBackground = true, Name = "web shell " + key }.Start();
+    }
+
+    /// <summary>
+    /// What a shell showed, sent by the page that drew it — its terminal holds the screen — as the terminal's tab sends
+    /// it: queued with the next message, never a turn of its own; someone who just read a build log may be reading.
+    /// </summary>
+    private void ShellReport(string? key, JsonArray? lines, int? exitCode)
+    {
+        if (key is null || !_shells.TryGetValue(key, out var shell) || lines is null) return;
+        var text = lines.Select(l => (l as JsonValue)?.TryGetValue<string>(out var t) == true ? t : "").ToList();
+        shell.Session.Inject(Core.Commands.ShellTranscript.Render(new Core.Commands.ShellOutcome("", text, exitCode)));
+        Notice(shell.Session.Id, "What the shell showed goes with your next message.", "Info");
     }
 
     // ONE NUMBERING PER SESSION FOR THIS TAB, as the terminal's composer numbers its tokens for its life.
