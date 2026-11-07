@@ -1,12 +1,15 @@
 # Commands
 
 Typed into the composer, like a message. They are handled by the app before the model sees anything,
-so they cost nothing — no request, no tokens.
+and most cost nothing — no request, no tokens. The exceptions are the ones whose whole job is a model
+call: `/compress`, `/init` and `/btw` send a request of their own, and `/agents send` gives a
+sub-agent a turn. A custom command is a prompt, so it is a turn too.
 
 **Which means most of them work with no model configured.** A session opened before you have set up
 a provider can still run `/exit`, `/help`, `/stats`, `/sessions`, `/diff`, `/mode`, `/mcp`,
-`/skills`, `/commands`, `/agents`, `/clear`, `/think`, `/open` — and `/model`, the one that fixes it. Only `/compress`, `/init` and
-`/btw` need a model, because those genuinely talk to it; each says so rather than doing nothing.
+`/skills`, `/commands`, `/agents`, `/clear`, `/think`, `/open` — and `/model`, the one that fixes it. `/compress`, `/init`,
+`/btw` and a custom command need a model and say so rather than doing nothing. (`/agents send` needs a
+sub-agent to send to, and there is none until a model has spawned one.)
 
 **Type `/` and the list appears.** Arrow to a command, Enter to fill it in. A command that takes
 arguments shows them as a hint — `/stats  usage: …  [<days>|all|clear]` — and typing a space
@@ -20,11 +23,13 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/help` | Keys and commands |
 | `/model` | Show or switch which configured model this session uses |
 | `/think` | Show or set how hard the model thinks (F10 cycles) |
+| `/think <level> --save` | Set it, and make it this instance's default in `config.json` |
 | `/providers` | Add, edit or remove providers (F8) |
 | `/mode` | Show how this session works |
 | `/mode agent single` · `/mode agent fan-out` | Set delegation, live |
 | `/mode edits always-ask` · `/mode edits accept-edits` | Set when writes ask, live (Shift+Tab cycles) |
-| `/clear` | Wipe the conversation |
+| `/clear` | Empty the agent's context, and start the conversation afresh |
+| `/trust` · `/trust yes` · `/trust no` | Show or set whether this folder is trusted |
 | `/compress` | Summarise the conversation to free room |
 | `/btw [question]` | Ask a side question about the conversation without adding it to the conversation |
 | `/stats` | Usage: tokens, projects, agent types, what fills the context |
@@ -41,6 +46,9 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/mcp reload` | Re-read config and reconnect |
 | `/mcp edit` | Add, edit or remove MCP servers |
 | `/mcp login <server>` | Authorise a server that needs OAuth |
+| `/plugin` | List configured plugins and each one's state |
+| `/plugin browse` | The plugin manager (F2): catalog, installed, updates |
+| `/plugin get` · `load` · `unwire` · `enable` · `disable` · `store` | Download, load, stop or configure one — see [`/plugin`](#plugin) |
 | `/skills` | List available skills, and any `SKILL.md` that was skipped |
 | `/memory` | List the notes the agent keeps across sessions |
 | `/memory open <name>` | Open a note in a tab, to read or edit |
@@ -70,7 +78,8 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/open <path>` | Open that file in a tab — relative to this folder, or absolute |
 | `/shell` | Open a terminal you can type in — Linux and Windows |
 | `/shell <command>` | Run one command in it, and tell the agent what happened |
-| `/exit` | Quit |
+| `/web` · `/web off` | Serve this terminal's sessions to a browser, or stop |
+| `/exit` | Close this session, or quit when it is the last |
 
 ---
 
@@ -306,9 +315,9 @@ outlier is a question about many runs. `capped` is counted apart from `failed` �
 its turn cap did not fail, it ran out of room, which is a fact about the briefing rather than the
 work.
 
-Separate from session state, which lives in `logs/<agent-id>/` rather than in a database at all — and
-**never pruned**, where a session's own folder is swept 30 days after it ends cleanly. This is the
-archive. Recording is
+The history is its own file, `history.db` in cxagent's folder, separate from session state — which is
+not a database at all but a folder per agent, `logs/<agent-id>/` — and it is **never pruned**, where a
+session's own folder is swept 30 days after it ends cleanly. This is the archive. Recording is
 best-effort throughout — a locked file costs statistics and never a session.
 
 **Nothing is recorded before this version.** A fresh install says so rather than showing an empty
@@ -371,8 +380,35 @@ works straight away, from the restored conversation.
 
 ## `/clear`
 
-Clears the agent's context — the messages the model is sent on every turn. The transcript on screen
-is left alone; it is your record, not the model's memory.
+Empties the agent's context — the messages the model is sent on every turn — and says
+*Conversation cleared.* The next message starts a fresh conversation in the same session, on the same
+model and mode. A `/btw` aside ends with it, since what it was forked from is gone, and a held custom
+command is dropped and named as not run.
+
+**What the screen does is the front end's call.** The terminal clears that tab's transcript and its
+context gauge with it; a browser keeps the transcript above and the line below it. Either way the
+session's `history.jsonl` keeps everything, so `/export` still has the whole session.
+
+Declined while a turn is running: emptying the list a turn is appending to would leave it writing
+into a conversation nobody reads.
+
+---
+
+## `/trust`
+
+The folder's trust, seen and changed from inside the session — otherwise it is answered once, at the
+startup question, or from a file prompt's *Trust this folder*.
+
+```
+/trust        this folder is trusted, not trusted, or not yet decided — and the path it means
+/trust yes    reads and writes inside it, and read-only commands, stop asking
+/trust no     every file operation asks — the way to take trust back
+```
+
+`y`, `trust` and `on` also mean yes; `n`, `untrust` and `off` also mean no. Setting what is already set
+says so and writes nothing. A folder never decided behaves as untrusted until it is. The root of the file
+system cannot be trusted, so `/trust yes` there is refused. What trust bounds is under
+[`/mode`](#mode); a failed save is reported, never taken as done.
 
 ---
 
@@ -444,6 +480,41 @@ configured.
 hand — it is what makes an `mcp` edit take effect without restarting. Adding a server does not need
 a restart. `/mcp login <server>` runs the OAuth flow for a server that returned 401, opening a browser
 and storing the token at `0600`, never in the config file.
+
+---
+
+## `/hooks`
+
+Every hook this session has, one row each: its event, matcher, the hook, where it came from —
+`system` (`config.json`), `project` (`.cxagent/hooks.json`) or `local` (`hooks.local.json`) — and its
+state. A hook is `active`, `not supported here` for an event or type cxagent does not run, or
+`not running: folder not trusted` for a repository hook in a folder you have not trusted.
+
+**A session runs the hooks files as it read them.** When a repository's file changes under it — a pull,
+a branch switch — the session says so once and keeps running what it had; `/hooks` then lists the
+changes, `+` and `−`, as they would apply. `/hooks review` applies them, as does a save in F8 › Hooks.
+Nothing a checkout brings in starts running without you reading it first.
+
+`/hooks edit` opens F8 › Hooks. What a hook is and does: [CONFIG.md](CONFIG.md#hooks--commands-that-run-on-the-agents-events).
+
+---
+
+## `/sandbox`
+
+Whether the model's shell commands run contained, and if they do, what they can touch: the folders
+they may write, those they may only read (because they run code later), those they see as empty, and
+whether they reach the network. Off, not available on this machine, or failed to start — each says so,
+with the fix where there is one; a sandbox that failed to start makes each command ask before it runs
+uncontained.
+
+`/sandbox on` and `/sandbox off` save the setting to `config.json` and apply it to this tab at once;
+other tabs take it when they are opened. `/sandbox edit` opens F8 › General, where the network and the
+lists are set.
+
+**`/sandbox review` is the answer to a contained command that changed what runs later** — git's files,
+or a new config folder. From then on contained commands ask, until you have looked and run
+`/sandbox review`. A command that wants out of the sandbox asks with `unsandboxed`, and only you can
+say yes. The settings: [CONFIG.md](CONFIG.md#sandbox--where-the-models-commands-run).
 
 ---
 
@@ -638,7 +709,9 @@ there; closing the session denies it, since that ends the agent. Either way it i
 panel, `/tasks`, `/agents open`, the palette — and closes its tab; its context is freed. A report the
 model had not yet received is handed to the model first; if it still cannot be, the agent stays and
 says so. The model is not told, and if it reaches for the agent it is told you dismissed it. Its handle
-is not used again in the session. When commands it started are still running, it asks first, as closing
+is not used again while the session stays open. The deletion is not recorded in the session's history,
+so resuming the session — after a restart, or from `/sessions` — brings the agent back with the rest
+(see [`/sessions`](#sessions)). When commands it started are still running, it asks first, as closing
 a tab does: **Cancel**, **Delete and stop them**, or **Delete, keep N commands running** — kept, they stay
 on the panel as the session's, each with its own `⏹`.
 
@@ -940,7 +1013,7 @@ who started it, how long it has been running, the command line and where its out
 every agent's work, not only yours** — the registry backing it is process-wide, and a command is
 stoppable by pid regardless of who is told about it, so hiding another agent's row would draw a
 boundary that is not really there. Commands that have ended stay listed with their exit code — the
-latest 50.
+latest 50, process-wide; the `F7` panel below keeps its own, longer list.
 
 **`stop` on an agent is your stop.** The agent reports to the model that you stopped it, without
 starting a turn, and the model is refused if it tries to restart it. **`output` reads without taking**:
@@ -960,7 +1033,8 @@ or how it ended; and a link, **View output ›** or **View transcript ›**, tha
 Every card has one button at its right edge: `⏹` while it runs, `✕` once it has ended. A click on it,
 or `x` on the selected card, stops a running task — a command is killed at once, with no confirmation, as its tab's Kill
 does — and deletes a finished one: a command's record leaves `/tasks` and `task_list`; for an agent, see
-[`/agents`](#agents). Nothing leaves on its own, except that past 64 finished commands the oldest go. A
+[`/agents`](#agents). Nothing leaves the panel on its own, except that past 64 finished commands the
+oldest go — so a command the panel still shows can already be gone from `/tasks`, which keeps 50. A
 sub-agent the parent is waiting on has two: `⇥` moves it to the background and `⏹` stops it alone —
 `b` and `x` from the keyboard; the hint under its card says so. While a turn waits on foreground work, the
 composer's line says so after a few seconds, with Ctrl+B to move all of it to the background. `F7` again hides the column; `F3` switches back to info.
@@ -989,8 +1063,9 @@ approved once, when it was backgrounded.
 
 ## `/exit`
 
-Quits, and marks the session finished. It is still listed by `/sessions`, still opens by id, and is
-still what `-c` continues if it is the most recent one here.
+Closes the session in front — and quits when it is the last — and marks it finished. It is still
+listed by `/sessions`, still opens by id, and is still what `-c` continues if it is the most recent one
+here.
 
 **On the way out it prints how to come back:**
 
@@ -1044,7 +1119,7 @@ The browser has the terminal's tabs and commands:
   command's **Open** in the Tasks panel shows its output as it is written, with Kill and Copy to
   transcript.
 - **Commands:** `/compress`, `/clear`, `/model`, `/mode`, `/think`, `/btw`, `/stats`, `/sandbox`
-  (and `/sandbox review`), `/diff`, `/agents`, `/skills`, `/commands`, `/mcp`, `/hooks`, `/tasks`,
+  (and `/sandbox review`), `/diff`, `/agents`, `/skills`, `/memory`, `/commands`, `/mcp`, `/hooks`, `/tasks`,
   `/sessions` (the list; a session is resumed from the sidebar), `/open`, `/export` and `/help`.
 - **`/open`**, or **Open a file** in the session panel: a file in an editor tab, highlighted, saved
   with Ctrl+S keeping its byte-order mark and line endings, the model told afterwards that you edited
@@ -1052,15 +1127,16 @@ The browser has the terminal's tabs and commands:
   and Reload, and a save over it asks first. Files under the web folders open; anywhere else only
   with `openAnywhere`.
 
-Four more reach beyond the conversation, and each waits on a switch only the terminal turns on — F8 ›
-Web › Browser access, or `web.allow` in [CONFIG.md](CONFIG.md#web--the-browser-front-end):
+Four more reach beyond the conversation, and each waits on a switch that only the terminal changes —
+F8 › Web › Browser access, or `web.allow` in [CONFIG.md](CONFIG.md#web--the-browser-front-end).
+`plugins` is on by default, since every plugin still asks before it loads; the other three are off:
 
 | Switch | Default | What a browser gets |
 |---|---|---|
 | `plugins` | on | **Marketplace**: F2's page — install, update, activate, auto-load, uninstall, a plugin's README and settings, stores and folders. A download still asks first, and a plugin still shows its hash and asks before it loads. `/plugin` too |
 | `openAnywhere` | off | `/open` beyond the web folders: any file the terminal's `/open` reaches |
 | `shell` | off | `/shell`, or **Open a shell**: your shell on a real terminal in a tab, in the session's folder — as you, outside the sandbox, with no prompts. What it showed goes with your next message when it exits, or on Copy to transcript |
-| `config` | off | `/config`, or **Settings**: F8's tabs as forms, and config.json as text. Keys show only their last four characters. `/trust`, `/init`, `/think --save`, `/mcp reload` and `/hooks review` too. A hook's or a local MCP server's command also needs `shell`: it runs as you |
+| `config` | off | `/config` — the browser's name for F8, which the terminal reaches as `/providers` — or **Settings**: F8's tabs as forms, and config.json as text. Keys show only their last four characters. `/trust`, `/init`, `/think --save`, `/mcp reload` and `/hooks review` too. A hook's or a local MCP server's command also needs `shell`: it runs as you |
 
 A browser never changes anything in the `web` block — the switches, the users, the folders, the
 address or the login: the config page leaves it out, and its Web tab only shows it. Nor does it open
@@ -1069,8 +1145,8 @@ behind an off switch says where to turn it on.
 
 ## From the shell
 
-Three flags that concern sessions, alongside `--mock`, `--mode <single|fan-out>` and
-`--config-dir`.
+The flags that concern sessions, alongside `--mock` and `--mode <single|fan-out>`; `cxagent --help`
+lists them all.
 
 ```bash
 cxagent --version               # print the version and exit
@@ -1080,7 +1156,8 @@ cxagent --sessions              # print this folder's sessions and exit
 cxagent --sessions all          # every folder
 cxagent -c                      # continue the most recent session here
 cxagent -r 5ZFAVZ               # continue that one, by id or any unambiguous abbreviation
-cxagent --resume                # start with this folder's sessions listed, to pick from
+cxagent --resume 5ZFAVZ         # the same; so is --resume=5ZFAVZ
+cxagent --resume                # with no id: start with this folder's sessions listed, to pick from
 cxagent -p "<goal>"             # one goal, no TUI — see SCRIPTING.md
 cxagent --web                   # start, and serve the sessions to a browser as /web does
 cxagent web                     # serve sessions to a browser, with no terminal
@@ -1092,7 +1169,7 @@ what works for `claude` works here.
 
 **`--config-dir` takes the directory itself**, with no `cxagent` folder appended — unlike
 `XDG_CONFIG_HOME`, which does append one. So `--config-dir /tmp/x` reads `/tmp/x/config.json` and
-puts the session database and logs beside it. It overrides `XDG_CONFIG_HOME` when both are set,
+puts the usage history (`history.db`) and the session folders (`logs/`) beside it. It overrides `XDG_CONFIG_HOME` when both are set,
 because a path typed on the command line is the more specific instruction.
 
 It is the quickest way to try something against a clean setup without touching your own — including
@@ -1110,9 +1187,10 @@ is the kind of friction that stops people looking. Output is tab-separated with 
 ```
 
 **Four requests, and they are different.** With none of them a new session starts. `-c` continues the most recent
-session *in this folder* — finished or not, skipping one already continued. `-r ID` continues that
-one specifically; an id is **not** folder-scoped — copying one out of `--sessions all` and pasting it
-here opens it, because naming a session is an explicit act. A bare `--resume` asks to pick: the TUI
+session *in this folder* — finished or not, skipping one already continued. `-r ID` (or
+`--resume ID`, the line `/exit` prints) continues that one specifically; an id is **not** folder-scoped
+— copying one out of `--sessions all` and pasting it here opens it, because naming a session is an
+explicit act. A `--resume` with no id after it asks to pick: the TUI
 starts with this folder's sessions listed, and `/sessions resume N` opens one.
 
 **A resume that finds nothing still starts the TUI.** It says what went wrong — nothing to continue,
