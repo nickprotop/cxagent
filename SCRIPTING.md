@@ -5,8 +5,12 @@ something a shell script, a git hook, a cron job or a CI step can call — and e
 ordinary session you can continue from the next line of the script, or open in the TUI afterwards
 to see exactly what it did.
 
-The options are Claude Code's, so a script written for `claude -p` runs with `cxagent` swapped in.
-Everything on this page was run against a local model before it was written down.
+The options it shares with Claude Code mean what they mean there, and the JSON it prints is Claude
+Code's shape, so a script written for `claude -p` that keeps to those options runs with `cxagent`
+swapped in. What differs is listed under [Options](#options).
+
+Every sample on this page was run against a local model before it was written down, except the last
+step of [One step at a time](#one-step-at-a-time), which pipes the test run in and has not been.
 
 ---
 
@@ -133,13 +137,31 @@ The same review, before anything leaves your machine. `.git/hooks/pre-push`, mad
 
 ```bash
 #!/bin/sh
-git diff @{push}.. | cxagent -p "/review" --trust | tail -n 1 | grep -q '^VERDICT: PASS' || {
-  echo "pre-push: the review failed — run: git diff @{push}.. | cxagent -p /review --trust" >&2
+# Compare with where this branch pushes to; a branch that has never been pushed has no @{push}, so
+# fall back to the remote's default branch.
+base=$(git rev-parse -q --verify '@{push}' || git rev-parse -q --verify origin/HEAD) || {
+  echo "pre-push: nothing to compare with — review skipped" >&2
+  exit 0
+}
+
+# Kept, not piped straight into grep: a pipe's status is its last command's, so a run that failed
+# would read as a review that did not pass, and its error would be lost.
+review=$(git diff "$base"... | cxagent -p "/review" --trust) || {
+  status=$?
+  printf '%s\n' "$review" >&2
+  echo "pre-push: cxagent exited $status" >&2
+  exit 1
+}
+
+printf '%s\n' "$review" | tail -n 1 | grep -q '^VERDICT: PASS' || {
+  printf '%s\n' "$review" >&2
+  echo "pre-push: the review did not pass" >&2
   exit 1
 }
 ```
 
-`git push --no-verify` skips it when you know better.
+It reviews the branch you have checked out, against the merge base, so commits already on the remote
+are not reviewed twice. `git push --no-verify` skips it when you know better.
 
 ### One step at a time
 
@@ -149,12 +171,17 @@ step getting only the permissions it needs:
 ```bash
 cxagent -p "bulk_price in prices.py gives no discount at exactly 10 items. Find out why. Do not change anything yet." --trust
 cxagent -c -p "Fix it, and add an assert for 10 items to test_prices.py." --trust --permission-mode acceptEdits
-cxagent -c -p "Run python3 test_prices.py and tell me the result in one line." --dangerously-skip-permissions
+python3 test_prices.py 2>&1 | cxagent -c -p "This is the test run. Tell me the result in one line."
 ```
 
+The first step reads, the second reads and edits, and the third needs nothing: the script runs the
+tests and pipes what they printed in, so the model never holds a shell. Where the model must run a
+command itself, a stored "Always allow" rule for it or a `PreToolUse` hook that answers `allow` lets
+that command through and nothing else; `--dangerously-skip-permissions` lets everything through.
+
 The first step found the `>` that should have been `>=`; the second changed one line and added the
-test; the third ran it: *"All tests passed (exit code 0)."* `git diff` is the review, and
-`cxagent -c` opens the whole chain in the TUI.
+test; the third reported the run in one line. `git diff` is the review, and `cxagent -c` opens the
+whole chain in the TUI.
 
 ### Keep the id, come back later
 
@@ -195,7 +222,10 @@ cxagent -p "Which file defines bulk_price? Check, then answer in one line." --tr
   --output-format stream-json |
   while read -r line; do
     case $(jq -r '.type' <<<"$line") in
-      assistant) jq -r '.message.content[] | .text // ("→ " + .input.summary)' <<<"$line" ;;
+      assistant) jq -r '.message.content[]
+                        | if .type == "text" then .text
+                          elif .type == "tool_use" then "→ " + .input.summary
+                          else empty end' <<<"$line" ;;   # a thinking block prints nothing
       result)    jq -r '"done: \(.subtype), \(.num_turns) turns"' <<<"$line" ;;
     esac
   done
@@ -250,9 +280,22 @@ The run needs no permissions at all — everything it reads arrived through the 
 | `--model <instance>` | run on a named provider from `config.json` |
 
 Plugins load in a headless run only if you approved them with "Always allow" in the TUI or name them
-with `--plugin`; one that is left out is listed in the result, with why. Claude Code options cxagent
-does not have — `--allowedTools`, `--system-prompt`, `--mcp-config` — are refused by name rather than
-ignored, so a script never believes one was honoured.
+with `--plugin`; one that is left out is listed in the result, with why.
+
+**Where it differs from Claude Code.** An option cxagent does not have is refused with exit 2 rather
+than ignored, so a script never believes one was honoured. Claude Code's `--allowedTools`,
+`--disallowedTools`, `--tools`, `--system-prompt`, `--append-system-prompt` (and their `-file`
+forms), `--mcp-config`, `--json-schema`, `--max-budget-usd`, `--bare`, `--no-session-persistence` and
+`--input-format` are refused by name, and any other option it does not know is refused as unknown.
+Of the options it shares:
+
+- `--permission-mode plan` is refused — cxagent has no plan mode — and `dontAsk` is `default`, since a
+  headless run refuses whatever would ask either way.
+- `--model` takes the name of a provider in `config.json`, not a model id.
+- `--trust`, `--thinking` and `--plugin` are cxagent's own.
+
+In the output, tool names are cxagent's (`read_file`, `run_shell`, …), and a `tool_use` block's
+`input` is a one-line `summary` of the call, not its arguments.
 
 ### The JSON result
 
@@ -278,7 +321,7 @@ said nothing about it. Thinking never appears in `result`.
 
 | Exit | When |
 |---|---|
-| 0 | answered |
+| 0 | answered — even when something was refused on the way; a script that must fail on a refusal checks `permission_denials` |
 | 1 | failed — the provider's message is on stderr and in `errors` |
 | 2 | usage — a bad or unsupported option, no model configured, nothing to run |
 | 3 | stopped at the turn limit |
