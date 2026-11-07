@@ -1537,7 +1537,11 @@ public sealed class InlineJobSink : IToolObserver
     /// touches belongs to the UI thread — posting the intent is what keeps one writer. The previous
     /// build wrote them directly and raced its own paints.</para>
     /// </summary>
-    public void TurnBegan() => _system.EnqueueOnUIThread(SettleRoundNow, "inline.TurnBegan");
+    public void TurnBegan()
+    {
+        var at = BoundaryHere();
+        _system.EnqueueOnUIThread(() => SettleRoundNow(at), "inline.TurnBegan");
+    }
 
     /// <summary>
     /// A model round ended: settle its row and open the next.
@@ -1551,7 +1555,21 @@ public sealed class InlineJobSink : IToolObserver
     /// round's assistant message already exists lands BELOW it and strands the prose above working
     /// that happened after it.</para>
     /// </summary>
-    public void RoundEnded() => _system.EnqueueOnUIThread(SettleRoundNow, "inline.RoundEnded");
+    public void RoundEnded()
+    {
+        var at = BoundaryHere();
+        _system.EnqueueOnUIThread(() => SettleRoundNow(at), "inline.RoundEnded");
+    }
+
+    /// <summary>
+    /// How many of the session's own calls had been recorded when a boundary arrived — where the round it ends stops.
+    ///
+    /// <para>MEASURED HERE, NOT WHEN THE QUEUE DRAINS. A live round's calls finish before the next request, so the
+    /// two agree while the UI keeps up; a restored session replays every round in one burst before the UI thread
+    /// runs any of it, and a count taken at the drain put the whole burst in the first row and left the rounds after
+    /// it with none.</para>
+    /// </summary>
+    private int BoundaryHere() => CountFor(_parentAgentId);
 
     /// <summary>
     /// Settles the round on screen and opens a fresh one. Must be on the UI thread.
@@ -1563,7 +1581,7 @@ public sealed class InlineJobSink : IToolObserver
     /// </summary>
     private void OpenRoundNow()
     {
-        SettleRoundNow();
+        SettleRoundNow(upTo: null);
         _round = new Round { AgentId = _parentAgentId, From = CountFor(_parentAgentId) };
     }
 
@@ -1604,11 +1622,19 @@ public sealed class InlineJobSink : IToolObserver
     }
 
     /// <summary>Draws a round's final state and forgets it. Must be on the UI thread.</summary>
-    private void SettleRoundNow()
+    /// <param name="upTo">Where the boundary that settles it found the calls, or null for wherever they are now.</param>
+    private void SettleRoundNow(int? upTo)
     {
-        if (_round is not { Row: { } id } settling) { _round = null; return; }
+        if (_round is not { Row: { } id } settling)
+        {
+            // A ROUND WITH NO ROW STILL ENDS AT ITS BOUNDARY: one that only spawned drew nothing, and the next round
+            // must not take its calls.
+            if (upTo is { } end) _lastSettledAt = Math.Max(_lastSettledAt, end);
+            _round = null;
+            return;
+        }
 
-        var calls = CallsOf(settling);
+        var calls = CallsOf(settling, upTo);
         if (calls.Count > 0)
         {
             // NO LIVE ARGUMENT, so the table settles into its finished shape: no spinner, no
@@ -1623,7 +1649,7 @@ public sealed class InlineJobSink : IToolObserver
             if (calls.Any(c => c.Outcome is "denied" or "failed")) _chat.SetExpanded(id, true);
         }
 
-        _lastSettledAt = CountFor(settling.AgentId ?? _parentAgentId);
+        _lastSettledAt = upTo ?? CountFor(settling.AgentId ?? _parentAgentId);
         _round = null;
     }
 
@@ -1652,13 +1678,18 @@ public sealed class InlineJobSink : IToolObserver
     /// <para>A SPAWN IS EXCLUDED, because the worker keeps its own row. Counting it here shows one
     /// spawn twice: a line in this table and the row below it.</para>
     /// </summary>
-    private IReadOnlyList<ToolCallReport> CallsOf(Round round)
+    /// <param name="upTo">Where the round ends, once a boundary has said; null reads to the newest call.</param>
+    private IReadOnlyList<ToolCallReport> CallsOf(Round round, int? upTo = null)
     {
         var id = round.AgentId ?? _parentAgentId;
         if (id is null || !_workerCalls.TryGetValue(id, out var calls)) return [];
 
         List<ToolCallReport> slice;
-        lock (calls) slice = round.From >= calls.Count ? [] : calls[round.From..];
+        lock (calls)
+        {
+            var end = Math.Min(upTo ?? calls.Count, calls.Count);
+            slice = round.From >= end ? [] : calls[round.From..end];
+        }
 
         return [.. slice.Where(c => c.JobType != "llm_agent")];
     }
