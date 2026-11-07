@@ -295,9 +295,10 @@ public static class PluginManagerRows
         var state = isLoaded ? "active" : "not active";
         if (!config.Enabled) state += ", no auto load";
 
-        // ORDINAL, AND BOTH NUMBERS. A sidecar version is whatever an author wrote, so semver
-        // parsing would have to decide what to do with one that is not — and a locally built plugin
-        // ahead of the catalog would be offered an "update" that is a downgrade.
+        // ONLY A NEWER CATALOG VERSION IS AN UPDATE. A locally built plugin ahead of the catalog must not
+        // be offered the catalog's older build as an "update": taking it is a downgrade, and the catalog
+        // keeps no way back. A sidecar version is whatever an author wrote, so one that does not read as a
+        // version cannot be ordered — then a difference is all that can be said, and it is offered.
         //
         // AN UPDATE THAT CANNOT RUN HERE IS STILL LISTED, with its reason and no way to take it.
         // Taking it would delete the working copy and install one the loader refuses, and the
@@ -305,7 +306,8 @@ public static class PluginManagerRows
         // the user a newer version exists and what would unlock it.
         if (entry is not null
             && inputs.InstalledVersions.TryGetValue(name, out var have)
-            && !string.Equals(have, entry.Version, StringComparison.Ordinal))
+            && !string.Equals(have, entry.Version, StringComparison.Ordinal)
+            && PluginVersion.IsNewer(entry.Version, than: have) != false)
         {
             var cannot = WhyItCannotRunHere(entry);
             return new PluginRow(name, PluginRowSection.Updates,

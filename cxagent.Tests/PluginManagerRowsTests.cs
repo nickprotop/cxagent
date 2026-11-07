@@ -206,10 +206,7 @@ public class PluginManagerRowsTests
     }
 
     /// <summary>
-    /// BOTH VERSIONS, NO CLAIM ABOUT WHICH IS NEWER. Comparison is ordinal because versions come
-    /// from a sidecar an author writes, and parsing them as semver means deciding what to do with
-    /// one that is not. A locally built plugin ahead of the catalog must not be offered a
-    /// "update" that is a downgrade.
+    /// BOTH VERSIONS ARE STATED. A catalog version newer than the installed one goes to Updates.
     /// </summary>
     [Fact]
     public void AVersionDifferenceGoesToUpdatesAndStatesBoth()
@@ -223,6 +220,36 @@ public class PluginManagerRowsTests
         Assert.Equal(PluginRowSection.Updates, row.Section);
         Assert.Contains("0.2.1", row.State);
         Assert.Contains("0.3.0", row.State);
+    }
+
+    [Theory]
+    [InlineData("0.4.0", "0.3.0")]      // a local build ahead of the catalog
+    [InlineData("1.10.0", "1.9.0")]     // numerically newer, though not as text
+    [InlineData("v2.0", "1.5.0")]
+    [InlineData("1.0.0", "1.0.0-rc.1")] // a release is newer than its pre-release
+    [InlineData("1.0", "1.0.0")]        // the same release, written two ways
+    public void AnInstalledVersionNewerThanTheCatalogs_IsNotOfferedAsAnUpdate(string installed, string catalog)
+    {
+        var rows = PluginManagerRows.Build(Inputs(
+            configured: new Dictionary<string, PluginConfig> { ["p"] = new("p.dll") },
+            catalog: [Entry("p", catalog)],
+            versions: new Dictionary<string, string> { ["p"] = installed }));
+
+        Assert.Equal(PluginRowSection.Installed, Row(rows, "p").Section);
+    }
+
+    [Theory]
+    [InlineData("1.0.0-rc.1", "1.0.0")]
+    [InlineData("1.9.0", "1.10.0")]
+    [InlineData("2024-nightly", "2025-nightly")]   // not versions at all: a difference is all that can be said
+    public void ANewerOrIncomparableCatalogVersion_IsOffered(string installed, string catalog)
+    {
+        var rows = PluginManagerRows.Build(Inputs(
+            configured: new Dictionary<string, PluginConfig> { ["p"] = new("p.dll") },
+            catalog: [Entry("p", catalog)],
+            versions: new Dictionary<string, string> { ["p"] = installed }));
+
+        Assert.Equal(PluginRowSection.Updates, Row(rows, "p").Section);
     }
 
     /// <summary>

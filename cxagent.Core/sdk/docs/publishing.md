@@ -68,9 +68,10 @@ waits for a maintainer to approve it. The issue is the quicker way.
 | yours | from the same `repository` | an update, if its version is higher (`1.10.0` beats `1.9.0`) |
 | someone else's | from another `repository` | refused; a maintainer can decide otherwise on the issue |
 
-An update replaces your entry in place. Its version must be higher: cxagent offers an update whenever
-the installed version differs from the catalog's, so an equal one is never offered and a lower one
-is offered as an "update" that is really a downgrade.
+An update replaces your entry in place. Its version must be higher: cxagent offers an update only
+when the catalog's version is newer than the installed one — read as dotted numbers, `1.10.0` after
+`1.9.0`, a release after its own pre-release — so an equal or lower one is never offered. A version
+that does not read as numbers cannot be ordered, and is offered whenever it differs.
 
 One submission per name at a time: while one issue's pull request for a name waits for review,
 another issue submitting the same name is refused, naming that pull request.
