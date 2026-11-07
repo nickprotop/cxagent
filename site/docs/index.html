@@ -11,7 +11,7 @@
 try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
 <title>Documentation — cxagent</title>
-<meta name="description" content="cxagent's documentation, grouped by audience: using it, writing a plugin, and embedding CxAgent.Core.">
+<meta name="description" content="What cxagent is, a first session in a minute, and its documentation grouped by audience: using it, writing a plugin, and embedding CxAgent.Core.">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Documentation — cxagent">
@@ -44,6 +44,55 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
 is edited in one place, and a link at the foot of each takes you to it. Anything not rendered here
 links to GitHub, because it is written for someone already reading the source.</p>
 
+<h2 id="what-it-is">What cxagent is</h2>
+
+<p>A coding agent that runs in your terminal, and in your browser when you are away from it. You
+give it a goal in plain language; it reads your code, edits files, runs commands and reports back,
+asking first before a command that can write, and before anything outside the folder you started it
+in. It works with the
+model you choose — local through Ollama, llama.cpp or any OpenAI-compatible server, or Anthropic,
+OpenAI and OpenRouter in the cloud — and there is no cxagent account or server between you and it.</p>
+
+<p>Why use it: it can hand a piece of reading to a <a href="glossary.html#worker">worker</a> with its
+own context, so the conversation keeps the conclusion and not the file dumps; several sessions run
+side by side, each in its own tab; and every feature works on a local model as well as a cloud
+one.</p>
+
+<h2 id="quickstart">A first session, in a minute</h2>
+
+<ol>
+<li><strong>Install.</strong> On Linux or macOS,
+<code>curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/install.sh | bash</code>,
+then open a new shell. <a href="../install.html">Windows, the .NET tool, and reading the script
+first →</a></li>
+<li><strong>Start it in a project.</strong> <code>cd</code> into a git repository with your work
+committed — it writes inside that folder — and run <code>cxagent</code>.</li>
+<li><strong>Pick a model.</strong> With no configuration yet, the configuration dialog opens on a card
+per kind of endpoint. Choose one, give it a key if it needs one, pick a model from the list it
+serves, and save. <kbd>F8</kbd> opens the same dialog later.</li>
+<li><strong>Trust the folder.</strong> The first session in a folder asks <em>Trust this folder?</em>
+Trusted, reads and read-only commands inside it stop asking, and so do writes in the default
+<code>accept-edits</code> mode; commands that can write, and anything outside the folder, still ask.
+<code>/trust</code> changes the answer later.</li>
+<li><strong>Ask for something.</strong> Type a goal in the <a href="glossary.html#composer">composer</a>
+and press <kbd>Enter</kbd> — <em>add a --verbose flag to the CLI and a test for it</em>. Its tool calls
+appear in the transcript as it works, and anything that needs your say-so stops and asks.</li>
+<li><strong>Review it.</strong> <code>/diff</code> shows <code>git diff</code> in the transcript,
+naming new files too, without a second terminal. There is no undo inside cxagent: git is the
+undo.</li>
+<li><strong>Carry on from a browser.</strong> Type <code>/web</code>: it answers <em>Serving this
+terminal's sessions at http://localhost:5180/</em>, and a browser on this machine opening that address
+gets the same live session — the same turns and tabs, its prompts shown in both places, the first
+answer taken. To reach it from your phone, open <kbd>F8</kbd> › Web first: set <strong>Listen
+on</strong> to <code>0.0.0.0</code>, add a user under <strong>Login</strong>, save, then
+<code>/web</code> (or <code>/web off</code> and <code>/web</code> if it is already serving). On the
+phone, open <code>http://&lt;this machine's LAN address&gt;:5180/</code> and log in. Without a user
+it refuses to listen beyond this machine and says how to add one. Plain HTTP sends that login across
+the network as it is typed: on a network you do not control, choose <strong>HTTPS, self-signed</strong>
+in the same tab and open <code>https://</code> instead. <a href="commands.html#web">Sessions
+in a browser →</a></li>
+</ol>
+
 <h2>Using cxagent</h2>
 
 <div class="doc-group">
@@ -58,6 +107,9 @@ links to GitHub, because it is written for someone already reading the source.</
     <span>— running cxagent from a script or CI, and reading what it did</span></li>
 <li><a href="../docs/walkthrough.html">A session, in pictures</a>
     <span>— captures from real sessions, mistakes included</span></li>
+<li><a href="../docs/glossary.html">Glossary</a>
+    <span>— the words these pages use in a sense of their own: composer, worker, trust, load set
+    and the rest</span></li>
 </ul>
 </div>
 

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#080a0c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<script>
+/* BEFORE THE STYLESHEET PAINTS ANYTHING: a reader who chose a theme gets it on the first frame
+   rather than after a flash of the other one. site.js owns the toggle; this only applies the choice. */
+try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<title>Glossary — cxagent</title>
+<meta name="description" content="The words cxagent's documentation uses in a sense of its own: composer, worker and task, instance, occupancy, compaction, trust, sidecar, gate, load set, shape, store and catalog.">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Glossary — cxagent">
+<meta property="og:url" content="https://nickprotop.github.io/cxagent/docs/glossary.html">
+<meta property="og:image" content="https://nickprotop.github.io/cxagent/screenshots/og.png">
+<meta property="og:site_name" content="cxagent">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:description" content="The words cxagent's documentation uses in a sense of its own.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fragment+Mono&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="../"><img class="brand-mark" src="../logo.svg" alt="" width="22" height="22"><span>cxagent</span></a>
+  <a href="../install.html">Install</a>
+  <a href="../plugins.html">Plugins</a>
+  <a href="../core.html">CxAgent.Core</a>
+  <a href="../docs/">Docs</a>
+  <a href="https://github.com/nickprotop/cxagent">GitHub</a>
+</nav>
+<main>
+
+<span class="section-label">// &nbsp;REFERENCE</span>
+<h1>Glossary</h1>
+<p class="lede">The words these pages use in a sense of their own.</p>
+
+<p>Each entry says what the word means here and links to where it is covered in full. The first
+group is for anyone using cxagent; the second is for plugins, which a user meets in the plugin
+manager and an author meets in the SDK.</p>
+
+<h2 id="using">Using cxagent</h2>
+
+<h3 id="composer">Composer</h3>
+<p>The input box at the foot of a tab, where you type a message or a <code>/command</code>.
+<kbd>Enter</kbd> sends it. What you type while a turn is running is queued, and <kbd>Esc</kbd>, which
+ends the turn, puts anything still queued back in the composer rather than discarding it. An agent's
+own tab has a composer too, and what you type there goes to that agent, not to the session.
+<a href="commands.html">Commands →</a></p>
+
+<h3 id="worker">Worker</h3>
+<p>A sub-agent: a second agent the session hands a piece of work to, with its own context, its own
+conversation and its own <a href="#compaction">compaction</a>. It runs, returns one report, and the
+parent keeps that report rather than everything the worker read. A worker runs in the foreground,
+with the turn waiting on it, or in the background while the conversation carries on;
+<kbd>Ctrl+B</kbd> moves one that is waiting to the background. Each has a tab of its own, and you can
+send it a message while it works. Its spend is counted apart from the parent's — the panel's
+<code>workers</code> line. <a href="commands.html#agents">Workers →</a></p>
+
+<h3 id="task">Task</h3>
+<p>Work running unattended: above all a long shell command that <code>run_shell</code> left running
+in the background, such as a build or a test suite. A task is a process, where a worker is an agent.
+The tasks panel (<kbd>F7</kbd>) and <code>/tasks</code> list both — background workers and background
+commands, running first, then finished — and each opens in a tab showing its output.
+<a href="commands.html#tasks">Tasks →</a></p>
+
+<h3 id="instance">Instance</h3>
+<p>One entry in <code>config.json</code>'s <code>providers</code> block: a name bound to one endpoint
+and one model, with that model's settings — its key, its context window, its thinking level. Two
+instances can be the same server with different models, so switching the model and switching the
+provider are the same act: <code>/model</code> picks an instance. The configuration dialog's
+Providers tab lists them. <a href="config.html">Configuration →</a></p>
+
+<h3 id="occupancy">Occupancy</h3>
+<p>How much of the model's context window the conversation fills right now: the tokens in context
+against the window, as in <code>5,725/32,000</code> on the status line. A worker's row shows its own.
+The window is the instance's <code>contextWindow</code>, or what the endpoint reports when that is
+unset; with neither, there is no denominator and no percentage is shown.
+<a href="config.html">Configuration →</a></p>
+
+<h3 id="compaction">Compaction</h3>
+<p>Summarising the conversation through the model to free room in the context, rather than dropping
+the oldest turns. It happens on its own when the context passes
+<code>contextCompressThreshold</code> — by default 80% of the window, when the window is known — and on
+demand with <code>/compress</code>. A worker compacts its own context, separately from the parent. The
+session's <code>history.jsonl</code> is never compacted, so an export still has everything.
+<a href="commands.html#compress">/compress →</a></p>
+
+<h3 id="trust">Trust</h3>
+<p>Two decisions share the word. <strong>Trusting a folder</strong> is the answer to <em>Trust this
+folder?</em>, asked the first time a session opens in it: in a trusted folder, file reads and
+commands that only read stop asking, and in the default <code>accept-edits</code> mode so do writes
+inside it. Commands that can write, and anything outside the folder, still ask, and no mode can widen
+past that answer. <code>/trust</code> shows or changes it; <code>--trust</code> trusts a folder for one
+headless run without saving anything. <strong>Trusting a plugin</strong> is approving it at load, against
+a hash of its <a href="#load-set">load set</a>. <a href="commands.html#trust">/trust →</a></p>
+
+<h2 id="plugins">Plugins</h2>
+
+<h3 id="sidecar">Sidecar</h3>
+<p>The <code>&lt;name&gt;.plugin.json</code> file shipped beside a plugin's binary. It declares the
+plugin's name, version, contract, kind (managed or native), its tools and how each is
+<a href="#gate">gated</a>, and any text it adds to the model's instructions. cxagent reads it
+<em>before</em> loading the binary, so the load prompt can say what a plugin claims without running
+it, and refuses the load if the plugin's own answer disagrees with it.
+<a href="plugins.html#the-sidecar">The sidecar →</a></p>
+
+<h3 id="gate">Gate, gated, dynamic</h3>
+<p>A gate is the permission check a tool call passes before it runs. A plugin's tool declares its gate
+in the sidecar: <code>"gated": true</code> asks before every call (and offers <strong>Always</strong>
+unless the tool also says <code>"alwaysAskable": false</code>); <code>false</code> never asks;
+<code>"dynamic"</code> hands each call to the plugin, which looks at the arguments and either lets it
+through or asks with wording of its own. The sidecar is a ceiling: code cannot quietly turn a
+<code>true</code> into no prompt. A tool embedded through CxAgent.Core passes two gates — one for the
+tool in this folder, then its own per-call check.
+<a href="plugins.html#permission">Permission →</a></p>
+
+<h3 id="load-set">Load set</h3>
+<p>Every file a plugin load would bring in: the binary, its sidecar, its README and whatever else is
+in the plugin's folder. The load prompt shows one hash over the whole set, and that hash is what you
+approve; change a byte of any file in it and the question comes back. Nothing in
+<code>config.json</code> can pre-approve a load set. <a href="../plugins.html#trust">Trusting a
+plugin →</a></p>
+
+<h3 id="shape">Shape</h3>
+<p>Used in two places, both meaning form rather than content. A <strong>catalog entry's
+shape</strong> follows the plugin: a managed plugin has one download for every platform, a native one
+a download per platform, and an entry hosted elsewhere commits its own <code>sha256</code> where one
+released with cxagent leaves it to the release to stamp. <code>plugin verify</code> holds an entry to its shape. And the
+<strong>static safety check</strong> on shell commands refuses on shape — a redirect, a chain — rather
+than on danger, which is why <code>dotnet build 2&gt;&amp;1 | tail</code> asks.
+<a href="plugin-publishing.html">Publishing →</a></p>
+
+<h3 id="catalog">Catalog</h3>
+<p>A <code>catalog.json</code> listing plugins: each one's version, platforms, publisher, licence,
+download address and <code>sha256</code>. cxagent's own is generated from
+<code>plugins/plugins.json</code> at release and published beside the <a href="../plugins.html">plugins
+page</a>; the plugin manager (<kbd>F2</kbd>) reads it, and every download is checked against its hash
+before anything is written.</p>
+
+<h3 id="store">Store</h3>
+<p>A catalog of your own: a <code>catalog.json</code> and the zips it points to, served from any static
+host. <code>cxagent store build</code> makes both from a folder of built plugins.
+<code>/plugin store add &lt;name&gt; &lt;url&gt;</code> adds one to a machine, after which its plugins
+appear in the plugin manager beside cxagent's and install with
+<code>/plugin get &lt;store&gt;/&lt;plugin&gt;</code>.
+<a href="plugin-publishing.html#running-your-own-store">Running your own store →</a></p>
+
+</main>
+<footer>
+  cxagent is MIT licensed. <a href="https://github.com/nickprotop/cxagent">Source on GitHub</a>.
+</footer>
+<script src="../site.js" defer></script>
+</body>
+</html>

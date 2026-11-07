@@ -45,6 +45,13 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
 
 <div id="catalog">
   <p class="note">Loading the catalog…</p>
+  <!-- WITHOUT A SCRIPT THE NOTE ABOVE NEVER CHANGES, and "Loading" forever reads as a site that is
+       down. The catalog is a plain file beside this page, so name it. -->
+  <noscript>
+    <p class="note">The plugin list is drawn by a script, which is not running here. The catalog it
+    reads is <a href="catalog.json">catalog.json</a>, and the committed source it is generated from
+    is <a href="https://github.com/nickprotop/cxagent/blob/master/plugins/plugins.json">plugins/plugins.json</a>.</p>
+  </noscript>
 </div>
 
 <section class="plugin-footnotes">
