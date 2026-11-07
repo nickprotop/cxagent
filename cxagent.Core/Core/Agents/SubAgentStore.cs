@@ -194,6 +194,32 @@ public sealed class SubAgentStore
         }
     }
 
+    /// <summary>
+    /// Lets go of every worker — the session is leaving their conversation for another — and of the names deleted ones
+    /// held, which were that conversation's too.
+    ///
+    /// <para>LET GO, NOT DELETED: no tombstone is written, so each comes back when its own conversation is resumed.
+    /// Only for workers that are idle; a caller refuses while any is working.</para>
+    /// </summary>
+    internal void LetGo()
+    {
+        lock (_naming)
+        {
+            foreach (var name in _byName.Keys.ToList())
+            {
+                _byName.TryRemove(name, out _);
+                _background.TryRemove(name, out _);
+                _ends.TryRemove(name, out _);
+                _since.TryRemove(name, out _);
+                _noted.TryRemove(name, out _);
+                _userSends.TryRemove(name, out _);
+                _foreground.TryRemove(name, out _);
+                _foregroundStops.TryRemove(name, out _);
+            }
+            _forgotten.Clear();
+        }
+    }
+
     /// <summary>Whether <paramref name="name"/> is in use — kept, or dismissed for good — so nothing new may take it.</summary>
     public bool Holds(string name)
     {

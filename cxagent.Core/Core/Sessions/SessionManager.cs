@@ -1015,7 +1015,7 @@ public sealed class SessionManager : IDisposable
     public void Resume(Session session, Storage.SessionSnapshot snapshot, Action? rewire = null)
     {
         SessionLifecycleLog.Write(Shared.Logs, "resume", session);
-        if (session.RefuseIfBusy()) return;
+        if (session.RefuseIfBusy() || session.RefuseIfWorkersRunning()) return;
 
         // THE STORED HOOK WHEN NOTHING IS PASSED. A caller that has one uses it; /sessions resume has
         // no way to build one, which is what Rewire exists for.
@@ -1058,6 +1058,10 @@ public sealed class SessionManager : IDisposable
         {
             session.MoveTo(moved);
         }
+
+        // THE CONVERSATION LEFT TAKES ITS WORKERS WITH IT. Kept, an idle one holds a name the restored conversation's
+        // own worker needs, and the model's next send by that name reaches the wrong conversation's.
+        session.SubAgents.LetGo();
 
         session.PendResume(snapshot);
         apply();

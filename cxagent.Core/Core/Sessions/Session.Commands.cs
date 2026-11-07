@@ -237,6 +237,18 @@ public sealed partial class Session
     /// <summary>Says that a resume cannot be applied because nothing can rebuild this session's host.
     /// A headless arrangement with no rewire hook, which is a real configuration rather than an
     /// error — but it must be SAID, because a silent no-op reads as success.</summary>
+    /// <summary>
+    /// Refuses to leave this conversation while one of its workers is running: replaced under it, its report would
+    /// have no conversation to go to.
+    /// </summary>
+    internal bool RefuseIfWorkersRunning()
+    {
+        if (SubAgents.Working == 0) return false;
+        Say(new Message("A worker is still running in this session. Wait for it to finish, or stop it in Tasks (F7), "
+          + "then resume.", Severity.Warning));
+        return true;
+    }
+
     internal void SayCannotResume() =>
         Say(new Message("This session cannot restore an earlier conversation — nothing here can rebuild "
           + "it. Use --resume at startup instead.", Severity.Warning));

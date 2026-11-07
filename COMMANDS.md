@@ -732,7 +732,9 @@ change still have their random half at the end, so typing either end of an id ma
 **An ambiguous id is reported, never resolved.** Two matches name both rather than picking the
 newer: silently restoring the wrong conversation is not something you find out about quickly.
 
-**Refused while a turn is running.** Restoring replaces the agent the running turn is writing into.
+**Refused while a turn is running**, or while one of this session's workers is: restoring replaces
+the conversation the turn is writing into, and the one a worker's report would go to. The idle workers
+of the conversation you leave are let go, not deleted — they come back when it is resumed.
 
 **A restored session comes back whole.** Its transcript is drawn again, back through every earlier
 resume: your messages, the answers and thinking, each tool call with its result, and the workers it

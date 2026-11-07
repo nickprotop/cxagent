@@ -111,4 +111,44 @@ public class ResumeMovesFolderTests : IDisposable
 
         Assert.Equal(_here, session.WorkingDirectory);
     }
+
+    /// <summary>
+    /// THE CONVERSATION LEFT TAKES ITS WORKERS WITH IT. Kept in the session, an idle one held a name the restored
+    /// conversation's own worker needed, and the model's next send by that name reached the wrong conversation's. Let
+    /// go — not deleted — it comes back when its own conversation is resumed.
+    /// </summary>
+    [Fact]
+    public void ResumingLetsGoOfTheIdleWorkersOfTheConversationItLeaves()
+    {
+        var (manager, session) = Wired();
+        using var _ = manager;
+        manager.Rewire = () => { };
+        var name = session.SubAgents.Keep(AgentTabTests.Child(new MockLlmProvider()), "counter");
+
+        manager.Resume(session, new SessionSnapshot("agent-1", [], 0, 0, DateTimeOffset.UtcNow));
+
+        Assert.Null(session.SubAgents.Find(name));
+        Assert.False(session.SubAgents.Holds(name));
+    }
+
+    /// <summary>
+    /// A RUNNING WORKER REFUSES THE RESUME, as a running turn does: replacing the conversation under it would leave its
+    /// report with nowhere to go.
+    /// </summary>
+    [Fact]
+    public void ResumingIsRefusedWhileAWorkerOfThisConversationIsRunning()
+    {
+        var (manager, session) = Wired();
+        using var _ = manager;
+        var rewired = false;
+        manager.Rewire = () => rewired = true;
+        var name = session.SubAgents.Keep(AgentTabTests.Child(new MockLlmProvider()), "counter");
+        Assert.True(session.SubAgents.TryClaim(name));
+
+        manager.Resume(session, new SessionSnapshot("agent-1", [], 0, 0, DateTimeOffset.UtcNow, WorkingDir: _there));
+
+        Assert.False(rewired);
+        Assert.Equal(_here, session.WorkingDirectory);
+        Assert.NotNull(session.SubAgents.Find(name));
+    }
 }
