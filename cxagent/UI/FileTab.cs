@@ -478,6 +478,9 @@ public static class FileTab
         if (For(host.Main).States.TryGetValue(title, out var state)) state.ExternallyChanged = true;
     }
 
+    /// <summary>Test seam: the watcher saw <paramref name="path"/> change on disk.</summary>
+    public static void ChangedOnDiskForTest(EditorHost host, string path) => OnChanged(host, path);
+
     /// <summary>Test seam: how many tabs are holding an open question.</summary>
     public static int PendingConfirmationsForTest(EditorHost host)
         => For(host.Main).States.Values.Count(s => s.Asking);

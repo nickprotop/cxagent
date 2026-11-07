@@ -1238,10 +1238,11 @@ public sealed class MainWindow : IDisposable
     {
         _waiting = waiting;
 
-        // THE ACTIVE TAB IS THE ONE ASKING. A prompt belongs to the session the user was working in,
-        // which is the tab in front of them at the moment it is raised — a second session's prompt
-        // arrives while ITS tab is active, or through a path that names it.
-        SetWaiting(Tabs.ActiveTabIndex, waiting);
+        // THE ACTIVE SESSION IS THE ONE ASKING. A prompt belongs to the session the user was working in — the tab in
+        // front of them when it is raised, or, with a file or a worker's tab in front, the session that tab belongs
+        // to. Marking the file tab instead put the session's dot on it, and answering reset its own markers.
+        var active = Tabs.ActiveTabIndex;
+        SetWaiting(IsSessionTab(active) ? active : StripIndexOf(ActiveSessionTab), waiting);
     }
 
     /// <summary>
@@ -1325,8 +1326,11 @@ public sealed class MainWindow : IDisposable
         // A DOT ON EACH WAITING TAB, and on no others. This was written to tab zero, which put a
         // second session's marker on the first session's tab — the same addressing mistake the bar
         // above made, and a worse one because a dot in the wrong place points somewhere real.
+        // SESSION TABS ONLY: nothing else waits, and a file tab's title carries markers of its own — "⚠ name •" — that
+        // rewriting it from the plain name here would wipe.
         for (var i = 0; i < Tabs.TabCount; i++)
         {
+            if (!IsSessionTab(i)) continue;
             var title = TabTitleOf(i);
             Tabs.SetTabTitle(i, _waitingTabs.Contains(i) ? title + " •" : title);
         }
@@ -2996,6 +3000,9 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>Test seam: <see cref="WaitingHint"/>.</summary>
     public static string? WaitingHintForTest(int count, TimeSpan waited) => WaitingHint(count, waited);
+
+    /// <summary>Test seam: a prompt raised, or answered, with whatever tab is in front.</summary>
+    public void SetWaitingForTest(bool waiting) => SetWaiting(waiting);
 
     /// <summary>
     /// Opens a job's tab, or switches to it when it is already open, and puts the keyboard in it.
