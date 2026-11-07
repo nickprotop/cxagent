@@ -76,4 +76,12 @@ public class DescribeCallTests
     public void NoRootStillNamesTheFile()
         => Assert.Contains("FileTab.cs",
             Agent.DescribeCall(Call("read_file", """{"path":"/work/UI/FileTab.cs"}"""), null));
+
+    // THE CHARACTERS, NOT THEIR ESCAPES. A restored call's arguments come back from history, which writes a backtick
+    // as \u0060 and an apostrophe as \u0027; printing that JSON's raw text showed the escapes on the row, where the
+    // live call had shown the characters the model wrote.
+    [Fact]
+    public void ArgumentsSavedWithEscapesShowTheirCharacters()
+        => Assert.Equal("agent_send {\"to\":\"tester\",\"prompt\":\"Run `ls`, it's quick\"}",
+            Agent.DescribeCall(Call("agent_send", """{"to":"tester","prompt":"Run \u0060ls\u0060, it\u0027s quick"}"""), Root));
 }

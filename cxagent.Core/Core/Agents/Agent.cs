@@ -4164,7 +4164,12 @@ public sealed class Agent
         if (PrimaryArgument(call) is { } primary)
             return $"{call.Name} · {Clip(primary, 56)}";
 
-        var args = call.Arguments.ToString();
+        // WRITTEN OUT AGAIN, NOT ITS RAW TEXT. A restored call's arguments were read back from history, whose writer
+        // escapes a backtick as ` and an apostrophe as '; the raw text put those escapes on the row where
+        // the live call had shown the characters. Relaxed escaping is safe here: this is a label, never markup or a URL.
+        var args = call.Arguments.ValueKind == System.Text.Json.JsonValueKind.Undefined
+            ? ""
+            : System.Text.Json.JsonSerializer.Serialize(call.Arguments, LabelJson);
         return $"{call.Name} {Clip(args, 60)}";
 
         // A PATH RELATIVE TO THE SESSION'S DIRECTORY, which is how the model names files in its own
@@ -4207,6 +4212,12 @@ public sealed class Agent
             }
         }
     }
+
+    /// <summary>How <see cref="DescribeCall"/> writes a call's arguments: compact, with characters left as they are.</summary>
+    private static readonly System.Text.Json.JsonSerializerOptions LabelJson = new()
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     // A SKIPPED INSTRUCTION FILE IS SAID ONCE, though the prompt that skips it is built every turn — see
     // InstructionNotices. This agent's own, for an agent with no policy to share the session's through.
