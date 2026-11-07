@@ -43,13 +43,18 @@
     <div id="prompts" class="prompts"></div>
     <form id="composer" class="composer" autocomplete="off">
       <div id="completion" class="completion" hidden></div>
-      <textarea id="input" rows="1" placeholder="Message, or / for commands" disabled></textarea>
-      <button id="stop" type="button" class="stop" hidden>Stop</button>
-      <button id="send" type="submit" class="send" disabled>Send</button>
-      <div class="composer-picks">
-        <label class="pick" id="pick-model" hidden><span class="pick-dot"></span><select id="model" aria-label="Model"></select></label>
-        <label class="pick" id="pick-mode" hidden><select id="mode" aria-label="Edit mode"></select></label>
-        <label class="pick" id="pick-sandbox" hidden><select id="sandbox" aria-label="Sandbox"></select></label>
+      <div class="composer-box">
+        <textarea id="input" rows="2" placeholder="Message, or / for commands" disabled></textarea>
+        <div class="composer-foot">
+          <div class="composer-picks">
+            <label class="pick" id="pick-model" hidden><span class="pick-dot"></span><select id="model" aria-label="Model"></select></label>
+            <label class="pick" id="pick-mode" hidden><select id="mode" aria-label="Edit mode"></select></label>
+            <label class="pick" id="pick-sandbox" hidden><select id="sandbox" aria-label="Sandbox"></select></label>
+          </div>
+          <span class="spacer"></span>
+          <button id="stop" type="button" class="stop" hidden>Stop</button>
+          <button id="send" type="submit" class="send" disabled>Send</button>
+        </div>
       </div>
     </form>
     <footer id="statusline" class="statusline"></footer>

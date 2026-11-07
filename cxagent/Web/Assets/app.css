@@ -219,20 +219,22 @@ body.no-panel .panel { display: none; }
 .prompt input[type=text] { width: 100%; font: inherit; color: var(--text); background: var(--sunken); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-top: 4px; }
 
 /* ---- composer ---------------------------------------------------------------------------------------------------- */
-.composer { flex: none; position: relative; display: flex; gap: 8px; align-items: flex-end; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+/* ONE BOX, TWO LINES: the message on top, and under it the pickers on the left with Stop and Send on the right. The
+   pickers belong here rather than in the top bar: the box is on screen at every width, where a phone's top bar has no
+   room, and it is where the choice matters — just before a message goes. */
+.composer { flex: none; position: relative; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line); background: var(--surface); }
-.composer textarea { flex: 1; resize: none; font: 14px/1.5 var(--sans); color: var(--text); background: var(--sunken); border: 1px solid var(--line);
-  border-radius: 10px; padding: 9px 12px; min-height: 40px; max-height: 40vh; }
-.composer textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-.composer .send { height: 40px; padding: 0 16px; background: var(--accent); color: var(--accent-ink); border: none; font-weight: 600; border-radius: 10px; }
-.composer .stop { height: 40px; padding: 0 14px; border-radius: 10px; background: var(--bad-bg); color: var(--bad); border-color: var(--bad-line); }
-/* THE PICKERS SIT UNDER THE MESSAGE BOX, on their own wrapped line: the box is on screen at every width, where the top
-   bar has no room on a phone, and it is where the choice matters — just before a message goes. */
-.composer { flex-wrap: wrap; }
-.composer-picks { flex-basis: 100%; display: flex; gap: 6px; min-width: 0; }
+.composer-box { display: flex; flex-direction: column; gap: 6px; background: var(--sunken); border: 1px solid var(--line); border-radius: 12px;
+  padding: 8px 8px 8px 12px; }
+.composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.composer textarea { resize: none; font: 14px/1.5 var(--sans); color: var(--text); background: transparent; border: none; outline: none;
+  padding: 2px 4px 0 0; min-height: 42px; max-height: 40vh; }
+.composer-foot { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.composer-picks { display: flex; gap: 6px; min-width: 0; }
 .composer-picks .pick { min-width: 0; flex: 0 1 auto; }
 .composer-picks .pick select { min-width: 0; }
-.composer-picks:not(:has(.pick:not([hidden]))) { display: none; }
+.composer .send { height: 32px; padding: 0 16px; background: var(--accent); color: var(--accent-ink); border: none; font-weight: 600; border-radius: 9px; flex: none; }
+.composer .stop { height: 32px; padding: 0 14px; border-radius: 9px; background: var(--bad-bg); color: var(--bad); border-color: var(--bad-line); flex: none; }
 .completion { position: absolute; left: 16px; bottom: 100%; margin-bottom: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 9px;
   padding: 4px; min-width: 240px; max-height: 40vh; overflow-y: auto; box-shadow: var(--shadow); }
 .completion div { padding: 5px 10px; cursor: pointer; border-radius: 6px; font: 13px var(--mono); }
