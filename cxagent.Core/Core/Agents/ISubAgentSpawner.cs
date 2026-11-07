@@ -107,6 +107,15 @@ public interface ISubAgentSpawner
 
     Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct,
         string? parentAgentId = null, Jobs.ToolSelection? turnTools = null);
+
+    /// <summary>
+    /// Runs the child an order describes and returns its envelope — the path <see cref="TryInvokeAsync"/> takes once it
+    /// has read its call, for a caller that is not a model's tool call. Null from a spawner that cannot spawn by order.
+    ///
+    /// <para>A DEFAULT MEMBER, so an existing implementation — the test fakes among them — keeps compiling.</para>
+    /// </summary>
+    Task<string?> SpawnAsync(SpawnOrder order, Action<SubAgent>? onChild, CancellationToken ct) =>
+        Task.FromResult<string?>(null);
 }
 
 /// <summary>

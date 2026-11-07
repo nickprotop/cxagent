@@ -387,7 +387,28 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     {
         if (!Claims(call.Name)) return null;
 
-        var prompt = Read(call, "prompt");
+        // NO ORIGIN AND NO HANDLE FROM A CALL, whatever its arguments hold: those are a session's to give, and a model
+        // naming them would dress an ordinary worker as something it is not.
+        return await SpawnAsync(new SpawnOrder
+        {
+            Prompt = Read(call, "prompt") ?? "",
+            Description = Read(call, "description"),
+            Type = Read(call, "type"),
+            Provider = Read(call, "provider"),
+            Root = Read(call, "root"),
+            Context = Read(call, "context"),
+            Background = Args.ReadBool(call, "background") ?? true,
+            ParentAgentId = parentAgentId,
+            TurnTools = turnTools,
+        }, onChild, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<string?> SpawnAsync(SpawnOrder order, Action<SubAgent>? onChild, CancellationToken ct)
+    {
+        var parentAgentId = order.ParentAgentId;
+        var turnTools = order.TurnTools;
+        var prompt = order.Prompt;
         if (string.IsNullOrWhiteSpace(prompt))
             return "error: 'prompt' is required — say what the agent should do and what to return.";
 
@@ -410,7 +431,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         // Substituting `general` means the user's briefing did not apply and nobody was told — the
         // same class of silent-wrong as a mode that quietly stays single. A blank or absent name IS
         // `general`, which is what makes a bare spawn ordinary rather than special.
-        var requested = Read(call, "type");
+        var requested = order.Type;
         var type = _types.Resolve(requested);
         if (type is null)
             return $"error: unknown agent type '{requested?.Trim()}'. Valid: {_types.Names}.";
@@ -418,12 +439,12 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         // WHERE IT RUNS, FROM THE TYPE'S OWN LIST — config is the only source of a child's provider.
         // Applied by replacing the type's routing, so the factory builds the child exactly as it always
         // has from type.Provider, its window and its instance name.
-        var pick = type.Pick(Read(call, "provider"));
+        var pick = type.Pick(order.Provider);
         if (pick.Refusal is { } refusal) return "error: " + refusal;
         type = type with { Routing = pick.Routing! };
 
         // WHERE IT WORKS, judged against this agent's own folder before anything is built.
-        var root = ChildRoot.Resolve(Read(call, "root"), _factory.Policy, _factory.WorkingDir);
+        var root = ChildRoot.Resolve(order.Root, _factory.Policy, _factory.WorkingDir);
         if (root.Refusal is { } outside) return "error: " + outside;
 
         string? planPath = null;
@@ -432,15 +453,16 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             // THE BRIEFING COMES FROM THE TYPE, never from the parent (D9). Config is the only
             // legitimate author of the highest-authority text in a child's prompt.
             Briefing = null,
-            CallerContext = WithPlanPath(Read(call, "context"), type,
-                new PlanTarget(Read(call, "description"), ChildCanWrite(turnTools, type), root.Root), out planPath),
+            CallerContext = WithPlanPath(order.Context, type,
+                new PlanTarget(order.Description, ChildCanWrite(turnTools, type), root.Root), out planPath),
             // The label the USER sees — status row and permission prompts. Never sent to the model.
-            Label = Read(call, "description"),
+            Label = order.Description,
             Type = type,
             // So the child's logs land UNDER this agent's directory rather than beside it.
             ParentAgentId = parentAgentId,
             TurnTools = turnTools,
             Root = root.Root,
+            Origin = order.Origin,
         });
         onChild?.Invoke(child);
 
@@ -448,12 +470,12 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         // task_output, task_stop — for the whole time it is running, which is exactly when the parent
         // wants to ask how far it has got or tell it something it needs. Kept only on completion, it
         // would be invisible to task_list for the whole of its run.
-        var keptAs = _store?.Keep(child, Read(call, "description"));
+        var keptAs = _store?.Keep(child, order.Description, order.Handle);
 
         // BACKGROUND BY DEFAULT, WHERE IT CAN WORK: a store (or nothing could reach or stop the child), a delivery
         // port and a parent id (or nobody could be told it ended), and a runtime that allows it — headless
         // does not (spec decision 8). Anything else spawns in the foreground, where none of these is needed.
-        var background = Args.ReadBool(call, "background") ?? true;
+        var background = order.Background;
         if (background && keptAs is not null && _factory.AllowBackground
             && _factory.Delivery is { } delivery && parentAgentId is not null)
         {
@@ -462,7 +484,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             _store!.TryClaim(keptAs);
             var run = _store.BeginBackground(
                 new BackgroundStart(Name: keptAs, ParentAgentId: parentAgentId, Brief: prompt,
-                    Description: Read(call, "description"), IsResume: false),
+                    Description: order.Description, IsResume: false),
                 new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(delivery, parentAgentId, keptAs)));
             _ = BackgroundRunner.Start(new BackgroundWork(_store, _store.Find(keptAs)!, run, prompt,
                 _factory.ConcurrencySlot, delivery,
@@ -538,7 +560,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                     if (released == ForegroundRelease.Move && _factory.Delivery is { } reports && parentAgentId is not null)
                     {
                         var run = _store!.BeginBackground(new BackgroundStart(Name: keptAs!, ParentAgentId: parentAgentId,
-                                Brief: prompt, Description: Read(call, "description"), IsResume: false),
+                                Brief: prompt, Description: order.Description, IsResume: false),
                             new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(reports, parentAgentId, keptAs!)));
                         run.Token.Register(foreground!.Cancel);
                         adopted = true;

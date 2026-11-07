@@ -195,6 +195,58 @@ public sealed class SubAgentStore
     }
 
     /// <summary>
+    /// Keeps this child under <paramref name="handle"/> when it may have it, and answers the handle it got.
+    ///
+    /// <para>THE HANDLE ASKED FOR, when nothing holds it — or when its tombstone is this same origin's: a colleague
+    /// dismissed and brought back is the same one returning, and the model's history already knows it by that name.
+    /// Anything else — a live holder, another's tombstone — gets the usual suffix, so no reach for an old worker lands
+    /// on a new one.</para>
+    /// </summary>
+    public string Keep(SubAgent agent, string? description, string? handle)
+    {
+        if (handle is null) return Mark(Keep(agent, description), agent.Origin);
+        lock (_naming)
+        {
+            var returning = _forgotten.ContainsKey(handle) && agent.Origin is { } origin
+                && _origins.TryGetValue(handle, out var was) && was == origin;
+            var name = !_byName.ContainsKey(handle) && (!_forgotten.ContainsKey(handle) || returning)
+                ? handle
+                : Slug(handle, [.. _byName.Keys, .. _forgotten.Keys]);
+            if (returning) _forgotten.TryRemove(handle, out _);
+            _byName[name] = new StoredAgent(name, agent.TypeName, description, DateTimeOffset.UtcNow, agent);
+            return Mark(name, agent.Origin);
+        }
+    }
+
+    /// <summary>
+    /// Where each worker came from, by handle — opaque here, set by whoever spawned or kept it.
+    ///
+    /// <para>KEPT THROUGH A FORGET, so a tombstone still knows whose it was (see <see cref="Keep(SubAgent, string?, string?)"/>);
+    /// let go with the conversation, as the tombstones are.</para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, string> _origins = new(StringComparer.Ordinal);
+
+    /// <summary>Marks a kept worker as coming from <paramref name="origin"/>; null clears the mark.</summary>
+    public void SetOrigin(string name, string? origin)
+    {
+        if (origin is null) _origins.TryRemove(name, out _);
+        else _origins[name] = origin;
+    }
+
+    /// <summary>Where the worker under <paramref name="name"/> came from, or null for an ordinary one.</summary>
+    public string? OriginOf(string name) => _origins.GetValueOrDefault(name);
+
+    /// <summary>The handle of the live worker from <paramref name="origin"/>, or null when none is kept now.</summary>
+    public string? NameOfOrigin(string origin) =>
+        _origins.FirstOrDefault(o => o.Value == origin && _byName.ContainsKey(o.Key)).Key;
+
+    private string Mark(string name, string? origin)
+    {
+        if (origin is not null) _origins[name] = origin;
+        return name;
+    }
+
+    /// <summary>
     /// Lets go of every worker — the session is leaving their conversation for another — and of the names deleted ones
     /// held, which were that conversation's too.
     ///
@@ -217,6 +269,7 @@ public sealed class SubAgentStore
                 _foregroundStops.TryRemove(name, out _);
             }
             _forgotten.Clear();
+            _origins.Clear();
         }
     }
 
@@ -244,6 +297,7 @@ public sealed class SubAgentStore
             if (_byName.ContainsKey(name) || _forgotten.ContainsKey(name)) return false;
             _byName[name] = new StoredAgent(name, agent.TypeName, description, ended.Began, agent);
             _ends[name] = ended;
+            Mark(name, agent.Origin);
             return true;
         }
     }
