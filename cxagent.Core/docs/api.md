@@ -128,6 +128,8 @@ bool          RefuseIfBusy()
 | `Started` | `Task Turn`, `Task<string?> Result`, `Task<SendOutcome> Outcome` | a turn began. Await `Turn`, or attach a continuation. `Result` is the final answer's text; `Outcome` says how the turn ended — `Completed`, `Capped` at the turn limit, `Failed`, `Cancelled` — which the text alone cannot tell you |
 | `Queued` | — | a turn was already running; the text went to the queue and `Pending` fired |
 | `NoAgent` | — | no model is wired |
+| `Handled` | `CommandStatus Status` | the text named a slash command, which ran and spoke through the observer; nothing went to the model. Ignoring this case is safe |
+| `Refused` | `string Reason` | a busy session refused a system-sent line (a plugin's wake or steer); send it again later. Never returned for a person typing |
 | `Aside` | `Task? Answer` | the session is in btw mode and the text went to the side agent — null when it was still answering and refused it |
 
 **Raises:** `UserTurnAdded` then `AssistantTurnBegan` on your observer; `TokensUpdated` and
@@ -508,8 +510,7 @@ transcript must never be handed to another.
 | `AssistantTurnEnded(id)` | that turn's answer is complete |
 | `AssistantLabelled(id, header)` | a header for the turn |
 | `UserImagesAttached(id, images)` | right after `UserTurnAdded`, when the prompt carries images. Does nothing unless you implement it |
-| `Said(message)` | the **session's own** words, in Core's markup dialect |
-| `Failed(message)` | a turn failed |
+| `Said(message)` | the **session's own** words, in Core's markup dialect — a failed turn included, said with `Severity.Error` |
 
 `ChatMessageId` identifies a turn so you can stream into the right row. Ids are minted by the
 session, so a parent and its children never collide.
@@ -563,14 +564,14 @@ implement one thing: how a human is asked.**
 ```csharp
 static PermissionDecider WithPrompt(
     PermissionRulesStore store,
-    Action<string>? notice,
+    Action<string?, Message>? notice,
     Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook)
 ```
 
 | Parameter | |
 |---|---|
 | `store` | handed to you by `buildGate` — do not construct one |
-| `notice` | one-line notices: "auto-refused", a rule that fired. May be null |
+| `notice` | `(sessionId, message)`: one-line notices — "auto-refused", a rule that fired — and which session they are about, null when none. May be null |
 | `promptHook` | `(request, offerTrust, ct)` → a choice. **Your dialog, your queue, your UI** |
 
 `offerTrust` is true for a **file** request whose path is inside the working directory — the only

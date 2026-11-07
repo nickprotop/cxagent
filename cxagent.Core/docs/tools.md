@@ -183,10 +183,14 @@ distinction is for the model — "no such tool" means the name is wrong and it s
 
 ## Names, and what you cannot shadow
 
-Injected tools are dispatched **after** every built-in, so naming a tool `read_file` does not
-override the built-in — it makes your tool unreachable. Pick names that are unmistakably yours.
+Injected tools are consulted **before** the built-ins, but one is skipped while a built-in of the same
+name is offered — so naming a tool `read_file` does not override the built-in, it makes your tool
+unreachable. (If tool selection withholds that built-in, the name is free and your tool answers to it.)
+Pick names that are unmistakably yours.
 
-Within your own set, a duplicate name means the last one registered wins.
+Within your own set, a duplicate name withdraws **both** tools — neither is offered, and the reason is
+reported — because which one would win depends on registration order you may not control. A strict
+toolset throws instead.
 
 ---
 
