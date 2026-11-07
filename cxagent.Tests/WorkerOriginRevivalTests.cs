@@ -44,7 +44,7 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         new() { Role = "tool", ToolCallId = "c1", Content = """<sub_agent id="CHILD01" name="charting" state="completed">worked</sub_agent>""" },
     ];
 
-    private (SubAgentStore Store, IReadOnlyList<string> Left) Revive(Func<string, ChildAugment?>? augment)
+    private (SubAgentStore Store, RevivalReport Report) Revive(Func<string, ChildAugment?>? augment)
     {
         var store = new SubAgentStore();
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
@@ -54,9 +54,9 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         });
         var source = new ExportSource(new ExportHeader("OLD", null, _root, null, null, 0, 0),
             ExportSource.EntriesOf(HistoryRecorder.Read(Path.Combine(_parent, "history.jsonl")), _parent), true, _parent);
-        var left = WorkerRevival.Revive(source, "NEW", new Revival(factory,
+        var report = WorkerRevival.Revive(source, "NEW", new Revival(factory,
             new AgentTypeCatalog(new Dictionary<string, AgentTypeConfig>(), null), store));
-        return (store, left);
+        return (store, report);
     }
 
     [Fact]
@@ -67,9 +67,10 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         parent.NoteWorker(new WorkerMark("CHILD01", "colleague:Charting") { Name = "charting", Type = "general", Description = "Charting" });
         string? asked = null;
 
-        var (store, left) = Revive(o => { asked = o; return new ChildAugment { Context = "EXP" }; });
+        var (store, report) = Revive(o => { asked = o; return new ChildAugment { Context = "EXP" }; });
 
-        Assert.Empty(left);
+        Assert.Empty(report.Left);
+        Assert.Empty(report.Plain);
         Assert.Equal("colleague:Charting", asked);
         Assert.Equal("colleague:Charting", store.OriginOf("charting"));
         var kept = store.Find("charting")!;
@@ -114,11 +115,12 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         parent.Record(SpawnedByTool());
         parent.NoteWorker(new WorkerMark("CHILD01", "colleague:Charting"));
 
-        var (store, left) = Revive(augment: null);
+        var (store, report) = Revive(augment: null);
 
         var kept = store.Find("charting")!;
         Assert.Equal(["work", "worked"], kept.Agent.Agent.Context.Messages.Select(m => m.Content));
-        Assert.Contains(left, l => l.StartsWith("charting (back as an ordinary worker", StringComparison.Ordinal));
+        Assert.Empty(report.Left);
+        Assert.Contains(report.Plain, l => l.StartsWith("charting (", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -128,10 +130,10 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         parent.Record(SpawnedByTool());
         parent.NoteWorker(new WorkerMark("CHILD01", "colleague:Charting"));
 
-        var (store, left) = Revive(_ => throw new InvalidOperationException("no such colleague"));
+        var (store, report) = Revive(_ => throw new InvalidOperationException("no such colleague"));
 
         Assert.NotNull(store.Find("charting"));
-        Assert.Contains(left, l => l.Contains("no such colleague", StringComparison.Ordinal));
+        Assert.Contains(report.Plain, l => l.Contains("no such colleague", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -140,9 +142,10 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         Parent().Record(SpawnedByTool());
         var asked = false;
 
-        var (store, left) = Revive(_ => { asked = true; return null; });
+        var (store, report) = Revive(_ => { asked = true; return null; });
 
-        Assert.Empty(left);
+        Assert.Empty(report.Left);
+        Assert.Empty(report.Plain);
         Assert.False(asked);
         Assert.Null(store.OriginOf("charting"));
         Assert.Null(store.Find("charting")!.Agent.Agent.Setup.Brief.CallerContext);

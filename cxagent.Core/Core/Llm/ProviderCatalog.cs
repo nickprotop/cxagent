@@ -72,6 +72,10 @@ public sealed record ProviderCatalog(
     /// config.json's absent key has already become the app's default, on, by the time it gets here.</summary>
     public bool? Memory { get; init; }
 
+    /// <summary>Whether sessions keep colleagues — see <see cref="ProviderSettings.Colleagues"/>. Null is off, as for
+    /// <see cref="Memory"/>.</summary>
+    public bool? Colleagues { get; init; }
+
     /// <summary>The user's <c>hooks</c> block — see <see cref="ProviderSettings.Hooks"/>.</summary>
     public Hooks.HooksSettings? Hooks { get; init; }
 

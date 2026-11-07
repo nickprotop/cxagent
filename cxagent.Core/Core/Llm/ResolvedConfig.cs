@@ -111,6 +111,10 @@ public sealed record ResolvedConfig(
     /// absent key is the app's on, an <see cref="AgentConfig"/> says for itself.</summary>
     public bool Memory => Catalog.Memory ?? false;
 
+    /// <summary>Whether sessions keep colleagues — the library, the colleague tool and its list in the prompt. Off unless
+    /// something turned it on, the rule <see cref="Memory"/> follows.</summary>
+    public bool Colleagues => Catalog.Colleagues ?? false;
+
     /// <summary>The user's hooks block. Never null — no block is no user hooks.</summary>
     public Hooks.HooksSettings Hooks => Catalog.Hooks ?? CxAgent.Core.Hooks.HooksSettings.None;
 
@@ -206,6 +210,8 @@ public static class ConfigResolver
                   WebSearch = settings.WebSearch,
                   // THE APP'S DEFAULT IS ON: a config.json that says nothing about memory has it.
                   Memory = settings.Memory ?? true,
+                  // ON BY DEFAULT IN THE APP, as memory is.
+                  Colleagues = settings.Colleagues ?? true,
                   Hooks = settings.Hooks,
                   Sandbox = settings.Sandbox,
                   Web = settings.Web },
@@ -323,6 +329,8 @@ public static class ConfigResolver
                   WebSearch = settings.WebSearch,
                   // THE APP'S DEFAULT IS ON: a config.json that says nothing about memory has it.
                   Memory = settings.Memory ?? true,
+                  // ON BY DEFAULT IN THE APP, as memory is.
+                  Colleagues = settings.Colleagues ?? true,
                   Hooks = settings.Hooks,
                   Sandbox = settings.Sandbox,
                   Web = settings.Web },

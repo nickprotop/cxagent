@@ -202,6 +202,12 @@ public sealed class SubAgentFactory
         public Func<string, ChildAugment?>? Augment { get; init; }
 
         /// <summary>
+        /// A provider entry by name, as a child's routing — for an order that names one (<see cref="SpawnOrder.Instance"/>)
+        /// and for reviving such a child. Null where nothing resolves entries; such an order is then refused.
+        /// </summary>
+        public Func<string, TypeRouting?>? Instances { get; init; }
+
+        /// <summary>
         /// What the session's agent is told: cxagent's config folder, so a user-level CXAGENT.md applies to a child
         /// too, and the day the session began, so a child's prompt is dated as its parent's is. A child's own
         /// briefing and caller context replace the session's — see <see cref="Create(ChildRequest)"/>.
@@ -338,6 +344,9 @@ public sealed class SubAgentFactory
 
     /// <summary>See <see cref="SubAgentRuntime.AllowBackground"/>.</summary>
     internal bool AllowBackground => _runtime.AllowBackground;
+
+    /// <summary>The routing for a provider entry by name, or null when there is no such entry here.</summary>
+    internal TypeRouting? InstanceRouting(string instance) => _runtime.Instances?.Invoke(instance);
 
     /// <summary>Whether a module answers origins here — false, and an origin builds a plain worker.</summary>
     internal bool CanAugment => _runtime.Augment is not null;

@@ -191,6 +191,13 @@ public sealed record AgentConfig
     public bool Memory { get; init; }
 
     /// <summary>
+    /// Whether sessions keep colleagues — workers kept across sessions, the <c>colleague</c> tool and their list in the
+    /// prompt. OFF unless set, unlike the app, for memory's reason: an embedder's agent writing a library into a config
+    /// folder is something it should choose. The library goes under the session's config folder.
+    /// </summary>
+    public bool Colleagues { get; init; }
+
+    /// <summary>
     /// Hooks for this app's sessions: the <c>hooks</c> block a hooks file holds, typed handlers, or both. The
     /// repository's own hooks files are read beside them, as in the app. See <see cref="Hooks.HooksConfig"/>.
     /// </summary>
@@ -285,7 +292,7 @@ public sealed record AgentConfig
                 MaxConcurrentAgents: chosen.MaxConcurrentAgents,
                 ClassifierInstance: Classifier)
             {
-                PluginPaths = PluginPaths, WebSearch = WebSearch, Memory = Memory, Hooks = hooks, Sandbox = Sandbox,
+                PluginPaths = PluginPaths, WebSearch = WebSearch, Memory = Memory, Colleagues = Colleagues, Hooks = hooks, Sandbox = Sandbox,
                 ClassifierTimeoutSeconds = ClassifierTimeoutSeconds, ShellDetachOnTimeout = ShellDetachOnTimeout,
             },
             [],

@@ -471,6 +471,11 @@ public record ProviderSettings(
     public bool? Memory { get; init; }
 
     /// <summary>
+    /// <c>colleagues.enabled</c>, or null when config says nothing — which the app reads as on, as it does memory's.
+    /// </summary>
+    public bool? Colleagues { get; init; }
+
+    /// <summary>
     /// The <c>hooks</c> block, or null when the config has none. Held as written; each session parses it
     /// beside the repository's own hooks files — see <see cref="Hooks.HookSources"/>.
     /// </summary>
@@ -1088,6 +1093,19 @@ public static class ProviderConfigLoader
                 }
             }
 
+            // THE SAME RULE FOR COLLEAGUES: a block of the wrong shape warns and keeps the default.
+            bool? colleagues = null;
+            if (root.TryGetProperty("colleagues", out var col))
+            {
+                if (col.ValueKind != JsonValueKind.Object)
+                    warnings.Add("colleagues must be an object, like { \"enabled\": false } — colleagues stay on.");
+                else if (col.TryGetProperty("enabled", out var on))
+                {
+                    if (on.ValueKind is JsonValueKind.True or JsonValueKind.False) colleagues = on.GetBoolean();
+                    else warnings.Add("colleagues.enabled must be true or false — colleagues stay on.");
+                }
+            }
+
             // A HOOKS BLOCK OF THE WRONG SHAPE WARNS, never refuses the config: no hooks is a working
             // setup, and taking every provider down over it would be the larger failure. Entries inside
             // it are checked per session, where a bad one costs only itself.
@@ -1415,6 +1433,7 @@ public static class ProviderConfigLoader
                 ShellDetachOnTimeout = shellDetachOnTimeout,
                 WebSearch = webSearch,
                 Memory = memory,
+                Colleagues = colleagues,
                 Hooks = hooks,
                 Sandbox = sandbox,
                 Web = web,

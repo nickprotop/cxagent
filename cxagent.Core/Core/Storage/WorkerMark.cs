@@ -24,6 +24,9 @@ public sealed record WorkerMark(
     /// <summary>The provider entry it was spawned on, or null for its type's own.</summary>
     [JsonPropertyName("provider")] public string? Provider { get; init; }
 
+    /// <summary>The provider entry it was ordered onto, whatever its type offers — see <c>SpawnOrder.Instance</c>.</summary>
+    [JsonPropertyName("instance")] public string? Instance { get; init; }
+
     /// <summary>The label its row showed.</summary>
     [JsonPropertyName("description")] public string? Description { get; init; }
 

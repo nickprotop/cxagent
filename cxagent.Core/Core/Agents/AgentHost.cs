@@ -561,6 +561,9 @@ public sealed class AgentHost : IDisposable
     /// <summary>Labels the next prompt this host's agent is sent — see <see cref="Incoming"/>.</summary>
     internal void NoteIncoming(Incoming from) => _agent.History?.NoteIncoming(from);
 
+    /// <summary>Records in this session's history where one of its workers came from — see <see cref="Storage.WorkerMark"/>.</summary>
+    internal void NoteWorker(Storage.WorkerMark mark) => _agent.History?.NoteWorker(mark);
+
     /// <summary>
     /// Runs one turn on this host's agent. A DELEGATION — everything around it is the session's.
     ///

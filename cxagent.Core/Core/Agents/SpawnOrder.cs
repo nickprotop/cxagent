@@ -21,6 +21,13 @@ public sealed record SpawnOrder
     /// <summary>The provider entry to run on, from the type's list, or null for its own.</summary>
     public string? Provider { get; init; }
 
+    /// <summary>
+    /// A provider entry to run on whatever the type offers, or null to follow <see cref="Provider"/> and the type. AN
+    /// ORDER'S ONLY, like the origin: a module that chose a model for a worker — a colleague's own — needs it honoured
+    /// even on a type that offers no choice, and a model must not be able to step outside its types' lists this way.
+    /// </summary>
+    public string? Instance { get; init; }
+
     /// <summary>The folder to work in, relative to the session's, or null for the session's own.</summary>
     public string? Root { get; init; }
 

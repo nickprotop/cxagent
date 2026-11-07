@@ -27,14 +27,21 @@ namespace CxAgent.Core.Sessions;
 /// <param name="Store">The session's store, which keeps them.</param>
 internal sealed record Revival(SubAgentFactory Factory, AgentTypeCatalog Types, SubAgentStore Store);
 
+/// <summary>What a restore could not bring back, and what came back other than it was — each with why.</summary>
+/// <param name="Left">Workers that stay in the past.</param>
+/// <param name="Plain">Workers back with their conversation but not as what they were: their origin's module is gone
+/// or failed.</param>
+internal sealed record RevivalReport(IReadOnlyList<string> Left, IReadOnlyList<string> Plain);
+
 internal static class WorkerRevival
 {
     /// <summary>
     /// Revives the workers of <paramref name="session"/> — its history, loaded once for the whole restore — under its
     /// newest agent <paramref name="parentAgentId"/>, and answers the ones that could not come back, each with why.
     /// </summary>
-    public static IReadOnlyList<string> Revive(ExportSource session, string parentAgentId, Revival into)
+    public static RevivalReport Revive(ExportSource session, string parentAgentId, Revival into)
     {
+        var plain = new List<string>();
         // THE SESSION'S COPIES, oldest first: a worker spawned before a resume has its folder under the copy that
         // spawned it, and one brought back by an earlier restore has another under each copy it worked in since.
         var copies = session.Entries.Select(e => e.Dir).Distinct(StringComparer.Ordinal).ToList();
@@ -45,7 +52,11 @@ internal static class WorkerRevival
             // host has been replaced, and a throw would leave the session half restored.
             try
             {
-                if (Revived(spawn, copies, session, parentAgentId, into) is { } why) left.Add($"{spawn.Name} ({why})");
+                switch (Revived(spawn, copies, session, parentAgentId, into))
+                {
+                    case { Plain: true } back: plain.Add($"{spawn.Name} ({back.Why})"); break;
+                    case { } why: left.Add($"{spawn.Name} ({why.Why})"); break;
+                }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
                 or ArgumentException or System.Text.Json.JsonException)
@@ -53,11 +64,17 @@ internal static class WorkerRevival
                 left.Add($"{spawn.Name} ({e.Message})");
             }
         }
-        return left;
+        return new RevivalReport(left, plain);
     }
 
-    /// <summary>Brings one worker back, or says why it stays in the past.</summary>
-    private static string? Revived(Spawn spawn, List<string> copies, ExportSource session, string parentAgentId, Revival into)
+    /// <summary>Why a worker did not come back as it was: left in the past, or back plain.</summary>
+    private sealed record Outcome(string Why, bool Plain = false)
+    {
+        public static implicit operator Outcome(string why) => new(why);
+    }
+
+    /// <summary>Brings one worker back, or says why it stays in the past or came back plain.</summary>
+    private static Outcome? Revived(Spawn spawn, List<string> copies, ExportSource session, string parentAgentId, Revival into)
     {
         var (factory, types, store) = (into.Factory, into.Types, into.Store);
 
@@ -78,8 +95,18 @@ internal static class WorkerRevival
         // disabled, a provider no longer offered, or a folder no longer allowed leaves it in the past, where its rows
         // still show it.
         if (types.Resolve(spawn.Type) is not { } type) return $"no type '{spawn.Type}'";
-        var pick = type.Pick(spawn.Provider);
-        if (pick.Routing is not { } routing) return pick.Refusal ?? "no provider";
+        TypeRouting routing;
+        if (spawn.Instance is { } instance)
+        {
+            if (factory.InstanceRouting(instance) is not { } entry) return $"no provider entry '{instance}'";
+            routing = entry;
+        }
+        else
+        {
+            var pick = type.Pick(spawn.Provider);
+            if (pick.Routing is not { } picked) return pick.Refusal ?? "no provider";
+            routing = picked;
+        }
         var root = ChildRoot.Resolve(spawn.Root, factory.Policy, factory.WorkingDir);
         if (root.Refusal is { } outside) return outside;
 
@@ -111,7 +138,7 @@ internal static class WorkerRevival
         // failed — leaves an ordinary worker with its conversation, and the session says so rather than letting the user
         // believe it is what it was.
         if (spawn.Origin is not null && (child.AugmentRefusal is not null || !factory.CanAugment))
-            return $"back as an ordinary worker: {child.AugmentRefusal ?? "nothing here knows where it came from"}";
+            return new Outcome(child.AugmentRefusal ?? "nothing here knows where it came from", Plain: true);
         return null;
     }
 
@@ -164,6 +191,9 @@ internal static class WorkerRevival
         /// <summary>The folder the spawn confined it to, or null for its parent's.</summary>
         public string? Root { get; init; }
 
+        /// <summary>The provider entry an order put it on, whatever its type offers.</summary>
+        public string? Instance { get; init; }
+
         public string? LastState { get; set; }
     }
 
@@ -188,6 +218,7 @@ internal static class WorkerRevival
                     {
                         Provider = mark.Provider,
                         Root = mark.Root,
+                        Instance = mark.Instance,
                     };
                 if (spawns.TryGetValue(mark.AgentId, out var marked)) marked.Origin = mark.Origin;
                 continue;

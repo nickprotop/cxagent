@@ -439,9 +439,19 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         // WHERE IT RUNS, FROM THE TYPE'S OWN LIST — config is the only source of a child's provider.
         // Applied by replacing the type's routing, so the factory builds the child exactly as it always
         // has from type.Provider, its window and its instance name.
-        var pick = type.Pick(order.Provider);
-        if (pick.Refusal is { } refusal) return "error: " + refusal;
-        type = type with { Routing = pick.Routing! };
+        //
+        // AN ORDER'S OWN ENTRY WINS OVER THE TYPE'S LIST: only a session sets Instance, never a model's call.
+        if (order.Instance is { } instance)
+        {
+            if (_factory.InstanceRouting(instance) is not { } routing) return $"error: there is no provider entry '{instance}' here.";
+            type = type with { Routing = routing };
+        }
+        else
+        {
+            var pick = type.Pick(order.Provider);
+            if (pick.Refusal is { } refusal) return "error: " + refusal;
+            type = type with { Routing = pick.Routing! };
+        }
 
         // WHERE IT WORKS, judged against this agent's own folder before anything is built.
         var root = ChildRoot.Resolve(order.Root, _factory.Policy, _factory.WorkingDir);

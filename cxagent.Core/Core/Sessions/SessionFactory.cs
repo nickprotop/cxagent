@@ -202,6 +202,11 @@ internal static class SessionFactory
             ? new Memory.MemoryStore(memoryRoot, session.WorkingDirectory)
             : null);
 
+        // COLLEAGUES IN CXAGENT'S OWN FOLDER too, and only where there is one. Decided before the factory is built: its
+        // door is installed only when something answers it, so with colleagues off an origin builds a plain worker and a
+        // resume says so.
+        var colleaguesRoot = resolution.Colleagues ? shared.GlobalInstructionsDir : null;
+
         var brief = new AgentBrief
         {
             GlobalInstructionsDir = shared.GlobalInstructionsDir,
@@ -252,6 +257,12 @@ internal static class SessionFactory
             // spawn the model emits runs — the barrier still holds them all inside the turn.
             MaxConcurrentAgents = resolution.MaxConcurrentAgents,
             WorkingDir = session.WorkingDirectory,
+
+            // THE DOOR, ANSWERED BY THE SESSION'S DESK as it is when a child is built — a re-wire keeps the desk.
+            Augment = colleaguesRoot is null ? null : origin => session.Colleagues?.Augment(origin),
+
+            // A PROVIDER ENTRY BY NAME, for an order that chose one and for reviving it.
+            Instances = name => ModelFor(resolution, name) is { } m ? new TypeRouting(m.Provider, m.Window, m.Instance) : null,
             Tools = new AgentTools(executors)
             {
                 Memory = session.Memory,
@@ -283,6 +294,19 @@ internal static class SessionFactory
         // THE SESSION'S STORE, so a child survives a re-wire that replaces the agent that spawned
         // it. Passing a fresh one here would silently empty the fridge on every model switch.
         var subAgents = new SubAgentSpawner(childFactory, agentTypes, session.SubAgents);
+
+        // BEFORE THE HOST AND ANY RESUME: revival asks the desk to equip each colleague it brings back.
+        session.UseColleagues(colleaguesRoot is null ? null : new Colleagues.ColleagueDeskParts
+        {
+            Library = new Colleagues.ColleagueStore(colleaguesRoot),
+            Workers = session.SubAgents,
+            Spawner = subAgents,
+            Folder = session.WorkingDirectory,
+            SessionId = () => session.SessionId,
+            NoteWorker = mark => session.Host?.NoteWorker(mark),
+            Models = name => name is null ? SessionModel(resolution) : ModelFor(resolution, name),
+            Notify = session.NotifyWarning,
+        });
 
         // THE PORTS' OBSERVERS BECOME SUBSCRIBER ONE OF A FAN-OUT, and everything downstream is
         // handed the fan-out instead. Behaviour is identical with one subscriber; what it buys is
@@ -498,9 +522,11 @@ internal static class SessionFactory
                 && Export.ExportSource.Load(paths, agent) is { } past)
             {
                 // ITS WORKERS COME BACK WITH IT, before its past is drawn — a restored card opens the worker it names.
-                var left = WorkerRevival.Revive(past, agent, new Revival(childFactory, agentTypes, session.SubAgents));
-                if (left.Count > 0)
-                    session.NotifyWarning($"Not brought back: {string.Join(", ", left)}. Their work is in the history above.");
+                var report = WorkerRevival.Revive(past, agent, new Revival(childFactory, agentTypes, session.SubAgents));
+                if (report.Left.Count > 0)
+                    session.NotifyWarning($"Not brought back: {string.Join(", ", report.Left)}. Their work is in the history above.");
+                if (report.Plain.Count > 0)
+                    session.NotifyWarning($"Back as ordinary workers, with their conversations: {string.Join(", ", report.Plain)}.");
 
                 // THE PAST IS SHOWN, not only remembered: an agent that knows things the screen does not show reads as
                 // one that invented them. Into this wire's own ports first — the front end that opened it — and then to
@@ -586,4 +612,21 @@ internal static class SessionFactory
             "main");
         return runner;
     }
+
+    /// <summary>The session's own model, as a colleague would run on it.</summary>
+    private static Colleagues.ModelChoice? SessionModel(ResolvedConfig resolution) =>
+        resolution.Provider is { } provider
+            ? new Colleagues.ModelChoice(provider, Label(resolution.InstanceName, provider), resolution.ContextWindow, resolution.InstanceName)
+            : null;
+
+    /// <summary>A provider entry by name — the session's own when it is the one named — or null when there is none.</summary>
+    private static Colleagues.ModelChoice? ModelFor(ResolvedConfig resolution, string name)
+    {
+        if (name == resolution.InstanceName) return SessionModel(resolution);
+        if (resolution.Providers is not { } registry || !registry.TryGet(name, out var provider)) return null;
+        return new Colleagues.ModelChoice(provider, Label(name, provider), registry.WindowFor(name), name);
+    }
+
+    private static string Label(string? instance, Llm.ILlmProvider provider) =>
+        instance is { Length: > 0 } ? $"{instance}:{provider.ModelId}" : provider.ModelId;
 }
