@@ -1,6 +1,7 @@
 # cxagent, in use
 
-Real sessions, driven by a local `qwen3.6-35b-a3b`. Most are one run at
+Real sessions, driven by a local `qwen3.6-35b-a3b` (an IQ4_XS quantisation, served by llama.cpp).
+Where a capture used a different model, its caption says so. Most are one run at
 [cxlog](https://github.com/nickprotop/cxlog) — closing three unfinished features by wiring
 `--follow`, `--export` and `--session` to services that already existed, then running the binary it
 had just built.
@@ -206,7 +207,8 @@ the catalog and the release disagree, and cxagent installs neither.
 
 ![Two plugins installed and loaded, from the catalog](20-plugin-installed.png)
 
-Two plugins, each in a directory of its own. The layout is not cosmetic: a plugin's identity is a
+Two plugins, each in a directory of its own — calculator and csharp-lsp, at this point in this
+session; a third arrives in a later one, below. The layout is not cosmetic: a plugin's identity is a
 hash over everything in its folder, and .NET resolves a plugin's dependencies from that folder too,
 so two plugins sharing one directory would be neither isolated nor separately identifiable —
 installing either would change the other's hash and re-ask its load prompt.
@@ -240,11 +242,12 @@ system prompt saying what its individual tool descriptions cannot — here, that
 and which file types it serves. A plugin that declares *no* tools and only that block is a valid
 plugin too.
 
-![Three plugins installed, with clone-finder's README rendered](21-clone-finder.png)
+![A later session, with three plugins installed and clone-finder's README rendered](21-clone-finder.png)
 
-A second plugin, and a different reason to have one. `clone-finder` answers "where is the duplicated
-code" in a single call, because the alternative is reading forty files to notice that three of them
-share a block — and that reading is the context the refactor then needs.
+A later session, after `clone-finder` joined the two above — and a different reason to have a
+plugin. `clone-finder` answers "where is the duplicated code" in a single call, because the
+alternative is reading forty files to notice that three of them share a block — and that reading is
+the context the refactor then needs.
 
 The Details pane renders the plugin's own README from disk, so what a tool returns can be read
 before deciding to install it. Here that includes a sample report: locations and a two-line

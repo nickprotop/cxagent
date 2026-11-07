@@ -79,12 +79,30 @@ def headings_of(markdown: str) -> set:
 
 
 def inline(text: str) -> str:
-    """Inline constructs, escaped first so a document cannot inject markup into the site."""
-    out = html.escape(text)
-    out = re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
+    """Inline constructs, escaped first so a document cannot inject markup into the site.
+
+    QUOTES ARE LEFT ALONE HERE. Most of this lands in text, where an apostrophe written as `&#x27;`
+    is noise in the page source and in anything that reads it without decoding -- a crawler's
+    snippet, a screen reader fed the raw alt. The one place a quote matters is inside an attribute,
+    and `image` escapes the double quote there itself.
+    """
+    out = html.escape(text, quote=False)
+
+    # CODE SPANS ARE SET ASIDE BEFORE EMPHASIS, and put back after. A `**/*.cs` glob inside one would
+    # otherwise be read as bold, and a span holding a backtick -- written ``!`cmd` ``, a double-tick
+    # span with one space of padding -- would be split by the single-tick rule into code, text and
+    # code, leaving tags that cross and a page that does not parse.
+    spans = []
+
+    def keep(match):
+        spans.append(f"<code>{match.group(1)}</code>")
+        return f"\x00{len(spans) - 1}\x00"
+
+    out = re.sub(r"`` ?(.+?) ?``", keep, out)
+    out = re.sub(r"`([^`]+)`", keep, out)
     out = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", out)
     out = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", out)
-    return out
+    return re.sub(r"\x00(\d+)\x00", lambda m: spans[int(m.group(1))], out)
 
 
 # A LIST ITEM: its indent, its marker (a bullet, or a number and a dot) and its text. Numbered items
@@ -268,6 +286,9 @@ def link_up(text: str, resolve) -> str:
         alt, target = match.group(1), match.group(2)
         # LAZY, because the walkthrough carries seventeen full-window terminal captures and a reader
         # arriving at the top should not wait for the ones they may never scroll to.
+        # THE ALT IS AN ATTRIBUTE, so its double quotes are escaped here: `inline` leaves quotes
+        # alone for the text it produces, and an unescaped `"` would end the attribute early.
+        alt = alt.replace('"', "&quot;")
         return (f'<img src="{html.escape(resolve(target))}" alt="{alt}" loading="lazy">')
 
     def one(match):
@@ -390,10 +411,15 @@ def main() -> int:
 
     template = (Path(__file__).parent / "doc-template.html").read_text()
     for rel, name in RENDERED.items():
-        title = re.search(r"^#\s+(.*)$", sources[rel], re.M)
+        heading = re.search(r"^#\s+(.*)$", sources[rel], re.M)
+        title = heading.group(1) if heading else name
+        # THE SITE'S NAME ONLY WHEN THE HEADING LACKS IT. "cxagent, in use" and "Scripting cxagent"
+        # already carry it, and a suffix there makes a tab read "cxagent, in use — cxagent".
+        if "cxagent" not in title.lower():
+            title = f"{title} — cxagent"
         (args.out / "docs" / f"{name}.html").write_text(
             template
-            .replace("{{title}}", html.escape(title.group(1) if title else name))
+            .replace("{{title}}", html.escape(title))
             .replace("{{wide}}", "" if name in NARROW else " doc-wide")
             .replace("{{body}}", pages[name])
             .replace("{{source}}", f"{GITHUB_BLOB}/{rel}"))
