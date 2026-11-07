@@ -295,6 +295,12 @@ body.no-panel .panel { display: none; }
 /* ---- C: phones ------------------------------------------------------------------------------------------------- */
 @media (max-width: 699px) {
   .tabs, .statusline, .logout, #panel-toggle { display: none !important; }
+  /* THE SANDBOX SHRINKS TO ITS DOT: three named pickers and Send do not fit one phone line, and its colour already says
+     which way it is set. The select is stretched invisibly over the dot so a tap anywhere on it still opens the list. */
+  #pick-sandbox { width: 44px; flex: none; padding: 0 0 0 10px; }
+  #pick-sandbox::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+  #pick-sandbox.warn::before { background: var(--warn); }
+  #pick-sandbox select { position: absolute; inset: 0; width: 100%; max-width: none; padding: 0; color: transparent; }
   body[data-view="list"] .sidebar { display: block; position: static; width: 100%; box-shadow: none; border: none; }
   body[data-view="list"] .main { display: none; }
   body[data-view="chat"] .phonebar { display: flex; }
