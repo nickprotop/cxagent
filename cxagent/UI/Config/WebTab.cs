@@ -171,9 +171,9 @@ public sealed class WebTab
             draft.AllowPlugins, v => draft.AllowPlugins = v);
         Switch("Open files anywhere", "The editor beyond the folders above: any file you can read and write.",
             draft.AllowOpenAnywhere, v => draft.AllowOpenAnywhere = v);
-        Switch("Shell", "A real terminal in a browser tab. It runs as you, outside the sandbox, with no prompts.",
+        Switch("Shell", "A real terminal in a browser tab. It runs as you, outside the sandbox, with no prompts. With Configuration on, it also lets a browser change hook and MCP server commands.",
             draft.AllowShell, v => draft.AllowShell = v);
-        Switch("Configuration", "Providers, MCP servers, agent types and settings — not these switches, the users or the folders.",
+        Switch("Configuration", "Providers, MCP servers, agent types, hooks and settings — not this tab. Hook and MCP server commands need Shell as well.",
             draft.AllowConfig, v => draft.AllowConfig = v);
         _detail.AddControl(ListDetail.Section("Browser access", access.Control));
     }

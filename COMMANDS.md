@@ -1031,11 +1031,12 @@ Web › Browser access, or `web.allow` in [CONFIG.md](CONFIG.md#web--the-browser
 |---|---|---|
 | `plugins` | on | **Marketplace**: F2's page — install, update, activate, auto-load, uninstall, a plugin's README and settings, stores and folders. A download still asks first, and a plugin still shows its hash and asks before it loads. `/plugin` too |
 | `openAnywhere` | off | `/open` beyond the web folders: any file the terminal's `/open` reaches |
-| `shell` | off | `/shell`, or **Open a shell**: your shell on a real terminal in a tab, in the session's folder — as you, outside the sandbox, with no prompts. What it showed goes with your next message when it exits, or on Copy to transcript. Linux only for now |
-| `config` | off | `/config`, or **Settings**: F8's tabs as forms, and config.json as text. Keys show only their last four characters. `/trust`, `/init` and `/think --save` too |
+| `shell` | off | `/shell`, or **Open a shell**: your shell on a real terminal in a tab, in the session's folder — as you, outside the sandbox, with no prompts. What it showed goes with your next message when it exits, or on Copy to transcript |
+| `config` | off | `/config`, or **Settings**: F8's tabs as forms, and config.json as text. Keys show only their last four characters. `/trust`, `/init`, `/think --save`, `/mcp reload` and `/hooks review` too. A hook's or a local MCP server's command also needs `shell`: it runs as you |
 
-A browser never changes the switches, the users or the folders: the config page leaves them out, and
-its Web tab only shows them. Anything not listed answers "not available on the web", and a command
+A browser never changes anything in the `web` block — the switches, the users, the folders, the
+address or the login: the config page leaves it out, and its Web tab only shows it. Nor does it open
+anything in cxagent's own folder. Anything not listed answers "not available on the web", and a command
 behind an off switch says where to turn it on.
 
 ## From the shell

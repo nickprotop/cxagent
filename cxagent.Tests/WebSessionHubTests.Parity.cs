@@ -471,10 +471,10 @@ public sealed partial class WebSessionHubTests
         }
         """;
 
-    private async Task<(Tab Tab, HttpServer Server)> ConfigTabAsync(string config)
+    private async Task<(Tab Tab, HttpServer Server)> ConfigTabAsync(string config, bool shell = false)
     {
         File.WriteAllText(ConfigPath, config);
-        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Config = true });
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Config = true, Shell = shell });
         return (await Tab.OpenAsync(server.Bound.Port), server);
     }
 
@@ -588,7 +588,7 @@ public sealed partial class WebSessionHubTests
     [Fact]
     public async Task An_mcp_server_is_added_turned_off_and_removed_after_a_confirmation()
     {
-        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        var (tab, server) = await ConfigTabAsync(TwoProviders, shell: true);
         try
         {
             await tab.SendAsync(Msg("configFormSave", ("tab", "mcp"), ("item", "+new"),
@@ -636,7 +636,7 @@ public sealed partial class WebSessionHubTests
     [Fact]
     public async Task A_hook_is_added_where_it_is_saved_and_one_missing_its_command_is_refused()
     {
-        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        var (tab, server) = await ConfigTabAsync(TwoProviders, shell: true);
         try
         {
             await tab.SendAsync(Msg("create", ("folder", Work)));
@@ -858,7 +858,7 @@ public sealed partial class WebSessionHubTests
     [Fact]
     public async Task A_hook_moved_by_a_change_elsewhere_is_not_the_one_removed()
     {
-        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        var (tab, server) = await ConfigTabAsync(TwoProviders, shell: true);
         try
         {
             await tab.SendAsync(Msg("create", ("folder", Work)));
@@ -889,6 +889,40 @@ public sealed partial class WebSessionHubTests
             else
                 Assert.Contains("changed since", answer["errors"]!.ToJsonString(), StringComparison.Ordinal);
             Assert.Contains("echo second", text, StringComparison.Ordinal);
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    // ---- a command a browser saves runs as you: it needs the shell switch too ---------------------------------------
+
+    [Fact]
+    public async Task A_command_hook_or_a_local_mcp_server_needs_the_shell_switch_as_well_as_config()
+    {
+        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        try
+        {
+            await tab.SendAsync(Msg("create", ("folder", Work)));
+            var id = (await tab.NextAsync(Type("opened")))["sessionId"]!.GetValue<string>();
+            await tab.SendAsync(Msg("configFormSave", ("tab", "hooks"), ("item", "+new"), ("sessionId", id),
+                ("values", new JsonObject { ["source"] = "User", ["event"] = "PreToolUse", ["type"] = "command", ["command"] = "echo x" })));
+            Assert.Contains("web.allow.shell", (await tab.NextAsync(Type("configRefused")))["errors"]!.ToJsonString(), StringComparison.Ordinal);
+
+            await tab.SendAsync(Msg("configFormSave", ("tab", "mcp"), ("item", "+new"),
+                ("values", new JsonObject { ["name"] = "local", ["command"] = "npx srv" })));
+            Assert.Contains("web.allow.shell", (await tab.NextAsync(Type("configRefused")))["errors"]!.ToJsonString(), StringComparison.Ordinal);
+
+            // A REMOTE SERVER RUNS NOTHING HERE.
+            await tab.SendAsync(Msg("configFormSave", ("tab", "mcp"), ("item", "+new"),
+                ("values", new JsonObject { ["name"] = "remote", ["url"] = "https://mcp.example.com" })));
+            await tab.NextAsync(Type("configSaved"));
+
+            var text = JsonNode.Parse(File.ReadAllText(ConfigPath))!.AsObject();
+            text["mcp"]!["sneaky"] = new JsonObject { ["command"] = new JsonArray("sh", "-c", "id") };
+            await tab.SendAsync(Msg("getConfig"));
+            var shown = JsonNode.Parse((await tab.NextAsync(Type("config")))["text"]!.GetValue<string>())!.AsObject();
+            shown["mcp"]!["sneaky"] = new JsonObject { ["command"] = new JsonArray("sh", "-c", "id") };
+            await tab.SendAsync(Msg("saveConfig", ("text", shown.ToJsonString())));
+            Assert.Contains("web.allow.shell", (await tab.NextAsync(Type("configRefused")))["errors"]!.ToJsonString(), StringComparison.Ordinal);
         }
         finally { await tab.DisposeAsync(); await server.StopAsync(); }
     }

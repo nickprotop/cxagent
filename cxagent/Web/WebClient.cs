@@ -818,6 +818,13 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 if (cfg is null) { Refused([$"There is no server '{name}'."]); return; }
                 var draft = WebConfigForms.SetMcp(name, cfg, isNew, values);
                 if (isNew && string.IsNullOrWhiteSpace(draft.CommandLine) && !draft.IsRemote) { Refused(["A server needs a command or a URL."]); return; }
+
+                // A LOCAL SERVER'S COMMAND RUNS AS THE USER: a new one, or a changed command line or folder, needs the shell switch.
+                if (!S.Allow.Shell && !draft.IsRemote && (isNew || draft.ToFields() is { } f && (f.Command is not null || f.Cwd is not null || f.Clear.Contains("cwd"))))
+                {
+                    Refused([WebConfig.CommandsNeedShell]);
+                    return;
+                }
                 if (!draft.IsDirty) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return; }
                 var fields = draft.ToFields();
                 result = McpCommit(isNew ? root => Core.Config.McpEdits.Add(root, name, fields) : root => Core.Config.McpEdits.Update(root, name, fields));
@@ -834,12 +841,21 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                     if (!hooks.CanSaveTo(source)) { Refused([$"There is no {CxAgent.UI.Config.HooksFile.Label(source)} to save to here."]); return; }
                     var added = hooks.Add(source);
                     WebConfigForms.SetHook(added, values);
+                    if (!S.Allow.Shell && added.Type == "command") { Refused([WebConfig.CommandsNeedShell]); return; }
                     item = null;
                 }
                 else if (WebConfigForms.HookAt(hooks, item) is { } hook)
                 {
                     if (!hook.Editable) { Refused(["This hook's type is not one cxagent runs; it is kept as it is."]); return; }
+                    var (type, command, shellName) = (hook.Type, hook.Command, hook.Shell);
                     WebConfigForms.SetHook(hook, values);
+
+                    // A COMMAND HOOK MADE, OR ITS COMMAND CHANGED, runs that command as the user.
+                    if (!S.Allow.Shell && hook.Type == "command" && (type != "command" || command != hook.Command || shellName != hook.Shell))
+                    {
+                        Refused([WebConfig.CommandsNeedShell]);
+                        return;
+                    }
                     item = null;
                 }
                 else { Refused(["That hook changed since this page read it — Reload."]); return; }
@@ -980,6 +996,12 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             }
             case ("mcp", "enable" or "disable" or "remove"):
             {
+                // TURNING A LOCAL SERVER ON starts its command.
+                if (action == "enable" && !S.Allow.Shell && settings.McpServers.TryGetValue(item, out var server) && !server.IsRemote)
+                {
+                    Refused([WebConfig.CommandsNeedShell]);
+                    return;
+                }
                 if (action == "remove" && !confirmed)
                 {
                     Send(new JsonObject { ["type"] = "configConfirm", ["tab"] = tab, ["item"] = item, ["action"] = action, ["text"] = $"Remove the MCP server '{item}'? Its tools leave every session." });
@@ -1106,7 +1128,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             Send(new JsonObject { ["type"] = "configAsk", ["instances"] = new JsonArray([.. moved.Select(i => (JsonNode)i)]) });
             return;
         }
-        var result = Config.Save(text, picked ?? Core.Config.CacheChoice.ApplyNow);
+        var result = Config.Save(text, picked ?? Core.Config.CacheChoice.ApplyNow, S.Allow.Shell);
         if (!result.Saved)
         {
             Send(new JsonObject { ["type"] = "configRefused", ["errors"] = new JsonArray([.. result.Errors.Select(e => (JsonNode)e)]) });

@@ -732,8 +732,8 @@ changes them, nor the users or the roots, even with `config` on:
 |---|---|---|
 | `plugins` | `true` | The plugin marketplace and `/plugin`. A download asks first; a plugin shows its hash and asks before it loads. |
 | `openAnywhere` | `false` | The editor beyond `roots`: any file the terminal's `/open` reaches. |
-| `shell` | `false` | A real shell in a tab — as you, outside the sandbox, with no prompts. Linux only for now. |
-| `config` | `false` | The configuration page: F8's tabs as forms and config.json as text, keys shown as their last four characters; and `/trust`, `/init` and `/think --save`. |
+| `shell` | `false` | A real shell in a tab — as you, outside the sandbox, with no prompts. |
+| `config` | `false` | The configuration page: F8's tabs as forms and config.json as text, keys shown as their last four characters; and `/trust`, `/init`, `/think --save`, `/mcp reload` and `/hooks review`. Adding or changing a hook's or a local MCP server's command needs `shell` too: it runs as you. The `web` block is never shown or changed. |
 
 A switch of the wrong type is warned about and stays at its default — off, for the three that widen
 what a login reaches. [COMMANDS.md](COMMANDS.md#web) says what a browser can do with each.

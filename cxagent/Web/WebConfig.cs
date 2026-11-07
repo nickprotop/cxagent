@@ -171,7 +171,14 @@ internal sealed class WebConfig(AppPaths paths, SessionManager manager, Action<R
     /// file — when the loader accepts it and the file is still what the page read, then makes it live: sessions on an
     /// instance whose model or endpoint changed are moved as <paramref name="choice"/> says, others in place.
     /// </summary>
-    public WebConfigSave Save(string text, CacheChoice choice)
+    /// <summary>
+    /// Why a save that adds or changes a command needs the shell switch: a hook's or an MCP server's command runs as the
+    /// user, outside the sandbox, exactly as the browser's shell would.
+    /// </summary>
+    public const string CommandsNeedShell =
+        "Hook and MCP server commands run as you, outside the sandbox: changing them from a browser needs web.allow.shell as well as config. Turn it on in the terminal: F8 › Web › Browser access (shell).";
+
+    public WebConfigSave Save(string text, CacheChoice choice, bool shell)
     {
         JsonObject sent;
         try
@@ -187,6 +194,15 @@ internal sealed class WebConfig(AppPaths paths, SessionManager manager, Action<R
             if (FileText(ConfigPath) != _readText)
                 return new WebConfigSave(false, ["config.json changed since this page read it — Reload to see it, then make your change again."]);
             Unhide(sent, "");
+        }
+
+        // AS TEXT, ANY CHANGE TO THE HOOKS OR THE MCP SERVERS needs the shell switch: a command anywhere in either runs as
+        // the user. The forms tell a command from a URL; the text does not try to.
+        if (!shell)
+        {
+            var file = (_readText is null ? null : JsonNode.Parse(_readText)) as JsonObject ?? [];
+            if (!JsonNode.DeepEquals(file["hooks"], sent["hooks"]) || !JsonNode.DeepEquals(file["mcp"], sent["mcp"]))
+                return new WebConfigSave(false, [CommandsNeedShell]);
         }
 
         JsonObject? before = null;
