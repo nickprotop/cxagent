@@ -46,7 +46,7 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
     <div class="pills">
       <span class="pill">licence <b>MIT</b></span>
       <span class="pill">runs on <b>Linux · macOS · Windows</b></span>
-      <span class="pill">models <b>Ollama · llama.cpp · OpenAI-compatible · Anthropic</b></span>
+      <span class="pill">models <b>local · cloud — Ollama · llama.cpp · OpenAI-compatible · Anthropic · OpenRouter</b></span>
       <!-- FILLED FROM THE CATALOG by site.js, and hidden until it is. The release workflow
            regenerates that file on every publish, so a version written in here would be stale the
            moment a release shipped with nothing failing to say so. -->
@@ -169,12 +169,13 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
   <div class="feature flip">
     <div class="feature-text">
       <span class="eyebrow">Models and plugins</span>
-      <h3>Local models with every feature, and plugins from a marketplace.</h3>
-      <p>Ollama, llama.cpp or any OpenAI-compatible server gets what a hosted model gets: workers,
-      background tasks, thinking you can see and switch, the sandbox, the browser. The session in the
-      captures at the top of this page ran on a local model. Anthropic and OpenRouter work too, per tab
-      and switchable mid-conversation. There is no cxagent account and no cxagent server: your code
-      goes only to the endpoint you configure.</p>
+      <h3>Local and cloud models, every feature on both — and plugins from a marketplace.</h3>
+      <p>Ollama, llama.cpp and any OpenAI-compatible server on your own machine; Anthropic, OpenRouter
+      and OpenAI in the cloud. Every one gets every feature: workers, background tasks, thinking you
+      can see and switch, the sandbox, the browser. Pick per tab, switch mid-conversation, and run an
+      agent type's workers on a different one. The session in the captures at the top of this page
+      ran on a local model. There is no cxagent account and no cxagent server: your code goes only to
+      the endpoint you configure.</p>
       <p><kbd>F2</kbd> opens the plugin marketplace — six today: a C# language server, a repository
       map, git worktrees, a clone finder, scheduled triggers and a calculator — and anyone can publish
       one. Before any of a plugin runs, cxagent shows a hash of everything it would load and asks,
