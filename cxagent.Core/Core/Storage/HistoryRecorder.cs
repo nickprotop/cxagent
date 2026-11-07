@@ -114,6 +114,12 @@ public sealed class HistoryRecorder
     /// <summary>Labels one message, for a caller that creates several at once (a mailbox drain).</summary>
     public void Label(ChatMessage message, Incoming from) => _labels.AddOrUpdate(message, new StrongBox<Incoming>(from));
 
+    /// <summary>Records where one of this agent's workers came from, for a resume to read back.</summary>
+    public void NoteWorker(WorkerMark mark)
+    {
+        lock (_gate) Append(new HistoryLine(0, DateTimeOffset.UtcNow, HistoryLine.Kinds.Origin) { Worker = mark });
+    }
+
     /// <summary>Marks the conversation as cleared here; what came before stays in the file.</summary>
     public void NoteCleared()
     {

@@ -90,6 +90,7 @@ internal static class WorkerRevival
             ParentAgentId = parentAgentId,
             Type = type with { Routing = routing },
             Root = root.Root,
+            Origin = spawn.Origin,
         });
 
         child.Agent.Context.Replace(ContextOf(entries));
@@ -103,9 +104,15 @@ internal static class WorkerRevival
         // ITS LAST END AS ITS HISTORY HAS IT: the state of the last report it sent, over its last run — from the last
         // message it was sent to the last it wrote. Not its whole record, which spans every run it had.
         var lastRun = entries.LastOrDefault(e => e.Message is { Role: "user", ToolCallId: null, IsTaskList: false })?.At ?? entries[0].At;
-        return store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(spawn.LastState, lastRun, entries[^1].At))
-            ? null
-            : "its name is taken";
+        if (!store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(spawn.LastState, lastRun, entries[^1].At)))
+            return "its name is taken";
+
+        // BACK, BUT NOT AS IT WAS: an origin nothing could equip again — no module now (the feature is off), or one that
+        // failed — leaves an ordinary worker with its conversation, and the session says so rather than letting the user
+        // believe it is what it was.
+        if (spawn.Origin is not null && (child.AugmentRefusal is not null || !factory.CanAugment))
+            return $"back as an ordinary worker: {child.AugmentRefusal ?? "nothing here knows where it came from"}";
+        return null;
     }
 
     /// <summary>
@@ -148,6 +155,9 @@ internal static class WorkerRevival
 
     private sealed record Spawn(string AgentId, string Name, string Type, string? Description)
     {
+        /// <summary>Where it came from, as the last origin line about it said, or null for an ordinary worker.</summary>
+        public string? Origin { get; set; }
+
         /// <summary>The provider the spawn asked for, or null for its type's own.</summary>
         public string? Provider { get; init; }
 
@@ -168,6 +178,21 @@ internal static class WorkerRevival
         var spawns = new Dictionary<string, Spawn>(StringComparer.Ordinal);
         foreach (var e in session.Entries)
         {
+            // AN ORIGIN LINE, IN ITS PLACE IN THE FILE: one carrying a name is a spawn the agent tool did not make; a bare
+            // one re-marks a worker already spawned, and the last one about a worker is what it is now.
+            if (e is { Kind: HistoryLine.Kinds.Origin, Worker: { } mark })
+            {
+                if (mark.Name is { Length: > 0 } name && !spawns.ContainsKey(mark.AgentId))
+                    spawns[mark.AgentId] = new Spawn(mark.AgentId, name,
+                        mark.Type is { Length: > 0 } t ? t : AgentTypeCatalog.DefaultTypeName, mark.Description)
+                    {
+                        Provider = mark.Provider,
+                        Root = mark.Root,
+                    };
+                if (spawns.TryGetValue(mark.AgentId, out var marked)) marked.Origin = mark.Origin;
+                continue;
+            }
+
             foreach (var call in e.Message?.ToolCalls ?? [])
             {
                 if (call.Name is not (Tool.Agent or Tool.AgentSend) || call.Id is null

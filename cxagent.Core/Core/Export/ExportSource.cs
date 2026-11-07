@@ -50,6 +50,9 @@ public sealed record ExportEntry(
 {
     /// <summary>Something the export says about the record itself — what an older session did not keep.</summary>
     public const string Note = "note";
+
+    /// <summary>For an origin line: the worker it is about. See <see cref="HistoryLine.Kinds.Origin"/>.</summary>
+    public WorkerMark? Worker { get; init; }
 }
 
 /// <summary>
@@ -182,9 +185,9 @@ public sealed class ExportSource
     }
 
     // THE CONTINUES LINE IS PLUMBING: it joins folders, and says nothing to a reader.
-    private static List<ExportEntry> EntriesOf(IReadOnlyList<HistoryLine> lines, string dir) =>
+    internal static List<ExportEntry> EntriesOf(IReadOnlyList<HistoryLine> lines, string dir) =>
         lines.Where(l => l.Kind != HistoryLine.Kinds.Continues)
-            .Select(l => new ExportEntry(l.At, l.Kind, l.Message, l.Thinking, l.From, dir))
+            .Select(l => new ExportEntry(l.At, l.Kind, l.Message, l.Thinking, l.From, dir) { Worker = l.Worker })
             .ToList();
 
     private static List<ExportEntry> Legacy(SessionFolder folder)

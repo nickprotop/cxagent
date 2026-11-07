@@ -339,6 +339,9 @@ public sealed class SubAgentFactory
     /// <summary>See <see cref="SubAgentRuntime.AllowBackground"/>.</summary>
     internal bool AllowBackground => _runtime.AllowBackground;
 
+    /// <summary>Whether a module answers origins here — false, and an origin builds a plain worker.</summary>
+    internal bool CanAugment => _runtime.Augment is not null;
+
     /// <summary>The session's policy, whose boundary a spawn's root is judged against.</summary>
     internal Permissions.PermissionPolicy? Policy => _runtime.Guards.Policy;
 

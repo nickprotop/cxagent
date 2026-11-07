@@ -24,6 +24,9 @@ public sealed record HistoryLine(
     [property: JsonPropertyName("from")] Incoming? From = null,
     [property: JsonPropertyName("prev")] string? Previous = null)
 {
+    /// <summary>For <see cref="Kinds.Origin"/>: which worker, and where it came from.</summary>
+    [JsonPropertyName("w")] public WorkerMark? Worker { get; init; }
+
     /// <summary>What a line records.</summary>
     internal static class Kinds
     {
@@ -41,5 +44,11 @@ public sealed record HistoryLine(
         /// the history before it lives in the previous agent's folder.
         /// </summary>
         public const string Continues = "continues";
+
+        /// <summary>
+        /// Where one of this agent's workers came from — see <see cref="WorkerMark"/>. Read by a resume, shown nowhere: a
+        /// transcript and an export skip a line they have no words for.
+        /// </summary>
+        public const string Origin = "origin";
     }
 }
