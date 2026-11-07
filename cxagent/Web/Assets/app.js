@@ -1125,8 +1125,16 @@ function pluginCard(view, r) {
     for (const st of r.settings) {
       const row = el("div", "form-field");
       row.append(el("label", "form-label", st.key), el("small", "form-help", st.prose));
-      const t = el("textarea", "form-input");
-      t.rows = 2; t.value = st.value; t.spellcheck = false;
+      let t;
+      if (st.secret) {
+        // NEVER THE VALUE: whether one is set, and its last four characters. Empty keeps it.
+        t = el("input", "form-input");
+        t.type = "password"; t.autocomplete = "new-password";
+        t.placeholder = st.saved && st.saved !== "none" ? st.saved + " — type to replace" : "none";
+      } else {
+        t = el("textarea", "form-input");
+        t.rows = 2; t.value = st.value; t.spellcheck = false;
+      }
       row.append(t);
       inputs.push([st.key, t]);
       d.append(row);

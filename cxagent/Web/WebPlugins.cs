@@ -124,10 +124,7 @@ internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
             // F2'S SETTINGS TAB: what the catalog says a configured plugin takes, in the author's order, and what
             // config holds for each — a string as itself, anything else as its JSON.
             ["settings"] = row.Configured is null || e is null || e.Settings.Count == 0 ? null
-                : new JsonArray([.. e.Settings.Select(kv => (JsonNode)new JsonObject
-                {
-                    ["key"] = kv.Key, ["prose"] = kv.Value, ["value"] = SettingText(row, kv.Key),
-                })]),
+                : new JsonArray([.. e.Settings.Select(kv => (JsonNode)Setting(row, kv.Key, kv.Value))]),
             ["catalog"] = e is null ? null : new JsonObject
             {
                 ["title"] = e.DisplayName, ["version"] = e.Version, ["description"] = e.Description, ["publisher"] = e.Publisher,
@@ -135,6 +132,22 @@ internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
                 ["requires"] = e.RequiresDescription, ["requiresInstall"] = e.RequiresInstall,
                 ["tools"] = new JsonArray([.. e.Tools.Select(t => (JsonNode)new JsonObject { ["name"] = t.Name, ["gated"] = t.Gated })]),
             },
+        };
+    }
+
+    /// <summary>
+    /// One setting for the page. A SECRET-NAMED ONE IS NOT SENT — an API token in a plugin's settings is as much a key
+    /// as a provider's — only whether it is set and its last four characters; left empty, a save keeps it.
+    /// </summary>
+    internal static JsonObject Setting(PluginRow row, string key, string prose)
+    {
+        var text = SettingText(row, key);
+        var secret = WebConfig.SecretName.IsMatch(key);
+        return new JsonObject
+        {
+            ["key"] = key, ["prose"] = prose, ["secret"] = secret,
+            ["value"] = secret ? "" : text,
+            ["saved"] = secret ? CxAgent.UI.Config.SecretField.Describe(text) : null,
         };
     }
 
@@ -350,6 +363,14 @@ internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
         foreach (var key in entry.Settings.Keys)
         {
             var text = ((values[key] as JsonValue)?.GetValue<string>() ?? "").Trim();
+
+            // A SECRET LEFT EMPTY KEEPS WHAT CONFIG HOLDS: the page was never sent it, so empty is not a request to clear.
+            if (text.Length == 0 && WebConfig.SecretName.IsMatch(key)
+                && configured.Settings is { ValueKind: System.Text.Json.JsonValueKind.Object } held && held.TryGetProperty(key, out var kept))
+            {
+                settings[key] = JsonNode.Parse(kept.GetRawText());
+                continue;
+            }
             if (text.Length == 0) continue;
             JsonNode value;
             try { value = JsonNode.Parse(text) ?? JsonValue.Create(text)!; }

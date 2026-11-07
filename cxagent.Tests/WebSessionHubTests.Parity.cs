@@ -827,4 +827,19 @@ public sealed partial class WebSessionHubTests
     [InlineData("/plugin load calculator")]
     public void The_reading_and_sending_verbs_are_allowed(string command) =>
         Assert.Null(CxAgent.Web.WebCommands.Refusal(command, Core.Web.WebAccess.Default));
+
+    [Fact]
+    public void A_plugin_s_secret_setting_is_described_not_sent()
+    {
+        // AN API TOKEN IN A PLUGIN'S SETTINGS IS A KEY: the marketplace is on by default, so it must not reach the page.
+        using var doc = System.Text.Json.JsonDocument.Parse("""{ "apiToken": "tok-secret-4321", "server": "csharp-ls" }""");
+        var row = new CxAgent.UI.PluginRow("p", CxAgent.UI.PluginRowSection.Installed, "",
+            Configured: new PluginConfig("p.dll") { Settings = doc.RootElement.Clone() });
+        var token = CxAgent.Web.WebPlugins.Setting(row, "apiToken", "the token");
+        Assert.True(token["secret"]!.GetValue<bool>());
+        Assert.Equal("", token["value"]!.GetValue<string>());
+        Assert.DoesNotContain("tok-secret-4321", token.ToJsonString(), StringComparison.Ordinal);
+        Assert.Contains("4321", token["saved"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Equal("csharp-ls", CxAgent.Web.WebPlugins.Setting(row, "server", "the server")["value"]!.GetValue<string>());
+    }
 }
