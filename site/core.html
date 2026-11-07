@@ -58,39 +58,92 @@ where words go.</strong> Everything else follows from those three sentences.</p>
 <p>You construct far less than people expect. <code>SessionManager.Create</code> builds what
 sessions share — the resume database, the usage archive, the log directory, the permission rules
 store, the command registry — and <code>Open</code> builds everything per-session. You never
-construct an <code>Agent</code> or a tool.</p>
+construct an <code>Agent</code> or any of the built-in tools; the only tools you write are your own.</p>
 
 <h2>An app is four calls</h2>
 
-<pre><code>using CxAgent.Core.Sessions;
-using CxAgent.Core.Llm;
+<pre><code>using CxAgent.Core.Llm;
+using CxAgent.Core.Permissions;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
 
-using var manager = SessionManager.Create(new AppPaths(configDir));
+var workingDirectory = Directory.GetCurrentDirectory();          // the permission boundary
 
-var session = manager.Open(
-    workingDirectory,                                        // the permission boundary
-    resolution,                                              // which model — see below
-    new SessionPorts { Observer = sink, ToolObserver = jobs });   // where words and tool activity go
+var resolution = new AgentConfig                                  // which model
+{
+    Models = { ["local"] = new(ProviderKind.OpenAiCompatible, "qwen3.6-35b")
+                           { BaseUrl = "http://localhost:8771/v1" } },
+}.Resolve();
+
+using var manager = SessionManager.Create(new AppPaths("/var/lib/myapp"),   // where its stores live
+    buildGate: store =&gt; PermissionDecider.WithPrompt(store, notice: null,
+        promptHook: (request, offerTrust, ct) =&gt;                 // how a human is asked
+        {
+            Console.Write($"{request.Kind}: {request.Shown} — allow once? [y/N] ");
+            return Task.FromResult(Console.ReadLine() == "y" ? PermissionChoice.Once : PermissionChoice.Deny);
+        }));
+
+var session = manager.Open(workingDirectory, resolution, new SessionPorts
+{
+    Observer = new ConsoleSink(),                                 // where words go
+    ToolObserver = new NullToolSink(),                            // where tool activity goes
+    Policy = new PermissionPolicy(workingDirectory, manager.Rules!),   // what requests are judged against
+});
 
 if (session.Submit("summarise this folder") is Session.SubmitOutcome.Started started)
     await started.Turn;</code></pre>
 
-<p><code>Submit</code> is synchronous. It returns a receipt rather than a task, because there are
-three outcomes and they are three different things for a caller to do:
-<code>Started</code> (a turn began — await it), <code>Queued</code> (a turn was already running, and
-this joined the queue), and <code>NoAgent</code> (no model is wired).</p>
+<p>The two observers it names are yours, and short:</p>
+
+<pre><code>using CxAgent.Core.Commands;
+using CxAgent.Core.Llm;
+using CxAgent.Core.Models;
+using CxAgent.Core.Sessions;
+
+sealed class ConsoleSink : ISessionObserver
+{
+    public void UserTurnAdded(ChatMessageId id, string text) { }
+    public void AssistantTurnBegan(ChatMessageId id) { }
+    public void AssistantTextAppended(ChatMessageId id, string token) =&gt; Console.Write(token);
+    public void AssistantThinkingAppended(ChatMessageId id, string text) { }
+    public void AssistantThinkingEnded(ChatMessageId id, ThinkingSummary summary) { }
+    public void AssistantTurnEnded(ChatMessageId id) =&gt; Console.WriteLine();
+    public void AssistantLabelled(ChatMessageId id, string header) { }
+    public void Said(Message message) =&gt; Console.WriteLine(message.Text);
+}
+
+sealed class NullToolSink : IToolObserver
+{
+    public void ToolsChanged(IReadOnlyList&lt;Job&gt; jobs) { }
+    public void ToolUpdated(Job job) { }
+    public void ToolProgressed(Job job) { }
+    public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot) { }
+    public void ToolOutputAppended(string jobId, string delta) { }
+}</code></pre>
+
+<p>A model can come from <code>config.json</code> instead of code:
+<code>ConfigResolver.Resolve(new AppPaths(dir), env, useMock: false)</code> returns the same
+<code>ResolvedConfig</code>. <a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ToolAgent">ToolAgent</a>
+is this program run end to end, with tools of its own.</p>
+
+<p><code>Submit</code> is synchronous. It returns a receipt rather than a task, because each outcome
+is a different thing for a caller to do: <code>Started</code> (a turn began — await it),
+<code>Queued</code> (a turn was already running, and this joined it), <code>Handled</code> (the text
+named a command, which has run), <code>NoAgent</code> (no model is wired), and two that only other
+kinds of caller meet — <code>Refused</code> and <code>Aside</code>.</p>
 
 <h2>What is actually yours to write</h2>
 
 <div class="table-scroll">
 <table>
-<thead><tr><th>You supply</th><th>What it is</th></tr></thead>
+<thead><tr><th>You supply</th><th>Required?</th><th>What it is</th></tr></thead>
 <tbody>
-<tr><td><code>ISessionObserver</code></td><td>where words go — the one thing you must implement</td></tr>
-<tr><td><code>IToolObserver</code></td><td>tool activity; a no-op is fine</td></tr>
-<tr><td>a prompt hook + a <code>PermissionPolicy</code></td><td>how a human is asked, and which folder to judge against</td></tr>
-<tr><td>a model</td><td>from code, from cxagent's own <code>config.json</code>, or a test double</td></tr>
+<tr><td><code>ISessionObserver</code></td><td>yes</td><td>where words go — <code>SessionPorts.Observer</code></td></tr>
+<tr><td><code>IToolObserver</code></td><td>yes</td><td>tool activity — <code>SessionPorts.ToolObserver</code>; a no-op is fine</td></tr>
+<tr><td>a model</td><td>to run a turn</td><td>a <code>ResolvedConfig</code> from code, from cxagent's own <code>config.json</code>, or a test double. Without one, <code>Submit</code> answers <code>NoAgent</code></td></tr>
+<tr><td>a <code>buildGate</code> with a prompt hook</td><td>to gate tools</td><td>how a human is asked. Leave it out and nothing is gated</td></tr>
+<tr><td>a <code>PermissionPolicy</code></td><td>with a gate</td><td>the folder and edit mode a request is judged against — <code>SessionPorts.Policy</code>. A gate without one refuses everything</td></tr>
+<tr><td>your own <code>IAgentTool</code>s</td><td>no</td><td>tools beside the built-ins — <code>SessionPorts.Tools</code></td></tr>
 </tbody>
 </table>
 </div>
@@ -104,29 +157,41 @@ there is nothing to strip.</p>
 <p><strong>The engine is in here. The only thing left to you is asking a human.</strong> Trust per
 folder, the working-directory boundary, edit modes, stored rules, the read-only command list, the
 <code>Auto</code> classifier and the wrapper that gates every tool are all Core. What Core cannot do
-is put a question on a screen, so you supply one delegate: given this request, what does the human
-say?</p>
+is put a question on a screen, so you supply one function — the prompt hook: given this request,
+what does the human say?</p>
 
-<p>Two halves, and one without the other is silent. <code>buildGate</code> gives the decider a way to
-ask; <code>SessionPorts.Policy</code> gives it the folder and edit mode to judge against. Omit the
-policy and every request is refused rather than guessed at; pass no <code>buildGate</code> at all and
-nothing is gated — a legitimate headless arrangement, but a choice rather than something to inherit
-by forgetting.</p>
+<p>It reaches Core through <code>buildGate</code>, which <code>SessionManager.Create</code> calls with
+the rules store it builds; hand that store and your prompt hook to
+<code>PermissionDecider.WithPrompt</code>, and the decider it returns is the gate. Two halves, and one
+without the other is silent. The gate gives Core a way to ask; <code>SessionPorts.Policy</code> gives
+it the folder and edit mode to judge against. Omit the policy and every request is refused rather
+than guessed at; pass no <code>buildGate</code> at all and nothing is gated — a legitimate headless
+arrangement, but a choice rather than something to inherit by forgetting.</p>
 
 <h2>Tools</h2>
 
-<p>The agent gets read, write, edit, glob, grep, shell, http and web fetch without you registering
-anything, plus <code>todowrite</code>, <code>ask_user</code> and <code>skill</code>, <code>memory</code> when
-you set <code>AgentConfig.Memory</code>, and — where the
-agent may delegate — <code>agent</code> to start a sub-agent, <code>agent_send</code> to message one,
-and <code>task_list</code>, <code>task_output</code> and <code>task_stop</code> for those running in
-the background. Each is wrapped in a permission gate at construction, so there is no path that
-runs a tool ungated.</p>
+<p>The agent gets <code>read_file</code>, <code>write_file</code>, <code>replace_in_file</code>,
+<code>glob</code>, <code>grep</code>, <code>run_shell</code>, <code>http_request</code>,
+<code>web_fetch</code> and <code>web_search</code> without you registering anything, plus
+<code>todowrite</code>, <code>ask_user</code> and <code>skill</code>, <code>memory</code> when you set
+<code>AgentConfig.Memory</code>, and — where the agent may delegate — <code>agent</code> to start a
+sub-agent, <code>agent_send</code> to message one, and <code>task_list</code>,
+<code>task_output</code> and <code>task_stop</code> for those running in the background. With a gate
+wired, Core puts it in front of every tool that acts — the built-ins, MCP and plugin tools, and your
+own — at construction, so none of them runs around it.</p>
 
-<p>You can add your own — a <code>deploy(env)</code>, a <code>queryOurWarehouse(sql)</code> — with
-one line of wiring. They are offered beside the built-ins, dispatched behind them, and gated on the
-way through. Or offer fewer: a <code>ToolSelection</code> narrows what an agent is handed, and a
-withheld tool is refused if called by name rather than merely hidden.</p>
+<p><code>http_request</code> and <code>web_fetch</code> are one HTTP executor used two ways.
+<code>http_request</code> is for an API: any method, headers and a body, and the response back as the
+server sent it. <code>web_fetch</code> takes only a URL and reads a page: it strips markup, scripts,
+styles and navigation and hands back the readable text, so a page costs the model roughly what its
+words cost. <code>web_search</code> finds the pages <code>web_fetch</code> reads.</p>
+
+<p>You can add your own — a <code>deploy(env)</code>, a <code>queryOurWarehouse(sql)</code> — by
+writing an <code>IAgentTool</code> and listing it in <code>SessionPorts.Tools</code>. They are
+offered beside the built-ins and, with a gate, wrapped in it on the way through; a name a built-in
+already has stays the built-in's while that built-in is offered. Or offer fewer: a
+<code>ToolSelection</code> narrows what an agent is handed, and a withheld tool is refused if called by
+name rather than merely hidden.</p>
 
 <pre><code>ToolSelection = new ToolSelection([Tool.Inherited, Tool.Not.RunShell]),</code></pre>
 
