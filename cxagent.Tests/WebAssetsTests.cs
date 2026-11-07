@@ -115,6 +115,41 @@ public sealed class WebAssetsTests
         Assert.Contains("<li>two</li>", html, StringComparison.Ordinal);
     }
 
+    /// <summary>A BACKSLASH ESCAPES PUNCTUATION, as markdown says and the terminal reads it: Core escapes a model name's
+    /// underscore so it is not read as emphasis, and the page must show the underscore, not the backslash.</summary>
+    [Fact]
+    public void A_backslash_escape_shows_the_character_not_the_backslash()
+    {
+        var html = Render("Switched to qwen3.6-35b-a3b-ud-iq4\\_xs and \\*not italic\\*.");
+        Assert.Contains("iq4_xs", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("\\", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<em>", html, StringComparison.Ordinal);
+        Assert.Contains("<code>a\\_b</code>", Render("`a\\_b`"), StringComparison.Ordinal);
+    }
+
+    /// <summary>A NUMBERED LIST WITH BLANK LINES BETWEEN ITS ITEMS is one list — models write them that way — and numbers
+    /// 1, 2, 3, as the terminal shows it.</summary>
+    [Fact]
+    public void A_loose_numbered_list_is_one_list()
+    {
+        var html = Render("1. first\n\n2. second\n\n3. third");
+        Assert.Equal(1, Regex.Matches(html, "<ol").Count);
+        Assert.Equal(3, Regex.Matches(html, "<li>").Count);
+    }
+
+    [Fact]
+    public void A_numbered_list_that_starts_later_keeps_its_number() =>
+        Assert.Contains("<ol start=\"4\">", Render("4. four\n5. five"), StringComparison.Ordinal);
+
+    /// <summary>A TABLE ROW STILL STREAMING — its closing pipe not yet written — is a row of the table, not loose text.</summary>
+    [Fact]
+    public void A_table_row_still_streaming_stays_in_the_table()
+    {
+        var html = Render("| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4");
+        Assert.Contains("<td>4</td>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<p>", html, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("/", "text/html")]
     [InlineData("/app.js", "text/javascript")]

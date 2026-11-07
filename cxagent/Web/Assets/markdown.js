@@ -43,6 +43,9 @@ function inline(text) {
   const kept = [];
   const keep = (html) => { kept.push(html); return "\u0000" + (kept.length - 1) + "\u0000"; };
   let s = escapeHtml(text).replace(/`([^`\n]+)`/g, (_, code) => keep("<code>" + code + "</code>"));
+  // A BACKSLASH ESCAPES PUNCTUATION — Core writes a model name's `\_` so it is not read as emphasis — and the character
+  // is kept aside so nothing below formats it. After code spans, where a backslash is literal.
+  s = s.replace(/\\(&lt;|&gt;|&amp;|&quot;|&#39;|[!-\/:-@\[-`{-~])/g, (_, c) => keep(c));
   s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (whole, label, url) => {
     // THE URL IS ALREADY ESCAPED, so a quote in it cannot close the attribute; the scheme decides if it is a link.
     if (!SAFE_URL.test(url.replace(/&amp;/g, "&"))) return label;
@@ -98,12 +101,14 @@ export function render(text) {
     if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
       let html = "<table><thead>" + tableRow(line, "th") + "</thead><tbody>";
       i += 2;
-      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) html += tableRow(lines[i++], "td");
+      // A ROW STILL STREAMING, its closing pipe not yet written, is a row of the table too.
+      while (i < lines.length && /^\s*\|/.test(lines[i])) html += tableRow(lines[i++], "td");
       out.push(html + "</tbody></table>");
       continue;
     }
     if ((m = LIST.exec(line))) {
       const ordered = /\d/.test(m[2]);
+      const first = ordered ? parseInt(m[2], 10) : 1;
       const items = [];
       while (i < lines.length && (m = LIST.exec(lines[i]))) {
         const item = [lines[i].slice(m[0].length)];
@@ -121,9 +126,16 @@ export function render(text) {
           continue;
         }
         items.push(inline(item.join(" ")));
+        // A BLANK LINE BETWEEN ITEMS keeps the list going when the next item is of the same kind: models write
+        // "1. …", a blank line, "2. …", and as separate lists every item read "1.".
+        let next = i;
+        while (next < lines.length && lines[next].trim() === "") next++;
+        const more = next > i && next < lines.length && LIST.exec(lines[next]);
+        if (more && /\d/.test(more[2]) === ordered && more[1].length === 0) i = next;
       }
       const tag = ordered ? "ol" : "ul";
-      out.push("<" + tag + ">" + items.map((it) => "<li>" + it + "</li>").join("") + "</" + tag + ">");
+      const start = ordered && first !== 1 ? ' start="' + first + '"' : "";
+      out.push("<" + tag + start + ">" + items.map((it) => "<li>" + it + "</li>").join("") + "</" + tag + ">");
       continue;
     }
     if (/^\s*>\s?/.test(line)) {
