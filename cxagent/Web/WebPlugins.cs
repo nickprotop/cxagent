@@ -195,6 +195,7 @@ internal sealed class WebPlugins(AppPaths paths, SessionManager manager)
             }
             case "removeStore":
             {
+                if (name.Trim().Length == 0 || name.Any(char.IsWhiteSpace)) return "A store's name has no spaces.";
                 var removed = await StoreAsync($"store remove {name}", session).ConfigureAwait(false);
                 _catalog = null;
                 return removed;

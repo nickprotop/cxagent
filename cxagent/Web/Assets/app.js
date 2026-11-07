@@ -84,6 +84,13 @@ function connect() {
       else if (view.kind === "file") send({ type: "openFile", sessionId: view.parent, path: view.path });
       // A SHELL DOES NOT SURVIVE ITS CONNECTION: the server ended it when the socket went, as closing the tab would.
       else if (view.kind === "shell") shellEnded(view, null, "the connection dropped, so the shell ended");
+      // NOT SESSIONS, SO NEVER "open": the config page asks for its tab again — an edited config.json keeps its edits,
+      // which the next save checks against the file — and the marketplace for its rows.
+      else if (view.kind === "config") {
+        if (view.tab !== "json") send({ type: "configForm", sessionId: configSession(), tab: view.tab, item: view.item });
+        else if (!view.dirty) send({ type: "getConfig" });
+      }
+      else if (view.kind === "plugins") { if (view.parent) send({ type: "plugins", sessionId: view.parent }); }
       else send({ type: "open", id, since: view.seq });
     }
   });
@@ -392,7 +399,8 @@ function activate(id) {
 function dropView(id) {
   const view = state.views.get(id);
   // A COMMAND'S TAB STOPS ITS FOLLOWING ON THE SERVER; the command itself carries on, as closing the terminal's tab leaves it.
-  if (view && (view.kind === "command" || view.kind === "file" || view.kind === "shell")) send({ type: "leave", sessionId: id });
+  // EVERY TAB THAT IS NOT A SESSION STOPS ITS STREAM ON THE SERVER — a worker's too; the thing itself carries on.
+  if (view && view.kind !== "session" && view.kind !== "config" && view.kind !== "plugins") send({ type: "leave", sessionId: id });
   if (view && view.term) view.term.dispose();
   state.views.delete(id);
   if (state.active === id) activate(state.views.keys().next().value || null);
@@ -2043,9 +2051,16 @@ function confirmClose(m) {
   $("prompts").append(box);
 }
 
-// A CLOSED SESSION TAKES ITS WORKERS' TABS WITH IT.
+// A CLOSED SESSION TAKES ITS TABS WITH IT: its workers, files, commands and shells — a shell's own end said in it first.
 function closed(id) {
-  for (const key of [...state.views.keys()]) if (key === id || key.startsWith(id + "~")) state.views.delete(key);
+  for (const [key, view] of [...state.views]) {
+    // THE CONFIG AND PLUGINS PAGES ARE THE SERVER'S, NOT THE SESSION'S: they only remember where they were opened from.
+    if (view.kind === "config" || view.kind === "plugins") { if (view.parent === id) view.parent = null; continue; }
+    if (key !== id && view.parent !== id) continue;
+    if (view.kind === "shell") shellEnded(view, null, "the session closed, so the shell ended");
+    if (view.term) view.term.dispose();
+    state.views.delete(key);
+  }
   for (const [pid, p] of state.prompts) if (p.message.sessionId === id) state.prompts.delete(pid);
   state.panels.delete(id);
   if (!state.views.has(state.active)) activate(state.views.keys().next().value || null);
@@ -2113,6 +2128,9 @@ $("composer").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value;
   if ((!text.trim() && !attached.length) || !state.active) return;
+  // THE SERVER TAKES 24 MB A MESSAGE, base64 and all: over it, the images stay here to be trimmed rather than lost.
+  const size = attached.reduce((n, a) => n + a.data.length, 0);
+  if (size > 22 * 1024 * 1024) { flash("These images are too large to send together — remove one or two."); return; }
   const message = { type: "say", sessionId: state.active, text };
   if (attached.length) {
     message.images = attached.map((a) => ({ name: a.name, data: a.data }));

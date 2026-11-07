@@ -28,7 +28,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     // as PNG is several megabytes before it is shrunk, and the shrinking is done here, where the terminal does it.
     private const int MaxIncoming = 24 * 1024 * 1024;
     private const int MaxImages = 8;
-    private const int MaxQueued = 10_000;
+    // ROOM FOR A WHOLE LOG'S REPLAY AND THEN SOME: a tab opening a long session is sent up to the log's 20,000 events at
+    // once, and a queue smaller than that drops the tab mid-replay — again on every reconnect.
+    private const int MaxQueued = 50_000;
 
     private readonly WebSessionHub _hub;
     private readonly WebSocket _socket;
@@ -101,6 +103,11 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             while (_socket.State == WebSocketState.Open && !linked.IsCancellationRequested)
             {
                 if (await ReceiveAsync(linked.Token).ConfigureAwait(false) is not { } text) break;
+                if (ReferenceEquals(text, TooLarge))
+                {
+                    Error($"That message was larger than {MaxIncoming / (1024 * 1024)} MB and was not sent — fewer or smaller images.");
+                    continue;
+                }
                 JsonObject? message;
                 try { message = JsonNode.Parse(text) as JsonObject; }
                 catch (JsonException) { message = null; }
@@ -221,8 +228,12 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 Live(Str(m, "sessionId"))?.CancelTurn();
                 break;
             case "close":
-                await CloseSessionAsync(Str(m, "sessionId"), m["confirm"]?.GetValue<bool>() == true).ConfigureAwait(false);
+            {
+                // BESIDE THE LOOP TOO: a close waits up to ten seconds for a turn to finish.
+                var (sid, confirm) = (Str(m, "sessionId"), m["confirm"]?.GetValue<bool>() == true);
+                _ = Beside(() => CloseSessionAsync(sid, confirm));
                 break;
+            }
             case "leave":
                 Leave(Str(m, "sessionId"));
                 break;
@@ -236,8 +247,12 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 StopCommand(Str(m, "sessionId"), Long(m, "pid"));
                 break;
             case "plugins":
-                await PluginsAsync(Str(m, "sessionId"), m["refresh"] is JsonValue rv && rv.TryGetValue<bool>(out var refresh) && refresh).ConfigureAwait(false);
+            {
+                // BESIDE THE MESSAGE LOOP: reading the catalogs waits on the network, and the loop is what answers prompts.
+                var (sid, refresh) = (Str(m, "sessionId"), m["refresh"] is JsonValue rv && rv.TryGetValue<bool>(out var r) && r);
+                _ = Beside(() => PluginsAsync(sid, refresh));
                 break;
+            }
             case "pluginAction":
                 await PluginActionAsync(Str(m, "sessionId"), Str(m, "name"), Str(m, "action"), Str(m, "folder"), m["values"] as JsonObject).ConfigureAwait(false);
                 break;
@@ -549,6 +564,11 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         if (_shells.TryRemove(sessionId, out var shell)) { shell.Dispose(); return; }
         foreach (var key in _shells.Keys.Where(k => k.StartsWith(sessionId + "$", StringComparison.Ordinal)))
             if (_shells.TryRemove(key, out var left)) left.Dispose();
+
+        // AND EVERYTHING ELSE OPEN UNDER IT: its workers' views and its commands' followers, which would otherwise go on
+        // streaming to a tab that no longer shows the session.
+        foreach (var key in _open.Keys.Where(k => k.StartsWith(sessionId + "~", StringComparison.Ordinal) || k.StartsWith(sessionId + "#", StringComparison.Ordinal)))
+            if (_open.TryRemove(key, out var under)) under.Dispose();
         _filesOrNull?.CloseSession(sessionId);
         if (_open.TryRemove(sessionId, out var sub)) sub.Dispose();
 
@@ -696,8 +716,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         _ = Task.Run(async () =>
         {
             string said;
+            // ANY FAILURE IS ANSWERED: a page left without a result keeps its "…ing" line forever.
             try { said = await Plugins.ActAsync(session, name, action, folder, values).ConfigureAwait(false); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or HttpRequestException)
+            catch (Exception e) when (e is not OutOfMemoryException)
             {
                 said = $"'{name}': {e.Message}";
             }
@@ -813,14 +834,15 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                     if (!hooks.CanSaveTo(source)) { Refused([$"There is no {CxAgent.UI.Config.HooksFile.Label(source)} to save to here."]); return; }
                     var added = hooks.Add(source);
                     WebConfigForms.SetHook(added, values);
-                    item = (hooks.Entries.Count - 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    item = null;
                 }
-                else if (int.TryParse(item, out var index) && index >= 0 && index < hooks.Entries.Count)
+                else if (WebConfigForms.HookAt(hooks, item) is { } hook)
                 {
-                    if (!hooks.Entries[index].Editable) { Refused(["This hook's type is not one cxagent runs; it is kept as it is."]); return; }
-                    WebConfigForms.SetHook(hooks.Entries[index], values);
+                    if (!hook.Editable) { Refused(["This hook's type is not one cxagent runs; it is kept as it is."]); return; }
+                    WebConfigForms.SetHook(hook, values);
+                    item = null;
                 }
-                else { Refused(["That hook is no longer there."]); return; }
+                else { Refused(["That hook changed since this page read it — Reload."]); return; }
                 if (HooksSave(hooks) is not { } saved) return;
                 result = saved;
                 break;
@@ -976,15 +998,14 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case ("hooks", "remove"):
             {
                 if (HooksDraft() is not { } hooks) return;
-                if (!int.TryParse(item, out var index) || index < 0 || index >= hooks.Entries.Count) { Refused(["That hook is no longer there."]); return; }
+                if (WebConfigForms.HookAt(hooks, item) is not { } e) { Refused(["That hook changed since this page read it — Reload."]); return; }
                 if (!confirmed)
                 {
-                    var e = hooks.Entries[index];
                     Send(new JsonObject { ["type"] = "configConfirm", ["tab"] = tab, ["item"] = item, ["action"] = action,
                         ["text"] = $"Remove the {e.Event} hook{(e.Name is { } n ? $" '{n}'" : "")} from {CxAgent.UI.Config.HooksFile.Label(e.Source)}?" });
                     return;
                 }
-                hooks.Remove(hooks.Entries[index]);
+                hooks.Remove(e);
                 if (HooksSave(hooks) is not { } result) return;
                 if (!result.Saved) { Refused(result.Errors); return; }
                 Send(new JsonObject { ["type"] = "configSaved", ["tab"] = tab, ["warnings"] = new JsonArray([.. result.Errors.Select(e => (JsonNode)e)]) });
@@ -1021,7 +1042,8 @@ internal sealed class WebClient : IPromptResponder, IDisposable
 
     private CxAgent.UI.Config.HooksDraft? HooksDraft()
     {
-        var session = LiveSession(_configFor) ?? OpenSessions.Select(LiveSession).FirstOrDefault(x => x is not null);
+        // THE PAGE'S OWN SESSION, NEVER ANOTHER: a page whose session closed must not edit a different project's hooks.
+        var session = _configFor is null ? OpenSessions.Select(LiveSession).FirstOrDefault(x => x is not null) : LiveSession(_configFor);
         if (session is null) { Error("Open a session first: its folder holds the project's hooks."); return null; }
         _configFor = session.Id;
         return CxAgent.UI.Config.HooksFile.Load(S.Paths, CxAgent.UI.Startup.Env(), session.WorkingDirectory);
@@ -1260,6 +1282,13 @@ internal sealed class WebClient : IPromptResponder, IDisposable
 
     // ---- plumbing ------------------------------------------------------------------------------------------------
 
+    /// <summary>Work run beside the message loop, its failure said to the tab rather than lost.</summary>
+    private Task Beside(Func<Task> work) => Task.Run(async () =>
+    {
+        try { await work().ConfigureAwait(false); }
+        catch (Exception e) when (e is not OutOfMemoryException) { Error(e.Message); }
+    });
+
     private Session? Live(string? sessionId) =>
         sessionId is null || !_open.ContainsKey(sessionId) ? null : S.Manager.Sessions.FirstOrDefault(s => s.Id == sessionId);
 
@@ -1274,6 +1303,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     private static long? Long(JsonObject m, string key) =>
         m[key] is JsonValue v && v.TryGetValue<long>(out var n) ? n : null;
 
+    // A MESSAGE TOO LARGE TO TAKE, read to its end and dropped — the tab is told, and keeps its connection.
+    private static readonly string TooLarge = new('\0', 1);
+
     private async Task<string?> ReceiveAsync(CancellationToken ct)
     {
         var buffer = new byte[8192];
@@ -1284,8 +1316,16 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             if (r.MessageType == WebSocketMessageType.Close) return null;
             all.Write(buffer, 0, r.Count);
 
-            // A MESSAGE THIS LARGE IS NOT ONE THIS PAGE SENDS.
-            if (all.Length > MaxIncoming) return null;
+            // TOO LARGE: the rest of it is read and thrown away, so the next message starts where it should.
+            if (all.Length > MaxIncoming)
+            {
+                while (!r.EndOfMessage)
+                {
+                    r = await _socket.ReceiveAsync(buffer, ct).ConfigureAwait(false);
+                    if (r.MessageType == WebSocketMessageType.Close) return null;
+                }
+                return TooLarge;
+            }
             if (r.EndOfMessage) return Encoding.UTF8.GetString(all.ToArray());
         }
     }

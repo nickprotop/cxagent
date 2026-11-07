@@ -842,4 +842,54 @@ public sealed partial class WebSessionHubTests
         Assert.Contains("4321", token["saved"]!.GetValue<string>(), StringComparison.Ordinal);
         Assert.Equal("csharp-ls", CxAgent.Web.WebPlugins.Setting(row, "server", "the server")["value"]!.GetValue<string>());
     }
+
+    [Fact]
+    public async Task A_message_too_large_is_refused_out_loud_and_the_tab_stays_connected()
+    {
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "x"),
+            ("images", new JsonArray(new JsonObject { ["name"] = "huge.png", ["data"] = new string('A', 25 * 1024 * 1024) }))));
+        Assert.Contains("larger than", (await tab.NextAsync(Type("error")))["message"]!.GetValue<string>(), StringComparison.Ordinal);
+        await tab.SendAsync(Msg("list"));
+        await tab.NextAsync(Type("sessions"));
+    }
+
+    [Fact]
+    public async Task A_hook_moved_by_a_change_elsewhere_is_not_the_one_removed()
+    {
+        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        try
+        {
+            await tab.SendAsync(Msg("create", ("folder", Work)));
+            var id = (await tab.NextAsync(Type("opened")))["sessionId"]!.GetValue<string>();
+            await tab.SendAsync(Msg("configFormSave", ("tab", "hooks"), ("item", "+new"), ("sessionId", id),
+                ("values", new JsonObject { ["source"] = "User", ["event"] = "PreToolUse", ["type"] = "command", ["command"] = "echo first" })));
+            await tab.NextAsync(Type("configSaved"));
+            var form = await tab.NextAsync(Type("configForm"));
+            var first = form["items"]!.AsArray().Single()!["id"]!.GetValue<string>();
+
+            // ANOTHER HOOK TAKES ITS PLACE, written elsewhere — the terminal's F8, a hand edit.
+            await tab.SendAsync(Msg("configFormSave", ("tab", "hooks"), ("item", "+new"), ("sessionId", id),
+                ("values", new JsonObject { ["source"] = "User", ["event"] = "PostToolUse", ["type"] = "command", ["command"] = "echo second" })));
+            await tab.NextAsync(Type("configSaved"));
+            var hooksFile = ConfigPath;
+            var root = JsonNode.Parse(File.ReadAllText(hooksFile))!.AsObject();
+            var hooks = root["hooks"]!.AsObject();
+            var reordered = new JsonObject();
+            foreach (var key in hooks.Select(k => k.Key).Reverse().ToList()) reordered[key] = hooks[key]!.DeepClone();
+            root["hooks"] = reordered;
+            File.WriteAllText(hooksFile, root.ToJsonString());
+
+            await tab.SendAsync(Msg("configFormAction", ("tab", "hooks"), ("item", first), ("action", "remove"), ("confirmed", true), ("sessionId", id)));
+            var answer = await tab.NextAsync(m => m["type"]?.GetValue<string>() is "configRefused" or "configSaved");
+            var text = File.ReadAllText(hooksFile);
+            if (answer["type"]!.GetValue<string>() == "configSaved")
+                Assert.DoesNotContain("echo first", text, StringComparison.Ordinal);
+            else
+                Assert.Contains("changed since", answer["errors"]!.ToJsonString(), StringComparison.Ordinal);
+            Assert.Contains("echo second", text, StringComparison.Ordinal);
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
 }

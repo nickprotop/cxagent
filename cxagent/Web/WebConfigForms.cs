@@ -370,10 +370,10 @@ internal static class WebConfigForms
     public static JsonObject Hooks(HooksDraft draft, string? item)
     {
         var entries = draft.Entries;
-        item ??= entries.Count > 0 ? "0" : NewItem;
+        item ??= entries.Count > 0 ? HookId(entries[0], 0) : NewItem;
         var form = new JsonObject
         {
-            ["items"] = new JsonArray([.. entries.Select((e, i) => (JsonNode)Item(i.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["items"] = new JsonArray([.. entries.Select((e, i) => (JsonNode)Item(HookId(e, i),
                 e.Name ?? e.Event, $"{CxAgent.UI.Config.HooksFile.Label(e.Source)} · {e.Type}{(e.Matcher is { Length: > 0 } m ? " · " + m : "")}"))]),
             ["item"] = item,
             ["addLabel"] = "Add a hook",
@@ -396,12 +396,11 @@ internal static class WebConfigForms
             form["actions"] = new JsonArray();
             return form;
         }
-        if (!int.TryParse(item, out var index) || index < 0 || index >= entries.Count)
+        if (HookAt(draft, item) is not { } e)
         {
             form["sections"] = new JsonArray();
             return form;
         }
-        var e = entries[index];
         var fields = new List<JsonObject>
         {
             Field("source", "Saved in", "info", CxAgent.UI.Config.HooksFile.Label(e.Source)),
@@ -435,6 +434,26 @@ internal static class WebConfigForms
         form["readOnly"] = !e.Editable;
         form["actions"] = new JsonArray(Action("remove", "Remove this hook", danger: true));
         return form;
+    }
+
+    /// <summary>
+    /// A hook's id for the page: its place, and what it is. A PLACE ALONE NAMES WHATEVER IS THERE NOW — a hook added in
+    /// the terminal since the page read the list would take the place, and an edit or a removal would land on it.
+    /// </summary>
+    public static string HookId(HookEntry e, int index)
+    {
+        var what = string.Join("\u0001", e.Source, e.Event, e.Matcher, e.Type, e.Command, e.Prompt, e.Url, e.Server, e.Tool, e.Name);
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(what)))[..12];
+        return $"{index}:{hash}";
+    }
+
+    /// <summary>The hook <paramref name="id"/> names, when it is still that hook; null when the list has changed under it.</summary>
+    public static HookEntry? HookAt(HooksDraft draft, string? id)
+    {
+        if (id is null || id.Split(':', 2) is not [var at, _] || !int.TryParse(at, out var index)
+            || index < 0 || index >= draft.Entries.Count) return null;
+        var e = draft.Entries[index];
+        return HookId(e, index) == id ? e : null;
     }
 
     /// <summary>A hook entry set from the page's values.</summary>
