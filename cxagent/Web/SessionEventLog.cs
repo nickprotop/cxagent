@@ -231,6 +231,9 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
 
     private Replay SinceLocked(long seq)
     {
+        // A NUMBER THIS LOG NEVER GAVE comes from an earlier log — a server since restarted, or /web turned off and on.
+        // The tab redraws from what is here rather than drop every event until the count passes its number.
+        if (seq > _seq) return new Replay([.. _events], true);
         var oldest = _events.First?.Value["seq"]!.GetValue<long>() ?? _seq + 1;
         if (seq >= 0 && seq + 1 >= oldest) return new Replay([.. _events.Where(e => e["seq"]!.GetValue<long>() > seq)], false);
         return new Replay([.. _events], seq > 0);

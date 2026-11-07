@@ -1181,8 +1181,15 @@ public sealed class SessionManager : IDisposable
         // to; picking it restores a transcript whose host is gone.
         session.MarkFinished();
         Release(session);
+        SessionClosed?.Invoke(session);
         return true;
     }
+
+    /// <summary>
+    /// A session was closed — by /exit, a tab, a browser, or idle unloading. For anything that shows a session from
+    /// outside its own ports (a browser's view) and must let go of it.
+    /// </summary>
+    public event Action<Session>? SessionClosed;
 
     /// <summary>
     /// Claims the folder of the session's current agent, and lets go of the one it held before.
@@ -1193,7 +1200,7 @@ public sealed class SessionManager : IDisposable
     ///
     /// <para>A REFUSED CLAIM IS SAID, NOT THROWN. Every door that resumes a session asks first whether it is
     /// held, so only a race lands here — and refusing to wire at this point would leave the user with a dead
-    /// tab instead of a warning.</para>
+    /// tab instead of a warning that two processes now write the same history.</para>
     /// </summary>
     private void HoldCurrentFolder(Session session)
     {
@@ -1206,7 +1213,7 @@ public sealed class SessionManager : IDisposable
         var claimed = SessionLock.TryAcquire(logs.LocksDir, agentId, Holder);
         if (claimed is null)
         {
-            session.NotifyWarning("This session is open in another process. Changes here are not saved.");
+            session.NotifyWarning("This session is also open in another process — both are now writing its history.");
             return;
         }
 

@@ -4466,8 +4466,14 @@ public sealed class MainWindow : IDisposable
         if (TabFor(session) is not { } tab) return false;
         var strip = StripIndexOf(tab);
         if (strip < 0) return false;
+
+        // THE TERMINAL'S OWN FRONT TAB COMES BACK when the close did not happen — refused for a running turn, or
+        // waiting on its confirm — so a browser closing something does not move the person at the keyboard.
+        var front = Tabs.ActiveTabIndex;
         Tabs.ActiveTabIndex = strip;
-        return CloseActiveSession();
+        var handled = CloseActiveSession();
+        if (_sessionTabs.Contains(tab) && front != strip && front < Tabs.TabCount) Tabs.ActiveTabIndex = front;
+        return handled;
     }
 
     public void SetTokenTotal(int total)

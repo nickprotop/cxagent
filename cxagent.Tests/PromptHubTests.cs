@@ -173,6 +173,44 @@ public sealed class PromptHubTests
         Assert.Empty(late.Shown);
     }
 
+    private sealed class Throwing : IPromptResponder
+    {
+        public bool Serves(string sessionId) => true;
+        public void Show(PendingPrompt prompt, CancellationToken resolved) => throw new ObjectDisposedException("tab");
+        public void Resolved(string promptId, Resolution resolution) => throw new ObjectDisposedException("tab");
+    }
+
+    [Fact]
+    public async Task A_responder_that_throws_does_not_strand_the_waiter()
+    {
+        var hub = new PromptHub();
+        hub.Add(new Throwing());
+        var r = new Recorder();
+        hub.Add(r);
+
+        var first = Ask(hub, "S");
+        var second = Ask(hub, "S");
+        Assert.True(hub.Answer(r.Shown[0].Id, new TrustAnswer(true), "x"));
+        Assert.True(Assert.IsType<TrustAnswer>(await first.WaitAsync(TimeSpan.FromSeconds(5))).Trusted);
+        Assert.Equal(2, r.Shown.Count);   // the next one was still shown
+        hub.Answer(r.Shown[1].Id, new TrustAnswer(false), "x");
+        await second.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void Waiting_for_shows_only_the_head_of_each_line()
+    {
+        var hub = new PromptHub();
+        _ = hub.AskPermissionAsync(Request("S"), false, CancellationToken.None);
+        _ = hub.AskPermissionAsync(Request("S"), false, CancellationToken.None);
+        _ = hub.AskTrustAsync("S", "/f", CancellationToken.None);
+
+        Assert.Equal(3, hub.PendingFor("S").Count);
+        var heads = hub.ShowableFor("S");
+        Assert.Equal(2, heads.Count);
+        Assert.Single(heads.OfType<PermissionPending>());
+    }
+
     [Fact]
     public async Task Cancel_resolves_for_everyone()
     {

@@ -48,7 +48,10 @@ function connect() {
   socket.addEventListener("open", () => {
     state.backoff = 1000;
     $("conn").classList.remove("down");
-    // CARRY ON WHERE EACH OPEN SESSION LEFT OFF.
+    // CARRY ON WHERE EACH OPEN SESSION LEFT OFF. Its prompts are dropped first: whatever was answered while this tab
+    // was away is gone, and the server sends again what still waits.
+    for (const [pid, p] of state.prompts) if (state.open.has(p.message.sessionId)) state.prompts.delete(pid);
+    drawPrompts();
     for (const [id, view] of state.open) send({ type: "open", id, since: view.seq });
   });
   socket.addEventListener("message", (e) => {
@@ -111,6 +114,11 @@ function handle(m) {
       break;
     case "closed":
       closed(m.sessionId);
+      break;
+    case "gone":
+      // NO LONGER THERE — unloaded or from a server since restarted. Back to the list, where it can be resumed.
+      if (state.open.has(m.id)) { closed(m.id); document.body.dataset.view = "list"; drawSessions(); }
+      else flash("That session is no longer there.");
       break;
     case "folders":
       drawFolders(m);

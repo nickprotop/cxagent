@@ -41,15 +41,28 @@ public sealed record WebHubServices(
 /// <para>THE ROOTS ARE A BOUNDARY OF THIS PAGE, NOT A SANDBOX. They keep a login from opening a session on any folder of
 /// the disk; what an open session's agent may then touch is the permission policy's and the sandbox's business.</para>
 /// </summary>
-public sealed class WebSessionHub(WebHubServices services)
+public sealed class WebSessionHub
 {
+    private readonly WebHubServices services;
     private readonly ConcurrentDictionary<string, LogEntry> _logs = new();
     private readonly ConcurrentDictionary<WebClient, byte> _clients = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _idleSince = new();
+    private readonly ConcurrentDictionary<string, byte> _unloading = new();
+    private readonly object _logGate = new();
+    private readonly SemaphoreSlim _resuming = new(1, 1);
+    private int _listPending;
+
+    /// <summary>A hub over <paramref name="services"/>, told whenever the manager closes a session.</summary>
+    public WebSessionHub(WebHubServices services)
+    {
+        this.services = services;
+        _banners = services.Banners;
+        services.Manager.SessionClosed += OnSessionClosed;
+    }
 
     private sealed record LogEntry(SessionEventLog Log, IDisposable Observers, IDisposable Tools);
 
-    private IReadOnlyList<string> _banners = services.Banners;
+    private IReadOnlyList<string> _banners;
 
     internal WebHubServices Services => services;
 
@@ -102,11 +115,87 @@ public sealed class WebSessionHub(WebHubServices services)
         foreach (var c in _clients.Keys.Where(c => c.Token == token)) await c.CloseAsync().ConfigureAwait(false);
     }
 
-    /// <summary>Tells every tab the session list changed.</summary>
+    /// <summary>
+    /// Tells every tab the session list changed — once for a burst of changes. Building the list reads every saved
+    /// session's header and probes its lock, which is too much to repeat per message per tab.
+    /// </summary>
     internal void ListChanged()
     {
-        var rows = Rows();
-        foreach (var c in _clients.Keys) c.Send(new JsonObject { ["type"] = "sessions", ["rows"] = rows.DeepClone() });
+        if (Interlocked.Exchange(ref _listPending, 1) == 1) return;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(250).ConfigureAwait(false);
+            Volatile.Write(ref _listPending, 0);
+            var rows = Rows();
+            foreach (var c in _clients.Keys) c.Send(new JsonObject { ["type"] = "sessions", ["rows"] = rows.DeepClone() });
+        });
+    }
+
+    /// <summary>
+    /// Lets go of everything this hub attached to sessions — the server is stopping. A session the terminal keeps is
+    /// left with no browser observer behind, so turning /web off and on does not stack them.
+    /// </summary>
+    public void DetachAll()
+    {
+        services.Manager.SessionClosed -= OnSessionClosed;
+        foreach (var id in _logs.Keys) Drop(id);
+    }
+
+    // A SESSION CLOSED ANYWHERE — /exit in the terminal, a browser, idle — leaves every tab that had it open, told.
+    private void OnSessionClosed(Session session)
+    {
+        Drop(session.Id);
+        foreach (var c in _clients.Keys) c.SessionClosed(session.Id);
+        ListChanged();
+    }
+
+    private void Drop(string sessionId)
+    {
+        if (_logs.TryRemove(sessionId, out var entry))
+        {
+            entry.Observers.Dispose();
+            entry.Tools.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Resumes a saved session — one at a time, re-checked inside the gate, and the conversation it continues retired
+    /// at once, as the terminal's resume does. Two tabs tapping the same row then make one live session, not two
+    /// writers of one conversation. Null with <paramref name="refusal"/> set when it may not be resumed.
+    /// </summary>
+    internal Session? Resume(string agentId, out string? refusal)
+    {
+        _resuming.Wait();
+        try
+        {
+            if (services.Manager.Sessions.FirstOrDefault(s => s.SessionId == agentId) is { } already)
+            {
+                refusal = null;
+                return already;
+            }
+            var snapshot = services.Store.LoadById(agentId);
+            if (snapshot is null) { refusal = "gone"; return null; }
+            if (snapshot.WorkingDir is not { } dir || !InsideRoots(dir, services.Roots))
+            {
+                refusal = "That session is outside the folders this server opens.";
+                return null;
+            }
+            if (services.Store.HolderOf(agentId) is { } held) { refusal = $"That session is {SessionLock.HeldMessage(held)}."; return null; }
+            if (services.Store.List(all: true).FirstOrDefault(i => i.Uid == agentId) is { Superseded: true })
+            {
+                refusal = "That conversation was already continued in a newer session.";
+                return null;
+            }
+
+            var session = services.Opener.Resume(snapshot);
+            services.Store.MarkSuperseded(agentId);
+            refusal = null;
+            return session;
+        }
+        finally
+        {
+            _resuming.Release();
+        }
     }
 
     /// <summary>
@@ -126,24 +215,24 @@ public sealed class WebSessionHub(WebHubServices services)
                 continue;
             }
             var since = _idleSince.GetOrAdd(session.Id, now);
-            if (now - since >= TimeSpan.FromMinutes(services.IdleMinutes))
-            {
-                _idleSince.TryRemove(session.Id, out _);
+            // ONCE: the minute timer and a tab leaving can both get here; only the one that takes the mark unloads.
+            if (now - since >= TimeSpan.FromMinutes(services.IdleMinutes) && _idleSince.TryRemove(session.Id, out _))
                 _ = UnloadAsync(session);
-            }
         }
     }
 
     internal async Task<bool> UnloadAsync(Session session)
     {
-        if (!await services.Opener.CloseAsync(session).ConfigureAwait(false)) return false;
-        if (_logs.TryRemove(session.Id, out var entry))
+        if (!_unloading.TryAdd(session.Id, 0)) return false;
+        try
         {
-            entry.Observers.Dispose();
-            entry.Tools.Dispose();
+            // THE MANAGER'S SessionClosed drops the log and tells the tabs.
+            return await services.Opener.CloseAsync(session).ConfigureAwait(false);
         }
-        ListChanged();
-        return true;
+        finally
+        {
+            _unloading.TryRemove(session.Id, out _);
+        }
     }
 
     private void NoteDetached()
@@ -158,7 +247,18 @@ public sealed class WebSessionHub(WebHubServices services)
     /// </summary>
     internal SessionEventLog LogFor(Session session, string? seedAgent)
     {
-        return _logs.GetOrAdd(session.Id, _ =>
+        if (_logs.TryGetValue(session.Id, out var existing)) return existing.Log;
+
+        // BUILT UNDER A LOCK, so two tabs opening at once do not each subscribe a log and leave one attached forever.
+        lock (_logGate)
+        {
+            if (_logs.TryGetValue(session.Id, out existing)) return existing.Log;
+            var entry = Build();
+            _logs[session.Id] = entry;
+            return entry.Log;
+        }
+
+        LogEntry Build()
         {
             var log = new SessionEventLog(session.Id);
             if ((seedAgent ?? session.SessionId) is { } agent)
@@ -169,7 +269,7 @@ public sealed class WebSessionHub(WebHubServices services)
             var observers = session.Observers?.Add(log) ?? Nothing.Instance;
             var tools = session.ToolObservers?.Add(log) ?? Nothing.Instance;
             return new LogEntry(log, observers, tools);
-        }).Log;
+        }
     }
 
     /// <summary>The rows the session list shows: saved sessions under the roots, and every live one.</summary>
@@ -216,17 +316,23 @@ public sealed class WebSessionHub(WebHubServices services)
     /// Whether <paramref name="folder"/> lies inside one of <paramref name="roots"/> once every link on its way is
     /// followed — so a link under a root that points elsewhere does not count as under it.
     /// </summary>
-    public static bool InsideRoots(string folder, IReadOnlyList<string> roots)
+    public static bool InsideRoots(string folder, IReadOnlyList<string> roots) => Resolved(folder, roots) is not null;
+
+    /// <summary>
+    /// <paramref name="folder"/> with every link followed, when that lies inside one of <paramref name="roots"/>; else
+    /// null. Opening the resolved path, not the one asked for, means a link swapped in after the check moves nothing.
+    /// </summary>
+    public static string? Resolved(string folder, IReadOnlyList<string> roots)
     {
         var real = RealPath(folder);
-        if (real is null) return false;
+        if (real is null) return null;
         foreach (var root in roots)
         {
             if (RealPath(root) is not { } r) continue;
             var prefix = r.EndsWith(Path.DirectorySeparatorChar) ? r : r + Path.DirectorySeparatorChar;
-            if (real == r || real.StartsWith(prefix, StringComparison.Ordinal)) return true;
+            if (real == r || real.StartsWith(prefix, StringComparison.Ordinal)) return real;
         }
-        return false;
+        return null;
     }
 
     /// <summary>The configured roots with <c>~</c> expanded on this machine; empty means the folder the server started in.</summary>

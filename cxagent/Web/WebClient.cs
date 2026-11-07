@@ -90,7 +90,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         finally
         {
             _out.Writer.TryComplete();
-            await _gone.CancelAsync().ConfigureAwait(false);
+            Gone();
             try { await sending.ConfigureAwait(false); } catch (Exception) { }
         }
     }
@@ -110,21 +110,34 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             await _socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "closing", timeout.Token).ConfigureAwait(false);
         }
         catch (Exception) { }
-        _gone.Cancel();
+        Gone();
         try { _socket.Abort(); } catch (Exception) { }
+    }
+
+    // NEVER DISPOSED, AND NEVER THROWS: a prompt resolving or a broadcast can reach a tab while it is going away.
+    private void Gone()
+    {
+        try { _gone.Cancel(); } catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>A session this tab had open was closed — by anyone.</summary>
+    public void SessionClosed(string sessionId)
+    {
+        if (!_open.ContainsKey(sessionId)) return;
+        Leave(sessionId);
+        Send(new JsonObject { ["type"] = "closed", ["sessionId"] = sessionId });
     }
 
     public void Send(JsonObject message)
     {
         // FULL MEANS THE TAB STOPPED READING: let it go, and it comes back with "since".
-        if (!_out.Writer.TryWrite(message.ToJsonString())) _gone.Cancel();
+        if (!_out.Writer.TryWrite(message.ToJsonString())) Gone();
     }
 
     public void Dispose()
     {
         foreach (var sub in _open.Values) sub.Dispose();
         _open.Clear();
-        _gone.Dispose();
     }
 
     // ---- prompts -------------------------------------------------------------------------------------------------
@@ -207,8 +220,8 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         if (folder is null) { Error("Which folder?"); return; }
         var full = Path.GetFullPath(folder);
         if (!Directory.Exists(full)) { Error("No such folder."); return; }
-        if (!WebSessionHub.InsideRoots(full, S.Roots)) { Error("That folder is outside the folders this server opens."); return; }
-        var session = S.Opener.Create(full);
+        if (WebSessionHub.Resolved(full, S.Roots) is not { } real) { Error("That folder is outside the folders this server opens."); return; }
+        var session = S.Opener.Create(real);
         Attach(session, 0, null);
         _hub.ListChanged();
     }
@@ -223,17 +236,15 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             return;
         }
 
-        var snapshot = S.Store.LoadById(id);
-        if (snapshot is null) { Error("No such session."); return; }
-        if (snapshot.WorkingDir is not { } dir || !WebSessionHub.InsideRoots(dir, S.Roots))
+        var session = _hub.Resume(id, out var refusal);
+        if (session is null)
         {
-            Error("That session is outside the folders this server opens.");
+            // GONE — unloaded, closed, or from a server since restarted: the page drops its view of it.
+            if (refusal == "gone") Send(new JsonObject { ["type"] = "gone", ["id"] = id });
+            else Error(refusal ?? "That session could not be opened.");
             return;
         }
-        if (S.Store.HolderOf(id) is { } held) { Error($"That session is {SessionLock.HeldMessage(held)}."); return; }
-
-        var session = S.Opener.Resume(snapshot);
-        Attach(session, 0, snapshot.AgentId);
+        Attach(session, 0, id);
         _hub.ListChanged();
     }
 
@@ -252,12 +263,17 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         _open[session.Id] = handle;
 
         // WHAT IS ALREADY WAITING — a prompt raised before this tab arrived is shown to it now.
-        foreach (var prompt in S.Prompts.PendingFor(session.Id)) Show(prompt, CancellationToken.None);
+        foreach (var prompt in S.Prompts.ShowableFor(session.Id)) Show(prompt, CancellationToken.None);
     }
 
     private void Leave(string? sessionId)
     {
-        if (sessionId is not null && _open.TryRemove(sessionId, out var sub)) sub.Dispose();
+        if (sessionId is null) return;
+        if (_open.TryRemove(sessionId, out var sub)) sub.Dispose();
+
+        // ITS PROMPTS GO WITH IT: no longer served, they would never hear they were answered.
+        foreach (var (id, prompt) in _shown)
+            if (prompt.SessionId == sessionId) _shown.TryRemove(id, out _);
     }
 
     private void Say(string? sessionId, string? text)
@@ -353,7 +369,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         }
         catch (Exception e) when (e is WebSocketException or OperationCanceledException or IOException or ObjectDisposedException)
         {
-            _gone.Cancel();
+            Gone();
         }
     }
 }

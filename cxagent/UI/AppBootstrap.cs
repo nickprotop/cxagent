@@ -969,10 +969,19 @@ public static class AppBootstrap
                 return;
             }
             webHost = null;
-            await running.Hub.DisconnectAllAsync("The terminal stopped sharing.");
-            await running.DisposeAsync();
-            mainWindow.SetWebServing(false);
-            transcript.Write(new Message("Stopped serving to browsers."));
+            // THE SERVER STOPS WHATEVER HAPPENS TELLING THE TABS — a tab failing on its way out must not leave the
+            // port open after the terminal said it stopped sharing.
+            try
+            {
+                await running.Hub.DisconnectAllAsync("The terminal stopped sharing.");
+            }
+            catch (Exception) { /* the tabs are closed by the stop below either way */ }
+            finally
+            {
+                await running.DisposeAsync();
+                mainWindow.SetWebServing(false);
+                transcript.Write(new Message("Stopped serving to browsers."));
+            }
         }
 
         manager.Commands.Register(

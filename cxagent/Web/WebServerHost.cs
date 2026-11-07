@@ -134,8 +134,15 @@ public sealed class WebServerHost : IAsyncDisposable
     {
         if (_stop.IsCancellationRequested) return;
         await _stop.CancelAsync().ConfigureAwait(false);
-        await Hub.DisconnectAllAsync("The server stopped.").ConfigureAwait(false);
-        if (_server is not null) await _server.StopAsync().ConfigureAwait(false);
+        try
+        {
+            await Hub.DisconnectAllAsync("The server stopped.").ConfigureAwait(false);
+        }
+        finally
+        {
+            Hub.DetachAll();
+            if (_server is not null) await _server.StopAsync().ConfigureAwait(false);
+        }
         if (_idle is not null) { try { await _idle.ConfigureAwait(false); } catch (OperationCanceledException) { } }
         if (_request.Opener.UnloadsIdle) _request.Manager.Shutdown(TimeSpan.FromSeconds(15));
     }

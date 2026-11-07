@@ -356,6 +356,54 @@ public sealed class WebSessionHubTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Two_tabs_resuming_one_session_make_one_live_session_and_retire_the_old_row()
+    {
+        new FolderSessionStore(_paths).SaveTurn(new FolderSessionStore.ResumeTurn("SAVED", [new ChatMessage { Role = "user", Content = "a" }], 1, 1, Work));
+        await using var a = await Tab.OpenAsync(_server.Bound.Port);
+        await using var b = await Tab.OpenAsync(_server.Bound.Port);
+
+        await Task.WhenAll(a.SendAsync(Msg("open", ("id", "SAVED"))), b.SendAsync(Msg("open", ("id", "SAVED"))));
+        await a.NextAsync(m => m["type"]?.GetValue<string>() is "opened" or "error");
+        await b.NextAsync(m => m["type"]?.GetValue<string>() is "opened" or "error");
+
+        Assert.Single(_manager.Sessions);
+        await a.SendAsync(Msg("list"));
+        var rows = (await a.NextAsync(m => m["type"]?.GetValue<string>() == "sessions" && m["rows"]!.AsArray().Count > 0))["rows"]!.AsArray();
+        Assert.DoesNotContain(rows, r => r!["agentId"]!.GetValue<string>() == "SAVED");
+        Assert.Single(rows);
+    }
+
+    [Fact]
+    public async Task A_session_closed_elsewhere_tells_its_tabs()
+    {
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        var session = _manager.Sessions.Single();
+
+        Assert.True(_manager.Close(session));
+
+        var closed = await tab.NextAsync(Type("closed"));
+        Assert.Equal(id, closed["sessionId"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Help_with_arguments_is_still_the_web_help()
+    {
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/help model")));
+        Assert.Contains("/compress", (await tab.NextAsync(Type("notice")))["text"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Reopening_a_session_that_no_longer_exists_says_it_is_gone()
+    {
+        await using var tab = await Tab.OpenAsync(_server.Bound.Port);
+        await tab.SendAsync(Msg("open", ("id", "NOPE"), ("since", 41)));
+        Assert.Equal("NOPE", (await tab.NextAsync(Type("gone")))["id"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Allowed_command_runs_and_others_are_refused()
     {
         var (tab, id) = await CreatedAsync();

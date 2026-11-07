@@ -66,6 +66,17 @@ public sealed class SessionEventLogTests
     }
 
     [Fact]
+    public void A_since_beyond_this_log_starts_over()
+    {
+        // A TAB FROM A PREVIOUS SERVER asks for "after 812" of a log that has only just begun; it must redraw, not
+        // wait for the numbers to catch up while dropping everything below them.
+        var log = Streamed(2);
+        var since = log.Since(812);
+        Assert.True(since.Reset);
+        Assert.Equal(log.LastSeq, since.Events.Count);
+    }
+
+    [Fact]
     public void A_reconnect_older_than_the_window_starts_over()
     {
         var log = new SessionEventLog("S", capacity: 10);

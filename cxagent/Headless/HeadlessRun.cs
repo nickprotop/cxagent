@@ -98,6 +98,9 @@ public static class HeadlessRun
         var logs = new LogFileManager(r.Paths);
         var services = Startup.Services(new StartupServicesRequest(r.Paths, stores, gate, logs, resolution));
         var manager = services.Manager;
+
+        // A HEADLESS RUN'S SESSIONS READ AS SUCH to anyone who finds them open — not "open in terminal, run /web".
+        manager.Holder = LockHolder.Headless;
         var session = new Session(r.WorkingDir);
 
         // ONE TEARDOWN, HOWEVER THE RUN ENDS — an exception from MCP or a plugin's load included, so

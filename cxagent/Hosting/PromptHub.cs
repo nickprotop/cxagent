@@ -103,8 +103,8 @@ public sealed class PromptHub
             heads = [.. _queues.Values.Where(q => q.Count > 0).Select(q => q[0])];
         }
         foreach (var head in heads)
-            if (!head.Gone.IsCancellationRequested && responder.Serves(head.Prompt.SessionId))
-                responder.Show(head.Prompt, head.Gone.Token);
+            if (!head.Gone.IsCancellationRequested)
+                Tell(responder, x => { if (x.Serves(head.Prompt.SessionId)) x.Show(head.Prompt, head.Gone.Token); });
         return new Removal(this, responder);
     }
 
@@ -113,6 +113,16 @@ public sealed class PromptHub
     {
         lock (_gate)
             return [.. _queues.Values.SelectMany(q => q).Select(e => e.Prompt).Where(p => p.SessionId == sessionId)];
+    }
+
+    /// <summary>
+    /// What a front end arriving now should show for <paramref name="sessionId"/>: the first prompt in each line, not
+    /// the ones queued behind it — those are shown in turn, as each one ahead is answered.
+    /// </summary>
+    public IReadOnlyList<PendingPrompt> ShowableFor(string sessionId)
+    {
+        lock (_gate)
+            return [.. _queues.Values.Where(q => q.Count > 0 && q[0].Prompt.SessionId == sessionId).Select(q => q[0].Prompt)];
     }
 
     /// <summary>Whether anything is waiting for <paramref name="sessionId"/>.</summary>
@@ -183,11 +193,18 @@ public sealed class PromptHub
         // THE SCREENS FIRST, then the waiter. A front end takes its copy down when told (it only queues the work), and
         // a turn resumed before that can raise its next prompt into a cell the old one still holds — where it is
         // never placed, and the turn waits on a prompt nobody can see.
-        done.Gone.Cancel();
-        foreach (var r in responders)
-            if (r.Serves(done.Prompt.SessionId)) r.Resolved(promptId, resolution);
-        done.Done.TrySetResult(resolution);
-        if (next is not null) Present(next);
+        try
+        {
+            done.Gone.Cancel();
+            foreach (var r in responders) Tell(r, x => { if (x.Serves(done.Prompt.SessionId)) x.Resolved(promptId, resolution); });
+        }
+        finally
+        {
+            // WHATEVER A FRONT END DID, the turn gets its answer and the next prompt is shown: one tab closing as it
+            // was told must not leave a turn waiting forever.
+            done.Done.TrySetResult(resolution);
+            if (next is not null) Present(next);
+        }
         return true;
     }
 
@@ -204,7 +221,14 @@ public sealed class PromptHub
             responders = [.. _responders];
         }
         foreach (var r in responders)
-            if (r.Serves(entry.Prompt.SessionId)) r.Show(entry.Prompt, entry.Gone.Token);
+            Tell(r, x => { if (x.Serves(entry.Prompt.SessionId)) x.Show(entry.Prompt, entry.Gone.Token); });
+    }
+
+    // ONE FRONT END'S FAILURE IS ITS OWN. A tab going away mid-call throws; the others are still told.
+    private static void Tell(IPromptResponder responder, Action<IPromptResponder> call)
+    {
+        try { call(responder); }
+        catch (Exception) { /* that front end is gone or broken; the prompt carries on for the rest */ }
     }
 
     private sealed class Removal(PromptHub hub, IPromptResponder responder) : IDisposable

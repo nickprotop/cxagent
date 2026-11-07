@@ -39,7 +39,11 @@ public static class WebCommands
     }
 
     /// <summary>Whether this is the web's own <c>/help</c>, answered here rather than by the terminal's.</summary>
-    public static bool IsHelp(string text) => text.Trim().Equals("/help", StringComparison.OrdinalIgnoreCase);
+    public static bool IsHelp(string text)
+    {
+        var first = text.Trim().Split(' ', 2)[0];
+        return first.Equals("/help", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// The web's <c>/help</c>: the allowed commands and what each does. The terminal's own /help opens a window in the
