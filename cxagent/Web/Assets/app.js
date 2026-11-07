@@ -2130,34 +2130,66 @@ function promptNode(m) {
     for (const line of m.lines || []) box.append(el("div", "why", line));
     for (const a of m.answers || []) btns.append(button(a.label, a.trusted ? "danger" : "good", () => answer({ trusted: a.trusted })));
   } else if (m.kind === "question") {
-    const answers = [];
-    for (const q of m.questions) {
-      const part = el("div", "question");
-      part.append(el("div", "q", q.header ? q.header + " — " + q.question : q.question));
+    // ONE QUESTION AT A TIME, AS THE TERMINAL ASKS: "Question 2 of 3", Back and Next (Alt+← / Alt+→), and — for more
+    // than one — "Your answers" before anything is sent, the last chance to change a decision the model will act on.
+    // What is answered is kept while stepping back and forth; a question left blank is skipped, "you decide".
+    const qs = m.questions, answers = qs.map(() => ""), step = { at: 0 };
+    const stage = el("div", "question-steps");
+    box.append(stage);
+    const read = [];
+    const show = () => {
+      stage.replaceChildren();
+      btns.replaceChildren();
+      if (step.at >= qs.length) {
+        stage.append(el("div", "q", "Your answers"));
+        qs.forEach((q, i) => {
+          const row = el("div", "answer-row");
+          row.append(el("span", "meta", q.header || q.question), el("span", answers[i] ? null : "meta", answers[i] || "(skipped — you decide)"));
+          stage.append(row);
+        });
+        btns.append(button("Send", "good", () => answer({ answers })), button("Change the last one", null, () => { step.at = qs.length - 1; show(); }));
+        return;
+      }
+      const q = qs[step.at];
+      if (qs.length > 1) stage.append(el("div", "meta", "Question " + (step.at + 1) + " of " + qs.length + (q.header ? " · " + q.header : "")));
+      else if (q.header) stage.append(el("div", "meta", q.header));
+      stage.append(el("div", "q", q.question));
       const name = "q" + Math.random().toString(36).slice(2);
       const picks = [];
+      const had = answers[step.at] ? answers[step.at].split(", ") : [];
       for (const o of q.options) {
         const label = el("label");
         const input = el("input");
         input.type = q.multiple ? "checkbox" : "radio";
         input.name = name;
         input.value = o.label;
+        input.checked = had.includes(o.label);
         label.append(input, el("span", null, o.label), o.description ? el("small", null, o.description) : "");
-        part.append(label);
+        stage.append(label);
         picks.push(input);
       }
       const other = el("input");
       other.type = "text";
       other.placeholder = q.options.length ? "or type your own answer" : "your answer";
-      part.append(other);
-      box.append(part);
-      answers.push(() => {
+      other.value = had.filter((h) => !q.options.some((o) => o.label === h)).join(", ");
+      stage.append(other);
+      read[0] = () => {
         const picked = picks.filter((i) => i.checked).map((i) => i.value);
         if (other.value.trim()) picked.push(other.value.trim());
-        return picked.join(", ");
-      });
-    }
-    btns.append(button("Answer", "good", () => answer({ answers: answers.map((f) => f()) })), button("Skip", null, () => answer({ cancelled: true })));
+        answers[step.at] = picked.join(", ");
+      };
+      const next = () => { read[0](); step.at = qs.length === 1 ? qs.length : step.at + 1; if (qs.length === 1) answer({ answers }); else show(); };
+      if (step.at > 0) btns.append(button("Back", null, () => { read[0](); step.at--; show(); }));
+      btns.append(button(qs.length === 1 ? "Answer" : step.at === qs.length - 1 ? "Review" : "Next", "good", next));
+      btns.append(button("Skip all", null, () => answer({ cancelled: true })));
+      box.onkeydown = (e) => {
+        if (!e.altKey || step.at >= qs.length) return;
+        if (e.key === "ArrowLeft" && step.at > 0) { e.preventDefault(); read[0](); step.at--; show(); }
+        if (e.key === "ArrowRight") { e.preventDefault(); next(); }
+      };
+      (picks[0] || other).focus?.();
+    };
+    show();
   }
   box.append(btns);
   return box;

@@ -63,8 +63,8 @@ was never sent, so stopping must not eat it.
 ![The browser showing the same call as one form: all three questions — discount size, stacking and qualification — with their options, a free-text box under each, and Answer and Skip](04-question-step-1-browser.png "Browser")
 
 In `invoice`, asked for a loyalty discount and told to ask first: one call, three questions, each
-option saying what it means. The terminal presents them as steps; the browser shows all three as one
-form, answered at once.
+option saying what it means. Both front ends present them as steps — one question at a time, Back
+and Next — and both show your answers together before anything is sent.
 
 ![Question 3 of 3, Qualification, with Number of past invoices highlighted and Alt+← to go back in the hint line](05-question-step-3.png)
 

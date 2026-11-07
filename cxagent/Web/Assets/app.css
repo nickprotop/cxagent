@@ -478,3 +478,6 @@ textarea.form-input { resize: vertical; }
 .form-order { display: flex; flex-direction: column; gap: 4px; }
 .form-order-item { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; }
 .form-order-item .spacer { flex: 1; }
+
+/* THE TERMINAL'S QUESTION STEPS: a summary row per answer. */
+.answer-row { display: flex; gap: 14px; padding: 2px 0; }
