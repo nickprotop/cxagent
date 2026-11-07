@@ -1004,6 +1004,13 @@ public sealed partial class Session
                         text = memoryNote + "\n\n" + text;
                     }
 
+                    // COLLEAGUES KEPT OR GROWN SINCE THE LIST WAS TAKEN, said the same way and for the same reason.
+                    if (TakeColleagueNote() is { } colleagueNote)
+                    {
+                        echo ??= text;
+                        text = colleagueNote + "\n\n" + text;
+                    }
+
                     // WHAT THE TRANSCRIPT SHOWED goes with the message when it differs from what is
                     // sent, so the session list can name the session by it — see ChatMessage.Shown.
                     sent = await Host!.RunAsync(text, scope.Token, tools,

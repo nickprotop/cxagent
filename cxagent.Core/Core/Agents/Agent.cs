@@ -1620,6 +1620,8 @@ public sealed class Agent
                     CanSearch = SelectionAllows(Jobs.Tool.WebSearch, turnTools),
                     // THE SNAPSHOT, never the files: a note written this session must not move the cached prefix.
                     Memory = _memoryTool is not null && SelectionAllows(Jobs.Tool.Memory, turnTools) ? _memoryIndex() : null,
+                    // THE LEAD'S ONLY, and the session's snapshot: a child is never told of colleagues.
+                    Colleagues = Setup.Identity.IsSubAgent ? null : Setup.Brief.ColleagueIndex?.Invoke(),
                     ModelFacingCommands = _modelFacingCommands?.Invoke() ?? [],
                 })
                 // AFTER the general prompt, so a project can override it.

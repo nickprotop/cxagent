@@ -137,6 +137,12 @@ internal readonly record struct SystemPromptContext(
     public IReadOnlyList<Memory.MemoryNote>? Memory { get; init; }
 
     /// <summary>
+    /// The colleagues the lead's prompt lists, or null for none — then no section. A SNAPSHOT, for memory's reason: this
+    /// text heads the cached prefix and the library changes mid-session. Never listed to a sub-agent.
+    /// </summary>
+    public IReadOnlyList<Colleagues.ColleagueLine>? Colleagues { get; init; }
+
+    /// <summary>
     /// The commands that asked to be named to the model — name and one-line summary each.
     ///
     /// <para>EMPTY IS THE NORMAL CASE and renders nothing: almost every command is the user's to
@@ -628,8 +634,27 @@ internal static class SystemPrompt
         AppendPluginInstructions(sb, ctx);
         AppendSkills(sb, ctx);
         AppendMemory(sb, ctx);
+        AppendColleagues(sb, ctx);
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The colleagues this conversation began with, for the lead only. ABSENT WHEN THERE ARE NONE, so a library nobody
+    /// has started costs no user a byte of prompt — or a cache miss.
+    /// </summary>
+    private static void AppendColleagues(StringBuilder sb, SystemPromptContext ctx)
+    {
+        if (ctx.IsSubAgent || ctx.Colleagues is not { Count: > 0 } colleagues) return;
+        sb.AppendLine();
+        sb.AppendLine("# Colleagues");
+        sb.AppendLine();
+        sb.AppendLine("Colleagues are workers the user chose to keep: each has worked before and starts from what it "
+                    + "learned. When a task touches a codebase one of them knows, bring it in with the colleague tool "
+                    + "rather than starting a fresh worker there; it then works as any worker does. The list was taken "
+                    + "when this conversation began.");
+        sb.AppendLine();
+        sb.Append(CxAgent.Core.Colleagues.ColleagueIndex.Render(colleagues, CxAgent.Core.Colleagues.ColleagueIndex.DefaultCap));
     }
 
     /// <summary>

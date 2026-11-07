@@ -1072,6 +1072,7 @@ public sealed class SessionManager : IDisposable
         // ANOTHER CONVERSATION'S PROMPT: the index the left one listed, and what its model was told, are not this one's.
         // Its cache is cold anyway, so the notes are listed as they are now.
         session.RefreshMemoryIndex();
+        session.RefreshColleagueIndex();
 
         session.PendResume(snapshot);
         apply();

@@ -214,6 +214,8 @@ internal static class SessionFactory
             // THE SESSION'S SNAPSHOT, for the reason StartedOn is the session's day: an agent rebuilt by a re-wire, and
             // every child, lists the same notes, so the system prompt — the head of the cache — does not move.
             MemoryIndex = session.MemoryIndex,
+            // THE SAME FOR THE COLLEAGUES' LIST: one snapshot for the session, so a re-wire lists what it listed.
+            ColleagueIndex = session.ColleagueIndex,
         };
 
         var childFactory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime

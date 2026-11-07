@@ -45,6 +45,7 @@ public sealed partial class Session
         // THE MEMORY INDEX CATCHES UP HERE AND NOWHERE ELSE: the prefix is being rebuilt anyway, so the notes written
         // since the session began cost nothing to list now.
         RefreshMemoryIndex();
+        RefreshColleagueIndex();
         if (Interlocked.Exchange(ref _pendingFresh, null) is not { } apply) return;
         Announce(SessionChangeKind.Model);
         apply();

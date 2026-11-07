@@ -208,6 +208,12 @@ public sealed record AgentBrief
     /// cleared or compacted, when the cache is rebuilt anyway.</para>
     /// </summary>
     public Func<IReadOnlyList<Memory.MemoryNote>>? MemoryIndex { get; init; }
+
+    /// <summary>
+    /// The colleagues the lead's prompt lists — the session's snapshot, for <see cref="MemoryIndex"/>'s reason. A
+    /// sub-agent given one ignores it: bringing colleagues in is the lead's to do.
+    /// </summary>
+    public Func<IReadOnlyList<Colleagues.ColleagueLine>>? ColleagueIndex { get; init; }
 }
 
 /// <summary>How far an agent may go.</summary>
