@@ -89,7 +89,7 @@ and the result follows once it returns. A submit from the plugin's client prints
 | `--cwd d` | the folder the plugin works in. Default: the current one |
 | `--answer allow\|deny` | how the permission question is answered |
 | `--timeout s` | stop the call after `s` seconds; the plugin is then stopped and its processes reaped. Default 60 |
-| `--command name [args…]` | run a command the plugin declares instead of a tool; everything after the name is its argument |
+| `--command name [args…]` | run a command the plugin declares instead of a tool; everything after the name is its argument except `--json`, so other options go before `--command` |
 | `--json` | one JSON object (below), and nothing printed live. Anywhere on the line — after `--command name` too |
 
 ### `--json`, for `check` and `call`

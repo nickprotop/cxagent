@@ -69,7 +69,8 @@ waits for a maintainer to approve it. The issue is the quicker way.
 | someone else's | from another `repository` | refused; a maintainer can decide otherwise on the issue |
 
 An update replaces your entry in place. Its version must be higher: cxagent offers an update whenever
-the version differs, so an equal or lower one would be offered as an update that changes nothing.
+the installed version differs from the catalog's, so an equal one is never offered and a lower one
+is offered as an "update" that is really a downgrade.
 
 One submission per name at a time: while one issue's pull request for a name waits for review,
 another issue submitting the same name is refused, naming that pull request.
@@ -77,9 +78,9 @@ another issue submitting the same name is refused, naming that pull request.
 ## The entry's shape
 
 `pack` writes it, and verify holds a hand-edited one to the same shape: a `source` (or, for a native
-plugin, one `sources` entry per platform) with `"kind": "url"` and a `"url"`, platforms from
-`linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64` and `win-arm64`, and every value of the
-type pack writes.
+plugin, one `sources` entry per platform) with `"kind": "url"` and a `"url"`, platforms of `any` for a managed plugin or, for a native one,
+from `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64` and `win-arm64`, and every value
+of the type pack writes.
 
 **A native plugin is per-platform, and the entry has to say which.** A managed plugin is portable
 MSIL — one build runs everywhere cxagent does, so it says `platforms: ["any"]` and has one `source`.
@@ -204,7 +205,8 @@ cxagent store build plugins --url https://tools.example/cx --out site
 ```
 
 `--url` is the address `site` is served from: https, or `http://localhost` for testing. A localhost
-catalog works with `/plugin store add`, but `plugin verify` refuses plain http, so it does not pass verify. The command
+catalog works with `/plugin store add`, but `plugin verify` refuses a plain http download with or
+without `--https-only`, so it does not pass verify. The command
 checks every plugin as `plugin check` does, packs it as `plugin pack` does, and writes `site/catalog.json`
 with each download addressed `https://tools.example/cx/<zip>`, beside one zip per plugin (per platform,
 for a native one). It prints each zip's hash, then the line to give your users.
@@ -212,7 +214,8 @@ for a native one). It prints each zip's hash, then the line to give your users.
 Each plugin's catalog text comes from the `pack-info.json` (or `.yaml`) in its folder, else its project.
 If a plugin does not load, a field is still unfilled, two plugins share a name, a name cannot be installed from a store (letters, digits, `-` and `_`), or the catalog would
 fail `plugin verify`'s shape rules, nothing is written and each problem is listed under its folder's name.
-A subfolder with no `*.plugin.json` is not a plugin: it is named on stderr (`skipped docs/: no *.plugin.json`)
+A subfolder with no `<name>.plugin.json` sidecar is not a plugin: it is named on stderr
+(`cxagent store: skipped docs/: no *.plugin.json`)
 and the build goes on without it.
 
 Exit codes: 0 built, 1 a plugin is at fault, 2 usage or nothing to build.

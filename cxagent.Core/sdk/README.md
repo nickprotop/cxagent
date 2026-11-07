@@ -105,8 +105,11 @@ public sealed class Plugin : IPlugin, IPluginGateSource
     public Task Start(CancellationToken ct) => Task.CompletedTask;
 
     // The call leaves the machine, so the user is asked — naming the city, so they know what is sent.
+    // Null is "no prompt": with no city, Invoke refuses the call before anything is sent.
     public PluginGate? Gate(string toolName, JobParameters call) =>
-        new PluginGate($"look up the weather for {call.Get<string>("city")} on open-meteo.com");
+        call.Get<string>("city") is { Length: > 0 } city
+            ? new PluginGate($"look up the weather for {city} on open-meteo.com")
+            : null;
 
     public async Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context, CancellationToken ct)
     {
@@ -185,7 +188,9 @@ answered: allow
 }
 ```
 
-`call` runs the real lifecycle once: Load, Start, the permission question, Invoke, Stop. It does so
+`call` runs the real lifecycle once: Load, Start, the permission question, Invoke, Stop. When the
+call would ask and there is no `--answer` — or the answer is `deny` — it stops at the question and
+skips Invoke, as a session waiting on or refused at its prompt does; Stop still runs. All of it runs
 without a model, so you see exactly what your code does:
 
 ![cxagent plugin call running weather_now for Athens](images/weather-call.png)

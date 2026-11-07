@@ -53,6 +53,13 @@ floor sits at 2 today for exactly this reason — see `cxagent_plugin.h`'s hands
 always did, because a plugin that never originates work has nothing wrong with omitting the ability
 to. See "`poll` — a plugin originates work" below.
 
+**v4 changed nothing a native library exports.** Contract 4 narrowed what a managed plugin is handed —
+`IJobContext` keeps only what a tool reports through, and a result's verdict fields became the
+host's to set — and added the sidecar's `"kind"`, which a native plugin for Windows needs because a
+.NET assembly and a native library are both `.dll` there. A library whose handshake says 2 or 3
+loads on a contract-4 host unchanged; one whose sidecar names a kind declares 4, because a host
+from before it would ignore the field and guess.
+
 ## `describe` — the manifest
 
 ```json
@@ -89,36 +96,41 @@ checked first, before the manifest is trusted enough to parse, and the in-body c
 mismatch between the two be caught as a manifest error with a clear message rather than silently
 trusting whichever the host happened to read.
 
-**Unknown top-level keys are refused by name, not ignored** — this already matches
-`PluginManifest.Parse`'s existing behaviour (`commands`, `completions`, `providers`, `observers`
-each report "this build does not service" rather than being silently dropped) and the ABI surface
-changes nothing about it. A native plugin declaring a hook point v1 doesn't service is told so at
-load, the same as a managed one.
+**A hook point this build does not service is refused by name, not ignored** — this matches
+`PluginManifest.Parse`'s behaviour (`tools`, `permission` and `commands` are read; `completions`,
+`providers` and `observers` each report "this build does not service" rather than being silently
+dropped) and the ABI surface changes nothing about it. A native plugin declaring a hook point this
+build does not service is told so at load, the same as a managed one.
 
 ## `context` — what `start` receives
 
 ```json
 {
   "workingDirectory": "/home/nick/source/cxagent",
-  "settings": { "server": "rust-analyzer", "args": ["--log-level", "warn"] }
+  "settings": { "server": "rust-analyzer", "args": ["--log-level", "warn"] },
+  "hostContract": 4
 }
 ```
 
-Deliberately smaller than `IPluginContext`. Three of that interface's five members have no JSON
-representation and are withheld on purpose, not merely because they are hard to serialize:
+Deliberately smaller than `IPluginContext`. Several of that interface's members have no JSON
+representation, or reach a native plugin another way, and are withheld on purpose rather than
+merely because they are hard to serialize:
 
-- **the transcript** — never offered in any form, matching `IPluginContext`'s own contract.
-- **the logger** — a native plugin has no callback into the host to log through (see
-  "What deliberately does not cross" below); it writes to its own stderr, which the host process
-  captures and attributes to the plugin by name. No JSON shape needed.
+- **the transcript** — never offered in any form; `IPluginContext` has no such member either.
+- **the logger** — a native plugin logs through the `log` callback `cxagent_plugin_attach` hands it
+  (with no call id, it reaches the logger the plugin was loaded with), or writes to its own stderr.
+  No JSON shape needed.
 - **the lifetime cancellation token** — see "Cancellation" below.
-- **`RegisterChildProcess`** — a native plugin registers a spawned process the same way, but as an
-  *outbound* message rather than an inbound context field; see "What this leaves room for."
+- **`RegisterChildProcess`** — the host registers the plugin host process itself, so it is reaped
+  with the plugin; no ABI call registers a process the native plugin spawns of its own.
+- **the client and the session id** — a native plugin originates work through `poll` instead; see
+  "`poll` — a plugin originates work".
 
-So `context_json` carries exactly the two fields a plugin needs to start doing its own work:
-`workingDirectory` (a string) and `settings` (the plugin's own settings object from config,
-verbatim — passed through unparsed, exactly as `IPluginContext.Settings` is a raw `JsonElement`
-today).
+So `context_json` carries three fields: `workingDirectory` (a string), `settings` (the plugin's own
+settings object from config, verbatim — passed through unparsed, exactly as
+`IPluginContext.Settings` is a raw `JsonElement`) and `hostContract` (the host's own contract
+number, as `IPluginContext.HostContract` gives a managed plugin, so a plugin can refuse a host too
+old to refuse it first; a reader treats it as 0 when absent).
 
 ## `call` — what `invoke` and `gate` receive
 
@@ -137,6 +149,10 @@ managed plugin's `call.Get<T>("line")` already has. Introducing a second, strict
 the ABI boundary would fight `JobParameters`'s own design rather than extend it. `arguments` is
 always a JSON object, never `null` and never omitted — an argument-less tool receives `{}`, so a
 plugin may index into it unconditionally exactly as `cxagent_plugin.h` states for `call_json`.
+
+**`invoke` may be called concurrently** — several calls in flight on the same library at once, and
+any of them alongside `poll`. The host takes no lock on this path, so a plugin that cannot tolerate
+concurrent calls serializes them itself; `cxagent_plugin.h` says the same on `invoke`.
 
 `toolName` is a plain string, not re-validated against the manifest by the wire format — the same
 division of responsibility `IPlugin.Invoke`'s own doc states: "an unrecognised name reaching this
@@ -201,7 +217,7 @@ whole contract**: a plugin that polls a submit gets no reply on this channel, ev
 failure, not the turn's own result.
 
 **May be called concurrently with `cxagent_plugin_invoke`** — nothing on this host serializes the
-two, matching `invoke`'s own concurrency note above.
+two, matching `invoke`'s own concurrency note above. It is never called concurrently with itself.
 
 ## `command` — one command a person typed
 
@@ -281,7 +297,7 @@ this design avoids elsewhere (see `PluginManifest`'s single sidecar-and-runtime 
 | --- | --- | --- |
 | `ok` | always | required boolean. Absent or non-boolean is a malformed envelope. |
 | `result` | `ok: true`, from `invoke` only | a `JobResult`, below. Omitted for `start`/`stop`, whose managed equivalents return `Task`, not `Task<JobResult>`. |
-| `error` | `ok: false` | required, non-empty string. |
+| `error` | `ok: false` | should be a non-empty string. Absent or empty, the call still fails, with a generic message instead (see below). |
 
 **`ok` and `JobResult.Success` are not the same bit, and both exist for a reason.** `ok: false`
 means the CALL ITSELF failed — the plugin could not produce a `JobResult` at all: a malformed
@@ -323,7 +339,7 @@ a v2 plugin may add a diagnostic field a v1 host does not read.
 | Native returns | Host behaviour |
 | --- | --- |
 | `{"ok":false,"error":"..."}` | the call fails; `error` becomes the tool's `ErrorMessage` |
-| `{"ok":false}` — no `error` | fails with a generated message naming the plugin and function |
+| `{"ok":false}` — no `error`, or an empty one | fails with the generic message `plugin call failed (no error message given).`; a failed `start` is prefixed with the plugin's name |
 | `{"ok":true,"result":{...}}` from `invoke`, valid `JobResult` shape | the `JobResult`, verbatim |
 | `{"ok":true}` from `start`/`stop` | success, no result to read |
 | `{"ok":true}` from `invoke` (missing `result`) | fails — `invoke` promises a `JobResult` and did not send one |
@@ -346,7 +362,8 @@ allocated a string frees it, using its own allocator. Concretely:
 - `context_json` and `call_json` (host → plugin): host-owned, valid only for the duration of the
   call the plugin is currently inside. A plugin that needs the value after the call returns must
   copy it before returning.
-- Every return value (`describe`, `start`, `invoke`, `stop`, and `poll` when it is not NULL):
+- Every return value (`describe`, `start`, `invoke`, `stop`, and `gate`, `poll` and `command` when
+  they are not NULL):
   plugin-owned. The host copies the UTF-8 bytes out into its own managed string and then calls
   `cxagent_plugin_free` on the original pointer — always, in a `finally`, including when the envelope
   failed to parse. The plugin's own `free()` (or whatever its runtime's deallocator is) runs inside

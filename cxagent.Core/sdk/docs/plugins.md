@@ -64,8 +64,8 @@ does not compile against an agent runtime, its database and its HTTP stack to im
 interfaces. Referencing `CxAgent.Core` also works and always did; it just brings all of that with it.
 
 **A call is handed what a tool uses, and nothing of the host's.** `IJobContext` gives you
-`WorkingDirectory`, `Requester`, `ReportProgress`, `ReportTextDelta` for streaming output, and `Log` —
-six members, so a test fake is six lines. In `JobResult` you set `Success`, `ExitCode`,
+`WorkingDirectory`, `Requester`, `ReportProgress`, `ReportTextDelta` for streaming output, and `Log`
+in two overloads (a line, or a `JobLogLevel` and a line) — six members, so a test fake is six lines. In `JobResult` you set `Success`, `ExitCode`,
 `ErrorMessage` and `Output`; `PermissionDenied`, `DecidedBy`, `LogFile` and `Duration` you can read
 but not set, because they are the host's to stamp: whether the gate denied a call, who approved it,
 and how long it took are not a tool's to report about itself.
@@ -118,7 +118,7 @@ and refuses the load if it disagrees with what `Load` returns.
     {
       "name": "calc_add",
       "description": "Adds two numbers.",
-      "inputSchema": { "type": "object", "properties": { "a": { "type": "number" } }, "required": ["a"] },
+      "inputSchema": { "type": "object", "properties": { "a": { "type": "number" }, "b": { "type": "number" } }, "required": ["a", "b"] },
       "gated": true
     }
   ]
@@ -383,9 +383,9 @@ unfalsifiable.
 
 **Declare the oldest contract whose features you use**, not the package you built against. A host
 loads every contract from its floor to its own, so the lower number reaches more hosts: a plugin
-using the per-call gate declares 2, one using the client declares 3. Contract 4 took things away
-from what a plugin is handed and added nothing to declare, so a plugin built against 4.0.0 runs on a
-contract-3 host too, and can say so.
+using the per-call gate declares 2, one using the client declares 3, one naming a `"kind"` declares 4.
+Contract 4 otherwise took things away from what a plugin is handed, so a plugin built against 4.x that
+names no kind runs on a contract-3 host too, and can say so.
 
 **Required, and checked against a range.** It says which shape you were built against — the
 manifest fields, the gating vocabulary, the lifecycle. A contract above what this host understands
@@ -396,11 +396,11 @@ reason: a manifest that does not say what it was built against cannot be checked
 compatible is the least safe reading available.
 
 **A range, where this was once exact equality**, so a host that gains a capability stops refusing
-every plugin that never asked for it — a contract-1 plugin written before per-call gating existed
-still loads on a host that has since added the client capability, as long as it sits at or above the
-floor. The floor today is 2, the first contract that can express `"gated": "dynamic"`; a contract-1
-manifest cannot say it, so its tools would load ungated rather than refused, and the floor exists to
-catch that silently wrong reading rather than let it happen.
+every plugin that never asked for it: a contract-2 plugin written before the client existed still
+loads on a host that has since added it. **The floor is why the range does not reach contract 1.**
+It is 2, the first contract that can express `"gated": "dynamic"`; a contract-1 manifest cannot say
+it, so its tools would load ungated rather than refused, and the floor exists to catch that silently
+wrong reading rather than let it happen.
 
 **There is no version floor beside it**, and adding one would be a step backwards. What a plugin
 needs is never really "cxagent 0.9.5"; it is "a host that understands `dynamic`" — which *is* the

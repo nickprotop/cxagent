@@ -3,12 +3,13 @@
 *Write tools in C. cxp handles the ABI, the JSON and the memory.*
 
 A native plugin is a shared library that exports the functions in
-[`cxagent_plugin.h`](../c/cxagent_plugin.h). The C SDK, **cxp**, implements every export for you
-over a table of the tools you register. You write functions that take a call and return a result.
+[`cxagent_plugin.h`](../c/cxagent_plugin.h). The C SDK, **cxp**, implements the exports for you
+over a table of the tools you register, and compiles in the optional ones only when your sidecar
+asks for them. You write functions that take a call and return a result.
 
 | File | |
 |---|---|
-| `cxp.h` | The API, the only header you include |
+| `cxp.h` | The API, the only header you include. It includes `cJSON.h` and `cxagent_plugin.h` itself, which is where the `cJSON` type `cxp_arg_json` and `cxp_ok_json` use comes from |
 | `cxp.c` | Every ABI export, over your table |
 | `cxp.cmake` | `cxp_add_plugin(...)`: builds the library from your sidecar |
 | `cJSON.h`, `cJSON.c` | JSON, vendored ([cJSON](https://github.com/DaveGamble/cJSON) 1.7.18, MIT) |
@@ -31,7 +32,9 @@ static cxp_result count(const cxp_call *call) {
 }
 
 static cxp_gate count_gate(const cxp_call *call) {
-    return cxp_ask(cxp_format("read %s", cxp_arg_string(call, "file")));
+    const char *file = cxp_arg_string(call, "file");
+    if (!file) return cxp_no_ask();   /* nothing to read: count refuses the call itself */
+    return cxp_ask(cxp_format("read %s", file));
 }
 
 CXP_PLUGIN(
@@ -70,13 +73,21 @@ It is the one copy of the manifest; [plugins.md](plugins.md#the-sidecar) covers 
 | | |
 |---|---|
 | `CXP_PLUGIN(entries...)` | The table: one per plugin, in one source file |
-| `CXP_TOOL(name, run, gate)` | `run` is `cxp_result (*)(const cxp_call *)`; `gate` is `cxp_gate (*)(const cxp_call *)`, or `0` for a tool gated `true` or `false` |
-| `CXP_COMMAND(name, run)` | `run` is `cxp_command_result (*)(const char *arguments)` |
+| `CXP_TOOL(name, run, gate)` | `run` runs the call; `gate` decides whether it asks, or is `0` (below) |
+| `CXP_COMMAND(name, run)` | `run` runs the command |
+
+The functions they take:
+
+```c
+cxp_result         my_tool(const cxp_call *call);     /* CXP_TOOL's run */
+cxp_gate           my_gate(const cxp_call *call);     /* CXP_TOOL's gate */
+cxp_command_result my_command(const char *arguments); /* CXP_COMMAND's run */
+```
 
 A tool's name and its `"gated"` value come from the sidecar. `"gated": "dynamic"` calls your gate
-function. `true` always asks, and `false` never does. A `"dynamic"` tool registered with `0` asks on
-every call, naming the tool: the sidecar said its calls may need permission, so cxp does not let them
-through unasked.
+function. `true` always asks, and `false` never does; both ignore the gate, so register them with `0`.
+A `"dynamic"` tool registered with `0` asks on every call, naming the tool, and never offers
+"Always": the sidecar said its calls may need permission, so cxp does not let them through unasked.
 
 ### Arguments and context
 
@@ -87,9 +98,10 @@ through unasked.
 | `cxp_arg_bool(call, name, fallback)` | 1 or 0, or `fallback` |
 | `cxp_arg_json(call, name)` | the raw `cJSON` value, or NULL; cxp owns it |
 | `cxp_working_directory()` | the folder the plugin works in |
-| `cxp_setting_string` / `_number` / `_bool` | the plugin's `settings` block in config.json, with the same fallbacks |
+| `cxp_setting_string` / `_number` / `_bool` | the plugin's `settings` block in config.json: NULL for a string, `fallback` for the others |
 
-A mistyped argument returns the fallback and never crashes. Treat input from the model as untrusted:
+A missing or mistyped argument returns NULL from `cxp_arg_string` and `cxp_arg_json`, and the
+fallback from the others; it never crashes, but a NULL you pass on unchecked can — check it. Treat input from the model as untrusted:
 it is.
 
 ### Results
