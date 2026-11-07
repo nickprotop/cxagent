@@ -23,6 +23,30 @@ public sealed record PastWorker(string JobId, string AgentId, string Name, strin
 /// <param name="Workers">The sub-agents the shown part spawned, oldest first.</param>
 public sealed record ReplayShown(int Turns, int Hidden, IReadOnlyList<PastWorker> Workers);
 
+/// <summary>Where a replay goes, and what else hears it.</summary>
+/// <param name="Chat">Hears what was said.</param>
+/// <param name="Tools">Hears the tool rows.</param>
+public sealed record ReplayTarget(ISessionObserver Chat, IToolObserver Tools)
+{
+    /// <summary>The newest user turns shown; the earlier ones are counted, not drawn.</summary>
+    public int MaxTurns { get; init; } = SessionReplay.DefaultTurns;
+
+    /// <summary>
+    /// Told of each worker as its row starts and before it ends — where a live session announces one — for a front end
+    /// that gives workers a view of their own.
+    /// </summary>
+    public Action<PastWorker>? Worker { get; init; }
+
+    /// <summary>
+    /// Told of each call as it ends, as <see cref="Agent.ToolCallFinished"/> tells a live watcher — for a front end
+    /// that draws its tool rows from those reports rather than from the rows themselves.
+    /// </summary>
+    public Action<ToolCallReport>? Called { get; init; }
+
+    /// <summary>A worker's own history, whose turns are what its parent sent it.</summary>
+    internal bool ForWorker { get; init; }
+}
+
 /// <summary>
 /// Shows a saved session's past to a front end as the ordinary events a live session raises: the user's turns, the
 /// answers, the tool calls with their results, and the workers it spawned.
@@ -44,43 +68,19 @@ public static class SessionReplay
     public const int DefaultTurns = 100;
 
     // NEGATIVE, AND FAR FROM ZERO: a live session numbers its messages upward from one, and a notice's seq counts
-    // down from minus one; a replayed id must collide with neither.
-    private const long FirstId = -1_000_000_000;
+    // down from minus one; a replayed id must collide with neither. ONE COUNTER FOR THE PROCESS, not one per replay:
+    // a second replay into the same view — a resume into a restored tab — must not reuse the first one's ids.
+    private static long _lastId = -1_000_000_000;
+
+    private static long NextId() => Interlocked.Decrement(ref _lastId);
 
     /// <summary>
-    /// Replays the session whose newest agent is <paramref name="agentId"/> into <paramref name="chat"/> and
-    /// <paramref name="tools"/>. Nothing is shown for a session with no saved folder.
+    /// Replays a session's loaded history — <see cref="ExportSource.Load"/>, which follows it back through every
+    /// resume — into <paramref name="target"/>.
     /// </summary>
-    /// <param name="worker">
-    /// Told of each worker as its row starts and before it ends — where a live session announces one — for a front end
-    /// that gives workers a view of their own.
-    /// </param>
-    /// <param name="called">
-    /// Told of each call as it ends, as <see cref="Agent.ToolCallFinished"/> tells a live watcher — for a front end
-    /// that draws its tool rows from those reports rather than from the rows themselves.
-    /// </param>
-    public static ReplayShown Play(AppPaths paths, string agentId, ISessionObserver chat, IToolObserver tools,
-        int maxTurns = DefaultTurns, Action<PastWorker>? worker = null, Action<ToolCallReport>? called = null)
+    public static ReplayShown Play(ExportSource source, ReplayTarget target)
     {
-        if (ExportSource.Load(paths, agentId) is not { } source) return new ReplayShown(0, 0, []);
-        return Play(source, chat, tools, new PlayOptions(maxTurns, worker, called));
-    }
-
-    /// <summary>
-    /// Replays a worker's history, gathered from every copy of its session, for its own tab: the messages it was sent
-    /// are its turns there.
-    /// </summary>
-    internal static ReplayShown PlayWorker(ExportSource source, ChildFeed feed) =>
-        Play(source, feed, feed, new PlayOptions(int.MaxValue, null, feed.CallFinished) { ForWorker = true });
-
-    private sealed record PlayOptions(int MaxTurns, Action<PastWorker>? Worker, Action<ToolCallReport>? Called)
-    {
-        /// <summary>A worker's own history, whose turns are what its parent sent it.</summary>
-        public bool ForWorker { get; init; }
-    }
-
-    private static ReplayShown Play(ExportSource source, ISessionObserver chat, IToolObserver tools, PlayOptions options)
-    {
+        var (chat, tools, options) = (target.Chat, target.Tools, target);
         var maxTurns = options.MaxTurns;
         var entries = source.Entries;
         var turnStarts = entries.Select((e, i) => (e, i)).Where(p => IsUserTurn(p.e, options.ForWorker)).Select(p => p.i).ToList();
@@ -96,16 +96,16 @@ public static class SessionReplay
         foreach (var e in entries)
             if (e.Message is { Role: "tool", ToolCallId: { } callId }) results.TryAdd(callId, e);
 
-        var id = FirstId;
         var workers = new List<PastWorker>();
         for (var i = from; i < entries.Count; i++)
         {
             var entry = entries[i];
             switch (entry.Kind)
             {
-                // NOT AT THE TOP OF A COPY: nothing has been said there to compact. Histories written before the recorder
-                // knew a resumed session's replaced system prompt from a compaction carry that line there.
-                case HistoryLine.Kinds.Compacted when i > 0 && entries[i - 1].Dir != entry.Dir:
+                // NOT THE LINE A REPLACED SYSTEM PROMPT LEFT: histories written before the recorder knew it from a
+                // compaction carry one at the top of a resumed copy. A real compaction there — a large session compacting
+                // on its first turn back — is followed by its summary, which that line never is.
+                case HistoryLine.Kinds.Compacted when i > 0 && entries[i - 1].Dir != entry.Dir && !SummaryAt(entries, i + 1):
                     continue;
                 case HistoryLine.Kinds.Compacted:
                     chat.Said(new Message("The conversation was compacted here; the agent remembers a summary of what came before."));
@@ -125,13 +125,13 @@ public static class SessionReplay
 
             if (IsUserTurn(entry, options.ForWorker))
             {
-                chat.UserTurnAdded(new ChatMessageId(id--), m.Content);
+                chat.UserTurnAdded(new ChatMessageId(NextId()), m.Content);
                 continue;
             }
             if (m.Role != "assistant" || m.Content.StartsWith(SessionCompressor.SummaryMarker, StringComparison.Ordinal))
                 continue;
 
-            var turn = new ChatMessageId(id--);
+            var turn = new ChatMessageId(NextId());
             chat.AssistantTurnBegan(turn);
             if (entry.Thinking is { Count: > 0 } thinking)
             {
@@ -148,7 +148,7 @@ public static class SessionReplay
                 var result = call.Id is { } cid ? results.GetValueOrDefault(cid) : null;
                 // STARTED, THEN ENDED, as a live call is: a row handed over already finished is ended by the first
                 // call and again by the second.
-                var job = Started(call, source.Header, at: entry.At, ref id);
+                var job = Started(call, source.Header, at: entry.At);
                 tools.ToolsChanged([job]);
                 if (call.Name == Tool.Agent && WorkerOf(call, job, result) is { } past)
                 {
@@ -165,6 +165,17 @@ public static class SessionReplay
         return new ReplayShown(turnStarts.Count - hidden, hidden, workers);
     }
 
+    private static bool SummaryAt(IReadOnlyList<ExportEntry> entries, int i) =>
+        i < entries.Count && entries[i].Message is { Role: "assistant" } m
+        && m.Content.StartsWith(SessionCompressor.SummaryMarker, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Replays a worker's history, gathered from every copy of its session, for its own tab: the messages it was sent
+    /// are its turns there.
+    /// </summary>
+    internal static ReplayShown PlayWorker(ExportSource source, ChildFeed feed) =>
+        Play(source, new ReplayTarget(feed, feed) { MaxTurns = int.MaxValue, Called = feed.CallFinished, ForWorker = true });
+
     /// <summary>
     /// A message the user typed — or, in a worker's own history, one its parent sent it. Tool results and the task list
     /// also carry the user role, and so do a worker's report and cxagent's own nudges; none of those is a turn.
@@ -173,12 +184,12 @@ public static class SessionReplay
         e is { Kind: HistoryLine.Kinds.Message, Message: { Role: "user", ToolCallId: null, IsTaskList: false } }
         && (e.From is null or Incoming.You || forWorker && e.From is Incoming.Brief or Incoming.Parent);
 
-    private static Job Started(ToolCall call, ExportHeader session, DateTimeOffset at, ref long id) =>
+    private static Job Started(ToolCall call, ExportHeader session, DateTimeOffset at) =>
         new()
         {
             // UNIQUE ACROSS THE CHAIN: a provider's call ids are only unique within one conversation, and a resumed
             // one is several.
-            Id = $"past:{id--}:{call.Id}",
+            Id = $"past:{-NextId()}:{call.Id}",
 
             // THE SESSION'S AGENT, whichever copy made the call: a front end counts a round's calls by agent, and
             // the calls the session makes next are its newest agent's.

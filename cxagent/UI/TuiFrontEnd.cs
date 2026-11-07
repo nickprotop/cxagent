@@ -61,11 +61,8 @@ public sealed class TuiFrontEnd(TuiTab tab) : IFrontEnd
     /// WITH THE CALL REPORTS. The tab draws a round's tool rows from those, not from the rows' own events, so without
     /// them a restored turn showed its answer and none of the calls behind it.
     /// </remarks>
-    public void ShowRestoredPast(Session session, SessionSinks sinks, AppPaths paths)
-    {
-        if (session.SessionId is { } agent)
-            SessionReplay.Play(paths, agent, sinks.Observer, sinks.ToolObserver, called: _jobs!.RecordToolCall);
-    }
+    public void ShowRestoredPast(Session session, SessionSinks sinks, Core.Export.ExportSource past) =>
+        SessionReplay.Play(past, new ReplayTarget(sinks.Observer, sinks.ToolObserver) { Called = _jobs!.RecordToolCall });
 
     /// <inheritdoc/>
     public void Wired(Session session, SessionSinks sinks, PermissionPolicy policy) =>

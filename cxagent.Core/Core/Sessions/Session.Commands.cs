@@ -848,7 +848,7 @@ public sealed partial class Session
         PendResume(new SessionSnapshot(
             Host.SessionId, Host.Context.Snapshot(),
             Host.Ledger.InputTokens, Host.Ledger.OutputTokens, DateTimeOffset.UtcNow,
-            Thinking: Host.SavedLevel()));
+            Thinking: Host.SavedLevel()) { Carried = true });
         CarryLedger(Host.Ledger);
         return true;
     }

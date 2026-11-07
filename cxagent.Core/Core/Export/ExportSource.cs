@@ -129,10 +129,23 @@ public sealed class ExportSource
     ///
     /// <para>READ ONCE PER EXPORT: the dialog renders again on every change of options, and a child's history is
     /// re-parsed for each call that mentions it otherwise. Concurrent, because those renders run on the pool.</para>
+    ///
+    /// <para>FROM EVERY COPY OF THE SESSION, oldest first, not only the one beside <paramref name="at"/>. A worker brought
+    /// back by a resume keeps its id and writes its later turns under the newer copy; read from one folder, its export
+    /// was the part before the resume or the part after, depending on which call reached it.</para>
     /// </summary>
     public ExportSource? Child(ExportEntry at, string childAgentId) =>
-        _children.GetOrAdd(Path.Combine(at.Dir, childAgentId), dir =>
-            LoadDir(dir, new ExportHeader(childAgentId, Header.Title, Header.WorkingDir, null, null, 0, 0, Header.Model)));
+        _children.GetOrAdd(childAgentId, id =>
+        {
+            var header = new ExportHeader(id, Header.Title, Header.WorkingDir, null, null, 0, 0, Header.Model);
+            var parts = Entries.Select(e => e.Dir).Append(at.Dir).Distinct(StringComparer.Ordinal)
+                .Select(dir => LoadDir(Path.Combine(dir, id), header))
+                .OfType<ExportSource>()
+                .ToList();
+            if (parts.Count <= 1) return parts.FirstOrDefault();
+            var entries = parts.SelectMany(p => p.Entries).ToList();
+            return new ExportSource(header with { Started = entries[0].At, Ended = entries[^1].At }, entries, true, parts[^1].Dir);
+        });
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ExportSource?> _children = new(StringComparer.Ordinal);
 

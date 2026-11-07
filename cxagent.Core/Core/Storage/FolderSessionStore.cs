@@ -419,4 +419,11 @@ public sealed record SessionSnapshot(
 
     string? WorkingDir = null,
 
-    string? Thinking = null);
+    string? Thinking = null)
+{
+    /// <summary>
+    /// The conversation of a session being re-wired in place — a model or config switch — rather than one restored
+    /// from disk: its tab already shows it, and its workers are still kept.
+    /// </summary>
+    public bool Carried { get; init; }
+}

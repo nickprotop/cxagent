@@ -194,6 +194,12 @@ public sealed class SubAgentStore
         }
     }
 
+    /// <summary>Whether <paramref name="name"/> is in use — kept, or dismissed for good — so nothing new may take it.</summary>
+    public bool Holds(string name)
+    {
+        lock (_naming) return _byName.ContainsKey(name) || _forgotten.ContainsKey(name);
+    }
+
     /// <summary>
     /// Keeps a worker brought back with its session under the handle it had, and answers whether it could.
     ///
@@ -224,17 +230,6 @@ public sealed class SubAgentStore
     public StoredAgent? Find(string name) => _byName.GetValueOrDefault(name);
 
     /// <summary>
-    /// The kept child with that AGENT id, or null when nothing holds it.
-    ///
-    /// <para>BY AGENT RATHER THAN BY HANDLE, for a caller that only ever sees the id: a child's tool
-    /// calls carry its agent id and nothing else, so a front end tracking what a child is doing has
-    /// no handle to look one up by.</para>
-    ///
-    /// <para>AND THIS IS WHY A CONSUMER NEED NOT KEEP ITS OWN REFERENCE. Every child kept here is
-    /// pinned for the life of the session already, because agent_send resumes it on the context its
-    /// spawn left behind; a second set of references elsewhere would pin the same Agents twice.</para>
-    /// </summary>
-    /// <summary>
     /// The handle a task is kept under, given its handle or its agent's id; anything else comes back as given,
     /// for the caller to answer "no task" about.
     ///
@@ -245,6 +240,17 @@ public sealed class SubAgentStore
     public string HandleFor(string handleOrId) =>
         _byName.ContainsKey(handleOrId) ? handleOrId : FindByAgentId(handleOrId)?.Name ?? handleOrId;
 
+    /// <summary>
+    /// The kept child with that AGENT id, or null when nothing holds it.
+    ///
+    /// <para>BY AGENT RATHER THAN BY HANDLE, for a caller that only ever sees the id: a child's tool
+    /// calls carry its agent id and nothing else, so a front end tracking what a child is doing has
+    /// no handle to look one up by.</para>
+    ///
+    /// <para>AND THIS IS WHY A CONSUMER NEED NOT KEEP ITS OWN REFERENCE. Every child kept here is
+    /// pinned for the life of the session already, because agent_send resumes it on the context its
+    /// spawn left behind; a second set of references elsewhere would pin the same Agents twice.</para>
+    /// </summary>
     public StoredAgent? FindByAgentId(string agentId) =>
         _byName.Values.FirstOrDefault(a => a.Agent.Agent.Id == agentId);
 

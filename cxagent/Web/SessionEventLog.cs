@@ -39,7 +39,6 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     private long _seq;
     private int _turns;
     private int _toolCalls;
-    private bool _replaying;
 
     // ROWS WHOSE END IS SENT, so a row ends once. A view attaching late is replayed a row's start with the job as it is
     // NOW — finished — which ends it there, and then the update that finished it; a row reopened (a worker sent more
@@ -109,18 +108,35 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     ///
     /// <para>NOT COUNTED. The panel's turns and tool calls are this run's, as the terminal's are.</para>
     /// </summary>
-    public ReplayShown Replay(AppPaths paths, string agentId)
+    /// <remarks>
+    /// THROUGH ITS OWN VIEW, NOT A FLAG ON THE LOG: a flag set for the replay's length would also stop a live event that
+    /// another thread delivers meanwhile from being counted.
+    /// </remarks>
+    public ReplayShown Replay(Core.Export.ExportSource past)
     {
-        lock (_gate) _replaying = true;
-        try
+        var view = new Uncounted(this);
+        return SessionReplay.Play(past, new ReplayTarget(view, view)
         {
-            return SessionReplay.Play(paths, agentId, this, this,
-                worker: w => Worker(w.JobId, w.AgentId, w.Name, w.Type, w.Task));
-        }
-        finally
-        {
-            lock (_gate) _replaying = false;
-        }
+            Worker = w => Worker(w.JobId, w.AgentId, w.Name, w.Type, w.Task),
+        });
+    }
+
+    /// <summary>The log as a replay sees it: every event appended, none counted as this run's.</summary>
+    private sealed class Uncounted(SessionEventLog log) : ISessionObserver, IToolObserver
+    {
+        public void UserTurnAdded(ChatMessageId id, string text) => log.AddUserTurn(id, text, counted: false);
+        public void AssistantTurnBegan(ChatMessageId id) => log.AssistantTurnBegan(id);
+        public void AssistantTextAppended(ChatMessageId id, string token) => log.AssistantTextAppended(id, token);
+        public void AssistantThinkingAppended(ChatMessageId id, string text) => log.AssistantThinkingAppended(id, text);
+        public void AssistantThinkingEnded(ChatMessageId id, ThinkingSummary summary) => log.AssistantThinkingEnded(id, summary);
+        public void AssistantTurnEnded(ChatMessageId id) => log.AssistantTurnEnded(id);
+        public void AssistantLabelled(ChatMessageId id, string header) => log.AssistantLabelled(id, header);
+        public void Said(Message message) => log.Said(message);
+        public void ToolsChanged(IReadOnlyList<Job> jobs) => log.Changed(jobs, counted: false);
+        public void ToolUpdated(Job job) => log.Updated(job, counted: false);
+        public void ToolProgressed(Job job) => log.ToolProgressed(job);
+        public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot) { }
+        public void ToolOutputAppended(string jobId, string delta) => log.ToolOutputAppended(jobId, delta);
     }
 
     /// <summary>
@@ -131,9 +147,11 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         Append("worker", new JsonObject { ["job"] = job, ["agentId"] = agentId, ["name"] = name, ["workerType"] = type, ["task"] = task });
 
     /// <inheritdoc/>
-    public void UserTurnAdded(ChatMessageId id, string text)
+    public void UserTurnAdded(ChatMessageId id, string text) => AddUserTurn(id, text, counted: true);
+
+    private void AddUserTurn(ChatMessageId id, string text, bool counted)
     {
-        lock (_gate) if (!_replaying) _turns++;
+        if (counted) lock (_gate) _turns++;
         Append("user", new JsonObject { ["turn"] = id.Value, ["text"] = text });
     }
 
@@ -170,7 +188,9 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         Append("said", new JsonObject { ["text"] = message.Text, ["severity"] = message.Severity.ToString() });
 
     /// <inheritdoc/>
-    public void ToolsChanged(IReadOnlyList<Job> jobs)
+    public void ToolsChanged(IReadOnlyList<Job> jobs) => Changed(jobs, counted: true);
+
+    private void Changed(IReadOnlyList<Job> jobs, bool counted)
     {
         foreach (var job in jobs)
         {
@@ -188,17 +208,19 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
                 ["runsOn"] = job.RunsOn,
                 ["progress"] = job.ProgressMessage,
             });
-            if (IsDone(job.State)) Ended(job);
+            if (IsDone(job.State)) Ended(job, counted);
         }
     }
 
     /// <inheritdoc/>
-    public void ToolUpdated(Job job)
+    public void ToolUpdated(Job job) => Updated(job, counted: true);
+
+    private void Updated(Job job, bool counted)
     {
         bool known;
         lock (_gate) known = _toolOutput.ContainsKey(job.Id);
-        if (!known) ToolsChanged([job]);
-        else if (IsDone(job.State)) Ended(job);
+        if (!known) Changed([job], counted);
+        else if (IsDone(job.State)) Ended(job, counted);
         else lock (_gate) _ended.Remove(job.Id);
     }
 
@@ -244,13 +266,13 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         Append("toolOutput", new JsonObject { ["job"] = jobId, ["text"] = send });
     }
 
-    private void Ended(Job job)
+    private void Ended(Job job, bool counted)
     {
         bool streamed;
         lock (_gate)
         {
             if (!_ended.Add(job.Id)) return;
-            if (!_replaying) _toolCalls++;
+            if (counted) _toolCalls++;
             streamed = _toolOutput.GetValueOrDefault(job.Id) > 0;
         }
         var output = job.Result?.Output;

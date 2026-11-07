@@ -16,69 +16,104 @@ namespace CxAgent.Core.Sessions;
 /// next agent_send to one was told it did not exist.</para>
 ///
 /// <para>THE SAME ID, so everything that already names the worker still finds it: the envelopes in the parent's
-/// history, a card's "open", and the export, which looks a child up by id beside the call that reached it.</para>
+/// history, a card's "open", and the export, which gathers a child by id from every copy of its session.</para>
 ///
 /// <para>IDLE, whatever it was doing when the process ended: a background run that was cut off is not resumed, and
 /// its report never arrived — the model can send it the work again.</para>
 /// </summary>
+/// <summary>Where revived workers are built and kept.</summary>
+/// <param name="Factory">Builds each one, as a spawn would.</param>
+/// <param name="Types">The agent types as configured now.</param>
+/// <param name="Store">The session's store, which keeps them.</param>
+internal sealed record Revival(SubAgentFactory Factory, AgentTypeCatalog Types, SubAgentStore Store);
+
 internal static class WorkerRevival
 {
     /// <summary>
-    /// Revives the workers of the session whose newest agent is <paramref name="sessionAgentId"/>, and answers how
-    /// many came back.
+    /// Revives the workers of <paramref name="session"/> — its history, loaded once for the whole restore — under its
+    /// newest agent <paramref name="parentAgentId"/>, and answers the ones that could not come back, each with why.
     /// </summary>
-    public static int Revive(AppPaths paths, string sessionAgentId, SubAgentFactory factory, AgentTypeCatalog types,
-        SubAgentStore store)
+    public static IReadOnlyList<string> Revive(ExportSource session, string parentAgentId, Revival into)
     {
-        if (ExportSource.Load(paths, sessionAgentId) is not { } session) return 0;
-
         // THE SESSION'S COPIES, oldest first: a worker spawned before a resume has its folder under the copy that
         // spawned it, and one brought back by an earlier restore has another under each copy it worked in since.
         var copies = session.Entries.Select(e => e.Dir).Distinct(StringComparer.Ordinal).ToList();
-        var revived = 0;
+        var left = new List<string>();
         foreach (var spawn in Spawns(session))
         {
-            if (store.FindByAgentId(spawn.AgentId) is not null || store.Find(spawn.Name) is not null) continue;
-
-            var entries = copies.Select(dir => Path.Combine(dir, spawn.AgentId))
-                .Select(dir => ExportSource.LoadDir(dir, new ExportHeader(spawn.AgentId, null, session.Header.WorkingDir, null, null, 0, 0)))
-                .Where(s => s is not null)
-                .SelectMany(s => s!.Entries)
-                .ToList();
-            if (entries.Count == 0) continue;
-
-            // ITS TYPE AS IT IS CONFIGURED NOW, on the type's own provider: a type since removed or disabled leaves the
-            // worker in the past, where its rows still show it.
-            if (types.Resolve(spawn.Type) is not { } type || type.Pick(null).Routing is not { } routing) continue;
-            var child = factory.Create(new SubAgentFactory.ChildRequest
+            // ONE WORKER'S DAMAGED RECORD COSTS THAT WORKER, not the restore: this runs inside the wire, after the
+            // host has been replaced, and a throw would leave the session half restored.
+            try
             {
-                Id = spawn.AgentId,
-                Label = spawn.Description,
-                ParentAgentId = sessionAgentId,
-                Type = type with { Routing = routing },
-            });
-
-            var context = ContextOf(entries);
-            child.Agent.Context.Replace(context);
-            child.Agent.History?.Adopt(child.Agent.Context.Messages);
-
-            // ITS PAST, FOR ITS TAB: a view attaching to the feed is played what the feed has seen.
-            if (child.Feed is { } feed)
-                SessionReplay.PlayWorker(new ExportSource(new ExportHeader(spawn.AgentId, null, session.Header.WorkingDir,
-                    null, null, 0, 0), entries, true, entries[^1].Dir), feed);
-
-            // ITS LAST END AS ITS HISTORY HAS IT: the state of the last report it sent, over its last run — from the
-            // last message it was sent to the last it wrote. Not its whole record, which spans every run it had.
-            var lastRun = entries.LastOrDefault(e => e.Message is { Role: "user", ToolCallId: null, IsTaskList: false })?.At ?? entries[0].At;
-            if (store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(spawn.LastState, lastRun, entries[^1].At)))
-                revived++;
+                if (Revived(spawn, copies, session, parentAgentId, into) is { } why) left.Add($"{spawn.Name} ({why})");
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
+                or ArgumentException or System.Text.Json.JsonException)
+            {
+                left.Add($"{spawn.Name} ({e.Message})");
+            }
         }
-        return revived;
+        return left;
+    }
+
+    /// <summary>Brings one worker back, or says why it stays in the past.</summary>
+    private static string? Revived(Spawn spawn, List<string> copies, ExportSource session, string parentAgentId, Revival into)
+    {
+        var (factory, types, store) = (into.Factory, into.Types, into.Store);
+
+        // ALREADY HERE — this run's own, or one the user dismissed — is not taken again, and is checked before anything
+        // is built for it.
+        if (store.FindByAgentId(spawn.AgentId) is not null) return null;
+        if (store.Holds(spawn.Name)) return "its name is taken";
+
+        var entries = copies.Select(dir => Path.Combine(dir, spawn.AgentId))
+            .Select(dir => ExportSource.LoadDir(dir, new ExportHeader(spawn.AgentId, null, session.Header.WorkingDir, null, null, 0, 0)))
+            .Where(s => s is not null)
+            .SelectMany(s => s!.Entries)
+            .ToList();
+        if (entries.Count == 0) return "its record is missing";
+
+        // AS IT WAS SPAWNED: its type as configured now, on the provider the spawn asked for, in the folder the spawn
+        // confined it to — a worker revived unconfined could write where it never could. A type since removed or
+        // disabled, a provider no longer offered, or a folder no longer allowed leaves it in the past, where its rows
+        // still show it.
+        if (types.Resolve(spawn.Type) is not { } type) return $"no type '{spawn.Type}'";
+        var pick = type.Pick(spawn.Provider);
+        if (pick.Routing is not { } routing) return pick.Refusal ?? "no provider";
+        var root = ChildRoot.Resolve(spawn.Root, factory.Policy, factory.WorkingDir);
+        if (root.Refusal is { } outside) return outside;
+
+        var child = factory.Create(new SubAgentFactory.ChildRequest
+        {
+            Id = spawn.AgentId,
+            Label = spawn.Description,
+            ParentAgentId = parentAgentId,
+            Type = type with { Routing = routing },
+            Root = root.Root,
+        });
+
+        child.Agent.Context.Replace(ContextOf(entries));
+        child.Agent.History?.Adopt(child.Agent.Context.Messages);
+
+        // ITS PAST, FOR ITS TAB: a view attaching to the feed is played what the feed has seen.
+        if (child.Feed is { } feed)
+            SessionReplay.PlayWorker(new ExportSource(new ExportHeader(spawn.AgentId, null, session.Header.WorkingDir,
+                null, null, 0, 0), entries, true, entries[^1].Dir), feed);
+
+        // ITS LAST END AS ITS HISTORY HAS IT: the state of the last report it sent, over its last run — from the last
+        // message it was sent to the last it wrote. Not its whole record, which spans every run it had.
+        var lastRun = entries.LastOrDefault(e => e.Message is { Role: "user", ToolCallId: null, IsTaskList: false })?.At ?? entries[0].At;
+        return store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(spawn.LastState, lastRun, entries[^1].At))
+            ? null
+            : "its name is taken";
     }
 
     /// <summary>
-    /// The conversation a worker's history ends with: everything since its last compaction or clear — the summary a
-    /// compaction left included — under its first system prompt.
+    /// The conversation a worker's history ends with: everything since its last compaction or clear, the summary a
+    /// compaction left included, and not ending on calls it never answered.
+    ///
+    /// <para>NO SYSTEM PROMPT: the agent writes its own on every turn, from its type as configured now, so an old one
+    /// kept here would only be replaced.</para>
     /// </summary>
     internal static List<ChatMessage> ContextOf(IReadOnlyList<ExportEntry> entries)
     {
@@ -94,16 +129,31 @@ internal static class WorkerRevival
             }
         }
 
-        var messages = entries.Skip(start).Where(e => e.Kind == HistoryLine.Kinds.Message && e.Message is not null)
+        var messages = entries.Skip(start)
+            .Where(e => e.Kind == HistoryLine.Kinds.Message && e.Message is { Role: not "system" })
             .Select(e => e.Message!).ToList();
-        if (messages.FirstOrDefault()?.Role != "system"
-            && entries.FirstOrDefault(e => e.Message?.Role == "system")?.Message is { } system)
-            messages.Insert(0, system);
+
+        // NOT ENDING ON CALLS IT NEVER ANSWERED: a worker cut off mid-call left calls without results, and a provider
+        // refuses a request that ends that way — its first send back would fail. The calls and any results they did
+        // get go; what it said before them stays.
+        var last = messages.FindLastIndex(m => m.ToolCalls is { Count: > 0 });
+        if (last >= 0)
+        {
+            var answered = messages.Skip(last + 1).Select(m => m.ToolCallId).OfType<string>().ToHashSet(StringComparer.Ordinal);
+            if (messages[last].ToolCalls!.Any(c => c.Id is null || !answered.Contains(c.Id)))
+                messages.RemoveRange(last, messages.Count - last);
+        }
         return messages;
     }
 
     private sealed record Spawn(string AgentId, string Name, string Type, string? Description)
     {
+        /// <summary>The provider the spawn asked for, or null for its type's own.</summary>
+        public string? Provider { get; init; }
+
+        /// <summary>The folder the spawn confined it to, or null for its parent's.</summary>
+        public string? Root { get; init; }
+
         public string? LastState { get; set; }
     }
 
@@ -129,7 +179,11 @@ internal static class WorkerRevival
                 if (call.Name == Tool.Agent && !spawns.ContainsKey(childId))
                     spawns[childId] = new Spawn(childId, SubAgentEnvelope.NameOf(result.Message.Content) ?? childId,
                         Arg(call, "type") is { Length: > 0 } t ? t : AgentTypeCatalog.DefaultTypeName,
-                        Arg(call, "description"));
+                        Arg(call, "description"))
+                    {
+                        Provider = Arg(call, "provider"),
+                        Root = Arg(call, "root"),
+                    };
                 if (spawns.TryGetValue(childId, out var spawn)) spawn.LastState = SubAgentEnvelope.StateOf(result.Message.Content);
             }
         }

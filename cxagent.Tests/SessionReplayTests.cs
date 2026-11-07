@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using CxAgent.Core.Export;
 using CxAgent.Core.Models;
 using CxAgent.Core.Storage;
 using CxAgent.Web;
@@ -47,7 +48,9 @@ public sealed class SessionReplayTests : IDisposable
     private (SessionEventLog Log, ReplayShown Shown) Play(string agentId, int maxTurns = SessionReplay.DefaultTurns)
     {
         var log = new SessionEventLog("S");
-        var shown = SessionReplay.Play(_paths, agentId, log, log, maxTurns);
+        var shown = ExportSource.Load(_paths, agentId) is { } past
+            ? SessionReplay.Play(past, new ReplayTarget(log, log) { MaxTurns = maxTurns })
+            : new ReplayShown(0, 0, []);
         return (log, shown);
     }
 
@@ -158,7 +161,7 @@ public sealed class SessionReplayTests : IDisposable
 
         var log = new SessionEventLog("S");
         var reports = new List<Core.Sessions.ToolCallReport>();
-        SessionReplay.Play(_paths, "A1", log, log, called: reports.Add);
+        SessionReplay.Play(ExportSource.Load(_paths, "A1")!, new ReplayTarget(log, log) { Called = reports.Add });
 
         var ended = log.Since(0).Events.Single(e => Kind(e) == "toolEnded");
         Assert.Null(ended["ms"]);
@@ -187,7 +190,7 @@ public sealed class SessionReplayTests : IDisposable
         History("A2").ContinuesFrom("A1", first);
 
         var reports = new List<Core.Sessions.ToolCallReport>();
-        SessionReplay.Play(_paths, "A2", new SessionEventLog("S"), new SessionEventLog("T"), called: reports.Add);
+        SessionReplay.Play(ExportSource.Load(_paths, "A2")!, new ReplayTarget(new SessionEventLog("S"), new SessionEventLog("T")) { Called = reports.Add });
 
         Assert.Equal("A2", Assert.Single(reports).AgentId);
     }
@@ -212,5 +215,43 @@ public sealed class SessionReplayTests : IDisposable
 
         Assert.DoesNotContain(log.Since(0).Events, e => Kind(e) == "said");
         Assert.Equal(["first", "second"], log.Since(0).Events.Where(e => Kind(e) == "user").Select(e => e["text"]!.GetValue<string>()));
+    }
+
+    [Fact]
+    public void A_second_replay_into_the_same_view_draws_its_rows_too()
+    {
+        // A /sessions resume INTO A RESTORED TAB replays again below the first; numbering every replay from the same
+        // start reused the first one's turn and row ids, and the second's rows were taken for ones already drawn.
+        History("A1").Record([User("go"), Calls("c1", "run_shell", """{"command":"ls"}"""), Result("c1", "x"), Said("done")]);
+        var log = new SessionEventLog("S");
+        SessionReplay.Play(ExportSource.Load(_paths, "A1")!, new ReplayTarget(log, log));
+        SessionReplay.Play(ExportSource.Load(_paths, "A1")!, new ReplayTarget(log, log));
+
+        var events = log.Since(0).Events;
+        Assert.Equal(2, events.Count(e => Kind(e) == "toolEnded"));
+        Assert.Equal(4, events.Where(e => Kind(e) == "turnBegan").Select(e => e["turn"]!.GetValue<long>()).Distinct().Count());
+    }
+
+    [Fact]
+    public void A_real_compaction_at_the_top_of_a_resumed_copy_is_shown()
+    {
+        // A LARGE RESUMED SESSION CAN COMPACT ON ITS FIRST TURN, before anything else is written to the new copy; a real
+        // compaction is followed by its summary, which the false line a replaced system prompt left never is.
+        var first = new List<ChatMessage> { User("first"), Said("one") };
+        History("A1").Record(first);
+        var path = Path.Combine(new SessionFolder(_paths, "A2").Dir, "history.jsonl");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var summary = System.Text.Json.JsonSerializer.Serialize(Core.Sessions.SessionCompressor.SummaryMarker + "earlier]");
+        File.WriteAllLines(path,
+        [
+            """{"q":1,"at":"2026-11-07T07:16:20Z","k":"continues","prev":"A1"}""",
+            """{"q":2,"at":"2026-11-07T07:16:20Z","k":"compacted"}""",
+            "{\"q\":3,\"at\":\"2026-11-07T07:16:20Z\",\"k\":\"message\",\"m\":{\"Role\":\"assistant\",\"Content\":" + summary + "}}",
+            """{"q":4,"at":"2026-11-07T07:16:21Z","k":"message","m":{"Role":"user","Content":"second"},"from":"You"}""",
+        ]);
+
+        var (log, _) = Play("A2");
+
+        Assert.Single(log.Since(0).Events, e => Kind(e) == "said" && e["text"]!.GetValue<string>().Contains("compacted", StringComparison.Ordinal));
     }
 }

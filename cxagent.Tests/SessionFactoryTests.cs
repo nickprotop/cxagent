@@ -135,19 +135,65 @@ public class SessionFactoryTests
         {
             var session = new Session(dir);
             var (ports, watchers) = (0, 0);
-            session.Restored += () => watchers++;
+            session.Restored += _ => watchers++;
             SessionPorts Ports() => new()
             {
-                Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel(), Restored = () => ports++,
+                Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel(), Restored = _ => ports++,
             };
 
-            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider()), new SharedServices(), Ports(), AgentMode.Single);
+            var shared = new SharedServices { Logs = new Core.Storage.LogFileManager(new Core.Storage.AppPaths(Path.Combine(dir, "cfg"))) };
+            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider()), shared, Ports(), AgentMode.Single);
             Assert.Equal((0, 0), (ports, watchers));
 
             session.PendResume(new Core.Storage.SessionSnapshot("OLD", [new Core.Models.ChatMessage { Role = "user", Content = "a" }],
                 0, 0, DateTimeOffset.UtcNow, Edits: null, WorkingDir: dir));
-            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider()), new SharedServices(), Ports(), AgentMode.Single);
+            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider()), shared, Ports(), AgentMode.Single);
             Assert.Equal((1, 1), (ports, watchers));
+
+            // A /model OR CONFIG SWITCH CARRIES THE CONVERSATION THROUGH THE SAME PENDING SNAPSHOT, into a tab that
+            // already shows it: drawing the past again would print the whole conversation twice.
+            Assert.True(session.CarryToNextWire());
+            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider()), shared, Ports(), AgentMode.Single);
+            Assert.Equal((1, 1), (ports, watchers));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A WATCHER OF THE SESSION'S WORKERS KEEPS WATCHING ACROSS A RE-WIRE. Subscribed through the host, it was dropped
+    /// with the host a /model switch replaced, and the browser drew no card for any worker spawned after one.
+    /// </summary>
+    [Fact]
+    public async Task A_worker_spawned_after_a_rewire_is_still_announced()
+    {
+        var dir = Directory.CreateTempSubdirectory("cxagent-factory-").FullName;
+        try
+        {
+            var provider = new MockLlmProvider();
+            var session = new Session(dir);
+            SessionPorts Ports() => new() { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() };
+            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(provider), new SharedServices(), Ports(), AgentMode.FanOut);
+            var spawned = 0;
+            session.WorkerSpawned += _ => spawned++;
+
+            Assert.True(session.CarryToNextWire());
+            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(provider), new SharedServices(), Ports(), AgentMode.FanOut);
+
+            provider.EnqueueResponse(new Core.Llm.LlmResponse
+            {
+                Text = "",
+                ToolCalls = [new Core.Models.ToolCall { Id = "c1", Name = "agent",
+                    Arguments = System.Text.Json.JsonDocument.Parse("""{"prompt":"say hi","background":false}""").RootElement.Clone() }],
+                StopReason = "tool_use",
+            });
+            provider.EnqueueResponse(new Core.Llm.LlmResponse { Text = "hi", StopReason = "end_turn" });
+            provider.EnqueueResponse(new Core.Llm.LlmResponse { Text = "done", StopReason = "end_turn" });
+            await session.SendAndWait("spawn one");
+
+            Assert.Equal(1, spawned);
         }
         finally
         {

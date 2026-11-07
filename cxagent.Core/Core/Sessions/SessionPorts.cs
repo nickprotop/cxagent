@@ -31,9 +31,10 @@ public sealed record SessionPorts
 
     /// <summary>
     /// Called once on a wire that restored a saved conversation, after the new host exists — where a front end that
-    /// shows the restored past draws it into this wire's own observers. Null for one that does not.
+    /// shows the restored past draws it into this wire's own observers. Null for one that does not. Handed the restored
+    /// history, read once for the whole restore.
     /// </summary>
-    public Action? Restored { get; init; }
+    public Action<Export.ExportSource>? Restored { get; init; }
 
     /// <summary>How it asks the user something, or null when there is nobody to ask.</summary>
     public AskUser? Ask { get; init; }

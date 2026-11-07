@@ -164,6 +164,25 @@ public class ExportSourceTests : IDisposable
     }
 
     [Fact]
+    public void AWorkerBroughtBackByAResume_IsGatheredFromEveryCopyItWorkedIn()
+    {
+        // A REVIVED WORKER KEEPS ITS ID, and its later turns are written under the newer copy: read from the folder
+        // beside one call, its export was only the part before the resume, or only the part after.
+        Header("P1", "Parent");
+        Recorder("P1").Record([User("go")]);
+        new HistoryRecorder(Path.Combine(FolderOf("P1"), "KID", "history.jsonl")).Record([User("brief")]);
+        var later = Recorder("P2");
+        later.ContinuesFrom("P1", []);
+        later.Record([User("again")]);
+        new HistoryRecorder(Path.Combine(FolderOf("P2"), "KID", "history.jsonl")).Record([User("more work")]);
+
+        var source = ExportSource.Load(Paths, "P2")!;
+
+        Assert.Equal(["brief", "more work"], Contents(source.Child(source.Entries[0], "KID")!));
+        Assert.Equal(["brief", "more work"], Contents(source.Child(source.Entries[^1], "KID")!));
+    }
+
+    [Fact]
     public void AChild_IsFoundBesideItsParent_OrNotAtAll()
     {
         Header("P", "Parent");

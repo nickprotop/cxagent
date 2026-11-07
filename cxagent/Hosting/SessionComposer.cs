@@ -33,7 +33,7 @@ public interface IFrontEnd
     /// A wire has just restored a saved conversation: draw its past into this wire's <paramref name="sinks"/>. Nothing
     /// by default, for a front end whose watchers replay it themselves.
     /// </summary>
-    void ShowRestoredPast(Session session, SessionSinks sinks, AppPaths paths) { }
+    void ShowRestoredPast(Session session, SessionSinks sinks, Core.Export.ExportSource past) { }
 }
 
 /// <summary>What every session the composer wires shares with the others.</summary>
@@ -130,7 +130,7 @@ public sealed class SessionComposer(ComposerServices services)
         Services.Manager.Open(session, config, Ports(session, config, policy, sinks, ask) with
         {
             // THE PAST INTO THIS WIRE'S OWN SINKS, the tab that is about to show the session.
-            Restored = () => frontEnd.ShowRestoredPast(session, sinks, Services.Paths),
+            Restored = past => frontEnd.ShowRestoredPast(session, sinks, past),
         }, mode);
 
         // PERMISSION DECISIONS INTO HISTORY. Set on every wire because the session id does not exist until the

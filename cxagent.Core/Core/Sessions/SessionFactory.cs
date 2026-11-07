@@ -472,19 +472,28 @@ internal static class SessionFactory
         // A RESUMED SESSION IS SAVED AT ONCE, not at its first turn. Every resume retires the row it continues, so a
         // continuation left unsaved until it took a turn was listed nowhere: opened, looked at and closed — or its
         // process gone — and the conversation could no longer be found, and the next -c took an older one.
-        if (resumeSnapshot is not null)
+        //
+        // A RESTORE, NOT A RE-WIRE IN PLACE: a model or config switch carries the conversation the same way, into a tab
+        // that already shows it and a store that still keeps its workers.
+        if (resumeSnapshot is { Carried: false })
         {
             host.SaveSettings();
 
-            // ITS WORKERS COME BACK WITH IT, before its past is drawn — a restored card opens the worker it names.
-            if (shared.Logs?.Paths is { } paths && session.SessionId is { } agent)
-                WorkerRevival.Revive(paths, agent, childFactory, agentTypes, session.SubAgents);
+            // ITS HISTORY READ ONCE, back through every resume, for the workers and every view of the past alike.
+            if (shared.Logs?.Paths is { } paths && session.SessionId is { } agent
+                && Export.ExportSource.Load(paths, agent) is { } past)
+            {
+                // ITS WORKERS COME BACK WITH IT, before its past is drawn — a restored card opens the worker it names.
+                var left = WorkerRevival.Revive(past, agent, new Revival(childFactory, agentTypes, session.SubAgents));
+                if (left.Count > 0)
+                    session.NotifyWarning($"Not brought back: {string.Join(", ", left)}. Their work is in the history above.");
 
-            // THE PAST IS SHOWN, not only remembered: an agent that knows things the screen does not show reads as one
-            // that invented them. Into this wire's own ports first — the front end that opened it — and then to any
-            // other watcher; never through the fan-out, whose transcript recorder would write the past again.
-            ports.Restored?.Invoke();
-            session.RaiseRestored();
+                // THE PAST IS SHOWN, not only remembered: an agent that knows things the screen does not show reads as
+                // one that invented them. Into this wire's own ports first — the front end that opened it — and then to
+                // any other watcher; never through the fan-out, whose transcript recorder would write the past again.
+                ports.Restored?.Invoke(past);
+                session.RaiseRestored(past);
+            }
         }
 
         // THE TRANSCRIPT KEYS ON THE SESSION AND ITS FILE LIVES IN THE AGENT'S FOLDER, so the store

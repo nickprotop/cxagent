@@ -243,7 +243,7 @@ public sealed class SessionEventLogTests
     {
         // THE COUNTS ARE THIS RUN'S, as the terminal's are for a resumed session.
         var log = new SessionEventLog("S");
-        log.Replay(SavedSession(out var agent), agent);
+        log.Replay(Core.Export.ExportSource.Load(SavedSession(out var agent), agent)!);
         Assert.Equal((0, 0), (log.Turns, log.ToolCalls));
 
         log.UserTurnAdded(new ChatMessageId(9), "again");
@@ -251,10 +251,29 @@ public sealed class SessionEventLogTests
     }
 
     [Fact]
+    public void Live_turns_that_arrive_during_a_replay_are_still_counted()
+    {
+        // A LONG REPLAY AND A LIVE TURN ON ANOTHER THREAD: the replay's events are not this run's, the live one is.
+        var paths = new AppPaths(Directory.CreateTempSubdirectory("replay-").FullName);
+        var dir = new SessionFolder(paths, "A1").Dir;
+        Directory.CreateDirectory(dir);
+        new Core.Storage.HistoryRecorder(Path.Combine(dir, "history.jsonl")).Record(
+            [.. Enumerable.Range(0, 3000).SelectMany(i => new[] { new ChatMessage { Role = "user", Content = $"u{i}" }, new ChatMessage { Role = "assistant", Content = $"a{i}" } })]);
+        var log = new SessionEventLog("S");
+        var past = Core.Export.ExportSource.Load(paths, "A1")!;
+
+        var live = Task.Run(() => { for (var i = 0; i < 300; i++) log.UserTurnAdded(new ChatMessageId(i + 1), "live"); });
+        log.Replay(past);
+        live.Wait();
+
+        Assert.Equal(300, log.Turns);
+    }
+
+    [Fact]
     public void Replaying_a_saved_session_comes_before_anything_live()
     {
         var log = new SessionEventLog("S");
-        log.Replay(SavedSession(out var agent), agent);
+        log.Replay(Core.Export.ExportSource.Load(SavedSession(out var agent), agent)!);
         log.Said(new Message("live"));
 
         var kinds = log.Since(0).Events.Select(e => e["kind"]!.GetValue<string>()).ToList();
@@ -275,7 +294,7 @@ public sealed class SessionEventLogTests
             new ChatMessage { Role = "tool", ToolCallId = "c1", Content = """<agent id="CHILD" name="counter" state="completed">2</agent>""" },
         ]);
         var log = new SessionEventLog("S");
-        log.Replay(paths, "A1");
+        log.Replay(Core.Export.ExportSource.Load(paths, "A1")!);
 
         var events = log.Since(0).Events;
         var kinds = events.Select(e => e["kind"]!.GetValue<string>()).ToList();

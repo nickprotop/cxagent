@@ -245,9 +245,16 @@ public sealed partial class Session
     /// A wire restored a saved conversation into this session — at open, or by a later resume. For a watcher that
     /// shows the restored past; on the session, not its host, so it survives the re-wire that raises it.
     /// </summary>
-    public event Action? Restored;
+    public event Action<Export.ExportSource>? Restored;
 
-    internal void RaiseRestored() => Restored?.Invoke();
+    internal void RaiseRestored(Export.ExportSource past) => Restored?.Invoke(past);
+
+    /// <summary>
+    /// A worker was built for a spawn row — this session's, whichever host spawned it. On the session, not its host:
+    /// <see cref="ChildSpawned"/> belongs to the host and goes with it at a re-wire, which suits a front end that
+    /// subscribes on every wire and not a watcher that subscribes once.
+    /// </summary>
+    public event Action<Agents.SpawnedChild>? WorkerSpawned;
 
     /// <summary>A child was built for a spawn row, paired with the row that started it — so a live
     /// row can show what its child is doing while it does it.</summary>
@@ -328,6 +335,7 @@ public sealed partial class Session
         LeaveAside();
         Host?.Dispose();
         Host = host;
+        if (host is not null) host.ChildSpawned += child => WorkerSpawned?.Invoke(child);
 
         // REMEMBERED, NOT REPLACED — see _agentIds.
         if (host is not null) lock (_agentIds) _agentIds.Add(host.SessionId);
