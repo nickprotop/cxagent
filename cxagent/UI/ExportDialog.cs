@@ -123,18 +123,6 @@ public static class ExportDialog
 
     private sealed class State
     {
-        private static readonly (ExportParts Part, string Label)[] Options =
-        [
-            (ExportParts.ToolCalls, "Tool calls, one line each"),
-            (ExportParts.Diffs, "Edits as diffs"),
-            (ExportParts.Header, "Session header"),
-            (ExportParts.ToolResults, "Tool results, whole"),
-            (ExportParts.Thinking, "Thinking"),
-            (ExportParts.Compaction, "Compaction summaries"),
-            (ExportParts.SystemAndInjected, "System prompt & injected"),
-            (ExportParts.SubAgents, "Sub-agent conversations"),
-        ];
-
         private readonly ExportDialogHost _host;
         private readonly ExportDialogRequest _request;
         private readonly RadioGroup<ExportScope> _scope = new();
@@ -168,15 +156,15 @@ public static class ExportDialog
             WholeRadio = new RadioControl<ExportScope>(_scope, ExportScope.Whole, "Whole session");
             LastRadio = new RadioControl<ExportScope>(_scope, ExportScope.LastTurn, "Last turn");
             LastNRadio = new RadioControl<ExportScope>(_scope, ExportScope.LastTurns, "Last");
-            ReadableRadio = new RadioControl<bool>(_preset, false, "Readable · for a person");
-            FullRadio = new RadioControl<bool>(_preset, true, "Full · for an agent");
+            ReadableRadio = new RadioControl<bool>(_preset, false, ExportText.ReadableLabel);
+            FullRadio = new RadioControl<bool>(_preset, true, ExportText.FullLabel);
             FileRadio = new RadioControl<bool>(_destination, false, "File");
             ClipboardRadio = new RadioControl<bool>(_destination, true, "Clipboard");
             PresetLabel = new MarkupControl([""]);
             ExportButton = new ButtonBuilder().WithText(" Export ").WithColorRole(ColorScheme.Accent)
                 .OnClick((_, _) => _ = ExportAsync()).Build();
 
-            foreach (var (part, label) in Options)
+            foreach (var (part, label) in ExportText.Parts)
             {
                 if (part == ExportParts.SubAgents && request.IsAgent) continue;
                 Boxes[part] = new CheckboxControl(label);
@@ -313,14 +301,6 @@ public static class ExportDialog
 
         private static MarkupControl Muted(string text) => new([$"[{ColorScheme.MutedMarkup}]{text}[/]"]);
 
-        /// <summary>What the chosen detail includes, in a line, under the choice.</summary>
-        private static string Describe(string preset) => preset switch
-        {
-            "Readable" => "What was said and done — tool calls as lines, edits as diffs.",
-            "Full" => "All the model saw — tool output, thinking, the system prompt.",
-            _ => "Custom — your own mix, set under Advanced.",
-        };
-
         private void Apply(ExportChoices choices, ExportPrefill prefill)
         {
             _syncing = true;
@@ -349,7 +329,7 @@ public static class ExportDialog
             else if (options.PresetName == "Full") FullRadio.Select();
             else _preset.Clear();
             _syncing = false;
-            PresetLabel.SetContent([$"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(Describe(options.PresetName))}[/]"]);
+            PresetLabel.SetContent([$"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(ExportText.Describe(options.PresetName))}[/]"]);
 
             var toFile = !_destination.SelectedValue;
             _path.IsEnabled = toFile;
@@ -357,7 +337,7 @@ public static class ExportDialog
 
             var notes = new List<string>();
             if (_request.RunningNote is { } running) notes.Add(running);
-            if ((options.Parts & ExportParts.ToolResults) != 0) notes.Add("Full exports include tool output — check before sharing.");
+            if (ExportText.PartsNote(options.Parts) is { } partsNote) notes.Add(partsNote);
             _note.SetContent([notes.Count == 0 ? "" : $"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(string.Join("  ·  ", notes))}[/]"]);
             _note.Visible = notes.Count > 0;
 
@@ -400,10 +380,9 @@ public static class ExportDialog
             }
             else
             {
-                var line = $"≈ {ExportTarget.Size(stats.Bytes)} · {stats.Messages} message{(stats.Messages == 1 ? "" : "s")}";
-                if (!_request.IsAgent) line += $" · {stats.SubAgents} sub-agent{(stats.SubAgents == 1 ? "" : "s")}";
-                if (_destination.SelectedValue && stats.Bytes > ExportTarget.ClipboardWarnBytes)
-                    line += $" · [{ColorScheme.CautionMarkup}]large for the clipboard[/]";
+                var line = MarkupParser.Escape(ExportText.SizeLine(stats, _request.IsAgent));
+                if (_destination.SelectedValue && ExportText.LargeForClipboard(stats))
+                    line += $" · [{ColorScheme.CautionMarkup}]{ExportText.ClipboardWarning}[/]";
                 SizeLine = line;
                 ExportButton.IsEnabled = stats.Messages > 0;
             }

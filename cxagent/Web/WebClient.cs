@@ -9,6 +9,7 @@ using CxAgent.Core.Permissions;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
 using CxAgent.Hosting;
+using CxAgent.UI;
 
 namespace CxAgent.Web;
 
@@ -231,8 +232,14 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "leaveAside":
                 LeaveAside(Str(m, "sessionId"));
                 break;
+            case "exportForm":
+                ExportForm(Str(m, "sessionId"), Core.Commands.ExportPrefill.None);
+                break;
+            case "exportPreview":
+                ExportPreview(Str(m, "sessionId"), m);
+                break;
             case "export":
-                Export(Str(m, "sessionId"), m["full"] is JsonValue f && f.TryGetValue<bool>(out var full) && full);
+                Export(Str(m, "sessionId"), m);
                 break;
             case "answer":
                 Answer(m);
@@ -709,7 +716,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         switch (parts[0].ToLowerInvariant())
         {
             case "/export":
-                Export(session.Id, args.Equals("full", StringComparison.OrdinalIgnoreCase));
+                ExportForm(session.Id, Core.Commands.ExportCommand.Parse(args));
                 return true;
             case "/open":
                 OpenFile(session, args);
@@ -1378,30 +1385,112 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         if (_hub.PanelFor(session.Id) is { } panel) SendPanel(session.Id, panel);
     }
 
+    // ONE CONVERSATION PER FORM: read when the form opens and reused for every preview and the export itself, as the
+    // terminal's dialog does — the export is of the conversation as it stood when it was asked for, and a preview per
+    // tick of a checkbox does not re-read a long history from disk.
+    private readonly ConcurrentDictionary<string, LoadedExport> _exporting = new();
+
     /// <summary>
-    /// F12 for a browser: the conversation as markdown, readable or full, handed to the page to save. Read from the
+    /// F12 for a browser: what the terminal's export dialog offers — the parts under Advanced, in its words, and the
+    /// mix chosen last time, with what <c>/export</c>'s words set over it. The choices are remembered by the terminal
+    /// alone: config.json is not a browser's to write.
+    /// </summary>
+    private void ExportForm(string? sessionId, Core.Commands.ExportPrefill prefill)
+    {
+        if (ExportSourceOf(sessionId, fresh: true) is not { } loaded) return;
+        var choices = ExportPreference.Read(Path.Combine(S.Paths.ConfigDir, "config.json"));
+        Send(new JsonObject
+        {
+            ["type"] = "exportForm",
+            ["sessionId"] = loaded.Session.Id,
+            ["parts"] = new JsonArray([.. ExportText.Parts.Select(p =>
+                (JsonNode)new JsonObject { ["bit"] = (int)p.Part, ["label"] = p.Label })]),
+            ["chosen"] = (int)(prefill.Full == true ? Core.Export.ExportOptions.Full : choices.Parts),
+            ["scope"] = (prefill.Scope ?? Core.Export.ExportScope.Whole).ToString(),
+            ["turns"] = prefill.Turns ?? 3,
+            ["clipboard"] = choices.ToClipboard,
+            ["readable"] = ExportText.ReadableLabel,
+            ["full"] = ExportText.FullLabel,
+            ["readableParts"] = (int)Core.Export.ExportOptions.Readable,
+            ["fullParts"] = (int)Core.Export.ExportOptions.Full,
+        });
+    }
+
+    /// <summary>What the chosen options would export: the terminal's size line, the preset they make and its words,
+    /// and the warnings beside them.</summary>
+    private void ExportPreview(string? sessionId, JsonObject m)
+    {
+        if (ExportSourceOf(sessionId, fresh: false) is not { } loaded) return;
+        var options = ExportOptionsOf(m);
+        var stats = Core.Export.ExportMarkdown.Render(loaded.Source, options).Stats;
+        var notes = new JsonArray();
+        if (loaded.Session.IsBusy) notes.Add(ExportText.RunningNote);
+        if (ExportText.PartsNote(options.Parts) is { } note) notes.Add(note);
+        var toClipboard = m["clipboard"] is JsonValue c && c.TryGetValue<bool>(out var b) && b;
+        Send(new JsonObject
+        {
+            ["type"] = "exportPreview",
+            ["sessionId"] = loaded.Session.Id,
+            ["size"] = ExportText.SizeLine(stats, isAgent: false),
+            ["warn"] = toClipboard && ExportText.LargeForClipboard(stats) ? ExportText.ClipboardWarning : null,
+            ["messages"] = stats.Messages,
+            ["preset"] = options.PresetName,
+            ["describe"] = ExportText.Describe(options.PresetName),
+            ["notes"] = notes,
+        });
+    }
+
+    /// <summary>
+    /// The conversation as markdown, with the form's options, handed to the page to save or copy. Read from the
     /// session's saved history as the terminal's export is, so the two files are the same.
     /// </summary>
-    private void Export(string? sessionId, bool full)
+    private void Export(string? sessionId, JsonObject m)
     {
-        if (LiveSession(sessionId) is not { } session) { Error("No such open session."); return; }
+        if (ExportSourceOf(sessionId, fresh: false) is not { } loaded) return;
+        _exporting.TryRemove(loaded.Session.Id, out _);
+        var result = Core.Export.ExportMarkdown.Render(loaded.Source, ExportOptionsOf(m));
+        var title = SessionHeader.Read(new SessionFolder(S.Paths, loaded.AgentId))?.Title;
+        Send(new JsonObject
+        {
+            ["type"] = "export",
+            ["sessionId"] = loaded.Session.Id,
+            ["name"] = Core.Export.ExportTarget.DefaultFileName(title, DateTimeOffset.Now),
+            ["markdown"] = result.Markdown,
+            ["size"] = Core.Export.ExportTarget.Size(result.Stats.Bytes),
+        });
+    }
+
+    private sealed record LoadedExport(Session Session, string AgentId, Core.Export.ExportSource Source);
+
+    /// <summary>The session's conversation as an export reads it: kept from the form when there is one, otherwise
+    /// read now — saved first, since the newest of it is in memory until a turn ends. Null, said, when there is
+    /// nothing to export.</summary>
+    private LoadedExport? ExportSourceOf(string? sessionId, bool fresh)
+    {
+        if (LiveSession(sessionId) is not { } session) { Error("No such open session."); return null; }
+        if (!fresh && _exporting.TryGetValue(session.Id, out var kept)) return kept;
         session.SaveNow();
         if (session.SessionId is not { } agentId
             || Core.Export.ExportSource.Load(S.Paths, agentId, session.SpendLabel) is not { } source)
         {
             Notice(session.Id, "Nothing to export yet.", "Info");
-            return;
+            return null;
         }
-        var parts = full ? Core.Export.ExportOptions.Full : Core.Export.ExportOptions.Readable;
-        var result = Core.Export.ExportMarkdown.Render(source, new Core.Export.ExportOptions(Core.Export.ExportScope.Whole, 0, parts));
-        var title = SessionHeader.Read(new SessionFolder(S.Paths, agentId))?.Title;
-        Send(new JsonObject
-        {
-            ["type"] = "export",
-            ["sessionId"] = session.Id,
-            ["name"] = Core.Export.ExportTarget.DefaultFileName(title, DateTimeOffset.Now),
-            ["markdown"] = result.Markdown,
-        });
+        return _exporting[session.Id] = new(session, agentId, source);
+    }
+
+    /// <summary>The options a message names. A message with no parts is the older Readable/Full pair — a page loaded
+    /// before the form, still open.</summary>
+    private static Core.Export.ExportOptions ExportOptionsOf(JsonObject m)
+    {
+        var scope = Enum.TryParse<Core.Export.ExportScope>(Str(m, "scope"), out var s) ? s : Core.Export.ExportScope.Whole;
+        var turns = Math.Max(1, (int)(Long(m, "turns") ?? 3));
+        var parts = Long(m, "parts") is { } bits
+            ? (Core.Export.ExportParts)bits & Core.Export.ExportOptions.Full
+            : m["full"] is JsonValue f && f.TryGetValue<bool>(out var full) && full
+                ? Core.Export.ExportOptions.Full
+                : Core.Export.ExportOptions.Readable;
+        return new(scope, turns, parts);
     }
 
     private void Answer(JsonObject m)

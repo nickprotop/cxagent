@@ -369,6 +369,24 @@ body.in-aside .composer-box { border-color: var(--warn-line); }
 
 .btns.export { display: flex; gap: 8px; margin: 2px 0 6px; }
 
+/* THE EXPORT FORM: the terminal's dialog laid out the same way — quiet labels down the left, the choices beside them,
+   and what will be written at the bottom beside the buttons. */
+.export-dialog { cursor: auto; }
+.export-box { width: min(620px, 92vw); }
+.export-body { padding: 12px 14px 4px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.export-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.export-label { flex: 0 0 64px; color: var(--muted); font-size: 12.5px; }
+.export-row > :not(.export-label) { min-width: 0; }
+.export-turns { width: 4.5em; padding: 3px 6px; }
+.export-advanced { flex: 1; }
+.export-advanced summary { cursor: pointer; color: var(--strong); font-size: 12.5px; margin-bottom: 6px; }
+.export-describe, .export-notes { flex: 1; }
+.export-foot { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.export-size { color: var(--muted); font: 12.5px var(--mono); }
+.export-size .warn { color: var(--warn); }
+.export-row .muted { color: var(--muted); font-size: 12.5px; }
+@media (max-width: 560px) { .export-label { flex-basis: 100%; } .export-label:empty { display: none; } }
+
 /* ---- the editor ------------------------------------------------------------------------------------------------ */
 
 /* THE TEXTAREA SITS OVER ITS HIGHLIGHTED COPY: same font, size, padding and wrapping, so each character lands on its

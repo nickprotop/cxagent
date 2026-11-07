@@ -47,7 +47,7 @@ public sealed class ExportFlow(ConsoleWindowSystem system, AppPaths paths, strin
             session.WorkingDirectory,
             ExportPreference.Read(configPath),
             prefill,
-            session.IsBusy ? "A turn is running; its unfinished answer is not included." : null));
+            session.IsBusy ? ExportText.RunningNote : null));
     }
 
     /// <summary>The agent in an agent tab, alone.</summary>

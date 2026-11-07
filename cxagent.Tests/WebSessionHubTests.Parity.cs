@@ -4,6 +4,7 @@ using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
 using CxAgent.Hosting;
+using CxAgent.UI;
 using CxAgent.Web;
 using CxAgent.Web.Http;
 using Xunit;
@@ -121,6 +122,63 @@ public sealed partial class WebSessionHubTests
     }
 
     [Fact]
+    public async Task The_export_form_offers_the_terminals_parts_and_remembered_mix()
+    {
+        _model.EnqueueResponse(Reply("the answer"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "the question")));
+        await TurnDoneAsync(tab);
+
+        await tab.SendAsync(Msg("exportForm", ("sessionId", id)));
+        var form = await tab.NextAsync(Type("exportForm"));
+        Assert.Equal(ExportText.Parts.Select(p => p.Label),
+            form["parts"]!.AsArray().Select(p => p!["label"]!.GetValue<string>()));
+        Assert.Equal((int)Core.Export.ExportOptions.Readable, form["chosen"]!.GetValue<int>());
+        Assert.Equal(ExportText.ReadableLabel, form["readable"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task An_export_preview_reads_as_the_terminals_size_line()
+    {
+        _model.EnqueueResponse(Reply("the answer"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "the question")));
+        await TurnDoneAsync(tab);
+
+        await tab.SendAsync(Msg("exportForm", ("sessionId", id)));
+        await tab.NextAsync(Type("exportForm"));
+        await tab.SendAsync(Msg("exportPreview", ("sessionId", id), ("scope", "Whole"),
+            ("parts", (int)Core.Export.ExportOptions.Full), ("clipboard", false)));
+        var preview = await tab.NextAsync(Type("exportPreview"));
+        Assert.Matches(@"^≈ \d+ (B|KB) · 2 messages · 0 sub-agents$", preview["size"]!.GetValue<string>());
+        Assert.Equal(ExportText.Describe("Full"), preview["describe"]!.GetValue<string>());
+        Assert.Equal("Full", preview["preset"]!.GetValue<string>());
+        Assert.Contains(ExportText.PartsNote(Core.Export.ExportOptions.Full)!,
+            preview["notes"]!.AsArray().Select(n => n!.GetValue<string>()));
+    }
+
+    [Fact]
+    public async Task An_export_of_the_last_turn_leaves_the_earlier_ones_out()
+    {
+        _model.EnqueueResponse(Reply("first answer"));
+        _model.EnqueueResponse(Reply("second answer"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "first question")));
+        await TurnDoneAsync(tab);
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "second question")));
+        await TurnDoneAsync(tab);
+
+        await tab.SendAsync(Msg("export", ("sessionId", id), ("scope", "LastTurn"),
+            ("parts", (int)Core.Export.ExportParts.ToolCalls)));
+        var markdown = (await tab.NextAsync(Type("export")))["markdown"]!.GetValue<string>();
+        Assert.Contains("second question", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("first question", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_thinking_level_the_model_does_not_offer_is_said_not_set()
     {
         var (tab, id) = await CreatedAsync();
@@ -170,15 +228,18 @@ public sealed partial class WebSessionHubTests
     }
 
     [Fact]
-    public async Task Export_typed_as_a_command_downloads_too()
+    public async Task Export_typed_as_a_command_opens_the_form_set_as_its_words_say()
     {
         _model.EnqueueResponse(Reply("the answer"));
         var (tab, id) = await CreatedAsync();
         await using var _ = tab;
         await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "the question")));
         await TurnDoneAsync(tab);
-        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/export full")));
-        Assert.Contains("the question", (await tab.NextAsync(Type("export")))["markdown"]!.GetValue<string>(), StringComparison.Ordinal);
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/export full last 2")));
+        var form = await tab.NextAsync(Type("exportForm"));
+        Assert.Equal((int)Core.Export.ExportOptions.Full, form["chosen"]!.GetValue<int>());
+        Assert.Equal("LastTurns", form["scope"]!.GetValue<string>());
+        Assert.Equal(2, form["turns"]!.GetValue<int>());
     }
 
     // ---- the editor -----------------------------------------------------------------------------------------------

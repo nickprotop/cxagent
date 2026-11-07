@@ -139,7 +139,7 @@ public static class WebCommands
     private static string? OwnSummary(string name) => name switch
     {
         "/open" => "open a file in a tab beside the conversation",
-        "/export" => "download this conversation as markdown",
+        "/export" => "export this conversation as markdown — the terminal's choices, downloaded or copied",
         "/shell" => "a real terminal in a tab",
         "/config" => "edit config.json — not the browser's own access, users or folders",
         _ => null,

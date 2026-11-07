@@ -156,7 +156,9 @@ function handle(m) {
       else flash("That session is no longer there.");
       break;
     case "folders": drawFolders(m); break;
-    case "export": download(m.name, m.markdown); break;
+    case "exportForm": exportForm(m); break;
+    case "exportPreview": exportPreview(m); break;
+    case "export": exported(m); break;
     case "openedCommand": openedCommand(m); break;
     case "openedFile": openedFile(m); break;
     case "openedShell": openedShell(m); break;
@@ -1304,6 +1306,169 @@ function download(name, text) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+// F12 AS THE TERMINAL HAS IT: scope, detail, the parts under Advanced, where it goes, and what it will be before it is
+// made. The server sends the parts in the terminal's words and answers each change with the terminal's size line, so
+// nothing here decides what an export holds. A browser cannot write a file where the terminal would, so a download
+// stands in for one; the clipboard is offered where the page may write to it.
+const exporting = { form: null, timer: 0 };
+
+function exportForm(m) {
+  closeExportForm();
+  const f = { sessionId: m.sessionId, parts: m.chosen, scope: m.scope || "Whole", turns: m.turns || 3,
+    clipboard: !!m.clipboard && !!navigator.clipboard, preview: null };
+  exporting.form = f;
+
+  const back = el("div", "viewer export-dialog");
+  back.id = "export-dialog";
+  const box = el("div", "theirs-box export-box");
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-label", "Export session");
+  const head = el("div", "theirs-head");
+  head.append(el("b", null, "Export session"), el("span", "spacer"));
+  const x = button("×", "icon", closeExportForm);
+  x.setAttribute("aria-label", "Close");
+  head.append(x);
+
+  const body = el("div", "export-body");
+  const row = (label, ...items) => {
+    const r = el("div", "export-row");
+    r.append(el("span", "export-label", label), ...items);
+    return r;
+  };
+  const radio = (name, value, label, on, pick) => {
+    const l = el("label", "form-check");
+    const i = el("input");
+    i.type = "radio";
+    i.name = name;
+    i.value = value;
+    i.checked = on;
+    i.addEventListener("change", () => { if (i.checked) pick(value); });
+    l.append(i, document.createTextNode(label));
+    return l;
+  };
+
+  const turns = el("input", "form-input export-turns");
+  turns.type = "number";
+  turns.min = "1";
+  turns.value = String(f.turns);
+  turns.setAttribute("aria-label", "Turns");
+  turns.addEventListener("input", () => { f.turns = Math.max(1, parseInt(turns.value, 10) || 1); changed(); });
+  const scope = (v) => { f.scope = v; changed(); };
+  body.append(row("Scope", radio("export-scope", "Whole", "Whole session", f.scope === "Whole", scope),
+    radio("export-scope", "LastTurn", "Last turn", f.scope === "LastTurn", scope),
+    radio("export-scope", "LastTurns", "Last", f.scope === "LastTurns", scope), turns, el("span", "muted", "turns")));
+
+  // THE PRESETS SET THE BOXES, and the boxes name the preset: a mix that is neither leaves both unticked, as the
+  // terminal's does, and the line under them says Custom.
+  const readable = radio("export-preset", "readable", m.readable, false, () => setParts(m.readableParts));
+  const full = radio("export-preset", "full", m.full, false, () => setParts(m.fullParts));
+  const describe = el("div", "form-help export-describe");
+  body.append(row("Detail", readable, full), row("", describe));
+
+  const adv = el("details", "export-advanced");
+  adv.append(el("summary", null, "Advanced"));
+  const boxes = el("div", "form-checks");
+  const checks = [];
+  for (const p of m.parts) {
+    const l = el("label", "form-check");
+    const c = el("input");
+    c.type = "checkbox";
+    c.checked = (f.parts & p.bit) !== 0;
+    c.addEventListener("change", () => { f.parts = c.checked ? f.parts | p.bit : f.parts & ~p.bit; changed(); });
+    checks.push([p.bit, c]);
+    l.append(c, document.createTextNode(p.label));
+    boxes.append(l);
+  }
+  adv.append(boxes);
+  body.append(row("", adv));
+
+  const to = (v) => { f.clipboard = v === "clipboard"; changed(); };
+  const clip = radio("export-to", "clipboard", "Clipboard", f.clipboard, to);
+  if (!navigator.clipboard) {
+    clip.querySelector("input").disabled = true;
+    clip.title = "This page may not write to the clipboard — it is not served over https or from this machine";
+  }
+  body.append(row("Save to", radio("export-to", "download", "Download", !f.clipboard, to), clip));
+  const notes = el("div", "form-help export-notes");
+  body.append(row("", notes));
+
+  const foot = el("div", "export-foot");
+  const size = el("span", "export-size", "…");
+  const go = button("Export", "primary", () => {
+    if (!f.preview || f.preview.messages === 0) return;
+    send({ type: "export", sessionId: f.sessionId, scope: f.scope, turns: f.turns, parts: f.parts });
+  });
+  go.disabled = true;
+  foot.append(size, el("span", "spacer"), go, button("Cancel", null, closeExportForm));
+
+  box.append(head, body, foot);
+  back.append(box);
+  back.addEventListener("click", (e) => { if (e.target === back) closeExportForm(); });
+  document.body.append(back);
+  f.ui = { readable, full, describe, checks, notes, size, go };
+
+  function setParts(bits) {
+    f.parts = bits;
+    for (const [bit, c] of checks) c.checked = (bits & bit) !== 0;
+    changed();
+  }
+  function changed() {
+    f.preview = null;
+    size.textContent = "…";
+    go.disabled = true;
+    clearTimeout(exporting.timer);
+    exporting.timer = setTimeout(() => send({ type: "exportPreview", sessionId: f.sessionId, scope: f.scope, turns: f.turns,
+      parts: f.parts, clipboard: f.clipboard }), 150);
+  }
+  changed();
+  go.focus();
+}
+
+function exportPreview(m) {
+  const f = exporting.form;
+  if (!f || f.sessionId !== m.sessionId) return;
+  f.preview = m;
+  const ui = f.ui;
+  ui.readable.querySelector("input").checked = m.preset === "Readable";
+  ui.full.querySelector("input").checked = m.preset === "Full";
+  ui.describe.textContent = m.describe;
+  ui.notes.textContent = (m.notes || []).join("  ·  ");
+  ui.notes.hidden = !m.notes || m.notes.length === 0;
+  ui.size.replaceChildren(document.createTextNode(m.size));
+  if (m.warn) ui.size.append(" · ", el("span", "warn", m.warn));
+  ui.go.disabled = m.messages === 0;
+}
+
+async function exported(m) {
+  const f = exporting.form;
+  const toClipboard = !!(f && f.sessionId === m.sessionId && f.clipboard);
+  closeExportForm();
+  if (toClipboard) {
+    try {
+      await navigator.clipboard.writeText(m.markdown);
+      flashInfo("Copied " + m.size + " as markdown");
+      return;
+    } catch {
+      flash("The clipboard refused it — downloading instead.");
+    }
+  }
+  download(m.name, m.markdown);
+}
+
+function closeExportForm() {
+  clearTimeout(exporting.timer);
+  exporting.form = null;
+  const d = $("export-dialog");
+  if (d) d.remove();
+}
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && exporting.form) { e.preventDefault(); closeExportForm(); } });
+
+function flashInfo(text) {
+  const view = state.views.get(state.active);
+  if (view) append(view, el("div", "said Info", text));
+}
+
 // ---- images -------------------------------------------------------------------------------------------------------
 
 // THE TERMINAL'S IMAGE WINDOW: a click on a sent image shows it whole, over the page, until a click or Esc.
@@ -1950,12 +2115,11 @@ function drawSessionPane(p) {
   if (p.tokens.workers) pane.append(kv("By workers", tokens(p.tokens.workers)));
   if (p.tokens.cost != null) pane.append(kv("Cost", money(p.tokens.cost), "total"));
 
-  // F12: the conversation as markdown — readable for a person, full for an agent.
+  // F12: the conversation as markdown, chosen in the terminal's export form.
   pane.append(el("h3", null, "Export"));
   const exp = el("div", "btns export");
-  exp.append(button("Readable", null, () => send({ type: "export", sessionId: activeSessionId(), full: false })),
-    button("Full", null, () => send({ type: "export", sessionId: activeSessionId(), full: true })));
-  exp.title = "Download this conversation as markdown";
+  exp.append(button("Export…", null, () => { send({ type: "exportForm", sessionId: activeSessionId() }); if (!wide()) setPanel(false); }));
+  exp.title = "Export this conversation as markdown";
   pane.append(exp);
 
   if (state.access && state.access.shell) {

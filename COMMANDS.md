@@ -897,6 +897,11 @@ adds every tool result, the model's thinking, compaction summaries, the system p
 **Advanced** has each part as its own box; ticking one by hand makes the preset *Custom*. The dialog remembers what
 you chose last.
 
+**In the browser,** *Export…* in the session pane — or `/export`, with the same words — opens the same form: scope,
+detail, Advanced and the size line, in the terminal's words. A browser cannot write a file where the terminal would,
+so *Download* stands in for one; *Clipboard* is offered where the page may write to it (https, or this machine).
+The browser starts from what the terminal remembered and does not change it — config.json is the terminal's.
+
 **The file is a timeline.** Everything sits where it happened. A sub-agent's work is split into the stretches it
 worked in — the brief under the call that spawned it, a later `agent_send` under that send, a follow-up you typed
 in its tab at the time you typed it — each a folded `<details>` block. A background agent's report appears when

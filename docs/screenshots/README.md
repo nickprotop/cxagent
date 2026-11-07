@@ -433,13 +433,14 @@ model is picked from what the endpoint serves. The first save wires the session;
 ## Exporting a conversation
 
 ![The export dialog over the team session: whole session, Readable, saved to a file named 2026-11-07-put-a-team-on-this-one-worker.md, about 20 KB across 34 messages and 3 sub-agents](38-export.png "Terminal")
-![The browser's session pane at the same moment, with Readable and Full under Export](38-export-browser.png "Browser")
+![The browser's export form at the same moment: whole session, Readable, Download, and the same size line](38-export-browser.png "Browser")
 
 `F12` — or `/export` — writes the conversation as markdown. *Readable* is for a person: what was said
 and done, each tool call a line, edits as diffs. *Full* is for another agent to carry on from: every
 tool result, the thinking, the system prompt. The three sub-agents counted at the bottom go into the
 file where they worked, so it reads as a timeline. The size is known before anything is written. The
-browser's session pane has the same two, `Readable` and `Full`, without the dialog's choices.
+browser's *Export…* opens the same choices — scope, detail, Advanced and the size line — with a download in place of
+the file.
 
 ---
 
