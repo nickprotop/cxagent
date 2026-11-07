@@ -82,9 +82,9 @@ public sealed record SessionPorts
     /// <see cref="Session.UnwirePluginAsync"/> — and SessionFactory reads both this port and that
     /// registry into one merged delegate. An embedder supplying this sees its own tools offered
     /// exactly as before; a plugin loaded through the session is offered in addition, not instead.
-    /// Neither is routed through <see cref="Tools"/>'s collision handling — that set resolves a
-    /// duplicate name last-registration-wins, which is wrong for a plugin and right only for one
-    /// embedder's own tools composed together.</para>
+    /// Neither is routed through <see cref="Tools"/>'s collision handling — that set withdraws both
+    /// tools of a duplicate name (see <see cref="Jobs.AgentToolset"/>), a rule written for one
+    /// embedder's own tools composed together, not for a plugin arriving at a turn boundary.</para>
     ///
     /// <para>Null for every embedder that supplies nothing here, which is every embedder today.
     /// </para>
