@@ -200,12 +200,18 @@ public sealed class ExportSource
             }).ToList();
         }
 
+        // NOTHING WRITTEN YET IS A SESSION JUST STARTED, not one from before history was recorded: its folder has a
+        // header and no context, transcript or history line. Saying "not recorded" there told a browser opening a
+        // minutes-old session that it predated 0.9.30.
+        var transcript = Transcript(folder).ToList();
+        if (context is null && transcript.Count == 0) return [];
+
         var entries = new List<ExportEntry>
         {
             new(DateTimeOffset.MinValue, ExportEntry.Note, new ChatMessage { Role = "system", Content = NotRecorded },
                 null, null, folder.Dir),
         };
-        entries.AddRange(Transcript(folder));
+        entries.AddRange(transcript);
         return entries;
     }
 

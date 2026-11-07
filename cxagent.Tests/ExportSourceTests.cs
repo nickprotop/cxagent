@@ -53,6 +53,18 @@ public class ExportSourceTests : IDisposable
         Assert.Equal("Fix it", source.Header.Title);
     }
 
+    /// <summary>
+    /// A SESSION JUST STARTED IS NOT ONE FROM BEFORE 0.9.30: its folder holds a header and nothing yet — no history line,
+    /// no context, no transcript — and a browser opening it then was told its tool calls "were not recorded".
+    /// </summary>
+    [Fact]
+    public void A_session_with_nothing_written_yet_is_empty_not_unrecorded()
+    {
+        Header("FRESH", "");
+        var source = ExportSource.Load(Paths, "FRESH")!;
+        Assert.Empty(source.Entries);
+    }
+
     /// <summary>A RESUMED SESSION IS SEVERAL FOLDERS: each once, oldest first.</summary>
     [Fact]
     public void AChain_LoadsEveryFolderOnce_OldestFirst()
