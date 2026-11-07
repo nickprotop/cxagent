@@ -97,18 +97,6 @@ public sealed class CommandMenu
     /// around the selection, so arrowing past this scrolls rather than running off the end.</summary>
     private const int MaxRows = 10;
 
-    /// <summary>
-    /// Most paths an <c>@</c> collects before it stops looking.
-    ///
-    /// <para>NOT <see cref="MaxRows"/>, WHICH IS A DRAWING CAP. Reusing it here meant the walk
-    /// stopped after ten paths and a repository's other few thousand were simply absent — with the
-    /// ten chosen by directory order, so the file being typed was usually not among them. The menu
-    /// scrolls; what it can scroll THROUGH is this.</para>
-    ///
-    /// <para>Still bounded, because the recursive case is the one with the least typed and a walk
-    /// with no cap is one that reads an entire disk for a two-character prefix.</para>
-    /// </summary>
-    private const int MaxPaths = 200;
 
     private bool _suppressUntilEdit;
 
@@ -262,7 +250,7 @@ public sealed class CommandMenu
             && AtToken.At(text, caret()) is { } at)
         {
             _at = at;
-            ShowPaths(root, at);
+            ShowPaths(root, text, at);
             return;
         }
 
@@ -276,54 +264,11 @@ public sealed class CommandMenu
 
         if (!IsOpen) _custom = Custom?.Invoke() ?? [];
 
-        // A SPACE DESCENDS INTO THE COMMAND'S ARGUMENTS rather than closing the menu. Closing on a
-        // space is a discovery gap: the palette vanishes at exactly the moment a user has committed
-        // to a command and needs to know what may follow it, leaving `/mcp reload` and
-        // `/stats clear` reachable only by having read the docs.
-        List<Row> matches;
-        _lineIsComplete = false;
-        if (text.Contains(' '))
-        {
-            var args = SessionCommands.ArgumentsFor(text, Values, Registry, _custom);
-
-        // A ROW THAT CARRIES ITS PLACEHOLDER COMPLETES TO THE VERB IN FRONT OF IT. Rows like
-        // `show <name>` and `login <name>` are otherwise unselectable: Completes:false makes them
-        // display-only, so the only way to reach the server list behind them is to type the verb by
-        // hand — the list works, but only for someone who already knows the word the palette is
-        // showing them.
-        //
-        // Completing the WHOLE name would put "<name>" in the composer literally, which is the
-        // failure Completes:false guards against. Completing the part before the placeholder gives
-        // "…/mcp show " — a prefix with a trailing space, which is exactly what makes the palette
-        // open its next level and offer the servers.
-            // THE PREFIX IS EVERYTHING ALREADY COMMITTED TO, not just the command name. At one level
-            // down those are the same string; at two — "/sessions resume 3" — they are not, and
-            // completing to "/sessions 3" would produce a command the dispatcher rejects.
-            var lastSpace = text.LastIndexOf(' ');
-            var prefix = text[..lastSpace];
-
-            matches = [.. args.Select(a => new Row(
-                a.Name, a.Summary, CompletionFor(a, prefix)))];
-
-            // NOTHING LEFT TO OFFER ONCE A COMPLETE ARGUMENT IS TYPED. "/sessions new /some/path"
-            // still matched the verb `new`, so the menu sat over a line that was already finished
-            // and Enter chose that completion instead of submitting. A row completing to what the
-            // user has ALREADY typed is not a suggestion.
-            var all = matches.Count;
-            matches = [.. matches.Where(m =>
-                !string.Equals(m.Completion?.TrimEnd(), text.TrimEnd(), StringComparison.Ordinal))];
-            _lineIsComplete = matches.Count < all;
-        }
-        else
-        {
-            // THE HINT RIDES WITH THE SUMMARY, so a command that takes arguments does not look
-            // identical to one that does not. Without it `/stats` and `/clear` were the same row to
-            // a reader, and nothing on screen suggested one of them had more to offer.
-            matches = [.. SessionCommands.Matching(text, Registry, _custom).Select(c => new Row(
-                c.Name,
-                c.TakesArguments ? $"{c.Summary}  {c.Hint}" : c.Summary,
-                c.Name))];
-        }
+        // THE ROWS ARE ComposerCompletion's — the browser's list is built by the same call, so the two composers offer
+        // the same thing for the same keystrokes.
+        var commands = ComposerCompletion.Commands(text, new ComposerSources(Registry, Values, _custom, null));
+        _lineIsComplete = commands.LineIsComplete;
+        List<Row> matches = [.. commands.Rows.Select(r => new Row(r.Label, r.Summary, r.Text))];
 
         Render(matches);
     }
@@ -364,14 +309,12 @@ public sealed class CommandMenu
     /// rather than rendered: it describes a prefix the user has already moved past, and drawing it
     /// would make the menu flicker between two answers.</para>
     /// </summary>
-    private void ShowPaths(string root, AtToken at)
+    private void ShowPaths(string root, string text, AtToken at)
     {
         _walk?.Cancel();
         _walk?.Dispose();
         var cts = new CancellationTokenSource();
         _walk = cts;
-
-        var prefix = at.Prefix;
 
         _ = Task.Run(async () =>
         {
@@ -379,7 +322,7 @@ public sealed class CommandMenu
             {
                 await Task.Delay(DebounceMs, cts.Token);
 
-                var hits = PathCompletions.Find(root, prefix, MaxPaths);
+                var hits = ComposerCompletion.Paths(text, at, root, ComposerCompletion.DefaultMaxPaths);
                 if (cts.Token.IsCancellationRequested) return;
 
                 // ONTO THE UI THREAD TO DRAW. Everything above this line touches the filesystem and
@@ -390,8 +333,7 @@ public sealed class CommandMenu
                     // this running, and a stale render is exactly what cancelling is for.
                     if (cts.Token.IsCancellationRequested) return;
 
-                    Render([.. hits.Select(h => new Row(
-                        h.Display, h.IsDirectory ? "directory" : "file", h.Path))]);
+                    Render([.. hits.Select(h => new Row(h.Label, h.Summary, h.Text))]);
                 }, "commandMenu.Delay");
             }
             catch (OperationCanceledException)
@@ -523,27 +465,14 @@ public sealed class CommandMenu
                 // list, having to type a character and delete it to summon one. Suppression exists
                 // for a COMPLETE command — "/help" — where the next Enter belongs to the submit path
                 // and reopening would capture it.
-                // AN @ ROW SPLICES; A COMMAND ROW REPLACES. A command IS the line, so replacing the
-                // composer is right for it. An @ reference sits mid-sentence — "fix the bug in
-                // @Shell" — and replacing there would delete every word in front of it. The two are
-                // told apart by the mode this menu is in, which is the reason it is a field.
+                // THE ROW CARRIES THE WHOLE LINE IT GIVES — see ComposerCompletion: a command row replaces the line, an @
+                // row splices into the sentence around it, keeping the @ on a directory so the list goes on to what is
+                // inside, and dropping it on a file so the model is sent an ordinary path.
                 //
                 // A DIRECTORY LEAVES THE MENU OPEN because its completion ends in a separator, which
                 // is the same rule "/mcp show " already follows: a completion that is not finished
                 // should offer what comes next rather than making the user summon it.
-                // THE @ SURVIVES A DIRECTORY, and goes on a file. Descending needs the marker: a
-                // completion that dropped it would leave "look at src/UI/" — plain text with no
-                // reference in it — and the menu would have nothing to reopen on. Keeping it while
-                // the path is unfinished is what makes "@src" → "@src/UI/" → "@src/UI/File.cs" one
-                // continuous act rather than three separate ones.
-                //
-                // It is removed on a FILE because the reference is then complete, and what the model
-                // receives must be an ordinary path in an ordinary sentence.
-                var text = _at is { } at
-                    ? Splice(CurrentComposer?.Input ?? string.Empty, at,
-                             picked.Completion.EndsWith('/') ? "@" + picked.Completion
-                                                             : picked.Completion)
-                    : picked.Completion;
+                var text = picked.Completion;
 
                 _suppressUntilEdit = !text.EndsWith(' ') && !text.EndsWith('/');
                 _chosenText = text;
