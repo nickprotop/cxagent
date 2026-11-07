@@ -1651,18 +1651,22 @@ function startWorkerCall(view, m, card) {
 }
 
 // A WORKER'S FINISHED CALL, as a row of its card's table — what the terminal's expanded worker row shows. A foreground
-// worker's calls already arrive live (startWorkerCall), so its card takes these only when nothing came that way.
+// worker's calls already arrive live (startWorkerCall), so its card takes these only when nothing came that way. THE
+// CELLS COME FORMATTED from the server's CallTable, the terminal's own: this draws them and decides nothing.
 function workerCall(view, m) {
   if (m.agent === view.agentId) return;
   const card = cardFor(view, m.agent);
   if (!card || card.live) return;
-  if (!card.table) { card.table = el("table", "calls"); card.body.insertBefore(card.table, card.open); }
-  const ok = m.outcome === "success";
+  if (!card.table) {
+    card.summary = el("div", "calls-summary");
+    card.table = el("table", "calls");
+    card.body.insertBefore(card.summary, card.open);
+    card.body.insertBefore(card.table, card.open);
+  }
+  card.summary.textContent = m.summary || "";
   const row = el("tr");
-  const size = m.chars >= 1024 ? (m.chars / 1024).toFixed(1) + " kB" : m.chars + " B";
-  row.append(el("td", null, ok ? "✓" : "✗"), el("td", null, m.tool), el("td", null, m.target || ""),
-    el("td", null, m.ms < 1000 ? m.ms + "ms" : (m.ms / 1000).toFixed(1) + "s"), el("td", null, size));
-  row.firstChild.className = ok ? "mark-ok" : "mark-bad";
+  row.append(el("td", "mark-" + m.tone, m.mark), el("td", null, m.tool), el("td", null, m.target || ""),
+    el("td", null, m.ms), el("td", null, m.out));
   card.table.append(row);
 }
 

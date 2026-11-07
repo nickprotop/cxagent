@@ -2453,50 +2453,8 @@ public sealed class InlineJobSink : IToolObserver
     /// </param>
     private static string Timetable(IReadOnlyList<ToolCallReport> calls, LiveRun? live = null)
     {
-        // EVERY NUMBER THROUGH DisplayNumber, and the duration especially. A bare ":0.0" takes the
-        // CURRENT CULTURE's decimal separator, so the same run reads "6.2s" or "6,2s" depending on
-        // the machine — and a comma reads as a GROUP separator to a reader expecting the other.
-        var parts = new List<string>
-        {
-            $"{DisplayNumber.Grouped(calls.Count)} call{(calls.Count == 1 ? "" : "s")}",
-        };
-
-        if (calls.Count > 0)
-        {
-            // "ACROSS", NOT A SECOND COUNT. This is how many DISTINCT tools the calls used, and
-            // "11 calls · 3 tools" reads as two tallies of the same thing that disagree — the table
-            // below it lists eleven rows. The preposition says the second number measures the first
-            // rather than competing with it.
-            var tools = calls.Select(c => c.ToolName).Distinct(StringComparer.Ordinal).Count();
-            parts.Add($"across {DisplayNumber.Grouped(tools)} tool{(tools == 1 ? "" : "s")}");
-
-            // TIME SPENT IN TOOLS, WHICH THE HEADER'S CLOCK IS NOT. That clock measures how long the
-            // WORKER has been alive — thinking, waiting on the provider, everything between calls —
-            // and this measures only the calls themselves. A child that thinks for four minutes and
-            // calls for three seconds reads 00h04m03s up there and 3.0s here, and the GAP between
-            // them is the informative part: it says where the time actually went. Two measurements,
-            // not one fact in two shapes, so dropping either loses something.
-            //
-            // SUMMED FROM THE CALLS rather than taken as a parameter, so it cannot disagree with the
-            // rows listed below it.
-            //
-            // NOT FOR A REPLAYED CALL, whose time history does not keep: a total over it would be made up.
-            if (!calls.Any(c => c.Untimed))
-                parts.Add($"{DisplayNumber.Fixed(calls.Sum(c => c.DurationMs) / 1000.0, 1)}s in tools");
-        }
-
-        // ZERO COUNTS ARE OMITTED. "16 calls · 4 tools · 6.2s · 0 failed · 0 denied" makes the
-        // reader check two words before discarding them, on every row that went fine — and the
-        // whole point of the line is that a bad run announces itself.
-        AddCount(parts, calls, "failed", "failed");
-        AddCount(parts, calls, "denied", "denied");
-        AddCount(parts, calls, "cancelled", "cancelled");
-
-        // OUTSIDE THE SANDBOX is not an outcome — the call may well have succeeded — so it is counted on its own.
-        if (calls.Count(c => c.Uncontained) is > 0 and var uncontained)
-            parts.Add($"{DisplayNumber.Grouped(uncontained)} uncontained");
-
-        var summary = string.Join(" · ", parts);
+        // THE LINE AND THE CELLS ARE CallTable's, so a browser's worker card reads the same calls the same way.
+        var summary = CallTable.Summary(calls);
         if (calls.Count == 0 && live?.InFlight is null) return summary;
 
         var rows = new List<string>
@@ -2517,9 +2475,8 @@ public sealed class InlineJobSink : IToolObserver
             var tool = Md.CodeSpan(call.ToolName);
             var target = string.IsNullOrWhiteSpace(call.Target) ? "" : Md.EscapeCell(call.Target!);
 
-            var outCell = live is null ? $" {Bytes(call.ResultChars)} |" : "";
-            rows.Add($"| {Mark(call.Outcome)} | {tool} | {target} "
-                   + $"| {(call.Untimed ? "" : DisplayNumber.Grouped(call.DurationMs))} |{outCell}");
+            var outCell = live is null ? $" {CallTable.Bytes(call.ResultChars)} |" : "";
+            rows.Add($"| {CallTable.Mark(call.Outcome)} | {tool} | {target} | {CallTable.Ms(call)} |{outCell}");
         }
 
         if (live?.InFlight is { } running) rows.Add(InFlightRow(running));
@@ -2588,42 +2545,5 @@ public sealed class InlineJobSink : IToolObserver
         var frame = (int)(Environment.TickCount64 / SpinnerIntervalMs % frames.Length);
         return frames[frame].ToString();
     }
-
-    /// <summary>Appends "<c>2 denied</c>" when there are any, and nothing when there are none.</summary>
-    private static void AddCount(List<string> parts, IReadOnlyList<ToolCallReport> calls,
-        string outcome, string word)
-    {
-        var n = calls.Count(c => string.Equals(c.Outcome, outcome, StringComparison.Ordinal));
-        if (n > 0) parts.Add($"{DisplayNumber.Grouped(n)} {word}");
-    }
-
-    /// <summary>
-    /// The outcome glyph, and FOUR of them rather than two.
-    ///
-    /// <para>✗ ran and broke; ⊘ never ran, because permission was refused; – never finished, because
-    /// the user stopped it. Those are three different problems with three different fixes, and a
-    /// column that renders them all as "failed" tells a reader to go and debug the wrong one.</para>
-    /// </summary>
-    private static string Mark(string outcome) => outcome switch
-    {
-        "succeeded" => "✓",
-        "denied" => "⊘",
-        "cancelled" => "–",
-        _ => "✗",
-    };
-
-    /// <summary>
-    /// How much the result put into the child's context, at the scale a reader compares by.
-    ///
-    /// <para>CHARACTERS COUNTED AS BYTES, which the column header says by naming kB. ResultChars is
-    /// what the loop measures — the figure that says whether a tool is cheap or is quietly filling
-    /// the window — and re-encoding it here to be exact about multi-byte runes would spend real work
-    /// on a digit nobody reads at this scale.</para>
-    /// </summary>
-    private static string Bytes(int chars) =>
-        chars <= 0 ? "0"
-        : chars < 1024 ? $"{DisplayNumber.Grouped(chars)} B"
-        : chars < 1024 * 1024 ? $"{DisplayNumber.Fixed(chars / 1024.0, 1)} kB"
-        : $"{DisplayNumber.Fixed(chars / (1024.0 * 1024.0), 1)} MB";
 
 }

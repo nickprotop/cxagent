@@ -350,16 +350,31 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     /// A call one of the session's agents finished — the page keeps a worker's as the rows of its card's call table, the
     /// table the terminal's expanded worker row shows. Every agent's arrives; the page leaves the session's own out.
     /// </summary>
-    public void WorkerCall(Core.Sessions.ToolCallReport call) => Append("workerCall", new JsonObject
+    public void WorkerCall(Core.Sessions.ToolCallReport call)
     {
-        ["agent"] = call.AgentId,
-        ["call"] = call.CallId,
-        ["tool"] = call.ToolName,
-        ["target"] = call.Target,
-        ["outcome"] = call.Outcome,
-        ["ms"] = call.DurationMs,
-        ["chars"] = call.ResultChars,
-    });
+        lock (_gate)
+        {
+            // THE ROW AS THE TERMINAL DRAWS IT — CallTable's mark, time and size — and the line over the table, counted
+            // over this worker's calls so far, so the page draws cells rather than re-deciding what an outcome means.
+            if (!_calls.TryGetValue(call.AgentId, out var calls)) _calls[call.AgentId] = calls = [];
+            calls.Add(call);
+            Append("workerCall", new JsonObject
+            {
+                ["agent"] = call.AgentId,
+                ["call"] = call.CallId,
+                ["mark"] = CxAgent.UI.CallTable.Mark(call.Outcome),
+                ["tone"] = CxAgent.UI.CallTable.Tone(call.Outcome),
+                ["tool"] = call.ToolName,
+                ["target"] = call.Target,
+                ["ms"] = CxAgent.UI.CallTable.Ms(call),
+                ["out"] = CxAgent.UI.CallTable.Bytes(call.ResultChars),
+                ["summary"] = CxAgent.UI.CallTable.Summary(calls),
+            });
+        }
+    }
+
+    // EACH WORKER'S CALLS SO FAR, for the summary line its next row carries.
+    private readonly Dictionary<string, List<Core.Sessions.ToolCallReport>> _calls = new(StringComparer.Ordinal);
 
     /// <summary>
     /// What is waiting for the running turn, whole — or empty once the turn took it or it was handed back. The page
@@ -377,6 +392,7 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         lock (_gate)
         {
             _events.Clear();
+            _calls.Clear();
             Append("cleared", new JsonObject());
         }
     }

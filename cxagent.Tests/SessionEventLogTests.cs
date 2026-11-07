@@ -320,20 +320,51 @@ public sealed class SessionEventLogTests
         Assert.Equal("cleared", back.Events[0]["kind"]!.GetValue<string>());
     }
 
-    /// <summary>A WORKER'S FINISHED CALL is told to the page, by whose it was — the rows the terminal's expanded worker
-    /// row shows as its call table.</summary>
+    private static CxAgent.Core.Sessions.ToolCallReport Call(string id, string outcome, long ms = 42, int chars = 1200) =>
+        new(id, "child-1", "read_file", "file", outcome, ms, chars, DateTimeOffset.UtcNow) { Target = "Agent.cs" };
+
+    /// <summary>A WORKER'S FINISHED CALL is told to the page as the terminal's row: its mark, tool, target, time and
+    /// size already formatted, so the two tables cannot read one call two ways.</summary>
     [Fact]
-    public void A_workers_finished_call_is_an_event_naming_the_worker()
+    public void A_workers_finished_call_is_the_terminals_row()
     {
         var log = new SessionEventLog("S");
-        log.WorkerCall(new CxAgent.Core.Sessions.ToolCallReport("c1", "child-1", "read_file", "file", "success", 42, 1200,
-            DateTimeOffset.UtcNow) { Target = "Agent.cs" });
+        log.WorkerCall(Call("c1", "succeeded", ms: 1234, chars: 1200));
         var e = log.Since(0).Events.Single();
         Assert.Equal("workerCall", e["kind"]!.GetValue<string>());
         Assert.Equal("child-1", e["agent"]!.GetValue<string>());
+        Assert.Equal("✓", e["mark"]!.GetValue<string>());
+        Assert.Equal("ok", e["tone"]!.GetValue<string>());
         Assert.Equal("read_file", e["tool"]!.GetValue<string>());
         Assert.Equal("Agent.cs", e["target"]!.GetValue<string>());
-        Assert.Equal(42, e["ms"]!.GetValue<long>());
-        Assert.Equal(1200, e["chars"]!.GetValue<int>());
+        Assert.Equal("1,234", e["ms"]!.GetValue<string>());
+        Assert.Equal("1.2 kB", e["out"]!.GetValue<string>());
+        Assert.Equal("1 call · across 1 tool · 1.2s in tools", e["summary"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("succeeded", "✓", "ok")]
+    [InlineData("failed", "✗", "bad")]
+    [InlineData("denied", "⊘", "skip")]
+    [InlineData("cancelled", "–", "skip")]
+    public void Each_outcome_has_the_terminals_mark(string outcome, string mark, string tone)
+    {
+        var log = new SessionEventLog("S");
+        log.WorkerCall(Call("c1", outcome));
+        var e = log.Since(0).Events.Single();
+        Assert.Equal(mark, e["mark"]!.GetValue<string>());
+        Assert.Equal(tone, e["tone"]!.GetValue<string>());
+    }
+
+    /// <summary>THE SUMMARY COUNTS THE WORKER'S CALLS SO FAR, the bad ones named, as the terminal's line over its
+    /// table does.</summary>
+    [Fact]
+    public void The_summary_counts_a_workers_calls_so_far()
+    {
+        var log = new SessionEventLog("S");
+        log.WorkerCall(Call("c1", "succeeded"));
+        log.WorkerCall(Call("c2", "failed"));
+        var last = log.Since(0).Events.Last();
+        Assert.Equal("2 calls · across 1 tool · 0.1s in tools · 1 failed", last["summary"]!.GetValue<string>());
     }
 }
