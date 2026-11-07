@@ -257,9 +257,10 @@ opens a real PTY in a tab beside `Chat`, and the browser's `Open a shell` opens 
 colours are the giveaway — `git` and `ls` emit them only when they believe they are talking to a
 terminal.
 
-In the terminal the checkbox **copy back on exit** is off by default, because a shell you opened for
-yourself is a convenience rather than a channel to the agent; `Copy now` sends what it has shown so
-far. The browser's shell has `Copy to transcript`.
+In both, the checkbox **copy back on exit** is off by default, because a shell you opened for yourself
+is a convenience rather than a channel to the agent; `Copy now` sends what it has shown so far. (The
+browser picture was taken before its shell had the checkbox, and shows the earlier `Copy to
+transcript`.)
 
 ![The model answering what was just done in the terminal: the two command lines and what each showed, including the stash on bulk-threshold](24-shell-transcript.png "Terminal")
 ![The same answer in the browser](24-shell-transcript-browser.png "Browser")

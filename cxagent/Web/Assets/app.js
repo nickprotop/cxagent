@@ -721,8 +721,9 @@ function shellEnded(view, exitCode, why) {
   view.ended = true;
   view.exitCode = exitCode;
   if (view.term) view.term.write("\r\n\x1b[2m[" + (why || ("exited" + (exitCode != null ? " " + exitCode : ""))) + "]\x1b[0m\r\n");
-  // TOLD ON EXIT, as the terminal's tab copies back when its shell ends: queued for the next message, no turn of its own.
-  if (!why) reportShell(view, exitCode);
+  // TOLD ON EXIT ONLY WHEN ASKED, as the terminal's tab does: its "copy back on exit" is off by default — a shell you
+  // opened is yours, and one worth sharing says so. Queued for the next message, no turn of its own.
+  if (!why && view.copyBack) reportShell(view, exitCode);
   drawTabs();
   if (state.active === view.id) drawWorkerHead();
 }
@@ -736,7 +737,17 @@ function drawShellHead(view, head) {
   where.title = view.folder;
   head.append(where, el("span", "spacer"));
   head.append(button("Back to session", "ghost", () => activate(view.parent)));
-  head.append(button("Copy to transcript", null, () => reportShell(view, view.ended ? view.exitCode : null)));
+  // A CHECKBOX FOR EXIT, A BUTTON FOR NOW — the terminal's pair: the decision about exit is made before the shell ends.
+  if (!view.ended) {
+    const box = el("label", "check");
+    const tick = el("input");
+    tick.type = "checkbox";
+    tick.checked = !!view.copyBack;
+    tick.addEventListener("change", () => { view.copyBack = tick.checked; });
+    box.append(tick, document.createTextNode(" copy back on exit"));
+    head.append(box);
+  }
+  head.append(button("Copy now", null, () => reportShell(view, view.ended ? view.exitCode : null)));
   head.append(button(view.ended ? "Close" : "End shell", "danger", () => dropView(view.id)));
 }
 

@@ -1140,7 +1140,7 @@ F8 › Web › Browser access, or `web.allow` in [CONFIG.md](CONFIG.md#web--the-
 |---|---|---|
 | `plugins` | on | **Marketplace**: F2's page — install, update, activate, auto-load, uninstall, a plugin's README and settings, stores and folders. A download still asks first, and a plugin still shows its hash and asks before it loads. `/plugin` too |
 | `openAnywhere` | off | `/open` beyond the web folders: any file the terminal's `/open` reaches |
-| `shell` | off | `/shell`, or **Open a shell**: your shell on a real terminal in a tab, in the session's folder — as you, outside the sandbox, with no prompts. What it showed goes with your next message when it exits, or on Copy to transcript |
+| `shell` | off | `/shell`, or **Open a shell**: your shell on a real terminal in a tab, in the session's folder — as you, outside the sandbox, with no prompts. As in the terminal's: **copy back on exit** sends what it showed with your next message when it ends (off until you tick it), and **Copy now** sends it at once |
 | `config` | off | `/config` — the browser's name for F8, which the terminal reaches as `/providers` — or **Settings**: F8's tabs as forms, and config.json as text. Keys show only their last four characters. `/trust`, `/init`, `/think --save`, `/mcp reload` and `/hooks review` too. A hook's or a local MCP server's command also needs `shell`: it runs as you |
 
 A browser never changes anything in the `web` block — the switches, the users, the folders, the
