@@ -116,7 +116,7 @@ public sealed partial class Session
 
     private static string Described(MemoryNote note) => note.Description.Length > 0 ? note.Description : "no description";
 
-    /// <summary><c>/memory</c>: every note this session sees — the user's, then this project's — with where they live.</summary>
+    /// <summary><c>/memory</c>: every note this session sees — the system notes, then this project's — with where they live.</summary>
     public CommandStatus ListMemory()
     {
         if (Memory is not { } store)
@@ -128,8 +128,8 @@ public sealed partial class Session
         var sb = new StringBuilder();
         foreach (var (scope, heading, folder) in new[]
                  {
-                     (MemoryScope.Global, "About you", store.GlobalFolder),
-                     (MemoryScope.Project, $"About this project ({store.Project ?? "no folder"})", store.ProjectFolder),
+                     (MemoryScope.System, "System", store.SystemFolder),
+                     (MemoryScope.Project, $"Project ({store.Project ?? "no folder"})", store.ProjectFolder),
                  })
         {
             var mine = notes.Where(n => n.Scope == scope).ToList();
@@ -155,7 +155,7 @@ public sealed partial class Session
         if (Memory is not { } store) return new MemoryForgetting(null, "Memory is off in this session.");
         if (name.Length == 0) return new MemoryForgetting(null, "Name the note: /memory forget <name>. /memory lists them.");
         if (store.Find(name) is not { } note) return new MemoryForgetting(null, $"There is no note called '{name}'. /memory lists them.");
-        var scope = note.Scope == MemoryScope.Global ? "global" : "this project's";
+        var scope = note.Scope == MemoryScope.System ? "system" : "project";
         return new MemoryForgetting(note,
             $"Forget {scope} note '{note.Name}'{(note.Description.Length > 0 ? $" — {note.Description}" : "")}? The file is deleted and cannot be brought back.");
     }

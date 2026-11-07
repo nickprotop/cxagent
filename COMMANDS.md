@@ -510,8 +510,8 @@ See [CONFIG.md](CONFIG.md#skills) for where skills live and what a `SKILL.md` lo
 ## `/memory`
 
 The agent keeps notes across sessions with its `memory` tool: corrections and preferences you state,
-how you like to work, and facts about the project the code does not say. **About you** notes are read in
-every folder; **about this project** notes only in this one. Each is a markdown file in cxagent's own
+how you like to work, and facts about the project the code does not say. **System** notes, about you, are read in
+every folder; **project** notes only in this one. Each is a markdown file in cxagent's own
 folder — never in the repository.
 
 `/memory` lists both sets, with the folder each lives in. `/memory open <name>` opens a note in a tab;

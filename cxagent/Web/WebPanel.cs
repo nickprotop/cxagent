@@ -109,7 +109,7 @@ internal static class WebPanel
                 ? new JsonArray([.. memory.List().Select(n => (JsonNode)new JsonObject
                 {
                     ["name"] = n.Name,
-                    ["scope"] = n.Scope == Core.Memory.MemoryScope.Global ? "global" : "project",
+                    ["scope"] = n.Scope == Core.Memory.MemoryScope.System ? "system" : "project",
                     ["description"] = n.Description,
                 })])
                 : null,

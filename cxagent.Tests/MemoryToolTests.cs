@@ -48,7 +48,7 @@ public sealed class MemoryToolTests : IDisposable
     [Fact]
     public void A_refused_write_says_why()
     {
-        var reply = new MemoryTool(Store, readOnly: false).TryInvoke(Call(new { action = "write", scope = "global", name = "key",
+        var reply = new MemoryTool(Store, readOnly: false).TryInvoke(Call(new { action = "write", scope = "system", name = "key",
             description = "d", content = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123" }));
         Assert.Contains("secret", reply, StringComparison.OrdinalIgnoreCase);
     }
@@ -57,7 +57,7 @@ public sealed class MemoryToolTests : IDisposable
     public void Reading_a_note_that_is_not_there_names_the_ones_that_are()
     {
         var store = Store;
-        store.Write(new MemoryNote("real-one", "d", MemoryScope.Global, "b"));
+        store.Write(new MemoryNote("real-one", "d", MemoryScope.System, "b"));
         var reply = new MemoryTool(store, readOnly: false).TryInvoke(Call(new { action = "read", name = "made-up" }));
         Assert.Contains("real-one", reply, StringComparison.Ordinal);
     }
@@ -66,11 +66,11 @@ public sealed class MemoryToolTests : IDisposable
     public void A_sub_agent_reads_but_cannot_write_or_delete()
     {
         var store = Store;
-        store.Write(new MemoryNote("kept", "d", MemoryScope.Global, "b"));
+        store.Write(new MemoryNote("kept", "d", MemoryScope.System, "b"));
         var tool = new MemoryTool(store, readOnly: true);
 
         Assert.Contains("b", tool.TryInvoke(Call(new { action = "read", name = "kept" })), StringComparison.Ordinal);
-        Assert.Contains("read", tool.TryInvoke(Call(new { action = "write", scope = "global", name = "new", description = "d", content = "c" })), StringComparison.Ordinal);
+        Assert.Contains("read", tool.TryInvoke(Call(new { action = "write", scope = "system", name = "new", description = "d", content = "c" })), StringComparison.Ordinal);
         Assert.Contains("read", tool.TryInvoke(Call(new { action = "delete", name = "kept" })), StringComparison.Ordinal);
         Assert.Equal(["kept"], store.List().Select(n => n.Name).ToList());
     }
@@ -82,6 +82,15 @@ public sealed class MemoryToolTests : IDisposable
             .GetProperty("properties").GetProperty("action").GetProperty("enum")
             .EnumerateArray().Select(a => a.GetString()).ToList();
         Assert.Equal(["list", "read"], actions);
+    }
+
+    [Fact]
+    public void The_scopes_the_model_is_offered_are_system_and_project()
+    {
+        var scopes = new MemoryTool(Store, readOnly: false).Definition.InputSchema
+            .GetProperty("properties").GetProperty("scope").GetProperty("enum")
+            .EnumerateArray().Select(a => a.GetString()).ToList();
+        Assert.Equal(["system", "project"], scopes);
     }
 
     [Fact]

@@ -64,13 +64,12 @@ public class SessionPanelTests
             Endpoint = "",
             MemoryNotes =
             [
-                new("a", "d", CxAgent.Core.Memory.MemoryScope.Global, ""),
-                new("b", "d", CxAgent.Core.Memory.MemoryScope.Global, ""),
+                new("a", "d", CxAgent.Core.Memory.MemoryScope.System, ""),
+                new("b", "d", CxAgent.Core.Memory.MemoryScope.System, ""),
                 new("c", "d", CxAgent.Core.Memory.MemoryScope.Project, ""),
             ],
         });
-        Assert.Contains("2 about you", panel.RenderedText, StringComparison.Ordinal);
-        Assert.Contains("1 about this project", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("2 system · 1 project", panel.RenderedText, StringComparison.Ordinal);
 
         panel.Refresh(new SessionPanel.SessionPanelState { Endpoint = "", MemoryNotes = null });
         Assert.DoesNotContain("Memory", panel.RenderedText, StringComparison.Ordinal);

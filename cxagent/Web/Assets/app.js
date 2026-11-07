@@ -1920,7 +1920,7 @@ function drawSessionPane(p) {
         button("Open", null, () => { send({ type: "memoryOpen", sessionId: activeSessionId(), name: n.name }); if (!wide()) setPanel(false); }),
         button("Forget", "danger", () => send({ type: "memoryForget", sessionId: activeSessionId(), name: n.name })),
       ];
-      pane.append(taskRow("", el("b", null, n.name), [n.scope === "global" ? "about you" : "this project", n.description].filter(Boolean).join(" · "), acts));
+      pane.append(taskRow("", el("b", null, n.name), [n.scope, n.description].filter(Boolean).join(" · "), acts));
     }
   }
 }

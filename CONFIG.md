@@ -1315,7 +1315,7 @@ commands may link anywhere.
 | `history.db` | Usage history for `/stats`. An archive: append-only, never pruned. `/stats clear` empties it. |
 | `logs/<agent-id>/` | Everything about one agent: its session, its context, its transcript, and its logs. A sub-agent's directory nests **inside** its parent's, so the tree mirrors who spawned whom. |
 | `CXAGENT.md` | Your global instructions, if you wrote any. |
-| `memory/global/<name>.md` | Notes the agent keeps about you, read in every folder. Markdown with a `name` and `description` up front; edit or delete them freely. |
+| `memory/system/<name>.md` | System notes: what the agent keeps about you, read in every folder. Markdown with a `name` and `description` up front; edit or delete them freely. |
 | `memory/projects/<folder>-<hash>/` | One project's notes, beside a `path` file naming the folder they belong to. The hash is of the folder's full path, so two folders of one name keep separate notes. |
 
 ### A folder is a session

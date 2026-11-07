@@ -36,7 +36,7 @@ public sealed class SessionMemoryTests : IDisposable
     [Fact]
     public async Task A_rewire_keeps_the_index_its_predecessor_had()
     {
-        Store.Write(new MemoryNote("before", "there at the start", MemoryScope.Global, "b"));
+        Store.Write(new MemoryNote("before", "there at the start", MemoryScope.System, "b"));
         var provider = new CapturingProvider();
         var session = new Session(_project);
         Wire(session, provider);
@@ -53,15 +53,15 @@ public sealed class SessionMemoryTests : IDisposable
     [Fact]
     public async Task A_change_made_elsewhere_is_said_at_the_front_of_the_next_message_once()
     {
-        Store.Write(new MemoryNote("doomed", "about to go", MemoryScope.Global, "b"));
-        Store.Write(new MemoryNote("edited", "will change", MemoryScope.Global, "b"));
+        Store.Write(new MemoryNote("doomed", "about to go", MemoryScope.System, "b"));
+        Store.Write(new MemoryNote("edited", "will change", MemoryScope.System, "b"));
         var provider = new CapturingProvider();
         var session = new Session(_project);
         Wire(session, provider);
         await session.SendAndWait("one");
 
         Store.Delete("doomed");
-        Store.Write(new MemoryNote("edited", "has changed", MemoryScope.Global, "new body"));
+        Store.Write(new MemoryNote("edited", "has changed", MemoryScope.System, "new body"));
         Store.Write(new MemoryNote("fresh", "from another session", MemoryScope.Project, "b"));
         await session.SendAndWait("two");
         await session.SendAndWait("three");
@@ -100,7 +100,7 @@ public sealed class SessionMemoryTests : IDisposable
         Wire(session, provider);
         await session.SendAndWait("one");
 
-        Store.Write(new MemoryNote("later", "written since", MemoryScope.Global, "b"));
+        Store.Write(new MemoryNote("later", "written since", MemoryScope.System, "b"));
         session.ClearContext();
         await session.SendAndWait("two");
 
@@ -120,7 +120,7 @@ public sealed class SessionMemoryTests : IDisposable
         await session.SendAndWait("one");
         Assert.Empty(session.MemoryIndex());
 
-        Store.Write(new MemoryNote("since", "written before the resume", MemoryScope.Global, "b"));
+        Store.Write(new MemoryNote("since", "written before the resume", MemoryScope.System, "b"));
         session.NoteAgentWroteMemory("since");
         manager.Resume(session, new CxAgent.Core.Storage.SessionSnapshot("other-conversation", [], 0, 0, DateTimeOffset.UtcNow, null), () => { });
 

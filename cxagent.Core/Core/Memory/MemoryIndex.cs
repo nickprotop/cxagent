@@ -3,7 +3,7 @@ using System.Text;
 namespace CxAgent.Core.Memory;
 
 /// <summary>
-/// The notes as the system prompt lists them: name and one-line description, the user's first, then the project's.
+/// The notes as the system prompt lists them: name and one-line description, the system notes first, then the project's.
 ///
 /// <para>NAMES, NOT BODIES — the economics skills have: fifty notes in full would be permanent prefix in every request,
 /// while their index is a few hundred tokens and the model reads the one that matters with <c>memory read</c>.</para>
@@ -17,7 +17,7 @@ public static class MemoryIndex
     public const int DefaultCap = 8_000;
 
     /// <summary>The list, or empty when there are no notes.</summary>
-    /// <param name="notes">In the store's order: global, then project, each by name.</param>
+    /// <param name="notes">In the store's order: system, then project, each by name.</param>
     /// <param name="cap">How many characters the list may take.</param>
     public static string Render(IReadOnlyList<MemoryNote> notes, int cap)
     {
@@ -29,7 +29,7 @@ public static class MemoryIndex
         {
             var note = ordered[i];
             var head = note.Scope != heading
-                ? (note.Scope == MemoryScope.Global ? "## About you\n" : "## About this project\n")
+                ? (note.Scope == MemoryScope.System ? "## System\n" : "## Project\n")
                 : "";
             var line = note.Description.Length > 0 ? $"- {note.Name} — {note.Description}\n" : $"- {note.Name}\n";
             if (sb.Length + head.Length + line.Length > cap)

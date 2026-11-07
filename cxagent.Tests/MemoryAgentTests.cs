@@ -39,7 +39,7 @@ public sealed class MemoryAgentTests : IDisposable
     public async Task With_a_store_the_tool_is_offered_and_the_index_is_in_the_prompt()
     {
         var store = Store;
-        store.Write(new MemoryNote("prefers-tabs", "Indentation preference", MemoryScope.Global, "Tabs."));
+        store.Write(new MemoryNote("prefers-tabs", "Indentation preference", MemoryScope.System, "Tabs."));
         var provider = new ScriptedProvider();
 
         await new Agent(Setup(provider, store)).SendAsync("hi", CancellationToken.None);
@@ -76,9 +76,9 @@ public sealed class MemoryAgentTests : IDisposable
         // THE SESSION'S SNAPSHOT: an agent rebuilt by /model reads the same index its predecessor did, whatever was
         // written since — the prefix of a long conversation is not re-sent for a note.
         var store = Store;
-        store.Write(new MemoryNote("on-disk", "d", MemoryScope.Global, "b"));
+        store.Write(new MemoryNote("on-disk", "d", MemoryScope.System, "b"));
         var provider = new ScriptedProvider();
-        IReadOnlyList<MemoryNote> snapshot = [new MemoryNote("from-snapshot", "d", MemoryScope.Global, "")];
+        IReadOnlyList<MemoryNote> snapshot = [new MemoryNote("from-snapshot", "d", MemoryScope.System, "")];
 
         await new Agent(Setup(provider, store, index: () => snapshot)).SendAsync("hi", CancellationToken.None);
 
@@ -89,7 +89,7 @@ public sealed class MemoryAgentTests : IDisposable
     [Fact]
     public async Task A_sub_agent_is_told_it_reads_only_and_its_write_is_refused()
     {
-        var provider = new ScriptedProvider(Write("child-fact", "global"));
+        var provider = new ScriptedProvider(Write("child-fact", "system"));
         await new Agent(Setup(provider, Store, subAgent: true)).SendAsync("go", CancellationToken.None);
 
         Assert.Contains("memory", provider.Tools[0]);
@@ -102,10 +102,10 @@ public sealed class MemoryAgentTests : IDisposable
     {
         // THE PARENT'S COMPACTION RETAKES THE SESSION'S SNAPSHOT; a background child still running must not see its
         // prompt move for it.
-        var current = new List<MemoryNote> { new("first", "d", MemoryScope.Global, "") };
+        var current = new List<MemoryNote> { new("first", "d", MemoryScope.System, "") };
         var provider = new ScriptedProvider(new ToolCall { Id = "t", Name = "memory", Arguments = JsonSerializer.SerializeToElement(new { action = "list" }) });
         var agent = new Agent(Setup(provider, Store, subAgent: true, index: () => [.. current]));
-        current.Add(new("second", "d", MemoryScope.Global, ""));
+        current.Add(new("second", "d", MemoryScope.System, ""));
 
         await agent.SendAsync("go", CancellationToken.None);
 

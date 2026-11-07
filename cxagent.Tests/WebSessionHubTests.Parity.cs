@@ -749,7 +749,7 @@ public sealed partial class WebSessionHubTests
     [Fact]
     public async Task Forgetting_a_note_asks_and_deletes_only_when_confirmed()
     {
-        Memory.Write(new("old-fact", "Wrong now", CxAgent.Core.Memory.MemoryScope.Global, "x"));
+        Memory.Write(new("old-fact", "Wrong now", CxAgent.Core.Memory.MemoryScope.System, "x"));
         var (tab, id) = await CreatedAsync();
         await using var _ = tab;
 
@@ -766,13 +766,13 @@ public sealed partial class WebSessionHubTests
     [Fact]
     public async Task The_panel_lists_the_notes_by_name_scope_and_description()
     {
-        Memory.Write(new("prefers-tabs", "Indentation", CxAgent.Core.Memory.MemoryScope.Global, "tabs"));
+        Memory.Write(new("prefers-tabs", "Indentation", CxAgent.Core.Memory.MemoryScope.System, "tabs"));
         var (tab, id) = await CreatedAsync();
         await using var _ = tab;
         var panel = await tab.NextAsync(m => m["type"]?.GetValue<string>() == "panel" && m["memory"] is JsonArray { Count: > 0 });
         var note = panel["memory"]![0]!;
         Assert.Equal("prefers-tabs", note["name"]!.GetValue<string>());
-        Assert.Equal("global", note["scope"]!.GetValue<string>());
+        Assert.Equal("system", note["scope"]!.GetValue<string>());
         Assert.Equal("Indentation", note["description"]!.GetValue<string>());
     }
 

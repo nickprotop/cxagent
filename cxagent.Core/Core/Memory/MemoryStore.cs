@@ -7,8 +7,8 @@ namespace CxAgent.Core.Memory;
 /// <summary>Whose a note is: the user's, kept for every folder, or one project's.</summary>
 public enum MemoryScope
 {
-    /// <summary>About the user — read in every folder.</summary>
-    Global,
+    /// <summary>System-wide: about the user, read in every folder.</summary>
+    System,
 
     /// <summary>About one project — read only in that folder.</summary>
     Project,
@@ -23,7 +23,7 @@ public sealed record MemoryNote(string Name, string Description, MemoryScope Sco
 
 /// <summary>
 /// The agent's notes across sessions: one markdown file each, under cxagent's own folder —
-/// <c>memory/global/</c> for the user, <c>memory/projects/&lt;folder&gt;-&lt;hash&gt;/</c> for a project.
+/// <c>memory/system/</c> for the user, <c>memory/projects/&lt;folder&gt;-&lt;hash&gt;/</c> for a project.
 ///
 /// <para>NEVER IN THE REPOSITORY. What the agent learns about a person is theirs, not something to commit beside the
 /// code for everyone who clones it; and a project's notes in its own tree would be one more thing for the user to
@@ -43,12 +43,12 @@ public sealed partial class MemoryStore
     private readonly string? _project;
 
     /// <param name="configDir">cxagent's own folder.</param>
-    /// <param name="projectDir">The folder the session works in, or null when there is none — then only global notes
+    /// <param name="projectDir">The folder the session works in, or null when there is none — then only system notes
     /// can be kept.</param>
     public MemoryStore(string configDir, string? projectDir)
     {
         var root = Path.Combine(configDir, "memory");
-        GlobalFolder = Path.Combine(root, "global");
+        SystemFolder = Path.Combine(root, "system");
         if (!string.IsNullOrWhiteSpace(projectDir))
         {
             _project = RealPath(projectDir);
@@ -57,7 +57,7 @@ public sealed partial class MemoryStore
     }
 
     /// <summary>Where the user's own notes are.</summary>
-    public string GlobalFolder { get; }
+    public string SystemFolder { get; }
 
     /// <summary>Where this project's notes are, or null without a project.</summary>
     public string? ProjectFolder { get; }
@@ -66,24 +66,24 @@ public sealed partial class MemoryStore
     public string? Project => _project;
 
     /// <summary>
-    /// Every note this session can see: the global ones, then the project's, each sorted by name — the order the
+    /// Every note this session can see: the system ones, then the project's, each sorted by name — the order the
     /// index shows them in, so the prompt is the same bytes for the same notes.
     /// </summary>
     public IReadOnlyList<MemoryNote> List() =>
-        [.. Read(GlobalFolder, MemoryScope.Global), .. ProjectFolder is { } p ? Read(p, MemoryScope.Project) : []];
+        [.. Read(SystemFolder, MemoryScope.System), .. ProjectFolder is { } p ? Read(p, MemoryScope.Project) : []];
 
     /// <summary>The note called <paramref name="name"/>, or null.</summary>
     public MemoryNote? Find(string name) =>
         PathOf(name) is { } path ? Parse(path, ScopeOf(path)) : null;
 
     /// <summary>
-    /// The file of the note called <paramref name="name"/>, or null. A project's note wins over a global one of the
+    /// The file of the note called <paramref name="name"/>, or null. A project's note wins over a system one of the
     /// same name, which only a hand-made file can produce: the store itself keeps a name to one scope.
     /// </summary>
     public string? PathOf(string name)
     {
         if (!ValidName(name)) return null;
-        foreach (var folder in new[] { ProjectFolder, GlobalFolder })
+        foreach (var folder in new[] { ProjectFolder, SystemFolder })
         {
             if (folder is null) continue;
             var path = Path.Combine(folder, name + ".md");
@@ -107,13 +107,13 @@ public sealed partial class MemoryStore
         if (LooksSecret(description) || LooksSecret(note.Body))
             return "That looks like a secret — a key, token or password. Notes are plain files in cxagent's folder; do not keep secrets in them.";
 
-        var folder = note.Scope == MemoryScope.Global ? GlobalFolder : ProjectFolder;
-        if (folder is null) return "There is no project folder in this session, so only global notes can be kept.";
+        var folder = note.Scope == MemoryScope.System ? SystemFolder : ProjectFolder;
+        if (folder is null) return "There is no project folder in this session, so only system notes can be kept.";
 
         // ONE NAME, ONE NOTE: /memory open and forget take a name alone, and a name in both scopes would make them guess.
-        var other = note.Scope == MemoryScope.Global ? ProjectFolder : GlobalFolder;
+        var other = note.Scope == MemoryScope.System ? ProjectFolder : SystemFolder;
         if (other is not null && File.Exists(Path.Combine(other, note.Name + ".md")))
-            return $"A {(note.Scope == MemoryScope.Global ? "project" : "global")} note is already called '{note.Name}'. Update that one, or pick another name.";
+            return $"A {(note.Scope == MemoryScope.System ? "project" : "system")} note is already called '{note.Name}'. Update that one, or pick another name.";
 
         Directory.CreateDirectory(folder);
         if (note.Scope == MemoryScope.Project && _project is not null)
@@ -160,7 +160,7 @@ public sealed partial class MemoryStore
 
     private MemoryScope ScopeOf(string path) =>
         ProjectFolder is not null && path.StartsWith(ProjectFolder + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            ? MemoryScope.Project : MemoryScope.Global;
+            ? MemoryScope.Project : MemoryScope.System;
 
     private static IEnumerable<MemoryNote> Read(string folder, MemoryScope scope)
     {

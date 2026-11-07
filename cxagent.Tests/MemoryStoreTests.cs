@@ -27,12 +27,12 @@ public sealed class MemoryStoreTests : IDisposable
     public void A_written_note_is_listed_and_read_back()
     {
         var store = Store(_projectA);
-        Assert.Null(store.Write(Note("prefers-tabs", MemoryScope.Global, "Indent with tabs.", "Indentation preference")));
+        Assert.Null(store.Write(Note("prefers-tabs", MemoryScope.System, "Indent with tabs.", "Indentation preference")));
 
         var note = Assert.Single(store.List());
         Assert.Equal("prefers-tabs", note.Name);
         Assert.Equal("Indentation preference", note.Description);
-        Assert.Equal(MemoryScope.Global, note.Scope);
+        Assert.Equal(MemoryScope.System, note.Scope);
         Assert.Equal("Indent with tabs.", store.Find("prefers-tabs")!.Body);
     }
 
@@ -51,7 +51,7 @@ public sealed class MemoryStoreTests : IDisposable
     public void Project_notes_stay_with_their_project_and_global_ones_go_everywhere()
     {
         Store(_projectA).Write(Note("about-a", MemoryScope.Project));
-        Store(_projectA).Write(Note("about-me", MemoryScope.Global));
+        Store(_projectA).Write(Note("about-me", MemoryScope.System));
 
         var fromB = Store(_projectB).List().Select(n => n.Name).ToList();
         Assert.Equal(["about-me"], fromB);
@@ -65,6 +65,8 @@ public sealed class MemoryStoreTests : IDisposable
         store.Write(Note("fact", MemoryScope.Project));
 
         Assert.StartsWith(Path.Combine(_config, "memory"), store.PathOf("fact")!, StringComparison.Ordinal);
+        store.Write(Note("me", MemoryScope.System));
+        Assert.StartsWith(Path.Combine(_config, "memory", "system"), store.PathOf("me")!, StringComparison.Ordinal);
         Assert.Empty(Directory.EnumerateFileSystemEntries(_projectA));
     }
 
@@ -86,7 +88,7 @@ public sealed class MemoryStoreTests : IDisposable
     public void A_name_that_is_not_a_kebab_case_slug_is_refused(string name)
     {
         var store = Store(_projectA);
-        Assert.NotNull(store.Write(Note(name, MemoryScope.Global)));
+        Assert.NotNull(store.Write(Note(name, MemoryScope.System)));
         Assert.Empty(store.List());
     }
 
@@ -99,7 +101,7 @@ public sealed class MemoryStoreTests : IDisposable
     public void A_note_that_looks_like_a_secret_is_refused(string body)
     {
         var store = Store(_projectA);
-        var problem = store.Write(Note("creds", MemoryScope.Global, body));
+        var problem = store.Write(Note("creds", MemoryScope.System, body));
 
         Assert.Contains("secret", problem, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(store.List());
@@ -107,7 +109,7 @@ public sealed class MemoryStoreTests : IDisposable
 
     [Fact]
     public void A_secret_in_the_description_is_refused_too() =>
-        Assert.NotNull(Store(_projectA).Write(Note("creds", MemoryScope.Global, "fine", "api_key: abcdef0123456789")));
+        Assert.NotNull(Store(_projectA).Write(Note("creds", MemoryScope.System, "fine", "api_key: abcdef0123456789")));
 
     [Theory]
     [InlineData("OPENAI_API_KEY=abc123def456ghi789")]
@@ -116,7 +118,7 @@ public sealed class MemoryStoreTests : IDisposable
     [InlineData("{ \"password\": \"s3cretPassw0rd!\" }")]
     [InlineData("sk_live_51HabcdefGHIJKLmnopQRST")]
     public void The_shapes_a_model_copies_from_an_env_file_are_secrets(string body) =>
-        Assert.NotNull(Store(_projectA).Write(Note("creds", MemoryScope.Global, body)));
+        Assert.NotNull(Store(_projectA).Write(Note("creds", MemoryScope.System, body)));
 
     [Theory]
     [InlineData("token: expiration is one hour")]
@@ -133,8 +135,8 @@ public sealed class MemoryStoreTests : IDisposable
     public void A_note_with_empty_or_broken_frontmatter_is_still_read(string text)
     {
         var store = Store(_projectA);
-        store.Write(Note("seed", MemoryScope.Global));
-        File.WriteAllText(Path.Combine(store.GlobalFolder, "odd.md"), text);
+        store.Write(Note("seed", MemoryScope.System));
+        File.WriteAllText(Path.Combine(store.SystemFolder, "odd.md"), text);
 
         Assert.Equal(2, store.List().Count);
         Assert.NotNull(store.Find("odd"));
@@ -145,10 +147,10 @@ public sealed class MemoryStoreTests : IDisposable
     {
         // A LINK COULD POINT ANYWHERE — config.json beside the memory folder — and the browser opens notes by name.
         var store = Store(_projectA);
-        store.Write(Note("seed", MemoryScope.Global));
+        store.Write(Note("seed", MemoryScope.System));
         var target = Path.Combine(_config, "config.json");
         File.WriteAllText(target, "{ \"secret\": 1 }");
-        File.CreateSymbolicLink(Path.Combine(store.GlobalFolder, "config.md"), target);
+        File.CreateSymbolicLink(Path.Combine(store.SystemFolder, "config.md"), target);
 
         Assert.Null(store.PathOf("config"));
         Assert.Null(store.Find("config"));
@@ -160,10 +162,10 @@ public sealed class MemoryStoreTests : IDisposable
     {
         var store = Store(_projectA);
         var bodies = Enumerable.Range(0, 40).Select(i => new string((char)('a' + i % 26), 4000)).ToList();
-        await Task.WhenAll(bodies.Select(b => Task.Run(() => store.Write(Note("shared", MemoryScope.Global, b)))));
+        await Task.WhenAll(bodies.Select(b => Task.Run(() => store.Write(Note("shared", MemoryScope.System, b)))));
 
         Assert.Contains(store.Find("shared")!.Body, bodies);
-        Assert.Empty(Directory.EnumerateFiles(store.GlobalFolder, "*.tmp"));
+        Assert.Empty(Directory.EnumerateFiles(store.SystemFolder, "*.tmp"));
     }
 
     [Fact]
@@ -175,10 +177,10 @@ public sealed class MemoryStoreTests : IDisposable
     {
         // ONE NAME, ONE NOTE: /memory open and forget take a name alone, and a name in both scopes would make them guess.
         var store = Store(_projectA);
-        store.Write(Note("style", MemoryScope.Global));
+        store.Write(Note("style", MemoryScope.System));
 
-        Assert.Contains("global", store.Write(Note("style", MemoryScope.Project)), StringComparison.Ordinal);
-        Assert.Null(store.Write(Note("style", MemoryScope.Global, "rewritten")));
+        Assert.Contains("system", store.Write(Note("style", MemoryScope.Project)), StringComparison.Ordinal);
+        Assert.Null(store.Write(Note("style", MemoryScope.System, "rewritten")));
         Assert.Equal("rewritten", store.Find("style")!.Body);
     }
 
@@ -198,15 +200,15 @@ public sealed class MemoryStoreTests : IDisposable
     {
         var store = Store(null);
         Assert.NotNull(store.Write(Note("fact", MemoryScope.Project)));
-        Assert.Null(store.Write(Note("me", MemoryScope.Global)));
+        Assert.Null(store.Write(Note("me", MemoryScope.System)));
     }
 
     [Fact]
     public void A_hand_edited_note_without_frontmatter_is_still_listed_by_its_file_name()
     {
         var store = Store(_projectA);
-        store.Write(Note("seed", MemoryScope.Global));
-        File.WriteAllText(Path.Combine(store.GlobalFolder, "loose.md"), "Just text.\n");
+        store.Write(Note("seed", MemoryScope.System));
+        File.WriteAllText(Path.Combine(store.SystemFolder, "loose.md"), "Just text.\n");
 
         var loose = store.Find("loose")!;
         Assert.Equal("", loose.Description);
@@ -222,19 +224,19 @@ public sealed class MemoryIndexTests
     [Fact]
     public void Global_notes_come_first_then_the_projects_each_sorted_by_name()
     {
-        var text = MemoryIndex.Render([Note("zeta", MemoryScope.Project), Note("beta", MemoryScope.Global),
-            Note("alpha", MemoryScope.Project), Note("aardvark", MemoryScope.Global)], 8000);
+        var text = MemoryIndex.Render([Note("zeta", MemoryScope.Project), Note("beta", MemoryScope.System),
+            Note("alpha", MemoryScope.Project), Note("aardvark", MemoryScope.System)], 8000);
 
         var order = new[] { "aardvark", "beta", "alpha", "zeta" }.Select(n => text.IndexOf("- " + n, StringComparison.Ordinal)).ToList();
         Assert.All(order, i => Assert.True(i >= 0));
         Assert.Equal(order.Order().ToList(), order);
-        Assert.True(text.IndexOf("About you", StringComparison.Ordinal) < text.IndexOf("About this project", StringComparison.Ordinal));
+        Assert.True(text.IndexOf("## System", StringComparison.Ordinal) < text.IndexOf("## Project", StringComparison.Ordinal));
     }
 
     [Fact]
     public void Past_the_cap_the_rest_are_counted_not_listed()
     {
-        var notes = Enumerable.Range(0, 200).Select(i => Note($"note-{i:000}", MemoryScope.Global, new string('x', 80))).ToList();
+        var notes = Enumerable.Range(0, 200).Select(i => Note($"note-{i:000}", MemoryScope.System, new string('x', 80))).ToList();
         var text = MemoryIndex.Render(notes, 2000);
 
         Assert.True(text.Length < 2400);
