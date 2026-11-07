@@ -151,4 +151,7 @@ public static class ValueSources
 
     /// <summary>The notes this session sees, for <c>/memory</c>.</summary>
     public const string MemoryNotes = Core.Sessions.CompletionSets.MemoryNotes;
+
+    /// <summary>The colleagues in the library, for <c>/colleagues bring</c>.</summary>
+    public const string Colleagues = Core.Sessions.CompletionSets.Colleagues;
 }

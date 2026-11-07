@@ -61,6 +61,13 @@ public static class SessionCommands
             new("open <name>", "open a note to read or edit", Completes: false, Values: ValueSources.MemoryNotes),
             new("forget <name>", "delete a note, after confirming", Completes: false, Values: ValueSources.MemoryNotes),
         ]),
+        // THE USER'S HALF OF THE LEAD'S colleague TOOL, all of it Core's: listing, keeping — the user typing it is the
+        // yes the tool has to ask for — and bringing one in, the same in the terminal and the browser.
+        new("/colleagues", "list the colleagues kept across sessions",
+        [
+            new("keep <worker> [name]", "keep a worker of this session as a colleague", Completes: false, Values: ValueSources.SpawnedAgents),
+            new("bring <name> <task>", "bring a colleague in to work on a task", Completes: false, Values: ValueSources.Colleagues),
+        ]),
         // THE TYPEABLE HALF OF WHAT /skills SHOWS THE MODEL'S HALF OF. A bare listing, or one file by
         // name — what /review will actually send, readable before it is run.
         new("/commands", "list custom commands, and any file that was shadowed or skipped",

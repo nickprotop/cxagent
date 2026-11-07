@@ -1701,6 +1701,7 @@ public sealed partial class Session
         CompletionSets.Tasks => [.. SpawnedAgentValues(), .. BackgroundJobValues()],
         CompletionSets.MemoryNotes => [.. Memory?.List().Select(n => new CompletionValue(n.Name,
             (n.Scope == CxAgent.Core.Memory.MemoryScope.System ? "system" : "project") + (n.Description.Length > 0 ? " · " + n.Description : ""))) ?? []],
+        CompletionSets.Colleagues => [.. Colleagues?.List().Select(c => new CompletionValue(c.Name, c.Description)) ?? []],
         _ => [],
     };
 

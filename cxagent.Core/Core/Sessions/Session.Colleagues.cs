@@ -1,4 +1,6 @@
+using System.Text;
 using CxAgent.Core.Colleagues;
+using CxAgent.Core.Commands;
 
 namespace CxAgent.Core.Sessions;
 
@@ -37,7 +39,8 @@ public sealed partial class Session
     {
         lock (_colleagueGate)
         {
-            if (_colleaguesKnown is not { } known || Colleagues is not { } desk) return null;
+            var brought = TakeBrought();
+            if (_colleaguesKnown is not { } known || Colleagues is not { } desk) return brought;
             var now = desk.List();
             var parts = new List<string>();
             foreach (var c in now)
@@ -49,11 +52,12 @@ public sealed partial class Session
             }
             var names = now.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
             parts.AddRange(known.Keys.Where(k => !names.Contains(k)).Order(StringComparer.Ordinal).Select(k => $"'{k}' was forgotten"));
-            if (parts.Count == 0) return null;
+            if (parts.Count == 0) return brought;
 
             _colleaguesKnown = now.ToDictionary(c => c.Name, Fingerprint, StringComparer.Ordinal);
-            return "[Colleagues changed since this conversation began: " + string.Join("; ", parts)
-                   + ". The colleague tool lists them as they are now.]";
+            var changed = "[Colleagues changed since this conversation began: " + string.Join("; ", parts)
+                          + ". The colleague tool lists them as they are now.]";
+            return brought is null ? changed : brought + "\n" + changed;
         }
     }
 
@@ -96,5 +100,97 @@ public sealed partial class Session
         }
         Colleagues?.Dispose();
         Colleagues = new ColleagueDesk(parts);
+    }
+
+    /// <summary>Colleagues the user brought in since the lead last heard, for the front of its next message.</summary>
+    private readonly List<string> _brought = [];
+
+    private string? TakeBrought()
+    {
+        lock (_brought)
+        {
+            if (_brought.Count == 0) return null;
+            var said = string.Join("\n", _brought);
+            _brought.Clear();
+            return said;
+        }
+    }
+
+    private const string ColleaguesOff = "Colleagues are off. Turn them on in F8 › General, or with colleagues.enabled in config.json.";
+
+    /// <summary><c>/colleagues</c>, with or without a verb — the same in every front end.</summary>
+    public CommandStatus ColleaguesCommand(string? arguments)
+    {
+        if (Colleagues is not { } desk)
+        {
+            Say(new Message(ColleaguesOff, Severity.Info));
+            return CommandStatus.Reported;
+        }
+        var text = (arguments ?? "").Trim();
+        var (verb, rest) = text.Split(' ', 2) is [var v, var r] ? (v, r.Trim()) : (text, "");
+        switch (verb.ToLowerInvariant())
+        {
+            case "":
+                return ListColleagues(desk);
+            case "keep":
+                if (rest.Length == 0) return Told("Name the worker: /colleagues keep <worker> [name]. /agents lists them.");
+                var (worker, name) = rest.Split(' ', 2) is [var w, var n] ? (w, n.Trim()) : (rest, (string?)null);
+                return Told(desk.Keep(new KeepOrder(worker, name is { Length: > 0 } ? name : null)));
+            case "bring":
+                _ = BringColleagueAsync(rest);
+                return CommandStatus.Reported;
+            default:
+                return Told($"/colleagues knows keep and bring, not '{verb}'. /colleagues alone lists them.");
+        }
+    }
+
+    /// <summary>
+    /// <c>/colleagues bring &lt;name&gt; &lt;task&gt;</c>: brings one in as the lead's worker, in the background, and tells
+    /// the lead with its next message — the worker's report reaches it like any other.
+    ///
+    /// <para>THE NAME MAY HOLD SPACES, so the longest colleague name the text starts with wins, and a single word is
+    /// tried last.</para>
+    /// </summary>
+    public async Task<CommandStatus> BringColleagueAsync(string rest)
+    {
+        if (Colleagues is not { } desk) return Told(ColleaguesOff);
+        var match = desk.List().Select(c => c.Name)
+            .Where(n => rest.StartsWith(n + " ", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(n => n.Length).FirstOrDefault();
+        var (name, task) = match is not null
+            ? (match, rest[(match.Length + 1)..].Trim())
+            : rest.Split(' ', 2) is [var first, var after] ? (first, after.Trim()) : (rest, "");
+        if (name.Length == 0 || task.Length == 0) return Told("Say who and what: /colleagues bring <name> <task>.");
+        if (SessionId is not { } lead) return Told("This session has no agent to report to yet.");
+
+        var answer = await desk.BringAsync(new BringOrder(name, task, null, Background: true, lead), CancellationToken.None);
+        if (Agents.SubAgentEnvelope.NameOf(answer) is { } handle)
+        {
+            lock (_brought)
+                _brought.Add($"[The user brought the colleague {name} in as the worker {handle}, on: {task}. Its report "
+                             + "reaches you when it finishes; agent_send reaches it meanwhile.]");
+            return Told($"{name} is working as {handle}.");
+        }
+        return Told(answer);
+    }
+
+    private CommandStatus ListColleagues(ColleagueDesk desk)
+    {
+        var all = desk.List();
+        var sb = new StringBuilder();
+        if (all.Count == 0) sb.Append("No colleagues yet. `/colleagues keep <worker> [name]` keeps a worker of this session as one.\n");
+        foreach (var line in all.Select(ColleagueLine.Of))
+            sb.Append("- **").Append(line.Name).Append("**").Append(line.Description.Length > 0 ? " — " + line.Description : "")
+              .Append(line.Knows.Count > 0 ? " · knows: " + string.Join(", ", line.Knows) : "").Append('\n');
+        sb.Append("\nIn `").Append(desk.Library.Root).Append("`. `/colleagues bring <name> <task>` brings one in.");
+        // THE PLAIN LINE TOO, so a notice reads "Charting — lays out charts" wherever bold is not drawn.
+        Say(new Message(sb.ToString().Replace("**", ""), Severity.Info));
+        return CommandStatus.Reported;
+    }
+
+    private CommandStatus Told(string text)
+    {
+        Say(new Message(text, Severity.Info));
+        return CommandStatus.Reported;
     }
 }

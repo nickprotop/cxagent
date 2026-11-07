@@ -446,6 +446,12 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, _) => session.ListMemory().Handled());
                     break;
 
+                // ALL OF IT HERE, verbs included: nothing in /colleagues needs a window — keeping is the user's own
+                // typing, and bringing one in is a spawn — so both front ends run exactly this.
+                case "/colleagues":
+                    Commands.Register(command, (session, arguments) => session.ColleaguesCommand(arguments).Handled());
+                    break;
+
                 case "/commands":
                     Commands.Register(command, (session, arguments) => session.ListCommands(arguments).Handled());
                     break;

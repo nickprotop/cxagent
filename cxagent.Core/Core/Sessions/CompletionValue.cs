@@ -75,4 +75,7 @@ internal static class CompletionSets
     /// <summary>The notes this session sees, for <c>/memory open</c> and <c>/memory forget</c>. Answered by the session,
     /// from the files — not the prompt's snapshot, which may name a note since deleted.</summary>
     public const string MemoryNotes = "memory-notes";
+
+    /// <summary>The colleagues in the library, for <c>/colleagues bring</c> — from the files, as the notes are.</summary>
+    public const string Colleagues = "colleagues";
 }

@@ -18,7 +18,7 @@ public static class WebCommands
     public static readonly IReadOnlyList<string> Allowed =
     [
         "/compress", "/clear", "/model", "/mode", "/think", "/btw", "/stats", "/sandbox", "/diff",
-        "/agents", "/skills", "/memory", "/commands", "/mcp", "/hooks", "/tasks", "/sessions", "/open", "/export", "/help",
+        "/agents", "/skills", "/memory", "/colleagues", "/commands", "/mcp", "/hooks", "/tasks", "/sessions", "/open", "/export", "/help",
     ];
 
     /// <summary>The commands behind a switch, and the switch: what each would reach beyond the conversation.</summary>
