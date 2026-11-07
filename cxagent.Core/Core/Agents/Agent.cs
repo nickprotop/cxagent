@@ -140,7 +140,7 @@ public sealed class Agent
     /// session's diagnostics fragmented across directories with turn numbering restarting at 000 in
     /// each — and the session id on screen churned every time the user typed.</para>
     /// </summary>
-    public string Id { get; } = Helpers.UlidGenerator.NewId();
+    public string Id { get; }
 
     /// <summary>
     /// The turn counter — session state, NOT per-prompt state.
@@ -1032,6 +1032,9 @@ public sealed class Agent
     /// </summary>
     public Agent(AgentSetup setup)
     {
+        // FIRST: everything below that names a folder or a session reads it.
+        Id = setup.Identity.Id ?? Helpers.UlidGenerator.NewId();
+
         // THE SETUP READ ONCE, into the names the body below uses — so how each value is derived (a default, a
         // refusal for a sub-agent, a trim) reads exactly as it does for every value, in one place.
         Setup = setup;

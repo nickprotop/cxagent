@@ -91,6 +91,12 @@ public sealed record AgentIdentity
     /// <summary>For a sub-agent in a folder of its own, that folder relative to its parent's, shown beside where it
     /// runs; null otherwise.</summary>
     public string? Root { get; init; }
+
+    /// <summary>
+    /// The id to take, or null to mint one. Only a worker brought back with its session keeps the id it had: the model,
+    /// the envelopes in its history and the export all know it by that id.
+    /// </summary>
+    public string? Id { get; init; }
 }
 
 /// <summary>What an agent may use.</summary>

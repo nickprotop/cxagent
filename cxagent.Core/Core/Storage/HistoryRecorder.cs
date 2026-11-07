@@ -125,6 +125,20 @@ public sealed class HistoryRecorder
     }
 
     /// <summary>
+    /// Takes <paramref name="loaded"/> as already written, writing nothing: a worker brought back with its session
+    /// keeps its id, and the messages it comes back with are in the folders of the session copies before this one.
+    /// </summary>
+    public void Adopt(IReadOnlyList<ChatMessage> loaded)
+    {
+        lock (_gate)
+        {
+            foreach (var message in loaded)
+                _written.AddOrUpdate(message, Marker);
+            _previous = [.. loaded];
+        }
+    }
+
+    /// <summary>
     /// Starts this history as the continuation of <paramref name="previousAgentId"/>'s, with
     /// <paramref name="loaded"/> already in its context. Those messages are that agent's record, not this one's,
     /// so none of them is written again.

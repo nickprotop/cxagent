@@ -192,6 +192,23 @@ public sealed class SessionEventLogTests
     }
 
     [Fact]
+    public void A_row_ends_once_however_often_its_end_is_reported_and_again_after_it_reopens()
+    {
+        // A VIEW ATTACHING LATE is replayed the row's start with the job as it is now — finished — and then the update
+        // that finished it. A worker's row reopened by more work runs and ends again, which is a second end.
+        var log = new SessionEventLog("S");
+        var job = new Job { Id = "W1", AgentId = "A", JobType = "llm_agent", DisplayName = "w", State = JobState.Succeeded };
+        log.ToolsChanged([job]);
+        log.ToolUpdated(job);
+        job.State = JobState.Running;
+        log.ToolUpdated(job);
+        job.State = JobState.Succeeded;
+        log.ToolUpdated(job);
+
+        Assert.Equal(2, log.Since(0).Events.Count(e => e["kind"]!.GetValue<string>() == "toolEnded"));
+    }
+
+    [Fact]
     public void The_log_counts_turns_and_tool_calls()
     {
         var log = Streamed(1);

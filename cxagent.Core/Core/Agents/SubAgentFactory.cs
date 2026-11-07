@@ -361,6 +361,9 @@ public sealed class SubAgentFactory
 
         /// <summary>The folder the child works in, when the spawn named one; null for the parent's own.</summary>
         public ChildRoot? Root { get; init; }
+
+        /// <summary>The id the child takes — a worker brought back with its session — or null to mint one.</summary>
+        public string? Id { get; init; }
     }
 
     /// <summary>A plain child: the general type, no briefing, nothing passed down.</summary>
@@ -439,6 +442,7 @@ public sealed class SubAgentFactory
                 SessionId = parentAgentId,
                 RunsOn = $"{type?.Name ?? AgentTypeCatalog.DefaultTypeName} on {entry}",
                 Root = request.Root?.Relative,
+                Id = request.Id,
             },
 
             // THE SESSION'S TOOLS, LESS WHAT ONLY THE SESSION MAY HAVE. The runtime's group is the session's own,

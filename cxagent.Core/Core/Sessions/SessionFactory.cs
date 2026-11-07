@@ -202,7 +202,7 @@ internal static class SessionFactory
             StartedOn = session.StartedOn,
         };
 
-        var subAgents = new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        var childFactory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = resolution.Provider!,
             InstanceName = resolution.InstanceName,
@@ -269,11 +269,10 @@ internal static class SessionFactory
                 // delegated call has that the parent's own calls do not.
                 Classifier = (shared.Gate as Permissions.PermissionDecider)?.Classifier,
             },
-        }),
-            agentTypes,
-            // THE SESSION'S STORE, so a child survives a re-wire that replaces the agent that spawned
-            // it. Passing a fresh one here would silently empty the fridge on every model switch.
-            session.SubAgents);
+        });
+        // THE SESSION'S STORE, so a child survives a re-wire that replaces the agent that spawned
+        // it. Passing a fresh one here would silently empty the fridge on every model switch.
+        var subAgents = new SubAgentSpawner(childFactory, agentTypes, session.SubAgents);
 
         // THE PORTS' OBSERVERS BECOME SUBSCRIBER ONE OF A FAN-OUT, and everything downstream is
         // handed the fan-out instead. Behaviour is identical with one subscriber; what it buys is
@@ -476,6 +475,10 @@ internal static class SessionFactory
         if (resumeSnapshot is not null)
         {
             host.SaveSettings();
+
+            // ITS WORKERS COME BACK WITH IT, before its past is drawn — a restored card opens the worker it names.
+            if (shared.Logs?.Paths is { } paths && session.SessionId is { } agent)
+                WorkerRevival.Revive(paths, agent, childFactory, agentTypes, session.SubAgents);
 
             // THE PAST IS SHOWN, not only remembered: an agent that knows things the screen does not show reads as one
             // that invented them. Into this wire's own ports first — the front end that opened it — and then to any

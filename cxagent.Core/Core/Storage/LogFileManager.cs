@@ -30,6 +30,9 @@ public class LogFileManager
 
     public LogFileManager(AppPaths paths) : this(paths, []) { }
 
+    /// <summary>Where cxagent keeps its files — what a session's saved history is read from.</summary>
+    public AppPaths Paths => _paths;
+
     private LogFileManager(AppPaths paths, string[] ancestry)
     {
         _paths = paths;

@@ -194,6 +194,25 @@ public sealed class SubAgentStore
         }
     }
 
+    /// <summary>
+    /// Keeps a worker brought back with its session under the handle it had, and answers whether it could.
+    ///
+    /// <para>THE OLD HANDLE OR NOTHING. The model's history addresses the worker by it; kept under a new one, the
+    /// model's next agent_send would name a worker that is not there. A handle already taken — a worker of this run,
+    /// or one the user dismissed — is not taken again.</para>
+    /// </summary>
+    /// <param name="ended">How its last run ended — what a list shows for it, which lists only workers that have run.</param>
+    public bool Restore(string name, SubAgent agent, string? description, AgentEnd ended)
+    {
+        lock (_naming)
+        {
+            if (_byName.ContainsKey(name) || _forgotten.ContainsKey(name)) return false;
+            _byName[name] = new StoredAgent(name, agent.TypeName, description, ended.Began, agent);
+            _ends[name] = ended;
+            return true;
+        }
+    }
+
     /// <summary>What this child was kept under, or null when nothing keeps it.</summary>
     public string? NameOf(SubAgent agent)
     {

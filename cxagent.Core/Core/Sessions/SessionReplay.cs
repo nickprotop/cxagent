@@ -66,13 +66,24 @@ public static class SessionReplay
         return Play(source, chat, tools, new PlayOptions(maxTurns, worker, called));
     }
 
-    private sealed record PlayOptions(int MaxTurns, Action<PastWorker>? Worker, Action<ToolCallReport>? Called);
+    /// <summary>
+    /// Replays a worker's history, gathered from every copy of its session, for its own tab: the messages it was sent
+    /// are its turns there.
+    /// </summary>
+    internal static ReplayShown PlayWorker(ExportSource source, ChildFeed feed) =>
+        Play(source, feed, feed, new PlayOptions(int.MaxValue, null, feed.CallFinished) { ForWorker = true });
+
+    private sealed record PlayOptions(int MaxTurns, Action<PastWorker>? Worker, Action<ToolCallReport>? Called)
+    {
+        /// <summary>A worker's own history, whose turns are what its parent sent it.</summary>
+        public bool ForWorker { get; init; }
+    }
 
     private static ReplayShown Play(ExportSource source, ISessionObserver chat, IToolObserver tools, PlayOptions options)
     {
         var maxTurns = options.MaxTurns;
         var entries = source.Entries;
-        var turnStarts = entries.Select((e, i) => (e, i)).Where(p => IsUserTurn(p.e)).Select(p => p.i).ToList();
+        var turnStarts = entries.Select((e, i) => (e, i)).Where(p => IsUserTurn(p.e, options.ForWorker)).Select(p => p.i).ToList();
         var hidden = Math.Max(0, turnStarts.Count - maxTurns);
         var from = hidden > 0 ? turnStarts[hidden] : 0;
 
@@ -112,7 +123,7 @@ public static class SessionReplay
             }
             if (entry.Message is not { } m) continue;
 
-            if (IsUserTurn(entry))
+            if (IsUserTurn(entry, options.ForWorker))
             {
                 chat.UserTurnAdded(new ChatMessageId(id--), m.Content);
                 continue;
@@ -155,12 +166,12 @@ public static class SessionReplay
     }
 
     /// <summary>
-    /// A message the user typed. Tool results and the task list also carry the user role, and so do a worker's
-    /// report and cxagent's own nudges; none of those is a turn of the user's.
+    /// A message the user typed — or, in a worker's own history, one its parent sent it. Tool results and the task list
+    /// also carry the user role, and so do a worker's report and cxagent's own nudges; none of those is a turn.
     /// </summary>
-    private static bool IsUserTurn(ExportEntry e) =>
+    private static bool IsUserTurn(ExportEntry e, bool forWorker) =>
         e is { Kind: HistoryLine.Kinds.Message, Message: { Role: "user", ToolCallId: null, IsTaskList: false } }
-        && e.From is null or Incoming.You;
+        && (e.From is null or Incoming.You || forWorker && e.From is Incoming.Brief or Incoming.Parent);
 
     private static Job Started(ToolCall call, ExportHeader session, DateTimeOffset at, ref long id) =>
         new()

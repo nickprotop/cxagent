@@ -41,6 +41,11 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     private int _toolCalls;
     private bool _replaying;
 
+    // ROWS WHOSE END IS SENT, so a row ends once. A view attaching late is replayed a row's start with the job as it is
+    // NOW — finished — which ends it there, and then the update that finished it; a row reopened (a worker sent more
+    // work) is running again and may end again.
+    private readonly HashSet<string> _ended = new(StringComparer.Ordinal);
+
     /// <summary>The session these events belong to (<c>Session.Id</c>).</summary>
     public string SessionId { get; } = sessionId;
 
@@ -194,6 +199,7 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         lock (_gate) known = _toolOutput.ContainsKey(job.Id);
         if (!known) ToolsChanged([job]);
         else if (IsDone(job.State)) Ended(job);
+        else lock (_gate) _ended.Remove(job.Id);
     }
 
     /// <inheritdoc/>
@@ -243,6 +249,7 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         bool streamed;
         lock (_gate)
         {
+            if (!_ended.Add(job.Id)) return;
             if (!_replaying) _toolCalls++;
             streamed = _toolOutput.GetValueOrDefault(job.Id) > 0;
         }
