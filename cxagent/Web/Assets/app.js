@@ -2297,12 +2297,15 @@ function resolved(id, by) {
 
 function drawPrompts() {
   // ONLY THE SERVER'S PROMPTS ARE REDRAWN; a page-made one (close anyway, sandbox off) stays until it is answered.
+  // A PROMPT STILL WAITING KEEPS ITS NODE — what is half typed, where the caret is — and one that comes back after
+  // a switch of tab is rebuilt from the state kept on its entry, so a third question is not reset to the first.
   const box = $("prompts");
-  for (const n of [...box.children]) if (n.dataset.prompt) n.remove();
   const sid = activeSessionId();
+  const kept = new Map();
+  for (const n of [...box.children]) if (n.dataset.prompt) { kept.set(n.dataset.prompt, n); n.remove(); }
   for (const p of state.prompts.values()) {
     if (p.message.sessionId !== sid) continue;
-    const node = promptNode(p.message);
+    const node = kept.get(p.message.id) || promptNode(p.message);
     node.dataset.prompt = p.message.id;
     box.append(node);
   }
@@ -2339,7 +2342,14 @@ function promptNode(m) {
     // ONE QUESTION AT A TIME, AS THE TERMINAL ASKS: "Question 2 of 3", Back and Next (Alt+← / Alt+→), and — for more
     // than one — "Your answers" before anything is sent, the last chance to change a decision the model will act on.
     // What is answered is kept while stepping back and forth; a question left blank is skipped, "you decide".
-    const qs = m.questions, answers = qs.map(() => ""), step = { at: 0 };
+    // ON THE PROMPT'S ENTRY, not in this node: the node is rebuilt when the tab comes back, and the answers and the
+    // step must survive that. THE PICKS STAY A LIST until they are sent, so a label holding ", " is still one pick.
+    const entry = state.prompts.get(m.id) || {};
+    const qs = m.questions;
+    const st = entry.ui || (entry.ui = { picked: qs.map(() => []), other: qs.map(() => ""), at: 0 });
+    const step = st;
+    const said = (i) => st.picked[i].concat(st.other[i].trim() ? [st.other[i].trim()] : []);
+    const answers = () => qs.map((_, i) => said(i).join(", "));
     const stage = el("div", "question-steps");
     box.append(stage);
     const read = [];
@@ -2350,10 +2360,11 @@ function promptNode(m) {
         stage.append(el("div", "q", "Your answers"));
         qs.forEach((q, i) => {
           const row = el("div", "answer-row");
-          row.append(el("span", "meta", q.header || q.question), el("span", answers[i] ? null : "meta", answers[i] || "(skipped — you decide)"));
+          const a = said(i).join(", ");
+          row.append(el("span", "meta", q.header || q.question), el("span", a ? null : "meta", a || "(skipped — you decide)"));
           stage.append(row);
         });
-        btns.append(button("Send", "good", () => answer({ answers })), button("Change the last one", null, () => { step.at = qs.length - 1; show(); }));
+        btns.append(button("Send", "good", () => answer({ answers: answers() })), button("Change the last one", null, () => { step.at = qs.length - 1; show(); }));
         return;
       }
       const q = qs[step.at];
@@ -2362,7 +2373,7 @@ function promptNode(m) {
       stage.append(el("div", "q", q.question));
       const name = "q" + Math.random().toString(36).slice(2);
       const picks = [];
-      const had = answers[step.at] ? answers[step.at].split(", ") : [];
+      const had = st.picked[step.at];
       for (const o of q.options) {
         const label = el("label");
         const input = el("input");
@@ -2370,6 +2381,7 @@ function promptNode(m) {
         input.name = name;
         input.value = o.label;
         input.checked = had.includes(o.label);
+        input.addEventListener("change", () => read[0]());
         label.append(input, el("span", null, o.label), o.description ? el("small", null, o.description) : "");
         stage.append(label);
         picks.push(input);
@@ -2377,14 +2389,14 @@ function promptNode(m) {
       const other = el("input");
       other.type = "text";
       other.placeholder = q.options.length ? "or type your own answer" : "your answer";
-      other.value = had.filter((h) => !q.options.some((o) => o.label === h)).join(", ");
+      other.value = st.other[step.at];
+      other.addEventListener("input", () => read[0]());
       stage.append(other);
       read[0] = () => {
-        const picked = picks.filter((i) => i.checked).map((i) => i.value);
-        if (other.value.trim()) picked.push(other.value.trim());
-        answers[step.at] = picked.join(", ");
+        st.picked[step.at] = picks.filter((i) => i.checked).map((i) => i.value);
+        st.other[step.at] = other.value;
       };
-      const next = () => { read[0](); step.at = qs.length === 1 ? qs.length : step.at + 1; if (qs.length === 1) answer({ answers }); else show(); };
+      const next = () => { read[0](); step.at = qs.length === 1 ? qs.length : step.at + 1; if (qs.length === 1) answer({ answers: answers() }); else show(); };
       if (step.at > 0) btns.append(button("Back", null, () => { read[0](); step.at--; show(); }));
       btns.append(button(qs.length === 1 ? "Answer" : step.at === qs.length - 1 ? "Review" : "Next", "good", next));
       btns.append(button("Skip all", null, () => answer({ cancelled: true })));
