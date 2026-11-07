@@ -31,6 +31,25 @@ public static class WebCommands
         ("/config", a => a.Config, "config"),
     ];
 
+    /// <summary>
+    /// The VERBS a browser may not reach, though their command is allowed: the terminal registers them over the same
+    /// names, and they open its windows (edit, open, browse, export), act on the host (login opens a browser there), or
+    /// decide what runs (reload, review). A page has its own form or button for each that it needs.
+    /// </summary>
+    private static readonly IReadOnlyList<(string Name, string Verb, Func<WebAccess, bool>? On, string Why)> Verbs =
+    [
+        ("/mcp", "edit", null, "the config page's MCP servers tab edits them"),
+        ("/mcp", "login", null, "it opens a browser on the machine cxagent runs on"),
+        ("/mcp", "reload", a => a.Config, "it reconnects every server to config.json"),
+        ("/hooks", "edit", null, "the config page's Hooks tab edits them"),
+        ("/hooks", "review", a => a.Config, "it accepts a repository's changed hook files, which then run"),
+        ("/agents", "edit", null, "the config page's Agent types tab edits them"),
+        ("/agents", "open", null, "a worker's card opens its tab here"),
+        ("/plugin", "browse", null, "Marketplace in the session panel is the browser's F2"),
+        ("/sessions", "export", null, "Export in the session panel downloads this one"),
+        ("/sandbox", "edit", null, "the config page's General tab edits it"),
+    ];
+
     /// <summary>What the refusal says.</summary>
     public const string NotOnTheWeb = "not available on the web";
 
@@ -51,9 +70,15 @@ public static class WebCommands
         var name = parts.Length > 0 ? parts[0].ToLowerInvariant() : "";
         var args = parts.Length > 1 ? parts[1].Trim() : "";
 
-        if (Gated.FirstOrDefault(g => g.Name == name) is { Name: not null } gated)
-            return gated.On(allow) ? null : Off(name, gated.Switch);
-        if (!Allowed.Contains(name)) return $"{name} is {NotOnTheWeb}.";
+        if (Gated.FirstOrDefault(g => g.Name == name) is { Name: not null } gated && !gated.On(allow))
+            return Off(name, gated.Switch);
+        if (!Allowed.Contains(name) && !Gated.Any(g => g.Name == name)) return $"{name} is {NotOnTheWeb}.";
+
+        var verb = args.Split(' ', 2)[0].ToLowerInvariant();
+        if (Verbs.FirstOrDefault(v => v.Name == name && v.Verb == verb) is { Name: not null } held)
+            return held.On is { } on
+                ? on(allow) ? null : Off($"{name} {verb}", "config") + $" ({held.Why}.)"
+                : $"{name} {verb} is {NotOnTheWeb} — {held.Why}.";
 
         // ONLY THE PARTS THAT LEAVE CONFIG ALONE. /sandbox on|off|edit write config.json — the picker under the message
         // box changes this session's; /stats clear deletes history behind a terminal dialog.

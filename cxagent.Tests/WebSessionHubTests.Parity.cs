@@ -792,4 +792,39 @@ public sealed partial class WebSessionHubTests
         }
         finally { await server.StopAsync(); }
     }
+
+    [Theory]
+    [InlineData("/mcp edit")]
+    [InlineData("/mcp login github")]
+    [InlineData("/hooks edit")]
+    [InlineData("/agents edit")]
+    [InlineData("/agents open scout")]
+    [InlineData("/plugin browse")]
+    [InlineData("/sessions export 2")]
+    [InlineData("/sandbox edit")]
+    public void A_verb_that_opens_a_terminal_window_or_acts_on_the_host_is_refused_whatever_the_switches(string command)
+    {
+        var all = new Core.Web.WebAccess(Shell: true, Config: true, Plugins: true, OpenAnywhere: true);
+        Assert.NotNull(CxAgent.Web.WebCommands.Refusal(command, all));
+    }
+
+    [Theory]
+    [InlineData("/mcp reload")]
+    [InlineData("/hooks review")]
+    public void A_verb_that_changes_what_runs_needs_config(string command)
+    {
+        Assert.NotNull(CxAgent.Web.WebCommands.Refusal(command, Core.Web.WebAccess.Default));
+        Assert.Null(CxAgent.Web.WebCommands.Refusal(command, Core.Web.WebAccess.Default with { Config = true }));
+    }
+
+    [Theory]
+    [InlineData("/mcp")]
+    [InlineData("/mcp show github")]
+    [InlineData("/hooks")]
+    [InlineData("/agents show scout")]
+    [InlineData("/agents send scout look again")]
+    [InlineData("/tasks stop 42")]
+    [InlineData("/plugin load calculator")]
+    public void The_reading_and_sending_verbs_are_allowed(string command) =>
+        Assert.Null(CxAgent.Web.WebCommands.Refusal(command, Core.Web.WebAccess.Default));
 }
