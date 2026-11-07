@@ -55,4 +55,33 @@ public sealed class GitTreeTests : IDisposable
         for (var i = 0; i < 50 && seen is null; i++) { seen = GitTree.Cached(_repo); await Task.Delay(100); }
         Assert.Equal("1 untracked", seen);
     }
+
+    /// <summary>THE FOLDER'S OWN REPOSITORY, whatever folder the process runs in — a second tab in another project
+    /// reads that project's branch and tree, not the first one's.</summary>
+    [Fact]
+    public void A_folder_is_read_as_its_own_repository_not_the_processes()
+    {
+        Repo();
+        Git("checkout", "-q", "-b", "elsewhere");
+        File.WriteAllText(Path.Combine(_repo, "b.txt"), "new\n");
+
+        var read = GitTree.Read(_repo);
+
+        Assert.NotNull(read);
+        Assert.Equal("elsewhere", read.Branch);
+        Assert.Equal("1 untracked", read.Status);
+        Assert.Null(GitTree.Read(Path.GetTempPath()));
+    }
+
+    /// <summary>THE TERMINAL'S PANEL ASKS FOR THE SESSION'S FOLDER, as the browser's does.</summary>
+    [Fact]
+    public async Task The_terminal_panel_reads_git_in_the_sessions_folder()
+    {
+        var asked = new TaskCompletionSource<string>();
+        var panel = new SessionPanel { ReadGitForTest = folder => { asked.TrySetResult(folder); return null; } };
+
+        panel.Refresh(new SessionPanel.SessionPanelState { Endpoint = "", Rules = 0, WorkingDirectory = _repo });
+
+        Assert.Equal(_repo, await asked.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
 }

@@ -2,11 +2,45 @@ using System.Diagnostics;
 
 namespace CxAgent.UI;
 
+/// <summary>A repository's branch and its working tree's shape — null for a clean tree.</summary>
+public sealed record GitInfo(string Branch, string? Status);
+
 /// <summary>
 /// A folder's working tree, as the session panel shows it — for the terminal's panel and a browser's alike.
 /// </summary>
 public static class GitTree
 {
+    /// <summary>
+    /// The branch and working tree of the repository <paramref name="folder"/> is in, or null outside one. THE FOLDER'S
+    /// OWN, never the process's: a terminal with tabs in two projects shows each tab its own repository.
+    /// </summary>
+    public static GitInfo? Read(string folder) =>
+        Branch(folder) is { Length: > 0 } branch ? new GitInfo(branch, Status(folder)) : null;
+
+    /// <summary>
+    /// The branch the folder's repository is on, read from <c>.git/HEAD</c> — no git process for a panel refreshed
+    /// every second. Null outside a repository, and the short commit when HEAD is detached.
+    /// </summary>
+    public static string? Branch(string folder)
+    {
+        try
+        {
+            for (var dir = new DirectoryInfo(folder); dir is not null; dir = dir.Parent)
+            {
+                var git = Path.Combine(dir.FullName, ".git");
+                string? head = null;
+                if (Directory.Exists(git)) head = Path.Combine(git, "HEAD");
+                else if (File.Exists(git) && File.ReadAllText(git).Trim() is var pointer && pointer.StartsWith("gitdir:", StringComparison.Ordinal))
+                    head = Path.Combine(Path.GetFullPath(pointer[7..].Trim(), dir.FullName), "HEAD");
+                if (head is null) continue;
+                var text = File.ReadAllText(head).Trim();
+                return text.StartsWith("ref: refs/heads/", StringComparison.Ordinal) ? text[16..] : text[..Math.Min(8, text.Length)];
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { }
+        return null;
+    }
+
     /// <summary>The working tree's shape — "3 changed · 1 untracked" — or null when it is clean or not a repository.
     /// Run in <paramref name="dir"/> (the process's folder when null), with <paramref name="limit"/> to answer.</summary>
     public static string? Status(string? dir = null, TimeSpan? limit = null, string program = "git")

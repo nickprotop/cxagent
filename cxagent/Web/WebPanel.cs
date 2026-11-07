@@ -98,10 +98,10 @@ internal static class WebPanel
             ["here"] = new JsonObject
             {
                 ["folder"] = session.WorkingDirectory,
-                ["git"] = GitBranch(session.WorkingDirectory),
+                ["git"] = CxAgent.UI.GitTree.Branch(session.WorkingDirectory),
                 // THE TREE'S SHAPE, as the terminal's panel shows it under the branch — GitTree's cached reading, so a
                 // panel built every second runs git at most once per five seconds.
-                ["gitTree"] = GitBranch(session.WorkingDirectory) is null ? null : CxAgent.UI.GitTree.Cached(session.WorkingDirectory),
+                ["gitTree"] = CxAgent.UI.GitTree.Branch(session.WorkingDirectory) is null ? null : CxAgent.UI.GitTree.Cached(session.WorkingDirectory),
                 ["skills"] = session.LoadedSkills.Count,
                 ["permissions"] = manager.Rules?.RulesFor(session.WorkingDirectory).Rules.Count ?? 0,
                 ["turnCap"] = Core.Agents.AgentHost.SessionCeilingFor(res?.Orchestrator?.MaxTurns),
@@ -142,29 +142,5 @@ internal static class WebPanel
                 ["modes"] = new JsonArray([.. session.Values(Core.Commands.ValueSources.EditModes).Select(v => (JsonNode)new JsonObject { ["name"] = v.Name, ["summary"] = v.Summary })]),
             },
         };
-    }
-
-    /// <summary>
-    /// The branch the folder's repository is on, read from <c>.git/HEAD</c> — no git process per panel refresh. Null
-    /// outside a repository, and the short commit when HEAD is detached.
-    /// </summary>
-    internal static string? GitBranch(string folder)
-    {
-        try
-        {
-            for (var dir = new DirectoryInfo(folder); dir is not null; dir = dir.Parent)
-            {
-                var git = Path.Combine(dir.FullName, ".git");
-                string? head = null;
-                if (Directory.Exists(git)) head = Path.Combine(git, "HEAD");
-                else if (File.Exists(git) && File.ReadAllText(git).Trim() is var pointer && pointer.StartsWith("gitdir:", StringComparison.Ordinal))
-                    head = Path.Combine(Path.GetFullPath(pointer[7..].Trim(), dir.FullName), "HEAD");
-                if (head is null) continue;
-                var text = File.ReadAllText(head).Trim();
-                return text.StartsWith("ref: refs/heads/", StringComparison.Ordinal) ? text[16..] : text[..Math.Min(8, text.Length)];
-            }
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { }
-        return null;
     }
 }

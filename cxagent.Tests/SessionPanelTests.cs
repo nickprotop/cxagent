@@ -753,7 +753,7 @@ public class SessionPanelTests
     {
         var panel = new SessionPanel
         {
-            ReadGitForTest = () => { Thread.Sleep(3000); return new SessionPanel.GitInfo("main", null); },
+            ReadGitForTest = _ => { Thread.Sleep(3000); return new GitInfo("main", null); },
         };
 
         var timer = System.Diagnostics.Stopwatch.StartNew();

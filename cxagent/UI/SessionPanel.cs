@@ -569,7 +569,7 @@ public sealed class SessionPanel
 
         // Rendered separately, into the control pinned at the panel's foot.
         var gitLines = new List<string>(3);
-        if (CachedGit() is { } git)
+        if (CachedGit(state.Folder) is { } git)
         {
             Section(gitLines, "Git");
             gitLines.Add(Value(git.Branch));
@@ -579,22 +579,20 @@ public sealed class SessionPanel
         _gitBlock.SetContent(gitLines);
     }
 
-    /// <summary>Branch and working-tree summary, as one cached answer.</summary>
-    public sealed record GitInfo(string Branch, string? Status);
+    /// <summary>A reading and the folder it was taken in.</summary>
+    private sealed record GitReading(string Folder, GitInfo? Info);
 
     /// <summary>The last reading — written on the pool, read by the refresh on the UI thread.</summary>
-    private volatile GitInfo? _git;
+    private volatile GitReading? _git;
 
     /// <summary>The reading under way, if one is.</summary>
     private Task? _gitReading;
 
-    /// <summary>Test seam: reads git in place of the real processes.</summary>
-    public Func<GitInfo?> ReadGitForTest { set => _readGit = value; }
+    /// <summary>Test seam: reads git for a folder in place of the real processes.</summary>
+    public Func<string, GitInfo?> ReadGitForTest { set => _readGit = value; }
 
-    private Func<GitInfo?> _readGit = ReadGit;
-
-    /// <summary>The branch and the working tree's state, from git in the current directory; null outside a repo.</summary>
-    private static GitInfo? ReadGit() => GitBranch() is { Length: > 0 } branch ? new GitInfo(branch, GitStatus()) : null;
+    // THE SESSION'S FOLDER, read the way a browser's panel reads it.
+    private Func<string, GitInfo?> _readGit = GitTree.Read;
 
     /// <summary>Test seam: the working-tree summary for a folder, with git given <paramref name="limit"/>
     /// to answer. A TEST CHOOSES ITS OWN LIMIT: the panel's half second is a judgement about a panel, and
@@ -634,17 +632,23 @@ public sealed class SessionPanel
     /// full timeout on a slow or network filesystem. The refresh shows the last reading at once; a fresh one appears
     /// on a later refresh.</para>
     /// </summary>
-    private GitInfo? CachedGit()
+    /// <para>A READING IS FOR ITS FOLDER. A panel shown for another folder takes a fresh reading at once and shows
+    /// nothing until it is in, rather than one repository's branch under another's location.</para>
+    private GitInfo? CachedGit(string folder)
     {
         var now = DateTimeOffset.UtcNow;
-        if (now - _gitTakenAt >= GitCacheFor && _gitReading is null or { IsCompleted: true })
+        var other = _gitFolder != folder;
+        if ((other || now - _gitTakenAt >= GitCacheFor) && _gitReading is null or { IsCompleted: true })
         {
+            _gitFolder = folder;
             _gitTakenAt = now;
             var read = _readGit;
-            _gitReading = Task.Run(() => _git = read());
+            _gitReading = Task.Run(() => _git = new GitReading(folder, read(folder)));
         }
-        return _git;
+        return _git is { } reading && reading.Folder == folder ? reading.Info : null;
     }
+
+    private string? _gitFolder;
 
     /// <summary>
     /// The working tree's shape — "3 modified · 1 untracked" — or null when it is clean.
@@ -658,7 +662,7 @@ public sealed class SessionPanel
     /// "do I have uncommitted work?", which a count answers and a truncated filename does not.</para>
     ///
     /// <para><c>--porcelain</c> because its format is a stability promise; the human-readable output
-    /// is explicitly not. Same bounded, never-throwing shape as <see cref="GitBranch"/>: git may be
+    /// is explicitly not. Same bounded, never-throwing shape as <see cref="GitTree.Branch"/>: git may be
     /// absent, the tree may be huge, and neither is worth a frozen panel.</para>
     /// </summary>
     // THE TREE'S SHAPE IS GitTree's, so a browser's panel reads it the same way.
@@ -757,41 +761,5 @@ public sealed class SessionPanel
 
         var max = MaxWidth - 2;
         return path.Length <= max ? path : "…" + path[^(max - 1)..];
-    }
-
-    /// <summary>
-    /// The current git branch, or null outside a repository.
-    ///
-    /// <para>Shelled out rather than taking a git DEPENDENCY. LibGit2Sharp is a native library per
-    /// platform for one string that `git rev-parse` returns in milliseconds, and cxagent already
-    /// runs shell commands as its core function — adding a package to avoid one is the wrong
-    /// trade.</para>
-    ///
-    /// <para>Never throws: git may be absent, the directory may not be a repo, and neither is worth
-    /// a blank panel.</para>
-    /// </summary>
-    private static string? GitBranch()
-    {
-        try
-        {
-            using var p = Process.Start(Core.Sandbox.GitSafe.Harden(new ProcessStartInfo("git", "rev-parse --abbrev-ref HEAD")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            }));
-            if (p is null) return null;
-
-            // Bounded, because a git call on a network filesystem can hang and this runs on the UI
-            // thread's cadence. A missing branch line is a far smaller cost than a frozen panel.
-            if (!p.WaitForExit(500)) { try { p.Kill(true); } catch (Exception) { } return null; }
-
-            var branch = p.StandardOutput.ReadToEnd().Trim();
-            return p.ExitCode == 0 && branch.Length > 0 ? branch : null;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
     }
 }
