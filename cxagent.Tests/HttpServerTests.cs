@@ -46,7 +46,9 @@ public sealed class HttpServerTests : IAsyncLifetime
         Assert.StartsWith("HTTP/1.1 200 OK", response, StringComparison.Ordinal);
         Assert.Contains("Content-Type: text/html; charset=utf-8", response, StringComparison.Ordinal);
         Assert.Contains("X-Content-Type-Options: nosniff", response, StringComparison.Ordinal);
-        Assert.Contains("Referrer-Policy: no-referrer", response, StringComparison.Ordinal);
+        // SAME-ORIGIN, NOT NO-REFERRER: under no-referrer a browser sends "Origin: null" on the login form's own POST,
+        // which the Origin check then refuses.
+        Assert.Contains("Referrer-Policy: same-origin", response, StringComparison.Ordinal);
         Assert.Contains("X-Frame-Options: DENY", response, StringComparison.Ordinal);
         Assert.Contains("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'", response, StringComparison.Ordinal);
         Assert.Contains("<html", response, StringComparison.OrdinalIgnoreCase);

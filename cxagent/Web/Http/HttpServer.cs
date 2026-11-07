@@ -94,7 +94,10 @@ public sealed class HttpExchange(HttpRequest request, Stream stream, bool secure
     public static readonly IReadOnlyList<KeyValuePair<string, string>> Security =
     [
         new("X-Content-Type-Options", "nosniff"),
-        new("Referrer-Policy", "no-referrer"),
+        // SAME-ORIGIN, NOT NO-REFERRER. No page of another site learns where its link was followed from, and the
+        // page's own form posts still carry their Origin — under no-referrer a browser sends "Origin: null", and the
+        // login's Origin check refuses its own page.
+        new("Referrer-Policy", "same-origin"),
         new("X-Frame-Options", "DENY"),
         new("Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"),

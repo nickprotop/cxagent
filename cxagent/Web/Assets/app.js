@@ -450,7 +450,8 @@ function resolved(id, by) {
   const p = state.prompts.get(id);
   state.prompts.delete(id);
   drawPrompts();
-  if (p && by && by !== "web") {
+  // SAID ONLY WHEN SOMEONE ELSE ANSWERED — the terminal, or another tab. This tab knows what it clicked.
+  if (p && by && !p.answeredHere) {
     const view = state.open.get(p.message.sessionId);
     if (view) append(view, el("div", "msg said", "answered by " + by));
   }
@@ -476,7 +477,11 @@ function button(text, cls, onClick) {
 
 function promptNode(m) {
   const box = el("div", "prompt");
-  const answer = (fields) => send(Object.assign({ type: "answer", promptId: m.id }, fields));
+  const answer = (fields) => {
+    const p = state.prompts.get(m.id);
+    if (p) p.answeredHere = true;
+    send(Object.assign({ type: "answer", promptId: m.id }, fields));
+  };
   if (m.kind === "permission") {
     const heading = m.sandboxFailure ? "Sandbox could not start: " + m.sandboxFailure + ". Run this uncontained?"
       : m.unsandboxedReason ? "Run this outside the sandbox?"
