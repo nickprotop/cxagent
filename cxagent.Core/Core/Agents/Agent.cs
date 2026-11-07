@@ -1194,7 +1194,14 @@ public sealed class Agent
         if (setup.Tools.Memory is { } memory)
         {
             _memoryTool = new Memory.MemoryTool(memory, readOnly: isSubAgent, written: name => MemoryWritten?.Invoke(name));
-            if (setup.Brief.MemoryIndex is { } index) _memoryIndex = index;
+            // A CHILD TAKES ITS LIST ONCE, when it is built: the session's snapshot is retaken when the PARENT clears or
+            // compacts, and a background child still running must not see its own prompt move for it.
+            if (setup.Brief.MemoryIndex is { } index && isSubAgent)
+            {
+                var atSpawn = index();
+                _memoryIndex = () => atSpawn;
+            }
+            else if (setup.Brief.MemoryIndex is { } sessions) _memoryIndex = sessions;
             else
             {
                 // NO SESSION TO HOLD A SNAPSHOT (a library caller, a test): read once, now, and keep it for this agent's life.

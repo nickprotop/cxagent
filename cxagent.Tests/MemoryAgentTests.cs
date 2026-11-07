@@ -98,6 +98,22 @@ public sealed class MemoryAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task A_sub_agents_index_is_fixed_when_it_is_built_whatever_its_parents_snapshot_does()
+    {
+        // THE PARENT'S COMPACTION RETAKES THE SESSION'S SNAPSHOT; a background child still running must not see its
+        // prompt move for it.
+        var current = new List<MemoryNote> { new("first", "d", MemoryScope.Global, "") };
+        var provider = new ScriptedProvider(new ToolCall { Id = "t", Name = "memory", Arguments = JsonSerializer.SerializeToElement(new { action = "list" }) });
+        var agent = new Agent(Setup(provider, Store, subAgent: true, index: () => [.. current]));
+        current.Add(new("second", "d", MemoryScope.Global, ""));
+
+        await agent.SendAsync("go", CancellationToken.None);
+
+        Assert.Equal(provider.Systems[0], provider.Systems[1]);
+        Assert.DoesNotContain("- second", provider.Systems[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_selection_that_removes_memory_removes_the_section_too()
     {
         var provider = new ScriptedProvider();

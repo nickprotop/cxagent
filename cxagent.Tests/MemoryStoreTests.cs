@@ -109,6 +109,63 @@ public sealed class MemoryStoreTests : IDisposable
     public void A_secret_in_the_description_is_refused_too() =>
         Assert.NotNull(Store(_projectA).Write(Note("creds", MemoryScope.Global, "fine", "api_key: abcdef0123456789")));
 
+    [Theory]
+    [InlineData("OPENAI_API_KEY=abc123def456ghi789")]
+    [InlineData("DB_PASSWORD=hunter2hunter2x")]
+    [InlineData("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")]
+    [InlineData("{ \"password\": \"s3cretPassw0rd!\" }")]
+    [InlineData("sk_live_51HabcdefGHIJKLmnopQRST")]
+    public void The_shapes_a_model_copies_from_an_env_file_are_secrets(string body) =>
+        Assert.NotNull(Store(_projectA).Write(Note("creds", MemoryScope.Global, body)));
+
+    [Theory]
+    [InlineData("token: expiration is one hour")]
+    [InlineData("password: required for staging")]
+    [InlineData("It reads password: ${DB_PASS} from the environment.")]
+    [InlineData("The api_key: <your key here> placeholder in the README.")]
+    public void Prose_about_credentials_is_not_a_secret(string body) =>
+        Assert.Null(Store(_projectA).Write(Note("about-auth", MemoryScope.Project, body)));
+
+    [Theory]
+    [InlineData("---\n---\nJust a body.\n")]
+    [InlineData("---\n---")]
+    [InlineData("---\n")]
+    public void A_note_with_empty_or_broken_frontmatter_is_still_read(string text)
+    {
+        var store = Store(_projectA);
+        store.Write(Note("seed", MemoryScope.Global));
+        File.WriteAllText(Path.Combine(store.GlobalFolder, "odd.md"), text);
+
+        Assert.Equal(2, store.List().Count);
+        Assert.NotNull(store.Find("odd"));
+    }
+
+    [Fact]
+    public void A_note_that_is_a_link_is_not_a_note()
+    {
+        // A LINK COULD POINT ANYWHERE — config.json beside the memory folder — and the browser opens notes by name.
+        var store = Store(_projectA);
+        store.Write(Note("seed", MemoryScope.Global));
+        var target = Path.Combine(_config, "config.json");
+        File.WriteAllText(target, "{ \"secret\": 1 }");
+        File.CreateSymbolicLink(Path.Combine(store.GlobalFolder, "config.md"), target);
+
+        Assert.Null(store.PathOf("config"));
+        Assert.Null(store.Find("config"));
+        Assert.DoesNotContain(store.List(), n => n.Name == "config");
+    }
+
+    [Fact]
+    public async Task Two_writers_of_one_note_leave_a_whole_note()
+    {
+        var store = Store(_projectA);
+        var bodies = Enumerable.Range(0, 40).Select(i => new string((char)('a' + i % 26), 4000)).ToList();
+        await Task.WhenAll(bodies.Select(b => Task.Run(() => store.Write(Note("shared", MemoryScope.Global, b)))));
+
+        Assert.Contains(store.Find("shared")!.Body, bodies);
+        Assert.Empty(Directory.EnumerateFiles(store.GlobalFolder, "*.tmp"));
+    }
+
     [Fact]
     public void Talking_about_passwords_is_not_a_secret() =>
         Assert.Null(Store(_projectA).Write(Note("auth", MemoryScope.Project, "Passwords are hashed with argon2; the token lives in the keychain.")));

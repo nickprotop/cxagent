@@ -118,7 +118,7 @@ public sealed class MemoryTool(MemoryStore store, bool readOnly, Action<string>?
         if (scope is null) return "A write needs a scope: 'global' for something about the user, 'project' for this project.";
         var problem = store.Write(new MemoryNote(name, Arg(call, "description") ?? "", scope.Value, Arg(call, "content") ?? ""));
         if (problem is null) written?.Invoke(name);
-        return problem ?? $"Saved '{name}' ({(scope == MemoryScope.Global ? "global" : "project")}). It is in the index from the next session.";
+        return problem ?? $"Saved '{name}' ({(scope == MemoryScope.Global ? "global" : "project")}). It is in the index once the conversation is cleared or compacted, and in every new session.";
     }
 
     private string Delete(string name)

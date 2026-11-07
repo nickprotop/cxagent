@@ -97,8 +97,11 @@ public sealed partial class Session
         }
     }
 
-    /// <summary>The conversation is fresh — the cache is rebuilt anyway, so the index may catch up.</summary>
-    private void RefreshMemoryIndex()
+    /// <summary>
+    /// The conversation is fresh — cleared, compacted, or another one resumed in its place — and the cache is rebuilt
+    /// anyway, so the index may catch up, and what the model knows starts again from it.
+    /// </summary>
+    internal void RefreshMemoryIndex()
     {
         lock (_memoryGate) ForgetSnapshot();
     }

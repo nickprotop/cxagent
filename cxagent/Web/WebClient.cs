@@ -710,7 +710,8 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     /// <summary>
     /// <c>/memory open</c>: a note in the editor, BY NAME ONLY. The one thing in cxagent's own folder a browser opens —
     /// the user's notes are theirs to read and correct wherever they work, as in the terminal. A name, never a path: the
-    /// store resolves it inside the memory folder, and a name is a kebab-case slug, so nothing else there is reachable.
+    /// store resolves it inside the memory folder, a name is a kebab-case slug, and a link there is not a note — so no
+    /// other file of that folder is reachable this way.
     /// </summary>
     private void OpenMemory(Session session, string name)
     {

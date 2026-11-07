@@ -87,7 +87,7 @@ public sealed partial class MemoryStore
         {
             if (folder is null) continue;
             var path = Path.Combine(folder, name + ".md");
-            if (File.Exists(path)) return path;
+            if (File.Exists(path) && !IsLink(path)) return path;
         }
         return null;
     }
@@ -126,9 +126,18 @@ public sealed partial class MemoryStore
         var text = $"---\nname: {note.Name}\ndescription: {description}\n---\n\n{note.Body.TrimEnd()}\n";
         var target = Path.Combine(folder, note.Name + ".md");
         // WHOLE OR NOT AT ALL: an editor tab open on the note, or a session reading the index, never sees half a file.
-        var temp = target + ".tmp";
-        File.WriteAllText(temp, text);
-        File.Move(temp, target, overwrite: true);
+        // A TEMP FILE OF ITS OWN per write: two tabs or two processes writing one note would otherwise share one, and
+        // the first to move it would hand the second a file truncated under it.
+        var temp = $"{target}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllText(temp, text);
+            File.Move(temp, target, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp)) File.Delete(temp);
+        }
         return null;
     }
 
@@ -157,7 +166,7 @@ public sealed partial class MemoryStore
     {
         if (!Directory.Exists(folder)) return [];
         return Directory.EnumerateFiles(folder, "*.md")
-            .Where(f => ValidName(Path.GetFileNameWithoutExtension(f)))
+            .Where(f => ValidName(Path.GetFileNameWithoutExtension(f)) && !IsLink(f))
             .Order(StringComparer.Ordinal)
             .Select(f => Parse(f, scope))
             .OfType<MemoryNote>()
@@ -167,23 +176,38 @@ public sealed partial class MemoryStore
     /// <summary>
     /// A note from its file. The NAME IS THE FILE'S, whatever the frontmatter says: a hand edit that renamed one inside
     /// would otherwise list a note no read could find. A file with no frontmatter is all body and no description.
+    ///
+    /// <para>ONE BAD FILE NEVER TAKES THE SESSION DOWN: the index, the panel and every message read the whole folder, so
+    /// a file that cannot be read is skipped, and frontmatter of any shape — empty, unclosed — reads as what it holds.</para>
     /// </summary>
     private static MemoryNote? Parse(string path, MemoryScope scope)
     {
         string text;
         try { text = File.ReadAllText(path).ReplaceLineEndings("\n"); }
-        catch (IOException) { return null; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
 
         var description = "";
         var body = text;
-        if (text.StartsWith("---\n", StringComparison.Ordinal) && text.IndexOf("\n---", 3, StringComparison.Ordinal) is var end and > 0)
+        // THE CLOSING FENCE FROM INDEX 3, so `---\n---` — frontmatter with nothing in it — closes at once.
+        if (text.StartsWith("---\n", StringComparison.Ordinal) && text.IndexOf("\n---", 3, StringComparison.Ordinal) is var end and >= 3)
         {
-            foreach (var line in text[4..end].Split('\n'))
+            var head = end > 4 ? text[4..end] : "";
+            foreach (var line in head.Split('\n'))
                 if (line.StartsWith("description:", StringComparison.Ordinal)) description = line["description:".Length..].Trim();
             var after = text.IndexOf('\n', end + 1);
             body = after < 0 ? "" : text[(after + 1)..];
         }
         return new MemoryNote(Path.GetFileNameWithoutExtension(path), description, scope, body.Trim('\n'));
+    }
+
+    /// <summary>
+    /// Whether <paramref name="path"/> is a link. A NOTE IS A FILE, NEVER A LINK: the browser opens notes by name, and a
+    /// link in the memory folder could point anywhere — config.json beside it — under a name that looks like a note.
+    /// </summary>
+    private static bool IsLink(string path)
+    {
+        try { return new FileInfo(path).LinkTarget is not null; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return true; }
     }
 
     // THE REAL FOLDER: a project reached through a link is the same project, and its notes must not split in two.
@@ -210,14 +234,20 @@ public sealed partial class MemoryStore
     [GeneratedRegex("[^A-Za-z0-9._-]+")]
     private static partial Regex SafeChars();
 
+    // KNOWN KEY FORMATS, then A KEYWORD ASSIGNED SOMETHING THAT LOOKS LIKE A CREDENTIAL. The keyword may end an
+    // identifier — OPENAI_API_KEY, DB_PASSWORD, AWS_SECRET_ACCESS_KEY: `_` is a word character, so no \b before it — and
+    // a quote may close it, as JSON's "password": does. The value needs a letter AND a digit and may not open with $, <
+    // or {: "token: expiration is one hour" and "password: ${DB_PASS}" are prose about a secret, not one.
     [GeneratedRegex(
         @"-----BEGIN [A-Z ]*PRIVATE KEY-----"
         + @"|\bsk-[A-Za-z0-9_-]{20,}"
+        + @"|\b[sr]k_(live|test)_[A-Za-z0-9]{16,}"
         + @"|\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}|\bgithub_pat_[A-Za-z0-9_]{30,}"
         + @"|\bxox[abprs]-[A-Za-z0-9-]{10,}"
         + @"|\bAKIA[0-9A-Z]{16}\b"
         + @"|\bAIza[0-9A-Za-z_-]{35}"
-        + @"|\b(api[_-]?key|secret|token|password|passwd|pwd)\b\s*[:=]\s*\S{8,}",
+        + @"|(?<![A-Za-z0-9])(api[_-]?key|secret|token|password|passwd|pwd)[A-Za-z0-9_-]*[""']?\s*[:=]\s*[""']?"
+        + @"(?=[^\s""']*[0-9])(?=[^\s""']*[A-Za-z])[^\s""'$<{][^\s""']{7,}",
         RegexOptions.IgnoreCase)]
     private static partial Regex SecretPattern();
 }

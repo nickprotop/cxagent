@@ -109,6 +109,25 @@ public sealed class SessionMemoryTests : IDisposable
     }
 
     [Fact]
+    public async Task Resuming_another_conversation_retakes_the_index()
+    {
+        // ANOTHER CONVERSATION'S PROMPT, and its cache is cold anyway: it must list the notes as they are now, and what
+        // the left conversation's model knew must not stop this one being told.
+        using var manager = SessionManager.Create(new CxAgent.Core.Storage.AppPaths(_config));
+        var provider = new CapturingProvider();
+        var session = manager.Open(_project, WithMemory(provider),
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
+        await session.SendAndWait("one");
+        Assert.Empty(session.MemoryIndex());
+
+        Store.Write(new MemoryNote("since", "written before the resume", MemoryScope.Global, "b"));
+        session.NoteAgentWroteMemory("since");
+        manager.Resume(session, new CxAgent.Core.Storage.SessionSnapshot("other-conversation", [], 0, 0, DateTimeOffset.UtcNow, null), () => { });
+
+        Assert.Contains(session.MemoryIndex(), n => n.Name == "since");
+    }
+
+    [Fact]
     public void Forgetting_asks_first_and_names_the_note()
     {
         Store.Write(new MemoryNote("deploy-target", "Where it deploys", MemoryScope.Project, "fly.io"));

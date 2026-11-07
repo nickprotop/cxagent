@@ -525,7 +525,7 @@ forgotten here, edited in a tab, written by another session — is said in one l
 your next message.
 
 A sub-agent reads notes but never writes them. A note that looks like a key, token or password is
-refused. Turn memory off in F8 › General, or with [`memory.enabled`](CONFIG.md#memory) in config.json.
+refused. Turn memory off in F8 › General, or with [`memory.enabled`](CONFIG.md#memory--notes-across-sessions) in config.json.
 
 ---
 

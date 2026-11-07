@@ -1069,6 +1069,10 @@ public sealed class SessionManager : IDisposable
         // own worker needs, and the model's next send by that name reaches the wrong conversation's.
         session.SubAgents.LetGo();
 
+        // ANOTHER CONVERSATION'S PROMPT: the index the left one listed, and what its model was told, are not this one's.
+        // Its cache is cold anyway, so the notes are listed as they are now.
+        session.RefreshMemoryIndex();
+
         session.PendResume(snapshot);
         apply();
         Shared.Resume?.MarkSuperseded(snapshot.AgentId);
