@@ -23,8 +23,9 @@ internal sealed record WebConfigSave(bool Saved, IReadOnlyList<string> Errors);
 /// <para>SECRETS STAY ON THE SERVER. A key, token or password is shown as its last four characters; a hidden value
 /// sent back unchanged is written back as it was, so a page never holds a key it did not type.</para>
 ///
-/// <para>THE BROWSER'S OWN LIMITS ARE NOT IN IT: <c>web.allow</c>, <c>web.users</c> and <c>web.roots</c> are left out of
-/// what is shown and put back from the file on save, whatever the page sent — a login must not widen its own access.</para>
+/// <para>THE web BLOCK IS NOT IN IT: where the server listens, who must log in, the users, the folders and the switches
+/// are left out of what is shown and put back from the file on save, whatever the page sent — a login must not widen
+/// its own access.</para>
 /// </summary>
 internal sealed class WebConfig(AppPaths paths, SessionManager manager, Action<ResolvedConfig>? saved)
 {
@@ -36,90 +37,116 @@ internal sealed class WebConfig(AppPaths paths, SessionManager manager, Action<R
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    /// <summary>The keys under <c>web</c> only the terminal changes.</summary>
-    private static readonly string[] Protected = ["allow", "users", "roots"];
-
-    // A NAME THAT HOLDS A SECRET: apiKey, tavilyApiKey, token, password, Authorization, client_secret …
-    private static readonly Regex SecretName = new("(api[_-]?key|token|secret|password|authorization)$", RegexOptions.IgnoreCase);
+    // A NAME THAT HOLDS A SECRET: apiKey, tavilyApiKey, AWS_SECRET_ACCESS_KEY, OPENAI_KEY, token, password, cookie …
+    internal static readonly Regex SecretName =
+        new("(key|token|secret|password|passwd|credential|authorization|cookie)s?$", RegexOptions.IgnoreCase);
 
     private string ConfigPath => Path.Combine(paths.ConfigDir, "config.json");
 
-    // THE SECRETS THE PAGE WAS SHOWN, by the placeholder it was shown: a value sent back as its placeholder is this.
-    private readonly Dictionary<string, string> _hidden = new(StringComparer.Ordinal);
+    // THE SECRETS THE PAGE WAS SHOWN, BY WHERE THEY WERE: a placeholder is put back only at the path it was taken from,
+    // so one pasted into a description stays the placeholder text, and two keys ending alike never trade places.
+    private readonly Dictionary<string, (string Shown, string Real)> _hidden = new(StringComparer.Ordinal);
+
+    // THE FILE AS THE PAGE READ IT: a save over a file changed since — by F8, /think --save, the marketplace — is refused
+    // rather than reverting that change, and the secret it may have rotated with it.
+    private string? _readText;
+
+    private static string? FileText(string path) => File.Exists(path) ? File.ReadAllText(path) : null;
 
     /// <summary>The file as a browser may see it, or null with why it cannot be read.</summary>
     public string? Read(out string? why)
     {
         why = null;
         JsonObject root;
+        string? text;
         try
         {
-            root = File.Exists(ConfigPath) ? JsonNode.Parse(File.ReadAllText(ConfigPath)) as JsonObject ?? [] : [];
+            text = FileText(ConfigPath);
+            root = text is null ? [] : JsonNode.Parse(text) as JsonObject ?? [];
         }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         {
             why = $"config.json could not be read: {e.Message}";
             return null;
         }
-        if (root["web"] is JsonObject web)
-        {
-            foreach (var key in Protected) web.Remove(key);
-            if (web.Count == 0) root.Remove("web");
-        }
+
+        // THE WHOLE web BLOCK IS THE TERMINAL'S: where the server listens, who must log in, the users, the folders and
+        // the switches are what a login must not change about itself, so none of it is shown.
+        root.Remove("web");
         lock (_hidden)
         {
+            _readText = text;
             _hidden.Clear();
-            Hide(root);
+            Hide(root, "");
         }
         return root.ToJsonString(Indented);
     }
 
-    private void Hide(JsonNode? node)
+    private void Hide(JsonNode? node, string path)
     {
         switch (node)
         {
             case JsonObject o:
                 foreach (var (name, value) in o.ToList())
                 {
+                    var at = path + "/" + name;
                     if (value is JsonValue v && v.TryGetValue<string>(out var text) && SecretName.IsMatch(name) && !IsReference(text))
-                    {
-                        var shown = $"(hidden · …{(text.Length > 4 ? text[^4..] : "")})";
-                        _hidden[shown] = text;
-                        o[name] = shown;
-                    }
-                    else Hide(value);
+                        o[name] = Mask(at, text);
+                    else Hide(value, at);
                 }
                 break;
             case JsonArray a:
-                foreach (var item in a) Hide(item);
+                for (var i = 0; i < a.Count; i++)
+                {
+                    var at = path + "/" + i;
+                    // A FLAG'S VALUE: ["--api-key", "sk-…"] in a server's arguments.
+                    var flag = i > 0 && a[i - 1] is JsonValue pv && pv.TryGetValue<string>(out var prev)
+                        && prev.StartsWith('-') && SecretName.IsMatch(prev.TrimStart('-').Replace("-", "", StringComparison.Ordinal));
+                    if (flag && a[i] is JsonValue v && v.TryGetValue<string>(out var text) && !IsReference(text)) a[i] = Mask(at, text);
+                    else Hide(a[i], at);
+                }
                 break;
         }
+    }
+
+    private JsonValue Mask(string path, string real)
+    {
+        var shown = $"(hidden #{_hidden.Count + 1} · …{(real.Length > 4 ? real[^4..] : "")})";
+        _hidden[path] = (shown, real);
+        return JsonValue.Create(shown);
     }
 
     // A PLACEHOLDER FOR A SECRET IS NOT ONE: {env:NAME} and $NAME say where the key comes from, which is worth seeing.
     private static bool IsReference(string text) =>
         text.Length == 0 || text.StartsWith("{env:", StringComparison.Ordinal) || text.StartsWith('$');
 
-    private void Unhide(JsonNode? node)
+    private void Unhide(JsonNode? node, string path)
     {
         switch (node)
         {
             case JsonObject o:
                 foreach (var (name, value) in o.ToList())
                 {
-                    if (value is JsonValue v && v.TryGetValue<string>(out var text) && _hidden.TryGetValue(text, out var real)) o[name] = real;
-                    else Unhide(value);
+                    var at = path + "/" + name;
+                    if (Restored(value, at) is { } real) o[name] = real;
+                    else Unhide(value, at);
                 }
                 break;
             case JsonArray a:
                 for (var i = 0; i < a.Count; i++)
                 {
-                    if (a[i] is JsonValue v && v.TryGetValue<string>(out var text) && _hidden.TryGetValue(text, out var real)) a[i] = real;
-                    else Unhide(a[i]);
+                    var at = path + "/" + i;
+                    if (Restored(a[i], at) is { } real) a[i] = real;
+                    else Unhide(a[i], at);
                 }
                 break;
         }
     }
+
+    private string? Restored(JsonNode? value, string path) =>
+        value is JsonValue v && v.TryGetValue<string>(out var text) && _hidden.TryGetValue(path, out var hidden) && hidden.Shown == text
+            ? hidden.Real
+            : null;
 
     /// <summary>
     /// The live sessions <paramref name="text"/> would move to a different model or endpoint — the move that re-sends a
@@ -134,15 +161,15 @@ internal sealed class WebConfig(AppPaths paths, SessionManager manager, Action<R
             now = File.Exists(ConfigPath) ? JsonNode.Parse(File.ReadAllText(ConfigPath)) as JsonObject ?? [] : [];
         }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException) { return null; }
-        lock (_hidden) Unhide(sent);
+        lock (_hidden) Unhide(sent, "");
         var changed = Change(now, sent).ModelChanged;
         return [.. manager.Sessions.Where(s => s.InstanceName is { } i && changed.Contains(i)).Select(s => s.InstanceName!).Distinct()];
     }
 
     /// <summary>
-    /// Writes <paramref name="text"/> as config.json — secrets put back, the browser's limits kept from the file —
-    /// when the loader accepts it, then makes it live: sessions on an instance whose model or endpoint changed are
-    /// moved as <paramref name="choice"/> says, others in place.
+    /// Writes <paramref name="text"/> as config.json — secrets put back where they were, the web block kept from the
+    /// file — when the loader accepts it and the file is still what the page read, then makes it live: sessions on an
+    /// instance whose model or endpoint changed are moved as <paramref name="choice"/> says, others in place.
     /// </summary>
     public WebConfigSave Save(string text, CacheChoice choice)
     {
@@ -155,29 +182,24 @@ internal sealed class WebConfig(AppPaths paths, SessionManager manager, Action<R
         {
             return new WebConfigSave(false, [$"Not valid JSON: {e.Message}"]);
         }
-        lock (_hidden) Unhide(sent);
+        lock (_hidden)
+        {
+            if (FileText(ConfigPath) != _readText)
+                return new WebConfigSave(false, ["config.json changed since this page read it — Reload to see it, then make your change again."]);
+            Unhide(sent, "");
+        }
 
         JsonObject? before = null;
         var write = ConfigFile.TryApply(new ConfigTarget(ConfigPath, CxAgent.UI.Startup.Env()), root =>
         {
             before = root.DeepClone().AsObject();
-            var kept = new JsonObject();
-            if (root["web"] is JsonObject web)
-                foreach (var key in Protected)
-                    if (web[key] is { } value) kept[key] = value.DeepClone();
-
+            var web = root["web"]?.DeepClone();
             root.Clear();
             foreach (var (name, value) in sent) root[name] = value?.DeepClone();
 
-            // THE FILE'S OWN LIMITS, whatever the page sent for them.
-            var into = root["web"] as JsonObject;
-            if (into is not null) foreach (var key in Protected) into.Remove(key);
-            if (kept.Count > 0)
-            {
-                if (into is null) root["web"] = into = [];
-                foreach (var (name, value) in kept) into[name] = value?.DeepClone();
-            }
-            if (into is { Count: 0 }) root.Remove("web");
+            // THE FILE'S OWN web BLOCK, whatever the page sent for it.
+            root.Remove("web");
+            if (web is not null) root["web"] = web;
         });
         if (!write.Saved) return new WebConfigSave(false, write.Errors);
 

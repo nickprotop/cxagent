@@ -266,11 +266,11 @@ public sealed partial class WebSessionHubTests
     // ---- the shell ------------------------------------------------------------------------------------------------
 
     /// <summary>A second server over the same sessions, with the switches <paramref name="allow"/> sets.</summary>
-    private async Task<(HttpServer Server, WebSessionHub Hub)> ServerWithAsync(Core.Web.WebAccess allow)
+    private async Task<(HttpServer Server, WebSessionHub Hub)> ServerWithAsync(Core.Web.WebAccess allow, string? root = null)
     {
         var composer = new SessionComposer(new ComposerServices(_manager, _paths, new PermissionRulesStore(_paths), null, null) { Prompts = _prompts });
         var opener = new ComposerSessionOpener(composer, ResolvedConfig.ForTesting(_model), AgentMode.Single);
-        var hub = new WebSessionHub(new WebHubServices(_manager, _prompts, new FolderSessionStore(_paths), _paths, [Projects], opener, _clock)
+        var hub = new WebSessionHub(new WebHubServices(_manager, _prompts, new FolderSessionStore(_paths), _paths, [root ?? Projects], opener, _clock)
         {
             Allow = allow,
         });
@@ -674,5 +674,122 @@ public sealed partial class WebSessionHubTests
             await tab.NextAsync(Type("error"));
         }
         finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    // ---- review fixes ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task The_editor_never_opens_cxagent_s_own_config_folder_even_under_a_root_or_with_open_anywhere()
+    {
+        // A ROOT ABOVE THE CONFIG FOLDER — `cxagent web` started in ~ — must not hand a login config.json: its keys,
+        // the users' hashes, and the switches it could turn on for itself.
+        File.WriteAllText(ConfigPath, TwoProviders);
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { OpenAnywhere = true }, root: _root);
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("create", ("folder", Work)));
+            var id = (await tab.NextAsync(Type("opened")))["sessionId"]!.GetValue<string>();
+            await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/open " + ConfigPath)));
+            Assert.Contains("cxagent's own", (await tab.NextAsync(Type("notice")))["text"]!.GetValue<string>(), StringComparison.Ordinal);
+            Assert.DoesNotContain(tab.Seen, m => m["type"]?.GetValue<string>() == "openedFile");
+        }
+        finally { await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task No_part_of_the_web_block_is_shown_or_changed_by_a_browser_s_text_save()
+    {
+        // LOGIN, BIND AND PORT TOO, not only the switches: a login turning the login off, or listening on every
+        // interface, has widened its own access as surely as one turning on the shell.
+        File.WriteAllText(ConfigPath, ConfigWithSecrets);
+        var before = JsonNode.Parse(File.ReadAllText(ConfigPath))!["web"]!.ToJsonString();
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Config = true });
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("getConfig"));
+            var text = (await tab.NextAsync(Type("config")))["text"]!.GetValue<string>();
+            Assert.DoesNotContain("\"web\"", text, StringComparison.Ordinal);
+
+            var edited = JsonNode.Parse(text)!.AsObject();
+            edited["web"] = new JsonObject { ["login"] = "off", ["bind"] = "0.0.0.0", ["port"] = 1 };
+            await tab.SendAsync(Msg("saveConfig", ("text", edited.ToJsonString())));
+            await tab.NextAsync(Type("configSaved"));
+            Assert.Equal(before, JsonNode.Parse(File.ReadAllText(ConfigPath))!["web"]!.ToJsonString());
+        }
+        finally { await server.StopAsync(); }
+    }
+
+    private const string ConfigWithServerSecrets = """
+        {
+          "providers": { "local": { "kind": "openai-compatible", "model": "m1", "baseUrl": "http://127.0.0.1:9/v1", "apiKey": "sk-secret-1234" } },
+          "defaultProvider": "local",
+          "mcp": { "cloud": { "command": ["srv", "--api-key", "flag-secret-5678"], "env": { "AWS_SECRET_ACCESS_KEY": "aws-secret-9999" } } }
+        }
+        """;
+
+    [Fact]
+    public async Task Secrets_under_other_names_and_after_a_flag_are_hidden_too()
+    {
+        File.WriteAllText(ConfigPath, ConfigWithServerSecrets);
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Config = true });
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("getConfig"));
+            var text = (await tab.NextAsync(Type("config")))["text"]!.GetValue<string>();
+            Assert.DoesNotContain("aws-secret-9999", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("flag-secret-5678", text, StringComparison.Ordinal);
+
+            // SENT BACK UNCHANGED, each is written back as it was.
+            await tab.SendAsync(Msg("saveConfig", ("text", text)));
+            await tab.NextAsync(Type("configSaved"));
+            var saved = File.ReadAllText(ConfigPath);
+            Assert.Contains("aws-secret-9999", saved, StringComparison.Ordinal);
+            Assert.Contains("flag-secret-5678", saved, StringComparison.Ordinal);
+        }
+        finally { await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task A_placeholder_pasted_somewhere_else_stays_the_placeholder()
+    {
+        // A SECRET COMES BACK ONLY WHERE IT WAS TAKEN FROM: pasted into a description, it would otherwise be written
+        // there in clear and shown on the next read, under a name that is not secret.
+        File.WriteAllText(ConfigPath, ConfigWithSecrets);
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Config = true });
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("getConfig"));
+            var edited = JsonNode.Parse((await tab.NextAsync(Type("config")))["text"]!.GetValue<string>())!.AsObject();
+            var placeholder = edited["providers"]!["local"]!["apiKey"]!.GetValue<string>();
+            edited["providers"]!["local"]!["description"] = placeholder;
+            await tab.SendAsync(Msg("saveConfig", ("text", edited.ToJsonString())));
+            await tab.NextAsync(Type("configSaved"));
+            var saved = JsonNode.Parse(File.ReadAllText(ConfigPath))!["providers"]!["local"]!;
+            Assert.Equal(placeholder, saved["description"]!.GetValue<string>());
+            Assert.Equal("sk-secret-1234", saved["apiKey"]!.GetValue<string>());
+        }
+        finally { await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task A_text_save_over_a_file_changed_since_it_was_read_is_refused()
+    {
+        File.WriteAllText(ConfigPath, ConfigWithSecrets);
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Config = true });
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("getConfig"));
+            var text = (await tab.NextAsync(Type("config")))["text"]!.GetValue<string>();
+            File.WriteAllText(ConfigPath, ConfigWithSecrets.Replace("\"m1\"", "\"m9\"", StringComparison.Ordinal));
+            await tab.SendAsync(Msg("saveConfig", ("text", text)));
+            Assert.Contains("changed since", (await tab.NextAsync(Type("configRefused")))["errors"]!.ToJsonString(), StringComparison.Ordinal);
+            Assert.Contains("\"m9\"", File.ReadAllText(ConfigPath), StringComparison.Ordinal);
+        }
+        finally { await server.StopAsync(); }
     }
 }

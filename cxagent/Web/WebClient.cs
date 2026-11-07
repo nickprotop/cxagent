@@ -659,6 +659,14 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 : $"There is no file {path}.", "Warning");
             return;
         }
+        // NEVER CXAGENT'S OWN FOLDER, whatever the roots and switches say: it holds config.json — the keys, the users'
+        // hashes and the very switches a login could turn on for itself — the permission rules, the server's certificate
+        // and every session's logs. A root above it (cxagent web started in ~) must not reach it.
+        if (WebSessionHub.Resolved(allowed, [S.Paths.ConfigDir]) is not null)
+        {
+            Notice(session.Id, $"{path} is in cxagent's own folder, which a browser never opens — its configuration is the config page's, behind web.allow.config.", "Warning");
+            return;
+        }
         if (_files.Open(session, path, allowed) is { } refused) Notice(session.Id, refused, "Warning");
     }
 
