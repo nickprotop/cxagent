@@ -568,4 +568,15 @@ public class SessionCommandTableTests
         Assert.Contains("a name from `providers` in config", help, StringComparison.Ordinal);
         Assert.DoesNotContain(@"\`", help, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// A HINT ALREADY BRACKETED IS NOT BRACKETED AGAIN. A command file's argument-hint is written as a reader sees it —
+    /// "[what to look for]" — and wrapping it once more showed "[[what to look for]]" in both palettes.
+    /// </summary>
+    [Theory]
+    [InlineData("[what to look for]", "[what to look for]")]
+    [InlineData("<file>", "[<file>]")]
+    [InlineData("what to look for", "[what to look for]")]
+    public void A_single_argument_hint_is_bracketed_once(string argument, string hint) =>
+        Assert.Equal(hint, new SessionCommand("/x", "y", [new CommandArgument(argument, "", Completes: false)]).Hint);
 }

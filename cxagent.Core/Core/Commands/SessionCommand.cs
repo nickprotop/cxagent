@@ -74,7 +74,11 @@ public readonly record struct SessionCommand(
     /// Every argument here is optional (each command answers something useful bare), so there is no
     /// second form to distinguish.</para>
     /// </summary>
-    public string Hint => TakesArguments ? $"[{string.Join("|", Args.Select(a => a.Name))}]" : "";
+    public string Hint => !TakesArguments ? ""
+        // ONE ARGUMENT ALREADY IN BRACKETS IS SHOWN AS WRITTEN: a command file's argument-hint is "[what to look for]",
+        // and wrapping it again read "[[what to look for]]".
+        : Args is [{ Name: var only }] && only.StartsWith('[') && only.EndsWith(']') ? only
+        : $"[{string.Join("|", Args.Select(a => a.Name))}]";
 }
 
 /// <summary>
