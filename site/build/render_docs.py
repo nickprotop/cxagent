@@ -294,7 +294,8 @@ def shots(lines: list, resolve, n: int) -> str:
         tab = f"{group}-{i}"
         tabs.append(f'<input type="radio" name="{group}" id="{tab}"{" checked" if i == 0 else ""}>'
                     f'<label for="{tab}">{inline(title)}</label>')
-        panes.append(f'<div class="shot">{link_up(inline(f"![{alt}]({target})"), resolve)}</div>')
+        # NAMED BY ITS TAB, so the stylesheet can size it: a phone's tall capture is held to a phone's width.
+        panes.append(f'<div class="shot shot-{slug(title)}">{link_up(inline(f"![{alt}]({target})"), resolve)}</div>')
     return f'<div class="shots">{"".join(tabs)}{"".join(panes)}</div>'
 
 

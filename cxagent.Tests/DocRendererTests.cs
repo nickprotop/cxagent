@@ -301,6 +301,20 @@ public class DocRendererTests
         Assert.DoesNotContain("Terminal\"", html[html.IndexOf("src=", StringComparison.Ordinal)..]);
     }
 
+    /// <summary>
+    /// A PANE IS NAMED BY ITS TAB, so the site can size it: a phone's capture is tall and narrow, and stretched to the
+    /// column's width it fills several screens. "Phone" gives the pane `shot-phone`, which the stylesheet holds to a
+    /// phone's width.
+    /// </summary>
+    [Fact]
+    public void A_pane_carries_a_class_named_after_its_tab()
+    {
+        var html = RenderWalkthrough(
+            "# W\n\n![Terminal side](a.png \"Terminal\")\n![Phone side](b.png \"Phone\")\n", "a.png", "b.png");
+        Assert.Contains("class=\"shot shot-terminal\"", html);
+        Assert.Contains("class=\"shot shot-phone\"", html);
+    }
+
     [Fact]
     public void A_single_titled_image_is_an_image_and_its_title_stays_out_of_the_path()
     {
