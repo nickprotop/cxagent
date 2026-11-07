@@ -66,12 +66,17 @@ internal static class ShellLine
         }
         catch (OperationCanceledException)
         {
-            try { process.Kill(entireProcessTree: true); } catch (Exception) { }
+            // ASKED, NOT AWAITED: the exit reaches WaitForExitAsync through a notification, and on a loaded machine the
+            // deadline's timer can fire first for a shell that ended long before it. HasExited reaps the child itself,
+            // so a line that finished is reported with its own code, not as killed at the timeout.
+            var ended = !ct.IsCancellationRequested && !capture.Full.IsCancellationRequested && HasEnded(process);
+            if (!ended) try { process.Kill(entireProcessTree: true); } catch (Exception) { }
             if (ct.IsCancellationRequested) throw;
+            if (ended) await Task.WhenAny(Task.WhenAll(stdout, stderr), Task.Delay(PipeGrace, CancellationToken.None));
 
             // FULL IS NOT A TIMEOUT. Output past the cap was cut and the line stopped on purpose, so
             // what it printed up to there is the answer, marked truncated below.
-            timedOut = !capture.Full.IsCancellationRequested;
+            timedOut = !ended && !capture.Full.IsCancellationRequested;
         }
         finally
         {
@@ -89,6 +94,12 @@ internal static class ShellLine
 
     /// <summary>How long, after the shell exits, output still in the pipe is waited for.</summary>
     private static readonly TimeSpan PipeGrace = TimeSpan.FromMilliseconds(500);
+
+    private static bool HasEnded(Process process)
+    {
+        try { return process.HasExited; }
+        catch (InvalidOperationException) { return false; }
+    }
 
     private static int SafeExitCode(Process process)
     {

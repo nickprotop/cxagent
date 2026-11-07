@@ -35,10 +35,12 @@ public class ShellLineTests
     {
         if (OperatingSystem.IsWindows()) return;
 
-        var r = await ShellLine.RunAsync("read x; echo got:$x", Here, TimeSpan.FromSeconds(10), default);
+        // EOF IS THE EVIDENCE, not the clock: read fails at once on a closed stdin and says so, while on an inherited
+        // one it would wait and the line would print nothing.
+        var r = await ShellLine.RunAsync("read x || echo stdin-at-eof", Here, TimeSpan.FromSeconds(10), default);
 
+        Assert.Contains("stdin-at-eof", r.Output);
         Assert.False(r.TimedOut);
-        Assert.Contains("got:", r.Output);
     }
 
     [Fact]
