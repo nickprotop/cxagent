@@ -1115,16 +1115,10 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             Notice(session.Id, WebCommands.Refusal("/shell", S.Allow) ?? "The shell is off for browsers.", "Warning");
             return;
         }
-        if (!OperatingSystem.IsLinux())
-        {
-            Notice(session.Id, "A shell in the browser needs Linux for now; the terminal's /shell works here.", "Warning");
-            return;
-        }
         var key = $"{session.Id}${Interlocked.Increment(ref _shellCount)}";
-        var shell = Environment.GetEnvironmentVariable("SHELL") is { Length: > 0 } sh && File.Exists(sh) ? sh : "/bin/sh";
         WebPty pty;
-        try { pty = new WebPty(shell, session.WorkingDirectory, 24, 80); }
-        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
+        try { pty = WebPty.Start(session.WorkingDirectory, 24, 80); }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or IOException or PlatformNotSupportedException)
         {
             Notice(session.Id, $"The shell could not start: {e.Message}", "Warning");
             return;
@@ -1133,7 +1127,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         Send(new JsonObject
         {
             ["type"] = "openedShell", ["sessionId"] = key, ["parent"] = session.Id,
-            ["shell"] = Path.GetFileName(shell), ["folder"] = session.WorkingDirectory,
+            ["shell"] = pty.ShellName, ["folder"] = session.WorkingDirectory,
         });
 
         // A THREAD OF ITS OWN, because a PTY read blocks until the shell writes; base64 because a read can end inside a
