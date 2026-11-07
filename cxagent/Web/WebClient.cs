@@ -235,6 +235,12 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "stopCommand":
                 StopCommand(Str(m, "sessionId"), Long(m, "pid"));
                 break;
+            case "plugins":
+                await PluginsAsync(Str(m, "sessionId"), m["refresh"] is JsonValue rv && rv.TryGetValue<bool>(out var refresh) && refresh).ConfigureAwait(false);
+                break;
+            case "pluginAction":
+                await PluginActionAsync(Str(m, "sessionId"), Str(m, "name"), Str(m, "action"), Str(m, "folder")).ConfigureAwait(false);
+                break;
             case "getConfig":
                 GetConfig();
                 break;
@@ -641,6 +647,43 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             return;
         }
         if (_files.Open(session, path, allowed) is { } refused) Notice(session.Id, refused, "Warning");
+    }
+
+    // ---- the plugin marketplace: F2, behind web.allow.plugins ---------------------------------------------------------
+
+    private WebPlugins? _pluginsOrNull;
+    private WebPlugins Plugins => _pluginsOrNull ??= new WebPlugins(S.Paths, S.Manager);
+
+    private const string PluginsOff =
+        "Plugins are off for browsers. They are turned on in the terminal: F8 › Web › Browser access (plugins), or web.allow.plugins in config.json.";
+
+    private async Task PluginsAsync(string? sessionId, bool refresh)
+    {
+        if (!S.Allow.Plugins) { Error(PluginsOff); return; }
+        if (LiveSession(sessionId) is not { } session) { Error("Open a session first: plugins load into a session."); return; }
+        Send(await Plugins.ListAsync(session, refresh).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// One action on one plugin row. Long ones — a download waits on its permission prompt, which this same tab
+    /// answers — run beside the message loop, so the answer can arrive while the action waits for it.
+    /// </summary>
+    private async Task PluginActionAsync(string? sessionId, string? name, string? action, string? folder)
+    {
+        if (!S.Allow.Plugins) { Error(PluginsOff); return; }
+        if (LiveSession(sessionId) is not { } session || name is null || action is null) { Error("Which plugin?"); return; }
+        _ = Task.Run(async () =>
+        {
+            string said;
+            try { said = await Plugins.ActAsync(session, name, action, folder).ConfigureAwait(false); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or HttpRequestException)
+            {
+                said = $"'{name}': {e.Message}";
+            }
+            Send(new JsonObject { ["type"] = "pluginResult", ["sessionId"] = session.Id, ["name"] = name, ["action"] = action, ["text"] = said });
+            Send(await Plugins.ListAsync(session, refresh: false).ConfigureAwait(false));
+        });
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     // ---- the config page: config.json, behind web.allow.config ------------------------------------------------------

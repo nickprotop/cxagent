@@ -439,4 +439,25 @@ public sealed partial class WebSessionHubTests
         }
         finally { await server.StopAsync(); }
     }
+
+    // ---- the plugin marketplace -----------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task The_marketplace_and_its_actions_are_refused_while_plugins_are_off()
+    {
+        var (server, _) = await ServerWithAsync(Core.Web.WebAccess.Default with { Plugins = false });
+        try
+        {
+            await using var tab = await Tab.OpenAsync(server.Bound.Port);
+            await tab.SendAsync(Msg("create", ("folder", Work)));
+            var id = (await tab.NextAsync(Type("opened")))["sessionId"]!.GetValue<string>();
+            await tab.SendAsync(Msg("plugins", ("sessionId", id)));
+            Assert.Contains("web.allow.plugins", (await tab.NextAsync(Type("error")))["message"]!.GetValue<string>(), StringComparison.Ordinal);
+            await tab.SendAsync(Msg("pluginAction", ("sessionId", id), ("name", "calculator"), ("action", "install"), ("folder", Work)));
+            Assert.Contains("web.allow.plugins", (await tab.NextAsync(Type("error")))["message"]!.GetValue<string>(), StringComparison.Ordinal);
+            await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/plugin load x")));
+            Assert.Contains("web.allow.plugins", (await tab.NextAsync(Type("notice")))["text"]!.GetValue<string>(), StringComparison.Ordinal);
+        }
+        finally { await server.StopAsync(); }
+    }
 }

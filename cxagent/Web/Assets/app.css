@@ -405,3 +405,19 @@ body.no-composer .composer { display: none; }
 .file-bar.good { background: color-mix(in srgb, var(--good, #3fb950) 14%, transparent); border-color: color-mix(in srgb, var(--good, #3fb950) 40%, transparent); color: var(--text); }
 .file-bar .errors { display: flex; flex-direction: column; gap: 2px; font: 12px var(--mono); }
 .file-bar .errors b { font: 600 12.5px var(--sans); }
+
+/* ---- the plugin marketplace ------------------------------------------------------------------------------------ */
+.plugins { padding: 16px 24px 32px; max-width: 980px; }
+.plugins h3 { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+.plugin-card { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 12px 14px; margin: 0 0 10px; }
+.plugin-card p { margin: 6px 0; }
+.plugin-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.plugin-head b { color: var(--strong); font-size: 14.5px; }
+.plugin-card .meta { color: var(--muted); font-size: 12.5px; }
+.plugin-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+.plugin-tools .tool { font: 12px var(--mono); padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--text); }
+.plugin-tools .tool.gated { border-color: var(--warn-line); color: var(--warn); }
+.plugin-card .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+.plugin-card select { font: 12.5px var(--sans); padding: 5px 6px; border-radius: 7px; border: 1px solid var(--line); background: var(--sunken); color: var(--text); max-width: 360px; }
+.plugin-filter { font: 12.5px var(--sans); padding: 4px 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--sunken); color: var(--text); width: 160px; }
+.plugin-head .badge { background: var(--raised); border-color: var(--line); color: var(--muted); }

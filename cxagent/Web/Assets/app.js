@@ -153,6 +153,8 @@ function handle(m) {
     case "openedFile": openedFile(m); break;
     case "openedShell": openedShell(m); break;
     case "config": openedConfig(m); break;
+    case "plugins": openedPlugins(m); break;
+    case "pluginResult": pluginResult(m); break;
     case "configAsk": configAsk(m); break;
     case "configRefused": configRefused(m); break;
     case "configSaved": configSaved(m); break;
@@ -281,14 +283,15 @@ function drawTabs() {
     const file = view.kind === "file";
     const shell = view.kind === "shell";
     const config = view.kind === "config";
-    const sub = worker || command || file || shell || config;
+    const plugins = view.kind === "plugins";
+    const sub = worker || command || file || shell || config || plugins;
     const row = sub ? null : state.rows.find((r) => r.id === id);
     const w = worker ? workerRunning(view) : null;
     const tab = el("button", "tab" + (id === state.active ? " on" : "") + (sub ? " worker" : ""));
     tab.type = "button";
     const dot = config ? (view.dirty ? "waiting" : "") : shell ? (view.ended ? "" : "working") : file ? (view.dirty ? "waiting" : "") : command ? (view.running ? "working" : "") : worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle");
     tab.append(el("span", "dot " + dot),
-      document.createTextNode(config ? "⚙ config.json" + (view.dirty ? " •" : "") : shell ? "❯ " + view.title : file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? "⤷ " + view.name : view.title || "session"));
+      document.createTextNode(plugins ? "⧉ Plugins" : config ? "⚙ config.json" + (view.dirty ? " •" : "") : shell ? "❯ " + view.title : file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? "⤷ " + view.name : view.title || "session"));
     if (file) tab.title = view.path;
     tab.addEventListener("click", () => activate(id));
     if (sub) {
@@ -401,6 +404,7 @@ function drawWorkerHead() {
   if (view && view.kind === "file") { drawFileHead(view, head); return; }
   if (view && view.kind === "shell") { drawShellHead(view, head); return; }
   if (view && view.kind === "config") { drawConfigHead(view, head); return; }
+  if (view && view.kind === "plugins") { drawPluginsHead(view, head); return; }
   if (!view || view.kind !== "worker") { head.hidden = true; return; }
   head.hidden = false;
   head.replaceChildren();
@@ -803,6 +807,132 @@ function drawConfigHead(view, head) {
     for (const e of view.bar.errors) list.append(el("div", null, e));
     bar.append(list);
   }
+  head.append(bar);
+}
+
+// ---- the plugin marketplace ----------------------------------------------------------------------------------------
+
+// F2 FOR A BROWSER, behind web.allow.plugins: the same rows — installed, updates, needs attention, available — and the
+// same actions. Loading still shows a plugin's hash and asks, and a download still asks first, as prompts here.
+const PLUGINS_ID = "plugins:";
+const SECTION_TITLES = { Installed: "Installed", Updates: "Updates", NeedsAttention: "Needs attention", Available: "Available" };
+const ACTION_LABELS = { install: "Install", update: "Update", activate: "Activate", deactivate: "Deactivate",
+  enable: "Enable auto-load", disable: "Disable auto-load", addToConfig: "Add to config", uninstall: "Uninstall" };
+
+function openPlugins(refresh) {
+  const sid = activeSessionId();
+  if (!sid) { flash("Open a session first: plugins load into a session."); return; }
+  send({ type: "plugins", sessionId: sid, refresh: !!refresh });
+}
+
+function openedPlugins(m) {
+  let view = state.views.get(PLUGINS_ID);
+  const fresh = !view;
+  if (!view) {
+    view = newView(PLUGINS_ID, "plugins");
+    Object.assign(view, { parent: m.sessionId, folder: "", filter: "" });
+  }
+  view.parent = m.sessionId;
+  view.data = m;
+  drawPlugins(view);
+  if (fresh) activate(PLUGINS_ID); else if (state.active === view.id) drawWorkerHead();
+}
+
+function drawPlugins(view) {
+  const m = view.data;
+  const box = el("div", "plugins");
+  if (m.error) box.append(el("div", "said Warning", "The catalog could not be read: " + m.error + " — what is cached is shown."));
+  for (const n of m.notes || []) box.append(el("div", "said", n));
+  const f = view.filter.toLowerCase();
+  for (const section of ["Updates", "NeedsAttention", "Installed", "Available"]) {
+    const rows = m.rows.filter((r) => r.section === section && (!f || (r.name + " " + (r.catalog?.description || "")).toLowerCase().includes(f)));
+    if (!rows.length) continue;
+    box.append(el("h3", null, SECTION_TITLES[section] + " · " + rows.length));
+    for (const r of rows) box.append(pluginCard(view, r));
+  }
+  if (!m.rows.length) box.append(el("p", "none", "No plugins installed, and none offered."));
+  view.log.replaceChildren(box);
+}
+
+function pluginCard(view, r) {
+  const c = r.catalog;
+  const card = el("div", "plugin-card");
+  const head = el("div", "plugin-head");
+  head.append(el("b", null, c?.title || r.name));
+  if (c?.version) head.append(el("span", "meta", c.version));
+  if (r.loaded) head.append(el("span", "badge", "active"));
+  if (r.autoLoad === true) head.append(el("span", "badge", "auto-load"));
+  if (c?.store) head.append(el("span", "badge", c.store));
+  card.append(head);
+  if (c?.description) card.append(el("p", null, c.description));
+  const facts = [r.state, r.detail, c?.publisher && "by " + c.publisher, c?.license, r.folder && "in " + r.folder].filter(Boolean);
+  if (facts.length) card.append(el("div", "meta", facts.join(" · ")));
+  if (c?.requires) card.append(el("div", "meta", "needs " + c.requires + (c.requiresInstall ? " — " + c.requiresInstall : "")));
+  if (c?.tools?.length) {
+    const tools = el("div", "plugin-tools");
+    for (const t of c.tools) {
+      const tag = el("span", "tool" + (t.gated === "never" ? "" : " gated"), t.name);
+      tag.title = t.gated === "never" ? "never asks" : "asks: " + t.gated;
+      tools.append(tag);
+    }
+    card.append(tools);
+  }
+  if (r.cannotUpdate) card.append(el("div", "said Warning", r.cannotUpdate));
+  const acts = el("div", "btns");
+  for (const a of r.actions) {
+    if (a === "install") {
+      const where = el("select");
+      for (const d of view.data.destinations) where.append(new Option(d.label, d.folder));
+      acts.append(where, button("Install", "primary", () => act(view, r.name, "install", where.value)));
+    } else acts.append(button(ACTION_LABELS[a] || a, a === "uninstall" ? "danger" : a === "update" ? "primary" : null, () => act(view, r.name, a, null)));
+  }
+  if (r.actions.length) card.append(acts);
+  return card;
+}
+
+function act(view, name, action, folder) {
+  view.busy = name + " · " + (ACTION_LABELS[action] || action).toLowerCase() + "…";
+  drawWorkerHead();
+  send({ type: "pluginAction", sessionId: view.parent, name, action, folder });
+}
+
+// A RESULT IS A SENTENCE; TWO OF THEM ASK AGAIN. "confirm:" carries the question F2 asks before deleting; "installed:"
+// offers what F2 offers after an install — load it now, add it to config, or neither — never all three at once.
+function pluginResult(m) {
+  const view = state.views.get(PLUGINS_ID);
+  if (!view) return;
+  view.busy = null;
+  if (m.text.startsWith("confirm:")) view.bar = { kind: "confirm", text: m.text.slice(8), name: m.name };
+  else if (m.text.startsWith("installed:")) view.bar = { kind: "installed", text: m.text.slice(10), name: m.name };
+  else view.bar = { kind: "said", text: m.text };
+  if (state.active === view.id) drawWorkerHead();
+}
+
+function drawPluginsHead(view, head) {
+  head.hidden = false;
+  head.replaceChildren();
+  head.append(el("span", "tag", "Plugins"));
+  const filter = el("input", "plugin-filter");
+  filter.placeholder = "filter";
+  filter.value = view.filter;
+  filter.addEventListener("input", () => { view.filter = filter.value; drawPlugins(view); });
+  head.append(filter);
+  head.append(el("span", "meta", view.busy || ("catalog read " + ago(view.data.readAt))));
+  head.append(el("span", "spacer"));
+  head.append(button("Back to session", "ghost", () => activate(view.parent)));
+  head.append(button("Refresh", null, () => { view.bar = null; openPlugins(true); }));
+  if (!view.bar) return;
+  const bar = el("div", "file-bar" + (view.bar.kind === "said" ? " good" : ""));
+  bar.append(el("span", null, view.bar.text), el("span", "spacer"));
+  if (view.bar.kind === "confirm") {
+    const name = view.bar.name;
+    bar.append(button("Remove", "danger", () => { view.bar = null; act(view, name, "uninstall", "confirmed"); }), button("Keep it", null, () => { view.bar = null; drawWorkerHead(); }));
+  } else if (view.bar.kind === "installed") {
+    const name = view.bar.name;
+    bar.append(button("Load now", "primary", () => { view.bar = null; act(view, name, "activate", null); }),
+      button("Add to config", null, () => { view.bar = null; act(view, name, "addToConfig", null); }),
+      button("Done", null, () => { view.bar = null; drawWorkerHead(); }));
+  } else bar.append(button("OK", null, () => { view.bar = null; drawWorkerHead(); }));
   head.append(bar);
 }
 
@@ -1450,6 +1580,13 @@ function drawSessionPane(p) {
     const sh = el("div", "btns export");
     sh.append(button("Open a shell", null, () => { send({ type: "openShell", sessionId: activeSessionId() }); if (!wide()) setPanel(false); }));
     pane.append(sh);
+  }
+
+  if (state.access && state.access.plugins) {
+    pane.append(el("h3", null, "Plugins"));
+    const pl = el("div", "btns export");
+    pl.append(button("Marketplace", null, () => { openPlugins(false); if (!wide()) setPanel(false); }));
+    pane.append(pl);
   }
 
   if (state.access && state.access.config) {
