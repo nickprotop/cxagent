@@ -1424,7 +1424,24 @@ function startCall(view, m) {
 // A WORKER'S OWN TOOL CALLS, should they reach the parent's feed, go inside its card, not into the parent's rounds.
 function startWorkerCall(view, m, card) {
   if (!card.table) { card.table = el("table", "calls"); card.body.insertBefore(card.table, card.open); }
+  card.live = true;
   callRow(view, m, card.table, null);
+}
+
+// A WORKER'S FINISHED CALL, as a row of its card's table — what the terminal's expanded worker row shows. A foreground
+// worker's calls already arrive live (startWorkerCall), so its card takes these only when nothing came that way.
+function workerCall(view, m) {
+  if (m.agent === view.agentId) return;
+  const card = cardFor(view, m.agent);
+  if (!card || card.live) return;
+  if (!card.table) { card.table = el("table", "calls"); card.body.insertBefore(card.table, card.open); }
+  const ok = m.outcome === "success";
+  const row = el("tr");
+  const size = m.chars >= 1024 ? (m.chars / 1024).toFixed(1) + " kB" : m.chars + " B";
+  row.append(el("td", null, ok ? "✓" : "✗"), el("td", null, m.tool), el("td", null, m.target || ""),
+    el("td", null, m.ms < 1000 ? m.ms + "ms" : (m.ms / 1000).toFixed(1) + "s"), el("td", null, size));
+  row.firstChild.className = ok ? "mark-ok" : "mark-bad";
+  card.table.append(row);
 }
 
 function endCall(view, m) {
@@ -1693,13 +1710,16 @@ function event(m) {
       liveCards(view.kind === "worker" ? view.parent : view.id);
       break;
     }
+    case "workerCall": workerCall(view, m); break;
     case "worker": {
       const card = view.cards.get(m.job);
       if (!card) break;
       card.agentId = m.agentId;
       card.open.disabled = false;
       if (m.workerType) card.who.textContent = m.workerType;
-      if (m.task) card.task.textContent = m.task;
+      // THE TITLE STAYS THE TITLE, as the terminal's row keeps its short description: the full brief is the card's hover,
+      // and the worker's own tab shows it in full.
+      if (m.task) card.task.title = m.task;
       break;
     }
   }

@@ -65,6 +65,7 @@ public sealed class WebSessionHub
     private readonly ConcurrentDictionary<string, Action<Core.Agents.SpawnedChild>> _spawns = new();
     private readonly ConcurrentDictionary<string, Action<Core.Export.ExportSource>> _restores = new();
     private readonly ConcurrentDictionary<string, Action<SessionChangeKind>> _clears = new();
+    private readonly ConcurrentDictionary<string, Action<ToolCallReport>> _calls = new();
     private int _listPending;
 
     /// <summary>A hub over <paramref name="services"/>, told whenever the manager closes a session.</summary>
@@ -172,6 +173,9 @@ public sealed class WebSessionHub
         foreach (var (id, clear) in _clears)
             if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.Changed -= clear;
         _clears.Clear();
+        foreach (var (id, call) in _calls)
+            if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.ToolCallFinished -= call;
+        _calls.Clear();
     }
 
     /// <summary>
@@ -235,6 +239,7 @@ public sealed class WebSessionHub
         if (_spawns.TryRemove(session.Id, out var spawn)) session.WorkerSpawned -= spawn;
         if (_restores.TryRemove(session.Id, out var restore)) session.Restored -= restore;
         if (_clears.TryRemove(session.Id, out var clear)) session.Changed -= clear;
+        if (_calls.TryRemove(session.Id, out var call)) session.ToolCallFinished -= call;
         foreach (var c in _clients.Keys) c.SessionClosed(session.Id);
         ListChanged();
     }
@@ -371,6 +376,10 @@ public sealed class WebSessionHub
             // "Conversation cleared.", so that line lands after the wipe, not under it.
             Action<SessionChangeKind> cleared = kind => { if (kind is SessionChangeKind.ContextCleared) log.Cleared(); };
             if (_clears.TryAdd(session.Id, cleared)) session.Changed += cleared;
+            // A WORKER'S CALLS, AS THEY FINISH — background ones included, whose own tool rows never reach this log — so
+            // its card shows the call table the terminal's expanded worker row does.
+            Action<ToolCallReport> called = log.WorkerCall;
+            if (_calls.TryAdd(session.Id, called)) session.ToolCallFinished += called;
             // ITS ASIDES TOO — /btw answered beside the conversation — as a watcher beside the terminal's own.
             var asides = session.WatchAsides(log);
             return new LogEntry(log, new Both(observers, asides), tools);

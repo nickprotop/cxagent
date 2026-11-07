@@ -319,4 +319,21 @@ public sealed class SessionEventLogTests
         Assert.True(back.Reset);
         Assert.Equal("cleared", back.Events[0]["kind"]!.GetValue<string>());
     }
+
+    /// <summary>A WORKER'S FINISHED CALL is told to the page, by whose it was — the rows the terminal's expanded worker
+    /// row shows as its call table.</summary>
+    [Fact]
+    public void A_workers_finished_call_is_an_event_naming_the_worker()
+    {
+        var log = new SessionEventLog("S");
+        log.WorkerCall(new CxAgent.Core.Sessions.ToolCallReport("c1", "child-1", "read_file", "file", "success", 42, 1200,
+            DateTimeOffset.UtcNow) { Target = "Agent.cs" });
+        var e = log.Since(0).Events.Single();
+        Assert.Equal("workerCall", e["kind"]!.GetValue<string>());
+        Assert.Equal("child-1", e["agent"]!.GetValue<string>());
+        Assert.Equal("read_file", e["tool"]!.GetValue<string>());
+        Assert.Equal("Agent.cs", e["target"]!.GetValue<string>());
+        Assert.Equal(42, e["ms"]!.GetValue<long>());
+        Assert.Equal(1200, e["chars"]!.GetValue<int>());
+    }
 }

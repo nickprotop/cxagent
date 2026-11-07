@@ -347,6 +347,21 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         state is JobState.Succeeded or JobState.Failed or JobState.Cancelled or JobState.Skipped;
 
     /// <summary>
+    /// A call one of the session's agents finished — the page keeps a worker's as the rows of its card's call table, the
+    /// table the terminal's expanded worker row shows. Every agent's arrives; the page leaves the session's own out.
+    /// </summary>
+    public void WorkerCall(Core.Sessions.ToolCallReport call) => Append("workerCall", new JsonObject
+    {
+        ["agent"] = call.AgentId,
+        ["call"] = call.CallId,
+        ["tool"] = call.ToolName,
+        ["target"] = call.Target,
+        ["outcome"] = call.Outcome,
+        ["ms"] = call.DurationMs,
+        ["chars"] = call.ResultChars,
+    });
+
+    /// <summary>
     /// The conversation was cleared: what was kept goes, and a <c>cleared</c> event takes its place — so a tab watching
     /// empties its transcript as the terminal's does, a tab joining later starts from the clear, and one that saw the
     /// old conversation is told to redraw rather than keep it.
