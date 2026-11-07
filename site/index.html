@@ -326,6 +326,22 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
       never in your tree. The prompt carries only their names, fixed for the conversation, so a note
       written mid-session costs no cache. <code>/memory</code> lists, opens and forgets them.</p>
     </div>
+    <div class="u-item">
+      <div class="u-num">11</div>
+      <p class="u-title">Hooks that guard and automate</p>
+      <p class="u-body">Commands that run on the agent's events — before a tool call, after one, when a turn ends. A hook
+      reads the event as JSON and answers by its exit code: block the call, rewrite it, add context, or send
+      the agent back to work while the tests still fail. A hook can also be a question to one of your models,
+      a read-only agent, a web request or an MCP tool, and it fires for sub-agents and headless runs too.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">12</div>
+      <p class="u-title">A conversation you can hand on</p>
+      <p class="u-body"><code>/export</code> or <kbd>F12</kbd> writes the session as markdown: <em>Readable</em> for a
+      person — the answers, each tool call as a line, edits as diffs — or <em>Full</em> for another agent to
+      carry on from, with every tool result and the model's thinking. Each worker's stretches sit where they
+      happened, and nothing is lost to compaction.</p>
+    </div>
   </div>
 </section>
 
