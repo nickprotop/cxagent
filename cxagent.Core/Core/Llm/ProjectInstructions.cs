@@ -75,8 +75,8 @@ public static class ProjectInstructions
 
     /// <summary>
     /// The name read from cxagent's own config directory — <c>AppPaths.ConfigDir</c>, which resolves
-    /// per-OS (<c>%APPDATA%\cxagent</c>, <c>~/Library/Application Support/cxagent</c>,
-    /// <c>$XDG_CONFIG_HOME/cxagent</c>).
+    /// per-OS (<c>%APPDATA%\cxagent</c> on Windows, <c>~/.config/cxagent</c> on Linux and macOS, or
+    /// <c>$XDG_CONFIG_HOME/cxagent</c> when that is set).
     ///
     /// <para>CXAGENT.md, and only that. This file is READ ONLY BY THIS APP — no other agent looks in
     /// cxagent's config directory — so the shared names buy nothing here: an AGENTS.md at this path

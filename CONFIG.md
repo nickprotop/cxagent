@@ -1,16 +1,23 @@
 # Configuration
 
-One file: `config.json`, in cxagent's config directory.
+Settings live in one file, `config.json`, in cxagent's config directory. Some things sit beside it in
+files of their own, each described in its section: your global `CXAGENT.md`, skills and commands, and
+a repository's `.cxagent/hooks.json`.
 
 | OS | Path |
 |---|---|
-| Linux | `$XDG_CONFIG_HOME/cxagent/`, or `~/.config/cxagent/` |
-| macOS | `~/Library/Application Support/cxagent/` |
+| Linux, macOS | `$XDG_CONFIG_HOME/cxagent/`, or `~/.config/cxagent/` |
 | Windows | `%APPDATA%\cxagent\` |
 
-The directory is forced to `0700` and `config.json` to `0600` on every start — it holds API keys, and
-a readable directory exposes the file listing even when the file itself is locked down. An install
-made before that was enforced is repaired on the next launch rather than staying loose.
+**On Linux and macOS the directory, and its `logs` folder, are set to `0700` on every start** — the
+directory holds API keys, and a readable one exposes the file listing even when the file itself is
+locked down. A folder left looser is tightened again on the next launch; a filesystem that refuses
+`chmod` is left as it is rather than stopping the app. `config.json` is written at `0600` whenever
+cxagent writes it (F8, the browser's config page, `cxagent web passwd`, the plugin manager). A
+`config.json` you created yourself keeps the mode you gave it until cxagent first saves it.
+
+**On Windows no mode is set.** The folder and its files take the access rules they inherit from
+`%APPDATA%`, which in a default profile admit only you, administrators and the system.
 
 There is no config file until you make one. [`config.sample.json`](config.sample.json) documents every
 key inline, including what each one's absence means. On a first run with no config, cxagent opens the
@@ -19,6 +26,29 @@ edit by hand. The dialog writes only what you changed — every other key, inclu
 know, stays as it was — and it judges each save with the same rules startup uses, so it never writes a
 file the next start would refuse. A file that does not parse is never overwritten: the dialog says why
 and leaves it for you to fix.
+
+---
+
+## `{env:NAME}` and `{file:path}` — secrets kept out of the file
+
+A few values may name where a secret comes from instead of holding it, so a config can be shared,
+committed or pasted into an issue without carrying one. `{env:NAME}` is replaced by that environment
+variable; `{file:path}` by that file's contents, trimmed of surrounding whitespace (an editor's
+trailing newline in a key file is the classic silent 401), with a leading `~` meaning your home.
+
+| Where | What it takes | When the value cannot be read |
+|---|---|---|
+| `mcp.<server>.headers` values | `{env:NAME}`, `{file:path}` | A warning at startup naming the key; the header is sent with an empty value and the server still connects |
+| `mcp.<server>.env` values | `{env:NAME}`, `{file:path}` | The same: a warning, and the variable is set empty |
+| `webSearch.tavilyApiKey` | `{env:NAME}`, `{file:path}` | A warning, and search stays on DuckDuckGo |
+| A provider's `apiKey` | No placeholder — the text is sent as written. The variable `CXAGENT_PROVIDER_<NAME>_APIKEY` (the instance's name in capitals) replaces it when set and not empty | — |
+| An `http` hook's `headers` | `$NAME` or `${NAME}`, for names listed in its `allowedEnvVars`, in system hooks only ([below](#the-five-types)) | Read as empty, without a warning |
+| An `mcp_tool` hook's `input` | `${tool_input.path}` — a field of the event, not a variable | — |
+
+Nowhere else: not a `command`, where expanding a value into the arguments of a process it spawns would
+make a config file a way to run code, and not a header name. An unset variable or an unreadable file
+never stops the config loading. Every variable the file reads with `{env:NAME}` is also kept from the
+model's [sandboxed commands](#sandbox--where-the-models-commands-run).
 
 ---
 
@@ -105,8 +135,11 @@ again with the notes and the model is treated as `false` from then on. Set `fals
 a text-only model to skip that first refused try. The Providers tab in `/config` sets it, and shows what
 the endpoint itself says beside your choice.
 
-**`apiKey` supports `${ENV_VAR}`**, so a config file can be committed or shared without carrying a
-secret. A key written literally is still forced to `0600`, but the variable form is better.
+**`apiKey` can stay out of the file.** Set `CXAGENT_PROVIDER_<NAME>_APIKEY` — the instance's name in
+capitals, `CXAGENT_PROVIDER_LOCAL_APIKEY` for the one above — and it replaces whatever `apiKey` says.
+`apiKey` itself takes no placeholder: [`{env:NAME}`](#envname-and-filepath--secrets-kept-out-of-the-file)
+there is sent as written. A key written literally is guarded only by the file's own permissions; the
+variable is the version that survives the file being shared.
 
 **`maxConcurrentAgents` bounds how many sub-agents may call this endpoint at once.** Absent or `0`
 means unlimited, which is the default — the same convention `maxTurns` uses.
@@ -340,7 +373,7 @@ source of truth for both.
 
 ## `tools` — what an agent is offered
 
-Every agent gets all twelve tools unless something narrows them. A **selection** is a list of terms
+Every agent gets every built-in tool unless something narrows them. A **selection** is a list of terms
 saying which it should have:
 
 ```json
@@ -350,7 +383,7 @@ saying which it should have:
 That is a session that reads and searches but never writes or shells out. Absent, nothing is
 narrowed — the default is unchanged and this key is one you can ignore entirely.
 
-F8's **General** tab edits `llmAgent.tools` — the session's agent — as a base and the eighteen tools as
+F8's **General** tab edits `llmAgent.tools` — the session's agent — as a base and the built-in tools as
 boxes; the **Agents** tab does the same for each type's `tools`.
 
 ### The terms
@@ -374,7 +407,7 @@ itself by asking.
 
 They compose outward-in, each applied to what the one before it left:
 
-| | Where | Scope |
+| Level | Where | Scope |
 |---|---|---|
 | **S1** | `llmAgent.tools` here, or in code when embedding | The session's agent, for its whole life |
 | **S2** | The embedding application, per session | One session |
@@ -391,7 +424,7 @@ A shipped type may set `tools` even though it may not set `briefing`. The two ar
 thing: a briefing is text the code depends on, while a toolset is a property of **your** deployment,
 which cxagent cannot know.
 
-### The eighteen names
+### The built-in names
 
 `read_file` · `write_file` · `replace_in_file` · `glob` · `grep` · `run_shell` · `web_fetch` ·
 `web_search` · `http_request` · `todowrite` · `ask_user` · `agent` · `agent_send` ·
@@ -433,7 +466,7 @@ An S3 selection that changes between requests rewrites the cached prompt prefix 
 
 Measured against a local llama.cpp server, 2,800-token prompt:
 
-| | cached | processed | prompt eval |
+| Run | cached | processed | prompt eval |
 |---|---|---|---|
 | Prompt unchanged, conversation grows | 2,824 | 28 | **66 ms** |
 | Prompt changed | 0 | 2,830 | **773 ms** |
@@ -455,12 +488,14 @@ a property of the session rather than of one request, S1 or S2 costs nothing.
 ```json
 "mcp": {
   "context7": { "command": ["npx", "-y", "@upstash/context7-mcp"], "enabled": true },
-  "remote":   { "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer ${TOKEN}" } }
+  "remote":   { "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer {env:TOKEN}" } }
 }
 ```
 
 `command` is argv — no shell, so no pipes, globs or redirection. An HTTP server uses `url` instead,
 and may carry `headers`. Optional per server: `enabled` (default true), `cwd`, `env`, `timeoutMs`.
+Values in `headers` and `env` may read [`{env:NAME}` and `{file:path}`](#envname-and-filepath--secrets-kept-out-of-the-file);
+`command` never does.
 
 A server's own usage instructions, when it sends any, are appended to the system prompt **attributed
 to it by name**, so the model can tell that advice apart from cxagent's own.
@@ -491,7 +526,7 @@ once without a restart.
 The plugin manager (F2, `/plugin browse`) writes these for you when it installs a plugin; this is what
 it writes.
 
-| key | |
+| Key | What it takes |
 | --- | --- |
 | `file` | the entry-point filename — a name, not a path, found in the folders below. Required. |
 | `enabled` | default true. Whether the plugin loads at startup — and only that: `/plugin load <name>` still loads a disabled one for this session. `/plugin enable` and `/plugin disable` flip it, and disabling also unloads a plugin that is running. |
@@ -537,7 +572,7 @@ A store is somebody else's plugin catalog, listed beside the official one in the
 reachable by `/plugin get`. `/plugin store add <name> <url>`, `remove` and `list` edit this list for you;
 `add` reads the catalog once first and saves nothing if it cannot.
 
-| key | |
+| Key | What it takes |
 | --- | --- |
 | `name` | lowercase letters, digits and `-`, 1–32 characters; not `cxagent`, which is the official catalog, and not the name of a plugin already installed or in the official catalog. |
 | `url` | the store's `catalog.json`: `https://`, or `http://localhost` / `http://127.0.0.1` for a store under test. |
@@ -650,9 +685,14 @@ of your home does not make your home writable. `writable` and `hidden` entries m
 In F8 they are typed one per line.
 
 **The environment** loses `DBUS_SESSION_BUS_ADDRESS`, `SSH_AUTH_SOCK`, `TMUX`, `TMUX_PANE`, `DISPLAY`,
-`WAYLAND_DISPLAY`, every name matching `*_API_KEY`, `*_APIKEY`, `*_KEY`, `*_TOKEN`, `*_SECRET*`,
-`*PASSWORD*`, `*_PWD`, `*_CREDENTIALS`, `AWS_*` or `DATABASE_URL` (case ignored), every variable
-`config.json` reads with `{env:NAME}`, and `hiddenEnv`. `passEnv` keeps a name back. They are removed
+`WAYLAND_DISPLAY`, every name matching one of these patterns (case ignored):
+
+```
+*_API_KEY   *_APIKEY   *_KEY   *_TOKEN   *_SECRET*   *PASSWORD*   *_PWD   *_CREDENTIALS   AWS_*   DATABASE_URL
+```
+
+every variable `config.json` reads with [`{env:NAME}`](#envname-and-filepath--secrets-kept-out-of-the-file),
+and `hiddenEnv`. `passEnv` keeps a name back. They are removed
 from bubblewrap itself, not only from the command, since bubblewrap's own environment is readable from
 inside. A variable the call sets in its own `env` is kept, since the call asked for it, and is set
 inside the sandbox, never on bubblewrap.
@@ -740,23 +780,27 @@ what a login reaches. [COMMANDS.md](COMMANDS.md#web) says what a browser can do 
 
 **`login`**, by where the server listens:
 
-| Mode | On localhost | Anywhere else |
+| Mode | Bound to loopback (`127.0.0.1`, `::1`) | Bound to any other address |
 |---|---|---|
 | `auto` | No login | Login required. With no `users`, it refuses to start and says how to add one. |
 | `always` | Login required | Login required |
-| `off` | No login | No login. It starts, and says on the console and on every page that anyone who reaches the port gets an agent that runs commands on this machine. |
+| `off` | No login | No login. It starts, and says on the console and on every page that anyone who reaches the port gets an agent that runs commands on this machine — anyone, that is, who addresses it by one of the names below. |
 
 A login lasts 30 days in that browser, or until **Log out**, which also closes that login's open
 tabs. A restart logs everyone out. Each failed login from an address makes that address wait longer
 (1, 2, 4 … 30 seconds) before its next attempt is checked at all.
 
-**Without a login, only this machine's own names are served** — `localhost`, `127.0.0.1`, the address it
-is bound to, the machine's name. A web page cannot make its own domain stand in for those, so it cannot
-reach the server through your browser.
+**Without a login, only this machine's own names are served** — `localhost`, `127.0.0.1`, `::1`, the
+machine's name, and the address it is bound to (every address the machine has, when bound to `0.0.0.0`).
+A request naming any other host is refused with `421`. A web page cannot make its own domain stand in
+for those, so it cannot reach the server through your browser; someone on your network who types one of
+those addresses can, which is what the `off` row warns about.
 
-**Behind a reverse proxy, set `login` to `always`.** nginx, Caddy and Tailscale's serve all connect from
-localhost, which `auto` treats as this machine and lets in without a login. Every login attempt then
-also comes from one address, so the failed-login wait is shared by everyone behind the proxy. The proxy
+**Behind a reverse proxy, set `login` to `always`.** `auto` decides by the address the server is bound
+to, not by who connects, so a server bound to loopback behind nginx, Caddy or Tailscale's serve asks for
+no login. Requests carrying the proxy's public name are then refused as an unknown host, and a proxy
+that rewrites `Host` to `localhost` lets in everyone who reaches the proxy. With `always`, every login attempt
+comes from the proxy's one address, so the failed-login wait is shared by everyone behind it. The proxy
 must pass WebSocket upgrades through; for nginx:
 
 ```nginx
@@ -785,8 +829,8 @@ search works on a machine with nothing configured. With a **Tavily** key, search
 results carry text from the page itself and often save the follow-up `web_fetch`. Tavily's free tier is
 1,000 searches a month with no card (as of November 2026; see tavily.com).
 
-**`{env:NAME}` and `{file:path}` work here**, so the key need not sit in this file. An unset variable
-warns at startup and leaves search on DuckDuckGo; a key that is not a string does the same. Neither
+**`{env:NAME}` and `{file:path}` work here** ([how](#envname-and-filepath--secrets-kept-out-of-the-file)),
+so the key need not sit in this file. An unset variable or an unreadable file warns at startup and leaves search on DuckDuckGo; a key that is not a string does the same. Neither
 stops the config loading.
 
 The model may name an engine for a call. When it does not, Tavily is used if there is a key, and a
@@ -984,7 +1028,7 @@ way, with folder trust from `--trust` or the stored decision.
 
 ### Each hook's settings
 
-| Key | |
+| Key | What it is |
 |---|---|
 | `type` | `command`, `prompt`, `agent`, `http` or `mcp_tool` (below) |
 | `command` | a command hook's line, run by `bash -c` |
@@ -1311,7 +1355,7 @@ commands may link anywhere.
 
 | File | What it is |
 |---|---|
-| `config.json` | This file. `0600`. |
+| `config.json` | This file. `0600` once cxagent has written it; see [the top of this page](#configuration) for Windows. |
 | `history.db` | Usage history for `/stats`. An archive: append-only, never pruned. `/stats clear` empties it. |
 | `logs/<agent-id>/` | Everything about one agent: its session, its context, its transcript, and its logs. A sub-agent's directory nests **inside** its parent's, so the tree mirrors who spawned whom. |
 | `CXAGENT.md` | Your global instructions, if you wrote any. |
@@ -1330,8 +1374,8 @@ Each agent's directory holds four kinds of thing:
 | `<job-id>.{log,stdout,stderr}` | Per-tool output, as before. |
 
 Deleting one directory removes that conversation completely — which is the point, since a context holds
-whatever the agent touched: file contents, command output, a token that appeared in a command. The
-directory is `0700`.
+whatever the agent touched: file contents, command output, a token that appeared in a command. It sits
+inside `logs/`, which is `0700` on Linux and macOS.
 
 Cleanly-ended sessions are swept after 30 days. A session you resumed is kept however old: it is the
 history behind a conversation that is still going. Deleting `history.db` costs `/stats`.

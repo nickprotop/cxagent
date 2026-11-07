@@ -720,8 +720,8 @@ ProviderConfigLoader.LoadAndValidate(paths, env)          // parsed settings + w
 ```
 
 `new AppPaths()` with no argument uses the per-user location — `$XDG_CONFIG_HOME/cxagent` when that
-is set, otherwise the platform's application-data folder (`~/.config` on Linux, `%APPDATA%` on
-Windows, `~/Library/Application Support` on macOS). The directory holds more than the file: the
+is set, otherwise the platform's application-data folder (`~/.config` on Linux and macOS — .NET's
+`ApplicationData`, not `~/Library/Application Support` — and `%APPDATA%` on Windows). The directory holds more than the file: the
 resume database, the usage archive and the logs live beside it.
 
 **Errors, not exceptions — at the `ConfigResolver` layer.** A missing or malformed file comes back as

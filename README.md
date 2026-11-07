@@ -602,9 +602,8 @@ reviewer, where an agent type runs) apply in place and keep every tab's prompt c
 re-send a conversation (a tab's model changing) asks first whether to apply it now, after compressing,
 at that tab's next clear or compaction, or only to new tabs.
 
-The file lands in `~/.config/cxagent/config.json` on Linux (`$XDG_CONFIG_HOME` when set),
-`%APPDATA%\cxagent\config.json` on Windows, and
-`~/Library/Application Support/cxagent/config.json` on macOS. The same directory holds your session
+The file lands in `~/.config/cxagent/config.json` on Linux and macOS (`$XDG_CONFIG_HOME` when set),
+and `%APPDATA%\cxagent\config.json` on Windows. The same directory holds your session
 history and logs.
 
 Written by hand, `~/.config/cxagent/config.json`:
@@ -813,8 +812,8 @@ irm https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.ps1 | 
 ```
 
 Your configuration and session history are left alone. They live in
-`$XDG_CONFIG_HOME/cxagent` (`%APPDATA%\cxagent` on Windows, `~/Library/Application Support/cxagent`
-on macOS). Delete that directory to remove them too.
+`~/.config/cxagent` on Linux and macOS (`$XDG_CONFIG_HOME/cxagent` when that is set), and
+`%APPDATA%\cxagent` on Windows. Delete that directory to remove them too.
 
 ## The cx family
 
