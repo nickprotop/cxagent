@@ -217,9 +217,10 @@ history, logs and plugins. <code>--config-dir</code> points one run at another d
 curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.sh | bash</code></pre>
 
 <p>It removes <code>~/.local/bin/cxagent</code>, the uninstaller and the <code>plugin-host</code>
-folder, and on Linux the <code>PATH</code> line the installer added. On macOS, look for that line in
-<code>~/.zshrc</code> or <code>~/.bashrc</code> afterwards and delete it yourself. A Linux build from source landed in the
-same place, so the same command removes it.</p>
+folder, and the <code>PATH</code> line the installer added — that line alone, leaving any other line
+that names <code>~/.local/bin</code>. The uninstaller that came with 0.10.2 or earlier cannot remove
+that line on macOS; run the one from master above instead, or delete it from <code>~/.zshrc</code>
+yourself. A Linux build from source landed in the same place, so the same command removes it.</p>
 
 <p>Installed with the script, on Windows, in PowerShell:</p>
 

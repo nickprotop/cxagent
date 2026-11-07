@@ -28,10 +28,17 @@ if [ -d "$INSTALL_DIR/plugin-host" ]; then
     echo "✓ Removed $INSTALL_DIR/plugin-host"
 fi
 
-# Clean PATH from shell config
+# Clean PATH from shell config: THE LINE install.sh WROTE, AND ONLY THAT ONE. Matched whole and as fixed text, so a
+# line of the user's own that also names ~/.local/bin (pipx adds one) is kept. Rewritten through a temp file with
+# POSIX grep, not `sed -i`, whose in-place flag differs between GNU and macOS; `cat >` keeps the file's own
+# permissions, and a link stays a link.
+LINE="export PATH=\"$INSTALL_DIR:\$PATH\""
 for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
-    if [ -f "$RC" ] && grep -q "$INSTALL_DIR" "$RC" 2>/dev/null; then
-        sed -i "\|$INSTALL_DIR|d" "$RC"
+    if [ -f "$RC" ] && grep -qxF "$LINE" "$RC" 2>/dev/null; then
+        TMP=$(mktemp) || continue
+        grep -vxF "$LINE" "$RC" > "$TMP"
+        cat "$TMP" > "$RC"
+        rm -f "$TMP"
         echo ""
         echo "✓ Removed PATH entry from $RC"
     fi
