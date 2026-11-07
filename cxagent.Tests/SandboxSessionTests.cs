@@ -162,14 +162,26 @@ public sealed class SandboxSessionTests : IDisposable
 
     private static string PathResolverReal(string p) => PermissionPolicy.RealFolder(p);
 
+    /// <summary>
+    /// A session whose sandbox is the test's, never this machine's.
+    ///
+    /// <para>OPENED WITH THE SANDBOX OFF, THEN GIVEN ONE. Opened with it on, the wiring probes this machine in the
+    /// background and says what it found — "not contained" on a runner with no bubblewrap — into the very notices these
+    /// tests count, at whatever moment the probe finishes. The state put in its place reports active and warns the
+    /// session, as the wired one does.</para>
+    /// </summary>
     private (Session Session, PermissionPolicy Policy, BufferedChatSink Sink) OpenWithSink(SandboxSettings sandbox)
     {
         var policy = new PermissionPolicy(_work, _rules, EditMode.AcceptEdits);
         var sink = new BufferedChatSink();
         var config = ResolvedConfig.ForTesting(new MockLlmProvider());
-        config = config with { Catalog = config.Catalog with { Sandbox = sandbox } };
+        config = config with { Catalog = config.Catalog with { Sandbox = sandbox with { Enabled = false } } };
         var session = _manager.Open(_work, config,
             new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel(), Policy = policy }, AgentMode.Single);
+        policy.Sandbox = new SandboxState(sandbox, new SandboxHome(Path.GetTempPath(), null, null), () => SandboxStatus.Active)
+        {
+            Warn = session.NotifyWarning,
+        };
         return (session, policy, sink);
     }
 
