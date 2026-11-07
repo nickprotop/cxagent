@@ -256,6 +256,13 @@ public sealed partial class Session
     /// </summary>
     public event Action<Agents.SpawnedChild>? WorkerSpawned;
 
+    /// <summary>
+    /// A tool call finished — this session's agent's or a child's, keyed by whose. On the session, not its host:
+    /// <see cref="ToolCallFinished"/> belongs to the host and goes with it at a re-wire, so a watcher that subscribes
+    /// once — a browser's hub — would stop hearing calls after the first /model switch.
+    /// </summary>
+    public event Action<ToolCallReport>? CallFinished;
+
     /// <summary>A child was built for a spawn row, paired with the row that started it — so a live
     /// row can show what its child is doing while it does it.</summary>
     public event Action<Agents.SpawnedChild>? ChildSpawned
@@ -336,6 +343,7 @@ public sealed partial class Session
         Host?.Dispose();
         Host = host;
         if (host is not null) host.ChildSpawned += child => WorkerSpawned?.Invoke(child);
+        if (host is not null) host.ToolCallFinished += call => CallFinished?.Invoke(call);
 
         // REMEMBERED, NOT REPLACED — see _agentIds.
         if (host is not null) lock (_agentIds) _agentIds.Add(host.SessionId);

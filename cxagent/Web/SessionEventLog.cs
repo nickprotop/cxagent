@@ -118,6 +118,9 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         return SessionReplay.Play(past, new ReplayTarget(view, view)
         {
             Worker = w => Worker(w.JobId, w.AgentId, w.Name, w.Type, w.Task),
+
+            // NO Called: a session's replay reports the calls in its own history — its own agent's, which the page
+            // already shows as tool rows. A past worker's calls live in the worker's history, which this does not read.
         });
     }
 

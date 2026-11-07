@@ -175,7 +175,7 @@ public sealed class WebSessionHub
             if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.Changed -= clear;
         _clears.Clear();
         foreach (var (id, call) in _calls)
-            if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.ToolCallFinished -= call;
+            if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.CallFinished -= call;
         _calls.Clear();
         foreach (var queue in _queues.Values) queue.Dispose();
         _queues.Clear();
@@ -242,7 +242,7 @@ public sealed class WebSessionHub
         if (_spawns.TryRemove(session.Id, out var spawn)) session.WorkerSpawned -= spawn;
         if (_restores.TryRemove(session.Id, out var restore)) session.Restored -= restore;
         if (_clears.TryRemove(session.Id, out var clear)) session.Changed -= clear;
-        if (_calls.TryRemove(session.Id, out var call)) session.ToolCallFinished -= call;
+        if (_calls.TryRemove(session.Id, out var call)) session.CallFinished -= call;
         if (_queues.TryRemove(session.Id, out var queue)) queue.Dispose();
         foreach (var c in _clients.Keys) c.SessionClosed(session.Id);
         ListChanged();
@@ -382,8 +382,11 @@ public sealed class WebSessionHub
             if (_clears.TryAdd(session.Id, cleared)) session.Changed += cleared;
             // A WORKER'S CALLS, AS THEY FINISH — background ones included, whose own tool rows never reach this log — so
             // its card shows the call table the terminal's expanded worker row does.
-            Action<ToolCallReport> called = log.WorkerCall;
-            if (_calls.TryAdd(session.Id, called)) session.ToolCallFinished += called;
+            // ON THE SESSION, so a /model switch or a config apply — a new host — does not silence it. THE WORKERS' ALONE:
+            // the session's own agent's calls already reach the page as its tool rows, and kept here they would fill
+            // the replay buffer with events the page throws away.
+            Action<ToolCallReport> called = call => { if (!session.IsSessionAgent(call.AgentId)) log.WorkerCall(call); };
+            if (_calls.TryAdd(session.Id, called)) session.CallFinished += called;
             // WHAT WAITS FOR THE TURN, as the terminal's queued block shows it: the whole queue on each line typed,
             // and empty once the turn took it or it went back to a composer.
             if (!_queues.ContainsKey(session.Id))

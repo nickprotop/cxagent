@@ -237,6 +237,27 @@ public sealed partial class WebSessionHubTests
         Assert.True(_manager.Sessions.Single(s => s.Id == id).IsBusy);
     }
 
+    /// <summary>THE SESSION'S OWN CALLS ARE NOT WORKER CALLS: they reach the page as its tool rows, and kept as worker
+    /// calls too they would fill the replay buffer with events the page throws away.</summary>
+    [Fact]
+    public async Task The_sessions_own_calls_are_not_sent_as_worker_calls()
+    {
+        _model.EnqueueResponse(new LlmResponse
+        {
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Name = "read_file", Id = "r1",
+                Arguments = System.Text.Json.JsonSerializer.SerializeToElement(new { path = "missing.txt" }) }],
+        });
+        _model.EnqueueResponse(Reply("done"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "read it")));
+        await TurnDoneAsync(tab);
+
+        Assert.Contains(tab.Seen, m => m["kind"]?.GetValue<string>() == "toolStarted" || m["kind"]?.GetValue<string>() == "tool");
+        Assert.DoesNotContain(tab.Seen, m => m["kind"]?.GetValue<string>() == "workerCall");
+    }
+
     [Fact]
     public async Task A_thinking_level_the_model_does_not_offer_is_said_not_set()
     {
