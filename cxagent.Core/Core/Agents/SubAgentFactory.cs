@@ -29,6 +29,12 @@ public sealed record SubAgent(Agent Agent, BufferedChatSink Sink, BufferedJobPan
     /// <summary>The folder it works in, relative to its parent's — null when it works where the parent
     /// does. The form every surface shows and the envelope stores.</summary>
     public string? Root { get; init; }
+
+    /// <summary>Where it came from, as the request said — opaque here, saved and restored, never read.</summary>
+    public string? Origin { get; init; }
+
+    /// <summary>Why the origin's hook failed and the child was built plain, or null when it did not.</summary>
+    public string? AugmentRefusal { get; init; }
 }
 
 /// <summary>
@@ -187,6 +193,13 @@ public sealed class SubAgentFactory
 
         /// <summary>Recomputes the threshold when a type brings its own window. See <c>Create</c>.</summary>
         public Func<int?, int?>? ThresholdFor { get; init; }
+
+        /// <summary>
+        /// The one door a module has into a child: asked with a request's <see cref="ChildRequest.Origin"/>, it answers
+        /// what to add (see <see cref="ChildAugment"/>), or null for nothing. Null — no module — and a request with no
+        /// origin both build exactly the child this factory always built.
+        /// </summary>
+        public Func<string, ChildAugment?>? Augment { get; init; }
 
         /// <summary>
         /// What the session's agent is told: cxagent's config folder, so a user-level CXAGENT.md applies to a child
@@ -364,6 +377,12 @@ public sealed class SubAgentFactory
 
         /// <summary>The id the child takes — a worker brought back with its session — or null to mint one.</summary>
         public string? Id { get; init; }
+
+        /// <summary>
+        /// Where the child came from, for the module that knows — <c>colleague:Charting</c>. OPAQUE HERE: the factory
+        /// passes it to <see cref="SubAgentRuntime.Augment"/> and onto the child, and never reads it.
+        /// </summary>
+        public string? Origin { get; init; }
     }
 
     /// <summary>A plain child: the general type, no briefing, nothing passed down.</summary>
@@ -373,7 +392,10 @@ public sealed class SubAgentFactory
     public SubAgent Create(ChildRequest request)
     {
         var briefing = request.Briefing;
-        var callerContext = request.CallerContext;
+        var (augment, refusal) = AugmentFor(request.Origin);
+        var callerContext = augment?.Context is { Length: > 0 } context
+            ? request.CallerContext is { Length: > 0 } passed ? context + "\n\n" + passed : context
+            : request.CallerContext;
         var label = request.Label;
         var type = request.Type;
         var parentAgentId = request.ParentAgentId;
@@ -514,6 +536,29 @@ public sealed class SubAgentFactory
         {
             Feed = feed,
             Root = request.Root?.Relative,
+            Origin = request.Origin,
+            AugmentRefusal = refusal,
         };
     }
+
+    /// <summary>
+    /// What the module adds for <paramref name="origin"/>, or why it could not say.
+    ///
+    /// <para>ANY EXCEPTION IS CAUGHT, here and nowhere else: a hook is another module's code, and its bug must cost
+    /// that module — a plain worker, with the reason carried out for the session to say — never the spawn.</para>
+    /// </summary>
+    private AugmentAnswer AugmentFor(string? origin)
+    {
+        if (origin is null || _runtime.Augment is not { } hook) return default;
+        try
+        {
+            return new AugmentAnswer(hook(origin), null);
+        }
+        catch (Exception e)
+        {
+            return new AugmentAnswer(null, e.Message);
+        }
+    }
+
+    private readonly record struct AugmentAnswer(ChildAugment? Augment, string? Refusal);
 }
