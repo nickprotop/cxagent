@@ -58,7 +58,7 @@ public static class GitTree
             if (p is null) return null;
 
             // READ BEFORE WAITING. Past a pipe's worth of status — about 1,500 files — git blocks until someone
-            // drains it, so waiting first timed out and the tree showed clean.
+            // drains it, so a wait before the read would time out and draw a busy tree as clean.
             var output = p.StandardOutput.ReadToEndAsync();
             if (!p.WaitForExit(limit ?? TimeSpan.FromMilliseconds(500))) { try { p.Kill(true); } catch (Exception) { } return "too slow to count"; }
             if (p.ExitCode != 0) return "status unknown";

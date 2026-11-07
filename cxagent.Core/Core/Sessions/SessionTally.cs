@@ -3,23 +3,20 @@ namespace CxAgent.Core.Sessions;
 /// <summary>
 /// What one conversation has done: turns taken, tools called, and how long it has been open.
 ///
-/// <para>THE SESSION'S, IN CORE, so every front end reads one count: the terminal's panel and a browser's each kept
-/// their own — started at different moments, counting different things — and showed 5 turns against 1.</para>
+/// <para>ON THE SESSION, IN CORE, so every front end reads one count. A count kept by each front end starts at its
+/// own moment and counts its own events, and the terminal and a browser on one session would show different turns.</para>
 ///
-/// <para>SEPARATE FROM THE PANEL THAT RENDERS IT, because one panel serves every tab. The right-hand
-/// column is a property of the WINDOW — there is one of it, and it shows whichever session is in
-/// front — so counters kept inside it were shared by every conversation in the process: two sessions
-/// summed into a single turn count, and the elapsed clock measured the WINDOW's age rather than
-/// either session's. A tab opened an hour in reported an hour of work it had not done.</para>
+/// <para>NOT IN THE PANEL THAT RENDERS IT, because one panel serves every tab: the right-hand column belongs to the
+/// window and shows whichever session is in front, so counters kept there would sum every conversation and time the
+/// window's age rather than the session's.</para>
 ///
-/// <para>A CLASS, NOT A RECORD, AND MUTABLE ON PURPOSE. The tab holds one and hands the same
-/// instance to the panel, so a turn recorded while the tab is in front updates the tab's own tally
-/// without the panel needing to write back. A record would make <c>Follow</c> a copy and the
-/// increments would land on a value nobody reads again.</para>
+/// <para>A CLASS, NOT A RECORD, AND MUTABLE ON PURPOSE. Every reader holds the session's one instance, so a turn
+/// recorded on the session's thread is what each panel reads next; a record would hand each reader a copy that the
+/// increments never reach.</para>
 /// </summary>
 public sealed class SessionTally
 {
-    /// <summary>When this conversation opened. Set at construction, which is when its tab is made.</summary>
+    /// <summary>When this conversation opened. Set at construction, which is when its session is made.</summary>
     public DateTimeOffset Started { get; } = DateTimeOffset.UtcNow;
 
     public int Turns { get; set; }

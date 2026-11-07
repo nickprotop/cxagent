@@ -39,7 +39,7 @@ public class PluginManagerRowsTests
 
     /// <summary>
     /// THE DETAIL'S FACTS, ONE SOURCE: STATE, CONTRACT and TOOLS — "1, never asks" — as F2 shows them and a browser's
-    /// marketplace now does, which showed none of them.
+    /// marketplace does, from the same source.
     /// </summary>
     [Fact]
     public void The_facts_name_the_state_the_contract_and_whether_the_tools_ask()

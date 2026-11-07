@@ -91,7 +91,7 @@ public class SessionFactoryTests
 
     /// <summary>
     /// THE SESSION KEEPS ITS OWN TALLY — turns taken and tools called — so the terminal's panel and a browser's read one
-    /// count. Each kept its own, started at a different moment and counted a different thing, and showed 5 against 1.
+    /// count; counts kept by each would start at different moments and count different things.
     /// </summary>
     [Fact]
     public async Task The_session_counts_its_own_turns()

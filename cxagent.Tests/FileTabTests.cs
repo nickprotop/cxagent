@@ -29,7 +29,7 @@ public class FileTabTests : IDisposable
 
     /// <summary>
     /// AN EDITED FILE THE AGENT THEN CHANGED CARRIES BOTH MARKERS: "⚠ name •" — the title says it is still true from
-    /// wherever you are looking. Seen in a drive as plain "name": both markers lost while the edits were still there.
+    /// wherever you are looking, through anything else that retitles tabs meanwhile.
     /// </summary>
     [Fact]
     public void An_edited_file_changed_on_disk_shows_both_markers()

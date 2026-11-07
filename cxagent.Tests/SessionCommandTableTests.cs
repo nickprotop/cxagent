@@ -571,7 +571,7 @@ public class SessionCommandTableTests
 
     /// <summary>
     /// A HINT ALREADY BRACKETED IS NOT BRACKETED AGAIN. A command file's argument-hint is written as a reader sees it —
-    /// "[what to look for]" — and wrapping it once more showed "[[what to look for]]" in both palettes.
+    /// "[what to look for]" — and wrapping it once more would show "[[what to look for]]" in both palettes.
     /// </summary>
     [Theory]
     [InlineData("[what to look for]", "[what to look for]")]

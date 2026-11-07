@@ -2,7 +2,8 @@ namespace CxAgent.UI;
 
 /// <summary>
 /// What the "Trust this folder?" question says, and its answers in their order — for the terminal's list and a
-/// browser's prompt alike, so the two cannot drift: the browser's was a shorter text with the risky answer first.
+/// browser's prompt alike, so the two cannot drift. THE CAUTIOUS ANSWER FIRST, in both: it is the one a stray Enter
+/// takes.
 /// </summary>
 public static class TrustQuestion
 {

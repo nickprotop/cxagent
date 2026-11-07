@@ -55,7 +55,7 @@ public class ExportSourceTests : IDisposable
 
     /// <summary>
     /// A SESSION JUST STARTED IS NOT ONE FROM BEFORE 0.9.30: its folder holds a header and nothing yet — no history line,
-    /// no context, no transcript — and a browser opening it then was told its tool calls "were not recorded".
+    /// no context, no transcript — and a browser opening it must not be told its tool calls "were not recorded".
     /// </summary>
     [Fact]
     public void A_session_with_nothing_written_yet_is_empty_not_unrecorded()

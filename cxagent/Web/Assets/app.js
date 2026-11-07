@@ -1094,7 +1094,7 @@ function openedPlugins(m) {
   view.data = m;
   if (!same) drawPlugins(view);
   // IN FRONT WHEN THE USER ASKED FOR IT, not only the first time: after "Back to session" the view still exists, and
-  // Marketplace refreshed it out of sight — the button looked dead until the page was reloaded.
+  // a refresh alone would happen out of sight, leaving Marketplace looking dead.
   const wanted = fresh || state.pluginsWanted;
   state.pluginsWanted = false;
   if (wanted) activate(PLUGINS_ID); else if (state.active === view.id) drawWorkerHead();

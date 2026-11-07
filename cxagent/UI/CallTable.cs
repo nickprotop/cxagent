@@ -7,8 +7,8 @@ namespace CxAgent.UI;
 /// One finished call as a call table shows it: the outcome's mark, the time and the size, ready to draw.
 ///
 /// <para>ONE SET OF CELLS FOR BOTH FRONT ENDS. The terminal's expanded worker row and a browser's worker card draw a
-/// worker's calls from here, so a call cannot read ✓ in one and ✗ in the other — which is exactly what two copies of
-/// the outcome names did.</para>
+/// worker's calls from here, so a call cannot read ✓ in one and ✗ in the other: Core's outcome names are matched in
+/// this one place.</para>
 /// </summary>
 public static class CallTable
 {

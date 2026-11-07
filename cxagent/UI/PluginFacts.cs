@@ -8,7 +8,7 @@ public sealed record PluginFact(string Key, string Value);
 
 /// <summary>
 /// The facts a plugin's detail shows — the state, what it needs, its contract and whether its tools ask — for F2's
-/// details pane and a browser's marketplace alike, which showed none of them.
+/// details pane and a browser's marketplace alike, so the two describe a plugin in the same words.
 /// </summary>
 public static class PluginFacts
 {

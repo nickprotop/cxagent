@@ -943,7 +943,7 @@ public sealed partial class WebSessionHubTests
     }
 
     /// <summary>"RUNS ON" KEEPS ITS ORDER, as F8's list does: the chosen providers first, in the type's own order — the
-    /// first is its default — then the rest. Alphabetical checkboxes lost the order, and with it the default.</summary>
+    /// first is its default — then the rest, so the default is visible as the first.</summary>
     [Fact]
     public void Runs_on_offers_the_types_providers_in_its_order_first()
     {
