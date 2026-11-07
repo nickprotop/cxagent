@@ -71,9 +71,9 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
     <div class="win">
       <div class="win-bar">
         <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
-        <span class="tl-title">cxagent — /your/project</span>
+        <span class="tl-title">cxagent — ~/source/cxgpu</span>
       </div>
-      <img src="screenshots/hero.png" alt="cxagent analysing a repository: a sub-agent's report in the conversation, and the live session panel with the tokens spent inside the child">
+      <img src="screenshots/hero.png" alt="cxagent on a GPU monitoring tool after three workers reported: the explorer's map of the folders, the reviewer's five points with a regression flagged, and the session panel splitting the tokens the workers spent from the lead's own">
     </div>
   </div>
 </div>
@@ -106,37 +106,38 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
           <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
           <span class="tl-title">cxagent — ~/source/invoice</span>
         </div>
-        <a href="screenshots/41-same-session-terminal.png"><img src="screenshots/41-same-session-terminal.png" alt="A session reopened in the terminal: its earlier turns, tool calls and the worker's agent_send drawn again, and a note that it was resumed" loading="lazy"></a>
+        <a href="screenshots/41-same-session-terminal.png"><img src="screenshots/41-same-session-terminal.png" alt="The same session in the terminal after a resume: the fix and its tests, a note that the session was resumed and is being served on the web, the message typed on the phone, the permission it answered there, and the reply" loading="lazy"></a>
       </div>
-      <a class="phone" href="screenshots/42-same-session-phone.png"><img src="screenshots/42-same-session-phone.png" alt="The same session in a phone's browser: the bug the agent found, the next message, and the composer with its model, mode and sandbox pickers" loading="lazy"></a>
+      <a class="phone" href="screenshots/42-same-session-phone.png"><img src="screenshots/42-same-session-phone.png" alt="The same session in a phone's browser: the bulk-discount fix and its three new tests, the message sent from the phone, and the answer — five tests ran, four passed, one failure that was already there — above the composer with its model, mode, thinking and sandbox pickers" loading="lazy"></a>
     </div>
   </div>
 
   <div class="feature flip">
     <div class="feature-text">
-      <span class="eyebrow">Workers and tasks</span>
-      <h3>Work that runs beside you, and that you can still reach.</h3>
-      <p>A worker is an agent with its own context, its own tab, and its own model and folder, chosen
-      when it is spawned; a task is a long command left running. Either runs in the foreground, with the
-      turn waiting on it, or in the background while the conversation carries on —
-      <kbd>Ctrl+B</kbd> moves whatever a turn is waiting on to the background mid-run, and each
-      report arrives as a message when it is done. <kbd>F7</kbd> lists what is running and what has
-      finished; <kbd>Enter</kbd> opens one in its tab.</p>
-      <p>Steer a worker while it works, from either side: type in its tab, or let the parent model
-      <code>agent_send</code> it. A working one reads the message at the top of its next turn; a
-      finished one picks up where it stopped, with everything it already read. What you sent shows
-      as your turn there, and what the parent sent as a note from the parent.</p>
+      <span class="eyebrow">Workers</span>
+      <h3>A team, not an assistant.</h3>
+      <p>The agent you talk to puts workers on a job — an explorer, a reviewer, a tester, a planner, a
+      builder, or a type you define — each with its own brief and its own context, and its own model
+      and folder when one is chosen for it. They run in the background while the conversation goes on:
+      <kbd>F7</kbd> lists them, and <kbd>Ctrl+B</kbd> moves whatever a turn is waiting on there. A long
+      command left running is listed beside them.</p>
+      <p>They do not disappear when their part is done. Each keeps everything it read, ran and
+      concluded, so you — in its own tab — or the lead, with <code>agent_send</code>, can hand it the
+      next piece, or a correction mid-task, and it carries on from where it is instead of starting
+      over. They read the same notes about you and the project the lead does, and when you resume the
+      session another day the team is still there, its conversations intact.</p>
       <p class="feature-links"><a href="docs/commands.html#agents">Workers →</a>
       <a href="docs/commands.html#tasks">Tasks →</a></p>
     </div>
-    <div class="feature-media">
+    <div class="feature-media with-inset">
       <div class="win">
         <div class="win-bar">
           <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
-          <span class="tl-title">cxagent — workers</span>
+          <span class="tl-title">cxagent — ~/source/cxgpu</span>
         </div>
-        <a href="screenshots/37-background-agents.png"><img src="screenshots/37-background-agents.png" alt="The conversation with background agents: a finished agent's report as a table, a worker still running, and the tasks panel listing it above three finished ones" loading="lazy"></a>
+        <a href="screenshots/37-background-agents.png"><img src="screenshots/37-background-agents.png" alt="The lead's conversation after it put a team on the repository: explore, review and test workers in the transcript with a table of their briefs, and the Tasks column with two still running and the reviewer finished" loading="lazy"></a>
       </div>
+      <a class="inset win" href="screenshots/44-worker-follow-up.png"><img src="screenshots/44-worker-follow-up.png" alt="The finished reviewer's own tab: its five points, a follow-up typed into its composer asking which matters most, and its answer — the hard-coded power scale — with the diff it would make" loading="lazy"></a>
     </div>
   </div>
 
@@ -159,9 +160,9 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
       <div class="win">
         <div class="win-bar">
           <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
-          <span class="tl-title">cxagent — editor</span>
+          <span class="tl-title">cxagent — ~/source/cxgpu</span>
         </div>
-        <a href="screenshots/26-editor-changed.png"><img src="screenshots/26-editor-changed.png" alt="A file changed by the agent underneath unsaved edits, showing the warning with Save, Reload and See theirs" loading="lazy"></a>
+        <a href="screenshots/26-editor-changed.png"><img src="screenshots/26-editor-changed.png" alt="A C# file open in a tab with a line typed but not saved, after the agent changed the same file on disk: Save, Reload and See theirs, and "changed on disk — reload to see it"" loading="lazy"></a>
       </div>
     </div>
   </div>
@@ -188,14 +189,28 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
       <div class="win">
         <div class="win-bar">
           <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
-          <span class="tl-title">cxagent — plugins</span>
+          <span class="tl-title">cxagent — ~/source/cxgpu</span>
         </div>
-        <a href="screenshots/18-plugin-marketplace.png"><img src="screenshots/18-plugin-marketplace.png" alt="The plugin manager over a session on a local model: six plugins available from the catalog, with calculator selected and its Install button" loading="lazy"></a>
+        <a href="screenshots/18-plugin-marketplace.png"><img src="screenshots/18-plugin-marketplace.png" alt="The plugin manager over a session on a local model: six plugins available from the catalog, calculator selected, with its version, licence, contract and tool count, and its Install button" loading="lazy"></a>
       </div>
     </div>
   </div>
 
   <p class="note"><a href="docs/walkthrough.html">The full walkthrough, with every capture →</a></p>
+</section>
+
+<section id="start" class="start-strip">
+  <div class="section-label"><span>//</span> Start</div>
+  <h2>A first session, in a minute</h2>
+  <ol class="steps">
+    <li><b>Install</b> — the one line above.</li>
+    <li><b>Start it in a project</b> with your work committed, and trust the folder.</li>
+    <li><b>Ask</b> for something, in plain language.</li>
+    <li><b>Put a team on it</b> — workers that stay for the next question.</li>
+    <li><b>It remembers you</b>, from one session to the next.</li>
+    <li><b>Carry on from your phone</b>, in the same session.</li>
+  </ol>
+  <p class="feature-links"><a href="docs/#quickstart">The whole guide, with pictures →</a></p>
 </section>
 
 <section id="why">

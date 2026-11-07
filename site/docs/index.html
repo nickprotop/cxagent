@@ -73,26 +73,39 @@ well as a cloud one.</p>
 then open a new shell. <a href="../install.html">Windows, the .NET tool, and reading the script
 first →</a></li>
 <li><strong>Start it in a project.</strong> <code>cd</code> into a git repository with your work
-committed — it writes inside that folder — and run <code>cxagent</code>.</li>
+committed — it writes inside that folder, and there is no undo inside cxagent; git is the undo — and run
+<code>cxagent</code>.</li>
 <li><strong>Pick a model.</strong> With no configuration yet, the configuration dialog opens on a card
 per kind of endpoint. Choose one, give it a key if it needs one, pick a model from the list it
-serves, and save. <kbd>F8</kbd> opens the same dialog later.</li>
+serves, and save. <kbd>F8</kbd> opens the same dialog later.
+<figure class="step-shot"><a href="../screenshots/35-first-run.png"><img src="../screenshots/35-first-run.png" alt="The configuration dialog on first run, with no provider yet: the Roles block empty, and six cards to pick from — Anthropic, OpenRouter, OpenAI, Ollama, llama.cpp and OpenAI-compatible" loading="lazy"></a><figcaption>First run: a card per kind of endpoint.</figcaption></figure>
+</li>
 <li><strong>Trust the folder.</strong> The first session in a folder asks <em>Trust this folder?</em>
 Trusted, reads and read-only commands inside it stop asking. Writes still ask in the default
 <code>always-ask</code> mode; <kbd>Shift+Tab</kbd> switches to <code>accept-edits</code>, where writes
 inside the folder go through. Commands that can write, and anything outside the folder, ask either
-way. <code>/trust</code> changes the answer later.</li>
+way. <code>/trust</code> changes the answer later.
+<figure class="step-shot"><a href="../screenshots/01-trust.png"><img src="../screenshots/01-trust.png" alt="The first session in a folder: the question Trust this folder?, the folder's path, what trusting allows, and the two answers with Don't trust selected" loading="lazy"></a><figcaption>The question the first session in a folder asks.</figcaption></figure>
+</li>
 <li><strong>Ask for something.</strong> Type a goal in the <a href="glossary.html#composer">composer</a>
 and press <kbd>Enter</kbd> — <em>add a --verbose flag to the CLI and a test for it</em>. Its tool calls
-appear in the transcript as it works, and anything that needs your say-so stops and asks.</li>
+appear in the transcript as it works, and anything that needs your say-so stops and asks.
+<figure class="step-shot"><a href="../screenshots/46-turn-working.png"><img src="../screenshots/46-turn-working.png" alt="A turn at work: the goal, an explore worker it sent first, the bug it named, its edits to invoice.py and the test file, and a prompt asking to run the tests, with Allow once and Deny" loading="lazy"></a><figcaption>A turn in progress: what it does is in the transcript, and the test run waits for your say-so.</figcaption></figure>
+</li>
 <li><strong>Put a team on it.</strong> Ask for work that splits — <em>have an explorer map how config
 is loaded while a reviewer checks the last commit</em>. Each worker runs in the background with its
 own context; <kbd>F7</kbd> lists them, <kbd>Enter</kbd> opens one in its tab, and typing there gives
 it more — while it works, or after. A finished worker stays, with everything it learned, for the next
-question. <a href="commands.html#agents">Workers →</a></li>
-<li><strong>Review it.</strong> <code>/diff</code> shows <code>git diff</code> in the transcript,
-naming new files too, without a second terminal. There is no undo inside cxagent: git is the
-undo.</li>
+question. <a href="commands.html#agents">Workers →</a>
+<figure class="step-shot"><a href="../screenshots/37-background-agents.png"><img src="../screenshots/37-background-agents.png" alt="The lead's conversation with explore, review and test workers spawned in the background and a table of their briefs, and the Tasks column with two running and the reviewer finished" loading="lazy"></a><figcaption>Three workers: <kbd>F7</kbd> lists what is running and what has finished.</figcaption></figure>
+</li>
+<li><strong>It remembers you.</strong> Tell it how you work — <em>always write tests with xUnit and
+plain Assert</em> — and it keeps a note: system notes, about you, go with you to every project; project
+notes stay with this one; both in cxagent's own folder, never in your repository. The next session
+already knows. <code>/memory</code> lists them, and <code>/memory open</code> or <code>/memory
+forget</code> corrects or removes one. <a href="commands.html#memory">Memory →</a>
+<figure class="step-shot"><a href="../screenshots/45-memory-note.png"><img src="../screenshots/45-memory-note.png" alt="The preference stated in the composer, the memory · write · test-framework-preference row the model's note made, its reply, and the session panel's Memory section reading 1 system · 0 project" loading="lazy"></a><figcaption>The note it keeps, and the panel counting it.</figcaption></figure>
+</li>
 <li><strong>Carry on from a browser.</strong> Type <code>/web</code>: it answers <em>Serving this
 terminal's sessions at http://localhost:5180/</em>, and a browser on this machine opening that address
 gets the same live session — the same turns and tabs, its prompts shown in both places, the first
@@ -103,7 +116,9 @@ phone, open <code>http://&lt;this machine's LAN address&gt;:5180/</code> and log
 it refuses to listen beyond this machine and says how to add one. Plain HTTP sends that login across
 the network as it is typed: on a network you do not control, choose <strong>HTTPS, self-signed</strong>
 in the same tab and open <code>https://</code> instead. <a href="commands.html#web">Sessions
-in a browser →</a></li>
+in a browser →</a>
+<figure class="step-shot phone-shot"><a href="../screenshots/42-same-session-phone.png"><img src="../screenshots/42-same-session-phone.png" alt="The same session in a phone's browser: the fix and its new tests, a message sent from the phone, and the answer, above the composer with its model, mode, thinking and sandbox pickers" loading="lazy"></a><figcaption>The same session on a phone.</figcaption></figure>
+</li>
 </ol>
 
 <h2>Using cxagent</h2>

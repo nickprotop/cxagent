@@ -574,6 +574,34 @@ body.landing { max-width: none; }
   .phone { right: -6px; width: 38%; border-width: 4px; border-radius: 16px; }
 }
 
+/* A WORKER'S OWN TAB, laid over the team's corner as the phone is over the session's: the follow-up you
+   give one worker, seen beside the team it belongs to. */
+.feature-media.with-inset { position: relative; padding: 0 0 56px; }
+.inset {
+  position: absolute; left: -18px; bottom: 0; width: 52%;
+  display: block;
+}
+.inset img { display: block; width: 100%; }
+@media (max-width: 40rem) {
+  .inset { left: -6px; width: 62%; }
+}
+
+/* THE FIRST SESSION, as six short steps: the page's promise that it is a minute's work, with the guide
+   one link away. Numbered because the order is real. */
+.start-strip .steps { counter-reset: step; list-style: none; padding: 0; margin: 1.2rem 0;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 28px; }
+.start-strip .steps li { counter-increment: step; position: relative; padding-left: 2.1rem; color: var(--fg-dim); }
+.start-strip .steps li::before { content: counter(step); position: absolute; left: 0; top: 0;
+  font: 600 0.85rem var(--mono, monospace); color: var(--accent, var(--fg-bright)); }
+.start-strip .steps b { color: var(--fg-bright); font-weight: 600; }
+@media (max-width: 52rem) { .start-strip .steps { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 34rem) { .start-strip .steps { grid-template-columns: 1fr; } }
+
+/* A PICTURE INSIDE A QUICKSTART STEP: the figure the docs use, with less air around it inside a list. */
+li > figure.step-shot { margin: 0.8rem 0 1.4rem; }
+/* A PHONE IS TALL: shown at a phone's width, not stretched across the column. */
+li > figure.phone-shot { max-width: 300px; }
+
 /* numbered differentiators — order is real here, they are not decoration */
 /* THREE ACROSS, NOT auto-fit, AND A MULTIPLE OF THREE CARDS. auto-fit packs whatever fits onto a
    row and strands the remainder beside empty cells; the grid's 1px gap is its background showing
