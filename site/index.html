@@ -62,7 +62,7 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
     <div class="btns">
       <a class="btn btn-primary" href="install.html">Get started</a>
       <a class="btn btn-ghost" href="https://github.com/nickprotop/cxagent">&#9733; Star on GitHub</a>
-      <a class="btn btn-ghost" href="#session">See a session</a>
+      <a class="btn btn-ghost" href="#features">See it working</a>
     </div>
   </div>
 
@@ -77,73 +77,126 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
   </div>
 </div>
 
-<section id="session">
-  <div class="section-label"><span>//</span> Sessions</div>
-  <h2>What a session looks like</h2>
-  <p class="section-sub">Every capture is from a real session, in several of the built-in themes.
-  Nothing is staged, and the mistakes are still in the pictures.</p>
+<section id="features" class="features">
+  <div class="section-label"><span>//</span> Features</div>
+  <h2>Four things it is built around</h2>
+  <p class="section-sub">Every capture is from a real session. Nothing is staged, and the mistakes
+  are still in the pictures.</p>
 
-  <div class="win">
-    <div class="win-bar">
-      <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
-      <span class="tl-title">cxagent — session explorer</span>
+  <div class="feature">
+    <div class="feature-text">
+      <span class="eyebrow">Front ends</span>
+      <h3>One session. A terminal, a browser, or both at once.</h3>
+      <p>The terminal is the workbench: a tab for every conversation and every worker, a file open
+      beside the chat, a real shell when one is needed. <code>cxagent web</code> serves the same
+      sessions to a browser with no terminal, and <code>/web</code> shares the one you are in —
+      follow a turn from your phone and answer its prompt there; the first answer wins.</p>
+      <p>Leave a session and come back to it from either. It returns whole: every turn, every tool
+      call, every worker drawn again, and the workers ready for more work. <code>F12</code> exports
+      any of them as markdown.</p>
+      <p class="feature-links"><a href="docs/commands.html#web">Sessions in a browser →</a>
+      <a href="screenshots/43-same-session-browser.png">The browser on a desktop →</a></p>
     </div>
-    <div class="explorer">
-      <div class="exp-nav" role="tablist" aria-label="Session captures" data-tabs>
-      <button type="button" class="exp-item" role="tab" id="tab-session-overview" aria-controls="pane-session-overview"><span class="exp-icon">&#128220;</span><span>A whole session</span></button>
-      <button type="button" class="exp-item" role="tab" id="tab-02-sub-agents" aria-controls="pane-02-sub-agents"><span class="exp-icon">&#127807;</span><span>An agent's own tab</span></button>
-      <button type="button" class="exp-item" role="tab" id="tab-37-background-agents" aria-controls="pane-37-background-agents"><span class="exp-icon">&#9203;</span><span>In the background</span></button>
-      <button type="button" class="exp-item" role="tab" id="tab-26-editor-changed" aria-controls="pane-26-editor-changed"><span class="exp-icon">&#128196;</span><span>The editor</span></button>
-      <button type="button" class="exp-item" role="tab" id="tab-23-shell-terminal" aria-controls="pane-23-shell-terminal"><span class="exp-icon">&#128421;&#65039;</span><span>A real terminal</span></button>
-      <button type="button" class="exp-item" role="tab" id="tab-29-btw-aside" aria-controls="pane-29-btw-aside"><span class="exp-icon">&#128172;</span><span>A side question</span></button>
-      <button type="button" class="exp-item" role="tab" id="tab-40-images" aria-controls="pane-40-images"><span class="exp-icon">&#128444;&#65039;</span><span>Images</span></button>
-      <button type="button" class="exp-item" role="tab" id="tab-01-trust" aria-controls="pane-01-trust"><span class="exp-icon">&#128274;</span><span>Trust</span></button>
+    <div class="feature-media with-phone">
+      <div class="win">
+        <div class="win-bar">
+          <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
+          <span class="tl-title">cxagent — invoice</span>
+        </div>
+        <a href="screenshots/41-same-session-terminal.png"><img src="screenshots/41-same-session-terminal.png" alt="A session reopened in the terminal: its earlier turns, tool calls and the worker's agent_send drawn again, and a note that it was resumed" loading="lazy"></a>
       </div>
-      <div class="exp-body" id="panels">
-      <div class="exp-pane" role="tabpanel" id="pane-session-overview" aria-labelledby="tab-session-overview">
-        <div class="exp-shot"><a href="screenshots/session-overview.png" title="Open the full-size capture"><img src="screenshots/session-overview.png" alt="A session exploring a codebase, with two finished workers and the panel showing cost" loading="lazy"></a></div>
-        <div class="exp-text"><h3>A session, end to end</h3><p>Two workers explored a GPU monitoring tool and reported back. The agent wrote the summary you are reading from what they found, not from the files — and the panel on the right carries what that cost while it happened: 1.2M tokens across workers. The system prompt is built the same way every turn, so what the model has already read stays read.</p></div>
-      </div>
-      <div class="exp-pane" role="tabpanel" id="pane-02-sub-agents" aria-labelledby="tab-02-sub-agents">
-        <div class="exp-shot"><a href="screenshots/36-agent-tab.png" title="Open the full-size capture"><img src="screenshots/36-agent-tab.png" alt="An agent's own tab while it runs, with Stop, its brief, its folded thinking between tool calls, and the tasks panel beside it" loading="lazy"></a></div>
-        <div class="exp-text"><h3>An agent in its own tab</h3><p>Sub-agents run in the background, listed in the tasks panel. Open one and it has a tab of its own: its brief, each step's thinking and tool calls, and its answer as it is written — with Stop, and a composer that talks to it rather than to the session.</p></div>
-      </div>
-      <div class="exp-pane" role="tabpanel" id="pane-37-background-agents" aria-labelledby="tab-37-background-agents">
-        <div class="exp-shot"><a href="screenshots/37-background-agents.png" title="Open the full-size capture"><img src="screenshots/37-background-agents.png" alt="The conversation with a background agent: a finished agent's report as a table, a worker still running, and the tasks panel listing it above three finished ones" loading="lazy"></a></div>
-        <div class="exp-text"><h3>Agents in the background</h3><p>A spawn returns at once and the parent carries on; each report arrives as a message when it is done. <code>F7</code> turns the right-hand column into the tasks panel — what is running first, then what has finished — and <code>Enter</code> on one opens it in a tab.</p><p class="exp-aside"><code>Ctrl+B</code> moves what a turn is waiting on to the background mid-run, and <code>x</code> stops a running agent.</p></div>
-      </div>
-      <div class="exp-pane" role="tabpanel" id="pane-26-editor-changed" aria-labelledby="tab-26-editor-changed">
-        <div class="exp-shot"><a href="screenshots/26-editor-changed.png" title="Open the full-size capture"><img src="screenshots/26-editor-changed.png" alt="A file changed by the agent underneath unsaved edits, showing the warning with Save, Reload and See theirs" loading="lazy"></a></div>
-        <div class="exp-text"><h3>A file open beside the conversation</h3><p><code>/open</code> puts a file in a tab, with its language's highlighter and a save that keeps the BOM and line endings. Here the agent wrote the file while it had unsaved edits: the edits are kept, and the bar says so, with <b>Reload</b> and <b>See theirs</b>.</p><p class="exp-aside">A save tells the model you edited the file, so it does not go on editing from a read you have since changed.</p></div>
-      </div>
-      <div class="exp-pane" role="tabpanel" id="pane-23-shell-terminal" aria-labelledby="tab-23-shell-terminal">
-        <div class="exp-shot"><a href="screenshots/23-shell-terminal.png" title="Open the full-size capture"><img src="screenshots/23-shell-terminal.png" alt="A shell in its own tab beside the Chat tab, with copy back on exit and Copy now in its toolbar" loading="lazy"></a></div>
-        <div class="exp-text"><h3>A terminal, for what a tool cannot do</h3><p>A captured stream has nothing to type into, so a <code>sudo</code> password or a <code>git rebase -i</code> is where an agent stops and hands the job back. <code>/shell</code> opens a real PTY in a tab of its own, beside the conversation — the colours are the giveaway, since <code>ls</code> emits them only when it believes it is talking to a terminal.</p><p class="exp-aside">Afterwards the agent is told what happened, queued rather than delivered into a turn of its own — so it does not start talking while you are still reading.</p></div>
-      </div>
-      <div class="exp-pane" role="tabpanel" id="pane-29-btw-aside" aria-labelledby="tab-29-btw-aside">
-        <div class="exp-shot"><a href="screenshots/29-btw-aside.png" title="Open the full-size capture"><img src="screenshots/29-btw-aside.png" alt="An aside answering in its own block while the main agent keeps working" loading="lazy"></a></div>
-        <div class="exp-text"><h3>A question on the side</h3><p><code>/btw</code> asks about what the agent knows without adding to what it remembers. The aside starts from the conversation as the agent last sent it and answers in its own block while the main turn carries on — the calls above and below it are the agent, still reading.</p><p class="exp-aside">It can read and nothing else, under the session's own permissions; a read the agent would be asked about is asked about here too.</p></div>
-      </div>
-      <div class="exp-pane" role="tabpanel" id="pane-40-images" aria-labelledby="tab-40-images">
-        <div class="exp-shot"><a href="screenshots/40-images.png" title="Open the full-size capture"><img src="screenshots/40-images.png" alt="The image window over a session on Claude Haiku: a pasted 3500 by 2504 screenshot shrunk to 1568 by 1122, drawn in full in Kitty, its sizes in the title and Open in viewer in the footer, and the composer holding the image's token and the question about it" loading="lazy"></a></div>
-        <div class="exp-text"><h3>A screenshot in the conversation</h3><p><code>Ctrl+V</code> pastes an image from the clipboard as a token, and dropping a file on the terminal does the same. The model is sent the picture, shrunk to 1568 pixels on its long edge; here Claude Haiku reads it. <code>Ctrl+G</code>, or a click on the message's image button, opens it in a window of its own.</p><p class="exp-aside">Kitty draws the pixels, any other terminal draws half-blocks, and the system viewer is a button away. A model that cannot see images is sent a note naming each one, so the conversation goes on.</p></div>
-      </div>
-      <div class="exp-pane" role="tabpanel" id="pane-01-trust" aria-labelledby="tab-01-trust">
-        <div class="exp-shot"><a href="screenshots/01-trust.png" title="Open the full-size capture"><img src="screenshots/01-trust.png" alt="Trusting a folder" loading="lazy"></a></div>
-        <div class="exp-text"><h3>Trusting a folder</h3><p>The first question of the first session. Reads and writes inside this folder stop asking; anything that writes elsewhere, and every shell command, still stops.</p></div>
-      </div>
+      <a class="phone" href="screenshots/42-same-session-phone.png"><img src="screenshots/42-same-session-phone.png" alt="The same session in a phone's browser: the bug the agent found, the next message, and the composer with its model, mode and sandbox pickers" loading="lazy"></a>
+    </div>
+  </div>
+
+  <div class="feature flip">
+    <div class="feature-text">
+      <span class="eyebrow">Workers and tasks</span>
+      <h3>Work that runs beside you, and that you can still reach.</h3>
+      <p>A worker is an agent with its own context, its own tab, and its own model and folder, chosen
+      when it is spawned; a task is a long command left running. Either runs in the foreground, with the
+      turn waiting on it, or in the background while the conversation carries on —
+      <kbd>Ctrl+B</kbd> moves whatever a turn is waiting on to the background mid-run, and each
+      report arrives as a message when it is done. <kbd>F7</kbd> lists what is running and what has
+      finished; <kbd>Enter</kbd> opens one in its tab.</p>
+      <p>Steer a worker while it works, from either side: type in its tab, or let the parent model
+      <code>agent_send</code> it. A working one reads the message at the top of its next turn; a
+      finished one picks up where it stopped, with everything it already read. What you sent shows
+      as your turn there, and what the parent sent as a note from the parent.</p>
+      <p class="feature-links"><a href="docs/commands.html#agents">Workers →</a>
+      <a href="docs/commands.html#tasks">Tasks →</a></p>
+    </div>
+    <div class="feature-media">
+      <div class="win">
+        <div class="win-bar">
+          <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
+          <span class="tl-title">cxagent — workers</span>
+        </div>
+        <a href="screenshots/37-background-agents.png"><img src="screenshots/37-background-agents.png" alt="The conversation with background agents: a finished agent's report as a table, a worker still running, and the tasks panel listing it above three finished ones" loading="lazy"></a>
       </div>
     </div>
   </div>
 
-  <p class="note" style="margin-top:1rem"><a href="docs/walkthrough.html">Twelve more captures, and the full walkthrough →</a></p>
+  <div class="feature">
+    <div class="feature-text">
+      <span class="eyebrow">Workbench</span>
+      <h3>Everything the job needs, in tabs beside the chat.</h3>
+      <p><code>/open</code> puts a file in a tab with its language's highlighter and a save that
+      keeps the bytes you did not edit. When the agent writes a file you have unsaved edits in,
+      yours are kept, with <b>Reload</b> and <b>See theirs</b>. <code>/shell</code> opens a real
+      terminal for what a captured stream cannot do — a password prompt, an interactive rebase —
+      and the agent is told afterwards what happened there.</p>
+      <p>Some questions do not need the model: <code>/diff</code> reads the working tree and
+      <code>/stats</code> the ledger, spending nothing. Each step's thinking is its own block,
+      folded until you open it, and <code>/think</code> sets how hard it thinks.</p>
+      <p class="feature-links"><a href="docs/commands.html#open">The editor →</a>
+      <a href="docs/commands.html#shell">The shell →</a></p>
+    </div>
+    <div class="feature-media">
+      <div class="win">
+        <div class="win-bar">
+          <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
+          <span class="tl-title">cxagent — editor</span>
+        </div>
+        <a href="screenshots/26-editor-changed.png"><img src="screenshots/26-editor-changed.png" alt="A file changed by the agent underneath unsaved edits, showing the warning with Save, Reload and See theirs" loading="lazy"></a>
+      </div>
+    </div>
+  </div>
+
+  <div class="feature flip">
+    <div class="feature-text">
+      <span class="eyebrow">Extend</span>
+      <h3>Your model, your tools.</h3>
+      <p>Ollama, llama.cpp, any OpenAI-compatible endpoint, or Anthropic — per tab, and switchable
+      mid-conversation. There is no cxagent account and no cxagent server: it talks to the endpoint
+      you configure, the MCP servers you add, and whatever a tool call reaches for.</p>
+      <p>Tools from any MCP server sit beside the built-in ones; a skill is a <code>SKILL.md</code>
+      the model loads when a task needs it, a markdown file becomes a command, and hooks run your
+      commands on the agent's events. Your Claude Code commands and skills work as they are. A plugin
+      shows you a hash of everything it would load before any of it runs, and asks again whenever
+      that hash changes.</p>
+      <p class="feature-links"><a href="plugins.html">Plugins →</a>
+      <a href="docs/config.html">Configuration →</a></p>
+    </div>
+    <div class="feature-media">
+      <div class="win">
+        <div class="win-bar">
+          <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
+          <span class="tl-title">cxagent — a plugin asks</span>
+        </div>
+        <a href="screenshots/15-plugin-load.png"><img src="screenshots/15-plugin-load.png" alt="A plugin asking before it loads: what it wants to run, the tools it adds, and the hash an always-allow covers" loading="lazy"></a>
+      </div>
+    </div>
+  </div>
+
+  <p class="note"><a href="docs/walkthrough.html">The full walkthrough, with every capture →</a></p>
 </section>
 
 <section id="why">
-  <div class="section-label"><span>//</span> Features</div>
-  <h2>What is in it</h2>
-  <p class="section-sub">The workbench first, then what keeps it in your hands: the prompts that
-  stop it, a prompt that does not move under a running conversation, and the real bytes on disk.</p>
+  <div class="section-label"><span>//</span> And</div>
+  <h2>What else is in it</h2>
+  <p class="section-sub">What keeps it in your hands — the prompts that stop it and the sandbox its
+  commands run in — and the rest of what a session can do.</p>
 
   <div class="uniques">
     <div class="u-item">
@@ -156,114 +209,20 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
     </div>
     <div class="u-item">
       <div class="u-num">02</div>
-      <p class="u-title">Sub-agents in the background</p>
-      <p class="u-body">A spawn returns at once and the parent carries on; each report arrives as a message when it is
-      done. <kbd>F7</kbd> lists what is running, <kbd>Enter</kbd> opens one in a tab with a composer
-      that talks to it, and <kbd>Ctrl+B</kbd> moves what a turn is waiting on to the background. Each
-      worker has its own context, and an agent type can run on its own model.
-      <a href="docs/config.html#agents--sub-agent-types">Agent types →</a></p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">03</div>
-      <p class="u-title">A file opens beside the conversation</p>
-      <p class="u-body"><code>/open</code> puts a file in a tab — line numbers, its language's highlighter, and a save
-      that keeps the bytes you did not edit. It tells the model afterwards; and when the agent writes
-      a file you have unsaved edits in, yours are kept, with <b>Reload</b> and <b>See theirs</b>.</p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">04</div>
-      <p class="u-title">A real terminal when one is needed</p>
-      <p class="u-body">A captured stream has nothing to type into, so a password prompt or an interactive rebase is
-      where most agents hand the job back. <code>/shell</code> opens a PTY in a tab beside the
-      conversation; what happened there reaches the model afterwards, queued rather than delivered
-      into a turn of its own.</p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">05</div>
-      <p class="u-title">Bring your own model</p>
-      <p class="u-body">Ollama, llama.cpp, any OpenAI-compatible endpoint, or Anthropic — per tab, and switchable
-      mid-conversation. Paste or drop a screenshot and a model that can see is sent the picture.
-      There is no cxagent account and no cxagent server: it talks to the endpoint you configure, the
-      MCP servers you add, and whatever a tool call reaches for.</p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">06</div>
       <p class="u-title">It asks before it reaches out</p>
       <p class="u-body">In a folder you trust, reads and commands that only read stop asking, and writes inside it go
       through without asking in accept-edits mode. Commands that can write, and anything outside the
-      folder, still stop. <code>/btw</code> asks a side question under the same rules, without
-      interrupting the turn.</p>
+      folder, still stop.</p>
     </div>
     <div class="u-item">
-      <div class="u-num">07</div>
+      <div class="u-num">03</div>
       <p class="u-title">A second model can answer the prompts</p>
       <p class="u-body">Name a classifier in your config and <code>/mode edits auto</code> reviews each write that
       would otherwise stop you. It fails closed — a timeout, an error or anything it cannot parse
       means ask, never allow.</p>
     </div>
     <div class="u-item">
-      <div class="u-num">08</div>
-      <p class="u-title">A plugin is a decision, not an install</p>
-      <p class="u-body">Install one from the catalog with <strong>F2</strong>. Before any of it runs, cxagent reads the
-      sidecar file beside it, shows you a hash of everything it would load, and asks — every time
-      that hash changes.</p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">09</div>
-      <p class="u-title">The prompt does not move</p>
-      <p class="u-body">Built the same way every turn, from facts sorted into a fixed order — so an MCP server
-      connecting at turn 82, or a skill the filesystem happened to list differently, does not
-      rewrite what the model has already read.</p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">10</div>
-      <p class="u-title">A conversation you can come back to</p>
-      <p class="u-body">Every session in a folder is recorded and listed, with the goal that started it —
-      <code>/sessions resume 2</code>, or by id from the command line. It comes back whole: every turn,
-      tool call and worker drawn again, and its workers ready for more work. <code>/compress</code>
-      summarises a full one in place, and <code>F12</code> exports any of them as markdown, with each
-      sub-agent's work where it happened.</p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">11</div>
-      <p class="u-title">Some questions do not need the model</p>
-      <p class="u-body"><code>/diff</code> reads the working tree, <code>/stats</code> reads the ledger,
-      <code>/sessions</code> reads what is recorded. They answer from git and from disk, spending
-      nothing and adding nothing to what the model has to read.</p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">12</div>
-      <p class="u-title">MCP, skills, hooks and your own commands</p>
-      <p class="u-body">Tools from any MCP server sit beside the built-in ones. A skill is a <code>SKILL.md</code> the
-      model loads when a task needs it, and a markdown file becomes a command like
-      <code>/review 42</code>. Hooks run your commands on the agent's events: a guard before a shell call,
-      a formatter after an edit, a check that the tests pass before a turn ends. Your Claude Code
-      commands and skills work as they are.</p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">13</div>
-      <p class="u-title">Thinking you can see, and set</p>
-      <p class="u-body">Each step's thinking is its own block, folded until you open it — from a local llama.cpp model
-      or from Claude. <code>/think</code> and <code>F10</code> choose how hard it thinks, from the
-      levels the model itself says it accepts.</p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">14</div>
-      <p class="u-title">One goal, or a script full of them</p>
-      <p class="u-body"><code>cxagent -p</code> runs a goal with no window and prints the answer, as text, JSON or a
-      stream of events. <code>-c</code> carries a script's next step on in the same conversation,
-      which then opens in the TUI like any other. Anything that would have asked is refused and
-      listed in the result.</p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">15</div>
-      <p class="u-title">Work that starts without you typing</p>
-      <p class="u-body">A plugin can declare that it may start work in its own session, and the load prompt says so
-      before you approve it. Unwiring it stops the turn it started — and leaves the one you started
-      alone.</p>
-    </div>
-    <div class="u-item">
-      <div class="u-num">16</div>
+      <div class="u-num">04</div>
       <p class="u-title">Commands in a sandbox</p>
       <p class="u-body">On Linux the model's shell commands run inside bubblewrap: they write only in the project,
       temp and package caches, see <code>~/.ssh</code> and your other credentials as empty, and cannot
@@ -271,13 +230,40 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
       always asks you, and only you.</p>
     </div>
     <div class="u-item">
-      <div class="u-num">17</div>
-      <p class="u-title">Your sessions in a browser</p>
-      <p class="u-body"><code>cxagent web</code> serves sessions to a browser with no terminal, and <code>/web</code>
-      shares the terminal's own: follow a turn and answer its prompts from a phone, first answer wins.
-      Highlighted markdown, tool rounds you can open, a tab per worker, and the model, mode and sandbox
-      picked under the message box.
-      One binary, no extra runtime, a login required as soon as it listens beyond this machine.</p>
+      <div class="u-num">05</div>
+      <p class="u-title">A question on the side</p>
+      <p class="u-body"><code>/btw</code> asks about what the agent knows without adding to what it remembers. It
+      answers in its own block while the main turn carries on, and it can only read, under the
+      session's own permissions.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">06</div>
+      <p class="u-title">A screenshot in the conversation</p>
+      <p class="u-body"><kbd>Ctrl+V</kbd> pastes an image as a token, and dropping a file on the terminal does the
+      same; a model that can see is sent the picture. Kitty draws the pixels, any other terminal
+      draws half-blocks, and a model that cannot see is sent a note naming each one.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">07</div>
+      <p class="u-title">The prompt does not move</p>
+      <p class="u-body">Built the same way every turn, from facts sorted into a fixed order — so an MCP server
+      connecting at turn 82, or a skill the filesystem happened to list differently, does not
+      rewrite what the model has already read.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">08</div>
+      <p class="u-title">One goal, or a script full of them</p>
+      <p class="u-body"><code>cxagent -p</code> runs a goal with no window and prints the answer, as text, JSON or a
+      stream of events. <code>-c</code> carries a script's next step on in the same conversation,
+      which then opens in the TUI like any other. Anything that would have asked is refused and
+      listed in the result.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">09</div>
+      <p class="u-title">Work that starts without you typing</p>
+      <p class="u-body">A plugin can declare that it may start work in its own session, and the load prompt says so
+      before you approve it. Unwiring it stops the turn it started — and leaves the one you started
+      alone.</p>
     </div>
   </div>
 </section>
@@ -341,7 +327,6 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
   <p>cxagent is MIT licensed. Its terminal UI is built on
   <a href="https://github.com/nickprotop/ConsoleEx">SharpConsoleUI</a>, from the same author.</p>
 </footer>
-<script src="explorer.js"></script>
 <script src="site.js" defer></script>
 </body>
 </html>

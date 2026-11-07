@@ -450,7 +450,7 @@ figcaption strong { color: var(--fg-bright); }
 /* --- Landing page ------------------------------------------------------------------------------
    The landing page follows the same shape as the SharpConsoleUI site: a wide split hero with a live
    terminal window beside the pitch, window chrome as the recurring device, "// SECTION" markers, and
-   a sidebar explorer instead of a column of screenshots. The two projects share an author and a
+   a few features given a block each rather than a gallery to click through. The two projects share an author and a
    stack, so they read as a family; the accent is the one thing that differs. */
 
 body.landing { max-width: none; }
@@ -534,45 +534,45 @@ body.landing { max-width: none; }
 }
 .section-sub { max-width: 62ch; margin: 0 0 26px; }
 
-/* the session explorer
-   A TAB STRIP ACROSS THE TOP, NOT A SIDEBAR. The captures are terminal text, and a sidebar took a
-   fifth of the window's width from them: at what was left the text was a texture rather than
-   something to read, which is the one thing this section exists to show. A sidebar also set the
-   window's height by its own length, leaving a band of nothing under short captures. */
-.explorer { display: block; }
-.exp-nav {
-  background: var(--bg-raised); border-bottom: 1px solid var(--border);
-  padding: 0 8px; overflow-x: auto; white-space: nowrap; scrollbar-width: thin;
+/* the feature blocks
+   A FEW FEATURES, EACH WITH ROOM, rather than a tab strip of captures: a tab nobody clicks hides
+   what it holds, and eight of them said nothing about which mattered. Text beside a capture,
+   alternating sides so the eye zig-zags down the page instead of reading one column of pictures. */
+.feature {
+  display: grid; grid-template-columns: 1fr 1.15fr; gap: 52px; align-items: center;
+  padding: 36px 0 60px;
 }
-.exp-item {
-  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
-  background: none; border: 0; border-bottom: 2px solid transparent;
-  padding: 12px 14px 10px; cursor: pointer; color: var(--fg);
-  font: 400 0.9rem var(--font-prose);
+.feature.flip { grid-template-columns: 1.15fr 1fr; }
+.feature.flip .feature-media { order: -1; }
+.feature-text { min-width: 0; }
+.feature-media { min-width: 0; }
+.feature-media .win img { display: block; width: 100%; height: auto; }
+.eyebrow {
+  display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 10px;
 }
-.exp-item:hover { background: var(--accent-bg); }
-.exp-item[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); }
-.exp-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-/* TEXT TABS, NO ICONS. Eight labels with an emoji each overflowed a 1180px strip, hiding the last
-   tab behind a scroll nobody sees on a desktop; the words alone fit and read as tabs. The icons stay
-   in the markup for a stacked, script-less page, where each one heads its capture. */
-.js .exp-item .exp-icon { display: none; }
-.exp-icon { font-size: 1rem; opacity: 0.9; }
-.exp-body { display: flex; flex-direction: column; min-width: 0; }
-/* ONE SHAPE FOR EVERY CAPTURE. They were taken at different window sizes, so each kept its own
-   aspect and the window changed height on every click, moving everything below it. The frame is
-   the common 17:10 of most of them; the others are fitted inside it on the capture background. */
-/* The frame is a terminal's black in both themes: the captures are dark, and a light band around a
-   fitted one reads as a margin the page forgot to fill rather than as the window behind it. */
-.exp-shot {
-  background: #0b0d10; border-bottom: 1px solid var(--border);
-  aspect-ratio: 17 / 10;
+.feature h3 {
+  font: 700 1.45rem/1.25 var(--font-prose); letter-spacing: -0.02em;
+  color: var(--fg-bright); margin: 0 0 14px;
 }
-.exp-shot a { display: block; width: 100%; height: 100%; }
-.exp-shot img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.exp-text { padding: 20px 24px; min-height: 9.5rem; }
-.exp-text h3 { font: 500 1.02rem var(--font-prose); color: var(--fg-bright); margin: 0 0 7px; }
-.exp-text p { margin: 0; font-size: 0.94rem; line-height: 1.62; max-width: 90ch; }
+.feature p { font-size: 0.97rem; line-height: 1.65; margin: 0 0 12px; max-width: 60ch; }
+.feature-links { display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; margin-top: 18px; }
+
+/* THE SAME SESSION ON A PHONE, laid over the terminal's corner: one picture that says both front
+   ends hold one conversation, where two side by side read as two products. Cropped to its top,
+   because a full-height phone towers over the window it is meant to sit on. */
+.feature-media.with-phone { position: relative; padding: 0 0 48px; }
+.phone {
+  position: absolute; right: -18px; bottom: 0; width: 30%;
+  aspect-ratio: 400 / 620; overflow: hidden;
+  border: 6px solid #1a1d22; border-radius: 22px;
+  box-shadow: var(--shadow-win), 0 0 0 1px var(--border);
+  background: #0b0d10;
+}
+.phone img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: bottom; }
+@media (max-width: 40rem) {
+  .phone { right: -6px; width: 38%; border-width: 4px; border-radius: 16px; }
+}
 
 /* numbered differentiators — order is real here, they are not decoration */
 /* THREE ACROSS, NOT auto-fit, AND A MULTIPLE OF THREE CARDS. auto-fit packs whatever fits onto a
@@ -613,27 +613,12 @@ body.landing { max-width: none; }
 .warn-block p { max-width: 66ch; }
 .warn-block b { color: var(--fg-bright); }
 
-/* No JS: the sidebar is inert, so it stays hidden and every capture stacks with its text. */
-.exp-nav { display: none; }
-.js .exp-nav { display: block; }
-.js .exp-body > [hidden] { display: none; }
-/* Stacked without JS: each capture keeps a rule between it and the next. */
-.exp-pane + .exp-pane { border-top: 1px solid var(--border); }
-
-/* AN ANIMATION, NOT A TRANSITION. Panes are shown and hidden with the `hidden` attribute, and
-   display:none has no intermediate state to transition from — so the reveal is keyframed instead.
-   Short and small: the point is to let the eye follow the swap, not to perform. */
-@keyframes exp-reveal {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
-}
-.js .exp-pane:not([hidden]) { animation: exp-reveal 0.18s ease-out; }
-
 @media (max-width: 60rem) {
   .hero-split { flex-direction: column; align-items: stretch; gap: 34px; }
   .hero-media { flex: 1; max-width: none; }
   .uniques { grid-template-columns: 1fr; }
-  .exp-text { min-height: 0; }
+  .feature, .feature.flip { grid-template-columns: 1fr; gap: 28px; }
+  .feature.flip .feature-media { order: 0; }
   .landing main { padding: 0 20px; }
 }
 
@@ -800,14 +785,6 @@ pre.has-copy:hover .copy-button,
   /* A BAND OF ITS OWN ABOVE THE CODE, because here the button never hides: laid over the first line
      it covers the end of a one-line command — the part a reader checks before running it. */
   pre.has-copy { padding-top: 2.4rem; }
-}
-
-/* A quiet aside under an explorer caption: the thread between two captures of one session. */
-.exp-aside {
-  margin-top: 0.7rem;
-  color: var(--fg-dim);
-  font-size: 0.9rem;
-  font-style: italic;
 }
 
 /* A thematic break between a document's sections. Quiet: it separates, it does not decorate. */
