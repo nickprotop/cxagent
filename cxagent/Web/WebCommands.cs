@@ -13,7 +13,11 @@ namespace CxAgent.Web;
 public static class WebCommands
 {
     /// <summary>The commands, as typed.</summary>
-    public static readonly IReadOnlyList<string> Allowed = ["/compress", "/clear", "/model", "/mode", "/stats", "/sandbox", "/diff", "/help"];
+    public static readonly IReadOnlyList<string> Allowed =
+    [
+        "/compress", "/clear", "/model", "/mode", "/think", "/btw", "/stats", "/sandbox", "/diff",
+        "/agents", "/skills", "/commands", "/mcp", "/hooks", "/tasks", "/sessions", "/help",
+    ];
 
     /// <summary>What the refusal says.</summary>
     public const string NotOnTheWeb = "not available on the web";
@@ -35,6 +39,13 @@ public static class WebCommands
             return $"/sandbox {args} is {NotOnTheWeb} — only /sandbox and /sandbox review are.";
         if (name == "/stats" && args.StartsWith("clear", StringComparison.OrdinalIgnoreCase))
             return $"/stats clear is {NotOnTheWeb}.";
+        if (name == "/think" && args.Contains("--save", StringComparison.OrdinalIgnoreCase))
+            return $"/think --save is {NotOnTheWeb} — it writes config.json; /think without it sets this session.";
+
+        // THE SIDEBAR RESUMES. A resume typed in a tab swaps the conversation under every other tab that has this
+        // session open; the list itself, and "all", only read.
+        if (name == "/sessions" && args.Length > 0 && !args.Equals("all", StringComparison.OrdinalIgnoreCase))
+            return $"/sessions {args.Split(' ')[0]} is {NotOnTheWeb} — open a session from the list instead.";
         return null;
     }
 

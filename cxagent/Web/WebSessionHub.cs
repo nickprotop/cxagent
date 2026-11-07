@@ -64,6 +64,15 @@ public sealed class WebSessionHub
 
     private sealed record LogEntry(SessionEventLog Log, IDisposable Observers, IDisposable Tools);
 
+    private sealed class Both(IDisposable first, IDisposable second) : IDisposable
+    {
+        public void Dispose()
+        {
+            first.Dispose();
+            second.Dispose();
+        }
+    }
+
     private IReadOnlyList<string> _banners;
 
     internal WebHubServices Services => services;
@@ -341,7 +350,9 @@ public sealed class WebSessionHub
             // what the tab already has, as the terminal does.
             Action<Core.Export.ExportSource> restored = past => log.Replay(past);
             if (_restores.TryAdd(session.Id, restored)) session.Restored += restored;
-            return new LogEntry(log, observers, tools);
+            // ITS ASIDES TOO — /btw answered beside the conversation — as a watcher beside the terminal's own.
+            var asides = session.WatchAsides(log);
+            return new LogEntry(log, new Both(observers, asides), tools);
         }
     }
 

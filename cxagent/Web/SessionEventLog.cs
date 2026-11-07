@@ -26,7 +26,7 @@ public sealed record Replay(IReadOnlyList<JsonObject> Events, bool Reset);
 ///
 /// <para>PLAIN TEXT, NOT MARKUP, like every observer: the page escapes before it renders.</para>
 /// </summary>
-public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : ISessionObserver, IToolObserver
+public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : ISessionObserver, IToolObserver, Core.Agents.IAsideObserver
 {
     /// <summary>How much of one tool's output reaches a browser; the rest is in the session's logs.</summary>
     public const int MaxToolOutput = 64 * 1024;
@@ -154,6 +154,50 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         if (counted) lock (_gate) _turns++;
         Append("user", new JsonObject { ["turn"] = id.Value, ["text"] = text });
     }
+
+    /// <summary>
+    /// The images a user turn carried, each as a data URL the page shows on the message — the terminal's thumbnail
+    /// and image button.
+    ///
+    /// <para>INLINE, NOT A LINK TO FETCH. The log replays to a tab that joins later, and a link would need a route
+    /// that checks the login and the session for every image; the bytes are already the shrunk ones the model was
+    /// sent, a few hundred kilobytes at most.</para>
+    /// </summary>
+    public void UserImagesAttached(ChatMessageId id, IReadOnlyList<AttachedImage> images) =>
+        Append("images", new JsonObject
+        {
+            ["turn"] = id.Value,
+            ["images"] = new JsonArray([.. images.Select(i => (JsonNode)new JsonObject
+            {
+                ["label"] = i.Label,
+                ["src"] = i.Bytes is { } bytes ? $"data:{i.MediaType};base64,{Convert.ToBase64String(bytes)}" : null,
+            })]),
+        });
+
+    // ---- asides: /btw, answered beside the conversation and never part of it -----------------------------------------
+
+    /// <inheritdoc/>
+    public void Asked(int aside, string question) => Append("asideAsked", new JsonObject { ["aside"] = aside, ["text"] = question });
+
+    /// <inheritdoc/>
+    public void Waiting(int aside, bool waiting) => Append("asideWaiting", new JsonObject { ["aside"] = aside, ["waiting"] = waiting });
+
+    /// <inheritdoc/>
+    public void AnswerAppended(int aside, string text) => Append("asideText", new JsonObject { ["aside"] = aside, ["text"] = text });
+
+    /// <inheritdoc/>
+    public void LookedUp(int aside, string row) => Append("asideLookedUp", new JsonObject { ["aside"] = aside, ["text"] = row });
+
+    /// <inheritdoc/>
+    public void ThinkingAppended(int aside, string text) => Append("asideThinking", new JsonObject { ["aside"] = aside, ["text"] = text });
+
+    /// <inheritdoc/>
+    public void ThinkingEnded(int aside, ThinkingSummary summary) =>
+        Append("asideThinkingEnded", new JsonObject { ["aside"] = aside, ["words"] = summary.Words });
+
+    /// <inheritdoc/>
+    public void Finished(int aside, Core.Agents.AsideEnd end, string? detail) =>
+        Append("asideEnded", new JsonObject { ["aside"] = aside, ["end"] = end.ToString(), ["detail"] = detail });
 
     /// <inheritdoc/>
     public void AssistantTurnBegan(ChatMessageId id) => Append("turnBegan", new JsonObject { ["turn"] = id.Value });

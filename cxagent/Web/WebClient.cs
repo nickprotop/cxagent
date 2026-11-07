@@ -24,7 +24,10 @@ namespace CxAgent.Web;
 /// </summary>
 internal sealed class WebClient : IPromptResponder, IDisposable
 {
-    private const int MaxIncoming = 64 * 1024;
+    // ROOM FOR A PASTED SCREENSHOT OR TWO. Images arrive as base64 inside the message that sends them; a 4K screenshot
+    // as PNG is several megabytes before it is shrunk, and the shrinking is done here, where the terminal does it.
+    private const int MaxIncoming = 24 * 1024 * 1024;
+    private const int MaxImages = 8;
     private const int MaxQueued = 10_000;
 
     private readonly WebSessionHub _hub;
@@ -57,7 +60,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     private readonly ConcurrentDictionary<string, string> _panels = new();
 
     /// <summary>The sessions this tab has open — not the workers' own views, which have no panel of their own.</summary>
-    public IEnumerable<string> OpenSessions => _open.Keys.Where(k => !k.Contains('~'));
+    public IEnumerable<string> OpenSessions => _open.Keys.Where(k => !k.Contains('~') && !k.Contains('#'));
 
     /// <summary>Sends a session's panel, when it differs from the last one this tab was sent.</summary>
     public void SendPanel(string sessionId, JsonObject panel)
@@ -189,7 +192,13 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 Create(Str(m, "folder"));
                 break;
             case "say":
-                Say(Str(m, "sessionId"), Str(m, "text"));
+                Say(Str(m, "sessionId"), Str(m, "text"), m["images"] as JsonArray);
+                break;
+            case "leaveAside":
+                LeaveAside(Str(m, "sessionId"));
+                break;
+            case "export":
+                Export(Str(m, "sessionId"), m["full"] is JsonValue f && f.TryGetValue<bool>(out var full) && full);
                 break;
             case "answer":
                 Answer(m);
@@ -211,6 +220,12 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 break;
             case "stopCommand":
                 StopCommand(Str(m, "sessionId"), Long(m, "pid"));
+                break;
+            case "openCommand":
+                OpenCommand(Str(m, "sessionId"), Long(m, "pid"));
+                break;
+            case "copyCommand":
+                CopyCommand(Str(m, "sessionId"), Long(m, "pid"));
                 break;
             case "setSandbox":
                 SetSandbox(Str(m, "sessionId"), m["enabled"] is JsonValue e && e.TryGetValue<bool>(out var on) ? on : null);
@@ -354,6 +369,95 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         _ = Task.Run(entry.Process.Kill);
     }
 
+    // run_shell's own limit on what it hands a model, and the terminal tab's Copy uses it for the same reason.
+    private const int CopyLimit = 8192;
+
+    private Core.Jobs.BackgroundJobEntry? CommandOf(Session session, long? pid) =>
+        pid is null ? null : Core.Jobs.BackgroundJobBoard.Default.For(session.Owns).FirstOrDefault(e => e.Job.Pid == pid);
+
+    /// <summary>
+    /// A background command's tab, as F7's Enter opens one in the terminal: what it has written so far, then each new
+    /// chunk as it is written, and its state when that changes — until the tab leaves it or the command's file stops
+    /// growing after it ended.
+    ///
+    /// <para>READ FROM ITS OUTPUT FILE, as the terminal's tab reads it: the command runs detached and writes there,
+    /// and nothing else holds its output.</para>
+    /// </summary>
+    private void OpenCommand(string? sessionId, long? pid)
+    {
+        if (LiveSession(sessionId) is not { } session || CommandOf(session, pid) is not { } entry) { Error("No such command."); return; }
+        var key = $"{session.Id}#{pid}";
+        if (_open.TryRemove(key, out var previous)) previous.Dispose();
+        var stop = new CancellationTokenSource();
+        _open[key] = new Stopper(stop);
+        Send(new JsonObject
+        {
+            ["type"] = "openedCommand", ["sessionId"] = key, ["parent"] = session.Id, ["pid"] = pid,
+            ["command"] = entry.Job.Command, ["path"] = entry.Job.OutputPath,
+        });
+        _ = FollowAsync(key, entry, stop.Token);
+    }
+
+    private async Task FollowAsync(string key, Core.Jobs.BackgroundJobEntry entry, CancellationToken stop)
+    {
+        var follower = entry.Job.OutputPath is { } path ? new Core.Jobs.OutputFollower(path) : null;
+        string? lastState = null;
+        var first = true;
+        try
+        {
+            while (!stop.IsCancellationRequested && !_gone.IsCancellationRequested)
+            {
+                var chunk = follower?.ReadNew();
+
+                // THE FILE'S BYTE-ORDER MARK IS NOT OUTPUT: the command's writer puts one at the top, and a page shows it.
+                if (first && chunk is { Length: > 0 }) { chunk = chunk.TrimStart('\uFEFF'); first = false; }
+                if (!string.IsNullOrEmpty(chunk)) Send(new JsonObject { ["type"] = "commandOutput", ["sessionId"] = key, ["text"] = chunk });
+                var view = entry.View();
+                var state = view.State.ToString();
+                if (state != lastState)
+                {
+                    lastState = state;
+                    Send(new JsonObject
+                    {
+                        ["type"] = "commandState", ["sessionId"] = key, ["state"] = state,
+                        ["exitCode"] = entry.Finished ? view.ExitCode : null,
+                    });
+                }
+
+                // ONE LAST READ AFTER IT ENDS, for what it wrote on its way out; then nothing more will come.
+                if (entry.Finished && string.IsNullOrEmpty(chunk)) break;
+                await Task.Delay(400, stop).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (IOException e) { Send(new JsonObject { ["type"] = "commandOutput", ["sessionId"] = key, ["text"] = $"\n(could not read its output: {e.Message})" }); }
+    }
+
+    /// <summary>
+    /// The terminal tab's Copy to transcript: the command's last lines, queued to go with the next message, without a
+    /// turn of their own.
+    /// </summary>
+    private void CopyCommand(string? sessionId, long? pid)
+    {
+        if (LiveSession(sessionId) is not { } session || CommandOf(session, pid) is not { } entry) { Error("No such command."); return; }
+        var lines = new Core.Jobs.OutputLines();
+        if (entry.Job.OutputPath is { } path && new Core.Jobs.OutputFollower(path).ReadNew() is { } all) lines.Append(all);
+        var text = string.Join("\n", lines.Display());
+        if (text.Length > CopyLimit) text = text[^CopyLimit..];
+        session.Inject($"Output of the background command `{Core.Jobs.OutputTail.OneLine(entry.Job.Command)}` "
+            + $"(pid {entry.Job.Pid}), its last {text.Length} characters — the whole of it is in "
+            + $"{entry.Job.OutputPath}:\n```\n{text}\n```");
+        Notice(session.Id, "Its output goes with your next message.", "Info");
+    }
+
+    private sealed class Stopper(CancellationTokenSource stop) : IDisposable
+    {
+        public void Dispose()
+        {
+            try { stop.Cancel(); } catch (ObjectDisposedException) { }
+        }
+    }
+
     /// <summary>
     /// Turns the sandbox on or off for THIS SESSION ONLY, now — nothing is written to config.json, which a browser
     /// never changes. The next session starts as config says.
@@ -383,8 +487,13 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             if (prompt.SessionId == sessionId) _shown.TryRemove(id, out _);
     }
 
-    private void Say(string? sessionId, string? text)
+    private void Say(string? sessionId, string? text, JsonArray? images = null)
     {
+        if (images is { Count: > 0 } && sessionId?.Contains('~') == true)
+        {
+            Notice(sessionId, "A worker takes text only; send the image in the session.", "Warning");
+            return;
+        }
         // TO A WORKER: what the terminal's agent tab sends — a message to that worker, not to its session.
         if (sessionId is not null && sessionId.Contains('~') && _open.ContainsKey(sessionId) && !string.IsNullOrWhiteSpace(text))
         {
@@ -399,13 +508,30 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 return;
             }
         }
-        if (Live(sessionId) is not { } session || string.IsNullOrWhiteSpace(text)) { Error("Nothing to send."); return; }
+        // AN IMAGE ALONE IS A MESSAGE: a pasted screenshot with nothing typed asks about the screenshot.
+        if (Live(sessionId) is not { } session || (string.IsNullOrWhiteSpace(text) && images is not { Count: > 0 })) { Error("Nothing to send."); return; }
+        text ??= "";
         if (text.TrimStart().StartsWith('/'))
         {
             if (WebCommands.Refusal(text) is { } refused) { Notice(session.Id, refused, "Warning"); return; }
             if (WebCommands.IsHelp(text)) { Notice(session.Id, WebCommands.Help(), "Info"); return; }
         }
-        switch (session.Submit(text))
+        Core.Models.Attachments? attached = null;
+        if (images is { Count: > 0 })
+        {
+            if (Attach(session, images, out var why) is not { } prepared)
+            {
+                Notice(session.Id, why ?? "That image could not be read.", "Warning");
+                return;
+            }
+            attached = new Core.Models.Attachments([], prepared);
+
+            // THE LABELS GO IN THE TEXT, as the terminal's tokens sit in its line: the model reads "[Image #1 …]" and
+            // the picture beside it, and a message can say "compare #1 with #2".
+            var labels = string.Join(" ", prepared.Select(i => i.Label));
+            text = text.Trim().Length == 0 ? labels : text.TrimEnd() + "\n" + labels;
+        }
+        switch (session.Submit(text, attachments: attached))
         {
             case Session.SubmitOutcome.Refused r:
                 Notice(session.Id, r.Reason, "Warning");
@@ -415,6 +541,78 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 break;
         }
         _hub.ListChanged();
+    }
+
+    // ONE NUMBERING PER SESSION FOR THIS TAB, as the terminal's composer numbers its tokens for its life.
+    private readonly ConcurrentDictionary<string, int> _imageCount = new();
+
+    /// <summary>
+    /// The images a message carries, shrunk and encoded as the terminal's paste does — or null, with why, when one is
+    /// not an image or the model is known not to see them. All or nothing: a message sent without one of the pictures
+    /// it talks about answers a different question.
+    /// </summary>
+    private List<Core.Models.AttachedImage>? Attach(Session session, JsonArray images, out string? why)
+    {
+        why = null;
+        if (images.Count > MaxImages) { why = $"At most {MaxImages} images go with one message."; return null; }
+        if (CxAgent.UI.ImageTokens.Refusal(session.Provider) is { } cannot) { why = cannot; return null; }
+        var prepared = new List<CxAgent.UI.ImageTokens.Prepared>();
+        foreach (var node in images)
+        {
+            var name = (node?["name"] as JsonValue)?.GetValue<string>() ?? "the pasted image";
+            byte[] bytes;
+            try { bytes = Convert.FromBase64String((node?["data"] as JsonValue)?.GetValue<string>() ?? ""); }
+            catch (FormatException) { why = $"{name} did not arrive whole."; return null; }
+            if (CxAgent.UI.ImageTokens.Encode(bytes, name, out var refusal) is not { } one) { why = refusal; return null; }
+            prepared.Add(one);
+        }
+        return [.. prepared.Select(p =>
+        {
+            var n = _imageCount.AddOrUpdate(session.Id, 1, (_, c) => c + 1);
+            var label = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"[Image #{n} {p.Width}×{p.Height}]");
+            return new Core.Models.AttachedImage(label, p.Hash, p.Width, p.Height)
+            {
+                Bytes = p.Bytes,
+                OriginalWidth = p.Original.Width,
+                OriginalHeight = p.Original.Height,
+                MediaType = p.MediaType,
+            };
+        })];
+    }
+
+    /// <summary>Esc in the terminal's btw mode: the aside stops, and what is typed goes to the main agent again.</summary>
+    private void LeaveAside(string? sessionId)
+    {
+        if (LiveSession(sessionId) is not { } session) { Error("No such open session."); return; }
+        session.LeaveAside();
+        _panels.TryRemove(session.Id, out _);
+        if (_hub.PanelFor(session.Id) is { } panel) SendPanel(session.Id, panel);
+    }
+
+    /// <summary>
+    /// F12 for a browser: the conversation as markdown, readable or full, handed to the page to save. Read from the
+    /// session's saved history as the terminal's export is, so the two files are the same.
+    /// </summary>
+    private void Export(string? sessionId, bool full)
+    {
+        if (LiveSession(sessionId) is not { } session) { Error("No such open session."); return; }
+        session.SaveNow();
+        if (session.SessionId is not { } agentId
+            || Core.Export.ExportSource.Load(S.Paths, agentId, session.SpendLabel) is not { } source)
+        {
+            Notice(session.Id, "Nothing to export yet.", "Info");
+            return;
+        }
+        var parts = full ? Core.Export.ExportOptions.Full : Core.Export.ExportOptions.Readable;
+        var result = Core.Export.ExportMarkdown.Render(source, new Core.Export.ExportOptions(Core.Export.ExportScope.Whole, 0, parts));
+        var title = SessionHeader.Read(new SessionFolder(S.Paths, agentId))?.Title;
+        Send(new JsonObject
+        {
+            ["type"] = "export",
+            ["sessionId"] = session.Id,
+            ["name"] = Core.Export.ExportTarget.DefaultFileName(title, DateTimeOffset.Now),
+            ["markdown"] = result.Markdown,
+        });
     }
 
     private void Answer(JsonObject m)

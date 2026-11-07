@@ -18,6 +18,50 @@ public sealed partial class Session
     /// <summary>Where asides draw. Null draws nowhere, which a headless host is content with.</summary>
     public IAsideObserver? AsideObserver { get; set; }
 
+    private readonly List<IAsideObserver> _asideWatchers = [];
+
+    /// <summary>
+    /// Another place asides draw, beside <see cref="AsideObserver"/>, until the returned handle is disposed.
+    ///
+    /// <para>A SECOND FRONT END, NOT A REPLACEMENT. A browser following a terminal's session has to hear its asides,
+    /// and the terminal sets <see cref="AsideObserver"/> again every time it re-wires the session; a browser that
+    /// replaced it would silence the terminal, and one it replaced would go deaf after a model switch.</para>
+    /// </summary>
+    public IDisposable WatchAsides(IAsideObserver watcher)
+    {
+        lock (_asideWatchers) _asideWatchers.Add(watcher);
+        return new Unwatch(() => { lock (_asideWatchers) _asideWatchers.Remove(watcher); });
+    }
+
+    private sealed class Unwatch(Action undo) : IDisposable
+    {
+        private Action? _undo = undo;
+        public void Dispose() => Interlocked.Exchange(ref _undo, null)?.Invoke();
+    }
+
+    /// <summary>
+    /// What an aside opened now draws to: the front end's observer and every watcher, as each stands WHEN AN EVENT
+    /// ARRIVES — a browser that opens the session while an aside answers hears the rest of it.
+    /// </summary>
+    private sealed class AsideFanOut(Session session) : IAsideObserver
+    {
+        private void Each(Action<IAsideObserver> raise)
+        {
+            if (session.AsideObserver is { } front) raise(front);
+            IAsideObserver[] watchers;
+            lock (session._asideWatchers) watchers = [.. session._asideWatchers];
+            foreach (var w in watchers) raise(w);
+        }
+
+        public void Asked(int aside, string question) => Each(o => o.Asked(aside, question));
+        public void Waiting(int aside, bool waiting) => Each(o => o.Waiting(aside, waiting));
+        public void AnswerAppended(int aside, string text) => Each(o => o.AnswerAppended(aside, text));
+        public void LookedUp(int aside, string row) => Each(o => o.LookedUp(aside, row));
+        public void ThinkingAppended(int aside, string text) => Each(o => o.ThinkingAppended(aside, text));
+        public void ThinkingEnded(int aside, Llm.ThinkingSummary summary) => Each(o => o.ThinkingEnded(aside, summary));
+        public void Finished(int aside, AsideEnd end, string? detail) => Each(o => o.Finished(aside, end, detail));
+    }
+
     public bool InAside => Volatile.Read(ref _inAside);
 
     public bool AsideAnswering => Volatile.Read(ref _aside)?.IsAnswering ?? false;
@@ -42,7 +86,7 @@ public sealed partial class Session
 
         // FORKED NOW, not at the first question: the user asked "by the way" about what is on screen,
         // and a turn that moves on in the meantime should not change what the aside sees.
-        var runner = host.OpenAside(Interlocked.Increment(ref _asides), AsideObserver ?? NullAside.Instance);
+        var runner = host.OpenAside(Interlocked.Increment(ref _asides), new AsideFanOut(this));
         if (runner is null)
         {
             Say(new Message("nothing to ask about yet — send a message first", Severity.Warning));
@@ -94,17 +138,5 @@ public sealed partial class Session
         if (!Volatile.Read(ref _inAside)) return;
         Volatile.Write(ref _inAside, false);
         Announce(SessionChangeKind.Aside);
-    }
-
-    private sealed class NullAside : IAsideObserver
-    {
-        public static readonly NullAside Instance = new();
-        public void Asked(int aside, string question) { }
-        public void Waiting(int aside, bool waiting) { }
-        public void AnswerAppended(int aside, string text) { }
-        public void LookedUp(int aside, string row) { }
-        public void ThinkingAppended(int aside, string text) { }
-        public void ThinkingEnded(int aside, Llm.ThinkingSummary summary) { }
-        public void Finished(int aside, AsideEnd end, string? detail) { }
     }
 }

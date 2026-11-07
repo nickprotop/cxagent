@@ -44,11 +44,14 @@
     <form id="composer" class="composer" autocomplete="off">
       <div id="completion" class="completion" hidden></div>
       <div class="composer-box">
-        <textarea id="input" rows="2" placeholder="Message, or / for commands" disabled></textarea>
+        <div id="aside-bar" class="aside-bar" hidden><span class="tag">btw</span><span>Asking on the side — the main conversation is not changed.</span><span class="spacer"></span><button id="aside-leave" type="button" class="ghost">Leave btw <kbd>Esc</kbd></button></div>
+        <div id="attachments" class="attachments" hidden></div>
+        <textarea id="input" rows="2" placeholder="Message, or / for commands — paste or drop an image" disabled></textarea>
         <div class="composer-foot">
           <div class="composer-picks">
             <label class="pick" id="pick-model" hidden><span class="pick-dot"></span><select id="model" aria-label="Model"></select></label>
             <label class="pick" id="pick-mode" hidden><select id="mode" aria-label="Edit mode"></select></label>
+            <label class="pick" id="pick-think" hidden title="How hard the model thinks (/think)"><span class="pick-mark">◆</span><select id="think" aria-label="Thinking"></select></label>
             <label class="pick" id="pick-sandbox" hidden><select id="sandbox" aria-label="Sandbox"></select></label>
           </div>
           <span class="spacer"></span>
@@ -71,6 +74,7 @@
   </aside>
 </div>
 <div id="scrim" class="scrim"></div>
+<div id="viewer" class="viewer" hidden><figure><img id="viewer-img" alt=""><figcaption id="viewer-cap"></figcaption></figure></div>
 <div id="picker" class="picker" hidden>
   <div class="picker-box">
     <div class="picker-head"><b>New session in…</b><button id="picker-close" type="button" class="icon" aria-label="Close">×</button></div>

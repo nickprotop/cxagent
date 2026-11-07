@@ -64,6 +64,11 @@ internal static class WebPanel
         }
 
         var sandbox = session.Policy?.Sandbox;
+
+        // WHAT THE MODEL OFFERS, ONCE IT HAS SAID. Asking is bounded and cached by the session, so the first panel
+        // starts the question and a later one carries the answer; the picker stays hidden until then.
+        var offered = session.KnownThinkingOptions;
+        if (offered is null) _ = session.ThinkingOptionsAsync();
         return new JsonObject
         {
             ["type"] = "panel",
@@ -99,6 +104,15 @@ internal static class WebPanel
                     .Select(m => (JsonNode)new JsonObject { ["name"] = m.Name, ["tools"] = m.ToolCount, ["failed"] = m.Error is not null })]),
             },
             ["model"] = res?.InstanceName,
+            ["thinking"] = new JsonObject
+            {
+                ["level"] = session.ThinkingLevel,
+                ["pending"] = session.PendingThinking,
+                ["levels"] = new JsonArray([.. (offered?.Levels ?? []).Select(l => (JsonNode)l)]),
+            },
+
+            // BTW MODE: what is typed goes to the aside until it is left, so the page has to say so.
+            ["aside"] = session.InAside,
             ["mode"] = session.Mode.Edits.ToString(),
             ["sandbox"] = new JsonObject
             {

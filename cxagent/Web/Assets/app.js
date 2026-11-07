@@ -80,6 +80,7 @@ function connect() {
     drawPrompts();
     for (const [id, view] of state.views) {
       if (view.kind === "worker") send({ type: "openWorker", sessionId: view.parent, agentId: view.agentId, since: view.seq });
+      else if (view.kind === "command") send({ type: "openCommand", sessionId: view.parent, pid: view.pid });
       else send({ type: "open", id, since: view.seq });
     }
   });
@@ -143,6 +144,10 @@ function handle(m) {
       else flash("That session is no longer there.");
       break;
     case "folders": drawFolders(m); break;
+    case "export": download(m.name, m.markdown); break;
+    case "openedCommand": openedCommand(m); break;
+    case "commandOutput": commandOutput(m); break;
+    case "commandState": commandState(m); break;
     case "error": flash(m.message); break;
   }
 }
@@ -257,14 +262,17 @@ function drawTabs() {
   tabs.replaceChildren();
   for (const [id, view] of state.views) {
     const worker = view.kind === "worker";
-    const row = worker ? null : state.rows.find((r) => r.id === id);
+    const command = view.kind === "command";
+    const sub = worker || command;
+    const row = sub ? null : state.rows.find((r) => r.id === id);
     const w = worker ? workerRunning(view) : null;
-    const tab = el("button", "tab" + (id === state.active ? " on" : "") + (worker ? " worker" : ""));
+    const tab = el("button", "tab" + (id === state.active ? " on" : "") + (sub ? " worker" : ""));
     tab.type = "button";
-    tab.append(el("span", "dot " + (worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle"))),
-      document.createTextNode(worker ? "⤷ " + view.name : view.title || "session"));
+    const dot = command ? (view.running ? "working" : "") : worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle");
+    tab.append(el("span", "dot " + dot),
+      document.createTextNode(command ? "▭ " + view.title : worker ? "⤷ " + view.name : view.title || "session"));
     tab.addEventListener("click", () => activate(id));
-    if (worker) {
+    if (sub) {
       // A WORKER'S TAB CLOSES ON THE PAGE ONLY — the worker carries on, and its card still opens it again.
       const x = el("span", "x", "×");
       x.title = "Close this tab";
@@ -326,7 +334,7 @@ function openWorker(sessionId, agentId) {
 // THE SESSION BEHIND THE ACTIVE VIEW: a worker's tab shows its parent's panel, model and prompts.
 function activeSessionId() {
   const v = state.views.get(state.active);
-  return v ? (v.kind === "worker" ? v.parent : v.id) : null;
+  return v ? (v.kind === "worker" || v.kind === "command" ? v.parent : v.id) : null;
 }
 
 function activate(id) {
@@ -334,11 +342,12 @@ function activate(id) {
   state.active = view ? id : null;
   $("chat").replaceChildren(view ? view.log : $("empty"));
   document.body.dataset.view = view ? "chat" : "list";
-  $("input").disabled = !view;
-  $("send").disabled = !view;
+  // A COMMAND'S TAB TAKES NO MESSAGES: it is the command's output, and the terminal's tab has no composer either.
+  $("input").disabled = !view || view.kind === "command";
+  $("send").disabled = !view || view.kind === "command";
   $("input").placeholder = view && view.kind === "worker" ? "Message " + view.name + "…" : "Message, or / for commands";
   $("crumb").textContent = view ? view.folder : "";
-  $("phone-title").textContent = view ? (view.kind === "worker" ? "⤷ " + view.name : view.title) : "";
+  $("phone-title").textContent = view ? (view.kind === "worker" ? "⤷ " + view.name : view.kind === "command" ? "▭ " + view.title : view.title) : "";
   drawWorkerHead();
   drawPrompts();
   drawSessions();
@@ -350,6 +359,9 @@ function activate(id) {
 }
 
 function dropView(id) {
+  const view = state.views.get(id);
+  // A COMMAND'S TAB STOPS ITS FOLLOWING ON THE SERVER; the command itself carries on, as closing the terminal's tab leaves it.
+  if (view && view.kind === "command") send({ type: "leave", sessionId: id });
   state.views.delete(id);
   if (state.active === id) activate(state.views.keys().next().value || null);
   else drawTabs();
@@ -358,6 +370,7 @@ function dropView(id) {
 function drawWorkerHead() {
   const view = state.views.get(state.active);
   const head = $("worker-head");
+  if (view && view.kind === "command") { drawCommandHead(view, head); return; }
   if (!view || view.kind !== "worker") { head.hidden = true; return; }
   head.hidden = false;
   head.replaceChildren();
@@ -376,6 +389,92 @@ function drawWorkerHead() {
     head.append(button("Stop", "danger", () => send({ type: "workerAction", sessionId: view.parent, agentId: view.agentId, action: "stop" })));
   }
 }
+
+// ---- a background command's tab ------------------------------------------------------------------------------------
+
+// THE TERMINAL'S F7 → Enter: what the command has written, followed as it writes, with Kill and Copy to transcript.
+// The server reads its output file; a reconnect opens it again, and the server starts again from the file.
+const COMMAND_KEEP = 400000;
+
+function openedCommand(m) {
+  let view = state.views.get(m.sessionId);
+  const fresh = !view;
+  if (!view) view = newView(m.sessionId, "command");
+  view.log.replaceChildren();
+  view.out = el("pre", "cmd-out");
+  view.log.append(view.out);
+  Object.assign(view, { parent: m.parent, pid: m.pid, command: m.command, path: m.path, title: String(m.pid), running: true,
+    folder: (state.views.get(m.parent) || {}).folder || "" });
+  if (fresh || state.active === m.sessionId) activate(m.sessionId);
+  else drawTabs();
+}
+
+function commandOutput(m) {
+  const view = state.views.get(m.sessionId);
+  if (!view || !view.out) return;
+  const stick = isAtBottom();
+  let text = view.out.textContent + m.text;
+  // THE TAIL, NOT THE WHOLE: a command that writes for an hour would grow the page without bound; the file has it all.
+  if (text.length > COMMAND_KEEP) text = text.slice(text.length - COMMAND_KEEP);
+  view.out.textContent = text;
+  if (view.id === state.active) scrollDown(stick);
+}
+
+function commandState(m) {
+  const view = state.views.get(m.sessionId);
+  if (!view) return;
+  view.running = m.state === "Running";
+  view.state = m.state;
+  view.exitCode = m.exitCode;
+  if (view.id === state.active) drawWorkerHead();
+  drawTabs();
+}
+
+function drawCommandHead(view, head) {
+  head.hidden = false;
+  head.replaceChildren();
+  head.append(view.running ? el("span", "spin small") : el("span", view.exitCode === 0 ? "mark-ok" : "mark-bad", view.exitCode === 0 ? "✓" : "✗"));
+  head.append(el("span", "tag", "Command"));
+  const cmd = el("code", "cmd", view.command);
+  cmd.title = view.command;
+  head.append(cmd);
+  head.append(el("span", "meta", "pid " + view.pid + " · " + (view.running ? "running" : view.exitCode != null ? "exit " + view.exitCode : String(view.state || "").toLowerCase())));
+  head.append(el("span", "spacer"));
+  head.append(button("Back to session", "ghost", () => activate(view.parent)));
+  head.append(button("Copy to transcript", null, () => send({ type: "copyCommand", sessionId: view.parent, pid: view.pid })));
+  if (view.running) head.append(button("Kill", "danger", () => send({ type: "stopCommand", sessionId: view.parent, pid: view.pid })));
+}
+
+function openCommand(sessionId, pid) {
+  const key = sessionId + "#" + pid;
+  if (state.views.has(key)) activate(key);
+  else send({ type: "openCommand", sessionId, pid });
+}
+
+// ---- export ---------------------------------------------------------------------------------------------------------
+
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
+  const a = el("a");
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// ---- images -------------------------------------------------------------------------------------------------------
+
+// THE TERMINAL'S IMAGE WINDOW: a click on a sent image shows it whole, over the page, until a click or Esc.
+function viewImage(src, label) {
+  $("viewer-img").src = src;
+  $("viewer-cap").textContent = label || "";
+  $("viewer").hidden = false;
+}
+function closeViewer() { $("viewer").hidden = true; $("viewer-img").src = ""; }
+$("viewer").addEventListener("click", closeViewer);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("viewer").hidden) closeViewer(); });
 
 // ---- appending ----------------------------------------------------------------------------------------------------
 
@@ -639,9 +738,83 @@ function event(m) {
   if (!view || m.seq <= view.seq) return;
   view.seq = m.seq;
   switch (m.kind) {
-    case "user":
-      append(view, el("div", "user", m.text));
+    case "user": {
+      const u = el("div", "user", m.text);
+      u.dataset.turn = String(m.turn);
+      append(view, u);
       break;
+    }
+    case "images": {
+      // ON THE MESSAGE THAT CARRIED THEM, as the terminal shows a thumbnail and a button on it.
+      const u = view.log.querySelector('.user[data-turn="' + m.turn + '"]');
+      if (!u) break;
+      const row = el("div", "images");
+      for (const i of m.images) {
+        if (!i.src) { row.append(el("span", "image-missing", i.label)); continue; }
+        const img = el("img");
+        img.src = i.src;
+        img.alt = i.label;
+        img.title = i.label + " — click to see it whole";
+        img.addEventListener("click", () => viewImage(i.src, i.label));
+        row.append(img);
+      }
+      u.append(row);
+      break;
+    }
+    case "asideAsked": {
+      // AN ASIDE IS ITS OWN BLOCK, marked so it is never read as the main conversation, which it does not change.
+      const box = el("div", "aside");
+      const head = el("div", "aside-head");
+      const spin = el("span", "spin small");
+      head.append(el("span", "tag", "btw"), el("span", "q", m.text), spin);
+      const body = el("div", "md");
+      box.append(head, body);
+      view.asides = view.asides || new Map();
+      view.asides.set(m.aside, { box, spin, body, text: "", thinking: null });
+      append(view, box);
+      break;
+    }
+    case "asideThinking": {
+      const a = view.asides && view.asides.get(m.aside);
+      if (!a) break;
+      if (!a.thinking) {
+        const d = el("details", "thinking");
+        const sm = el("summary");
+        sm.append(el("span", "mark", "◆"), document.createTextNode(" Thinking"));
+        const pre = el("pre");
+        d.append(sm, pre);
+        a.thinking = { d, sm, pre };
+        a.box.insertBefore(d, a.body);
+      }
+      a.thinking.pre.textContent += m.text;
+      break;
+    }
+    case "asideThinkingEnded": {
+      const a = view.asides && view.asides.get(m.aside);
+      if (a && a.thinking) a.thinking.sm.replaceChildren(el("span", "mark", "◆"), document.createTextNode(" Thought · " + m.words + " words"));
+      break;
+    }
+    case "asideLookedUp": {
+      const a = view.asides && view.asides.get(m.aside);
+      if (a) a.box.insertBefore(el("div", "aside-look", "↳ " + m.text), a.body);
+      break;
+    }
+    case "asideText": {
+      const a = view.asides && view.asides.get(m.aside);
+      if (!a) break;
+      a.text += m.text;
+      const stick = isAtBottom();
+      a.body.innerHTML = render(a.text);
+      if (view.id === state.active) scrollDown(stick);
+      break;
+    }
+    case "asideEnded": {
+      const a = view.asides && view.asides.get(m.aside);
+      if (!a) break;
+      a.spin.remove();
+      if (m.end !== "Answered") a.box.append(el("div", "said Warning", m.end === "Stopped" ? "stopped" : m.end === "Capped" ? "answered from what it had" : "failed" + (m.detail ? ": " + m.detail : "")));
+      break;
+    }
     case "turnBegan":
       turnOf(view, m.turn);
       setWorking(view, true);
@@ -770,11 +943,22 @@ function options(select, choices, current, label) {
 function drawPicks() {
   const panel = state.panels.get(activeSessionId());
   for (const id of ["pick-model", "pick-mode", "pick-sandbox"]) $(id).hidden = !panel;
-  if (!panel) return;
+  drawAside(panel);
+  if (!panel) { $("pick-think").hidden = true; return; }
   // A SELECT THE USER HAS OPEN IS LEFT ALONE: the panel arrives every second, and rebuilding it would shut the list.
   const busy = document.activeElement;
   if (busy !== $("model")) options($("model"), panel.choices.models || [], panel.model);
   if (busy !== $("mode")) options($("mode"), panel.choices.modes || [], panel.mode, (n) => n.replace(/-/g, " "));
+
+  // HOW HARD IT THINKS: the levels the model itself offers, then its own default — /think and F10's choices. Hidden
+  // until the model has said, and for one that offers none.
+  const th = panel.thinking || { levels: [] };
+  $("pick-think").hidden = !th.levels.length;
+  if (th.levels.length && busy !== $("think")) {
+    const current = th.pending || th.level || "default";
+    options($("think"), [...th.levels.map((l) => ({ name: l })), { name: "default", summary: "the model's own" }], current,
+      (n) => (n === "default" ? "default thinking" : "think " + n) + (th.pending && n === th.pending ? " (next message)" : ""));
+  }
 
   const sb = $("sandbox");
   const on = panel.sandbox.enabled;
@@ -798,6 +982,24 @@ $("mode").addEventListener("change", (e) => {
   if (sid) send({ type: "say", sessionId: sid, text: "/mode edits " + e.target.value });
   e.target.blur();
 });
+$("think").addEventListener("change", (e) => {
+  const sid = activeSessionId();
+  if (sid) send({ type: "say", sessionId: sid, text: "/think " + e.target.value });
+  e.target.blur();
+});
+
+// BTW MODE: what is typed goes to the aside until it is left — Esc, as in the terminal, or the bar's button.
+function drawAside(panel) {
+  const on = !!(panel && panel.aside) && state.views.get(state.active)?.kind === "session";
+  $("aside-bar").hidden = !on;
+  document.body.classList.toggle("in-aside", on);
+}
+function leaveAside() {
+  const sid = activeSessionId();
+  if (sid) send({ type: "leaveAside", sessionId: sid });
+}
+$("aside-leave").addEventListener("click", leaveAside);
+
 $("sandbox").addEventListener("change", (e) => {
   const sid = activeSessionId();
   const off = e.target.value === "off";
@@ -878,6 +1080,14 @@ function drawSessionPane(p) {
   if (p.tokens.workers) pane.append(kv("By workers", tokens(p.tokens.workers)));
   if (p.tokens.cost != null) pane.append(kv("Cost", money(p.tokens.cost), "total"));
 
+  // F12: the conversation as markdown — readable for a person, full for an agent.
+  pane.append(el("h3", null, "Export"));
+  const exp = el("div", "btns export");
+  exp.append(button("Readable", null, () => send({ type: "export", sessionId: activeSessionId(), full: false })),
+    button("Full", null, () => send({ type: "export", sessionId: activeSessionId(), full: true })));
+  exp.title = "Download this conversation as markdown";
+  pane.append(exp);
+
   pane.append(el("h3", null, "Here"));
   const folder = kv("Folder", shortFolder(p.here.folder));
   folder.title = p.here.folder;
@@ -916,7 +1126,8 @@ function drawTasksPane(p, sid) {
   if (!p.commands.length) pane.append(el("p", "none", "No background commands."));
   for (const c of p.commands) {
     const running = c.state === "Running";
-    const acts = running ? [button("Stop", "danger", () => send({ type: "stopCommand", sessionId: sid, pid: c.pid }))] : [];
+    const acts = [button("Open", null, () => { openCommand(sid, c.pid); if (!wide()) setPanel(false); })];
+    if (running) acts.push(button("Stop", "danger", () => send({ type: "stopCommand", sessionId: sid, pid: c.pid })));
     const head = el("code", null, c.command);
     head.title = c.command;
     pane.append(taskRow(running ? "working" : "", head,
@@ -1042,11 +1253,70 @@ function closed(id) {
 
 const input = $("input");
 
+// ---- images in the composer: pasted or dropped, shown as chips, sent with the message ----------------------------
+
+const attached = [];   // { name, data (base64), url }
+const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+
+function drawAttachments() {
+  const box = $("attachments");
+  box.replaceChildren(...attached.map((a, i) => {
+    const chip = el("span", "chip");
+    const img = el("img");
+    img.src = a.url;
+    img.alt = a.name;
+    const x = el("button", "x icon", "×");
+    x.type = "button";
+    x.title = "Remove this image";
+    x.addEventListener("click", () => { URL.revokeObjectURL(a.url); attached.splice(i, 1); drawAttachments(); });
+    chip.append(img, el("span", null, a.name), x);
+    return chip;
+  }));
+  box.hidden = attached.length === 0;
+}
+
+function attachFiles(files) {
+  for (const f of files) {
+    if (!f.type.startsWith("image/")) continue;
+    if (f.size > MAX_IMAGE_BYTES) { flash(f.name + " is too large to send."); continue; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const data = String(reader.result).split(",")[1] || "";
+      attached.push({ name: f.name || "pasted image", data, url: URL.createObjectURL(f) });
+      drawAttachments();
+    };
+    reader.readAsDataURL(f);
+  }
+}
+
+input.addEventListener("paste", (e) => {
+  const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
+  // TEXT WINS, as in the terminal: a spreadsheet copies its cells and a picture of them, and the cells were meant.
+  if (!files.length || (e.clipboardData.getData("text/plain") || "").trim()) return;
+  e.preventDefault();
+  attachFiles(files);
+});
+$("composer").addEventListener("dragover", (e) => { if ([...(e.dataTransfer?.types || [])].includes("Files")) { e.preventDefault(); $("composer").classList.add("drop"); } });
+$("composer").addEventListener("dragleave", () => $("composer").classList.remove("drop"));
+$("composer").addEventListener("drop", (e) => {
+  $("composer").classList.remove("drop");
+  if (!e.dataTransfer?.files?.length) return;
+  e.preventDefault();
+  attachFiles(e.dataTransfer.files);
+});
+
 $("composer").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value;
-  if (!text.trim() || !state.active) return;
-  send({ type: "say", sessionId: state.active, text });
+  if ((!text.trim() && !attached.length) || !state.active) return;
+  const message = { type: "say", sessionId: state.active, text };
+  if (attached.length) {
+    message.images = attached.map((a) => ({ name: a.name, data: a.data }));
+    for (const a of attached) URL.revokeObjectURL(a.url);
+    attached.length = 0;
+    drawAttachments();
+  }
+  send(message);
   input.value = "";
   completion(false);
   resize();
@@ -1068,7 +1338,11 @@ input.addEventListener("keydown", (e) => {
     if (pick) { input.value = pick.textContent + " "; completion(false); }
     return;
   }
-  if (e.key === "Escape") { completion(false); return; }
+  if (e.key === "Escape") {
+    if (!list.hidden) { completion(false); return; }
+    if (document.body.classList.contains("in-aside")) { e.preventDefault(); leaveAside(); }
+    return;
+  }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("composer").requestSubmit(); }
 });
 

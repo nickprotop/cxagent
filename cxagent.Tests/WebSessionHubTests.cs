@@ -15,7 +15,7 @@ namespace CxAgent.Tests;
 
 /// <summary>Browser tabs over a real WebSocket: the session list, opening and creating within the roots, streaming a
 /// turn, prompts, closing, and unloading what nobody is looking at.</summary>
-public sealed class WebSessionHubTests : IAsyncLifetime
+public sealed partial class WebSessionHubTests : IAsyncLifetime
 {
     private sealed class Clock : TimeProvider
     {
