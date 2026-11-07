@@ -100,18 +100,16 @@ binary and copies it to <code>~/.local/bin/cxagent</code>, adding that directory
 cd cxagent
 ./build-and-install.sh</code></pre>
 
-<p>The script knows Linux only — it names a Linux runtime, so it does not build for macOS or
-Windows. There, publish for your platform yourself and put the result on your <code>PATH</code>.
-On Windows, in PowerShell:</p>
+<p>It runs on Linux and macOS, x64 or ARM, and builds for the machine it runs on. On Windows, publish
+it yourself and put the result on your <code>PATH</code>, in PowerShell:</p>
 
 <pre><code>git clone https://github.com/nickprotop/cxagent.git
 cd cxagent
 dotnet publish cxagent/cxagent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish\win-x64
 .\publish\win-x64\cxagent.exe</code></pre>
 
-<p>Use <code>win-arm64</code> on ARM, and on macOS <code>osx-arm64</code> or <code>osx-x64</code>,
-which writes <code>publish/&lt;runtime&gt;/cxagent</code>. A source build leaves out the plugin host
-the install scripts add, so native plugins do not load from it; managed ones do.</p>
+<p>Use <code>win-arm64</code> on ARM. A source build leaves out the plugin host the install scripts
+add, so native plugins do not load from it; managed ones do.</p>
 
 <h2>Updating</h2>
 

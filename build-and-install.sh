@@ -8,12 +8,18 @@ set -e
 
 INSTALL_DIR="$HOME/.local/bin"
 
-# Detect architecture
+# THE MACHINE'S OWN RUNTIME, by system and architecture: a Mac takes an osx build, never a Linux one that will not
+# run there. macOS reports Apple silicon as arm64 where Linux says aarch64. On macOS the SDK signs the binary it
+# publishes, so it runs without the quarantine a downloaded one carries. Windows has no bash here: install.html gives
+# its dotnet publish line.
+OS=$(uname -s)
 ARCH=$(uname -m)
-case "$ARCH" in
-    x86_64)  RID="linux-x64" ;;
-    aarch64) RID="linux-arm64" ;;
-    *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
+case "$OS/$ARCH" in
+    Linux/x86_64)          RID="linux-x64" ;;
+    Linux/aarch64)         RID="linux-arm64" ;;
+    Darwin/x86_64)         RID="osx-x64" ;;
+    Darwin/arm64)          RID="osx-arm64" ;;
+    *)                     echo "Unsupported system: $OS $ARCH"; exit 1 ;;
 esac
 
 # Get version from latest tag
