@@ -1004,9 +1004,39 @@ A browser attached this way drives the very sessions on screen: their prompts sh
 the first answer counts, and a session the browser starts or resumes opens as a tab here. Quitting the
 terminal stops the serving too. Without a terminal, run `cxagent web` instead.
 
-In a browser, the slash commands that work are `/compress`, `/clear`, `/model`, `/mode`, `/stats`,
-`/sandbox` (and `/sandbox review`), `/diff` and `/help`. Anything that opens a terminal screen or
-changes config.json answers "not available on the web".
+### What a browser can do
+
+The browser has the terminal's tabs and commands:
+
+- **The conversation:** the model, edit mode, thinking level and sandbox are picked under the message
+  box; `/btw` asks on the side, in a block of its own, until **Leave btw** or Esc; an image pasted or
+  dropped on the message box goes with the message; **Export** in the session panel, or `/export`
+  (`/export full` for everything the model saw), downloads the conversation as markdown.
+- **Workers and commands:** a tab per worker, with its messages, Stop and Background; a background
+  command's **Open** in the Tasks panel shows its output as it is written, with Kill and Copy to
+  transcript.
+- **Commands:** `/compress`, `/clear`, `/model`, `/mode`, `/think`, `/btw`, `/stats`, `/sandbox`
+  (and `/sandbox review`), `/diff`, `/agents`, `/skills`, `/commands`, `/mcp`, `/hooks`, `/tasks`,
+  `/sessions` (the list; a session is resumed from the sidebar), `/open`, `/export` and `/help`.
+- **`/open`**, or **Open a file** in the session panel: a file in an editor tab, highlighted, saved
+  with Ctrl+S keeping its byte-order mark and line endings, the model told afterwards that you edited
+  it. Unedited, the tab follows the file on disk; edited, a change on disk is said, with See theirs
+  and Reload, and a save over it asks first. Files under the web folders open; anywhere else only
+  with `openAnywhere`.
+
+Four more reach beyond the conversation, and each waits on a switch only the terminal turns on — F8 ›
+Web › Browser access, or `web.allow` in [CONFIG.md](CONFIG.md#web--the-browser-front-end):
+
+| Switch | Default | What a browser gets |
+|---|---|---|
+| `plugins` | on | **Marketplace**: F2's page — install, update, activate, auto-load, uninstall, a plugin's README and settings, stores and folders. A download still asks first, and a plugin still shows its hash and asks before it loads. `/plugin` too |
+| `openAnywhere` | off | `/open` beyond the web folders: any file the terminal's `/open` reaches |
+| `shell` | off | `/shell`, or **Open a shell**: your shell on a real terminal in a tab, in the session's folder — as you, outside the sandbox, with no prompts. What it showed goes with your next message when it exits, or on Copy to transcript. Linux only for now |
+| `config` | off | `/config`, or **Settings**: F8's tabs as forms, and config.json as text. Keys show only their last four characters. `/trust`, `/init` and `/think --save` too |
+
+A browser never changes the switches, the users or the folders: the config page leaves them out, and
+its Web tab only shows them. Anything not listed answers "not available on the web", and a command
+behind an off switch says where to turn it on.
 
 ## From the shell
 

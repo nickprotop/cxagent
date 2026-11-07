@@ -379,8 +379,16 @@ cxagent --web                     # the terminal, and its sessions in a browser 
 The page draws a turn as the terminal does: markdown with highlighted code, each round of tool calls
 folded into a row you can open, and each worker as a card that opens its own tab with its own
 transcript. A side panel shows the session (context, turns, tokens, folder) and its tasks, with
-workers and background commands you can open or stop. The model, the edit mode and the sandbox are
-chosen under the message box.
+workers and background commands you can open or stop. The model, the edit mode, the thinking level
+and the sandbox are chosen under the message box.
+
+**The terminal's tabs, in the browser.** `/btw` side questions, pasted and dropped images, an export
+as markdown, a background command's output in a tab, the editor (`/open`), and the terminal's
+listings. Four things that reach further each wait on a switch only the terminal turns on — F8 › Web
+› Browser access, or `web.allow`: the plugin marketplace (on by default), the editor beyond
+`web.roots`, a real shell in a tab, and the configuration page with F8's tabs as forms (off). A
+browser never changes those switches, the users or the folders.
+[COMMANDS.md](COMMANDS.md#web) has the whole list.
 
 **A login is a shell on this machine.** Whoever gets in drives an agent that runs commands here,
 contained only as far as the sandbox contains them. So the server listens on localhost unless told
@@ -725,7 +733,8 @@ first. If you want every shell command to ask, don't use `auto`.
 
 **`cxagent web` puts all of that behind a browser.** Whoever logs in gets an agent that edits files and
 runs commands here, just as you do at the terminal. It listens on localhost unless told otherwise, needs
-a login once it listens anywhere else, and says so loudly if you turn the login off. Plain HTTP beyond
+a login once it listens anywhere else, and says so loudly if you turn the login off. A shell, the
+configuration and the editor beyond `web.roots` stay off for browsers until you turn each on. Plain HTTP beyond
 this machine sends passwords and replies unencrypted: use `--self-signed` or a proxy, and set
 `web.login` to `always` behind one.
 

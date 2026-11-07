@@ -706,7 +706,8 @@ widen it. In the library, `AgentConfig.Sandbox` is null, so off, unless set.
   "login": "auto",
   "users": { "me": "pbkdf2:sha256:600000:…", "guest": "a plain password works too" },
   "roots": ["~/source"],
-  "idleMinutes": 30
+  "idleMinutes": 30,
+  "allow": { "plugins": true, "openAnywhere": false, "shell": false, "config": false }
 }
 ```
 
@@ -722,6 +723,20 @@ first three for one run. **User config only**: nothing a repository brings can a
 | `users` | `{}` | User name to password. A value starting `pbkdf2:` is a hash, written by `cxagent web passwd <name>`; anything else is the password itself. |
 | `roots` | `[]` | Folders a browser may open sessions under, `/` or `~` anchored. Empty means the folder the server started in. A link under a root that points outside it does not count as under it. |
 | `idleMinutes` | `30` | How long a session nobody has open in a browser, with no turn running and nothing waiting on you, stays loaded under `cxagent web`. `0` keeps it. The terminal's own sessions never unload. |
+| `allow` | see below | What a browser may do beyond the conversation. |
+
+**`allow`**, one switch each, set here or in F8 › Web › Browser access. A browser shows them and never
+changes them, nor the users or the roots, even with `config` on:
+
+| Switch | Default | What a browser gets |
+|---|---|---|
+| `plugins` | `true` | The plugin marketplace and `/plugin`. A download asks first; a plugin shows its hash and asks before it loads. |
+| `openAnywhere` | `false` | The editor beyond `roots`: any file the terminal's `/open` reaches. |
+| `shell` | `false` | A real shell in a tab — as you, outside the sandbox, with no prompts. Linux only for now. |
+| `config` | `false` | The configuration page: F8's tabs as forms and config.json as text, keys shown as their last four characters; and `/trust`, `/init` and `/think --save`. |
+
+A switch of the wrong type is warned about and stays at its default — off, for the three that widen
+what a login reaches. [COMMANDS.md](COMMANDS.md#web) says what a browser can do with each.
 
 **`login`**, by where the server listens:
 
