@@ -321,8 +321,12 @@ internal static class WebConfigForms
         }
         fields.Add(Radio("runsOn", "Runs on", d.Mode.ToString(),
             ("Session", "The session's model", null), ("List", "These providers, first that works", null), ("Any", "Any provider configured", null)));
-        var checks = Field("providers", "Providers", "checks", new JsonArray([.. d.Providers.Select(p => (JsonNode)p)]), "Used when Runs on is these providers, in this order.");
-        checks["options"] = new JsonArray([.. providers.Select(p => (JsonNode)new JsonObject { ["value"] = p, ["label"] = p })]);
+        // AN ORDERED LIST, as F8's: the type's providers first, in its order — the first is its default — then the rest,
+        // to tick on. Alphabetical checkboxes lost the order, and with it which one is the default.
+        var checks = Field("providers", "Providers", "order", new JsonArray([.. d.Providers.Select(p => (JsonNode)p)]),
+            "Used when Runs on is these providers: tried in this order, the first is the default. ↑/↓ reorder.");
+        checks["options"] = new JsonArray([.. d.Providers.Concat(providers.Where(p => !d.Providers.Contains(p)))
+            .Select(p => (JsonNode)new JsonObject { ["value"] = p, ["label"] = p })]);
         fields.Add(checks);
         fields.Add(Field("maxTurns", "Max turns", "number", d.MaxTurns?.ToString() ?? "",
             d.Shipped?.DefaultMaxTurns is { } m ? $"Empty: the shipped {m}." : "Empty: the session's cap."));

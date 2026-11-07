@@ -843,7 +843,7 @@ function drawConfigForm(view, m) {
     if (sec.help) s.append(el("p", "none", sec.help));
     for (const f of sec.fields) {
       const row = el("div", "form-field " + f.kind);
-      if (f.kind !== "radio" && f.kind !== "checks") row.append(el("label", "form-label", f.label));
+      if (f.kind !== "radio" && f.kind !== "checks" && f.kind !== "order") row.append(el("label", "form-label", f.label));
       let read;
       if (f.kind === "radio") {
         const fs = el("fieldset");
@@ -860,6 +860,38 @@ function drawConfigForm(view, m) {
         }
         row.append(fs);
         read = () => (fs.querySelector("input:checked") || {}).value;
+      } else if (f.kind === "order") {
+        // F8'S ORDERED LIST: ticked providers in their order, the first marked default, ↑/↓ to reorder.
+        row.append(el("div", "form-label", f.label));
+        const list = el("div", "form-order");
+        const on = new Set(f.value || []);
+        const mark = () => {
+          let first = true;
+          for (const item of list.children) {
+            const ticked = item.querySelector("input").checked;
+            item.querySelector(".default").hidden = !(ticked && first);
+            if (ticked) first = false;
+          }
+        };
+        const move = (item, by) => {
+          const to = by < 0 ? item.previousElementSibling : item.nextElementSibling;
+          if (!to) return;
+          if (by < 0) list.insertBefore(item, to); else list.insertBefore(to, item);
+          mark(); dirty();
+        };
+        for (const o of f.options) {
+          const item = el("div", "form-order-item");
+          const i = el("input");
+          i.type = "checkbox"; i.value = o.value; i.checked = on.has(o.value);
+          i.addEventListener("change", () => { mark(); dirty(); });
+          const up = button("↑", "ghost", () => move(item, -1));
+          const down = button("↓", "ghost", () => move(item, 1));
+          item.append(i, el("span", null, o.label), el("span", "badge default", "default"), el("span", "spacer"), up, down);
+          list.append(item);
+        }
+        mark();
+        row.append(list);
+        read = () => [...list.querySelectorAll("input:checked")].map((i) => i.value);
       } else if (f.kind === "checks") {
         row.append(el("div", "form-label", f.label));
         const grid = el("div", "form-checks");

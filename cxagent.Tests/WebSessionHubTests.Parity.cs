@@ -789,6 +789,24 @@ public sealed partial class WebSessionHubTests
         Assert.DoesNotContain(rows, r => r!["id"]!.GetValue<string>() == "SUPER1ABCDEF");
     }
 
+    /// <summary>"RUNS ON" KEEPS ITS ORDER, as F8's list does: the chosen providers first, in the type's own order — the
+    /// first is its default — then the rest. Alphabetical checkboxes lost the order, and with it the default.</summary>
+    [Fact]
+    public void Runs_on_offers_the_types_providers_in_its_order_first()
+    {
+        var settings = ProviderConfigLoader.Parse("""
+            { "providers": { "alpha": { "kind": "ollama", "model": "a" }, "beta": { "kind": "ollama", "model": "b" },
+                             "gamma": { "kind": "ollama", "model": "c" } },
+              "defaultProvider": "alpha",
+              "agents": { "researcher": { "description": "d", "briefing": "b", "provider": ["gamma", "alpha"] } } }
+            """, new Dictionary<string, string>());
+        var form = WebConfigForms.Agents(settings, "researcher");
+        var field = form["sections"]!.AsArray().SelectMany(sec => sec!["fields"]!.AsArray()).Single(f => f!["id"]!.GetValue<string>() == "providers")!;
+        Assert.Equal("order", field["kind"]!.GetValue<string>());
+        Assert.Equal(["gamma", "alpha", "beta"], field["options"]!.AsArray().Select(o => o!["value"]!.GetValue<string>()));
+        Assert.Equal(["gamma", "alpha"], field["value"]!.AsArray().Select(v => v!.GetValue<string>()));
+    }
+
     /// <summary>F8'S PROVIDERS RAIL AND SENTENCE: an instance with open tabs says so in its row — "1 tab" — and its form says
     /// what a save does to them, from ProviderRows, the source F8 reads.</summary>
     [Fact]

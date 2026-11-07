@@ -473,3 +473,8 @@ textarea.form-input { resize: vertical; }
 .plugin-facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 8px 0; font-size: 12px; }
 .plugin-facts dt { color: var(--muted); font-weight: 600; letter-spacing: .04em; }
 .plugin-facts dd { margin: 0; }
+
+/* F8'S ORDERED PROVIDER LIST: a row each, the default marked, ↑/↓ at the end. */
+.form-order { display: flex; flex-direction: column; gap: 4px; }
+.form-order-item { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; }
+.form-order-item .spacer { flex: 1; }
