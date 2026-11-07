@@ -362,6 +362,8 @@ function activate(id) {
   $("input").disabled = !conversation;
   $("send").disabled = !conversation;
   document.body.classList.toggle("editing", !!view && (view.kind === "file" || view.kind === "shell"));
+  // AND NO MESSAGE BOX AT ALL there: one that cannot send is room taken from the shell, the file or the output.
+  document.body.classList.toggle("no-composer", !!view && !conversation);
   $("input").placeholder = view && view.kind === "worker" ? "Message " + view.name + "…" : "Message, or / for commands";
   $("crumb").textContent = view ? view.folder : "";
   $("phone-title").textContent = view ? (view.kind === "worker" ? "⤷ " + view.name : view.kind === "command" ? "▭ " + view.title : view.title) : "";

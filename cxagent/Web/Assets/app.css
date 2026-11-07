@@ -399,3 +399,4 @@ body.editing .chat > .view { height: 100%; }
 /* ---- the shell ------------------------------------------------------------------------------------------------- */
 .shell { height: 100%; padding: 8px 10px; background: #0b0e14; box-sizing: border-box; }
 .shell .xterm { height: 100%; }
+body.no-composer .composer { display: none; }
