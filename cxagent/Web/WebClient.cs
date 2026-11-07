@@ -855,7 +855,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 form = new JsonObject { ["sections"] = WebConfigForms.General(CxAgent.UI.Config.GeneralDraft.From(settings, read.TavilyKeyAsWritten)) };
                 break;
             case "providers":
-                form = WebConfigForms.Providers(settings, item);
+                form = WebConfigForms.Providers(settings, item, CxAgent.UI.Config.ProviderRows.TabsByInstance(S.Manager.Sessions));
                 break;
             case "mcp":
                 form = WebConfigForms.Mcp(settings, item);

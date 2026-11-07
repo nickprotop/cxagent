@@ -231,11 +231,7 @@ public sealed class ProvidersTab
         FillRail(select ?? _draft?.Name);
     }
 
-    private IReadOnlyDictionary<string, int> TabsByInstance() =>
-        _host.Apply.Manager.Sessions
-            .Where(s => s.InstanceName is not null)
-            .GroupBy(s => s.InstanceName!)
-            .ToDictionary(g => g.Key, g => g.Count());
+    private IReadOnlyDictionary<string, int> TabsByInstance() => ProviderRows.TabsByInstance(_host.Apply.Manager.Sessions);
 
     private void FillRail(string? select)
     {
@@ -333,7 +329,7 @@ public sealed class ProvidersTab
     private string TabsLine(string name)
     {
         var tabs = TabsByInstance().TryGetValue(name, out var n) ? n : 0;
-        return tabs == 0 ? "" : $"[{ColorScheme.MutedMarkup}]{(tabs == 1 ? "1 open tab is" : $"{tabs} open tabs are")} on '{MarkupParser.Escape(name)}' — a new key reaches {(tabs == 1 ? "it" : "them")} in place; a new model or endpoint asks first.[/]";
+        return ProviderRows.TabsSentence(name, tabs) is { } sentence ? $"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(sentence)}[/]" : "";
     }
 
     private void BuildDetail(InstanceDraft draft)

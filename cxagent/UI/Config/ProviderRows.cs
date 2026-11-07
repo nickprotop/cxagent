@@ -41,7 +41,24 @@ public static class ProviderRows
     /// The row's second line: its roles in words, then how many tabs use it, then its model. Words, not
     /// ★ and ◆: a mark needs a legend nobody has, and the Roles block above names the same two roles.
     /// </summary>
-    public static string Describe(ProviderRow row)
+    public static string Describe(ProviderRow row) => DescribeText(row);
+
+    /// <summary>
+    /// How many open tabs each instance has — the sessions on it. One count for F8's rail and a browser's config page.
+    /// </summary>
+    public static IReadOnlyDictionary<string, int> TabsByInstance(IEnumerable<Core.Sessions.Session> sessions) =>
+        sessions.Where(s => s.InstanceName is not null)
+            .GroupBy(s => s.InstanceName!)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+
+    /// <summary>
+    /// What a save does to the tabs on <paramref name="name"/>, or null when none is — the line under an instance's form.
+    /// Plain text: F8 colours it, a browser shows it as written.
+    /// </summary>
+    public static string? TabsSentence(string name, int tabs) => tabs == 0 ? null
+        : $"{(tabs == 1 ? "1 open tab is" : $"{tabs} open tabs are")} on '{name}' — a new key reaches {(tabs == 1 ? "it" : "them")} in place; a new model or endpoint asks first.";
+
+    private static string DescribeText(ProviderRow row)
     {
         var parts = new List<string>();
         if (row.IsDefault) parts.Add("default");

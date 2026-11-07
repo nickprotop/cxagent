@@ -771,6 +771,21 @@ public sealed partial class WebSessionHubTests
         Assert.True(panel["here"]!.AsObject().ContainsKey("gitTree"));
     }
 
+    /// <summary>F8'S PROVIDERS RAIL AND SENTENCE: an instance with open tabs says so in its row — "1 tab" — and its form says
+    /// what a save does to them, from ProviderRows, the source F8 reads.</summary>
+    [Fact]
+    public void The_providers_form_names_the_open_tabs_on_an_instance_as_f8_does()
+    {
+        var settings = ProviderConfigLoader.Parse(TwoProviders, new Dictionary<string, string>());
+        var name = settings.Providers.Keys.First();
+        var form = WebConfigForms.Providers(settings, name, new Dictionary<string, int> { [name] = 1 });
+
+        var row = form["items"]!.AsArray().Single(i => i!["id"]!.GetValue<string>() == name)!;
+        Assert.Contains("1 tab", row["sub"]!.GetValue<string>(), StringComparison.Ordinal);
+        var kind = form["sections"]!.AsArray().SelectMany(sec => sec!["fields"]!.AsArray()).Single(f => f!["id"]!.GetValue<string>() == "kind")!;
+        Assert.StartsWith($"1 open tab is on '{name}'", kind["help"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
     /// <summary>F2'S FACTS ON EACH CARD — the state, the contract, whether the tools ask — from PluginFacts, the source
     /// the terminal's details pane reads.</summary>
     [Fact]

@@ -152,14 +152,19 @@ internal static class WebConfigForms
     public const string NewItem = "+new";
 
     /// <summary>The Providers tab: the defaults, the instances, and one instance's fields — new when <paramref name="item"/> is <see cref="NewItem"/>.</summary>
-    public static JsonObject Providers(ProviderSettings settings, string? item)
+    /// <param name="settings">The config as it is now.</param>
+    /// <param name="item">The instance shown, <see cref="NewItem"/>, or null for the default.</param>
+    /// <param name="tabs">How many open tabs each instance has — F8's "1 tab" and its sentence under the form.</param>
+    public static JsonObject Providers(ProviderSettings settings, string? item, IReadOnlyDictionary<string, int>? tabs = null)
     {
+        tabs ??= new Dictionary<string, int>();
         var names = settings.Providers.Keys.Order(StringComparer.Ordinal).ToList();
         item ??= settings.DefaultProvider ?? names.FirstOrDefault();
         var form = new JsonObject
         {
-            ["items"] = new JsonArray([.. names.Select(n => (JsonNode)Item(n, n,
-                string.Join(" · ", new[] { settings.Providers[n].Model, n == settings.DefaultProvider ? "default" : null, n == settings.Classifier ? "reviewer" : null }.OfType<string>())))]),
+            // F8'S RAIL ROWS, from ProviderRows: roles in words, the tabs on it, its model.
+            ["items"] = new JsonArray([.. CxAgent.UI.Config.ProviderRows.For(settings, tabs, null)
+                .Select(r => (JsonNode)Item(r.Name, r.Name, CxAgent.UI.Config.ProviderRows.Describe(r)))]),
             ["item"] = item,
             ["addLabel"] = "Add a provider",
         };
@@ -184,8 +189,9 @@ internal static class WebConfigForms
         else if (item is not null && settings.Providers.TryGetValue(item, out var cfg))
         {
             var d = new InstanceDraft(item, cfg);
+            var onIt = CxAgent.UI.Config.ProviderRows.TabsSentence(item, tabs.GetValueOrDefault(item));
             sections.Add(Section(item,
-                Field("kind", "Kind", "info", cfg.Kind),
+                Field("kind", "Kind", "info", cfg.Kind, onIt),
                 Field("model", "Model", "text", d.Model),
                 Field("baseUrl", "Endpoint", "text", d.BaseUrl ?? "", "Empty for the kind's own."),
                 Field("description", "Description", "text", d.Description ?? "", "Shown in /model and to the model choosing a type's provider."),
