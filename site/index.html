@@ -92,9 +92,11 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
       beside the chat, a real shell when one is needed. <code>cxagent web</code> serves the same
       sessions to a browser with no terminal, and <code>/web</code> shares the one you are in —
       follow a turn from your phone and answer its prompt there; the first answer wins.</p>
-      <p>Leave a session and come back to it from either. It returns whole: every turn, every tool
-      call, every worker drawn again, and the workers ready for more work. <code>F12</code> exports
-      any of them as markdown.</p>
+      <p>In the browser you follow and drive the conversation and its workers — a tab for each, Stop
+      and Background on a running one, the model, mode and sandbox under the message box; the
+      editor, the shell and side questions stay in the terminal. Leave a session and come back to it
+      from either: it returns whole, every turn, tool call and worker drawn again, and the workers
+      ready for more work.</p>
       <p class="feature-links"><a href="docs/commands.html#web">Sessions in a browser →</a>
       <a href="screenshots/43-same-session-browser.png">The browser on a desktop →</a></p>
     </div>
@@ -166,26 +168,28 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
 
   <div class="feature flip">
     <div class="feature-text">
-      <span class="eyebrow">Extend</span>
-      <h3>Your model, your tools.</h3>
-      <p>Ollama, llama.cpp, any OpenAI-compatible endpoint, or Anthropic — per tab, and switchable
-      mid-conversation. There is no cxagent account and no cxagent server: it talks to the endpoint
-      you configure, the MCP servers you add, and whatever a tool call reaches for.</p>
-      <p>Tools from any MCP server sit beside the built-in ones; a skill is a <code>SKILL.md</code>
-      the model loads when a task needs it, a markdown file becomes a command, and hooks run your
-      commands on the agent's events. Your Claude Code commands and skills work as they are. A plugin
-      shows you a hash of everything it would load before any of it runs, and asks again whenever
-      that hash changes.</p>
-      <p class="feature-links"><a href="plugins.html">Plugins →</a>
-      <a href="docs/config.html">Configuration →</a></p>
+      <span class="eyebrow">Models and plugins</span>
+      <h3>Local models with every feature, and plugins from a marketplace.</h3>
+      <p>Ollama, llama.cpp or any OpenAI-compatible server gets what a hosted model gets: workers,
+      background tasks, thinking you can see and switch, the sandbox, the browser. The session in the
+      captures at the top of this page ran on a local model. Anthropic and OpenRouter work too, per tab
+      and switchable mid-conversation. There is no cxagent account and no cxagent server: your code
+      goes only to the endpoint you configure.</p>
+      <p><kbd>F2</kbd> opens the plugin marketplace — six today: a C# language server, a repository
+      map, git worktrees, a clone finder, scheduled triggers and a calculator — and anyone can publish
+      one. Before any of a plugin runs, cxagent shows a hash of everything it would load and asks,
+      and asks again whenever that hash changes. MCP servers, skills, hooks and markdown commands sit
+      beside them, and your Claude Code commands and skills work as they are.</p>
+      <p class="feature-links"><a href="plugins.html">The marketplace →</a>
+      <a href="docs/config.html">Models and configuration →</a></p>
     </div>
     <div class="feature-media">
       <div class="win">
         <div class="win-bar">
           <span class="tl-dots"><i class="tl-dot r"></i><i class="tl-dot y"></i><i class="tl-dot g"></i></span>
-          <span class="tl-title">cxagent — a plugin asks</span>
+          <span class="tl-title">cxagent — plugins</span>
         </div>
-        <a href="screenshots/15-plugin-load.png"><img src="screenshots/15-plugin-load.png" alt="A plugin asking before it loads: what it wants to run, the tools it adds, and the hash an always-allow covers" loading="lazy"></a>
+        <a href="screenshots/18-plugin-marketplace.png"><img src="screenshots/18-plugin-marketplace.png" alt="The plugin manager over a session on a local model: six plugins available from the catalog, with calculator selected and its Install button" loading="lazy"></a>
       </div>
     </div>
   </div>
