@@ -94,8 +94,8 @@ session's <code>history.jsonl</code> is never compacted, so an export still has 
 <h3 id="trust">Trust</h3>
 <p>Two decisions share the word. <strong>Trusting a folder</strong> is the answer to <em>Trust this
 folder?</em>, asked the first time a session opens in it: in a trusted folder, file reads and
-commands that only read stop asking, and in the default <code>accept-edits</code> mode so do writes
-inside it. Commands that can write, and anything outside the folder, still ask, and no mode can widen
+commands that only read stop asking, and in <code>accept-edits</code> mode — chosen with
+<code>/mode edits</code> or Shift+Tab; the default asks — so do writes inside it. Commands that can write, and anything outside the folder, still ask, and no mode can widen
 past that answer. <code>/trust</code> shows or changes it; <code>--trust</code> trusts a folder for one
 headless run without saving anything. <strong>Trusting a plugin</strong> is approving it at load, against
 a hash of its <a href="#load-set">load set</a>. <a href="commands.html#trust">/trust →</a></p>

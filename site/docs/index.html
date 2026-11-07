@@ -53,10 +53,17 @@ in. It works with the
 model you choose — local through Ollama, llama.cpp or any OpenAI-compatible server, or Anthropic,
 OpenAI and OpenRouter in the cloud — and there is no cxagent account or server between you and it.</p>
 
-<p>Why use it: it can hand a piece of reading to a <a href="glossary.html#worker">worker</a> with its
-own context, so the conversation keeps the conclusion and not the file dumps; several sessions run
-side by side, each in its own tab; and every feature works on a local model as well as a cloud
-one.</p>
+<p>Why use it: it works like a small team, not a single assistant. The agent you talk to puts
+<a href="glossary.html#worker">workers</a> on a job — an explorer, a reviewer, a tester, a planner, a
+builder, or a type you define — each with its own brief and its own context, and its own model and
+folder when one is chosen for it. They run in the background while the conversation goes on, and
+they do not disappear when their part is done: each keeps everything it read, ran and concluded, so
+you or the lead agent can hand it the next piece, or a correction mid-task, and it carries on from
+where it is instead of starting over. They read the same notes about you and the project the lead
+does. Resume the session another day and the team is still there, its conversations intact.</p>
+
+<p>Several sessions run side by side, each in its own tab, and every feature works on a local model as
+well as a cloud one.</p>
 
 <h2 id="quickstart">A first session, in a minute</h2>
 
@@ -71,12 +78,18 @@ committed — it writes inside that folder — and run <code>cxagent</code>.</li
 per kind of endpoint. Choose one, give it a key if it needs one, pick a model from the list it
 serves, and save. <kbd>F8</kbd> opens the same dialog later.</li>
 <li><strong>Trust the folder.</strong> The first session in a folder asks <em>Trust this folder?</em>
-Trusted, reads and read-only commands inside it stop asking, and so do writes in the default
-<code>accept-edits</code> mode; commands that can write, and anything outside the folder, still ask.
-<code>/trust</code> changes the answer later.</li>
+Trusted, reads and read-only commands inside it stop asking. Writes still ask in the default
+<code>always-ask</code> mode; <kbd>Shift+Tab</kbd> switches to <code>accept-edits</code>, where writes
+inside the folder go through. Commands that can write, and anything outside the folder, ask either
+way. <code>/trust</code> changes the answer later.</li>
 <li><strong>Ask for something.</strong> Type a goal in the <a href="glossary.html#composer">composer</a>
 and press <kbd>Enter</kbd> — <em>add a --verbose flag to the CLI and a test for it</em>. Its tool calls
 appear in the transcript as it works, and anything that needs your say-so stops and asks.</li>
+<li><strong>Put a team on it.</strong> Ask for work that splits — <em>have an explorer map how config
+is loaded while a reviewer checks the last commit</em>. Each worker runs in the background with its
+own context; <kbd>F7</kbd> lists them, <kbd>Enter</kbd> opens one in its tab, and typing there gives
+it more — while it works, or after. A finished worker stays, with everything it learned, for the next
+question. <a href="commands.html#agents">Workers →</a></li>
 <li><strong>Review it.</strong> <code>/diff</code> shows <code>git diff</code> in the transcript,
 naming new files too, without a second terminal. There is no undo inside cxagent: git is the
 undo.</li>

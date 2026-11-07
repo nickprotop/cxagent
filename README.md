@@ -437,10 +437,10 @@ turning it off really does turn it off.
 The axis is named because there is more than one, and `/mode` on its own reports every axis rather
 than guessing which one you meant.
 
-**`/mode edits`** decides when a file write happens without asking. `accept-edits`, the default,
-keeps writes inside the working directory silent and asks everywhere else; `always-ask` prompts for
-every one. **Shift+Tab cycles it** from the composer. It names what cxagent already did rather than
-granting anything new, and it cannot widen past your trust decision: on a folder you did not trust,
+**`/mode edits`** decides when a file write happens without asking. `always-ask`, the default,
+prompts for every one; `accept-edits` keeps writes inside the working directory silent and asks
+everywhere else. **Shift+Tab cycles it** from the composer, and the choice is remembered for the
+folder. It cannot widen past your trust decision: on a folder you did not trust,
 `accept-edits` still asks for everything, and the listing says so. Writes to `.git/`, `.vscode/`,
 `.claude/`, `.idea/`, `.github/`, `.husky/`, `.devcontainer/`, `.cxagent/` and an `.envrc` keep asking regardless. A
 hook that runs on your next git command is not what anyone means by "accept edits".

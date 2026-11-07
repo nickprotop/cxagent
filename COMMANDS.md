@@ -203,17 +203,17 @@ must be named: `ask` and `edits` say nothing about which axis they belong to.
 
 | | |
 | --- | --- |
-| `always-ask` | Every write asks. Rules you saved with **Always** still apply. |
-| `accept-edits` | Writes inside the working directory are silent; everywhere else asks. **Default.** |
+| `always-ask` | Every write asks. Rules you saved with **Always** still apply. **Default.** |
+| `accept-edits` | Writes inside the working directory are silent; everywhere else asks. |
 | `auto` | As `accept-edits`, plus a model *decides* things that would otherwise prompt — see below. Offered only when [`classifier`](CONFIG.md#classifier--the-reviewer-for-mode-edits-auto) is configured. |
 
 **Shift+Tab cycles this axis** from the composer, and the mode line shows where you are. Delegation
 stays on `/mode` — it changes what the model is offered and what a turn may spend, which is the wrong
 weight for a keystroke.
 
-`accept-edits` is the default because it is what cxagent already did: writes under the working
-directory on a *trusted* folder never prompted. The axis names that behaviour so you can turn it off,
-not a new permission.
+`always-ask` is the default because a permissive mode is a widening, and a widening is chosen, not
+inherited: a folder starts asking, and the mode you pick for it — with `/mode edits` or Shift+Tab — is
+remembered for that folder, so it is chosen once.
 
 **Trust bounds the mode; the mode cannot widen past it.** On a folder you did not trust,
 `accept-edits` still asks for everything — and the `/mode` listing says so rather than reporting what
