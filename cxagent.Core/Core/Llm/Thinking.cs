@@ -50,7 +50,14 @@ public sealed record ThinkingOptions(IReadOnlyList<string> Levels, string? Why =
 /// <param name="Words">Word count of the thinking text.</param>
 /// <param name="Hidden">The provider withheld the text (display omitted).</param>
 /// <param name="Redacted">The block was safety-redacted.</param>
-public sealed record ThinkingSummary(TimeSpan Duration, int Words, bool Hidden, bool Redacted);
+public sealed record ThinkingSummary(TimeSpan Duration, int Words, bool Hidden, bool Redacted)
+{
+    /// <summary>
+    /// True when <see cref="Duration"/> is not known — a replayed session's thinking, whose history keeps the text but
+    /// not how long it took. A header then says what was thought, not for how long.
+    /// </summary>
+    public bool Untimed { get; init; }
+}
 
 /// <summary>
 /// A provider whose thinking can be set per session.

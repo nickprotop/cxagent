@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Models;
+using CxAgent.Core.Storage;
 using CxAgent.Web;
 using Xunit;
 
@@ -202,42 +203,68 @@ public sealed class SessionEventLogTests
         Assert.Equal(1, log.ToolCalls);
     }
 
-    [Fact]
-    public void A_seeded_past_is_not_counted_with_this_run()
+    private static AppPaths SavedSession(out string agentId)
     {
-        // THE COUNTS ARE THIS RUN'S, as the terminal's are: the transcript keeps no tool calls, so counting its turns
-        // while its calls read zero would put "3 turns · 0 tool calls" on a session that ran four.
-        var file = Path.Combine(Directory.CreateTempSubdirectory("seed-").FullName, "transcript.jsonl");
-        File.WriteAllLines(file,
+        // ONE TURN WITH ONE TOOL CALL, as history.jsonl records it.
+        var paths = new AppPaths(Directory.CreateTempSubdirectory("replay-").FullName);
+        agentId = "A1";
+        var dir = new SessionFolder(paths, agentId).Dir;
+        Directory.CreateDirectory(dir);
+        new Core.Storage.HistoryRecorder(Path.Combine(dir, "history.jsonl")).Record(
         [
-            """{"s":"x","q":1,"at":"2026-11-06T05:10:36Z","k":"user","r":"User","b":"ls /"}""",
-            """{"s":"x","q":4,"at":"2026-11-06T05:10:37Z","k":"assistant","r":"Assistant","b":"bin boot"}""",
+            new ChatMessage { Role = "user", Content = "ls /" },
+            new ChatMessage { Role = "assistant", Content = "", ToolCalls = [new ToolCall { Id = "c1", Name = "run_shell",
+                Arguments = System.Text.Json.JsonDocument.Parse("""{"command":"ls /"}""").RootElement.Clone() }] },
+            new ChatMessage { Role = "tool", ToolCallId = "c1", Content = "bin boot" },
+            new ChatMessage { Role = "assistant", Content = "two folders" },
         ]);
+        return paths;
+    }
+
+    [Fact]
+    public void A_replayed_past_is_not_counted_with_this_run()
+    {
+        // THE COUNTS ARE THIS RUN'S, as the terminal's are for a resumed session.
         var log = new SessionEventLog("S");
-        log.Seed(file);
-        Assert.Equal(0, log.Turns);
+        log.Replay(SavedSession(out var agent), agent);
+        Assert.Equal((0, 0), (log.Turns, log.ToolCalls));
 
         log.UserTurnAdded(new ChatMessageId(9), "again");
         Assert.Equal(1, log.Turns);
     }
 
     [Fact]
-    public void Seeding_from_a_transcript_replays_it_first()
+    public void Replaying_a_saved_session_comes_before_anything_live()
     {
-        var file = Path.Combine(Directory.CreateTempSubdirectory("seed-").FullName, "transcript.jsonl");
-        File.WriteAllLines(file,
-        [
-            """{"s":"x","q":1,"at":"2026-11-06T05:10:36Z","k":"user","r":"User","b":"ls /"}""",
-            """{"s":"x","q":4,"at":"2026-11-06T05:10:37Z","k":"assistant","r":"Assistant","b":"bin boot"}""",
-            """{"s":"x","q":-1,"at":"2026-11-06T05:10:30Z","k":"system","r":"Info","b":"6 plugins loaded"}""",
-            "not json",
-        ]);
         var log = new SessionEventLog("S");
-        log.Seed(file);
+        log.Replay(SavedSession(out var agent), agent);
         log.Said(new Message("live"));
 
         var kinds = log.Since(0).Events.Select(e => e["kind"]!.GetValue<string>()).ToList();
-        Assert.Equal(["user", "turnBegan", "text", "turnEnded", "said", "said"], kinds);
-        Assert.Equal("bin boot", log.Since(0).Events[2]["text"]!.GetValue<string>());
+        Assert.Equal(["user", "turnBegan", "turnEnded", "toolStarted", "toolEnded", "turnBegan", "text", "turnEnded", "said"], kinds);
+    }
+
+    [Fact]
+    public void A_replayed_worker_is_announced_for_its_row()
+    {
+        var paths = new AppPaths(Directory.CreateTempSubdirectory("replay-").FullName);
+        var dir = new SessionFolder(paths, "A1").Dir;
+        Directory.CreateDirectory(dir);
+        new Core.Storage.HistoryRecorder(Path.Combine(dir, "history.jsonl")).Record(
+        [
+            new ChatMessage { Role = "user", Content = "count" },
+            new ChatMessage { Role = "assistant", Content = "", ToolCalls = [new ToolCall { Id = "c1", Name = "agent",
+                Arguments = System.Text.Json.JsonDocument.Parse("""{"type":"general","prompt":"count files"}""").RootElement.Clone() }] },
+            new ChatMessage { Role = "tool", ToolCallId = "c1", Content = """<agent id="CHILD" name="counter" state="completed">2</agent>""" },
+        ]);
+        var log = new SessionEventLog("S");
+        log.Replay(paths, "A1");
+
+        var events = log.Since(0).Events;
+        var kinds = events.Select(e => e["kind"]!.GetValue<string>()).ToList();
+        Assert.True(kinds.IndexOf("toolStarted") < kinds.IndexOf("worker") && kinds.IndexOf("worker") < kinds.IndexOf("toolEnded"));
+        var worker = events.Single(e => e["kind"]!.GetValue<string>() == "worker");
+        Assert.Equal(("CHILD", "counter", "general"), (worker["agentId"]!.GetValue<string>(), worker["name"]!.GetValue<string>(),
+            worker["workerType"]!.GetValue<string>()));
     }
 }

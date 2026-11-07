@@ -149,6 +149,23 @@ public class HistoryRecorderTests : IDisposable
     /// A COMPACTION THAT COULD NOT SUMMARISE STILL SAYS SO: the fallback drops the oldest half with no summary, and the
     /// history marks where — a dropped task list is the one removal that is not a compaction.
     /// </summary>
+    /// <summary>
+    /// A RESUMED SESSION'S SYSTEM PROMPT IS BUILT AFRESH, and the one it loaded leaves the context. That is no
+    /// compaction — compaction keeps the system prompt — and marking it put "the conversation was compacted here" in
+    /// every restored session's past.
+    /// </summary>
+    [Fact]
+    public void ASystemPromptReplacedOnResume_IsNotMarkedAsACompaction()
+    {
+        var recorder = new HistoryRecorder(PathOf);
+        var loaded = new List<ChatMessage> { new() { Role = "system", Content = "old prompt" }, User("a", 1), Assistant("b", 2) };
+        recorder.ContinuesFrom("PREVIOUS", loaded);
+
+        recorder.Record([new ChatMessage { Role = "system", Content = "new prompt" }, .. loaded.Skip(1), User("c", 3)]);
+
+        Assert.DoesNotContain(Lines(), l => l.Kind == HistoryLine.Kinds.Compacted);
+    }
+
     [Fact]
     public void ATruncationWithoutASummary_IsMarked_AndATaskListDroppedIsNot()
     {

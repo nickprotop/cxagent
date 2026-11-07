@@ -86,6 +86,12 @@ public class ThinkingBlockTests
         Assert.Equal("◆ Thought for 9s · 412 words", ChatTranscriptSink.FoldedHeader(Sum()));
 
     [Fact]
+    public void FoldedHeader_Untimed_SaysNoDuration() =>
+        // A REPLAYED SESSION'S THINKING: history keeps the text, not how long it took.
+        Assert.Equal("◆ Thought · 412 words",
+            ChatTranscriptSink.FoldedHeader(Sum() with { Untimed = true }));
+
+    [Fact]
     public void FoldedHeader_Hidden_HasNoWordCount() =>
         Assert.Equal("◆ Thought for 4s",
             ChatTranscriptSink.FoldedHeader(new(TimeSpan.FromSeconds(4), 0, Hidden: true, Redacted: false)));

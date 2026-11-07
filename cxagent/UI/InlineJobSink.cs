@@ -1020,7 +1020,8 @@ public sealed class InlineJobSink : IToolObserver
 
         // A WORKER'S LENGTH IN THE WORDS ITS FINISH NOTICE USES — see DisplayNumber.Took. Tool rows keep
         // their tenths: they are compared at a glance against each other, not against a notice.
-        var duration = job.JobType == "llm_agent" && job.Result?.Duration is { } took
+        var duration = job.Replayed ? ""
+            : job.JobType == "llm_agent" && job.Result?.Duration is { } took
             ? " · " + DisplayNumber.Took(took)
             : DurationSuffix(job.Result?.Duration);
         var state = job.State switch
@@ -1205,7 +1206,8 @@ public sealed class InlineJobSink : IToolObserver
 
     private string StatusText(Job job)
     {
-        var duration = DurationSuffix(job.Result?.Duration);
+        // A REPLAYED ROW HAS NO TIME TO SHOW: its history keeps none.
+        var duration = job.Replayed ? "" : DurationSuffix(job.Result?.Duration);
 
         return job.State switch
         {
@@ -2439,7 +2441,10 @@ public sealed class InlineJobSink : IToolObserver
             //
             // SUMMED FROM THE CALLS rather than taken as a parameter, so it cannot disagree with the
             // rows listed below it.
-            parts.Add($"{DisplayNumber.Fixed(calls.Sum(c => c.DurationMs) / 1000.0, 1)}s in tools");
+            //
+            // NOT FOR A REPLAYED CALL, whose time history does not keep: a total over it would be made up.
+            if (!calls.Any(c => c.Untimed))
+                parts.Add($"{DisplayNumber.Fixed(calls.Sum(c => c.DurationMs) / 1000.0, 1)}s in tools");
         }
 
         // ZERO COUNTS ARE OMITTED. "16 calls · 4 tools · 6.2s · 0 failed · 0 denied" makes the
@@ -2476,7 +2481,7 @@ public sealed class InlineJobSink : IToolObserver
 
             var outCell = live is null ? $" {Bytes(call.ResultChars)} |" : "";
             rows.Add($"| {Mark(call.Outcome)} | {tool} | {target} "
-                   + $"| {DisplayNumber.Grouped(call.DurationMs)} |{outCell}");
+                   + $"| {(call.Untimed ? "" : DisplayNumber.Grouped(call.DurationMs))} |{outCell}");
         }
 
         if (live?.InFlight is { } running) rows.Add(InFlightRow(running));

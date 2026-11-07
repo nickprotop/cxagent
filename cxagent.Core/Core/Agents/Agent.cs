@@ -4057,8 +4057,9 @@ public sealed class Agent
               + "anything above, follow this.\n\n" + briefing + "\n";
 
 
-    /// <summary>The executor a tool dispatches to, for the transcript row's author label only.</summary>
-    private string ToolJobType(string toolName) => toolName switch
+    /// <summary>The job type of a built-in tool, or null for one that is not — the part of <see cref="ToolJobType"/>
+    /// a replayed session can answer without this agent's MCP servers and plugin tools.</summary>
+    internal static string? BuiltinJobType(string toolName) => toolName switch
     {
         "run_shell" => "shell",
         "http_request" => "http",
@@ -4084,6 +4085,12 @@ public sealed class Agent
         // An MCP tool is none of the three, and the `_ => "file"` below would label it a file
         // operation — a row claiming a third-party server call was a local file read. "mcp" is the
         // honest label; the server's own name is already in DisplayName.
+        _ => null,
+    };
+
+    /// <summary>The executor a tool dispatches to, for the transcript row's author label only.</summary>
+    private string ToolJobType(string toolName) => BuiltinJobType(toolName) ?? toolName switch
+    {
         _ when _mcp is not null && _mcp.Names().Contains(toolName) => "mcp",
 
         // AN INJECTED TOOL IS ITS OWN TYPE, named after itself. Falling through to "file" would be

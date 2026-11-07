@@ -105,6 +105,12 @@ public record Job
     /// </summary>
     public string? RunsOn { get; set; }
 
+    /// <summary>
+    /// A row replayed from a saved session's history, which keeps what a call did but not when or for how long: a
+    /// front end shows no duration for it rather than a made-up one.
+    /// </summary>
+    public bool Replayed { get; init; }
+
     /// <summary>For a spawn whose child works in a folder of its own, that folder relative to the
     /// parent's; null otherwise. Shown beside <see cref="RunsOn"/>.</summary>
     public string? ChildRoot { get; set; }

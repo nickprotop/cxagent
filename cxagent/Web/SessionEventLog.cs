@@ -4,6 +4,7 @@ using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Sessions;
+using CxAgent.Core.Storage;
 
 namespace CxAgent.Web;
 
@@ -38,14 +39,14 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     private long _seq;
     private int _turns;
     private int _toolCalls;
+    private bool _replaying;
 
     /// <summary>The session these events belong to (<c>Session.Id</c>).</summary>
     public string SessionId { get; } = sessionId;
 
     /// <summary>
-    /// User turns taken since this log began — the panel's "turns". A seeded past is not counted: the transcript
-    /// keeps no tool calls, so counting its turns would pair them with a tool-call count of zero, and the terminal
-    /// counts a resumed session from its reopening too.
+    /// User turns taken since this log began — the panel's "turns". A replayed past is not counted: the terminal
+    /// counts a resumed session from its reopening, and both should say the same.
     /// </summary>
     public int Turns
     {
@@ -98,38 +99,22 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     }
 
     /// <summary>
-    /// Replays a session's saved transcript as events, before anything live — what a tab joining a resumed or
-    /// already-running session sees of its past. Lines that cannot be read are skipped.
+    /// Shows a saved session's past before anything live — what a tab joining a resumed or already-running session sees
+    /// of it: its turns, its tool calls and the workers it spawned, back through every resume.
+    ///
+    /// <para>NOT COUNTED. The panel's turns and tool calls are this run's, as the terminal's are.</para>
     /// </summary>
-    public void Seed(string transcriptPath)
+    public ReplayShown Replay(AppPaths paths, string agentId)
     {
-        if (!File.Exists(transcriptPath)) return;
-        string[] lines;
-        try { lines = File.ReadAllLines(transcriptPath); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return; }
-
-        var turn = -1L;
-        foreach (var line in lines)
+        lock (_gate) _replaying = true;
+        try
         {
-            JsonNode? row;
-            try { row = JsonNode.Parse(line); }
-            catch (JsonException) { continue; }
-            if (row?["k"]?.GetValue<string>() is not { } kind || row["b"]?.GetValue<string>() is not { } body) continue;
-            switch (kind)
-            {
-                case "user":
-                    Append("user", new JsonObject { ["text"] = body });
-                    break;
-                case "assistant":
-                    var id = turn--;
-                    Append("turnBegan", new JsonObject { ["turn"] = id });
-                    Append("text", new JsonObject { ["turn"] = id, ["text"] = body });
-                    Append("turnEnded", new JsonObject { ["turn"] = id });
-                    break;
-                default:
-                    Append("said", new JsonObject { ["text"] = body, ["severity"] = row["r"]?.GetValue<string>() ?? "Info" });
-                    break;
-            }
+            return SessionReplay.Play(paths, agentId, this, this,
+                worker: w => Worker(w.JobId, w.AgentId, w.Name, w.Type, w.Task));
+        }
+        finally
+        {
+            lock (_gate) _replaying = false;
         }
     }
 
@@ -143,7 +128,7 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     /// <inheritdoc/>
     public void UserTurnAdded(ChatMessageId id, string text)
     {
-        lock (_gate) _turns++;
+        lock (_gate) if (!_replaying) _turns++;
         Append("user", new JsonObject { ["turn"] = id.Value, ["text"] = text });
     }
 
@@ -163,7 +148,7 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         Append("thinkingEnded", new JsonObject
         {
             ["turn"] = id.Value,
-            ["seconds"] = Math.Round(summary.Duration.TotalSeconds, 1),
+            ["seconds"] = summary.Untimed ? null : Math.Round(summary.Duration.TotalSeconds, 1),
             ["words"] = summary.Words,
             ["hidden"] = summary.Hidden,
         });
@@ -258,7 +243,7 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         bool streamed;
         lock (_gate)
         {
-            _toolCalls++;
+            if (!_replaying) _toolCalls++;
             streamed = _toolOutput.GetValueOrDefault(job.Id) > 0;
         }
         var output = job.Result?.Output;

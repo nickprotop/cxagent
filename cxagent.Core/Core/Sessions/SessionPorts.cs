@@ -29,6 +29,12 @@ public sealed record SessionPorts
     /// </summary>
     public required IToolObserver ToolObserver { get; init; }
 
+    /// <summary>
+    /// Called once on a wire that restored a saved conversation, after the new host exists — where a front end that
+    /// shows the restored past draws it into this wire's own observers. Null for one that does not.
+    /// </summary>
+    public Action? Restored { get; init; }
+
     /// <summary>How it asks the user something, or null when there is nobody to ask.</summary>
     public AskUser? Ask { get; init; }
 

@@ -473,7 +473,16 @@ internal static class SessionFactory
         // A RESUMED SESSION IS SAVED AT ONCE, not at its first turn. Every resume retires the row it continues, so a
         // continuation left unsaved until it took a turn was listed nowhere: opened, looked at and closed — or its
         // process gone — and the conversation could no longer be found, and the next -c took an older one.
-        if (resumeSnapshot is not null) host.SaveSettings();
+        if (resumeSnapshot is not null)
+        {
+            host.SaveSettings();
+
+            // THE PAST IS SHOWN, not only remembered: an agent that knows things the screen does not show reads as one
+            // that invented them. Into this wire's own ports first — the front end that opened it — and then to any
+            // other watcher; never through the fan-out, whose transcript recorder would write the past again.
+            ports.Restored?.Invoke();
+            session.RaiseRestored();
+        }
 
         // THE TRANSCRIPT KEYS ON THE SESSION AND ITS FILE LIVES IN THE AGENT'S FOLDER, so the store
         // is told the mapping here — the first point where both ids are in hand, since SessionId

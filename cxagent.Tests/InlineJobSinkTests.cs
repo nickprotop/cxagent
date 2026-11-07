@@ -1321,6 +1321,33 @@ public class InlineJobSinkTests
         { Target = target };
 
     [Fact]
+    public void ARoundOfReplayedCalls_ShowsNoTimesItDoesNotHave()
+    {
+        // HISTORY KEEPS WHAT A CALL DID, NOT HOW LONG IT TOOK: a restored round read "0.0s in tools", and each row 0.
+        var body = InlineJobSink.TimetableForTest(
+        [
+            Call("run_shell", "ls", "succeeded", ms: 0) with { Untimed = true },
+            Call("read_file", "readme.txt", "succeeded", ms: 0) with { Untimed = true },
+        ]);
+
+        Assert.Equal("2 calls · across 2 tools", body.Split('\n')[0]);
+        Assert.Contains("| ✓ | `run_shell` | ls |  |", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AReplayedRow_SaysDoneWithoutADuration()
+    {
+        var job = JobWith(JobState.Succeeded);
+        var replayed = new Job
+        {
+            Id = job.Id, AgentId = job.AgentId, JobType = "shell", DisplayName = job.DisplayName, State = job.State,
+            Result = job.Result, Replayed = true,
+        };
+
+        Assert.DoesNotContain("·", InlineJobSink.StatusTextForTest(replayed), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AWorkerThatMadeNoCalls_RendersTheSummaryLineAlone()
     {
         // NOT AN EMPTY BODY. A worker that called nothing still ran, and "0 calls" says so;

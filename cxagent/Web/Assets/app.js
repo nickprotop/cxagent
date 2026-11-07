@@ -488,7 +488,7 @@ function drawRound(r) {
   r.mark.textContent = running ? "" : failed ? "✗" : "✓";
   const parts = [r.calls.length === 1 ? (r.calls[0].tool + (r.calls[0].target ? " " + r.calls[0].target : ""))
     : r.calls.length + " calls · " + tools + " tool" + (tools === 1 ? "" : "s")];
-  if (done.length && !running) parts.push(seconds.toFixed(1) + "s");
+  if (done.length && !running && done.every((c) => c.ms != null)) parts.push(seconds.toFixed(1) + "s");
   if (failed) parts.push(failed + " failed");
   if (running) parts.push("running " + running.tool + (running.progress ? " · " + running.progress : ""));
   r.meta.textContent = parts.join(" · ");
@@ -549,10 +549,11 @@ function endCall(view, m) {
   call.state = m.state;
   call.sandbox = m.sandbox;
   call.sandboxWarning = m.sandboxWarning;
-  call.ms = m.ms != null ? m.ms : Date.now() - call.started;
+  // NO TIME FOR A REPLAYED CALL: its history does not keep one, and the page timing a replay's burst reads 0.0s.
+  call.ms = m.ms != null ? m.ms : null;
   const ok = m.state === "Succeeded", bad = m.state === "Failed";
   call.markCell.replaceChildren(el("span", ok ? "mark-ok" : bad ? "mark-bad" : "mark-skip", ok ? "✓" : bad ? "✗" : "–"));
-  call.timeCell.replaceChildren(document.createTextNode(call.ms < 1000 ? call.ms + "ms" : (call.ms / 1000).toFixed(1) + "s"));
+  call.timeCell.replaceChildren(document.createTextNode(call.ms == null ? "" : call.ms < 1000 ? call.ms + "ms" : (call.ms / 1000).toFixed(1) + "s"));
   // THE RESULT COMES WITH THE END when nothing streamed; a failure's carries its error already.
   if (m.output && !call.pre.textContent) call.pre.textContent = m.output;
   else if (m.error) call.pre.textContent += (call.pre.textContent ? "\n" : "") + m.error;
@@ -674,7 +675,7 @@ function event(m) {
       const t = turnOf(view, m.turn);
       if (!t.thinking) break;
       if (m.hidden && !t.thinking.pre.textContent) t.thinking.d.remove();
-      else t.thinking.s.replaceChildren(el("span", "mark", "◆"), document.createTextNode("Thought for " + m.seconds + "s · " + m.words + " words"));
+      else t.thinking.s.replaceChildren(el("span", "mark", "◆"), document.createTextNode((m.seconds == null ? "Thought" : "Thought for " + m.seconds + "s") + " · " + m.words + " words"));
       t.thinking = null;
       break;
     }

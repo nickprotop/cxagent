@@ -2,6 +2,7 @@ using CxAgent.Core.Agents;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Sessions;
+using CxAgent.Core.Storage;
 using CxAgent.Hosting;
 using SharpConsoleUI;
 
@@ -54,6 +55,17 @@ public sealed class TuiFrontEnd(TuiTab tab) : IFrontEnd
     /// above another session's transcript.
     /// </remarks>
     public AskUser? AskFor(Session session) => (questions, ct) => tab.Main.AskQuestionAsync(session, questions, ct);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// WITH THE CALL REPORTS. The tab draws a round's tool rows from those, not from the rows' own events, so without
+    /// them a restored turn showed its answer and none of the calls behind it.
+    /// </remarks>
+    public void ShowRestoredPast(Session session, SessionSinks sinks, AppPaths paths)
+    {
+        if (session.SessionId is { } agent)
+            SessionReplay.Play(paths, agent, sinks.Observer, sinks.ToolObserver, called: _jobs!.RecordToolCall);
+    }
 
     /// <inheritdoc/>
     public void Wired(Session session, SessionSinks sinks, PermissionPolicy policy) =>

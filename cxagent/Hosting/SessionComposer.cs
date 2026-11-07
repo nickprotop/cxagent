@@ -28,6 +28,12 @@ public interface IFrontEnd
 
     /// <summary>The session is wired; subscribe whatever the front end shows about it.</summary>
     void Wired(Session session, SessionSinks sinks, PermissionPolicy policy);
+
+    /// <summary>
+    /// A wire has just restored a saved conversation: draw its past into this wire's <paramref name="sinks"/>. Nothing
+    /// by default, for a front end whose watchers replay it themselves.
+    /// </summary>
+    void ShowRestoredPast(Session session, SessionSinks sinks, AppPaths paths) { }
 }
 
 /// <summary>What every session the composer wires shares with the others.</summary>
@@ -121,7 +127,11 @@ public sealed class SessionComposer(ComposerServices services)
 
         // THROUGH THE HUB WHEN THERE IS ONE, so a question can be answered from any front end showing the session.
         var ask = Services.Prompts?.AskUserFor(session.Id) ?? frontEnd.AskFor(session);
-        Services.Manager.Open(session, config, Ports(session, config, policy, sinks, ask), mode);
+        Services.Manager.Open(session, config, Ports(session, config, policy, sinks, ask) with
+        {
+            // THE PAST INTO THIS WIRE'S OWN SINKS, the tab that is about to show the session.
+            Restored = () => frontEnd.ShowRestoredPast(session, sinks, Services.Paths),
+        }, mode);
 
         // PERMISSION DECISIONS INTO HISTORY. Set on every wire because the session id does not exist until the
         // host does. BOTH FIELDS FROM THE REPORT, NOT THE CLOSURE: one gate serves every session, so a report can

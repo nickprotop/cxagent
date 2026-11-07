@@ -60,7 +60,7 @@ public sealed class HistoryRecorder
         lock (_gate)
         {
             var present = new HashSet<ChatMessage>(context, ReferenceEqualityComparer.Instance);
-            var left = _previous.Where(m => !present.Contains(m)).Select(m => (Key: Key(m), m.IsTaskList)).ToList();
+            var left = _previous.Where(m => !present.Contains(m)).Select(m => (Key: Key(m), m.IsTaskList, System: m.Role == "system")).ToList();
 
             var fresh = new List<ChatMessage>();
             foreach (var message in context)
@@ -79,8 +79,9 @@ public sealed class HistoryRecorder
 
             // WHAT LEFT AND CAME BACK AS NOTHING WAS COMPACTED AWAY — the fallback that truncates when it cannot
             // summarise leaves no summary to mark, so the drop itself is the mark. A task list is the exception: an
-            // emptied plan is removed and not put back, and that is no compaction.
-            if (left.Any(l => !l.IsTaskList) && !fresh.Any(IsSummary))
+            // emptied plan is removed and not put back, and that is no compaction. Nor is a system prompt: a resumed
+            // session builds its own and the loaded one leaves, while compaction keeps the system prompt.
+            if (left.Any(l => !l.IsTaskList && !l.System) && !fresh.Any(IsSummary))
                 Append(new HistoryLine(0, DateTimeOffset.UtcNow, HistoryLine.Kinds.Compacted));
 
             foreach (var message in fresh)

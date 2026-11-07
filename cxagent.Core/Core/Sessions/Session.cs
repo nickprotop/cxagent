@@ -241,6 +241,14 @@ public sealed partial class Session
         remove { if (Host is { } h) h.ToolCallFinished -= value; }
     }
 
+    /// <summary>
+    /// A wire restored a saved conversation into this session — at open, or by a later resume. For a watcher that
+    /// shows the restored past; on the session, not its host, so it survives the re-wire that raises it.
+    /// </summary>
+    public event Action? Restored;
+
+    internal void RaiseRestored() => Restored?.Invoke();
+
     /// <summary>A child was built for a spawn row, paired with the row that started it — so a live
     /// row can show what its child is doing while it does it.</summary>
     public event Action<Agents.SpawnedChild>? ChildSpawned
@@ -1580,8 +1588,7 @@ public sealed partial class Session
     internal void SayResumed(int messages)
     {
         Announce(SessionChangeKind.Resumed);
-        Say($"Resumed an earlier session: {messages} messages restored. "
-          + "They are not shown above, but the agent remembers them.");
+        Say($"Resumed an earlier session: {messages} messages restored.");
     }
 
     /// <summary>

@@ -48,6 +48,12 @@ public sealed record ToolCallReport(
     public string? Target { get; init; }
 
     /// <summary>
+    /// A call replayed from history, whose <see cref="DurationMs"/> is not known: a table shows it without a time, and
+    /// a total that includes it is not shown.
+    /// </summary>
+    public bool Untimed { get; init; }
+
+    /// <summary>
     /// What the call returned, capped — or null for a call that returned nothing, and for one that
     /// never ran.
     ///

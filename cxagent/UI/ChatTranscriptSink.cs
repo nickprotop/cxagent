@@ -373,7 +373,7 @@ public sealed class ChatTranscriptSink : ISessionObserver
     /// happened. No word count when the provider hid the text — zero would read as "said nothing".
     /// </summary>
     public static string FoldedHeader(Core.Llm.ThinkingSummary s) =>
-        $"◆ Thought for {Math.Max(1, (int)Math.Round(s.Duration.TotalSeconds))}s"
+        (s.Untimed ? "◆ Thought" : $"◆ Thought for {Math.Max(1, (int)Math.Round(s.Duration.TotalSeconds))}s")
         + (s.Words > 0 ? $" · {s.Words} words" : "")
         + (s.Redacted ? " (redacted)" : "");
 

@@ -248,7 +248,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         if (!Directory.Exists(full)) { Error("No such folder."); return; }
         if (WebSessionHub.Resolved(full, S.Roots) is not { } real) { Error("That folder is outside the folders this server opens."); return; }
         var session = S.Opener.Create(real);
-        Attach(session, 0, null);
+        Attach(session, 0);
         _hub.ListChanged();
     }
 
@@ -258,7 +258,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         if (S.Manager.Sessions.FirstOrDefault(s => s.Id == id || s.SessionId == id) is { } live)
         {
             if (!WebSessionHub.InsideRoots(live.WorkingDirectory, S.Roots)) { Error("That session is outside the folders this server opens."); return; }
-            Attach(live, since, null);
+            Attach(live, since);
             return;
         }
 
@@ -270,13 +270,13 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             else Error(refusal ?? "That session could not be opened.");
             return;
         }
-        Attach(session, 0, id);
+        Attach(session, 0);
         _hub.ListChanged();
     }
 
-    private void Attach(Session session, long since, string? seedAgent)
+    private void Attach(Session session, long since)
     {
-        var log = _hub.LogFor(session, seedAgent);
+        var log = _hub.LogFor(session);
         if (_open.TryRemove(session.Id, out var previous)) previous.Dispose();
         Send(WebProtocol.Opened(session));
 

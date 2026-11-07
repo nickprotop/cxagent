@@ -1327,8 +1327,7 @@ public static class AppBootstrap
                 // going.
                 sessions.MarkSuperseded(snapshot.AgentId);
                 resumeNotice = new Message($"Resumed an earlier session: {snapshot.Context.Count} "
-                                         + "messages restored. They are not shown above, but the "
-                                         + "agent remembers them.", Severity.Warning);
+                                         + "messages restored.", Severity.Warning);
             }
             else
             {

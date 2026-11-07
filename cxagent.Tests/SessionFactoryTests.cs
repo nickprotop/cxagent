@@ -122,4 +122,36 @@ public class SessionFactoryTests
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         }
     }
+
+    /// <summary>
+    /// A WIRE THAT RESTORED A CONVERSATION SAYS SO, once, to the front end that opened it and to the session's other
+    /// watchers — the moment the restored past is drawn. A plain wire says nothing.
+    /// </summary>
+    [Fact]
+    public void Only_a_wire_that_restored_a_conversation_reports_it()
+    {
+        var dir = Directory.CreateTempSubdirectory("cxagent-factory-").FullName;
+        try
+        {
+            var session = new Session(dir);
+            var (ports, watchers) = (0, 0);
+            session.Restored += () => watchers++;
+            SessionPorts Ports() => new()
+            {
+                Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel(), Restored = () => ports++,
+            };
+
+            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider()), new SharedServices(), Ports(), AgentMode.Single);
+            Assert.Equal((0, 0), (ports, watchers));
+
+            session.PendResume(new Core.Storage.SessionSnapshot("OLD", [new Core.Models.ChatMessage { Role = "user", Content = "a" }],
+                0, 0, DateTimeOffset.UtcNow, Edits: null, WorkingDir: dir));
+            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider()), new SharedServices(), Ports(), AgentMode.Single);
+            Assert.Equal((1, 1), (ports, watchers));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

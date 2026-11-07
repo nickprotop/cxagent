@@ -51,6 +51,7 @@ public sealed class WebSessionHub
     private readonly object _logGate = new();
     private readonly SemaphoreSlim _resuming = new(1, 1);
     private readonly ConcurrentDictionary<string, Action<Core.Agents.SpawnedChild>> _spawns = new();
+    private readonly ConcurrentDictionary<string, Action> _restores = new();
     private int _listPending;
 
     /// <summary>A hub over <paramref name="services"/>, told whenever the manager closes a session.</summary>
@@ -143,6 +144,9 @@ public sealed class WebSessionHub
         foreach (var (id, spawn) in _spawns)
             if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.ChildSpawned -= spawn;
         _spawns.Clear();
+        foreach (var (id, restore) in _restores)
+            if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.Restored -= restore;
+        _restores.Clear();
     }
 
     /// <summary>
@@ -204,6 +208,7 @@ public sealed class WebSessionHub
         Drop(session.Id);
         foreach (var key in _logs.Keys.Where(k => k.StartsWith(session.Id + "~", StringComparison.Ordinal)).ToList()) Drop(key);
         if (_spawns.TryRemove(session.Id, out var spawn)) session.ChildSpawned -= spawn;
+        if (_restores.TryRemove(session.Id, out var restore)) session.Restored -= restore;
         foreach (var c in _clients.Keys) c.SessionClosed(session.Id);
         ListChanged();
     }
@@ -301,10 +306,10 @@ public sealed class WebSessionHub
     }
 
     /// <summary>
-    /// The log a session's tabs follow, created on first open and kept while the session lives. <paramref name="seedAgent"/>
-    /// names the saved transcript its past is read from.
+    /// The log a session's tabs follow, created on first open and kept while the session lives, its past replayed from
+    /// the session's own history — which, for a resumed one, names the conversation it continues.
     /// </summary>
-    internal SessionEventLog LogFor(Session session, string? seedAgent)
+    internal SessionEventLog LogFor(Session session)
     {
         if (_logs.TryGetValue(session.Id, out var existing)) return existing.Log;
 
@@ -320,8 +325,8 @@ public sealed class WebSessionHub
         LogEntry Build()
         {
             var log = new SessionEventLog(session.Id);
-            if ((seedAgent ?? session.SessionId) is { } agent)
-                log.Seed(new SessionFolder(services.Paths, agent).TranscriptPath);
+            if (session.SessionId is { } agent)
+                log.Replay(services.Paths, agent);
 
             // THROUGH THE FAN-OUT, BESIDE WHATEVER ELSE SHOWS THE SESSION — the terminal's tab under /web — and kept
             // across re-wires, which replace only the port's own subscriptions.
@@ -331,6 +336,11 @@ public sealed class WebSessionHub
             // WORKERS ANNOUNCE THEMSELVES in this log as they start.
             Action<Core.Agents.SpawnedChild> spawned = child => OnChildSpawned(session, child);
             if (_spawns.TryAdd(session.Id, spawned)) session.ChildSpawned += spawned;
+
+            // A LATER RESUME — /sessions resume typed in an open tab — shows the conversation it brought back, below
+            // what the tab already has, as the terminal does.
+            Action restored = () => { if (session.SessionId is { } now) log.Replay(services.Paths, now); };
+            if (_restores.TryAdd(session.Id, restored)) session.Restored += restored;
             return new LogEntry(log, observers, tools);
         }
     }
