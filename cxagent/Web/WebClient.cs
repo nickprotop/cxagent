@@ -36,6 +36,10 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     private readonly WebSessionHub _hub;
     private readonly WebSocket _socket;
     private readonly string _who;
+
+    // WHICH TAB ASKED, as a stop names it: unique per connection, since one login can have several tabs open and the
+    // text goes back to the one that pressed Esc.
+    private readonly string _tag = "web:" + Guid.NewGuid().ToString("N");
     private readonly Channel<string> _out = Channel.CreateBounded<string>(new BoundedChannelOptions(MaxQueued)
     {
         FullMode = BoundedChannelFullMode.DropWrite,
@@ -245,7 +249,10 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 Answer(m);
                 break;
             case "stop":
-                Live(Str(m, "sessionId"))?.CancelTurn();
+                Live(Str(m, "sessionId"))?.CancelTurn(_tag);
+                break;
+            case "unqueue":
+                Live(Str(m, "sessionId"))?.CancelPending(_tag);
                 break;
             case "close":
             {
@@ -410,7 +417,15 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             if (replay.Reset) Send(new JsonObject { ["type"] = "reset", ["sessionId"] = session.Id });
             foreach (var e in replay.Events) Send(e.DeepClone().AsObject());
         }, out var handle);
-        _open[session.Id] = handle;
+
+        // WHAT THIS TAB TOOK BACK comes back to its own composer — its Esc, its Cancel on the queued line — and not to
+        // another tab's or the terminal's, which would find someone else's words in what they were typing.
+        Action<string, string?> handedBack = (text, by) =>
+        {
+            if (by == _tag) Send(new JsonObject { ["type"] = "restore", ["sessionId"] = session.Id, ["text"] = text });
+        };
+        session.Cancelled += handedBack;
+        _open[session.Id] = new WebSessionHub.Both(handle, new Unsubscribe(() => session.Cancelled -= handedBack));
 
         // WHAT IS ALREADY WAITING — a prompt raised before this tab arrived is shown to it now.
         foreach (var prompt in S.Prompts.ShowableFor(session.Id)) Show(prompt, CancellationToken.None);

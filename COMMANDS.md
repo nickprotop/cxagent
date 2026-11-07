@@ -1217,12 +1217,14 @@ doing half of what was typed leaves no way to tell which half you got.
 
 **Escape** stops a running turn. Anything queued goes back into the composer rather than being
 discarded — it was never sent, so stopping must not eat what you typed. In btw mode it stops the
-aside's answer instead, then leaves btw mode — see [`/btw`](#btw).
+aside's answer instead, then leaves btw mode — see [`/btw`](#btw). With a browser on the same session, the
+text goes back to whichever composer pressed Escape — the browser's Esc or Stop, or the terminal's — not to both.
 
 **Enter during a running turn** queues the message rather than starting a second one. Several queued
 messages are joined into one prompt, newline-separated, and sent when the turn ends. They are
 appended rather than replaced: two messages typed in succession are usually one thought completed,
-and keeping only the last would silently discard half of what you said.
+and keeping only the last would silently discard half of what you said. The waiting text shows above
+the composer in both front ends, with *Cancel · back to composer* to take it back without stopping the turn.
 
 **A custom command typed during a running turn** waits instead of joining it. It shows as a
 *held* row and runs as its own turn when the running one ends, expanded then, so a ``!`git diff` ``

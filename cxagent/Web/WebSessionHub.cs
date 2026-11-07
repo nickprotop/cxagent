@@ -66,6 +66,7 @@ public sealed class WebSessionHub
     private readonly ConcurrentDictionary<string, Action<Core.Export.ExportSource>> _restores = new();
     private readonly ConcurrentDictionary<string, Action<SessionChangeKind>> _clears = new();
     private readonly ConcurrentDictionary<string, Action<ToolCallReport>> _calls = new();
+    private readonly ConcurrentDictionary<string, IDisposable> _queues = new();
     private int _listPending;
 
     /// <summary>A hub over <paramref name="services"/>, told whenever the manager closes a session.</summary>
@@ -78,7 +79,7 @@ public sealed class WebSessionHub
 
     private sealed record LogEntry(SessionEventLog Log, IDisposable Observers, IDisposable Tools);
 
-    private sealed class Both(IDisposable first, IDisposable second) : IDisposable
+    internal sealed class Both(IDisposable first, IDisposable second) : IDisposable
     {
         public void Dispose()
         {
@@ -176,6 +177,8 @@ public sealed class WebSessionHub
         foreach (var (id, call) in _calls)
             if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.ToolCallFinished -= call;
         _calls.Clear();
+        foreach (var queue in _queues.Values) queue.Dispose();
+        _queues.Clear();
     }
 
     /// <summary>
@@ -240,6 +243,7 @@ public sealed class WebSessionHub
         if (_restores.TryRemove(session.Id, out var restore)) session.Restored -= restore;
         if (_clears.TryRemove(session.Id, out var clear)) session.Changed -= clear;
         if (_calls.TryRemove(session.Id, out var call)) session.ToolCallFinished -= call;
+        if (_queues.TryRemove(session.Id, out var queue)) queue.Dispose();
         foreach (var c in _clients.Keys) c.SessionClosed(session.Id);
         ListChanged();
     }
@@ -380,6 +384,28 @@ public sealed class WebSessionHub
             // its card shows the call table the terminal's expanded worker row does.
             Action<ToolCallReport> called = log.WorkerCall;
             if (_calls.TryAdd(session.Id, called)) session.ToolCallFinished += called;
+            // WHAT WAITS FOR THE TURN, as the terminal's queued block shows it: the whole queue on each line typed,
+            // and empty once the turn took it or it went back to a composer.
+            if (!_queues.ContainsKey(session.Id))
+            {
+                Action<string, string> pending = (whole, _) => log.Queued(whole);
+                Action<string> drained = _ => log.Queued("");
+                Action<string, string?> cancelled = (_, _) => log.Queued("");
+                session.Pending += pending;
+                session.Drained += drained;
+                session.Cancelled += cancelled;
+                if (!_queues.TryAdd(session.Id, new Unsubscribe(() =>
+                {
+                    session.Pending -= pending;
+                    session.Drained -= drained;
+                    session.Cancelled -= cancelled;
+                })))
+                {
+                    session.Pending -= pending;
+                    session.Drained -= drained;
+                    session.Cancelled -= cancelled;
+                }
+            }
             // ITS ASIDES TOO — /btw answered beside the conversation — as a watcher beside the terminal's own.
             var asides = session.WatchAsides(log);
             return new LogEntry(log, new Both(observers, asides), tools);
@@ -496,4 +522,11 @@ public sealed class WebSessionHub
         public static readonly Nothing Instance = new();
         public void Dispose() { }
     }
+}
+
+/// <summary>Runs an unsubscribe once, when disposed.</summary>
+internal sealed class Unsubscribe(Action undo) : IDisposable
+{
+    private Action? _undo = undo;
+    public void Dispose() => Interlocked.Exchange(ref _undo, null)?.Invoke();
 }

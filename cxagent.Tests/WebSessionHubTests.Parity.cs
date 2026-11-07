@@ -178,6 +178,65 @@ public sealed partial class WebSessionHubTests
         Assert.DoesNotContain("first question", markdown, StringComparison.Ordinal);
     }
 
+    // A TURN HELD OPEN on a question the model asked, so a line typed meanwhile waits in the queue.
+    private async Task<(Tab Tab, string SessionId)> WaitingOnAQuestionAsync()
+    {
+        _model.EnqueueResponse(new LlmResponse
+        {
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Name = "ask_user", Id = "q1",
+                Arguments = System.Text.Json.JsonSerializer.SerializeToElement("Which one?") }],
+        });
+        _model.EnqueueResponse(Reply("done"));
+        var (tab, id) = await CreatedAsync();
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "go")));
+        await tab.NextAsync(Type("prompt"));
+        return (tab, id);
+    }
+
+    [Fact]
+    public async Task What_is_queued_shows_as_queued_until_the_turn_takes_it_or_it_comes_back()
+    {
+        var (tab, id) = await WaitingOnAQuestionAsync();
+        await using var _ = tab;
+
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "and end with open questions")));
+        var queued = await tab.NextAsync(Kind("queued"));
+        Assert.Equal("and end with open questions", queued["text"]!.GetValue<string>());
+
+        await tab.SendAsync(Msg("stop", ("sessionId", id)));
+        Assert.Equal("", (await tab.NextAsync(Kind("queued")))["text"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task A_stop_from_the_browser_hands_its_queued_text_back_to_its_composer()
+    {
+        var (tab, id) = await WaitingOnAQuestionAsync();
+        await using var _ = tab;
+
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "and end with open questions")));
+        await tab.NextAsync(Kind("queued"));
+        await tab.SendAsync(Msg("stop", ("sessionId", id)));
+
+        var back = await tab.NextAsync(Type("restore"));
+        Assert.Equal("and end with open questions", back["text"]!.GetValue<string>());
+        Assert.Equal(id, back["sessionId"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Cancel_on_the_queued_line_hands_it_back_without_stopping_the_turn()
+    {
+        var (tab, id) = await WaitingOnAQuestionAsync();
+        await using var _ = tab;
+
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "never mind this")));
+        await tab.NextAsync(Kind("queued"));
+        await tab.SendAsync(Msg("unqueue", ("sessionId", id)));
+
+        Assert.Equal("never mind this", (await tab.NextAsync(Type("restore")))["text"]!.GetValue<string>());
+        Assert.True(_manager.Sessions.Single(s => s.Id == id).IsBusy);
+    }
+
     [Fact]
     public async Task A_thinking_level_the_model_does_not_offer_is_said_not_set()
     {

@@ -215,7 +215,7 @@ public sealed partial class Session
     /// <see cref="CancelTurn"/> — it cannot be read here, after the cancel has unwound it.</param>
     /// <param name="held">The held command, taken before the cancel for the same reason: the cancel
     /// exit would otherwise drop it as "not run" before it could be handed back.</param>
-    private void HandBack(string? expanding, string? held)
+    private void HandBack(string? expanding, string? held, string? by)
     {
         // THE WHOLE QUEUE, NOT ONLY ITS TEXT: what it showed and what it carried go with it, or they wait
         // behind the cancel and join the next line steered — the old line drawn again, its screenshot
@@ -225,7 +225,7 @@ public sealed partial class Session
         var lines = new[] { steered, expanding, held }.Where(l => l is { Length: > 0 }).ToList();
         if (lines.Count == 0) return;
 
-        Cancelled?.Invoke(lines[0]!, null);
+        Cancelled?.Invoke(lines[0]!, by);
         foreach (var dropped in lines.Skip(1))
             Say(new Message($"{dropped!.Split('\n')[0]} was not run.", Severity.Warning));
     }

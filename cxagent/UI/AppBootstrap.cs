@@ -552,16 +552,18 @@ public static class AppBootstrap
             // REMOVED, not rewritten to a tombstone. The queue emptied, so the placeholder has nothing
             // left to stand for — and the text is sitting in the composer in plain view, so a row
             // saying so would explain something already on screen at the cost of a transcript line.
-            // THE ASKER IS IGNORED WHILE THERE IS ONE FRONT END. It exists so a daemon can route the
-            // text back to the composer it came from; this window is the only composer there is.
-            session.Cancelled += (text, _) => system.EnqueueOnUIThread(() =>
+            // ONLY WHAT THIS WINDOW TOOK BACK. The asker is null when the stop came from here; a browser
+            // under /web names itself, and the text goes to its composer instead — the person who pressed
+            // Escape is the one about to edit it. Either way the queue is empty, so the block goes.
+            session.Cancelled += (text, by) => system.EnqueueOnUIThread(() =>
             {
                 // INTO THE COMPOSER OF THE SESSION THAT CANCELLED, not the one on screen.
                 // AS TYPED, when what came back is what this composer queued: a pasted token returns as
                 // a token. See PromptQueue.Restore.
                 if (mainWindow.TabForSession(session) is { } tab)
                 {
-                    tab.Input.SetInputSegments(PromptQueue.Restore(text, tab.QueuedLines, tab.Input.InputSegments));
+                    if (by is null)
+                        tab.Input.SetInputSegments(PromptQueue.Restore(text, tab.QueuedLines, tab.Input.InputSegments));
                     tab.QueuedLines.Clear();
                 }
                 RemoveQueuedBlock();

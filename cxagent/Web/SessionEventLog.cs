@@ -362,6 +362,12 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     });
 
     /// <summary>
+    /// What is waiting for the running turn, whole — or empty once the turn took it or it was handed back. The page
+    /// shows it above the composer as the terminal shows its queued block, with the same way to take it back.
+    /// </summary>
+    public void Queued(string text) => Append("queued", new JsonObject { ["text"] = text });
+
+    /// <summary>
     /// The conversation was cleared: what was kept goes, and a <c>cleared</c> event takes its place — so a tab watching
     /// empties its transcript as the terminal's does, a tab joining later starts from the clear, and one that saw the
     /// old conversation is told to redraw rather than keep it.

@@ -1161,7 +1161,9 @@ public sealed partial class Session
     /// <para>FALSE WHEN IDLE, and NOTHING is said or returned then: a stop arriving just after a turn
     /// ended is an ordinary race, and announcing it would report an event that did not happen.</para>
     /// </summary>
-    public bool CancelTurn()
+    /// <param name="by">Who stopped it — carried on <see cref="Cancelled"/>, so queued text goes back to the composer of
+    /// the front end that asked, not to every one attached. Null for a host with one front end.</param>
+    public bool CancelTurn(string? by = null)
     {
         CancellationTokenSource? turn;
         lock (_turnGate) turn = _turn;
@@ -1185,7 +1187,7 @@ public sealed partial class Session
         // AFTER the announcement, so a subscriber restoring the text into a composer is drawing over
         // a surface that has already reacted to the stop — announce before you say, and before you
         // hand anything back.
-        HandBack(expanding, held);
+        HandBack(expanding, held, by);
         return true;
     }
 }

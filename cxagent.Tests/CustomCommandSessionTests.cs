@@ -235,6 +235,28 @@ public class CustomCommandSessionTests : IDisposable
     }
 
     /// <summary>
+    /// The queued line goes back to the composer of whoever stopped the turn: with a browser and the terminal on one
+    /// session, the stop names its front end, and the handback carries that name.
+    /// </summary>
+    [Fact]
+    public async Task A_stop_names_who_asked_on_the_text_it_hands_back()
+    {
+        CommandFile("slow", "!`sleep 30`");
+        var asked = new TaskCompletionSource();
+        var w = Open(new BlockingGate(asked));
+        using var _ = w.Manager;
+        string? by = "unset";
+        w.Session.Cancelled += (_, who) => by = who;
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(w.Session.Submit("/slow"));
+        await asked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(w.Session.CancelTurn(by: "web:tab-1"));
+        await started.Turn;
+
+        Assert.Equal("web:tab-1", by);
+    }
+
+    /// <summary>
     /// A cancel hands the queued line back and takes all of it out of the queue — its words as shown and
     /// its images too — so the next steer is only what is typed next, not a second copy of the screenshot.
     /// </summary>

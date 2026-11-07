@@ -369,6 +369,13 @@ body.in-aside .composer-box { border-color: var(--warn-line); }
 
 .btns.export { display: flex; gap: 8px; margin: 2px 0 6px; }
 
+/* THE QUEUED LINE above the composer, as the terminal's queued block: what waits for the turn, and the way back. */
+.queued { display: flex; align-items: center; gap: 8px; padding: 6px 10px 2px; font-size: 12.5px; color: var(--muted); }
+.queued[hidden] { display: none; }
+.queued .tag { font: 600 11px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.queued-text { color: var(--strong); white-space: pre-wrap; overflow: hidden; text-overflow: ellipsis; max-height: 3.2em; }
+.queued button { padding: 2px 8px; font-size: 12px; }
+
 /* THE EXPORT FORM: the terminal's dialog laid out the same way — quiet labels down the left, the choices beside them,
    and what will be written at the bottom beside the buttons. */
 .export-dialog { cursor: auto; }

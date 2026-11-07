@@ -156,6 +156,7 @@ function handle(m) {
       else flash("That session is no longer there.");
       break;
     case "folders": drawFolders(m); break;
+    case "restore": restore(m); break;
     case "exportForm": exportForm(m); break;
     case "exportPreview": exportPreview(m); break;
     case "export": exported(m); break;
@@ -398,6 +399,8 @@ function activate(id) {
   drawPrompts();
   drawSessions();
   drawPanel();
+  drawQueued();
+  if (view && view.restored != null) { putBack(view.restored); view.restored = null; }
   drawPicks();
   drawStop();
   scrollDown(true);
@@ -1753,6 +1756,36 @@ function cardFor(view, agentId) {
   return null;
 }
 
+// ---- the queue ----------------------------------------------------------------------------------------------------
+
+// THE TERMINAL'S QUEUED BLOCK: a line typed while a turn runs waits for the turn's next step, shown here until it is
+// taken — and Cancel puts it back in this composer instead, without stopping the turn.
+function drawQueued() {
+  const bar = $("queued");
+  const view = state.views.get(state.active);
+  const text = view && view.kind === "session" ? view.queued || "" : "";
+  bar.hidden = !text;
+  if (!text) { bar.replaceChildren(); return; }
+  const cancel = button("Cancel · back to composer", "ghost", () => send({ type: "unqueue", sessionId: state.active }));
+  bar.replaceChildren(el("span", "tag", "queued"), el("span", "queued-text", text), el("span", "spacer"), cancel);
+}
+
+// TEXT HANDED BACK — by this tab's Esc or its Cancel — goes above anything typed since: it was typed first.
+function restore(m) {
+  const view = state.views.get(m.sessionId);
+  if (!view) return;
+  if (state.active === m.sessionId) putBack(m.text);
+  else view.restored = view.restored ? view.restored + "\n" + m.text : m.text;
+}
+
+function putBack(text) {
+  const input = $("input");
+  input.value = input.value ? text + "\n" + input.value : text;
+  resize();
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+
 // ---- events ------------------------------------------------------------------------------------------------------
 
 function event(m) {
@@ -1762,6 +1795,11 @@ function event(m) {
   switch (m.kind) {
     // /clear: THE TRANSCRIPT EMPTIES, as the terminal's tab does. resetView, but the count is kept: this event is part
     // of the stream, and what follows it continues from here.
+    // WHAT WAITS FOR THE RUNNING TURN, whole; empty once the turn took it or it went back to a composer.
+    case "queued":
+      view.queued = m.text;
+      if (state.active === m.sessionId) drawQueued();
+      break;
     case "cleared": {
       const seq = view.seq;
       resetView(view);
@@ -2591,7 +2629,7 @@ input.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (!list.hidden) { completion(false); return; }
     if (document.body.classList.contains("in-aside")) { e.preventDefault(); leaveAside(); return; }
-    // ESCAPE STOPS A RUNNING TURN, as in the terminal; what was queued comes back to the composer from the server.
+    // ESCAPE STOPS A RUNNING TURN, as in the terminal; what was queued comes back to this composer as a "restore".
     if (!$("stop").hidden) { e.preventDefault(); send({ type: "stop", sessionId: activeSessionId() }); }
     return;
   }
