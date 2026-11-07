@@ -404,6 +404,50 @@ public sealed class WebSessionHubTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Opening_a_session_sends_its_panel()
+    {
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        var panel = await tab.NextAsync(Type("panel"));
+        Assert.Equal(id, panel["sessionId"]!.GetValue<string>());
+        Assert.NotNull(panel["tokens"]);
+        Assert.NotNull(panel["choices"]!["modes"]);
+        Assert.Equal(Work, panel["here"]!["folder"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task The_panel_follows_a_turn()
+    {
+        _model.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn", Usage = new LlmUsage { InputTokens = 1200, OutputTokens = 30 } });
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.NextAsync(Type("panel"));
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "hi")));
+        await TurnDoneAsync(tab);
+        _hub.PushPanels();
+        var panel = await tab.NextAsync(m => m["type"]?.GetValue<string>() == "panel" && m["session"]!["turns"]!.GetValue<int>() == 1);
+        Assert.True(panel["tokens"]!["total"]!.GetValue<int>() > 0);
+    }
+
+    [Fact]
+    public async Task The_sandbox_switch_changes_this_session_only_and_writes_nothing()
+    {
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        var session = _manager.Sessions.Single();
+        var before = File.Exists(Path.Combine(_paths.ConfigDir, "config.json")) ? File.ReadAllText(Path.Combine(_paths.ConfigDir, "config.json")) : null;
+
+        await tab.SendAsync(Msg("setSandbox", ("sessionId", id), ("enabled", false)));
+        await tab.NextAsync(Type("notice"));
+        Assert.False(session.Policy!.Sandbox!.Settings.Enabled);
+
+        await tab.SendAsync(Msg("setSandbox", ("sessionId", id), ("enabled", true)));
+        await tab.NextAsync(m => m["type"]?.GetValue<string>() == "notice" && m["text"]!.GetValue<string>().Contains("on", StringComparison.Ordinal));
+        Assert.True(session.Policy!.Sandbox!.Settings.Enabled);
+        Assert.Equal(before, File.Exists(Path.Combine(_paths.ConfigDir, "config.json")) ? File.ReadAllText(Path.Combine(_paths.ConfigDir, "config.json")) : null);
+    }
+
+    [Fact]
     public async Task Allowed_command_runs_and_others_are_refused()
     {
         var (tab, id) = await CreatedAsync();

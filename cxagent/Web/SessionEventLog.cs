@@ -34,10 +34,28 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     private readonly LinkedList<JsonObject> _events = new();
     private readonly List<Action<JsonObject>> _subscribers = [];
     private readonly Dictionary<string, int> _toolOutput = [];
+    private readonly Dictionary<string, string> _progress = [];
     private long _seq;
+    private int _turns;
+    private int _toolCalls;
 
     /// <summary>The session these events belong to (<c>Session.Id</c>).</summary>
     public string SessionId { get; } = sessionId;
+
+    /// <summary>User turns this log has seen, its seeded past included — the panel's "turns".</summary>
+    public int Turns
+    {
+        get { lock (_gate) return _turns; }
+    }
+
+    /// <summary>Tool calls that finished, as this log saw them — the panel's "tool calls".</summary>
+    public int ToolCalls
+    {
+        get { lock (_gate) return _toolCalls; }
+    }
+
+    /// <summary>When this log began — the panel's session clock, for a session the browser has watched since.</summary>
+    public DateTimeOffset Started { get; } = DateTimeOffset.UtcNow;
 
     /// <summary>The number of the newest event.</summary>
     public long LastSeq
@@ -96,6 +114,7 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
             switch (kind)
             {
                 case "user":
+                    lock (_gate) _turns++;
                     Append("user", new JsonObject { ["text"] = body });
                     break;
                 case "assistant":
@@ -111,8 +130,16 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         }
     }
 
+    /// <summary>A worker started for the row <paramref name="job"/>: who it is, so its card can name it and open it.</summary>
+    public void Worker(string job, string agentId, string name, string? type, string? task) =>
+        Append("worker", new JsonObject { ["job"] = job, ["agentId"] = agentId, ["name"] = name, ["type"] = type, ["task"] = task });
+
     /// <inheritdoc/>
-    public void UserTurnAdded(ChatMessageId id, string text) => Append("user", new JsonObject { ["turn"] = id.Value, ["text"] = text });
+    public void UserTurnAdded(ChatMessageId id, string text)
+    {
+        lock (_gate) _turns++;
+        Append("user", new JsonObject { ["turn"] = id.Value, ["text"] = text });
+    }
 
     /// <inheritdoc/>
     public void AssistantTurnBegan(ChatMessageId id) => Append("turnBegan", new JsonObject { ["turn"] = id.Value });
@@ -154,11 +181,16 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
             bool known;
             lock (_gate) known = !_toolOutput.TryAdd(job.Id, 0);
             if (known) continue;
+            // A WORKER'S ROW SAYS WHAT IT IS — its type and description are in the name, the model it runs on here,
+            // and its progress line as the terminal shows it ("2 turns · 14% ctx · 6s").
             Append("toolStarted", new JsonObject
             {
                 ["job"] = job.Id,
                 ["name"] = job.DisplayName,
                 ["agent"] = job.AgentId,
+                ["jobType"] = job.JobType,
+                ["runsOn"] = job.RunsOn,
+                ["progress"] = job.ProgressMessage,
             });
             if (IsDone(job.State)) Ended(job);
         }
@@ -174,7 +206,26 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     }
 
     /// <inheritdoc/>
-    public void ToolProgressed(Job job) { }
+    /// <remarks>
+    /// ONLY WHAT CHANGED is appended: a worker reports progress every few seconds, often the same line, and every one
+    /// would otherwise be kept and sent to every tab.
+    /// </remarks>
+    public void ToolProgressed(Job job)
+    {
+        var line = (job.ProgressMessage ?? "") + "\u0000" + (job.ProgressBody ?? "");
+        lock (_gate)
+        {
+            if (_progress.TryGetValue(job.Id, out var last) && last == line) return;
+            _progress[job.Id] = line;
+        }
+        Append("toolProgress", new JsonObject
+        {
+            ["job"] = job.Id,
+            ["progress"] = job.ProgressMessage,
+            ["body"] = job.ProgressBody,
+            ["runsOn"] = job.RunsOn,
+        });
+    }
 
     /// <inheritdoc/>
     public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot) { }
@@ -198,6 +249,7 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
 
     private void Ended(Job job)
     {
+        lock (_gate) _toolCalls++;
         var output = job.Result?.Output;
         Append("toolEnded", new JsonObject
         {

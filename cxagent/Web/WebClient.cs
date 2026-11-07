@@ -54,6 +54,20 @@ internal sealed class WebClient : IPromptResponder, IDisposable
 
     public bool HasOpen(string sessionId) => _open.ContainsKey(sessionId);
 
+    private readonly ConcurrentDictionary<string, string> _panels = new();
+
+    /// <summary>The sessions this tab has open — not the workers' own views, which have no panel of their own.</summary>
+    public IEnumerable<string> OpenSessions => _open.Keys.Where(k => !k.Contains('~'));
+
+    /// <summary>Sends a session's panel, when it differs from the last one this tab was sent.</summary>
+    public void SendPanel(string sessionId, JsonObject panel)
+    {
+        var text = panel.ToJsonString();
+        if (_panels.TryGetValue(sessionId, out var last) && last == text) return;
+        _panels[sessionId] = text;
+        Send(panel.DeepClone().AsObject());
+    }
+
     public async Task RunAsync(CancellationToken ct)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _gone.Token);
@@ -189,6 +203,18 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "leave":
                 Leave(Str(m, "sessionId"));
                 break;
+            case "openWorker":
+                OpenWorker(Str(m, "sessionId"), Str(m, "agentId"), Long(m, "since") ?? 0);
+                break;
+            case "workerAction":
+                WorkerAction(Str(m, "sessionId"), Str(m, "agentId"), Str(m, "action"));
+                break;
+            case "stopCommand":
+                StopCommand(Str(m, "sessionId"), Long(m, "pid"));
+                break;
+            case "setSandbox":
+                SetSandbox(Str(m, "sessionId"), m["enabled"] is JsonValue e && e.TryGetValue<bool>(out var on) ? on : null);
+                break;
             default:
                 Error("Unknown message.");
                 break;
@@ -264,7 +290,88 @@ internal sealed class WebClient : IPromptResponder, IDisposable
 
         // WHAT IS ALREADY WAITING — a prompt raised before this tab arrived is shown to it now.
         foreach (var prompt in S.Prompts.ShowableFor(session.Id)) Show(prompt, CancellationToken.None);
+
+        // AND ITS PANEL AT ONCE, not at the next tick.
+        _panels.TryRemove(session.Id, out _);
+        if (_hub.PanelFor(session.Id) is { } panel) SendPanel(session.Id, panel);
     }
+
+    // A WORKER'S OWN VIEW: its transcript from the start, then live — the terminal's agent tab, in a browser tab.
+    private void OpenWorker(string? sessionId, string? agentId, long since)
+    {
+        if (LiveSession(sessionId) is not { } session || agentId is null) { Error("Open the worker's session first."); return; }
+        if (_hub.WorkerLog(session, agentId) is not { } log || session.SubAgents.FindByAgentId(agentId) is not { } stored)
+        {
+            Error("That worker is no longer there.");
+            return;
+        }
+        var key = WebSessionHub.WorkerKey(session.Id, agentId);
+        if (_open.TryRemove(key, out var previous)) previous.Dispose();
+        Send(new JsonObject
+        {
+            ["type"] = "openedWorker",
+            ["sessionId"] = key,
+            ["parent"] = session.Id,
+            ["agentId"] = agentId,
+            ["name"] = stored.Name,
+            ["workerType"] = stored.TypeName,
+            ["task"] = stored.Description,
+            ["model"] = stored.Agent.ModelId,
+            ["folder"] = stored.Agent.Root ?? session.WorkingDirectory,
+        });
+        log.Subscribe(since, Send, replay =>
+        {
+            if (replay.Reset) Send(new JsonObject { ["type"] = "reset", ["sessionId"] = key });
+            foreach (var e in replay.Events) Send(e.DeepClone().AsObject());
+        }, out var handle);
+        _open[key] = handle;
+    }
+
+    private void WorkerAction(string? sessionId, string? agentId, string? action)
+    {
+        if (LiveSession(sessionId) is not { } session || agentId is null
+            || session.SubAgents.FindByAgentId(agentId) is not { } stored) { Error("That worker is no longer there."); return; }
+        switch (action)
+        {
+            case "stop":
+                _ = Task.Run(() => session.StopAgent(stored.Name));
+                break;
+            case "background":
+                if (!session.MoveToBackground(stored.Name)) Notice(session.Id, $"{stored.Name} could not move to the background.", "Warning");
+                break;
+            default:
+                Error("Unknown worker action.");
+                break;
+        }
+    }
+
+    // A BACKGROUND COMMAND THIS SESSION STARTED, stopped as F7 stops it.
+    private void StopCommand(string? sessionId, long? pid)
+    {
+        if (LiveSession(sessionId) is not { } session || pid is null) { Error("No such command."); return; }
+        var entry = Core.Jobs.BackgroundJobBoard.Default.For(session.Owns).FirstOrDefault(e => e.Job.Pid == pid);
+        if (entry is null || entry.Finished) { Error("That command is not running."); return; }
+        _ = Task.Run(entry.Process.Kill);
+    }
+
+    /// <summary>
+    /// Turns the sandbox on or off for THIS SESSION ONLY, now — nothing is written to config.json, which a browser
+    /// never changes. The next session starts as config says.
+    /// </summary>
+    private void SetSandbox(string? sessionId, bool? enabled)
+    {
+        if (LiveSession(sessionId) is not { } session || enabled is not { } on) { Error("No such open session."); return; }
+        var current = session.Policy?.Sandbox?.Settings ?? session.Resolution?.Sandbox ?? Core.Sandbox.SandboxSettings.AppDefault;
+        session.UseSandbox(current with { Enabled = on });
+        Notice(session.Id, on
+            ? "The sandbox is on for this session."
+            : "The sandbox is off for this session: its commands run as you and ask first. config.json is unchanged.", on ? "Info" : "Warning");
+        _panels.TryRemove(session.Id, out _);
+        if (_hub.PanelFor(session.Id) is { } panel) SendPanel(session.Id, panel);
+    }
+
+    private Session? LiveSession(string? sessionId) =>
+        sessionId is null || sessionId.Contains('~') ? null : Live(sessionId);
 
     private void Leave(string? sessionId)
     {
@@ -278,6 +385,20 @@ internal sealed class WebClient : IPromptResponder, IDisposable
 
     private void Say(string? sessionId, string? text)
     {
+        // TO A WORKER: what the terminal's agent tab sends — a message to that worker, not to its session.
+        if (sessionId is not null && sessionId.Contains('~') && _open.ContainsKey(sessionId) && !string.IsNullOrWhiteSpace(text))
+        {
+            var parts = sessionId.Split('~', 2);
+            if (Live(parts[0]) is { } parent && parent.SubAgents.FindByAgentId(parts[1]) is { } worker)
+            {
+                _ = Task.Run(async () =>
+                {
+                    if (await parent.SendFromAgentTab(worker.Name, text).ConfigureAwait(false) is { } refused)
+                        Notice(sessionId, refused, "Warning");
+                });
+                return;
+            }
+        }
         if (Live(sessionId) is not { } session || string.IsNullOrWhiteSpace(text)) { Error("Nothing to send."); return; }
         if (text.TrimStart().StartsWith('/'))
         {

@@ -109,6 +109,39 @@ public sealed class SessionEventLogTests
     }
 
     [Fact]
+    public void A_worker_row_carries_its_type_model_and_live_progress()
+    {
+        var log = new SessionEventLog("S");
+        var job = new Job { Id = "W1", AgentId = "A", JobType = "llm_agent", DisplayName = "planner · find tests", State = JobState.Running,
+            RunsOn = "deepseek:deepseek-v3.2", ProgressMessage = "starting…" };
+        log.ToolsChanged([job]);
+        job.ProgressMessage = "2 turns · 14% ctx · 6s";
+        job.ProgressBody = "task: find tests";
+        log.ToolProgressed(job);
+        log.ToolProgressed(job);   // unchanged: nothing new
+
+        var events = log.Since(0).Events;
+        Assert.Equal("llm_agent", events[0]["jobType"]!.GetValue<string>());
+        Assert.Equal("deepseek:deepseek-v3.2", events[0]["runsOn"]!.GetValue<string>());
+        var progress = events.Where(e => e["kind"]!.GetValue<string>() == "toolProgress").ToList();
+        Assert.Single(progress);
+        Assert.Equal("2 turns · 14% ctx · 6s", progress[0]["progress"]!.GetValue<string>());
+        Assert.Equal("task: find tests", progress[0]["body"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void The_log_counts_turns_and_tool_calls()
+    {
+        var log = Streamed(1);
+        var job = new Job { Id = "J", AgentId = "A", JobType = "shell", DisplayName = "x", State = JobState.Running };
+        log.ToolsChanged([job]);
+        job.State = JobState.Succeeded;
+        log.ToolUpdated(job);
+        Assert.Equal(1, log.Turns);
+        Assert.Equal(1, log.ToolCalls);
+    }
+
+    [Fact]
     public void Seeding_from_a_transcript_replays_it_first()
     {
         var file = Path.Combine(Directory.CreateTempSubdirectory("seed-").FullName, "transcript.jsonl");

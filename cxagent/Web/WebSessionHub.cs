@@ -50,6 +50,7 @@ public sealed class WebSessionHub
     private readonly ConcurrentDictionary<string, byte> _unloading = new();
     private readonly object _logGate = new();
     private readonly SemaphoreSlim _resuming = new(1, 1);
+    private readonly ConcurrentDictionary<string, Action<Core.Agents.SpawnedChild>> _spawns = new();
     private int _listPending;
 
     /// <summary>A hub over <paramref name="services"/>, told whenever the manager closes a session.</summary>
@@ -139,12 +140,70 @@ public sealed class WebSessionHub
     {
         services.Manager.SessionClosed -= OnSessionClosed;
         foreach (var id in _logs.Keys) Drop(id);
+        foreach (var (id, spawn) in _spawns)
+            if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.ChildSpawned -= spawn;
+        _spawns.Clear();
+    }
+
+    /// <summary>
+    /// Sends every tab the side panel of each session it has open — each tab only when it changed. Called every
+    /// second or so by the host; a test calls it directly.
+    /// </summary>
+    public void PushPanels()
+    {
+        var built = new Dictionary<string, JsonObject?>(StringComparer.Ordinal);
+        foreach (var client in _clients.Keys)
+            foreach (var id in client.OpenSessions)
+            {
+                if (!built.TryGetValue(id, out var panel)) built[id] = panel = PanelFor(id);
+                if (panel is not null) client.SendPanel(id, panel);
+            }
+    }
+
+    /// <summary>The panel for a session this hub has a log for, or null.</summary>
+    internal JsonObject? PanelFor(string sessionId) =>
+        _logs.TryGetValue(sessionId, out var entry) && services.Manager.Sessions.FirstOrDefault(s => s.Id == sessionId) is { } session
+            ? WebPanel.Build(session, entry.Log, services.Manager)
+            : null;
+
+    /// <summary>The key a worker's own view goes by: its session and its agent id.</summary>
+    internal static string WorkerKey(string sessionId, string agentId) => sessionId + "~" + agentId;
+
+    /// <summary>
+    /// A worker's own transcript, as its terminal tab shows it: a log fed by the worker's feed, which replays what it has
+    /// done so far and then follows it live. Kept while its session lives.
+    /// </summary>
+    internal SessionEventLog? WorkerLog(Session session, string agentId)
+    {
+        var key = WorkerKey(session.Id, agentId);
+        if (_logs.TryGetValue(key, out var existing)) return existing.Log;
+        if (session.SubAgents.FindByAgentId(agentId) is not { } stored) return null;
+        lock (_logGate)
+        {
+            if (_logs.TryGetValue(key, out existing)) return existing.Log;
+            var log = new SessionEventLog(key);
+            var feed = stored.Agent.Feed.Attach(new Core.Sessions.ChildView(log, log));
+            _logs[key] = new LogEntry(log, feed, Nothing.Instance);
+            return log;
+        }
+    }
+
+    // A WORKER STARTING IS SAID IN ITS SESSION'S LOG, with what it is — so its card can say "planner · deepseek" and open
+    // its own view.
+    private void OnChildSpawned(Session session, Core.Agents.SpawnedChild child)
+    {
+        if (!_logs.TryGetValue(session.Id, out var entry)) return;
+        var agentId = child.Child.Agent.Id;
+        var stored = session.SubAgents.FindByAgentId(agentId);
+        entry.Log.Worker(child.JobId, agentId, stored?.Name ?? agentId, stored?.TypeName, stored?.Description);
     }
 
     // A SESSION CLOSED ANYWHERE — /exit in the terminal, a browser, idle — leaves every tab that had it open, told.
     private void OnSessionClosed(Session session)
     {
         Drop(session.Id);
+        foreach (var key in _logs.Keys.Where(k => k.StartsWith(session.Id + "~", StringComparison.Ordinal)).ToList()) Drop(key);
+        if (_spawns.TryRemove(session.Id, out var spawn)) session.ChildSpawned -= spawn;
         foreach (var c in _clients.Keys) c.SessionClosed(session.Id);
         ListChanged();
     }
@@ -268,6 +327,10 @@ public sealed class WebSessionHub
             // across re-wires, which replace only the port's own subscriptions.
             var observers = session.Observers?.Add(log) ?? Nothing.Instance;
             var tools = session.ToolObservers?.Add(log) ?? Nothing.Instance;
+
+            // WORKERS ANNOUNCE THEMSELVES in this log as they start.
+            Action<Core.Agents.SpawnedChild> spawned = child => OnChildSpawned(session, child);
+            if (_spawns.TryAdd(session.Id, spawned)) session.ChildSpawned += spawned;
             return new LogEntry(log, observers, tools);
         }
     }

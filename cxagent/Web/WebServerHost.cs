@@ -46,6 +46,7 @@ public sealed class WebServerHost : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private HttpServer? _server;
     private Task? _idle;
+    private Task? _panels;
 
     private WebServerHost(WebHostRequest request, LoginGate gate, IReadOnlySet<string> knownHosts, WebSessionHub hub)
     {
@@ -123,6 +124,7 @@ public sealed class WebServerHost : IAsyncDisposable
         host.Url = new Uri($"{(certificate is null ? "http" : "https")}://{shown}:{host._server.Bound.Port}/");
 
         if (r.Opener.UnloadsIdle && s.IdleMinutes > 0) host._idle = host.IdleLoopAsync();
+        host._panels = host.PanelLoopAsync();
         return host;
     }
 
@@ -144,7 +146,23 @@ public sealed class WebServerHost : IAsyncDisposable
             if (_server is not null) await _server.StopAsync().ConfigureAwait(false);
         }
         if (_idle is not null) { try { await _idle.ConfigureAwait(false); } catch (OperationCanceledException) { } }
+        if (_panels is not null) await _panels.ConfigureAwait(false);
         if (_request.Opener.UnloadsIdle) _request.Manager.Shutdown(TimeSpan.FromSeconds(15));
+    }
+
+    // THE SIDE PANELS, refreshed each second; a tab is sent its panel only when it changed.
+    private async Task PanelLoopAsync()
+    {
+        try
+        {
+            while (!_stop.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), _stop.Token).ConfigureAwait(false);
+                try { Hub.PushPanels(); }
+                catch (Exception) { /* a session closing mid-read; the next tick reads what is left */ }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private async Task IdleLoopAsync()
