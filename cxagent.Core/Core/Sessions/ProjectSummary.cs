@@ -9,11 +9,15 @@ namespace CxAgent.Core.Sessions;
 /// <param name="Catalog">Skills and command files found, of every scope; the project's are picked out.</param>
 /// <param name="Hooks">The hooks the session read, of every source; the project's are picked out.</param>
 /// <param name="WorkingDirectory">The folder the session works in.</param>
-public sealed record ProjectFacts(string WorkingDirectory, TrustState Trust, InvocableCatalogResult Catalog, HookSnapshot Hooks);
+public sealed record ProjectFacts(string WorkingDirectory, TrustState Trust, InvocableCatalogResult Catalog, HookSnapshot Hooks)
+{
+    /// <summary>The session's notes, or null when memory is off — the project's are picked out.</summary>
+    public Memory.MemoryStore? Memory { get; init; }
+}
 
 /// <summary>One kind of thing a repository brings, how many, and where they live.</summary>
 /// <param name="State">A word about whether these take effect here, or null when they always do.</param>
-/// <param name="Kind">What these are: instruction files, skills, commands, plugins or hooks.</param>
+/// <param name="Kind">What these are: instruction files, skills, commands, plugins, hooks or memory.</param>
 /// <param name="Count">How many.</param>
 /// <param name="Folder">Where they live.</param>
 /// <param name="Names">Their names or paths.</param>
@@ -29,7 +33,7 @@ public sealed record ProjectItem(string Kind, int Count, string Folder, IReadOnl
 /// </summary>
 public sealed record ProjectSummary(string? RepoRoot, TrustState Trust, IReadOnlyList<ProjectItem> Items)
 {
-    public static readonly IReadOnlyList<string> Kinds = ["Instruction files", "Skills", "Commands", "Plugins", "Hooks"];
+    public static readonly IReadOnlyList<string> Kinds = ["Instruction files", "Skills", "Commands", "Plugins", "Hooks", "Memory"];
 
     /// <summary>The item of this kind; every kind is always present, with a zero count when there is none.</summary>
     public ProjectItem Item(string kind) => Items.First(i => i.Kind == kind);
@@ -50,6 +54,9 @@ public sealed record ProjectSummary(string? RepoRoot, TrustState Trust, IReadOnl
             : [];
         var hooks = facts.Hooks.Hooks.Where(h => h.Source is HookSource.Project or HookSource.Local).ToList();
         var trusted = facts.Trust == TrustState.Trusted;
+        // THE PROJECT'S NOTES ONLY: system notes are about the user, and go with them to every folder. Not in the
+        // repository — cxagent's own folder keeps them — so the folder shown is that one, which is where to look.
+        var notes = facts.Memory?.List().Where(n => n.Scope == Memory.MemoryScope.Project).Select(n => n.Name).ToList() ?? [];
 
         return new(root, facts.Trust,
         [
@@ -60,6 +67,7 @@ public sealed record ProjectSummary(string? RepoRoot, TrustState Trust, IReadOnl
             new("Plugins", plugins.Count, pluginsDir, plugins, plugins.Count > 0 ? "each asks before it loads" : null),
             new("Hooks", hooks.Count, Path.Combine(root, ".cxagent"), [.. hooks.Select(h => h.DisplayName)],
                 hooks.Count == 0 ? null : trusted ? "running" : "not running: folder not trusted"),
+            new("Memory", notes.Count, facts.Memory?.ProjectFolder ?? "", notes, facts.Memory is null ? "off" : null),
         ]);
     }
 }

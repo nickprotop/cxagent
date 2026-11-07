@@ -394,9 +394,10 @@ the default model for prompt and agent hooks sits beside **+ Add hook**. See
 [CONFIG.md](CONFIG.md#hooks--commands-that-run-on-the-agents-events).
 
 **Project.** The repository the session works in: its trust, which you can change here, and what it brings —
-instruction files, skills, commands, plugins and hooks — with counts and names.
+instruction files, skills, commands, plugins and hooks — with counts and names, and the agent's **memory** notes
+about it, with the folder in cxagent's own directory that holds them. The browser's config page has the same tab.
 
-**General.** The settings every tab is opened with: what a command past its timeout gets (handed to the
+**General.** The settings every tab is opened with: whether the agent keeps memory notes, what a command past its timeout gets (handed to the
 background, or killed), the turn cap per request (the default — none for you, 300 for sub-agents — no cap, or
 a number for both), the token count a conversation compacts above (empty is 80% of the model's window; the
 hint shows the number), the sandbox (on or off, the network inside it, and the folders and variables added to

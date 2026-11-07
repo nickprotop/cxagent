@@ -62,4 +62,35 @@ public class ProjectSummaryTests : IDisposable
         Assert.Null(s.RepoRoot);
         Assert.All(s.Items, i => Assert.Equal(0, i.Count));
     }
+
+    [Fact]
+    public void Memory_lists_this_projects_notes_and_where_they_live_not_the_system_ones()
+    {
+        Directory.CreateDirectory(Path.Combine(_repo, ".git"));
+        var config = Directory.CreateTempSubdirectory("cxagent-project-summary-cfg").FullName;
+        try
+        {
+            var store = new CxAgent.Core.Memory.MemoryStore(config, _repo);
+            store.Write(new("deploy-target", "d", CxAgent.Core.Memory.MemoryScope.Project, "b"));
+            store.Write(new("build-command", "d", CxAgent.Core.Memory.MemoryScope.Project, "b"));
+            store.Write(new("prefers-tabs", "d", CxAgent.Core.Memory.MemoryScope.System, "b"));
+
+            var memory = ProjectSummary.For(new ProjectFacts(_repo, TrustState.Trusted,
+                InvocableCatalog.Find(new CatalogRoots(_repo, null)), HookSources.Read(HooksSettings.None, _repo)) { Memory = store })
+                .Item("Memory");
+
+            Assert.Equal(2, memory.Count);
+            Assert.Equal(["build-command", "deploy-target"], memory.Names);
+            Assert.Equal(store.ProjectFolder, memory.Folder);
+            Assert.Null(memory.State);
+        }
+        finally { Directory.Delete(config, recursive: true); }
+    }
+
+    [Fact]
+    public void Memory_says_off_when_it_is_off()
+    {
+        Directory.CreateDirectory(Path.Combine(_repo, ".git"));
+        Assert.Equal("off", Summary().Item("Memory").State);
+    }
 }

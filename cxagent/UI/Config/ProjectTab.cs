@@ -10,7 +10,7 @@ namespace CxAgent.UI.Config;
 
 /// <summary>
 /// The Project tab: the repository this tab works in, whether it is trusted, and what it brings —
-/// instruction files, skills, commands, plugins, hooks.
+/// instruction files, skills, commands, plugins, hooks, and the notes kept about it.
 ///
 /// <para>READ-ONLY BUT FOR TRUST. Each of the things listed is edited where it lives (a file, a folder, the
 /// Hooks tab); this is the one place they are seen together, and trust is here because it decides what of
@@ -48,7 +48,7 @@ public sealed class ProjectTab
         var session = Session;
         var policy = session.Policy;
         var summary = ProjectSummary.For(new ProjectFacts(session.WorkingDirectory, policy?.Trust ?? TrustState.Unknown,
-            session.Catalog(), session.Hooks?.Snapshot ?? Core.Hooks.HookSnapshot.Empty));
+            session.Catalog(), session.Hooks?.Snapshot ?? Core.Hooks.HookSnapshot.Empty) { Memory = session.Memory });
         var muted = ColorScheme.MutedMarkup;
 
         if (summary.RepoRoot is null)

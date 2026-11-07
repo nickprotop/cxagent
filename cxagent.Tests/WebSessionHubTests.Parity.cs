@@ -269,7 +269,9 @@ public sealed partial class WebSessionHubTests
     private async Task<(HttpServer Server, WebSessionHub Hub)> ServerWithAsync(Core.Web.WebAccess allow, string? root = null)
     {
         var composer = new SessionComposer(new ComposerServices(_manager, _paths, new PermissionRulesStore(_paths), null, null) { Prompts = _prompts });
-        var opener = new ComposerSessionOpener(composer, ResolvedConfig.ForTesting(_model), AgentMode.Single);
+        // MEMORY ON, as the app has it and as the shared harness does.
+        var resolved = ResolvedConfig.ForTesting(_model);
+        var opener = new ComposerSessionOpener(composer, resolved with { Catalog = resolved.Catalog with { Memory = true } }, AgentMode.Single);
         var hub = new WebSessionHub(new WebHubServices(_manager, _prompts, new FolderSessionStore(_paths), _paths, [root ?? Projects], opener, _clock)
         {
             Allow = allow,
@@ -667,6 +669,51 @@ public sealed partial class WebSessionHubTests
             await tab.SendAsync(Msg("configForm", ("tab", "hooks"), ("sessionId", id)));
             var form = await tab.NextAsync(Type("configForm"));
             Assert.Contains(form["items"]!.AsArray(), i => i!["sub"]!.GetValue<string>().Contains("run_shell", StringComparison.Ordinal));
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    // ---- the Project tab: F8's, in the browser ----------------------------------------------------------------------
+
+    private async Task<(Tab Tab, HttpServer Server, string SessionId)> ProjectTabAsync()
+    {
+        Directory.CreateDirectory(Path.Combine(Work, ".git"));
+        var (tab, server) = await ConfigTabAsync(TwoProviders);
+        await tab.SendAsync(Msg("create", ("folder", Work)));
+        var id = (await tab.NextAsync(Type("opened")))["sessionId"]!.GetValue<string>();
+        return (tab, server, id);
+    }
+
+    [Fact]
+    public async Task The_project_tab_is_offered_and_lists_what_the_repo_brings_with_its_memory()
+    {
+        var (tab, server, id) = await ProjectTabAsync();
+        try
+        {
+            new CxAgent.Core.Memory.MemoryStore(_paths.ConfigDir, Work)
+                .Write(new("deploy-target", "d", CxAgent.Core.Memory.MemoryScope.Project, "b"));
+            await tab.SendAsync(Msg("configForm", ("tab", "project"), ("sessionId", id)));
+            var form = await tab.NextAsync(Type("configForm"));
+            var text = form.ToJsonString();
+
+            Assert.Contains(form["tabs"]!.AsArray(), t => t!["id"]!.GetValue<string>() == "project");
+            foreach (var kind in Core.Sessions.ProjectSummary.Kinds) Assert.Contains($"\"{kind}\"", text, StringComparison.Ordinal);
+            Assert.Contains("deploy-target", text, StringComparison.Ordinal);
+            Assert.Contains("\"trust\"", text, StringComparison.Ordinal);
+        }
+        finally { await tab.DisposeAsync(); await server.StopAsync(); }
+    }
+
+    [Fact]
+    public async Task The_project_tab_s_trust_is_saved_as_trust_says()
+    {
+        var (tab, server, id) = await ProjectTabAsync();
+        try
+        {
+            await tab.SendAsync(Msg("configFormSave", ("tab", "project"), ("sessionId", id), ("values", new JsonObject { ["trust"] = "false" })));
+            await tab.NextAsync(Type("configSaved"));
+            Assert.Equal(Core.Permissions.TrustState.Untrusted, new PermissionRulesStore(_paths).GetTrust(Work));
+            Assert.False(_manager.Sessions.Single(s => s.Id == id).Policy!.FolderTrusted);
         }
         finally { await tab.DisposeAsync(); await server.StopAsync(); }
     }

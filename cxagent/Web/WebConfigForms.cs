@@ -21,7 +21,7 @@ internal static class WebConfigForms
     public static readonly IReadOnlyList<(string Id, string Title)> Tabs =
     [
         ("general", "General"), ("providers", "Providers"), ("mcp", "MCP servers"), ("agents", "Agent types"),
-        ("hooks", "Hooks"), ("web", "Web"), ("json", "config.json"),
+        ("hooks", "Hooks"), ("project", "Project"), ("web", "Web"), ("json", "config.json"),
     ];
 
     // ---- fields ------------------------------------------------------------------------------------------------
@@ -488,6 +488,42 @@ internal static class WebConfigForms
     /// The Web tab, shown and never edited from a browser: where it listens, who must log in, the users, the folders
     /// and the switches — what a login must not be able to change about itself.
     /// </summary>
+    // ---- Project ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// F8's Project tab: the repository the page's session works in, its trust, and what it brings — from the same
+    /// <see cref="Core.Sessions.ProjectSummary"/>, so the two front ends list the same things the same way. Read-only
+    /// but for trust, as there.
+    /// </summary>
+    public static JsonObject Project(Core.Sessions.ProjectSummary s, string workingDirectory)
+    {
+        if (s.RepoRoot is not { } root)
+            return new()
+            {
+                ["readOnly"] = true,
+                ["sections"] = new JsonArray(Section("No repository here",
+                    Field("folder", "Folder", "info", workingDirectory, "Not inside a git repository, so nothing is read from it as a project."))),
+            };
+
+        var trusted = s.Trust == Core.Permissions.TrustState.Trusted;
+        var brings = s.Items.Select(i => Field(i.Kind, i.Kind, "info",
+            (i.Count == 0 ? "none" : i.Count + (i.State is { } st ? " · " + st : ""))
+            + (i.Names.Count > 0 ? " — " + string.Join(", ", i.Names.Take(8)) + (i.Names.Count > 8 ? ", …" : "") : ""),
+            i.Folder.Length > 0 ? i.Folder : null)).ToArray();
+        return new()
+        {
+            ["sections"] = new JsonArray(
+                Section($"{Path.GetFileName(root)} — {root}",
+                    Radio("trust", "Trust", trusted ? "true" : "false",
+                        ("true", "Trusted", "Reads and writes inside it are not asked about, and its hooks run."),
+                        ("false", "Not trusted", "Every file operation asks, and its hooks do not run."))),
+                Section("What it brings", brings)),
+        };
+    }
+
+    /// <summary>The trust the Project form asks for, or null when it did not say.</summary>
+    public static bool? ProjectTrust(JsonObject values) => Bool(values, "trust");
+
     public static JsonObject Web(Core.Web.WebSettings w) => new()
     {
         ["readOnly"] = true,

@@ -815,6 +815,14 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "web":
                 form = WebConfigForms.Web(settings.Web ?? Core.Web.WebSettings.Default);
                 break;
+            case "project":
+            {
+                if (ConfigSession("its folder is the project") is not { } session) return;
+                form = WebConfigForms.Project(Core.Sessions.ProjectSummary.For(new Core.Sessions.ProjectFacts(session.WorkingDirectory,
+                    session.Policy?.Trust ?? Core.Permissions.TrustState.Unknown, session.Catalog(),
+                    session.Hooks?.Snapshot ?? Core.Hooks.HookSnapshot.Empty) { Memory = session.Memory }), session.WorkingDirectory);
+                break;
+            }
             default:
                 Error($"No such configuration tab: {tab}.");
                 return;
@@ -926,6 +934,19 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 result = Config.Commit(edit, new Core.Config.ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true, $"{name} saved"),
                     Core.Config.CacheChoice.ApplyNow);
                 item = name;
+                break;
+            }
+            case "project":
+            {
+                // TRUST, THE ONE SETTING HERE, through /trust's own path — stored, announced and applied as there.
+                if (ConfigSession("its folder is the project") is not { } session) return;
+                if (WebConfigForms.ProjectTrust(values) is not { } want || want == (session.Policy?.FolderTrusted == true))
+                {
+                    Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") });
+                    return;
+                }
+                session.SetTrust(want ? "yes" : "no");
+                result = new WebConfigSave(true, []);
                 break;
             }
             default:
@@ -1108,13 +1129,21 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     // THE SESSION THE CONFIG PAGE WAS OPENED FROM: its folder is where the project's and local hooks files are.
     private string? _configFor;
 
-    private CxAgent.UI.Config.HooksDraft? HooksDraft()
+    private CxAgent.UI.Config.HooksDraft? HooksDraft() =>
+        ConfigSession("its folder holds the project's hooks") is { } session
+            ? CxAgent.UI.Config.HooksFile.Load(S.Paths, CxAgent.UI.Startup.Env(), session.WorkingDirectory)
+            : null;
+
+    /// <summary>
+    /// The session the config page was opened from, or null — said, with <paramref name="why"/> it is needed. THE PAGE'S
+    /// OWN SESSION, NEVER ANOTHER: a page whose session closed must not edit a different project's hooks or trust.
+    /// </summary>
+    private Session? ConfigSession(string why)
     {
-        // THE PAGE'S OWN SESSION, NEVER ANOTHER: a page whose session closed must not edit a different project's hooks.
         var session = _configFor is null ? OpenSessions.Select(LiveSession).FirstOrDefault(x => x is not null) : LiveSession(_configFor);
-        if (session is null) { Error("Open a session first: its folder holds the project's hooks."); return null; }
+        if (session is null) { Error($"Open a session first: {why}."); return null; }
         _configFor = session.Id;
-        return CxAgent.UI.Config.HooksFile.Load(S.Paths, CxAgent.UI.Startup.Env(), session.WorkingDirectory);
+        return session;
     }
 
     /// <summary>
