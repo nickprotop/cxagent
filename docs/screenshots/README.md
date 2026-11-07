@@ -1,10 +1,14 @@
 # cxagent, in use
 
 Real sessions, driven by a local `qwen3.6-35b-a3b` (an IQ4_XS quantisation, served by llama.cpp).
-Where a capture used a different model, its caption says so. Most are one run at
-[cxlog](https://github.com/nickprotop/cxlog) — closing three unfinished features by wiring
-`--follow`, `--export` and `--session` to services that already existed, then running the binary it
-had just built.
+Where a capture used a different model, its caption says so. The runs are at two repositories:
+[cxgpu](https://github.com/nickprotop/cxgpu), a GPU monitor for the terminal written in C#, and
+`invoice`, a small Python repository with a bulk discount, a branch that broke it and a test file.
+
+Every session was served with `--web`, so wherever the browser has the same feature there are two
+tabs above the picture: **Terminal** and **Browser**, the same session at the same moment. The few
+steps that only the terminal has are a single picture. These demo runs had cxagent's own sandbox
+switched off, which is why the browser's mode line reads `unsandboxed`.
 
 Nothing here is staged. The mistakes are in the pictures too, because they are what the runs
 actually did.
@@ -13,37 +17,40 @@ actually did.
 
 ## Trusting a folder
 
-![Trust](01-trust.png)
+![The first session in cxgpu: the trust question for /home/dev/source/cxgpu under the logo, with Don't trust selected above Trust this folder](01-trust.png "Terminal")
+![The same question in the browser: Trust this folder? for /home/dev/source/cxgpu with Trust this folder and Don't trust buttons, above an empty conversation](01-trust-browser.png "Browser")
 
-The first question of the first session. Reads and writes inside this folder stop asking; anything
-that writes elsewhere, and every shell command, still stops.
+The first question of the first session, asked on both screens at once — either can answer it.
+Reads and read-only commands inside this folder stop asking, and writes inside it go through without
+asking in accept-edits mode. Commands that can write, and anything outside the folder, still ask.
 
 ---
 
 ## Sub-agents
 
-![The conversation with background agents: a finished agent's report as a table, a worker still running, and the tasks panel listing it above three finished ones](37-background-agents.png)
+![The lead's conversation after "Put a team on this": explore, review and test workers in the transcript with a table of them, the test worker done, and the Tasks column with the explorer and reviewer still running and the test run finished](37-background-agents.png "Terminal")
+![The same moment in the browser: the three worker rows, the explorer and reviewer working in the background and the test worker done, and the Tasks tab listing all three with Open and Stop](37-background-agents-browser.png "Browser")
 
-This repository, asked to send explore agents to find how its own agent tabs work. A sub-agent runs in
-the background by default: the spawn answers at once, the conversation carries on, and each report
-arrives as a message when it is done — here the one above, a table of `file:line` for every part of
-the tab. `F7` turns the right-hand column into the tasks panel: what is running first, with its clock
-and a `⏹`, then a Finished section.
+cxgpu, asked to put a team on it: one worker to map the alert engine, one to review the last commit,
+one to run the tests. A sub-agent runs in the background by default: the spawn answers at once, the
+conversation carries on, and each report arrives as a message when it is done — here the test run's,
+first. `F7` turns the right-hand column into the tasks panel: what is running, with its clock and a
+`⏹`, then a Finished section. The browser's Tasks tab lists the same workers with `Open` and `Stop`.
 
-![An agent's own tab while it runs: Stop in its toolbar, its brief and clock, each step's thinking folded between its tool calls, and a composer that sends it a message](36-agent-tab.png)
+![The reviewer's own tab after it finished: its name, model, done after 3:52, and the end of its report — one line changed in cxgpu.csproj, the build and 230 tests passing, and its assessment](36-agent-tab.png "Terminal")
+![The same worker opened in the browser: its header with Back to session, and the same report rendered as headings — what changed, verification and assessment](36-agent-tab-browser.png "Browser")
 
-`View transcript ›` on a card opens that agent in a tab of its own. It is the agent's whole
-conversation, live: the brief it was given, each step's thinking folded between its tool calls, and
-its answer as it is written. `Stop` ends it; a foreground one also gets `Background`, which hands it
-off so the parent's turn goes on — the same as `Ctrl+B`. The composer under it talks to the agent, not
-the session: "Enter tells it — it reads this on its next turn". Closing the tab leaves the agent
-running.
+`View transcript ›` on a card opens that agent in a tab of its own: the brief it was given, each step
+and its tool calls, and its answer as it is written. This one is the reviewer, just after it
+finished. While an agent runs, its tab has `Stop`, and a foreground one also gets `Background`, which
+hands it off so the parent's turn goes on — the same as `Ctrl+B`. The composer under it talks to the
+agent, not the session. Closing the tab leaves the agent where it was.
 
 ---
 
 ## Stopping without losing what you typed
 
-![Escape](03-escape.png)
+![A long answer about tax and edge cases cut off by Stopped., with the queued line "and end with a list of open questions" back in the composer](03-escape.png)
 
 Escape ends the turn. Anything queued goes back into the composer rather than being discarded — it
 was never sent, so stopping must not eat it.
@@ -52,58 +59,58 @@ was never sent, so stopping must not eat it.
 
 ## Asking the user
 
-![Question, step 1](04-question-step-1.png)
+![The model's first ask_user call open in the composer: question 1 of 3, Discount size, with 5%, 10% and Tiered, each described](04-question-step-1.png "Terminal")
+![The browser showing the same call as one form: all three questions — discount size, stacking and qualification — with their options, a free-text box under each, and Answer and Skip](04-question-step-1-browser.png "Browser")
 
-The model needed three decisions that were mine to make. It gets one call, up to four questions,
-presented as steps.
+In `invoice`, asked for a loyalty discount and told to ask first: one call, three questions, each
+option saying what it means. The terminal presents them as steps; the browser shows all three as one
+form, answered at once.
 
-![Question, step 3](05-question-step-3.png)
+![Question 3 of 3, Qualification, with Number of past invoices highlighted and Alt+← to go back in the hint line](05-question-step-3.png)
 
-Every option carries a description saying what it means. A list of bare labels asks the user to guess
-what the model was thinking. `Alt+←` appears from step 2 — an answer can be reconsidered while
-reading the next question.
+Every option carries a description. A list of bare labels asks the user to guess what the model was
+thinking. `Alt+←` appears from step 2 — an answer can be reconsidered while reading the next question.
 
-![Summary](06-question-summary.png)
+![The answers summary: Discount size 10%, Stacking Yes, stack both, Qualification Number of past invoices](06-question-summary.png)
 
-Then every answer under its header before any of it is sent. Above the summary is what happened
-first: the model wrote its three questions as *prose*, in a message nobody was listening for a reply
-to — the exact failure the tool exists to prevent — and had to be told to ask properly. The table it
-rendered is its own markdown.
+Then every answer under its header before any of it is sent.
 
 ---
 
 ## MCP
 
-![MCP](07-mcp.png)
+![A cxgpu session with context7 configured: context7_resolve-library-id taking 10.9s and context7_query-docs 7.2s, then a three-point answer about MultilineEditControl](07-mcp.png "Terminal")
+![The same answer in the browser, each context7 call followed by answered by terminal, and MCP · context7 · 2 tools in the side pane](07-mcp-browser.png "Browser")
 
-It had been digging through NuGet packages on disk looking for SharpConsoleUI's API. Told to use
-context7 instead, it resolved the real documentation site. External servers ask separately from local
-commands.
+Asked about SharpConsoleUI's `MultilineEditControl` and told not to search the disk, it used
+[context7](https://github.com/upstash/context7): one call to find the library, one to read its
+documentation. Each MCP tool asked first, separately from local commands — the always-allow rule it
+offers covers `mcp:context7_resolve-library-id`, that tool on that server and nothing else.
 
 ---
 
 ## Running what it built
 
-![Running the build](08-running-the-build.png)
+![The agent finding the project file, running dotnet publish -c Release, then the single-file binary with --help, and reporting cxgpu 1.0.0's usage](08-running-the-build.png "Terminal")
+![The same turn in the browser, ending with the help's first line in a code block and the summary under it](08-running-the-build-browser.png "Browser")
 
-A feature that compiles but was never executed is not finished. cxlog is a full-screen TUI, so it
-cannot run from a captured shell — told to use tmux, the agent adapted its own invocation across
-three failures and got `Exported to /tmp/out.json`.
-
-Failed tool calls render red, and stay in the transcript. The crash it hit on the first run turned
-out to be a pre-existing bug in cxlog, not its own.
+A feature that compiles but was never executed is not finished. Told to build cxgpu and run what it
+built, not `dotnet run`, it published a Release build, found that the output is a self-contained
+single file, and ran that with `--help`. Each `run_shell` asked first; the session was in always-ask.
 
 ---
 
 ## Reviewing the work
 
-![Diff](09-diff.png)
+![/diff in the transcript after the loyalty change: invoice.py with the past_invoices argument and loyalty line, and test_invoice.py with test_loyalty_discount_stacks; the panel's Git line says 2 changed](09-diff.png "Terminal")
+![The same diff in the browser, coloured, with the session pane beside it](09-diff-browser.png "Browser")
 
 `/diff` is `git diff`, in the transcript. The app edits files without asking inside the working
 folder, so the review step should not require another terminal. Long diffs are capped and say what
 was elided.
 
-![Untracked](10-diff-untracked.png)
+![After a commit and a new CHANGELOG.md: Diff · no tracked changes · 1 untracked file: CHANGELOG.md — git add to see them here](10-diff-untracked.png "Terminal")
+![The same notice in the browser under the CHANGELOG.md write](10-diff-untracked-browser.png "Browser")
 
 `git diff` exits 0 with no output for a file it has never seen — so a brand-new file, which is what
 an agent spends its time creating, would report as unchanged. Untracked files are named instead.
@@ -112,16 +119,17 @@ an agent spends its time creating, would report as unchanged. Untracked files ar
 
 ## Switching model mid-conversation
 
-![Switching model](13-model-switch.png)
+![After /model local-32k: the switch notice saying the conversation is kept and the window shrank from 212k to 32k, then the 32k model answering what was added today and how a customer qualifies; the panel lists tokens for both instances](13-model-switch.png "Terminal")
+![The same notice and answer in the browser, the model chip reading local-32k](13-model-switch-browser.png "Browser")
 
-One frame, three claims. The number was given to a 212k model; a 32k model answers it — the
-conversation carried. The status bar reads `5,725/32,000`, so the **context window followed** rather
-than staying at the old model's. And the spend accumulated across both instead of resetting, so
-`/stats` still sees one session.
+The loyalty discount was built on the 212k instance; the 32k one answers what it was, without reading
+anything — the conversation carried. The status bar reads `ctx 46%`, so the **context window
+followed** rather than staying at the old model's, and the panel keeps the spend of both instances in
+one session.
 
 A `providers` entry is an *instance* — a name bound to one endpoint and one model — so `fast` and
 `careful` can be the same server with different models, and switching "the model" and switching "the
-provider" are the same act.
+provider" are the same act. Here `local` and `local-32k` are the same server with different windows.
 
 The switch says what it costs, and only when there is something to say. Here the new window is
 smaller, so it says so: nothing breaks, because the turn loop measures pressure before every send
@@ -131,341 +139,283 @@ and compacts if it must, but a conversation that fitted may now have to be summa
 
 ## What it cost
 
-![Stats](12-stats.png)
+![/stats over the last 7 days: 1,471,347 tokens across 15 sessions and 91 turns, 19% to workers, 65% input cached, then the daily bar, by project, by instance and by agent type](12-stats.png "Terminal")
+![The same report in the browser, each section a block with a Copy button](12-stats-browser.png "Browser")
 
-`/stats` over the same two sessions. **Tools are ranked by characters returned, not call count** —
-a turn re-sends everything before it, so one tool returning 215k characters over 44 calls does not
-cost that once, it costs it again on every later turn. Forty cheap calls are rarely the problem.
+`/stats` over every session in this configuration. Further down, **tools are ranked by characters
+returned, not call count** — a turn re-sends everything before it, so one tool returning a lot over
+a few calls costs it again on every later turn. Forty cheap calls are rarely the problem. The last
+line is the permission gate's own accounting: how many calls asked, and how many an always-allow rule
+let through.
 
-The failures are counted alongside: `run_shell` failed 16 times out of 32, which is what the three
-tmux attempts and the denied commands look like from the outside.
-
-The last line is the permission gate's own accounting — **20 asked, 64 by rule**. Those 64 are calls
-that would each have been a prompt before "always allow" learned to grant a command's name rather
-than its exact string.
-
-The worker share reads 1% here because this session did most of its work in the parent — reading,
-editing, building and running. A session that delegates heavily reads very differently, which is the
-point of measuring it at all.
+The worker share is the number that says whether delegating paid: what the workers spent, against
+everything.
 
 ---
 
 ## Sessions
 
-![Sessions and resume](11-sessions-and-resume.png)
+![The resumed invoice session: the question asked without re-reading anything, the answer listing the day's changes, and /sessions below it — 13 sessions here, two of them just now](11-sessions-and-resume.png "Terminal")
+![The same answer in the browser, with the sidebar listing the invoice sessions](11-sessions-and-resume-browser.png "Browser")
 
-This session died when the agent's own `tmux kill-session` took down the server it was running in.
-Nothing marked it finished, so it stayed resumable: `cxagent --resume QQEQXA` restored 165 messages.
-
-The question above the listing is the check that matters — *without re-reading anything*, which gaps,
-which format, what crash. It answered all three from memory, with the stack trace and the root cause
-it had diagnosed, and spent no tool calls doing it.
+`cxagent --resume DQZY42` restored 59 messages, and the question above the listing is the check that
+matters — *without re-reading anything*. It answered from memory and spent no tool calls doing it. It
+is also wrong in one place: the loyalty change was committed earlier in that session, and it lists it
+as uncommitted.
 
 ---
 
 ## Delegating a piece of reading
 
-![Worker result](16-worker-result.png)
+![The three worker rows collapsed under the lead's request, each done with its time](16-worker-result.png "Terminal")
+![The same rows in the browser, each showing the worker's brief rather than its title](16-worker-result-browser.png "Browser")
 
 A worker is one row. It ran in its own context, spent its own turns, and what comes back is the
-answer — the row above it stays a row, and the transcript carries on.
+answer — the row stays a row, and the transcript carries on.
 
-The panel splits `workers` from `this agent` because they are different money: the parent paid for a
-question and a summary, and the reading happened somewhere that could be thrown away afterwards.
+![The reviewer's row opened: 13 calls across 3 tools in 4.9s, a table of each call with its target, time and output size — git log, git show, the project file, three greps, a build and five test runs](17-worker-timeline.png "Terminal")
+![The same row opened in the browser, offering Open in a tab](17-worker-timeline-browser.png "Browser")
 
-![Worker timeline](17-worker-timeline.png)
-
-The same row, opened. Its own model, its own task as it was briefed, its turns and its tokens — then
-every call it made, with the time each took and how much came back.
-
-The two failed `glob` calls above it are the parent's, not the worker's: it guessed a path, guessed
-again, and found the files on the third try before delegating. Those are in the picture because they
-are what the session did.
+The same row, opened in the terminal: every call the reviewer made, with the time each took and how
+much came back. It took five tries to run the tests — `dotnet test` at the repository root runs
+nothing here — before it named the test project. A worker's report is a claim; this is the work
+behind it. The browser's row opens to a link to the worker's tab instead.
 
 ---
 
 ## Plugins
 
-![The plugin manager, listing what the catalog offers](18-plugin-marketplace.png)
+![F2's plugin manager: nothing installed, six plugins available, Calculator selected with not installed, contract 2, 1 tool, never asks](18-plugin-marketplace.png "Terminal")
+![The browser's marketplace: Calculator, Clone Finder and C# Language Server cards with their tools and a folder picker beside Install](18-plugin-marketplace-browser.png "Browser")
 
-**F2** opens the manager. The list is read from a catalog published on the web, so what a machine can
-install is whatever has been released rather than whatever shipped with the binary — no plugin is
-bundled with the installer. Each entry carries the version, the licence, the publisher, the contract
-it was built against, and how many tools it adds. `TOOLS 1, never asks` is a promise the manifest
-makes and the load gate later repeats: this plugin's tool does not stop to ask permission, because it
-reads nothing and reaches nowhere.
+**F2** opens the manager, and the browser has the same catalog. The list is read from a catalog
+published on the web, so what a machine can install is whatever has been released rather than
+whatever shipped with the binary — no plugin is bundled with the installer. `TOOLS 1, never asks` is a
+promise the manifest makes and the load gate later repeats: this plugin's tool does not stop to ask
+permission, because it reads nothing and reaches nowhere.
 
-![The download permission prompt, naming the release URL](19-plugin-download.png)
+![The HTTP permission prompt naming the calculator release URL, with Allow once and Deny](19-plugin-download.png "Terminal")
+![The same prompt in the browser, over the marketplace](19-plugin-download-browser.png "Browser")
 
 Installing asks first, and the question names the file it is about to fetch. There is deliberately no
 **Always allow** here, though other prompts offer one: a standing rule for plugin downloads has no
 honest scope — "any download from github.com" would pre-approve every future plugin, and the exact
-URL is useless because the next version has a different one.
+URL is useless because the next version has a different one. What arrives is checked against the
+catalog's `sha256` before anything is written.
 
-What arrives is checked against the catalog's `sha256` before anything is written. A mismatch means
-the catalog and the release disagree, and cxagent installs neither.
-
-![Two plugins installed and loaded, from the catalog](20-plugin-installed.png)
-
-Two plugins, each in a directory of its own — calculator and csharp-lsp, at this point in this
-session; a third arrives in a later one, below. The layout is not cosmetic: a plugin's identity is a
-hash over everything in its folder, and .NET resolves a plugin's dependencies from that folder too,
-so two plugins sharing one directory would be neither isolated nor separately identifiable —
-installing either would change the other's hash and re-ask its load prompt.
-
-`loaded, no auto load` is both halves of the truth. The plugin is answering tool calls right now,
-and nothing in `config.json` names it, so the next session starts without it. Adding it to the config
-is a separate, explicit step.
-
-![Loading a plugin](15-plugin-load.png)
+![The load prompt: calculator wants to read files in this folder, adds 1 tool and guidance, and Always allow covers its hash](15-plugin-load.png "Terminal")
+![The same prompt in the browser, the hash on the Always allow button](15-plugin-load-browser.png "Browser")
 
 A plugin is a DLL cxagent did not ship, loaded into this session. The prompt is the only boundary
-cxagent can enforce on your behalf, so it says what the plugin will contribute — **3 tools, and
-guidance to the model's instructions** — and covers its approval with a hash of the whole load set.
-Change a byte of it and this question comes back.
+cxagent can enforce on your behalf, so it says what the plugin will contribute and covers its
+approval with a hash of the whole load set. Change a byte of it and this question comes back. It is
+a different question from the download, asked separately on purpose: one consents to fetching bytes,
+this one to running them.
 
-This is a different question from the install above, and it is asked separately on purpose: one
-consents to fetching bytes, this one consents to running them.
+![The manager with calculator and csharp-lsp installed, both active, not in config; csharp-lsp selected with its three tools and what it needs on PATH](20-plugin-installed.png "Terminal")
+![The browser's marketplace with both installed and active, each with Deactivate, Add to config and Uninstall](20-plugin-installed-browser.png "Browser")
 
-![The LSP plugin working](14-plugin-lsp.png)
+Two plugins, each in a directory of its own — calculator from the terminal, csharp-lsp installed and
+loaded from the browser, and the terminal's list shows both. A plugin's identity is a hash over
+everything in its folder, so two plugins sharing one directory would be neither isolated nor
+separately identifiable. `active, not in config` is both halves of the truth: the plugin is answering
+tool calls now, and nothing in `config.json` names it, so the next session starts without it.
 
-The same session, using tools that are not part of cxagent. `csharp_definition` resolves a reference
-in `cxgpu.Tests` to its declaration in `cxgpu` — across a project boundary, which is the thing grep
-cannot do — and `csharp_references` finds all 34 usages.
+![The model grepping three times, then csharp_definition at 2,810 ms and csharp_references at 306 ms in a table, and the answer: AlertEngine declared at AlertEngine.cs:17 with 44 references](14-plugin-lsp.png "Terminal")
+![The same calls in the browser, both opened, with their times](14-plugin-lsp-browser.png "Browser")
 
-Note the two timings: **3.1s** for the first call and **0.2s** for the second. The first pays for the
-language server to index the solution; everything after that is answered from a warm index. The
-plugin holds that server for the life of the session and cxagent reaps it if the session dies.
+Told to use the C# tools and not grep, it grepped three times first, then used them. `csharp_definition`
+took **2.8s** and `csharp_references` **0.3s**: the first pays for the language server to index the
+solution, and everything after is answered from a warm index. The references cross from `cxgpu` into
+`cxgpu.Tests`, which grep cannot tell apart from a name in a comment. Its breakdown says three
+production files and names two.
 
-The tools come from a manifest, and so does the prose above them: a plugin can add a block to the
-system prompt saying what its individual tool descriptions cannot — here, that positions are 1-based
-and which file types it serves. A plugin that declares *no* tools and only that block is a valid
-plugin too.
+![The manager with three plugins installed and clone-finder selected, its README rendered with a sample report](21-clone-finder.png "Terminal")
+![The browser's Clone Finder card with its README opened](21-clone-finder-browser.png "Browser")
 
-![A later session, with three plugins installed and clone-finder's README rendered](21-clone-finder.png)
+`clone-finder` answers "where is the duplicated code" in a single call, because the alternative is
+reading forty files to notice that three of them share a block. The README is rendered from disk, so
+what a tool returns can be read before deciding to install it: locations and a couple of lines per
+finding, never the duplicated block itself.
 
-A later session, after `clone-finder` joined the two above — and a different reason to have a
-plugin. `clone-finder` answers "where is the duplicated code" in a single call, because the
-alternative is reading forty files to notice that three of them share a block — and that reading is
-the context the refactor then needs.
+![find_clones in one call, then the model reading two ranges: OverviewTab.cs 10 lines by 5 and ProcessesTab.cs 22 lines by 2, both judged worth merging](22-clone-finder-working.png "Terminal")
+![The same answer in the browser](22-clone-finder-working-browser.png "Browser")
 
-The Details pane renders the plugin's own README from disk, so what a tool returns can be read
-before deciding to install it. Here that includes a sample report: locations and a two-line
-fingerprint per finding, never the duplicated block itself. Printing the block would spend the
-context the tool exists to save.
-
-![The model acting on what clone-finder found](22-clone-finder-working.png)
-
-The same session using it. One call returned the duplication in a 62-file repository; the model
-names the two worst findings — `10L ×5` and `22L ×2`, with their files — and reads only the line
-ranges the report pointed at rather than hunting for them.
-
-Note the panel: **workers 26,751 · this agent 47,280**. Delegated work is accounted separately from
-the parent's own, which is the number that says whether the delegation paid.
+One call returned the duplication in the whole repository; the model reads only the ranges the report
+pointed at rather than hunting for them.
 
 ---
 
 ## A terminal, for the things a tool cannot do
 
-![A shell in its own tab beside the Chat tab, with copy back on exit and Copy now in its toolbar](23-shell-terminal.png)
+![A shell in its own tab beside Chat in the invoice folder, with copy back on exit and Copy now, after git status, git log and ls in colour](23-shell-terminal.png "Terminal")
+![The browser's own shell on the same folder: the same commands in colour, with Copy to transcript and End shell](23-shell-terminal-browser.png "Browser")
 
 `run_shell` runs a command and reads what it printed. That covers most of what an agent needs and
-none of what needs a person: a `sudo` password, `gcloud auth login`, `git rebase -i`. There is
-nothing to type into behind a captured stream.
+none of what needs a person: a `sudo` password, `gcloud auth login`, `git rebase -i`. A bare `/shell`
+opens a real PTY in a tab beside `Chat`, and the browser's `Open a shell` opens one of its own. The
+colours are the giveaway — `git` and `ls` emit them only when they believe they are talking to a
+terminal.
 
-A bare `/shell` opens a real PTY in a tab of its own, beside `Chat`. The colours are the giveaway —
-`ls` and `git` emit them only when they believe they are talking to a terminal, so this is a child
-process that called `isatty()` and got the truth. The session is still running in the other tab.
+In the terminal the checkbox **copy back on exit** is off by default, because a shell you opened for
+yourself is a convenience rather than a channel to the agent; `Copy now` sends what it has shown so
+far. The browser's shell has `Copy to transcript`.
 
-The toolbar is the tab's own: `copy back on exit`, and `Copy now` to send what the shell has shown so
-far without leaving. The checkbox is **off** by default, because a shell you opened for yourself is a
-convenience rather than a channel to the agent. `exit` closes the tab.
+![The model answering what was just done in the terminal: the two command lines and what each showed, including the stash on bulk-threshold](24-shell-transcript.png "Terminal")
+![The same answer in the browser](24-shell-transcript-browser.png "Browser")
 
-![The model answering from a transcript of the terminal](24-shell-transcript.png)
-
-The same session afterwards. The agent knows `ls -alF` was run and that the trailing `exit` closed
-the shell — from a terminal it never touched and cannot drive.
-
-Note the turn counter: **1 turn, 0 tool calls**. The transcript is queued, not delivered into a turn
-of its own. Someone who has just closed a terminal may be reading it, or thinking, or gone, and an
-agent that starts talking into that — or starts fixing a failure nobody asked it to fix — is worse
-than one that waits. It arrives with whatever you say next.
-
+The same session afterwards, from a terminal the agent never touched and cannot drive. The transcript
+is queued, not delivered into a turn of its own: someone who has just closed a terminal may be
+reading it, or thinking, or gone. It arrives with whatever you say next.
 
 ---
 
 ## A file, for the edit that is faster to make than to describe
 
-![A C# file open in a tab, with line numbers and syntax highlighting](25-editor.png)
+![invoice.py open in a tab with line numbers and Python highlighting, Save ^S and py · 27 lines](25-editor.png "Terminal")
+![The same file open in the browser's editor, with Back to session and Save](25-editor-browser.png "Browser")
 
-`/open` puts a file in a tab beside the conversation. Bare, it opens a picker; with a path it goes
-straight there; and `@` completes the path, because the composer's completion does not care that a
-slash command is in front of it.
-
-The editor is a real one — line numbers, the language's own highlighter, no wrapping so the numbers
-keep meaning what they say. Saving writes the file back with the conventions it arrived with: a file
-that had a BOM keeps it, a CRLF file stays CRLF, and the diff shows only what you changed.
+`/open` puts a file in a tab beside the conversation, and the browser's `Open a file` does the same.
+Saving writes the file back with the conventions it arrived with: a BOM stays, CRLF stays, and the
+diff shows only what you changed.
 
 The reason it exists is the line the model never sees otherwise. It read a file at turn 12, you
-changed it at turn 15, and it edits from a stale read at turn 20 — which happens today, with an
-external editor, silently. Saving here tells the model: `[cxagent] the user edited <path>`, queued
-rather than sent, so it arrives with your next message instead of starting a turn of its own.
+changed it at turn 15, and it edits from a stale read at turn 20. Saving here tells the model:
+`[cxagent] the user edited <path>`, queued rather than sent, so it arrives with your next message.
 
-![The same file after the agent changed it underneath, showing the warning and its three buttons](26-editor-changed.png)
+![The same file with "# ten counts" typed but not saved, after the agent rewrote the docstring on disk: Save, Reload, See theirs and "changed on disk — reload to see it"](26-editor-changed.png "Terminal")
+![The browser's editor with the same unsaved line: invoice.py • and "Changed on disk. Your edits are kept here." with See theirs and Reload](26-editor-changed-browser.png "Browser")
 
 The other half of the same problem. A watcher notices when the agent writes a file you have open: a
-clean buffer just reloads, and a modified one keeps your edits and says so. The `⚠` and the `•`
-compose — the file changed underneath **and** you have unsaved work.
-
-`Reload` and `See theirs` appear only in this state; on a clean file they would be two controls that
-do nothing. `See theirs` opens what is on disk read-only in a second tab, because choosing between
-two versions you cannot read is not a choice.
-
-Saving now asks first. The rule the watcher enforces has a mirror: a modified buffer is never
-overwritten by a program, and a program's file is never silently overwritten by a stale buffer.
+clean buffer just reloads, and a modified one keeps your edits and says so. `Reload` and `See theirs`
+appear only in this state. `See theirs` opens what is on disk read-only in a second tab, because
+choosing between two versions you cannot read is not a choice. Reload on a modified buffer asks
+first, and so does Save.
 
 ---
 
 ## Background jobs, and what they printed
 
-![The jobs panel beside the conversation: a finished Release build and a test suite still running](27-jobs-panel.png)
+![The jobs panel after both background jobs finished: dotnet build -c Release exit 0 in 0s and dotnet test exit 0 in 1s, beside the agent's report of both](27-jobs-panel.png "Terminal")
+![The browser's Tasks tab listing the same two commands with their pids and exit codes](27-jobs-panel-browser.png "Browser")
 
-This repository, building and testing itself: asked to run the suite and a Release build in the
-background, the agent started both and went quiet. `F7` turns the right-hand column into the jobs
-panel — each command, how long it has run, and its last three lines — while `F3` is still the info
-panel it replaces.
+Asked to start the tests and a Release build in the background and not to poll, the agent started
+both and stopped. `F7` turns the right-hand column into the tasks panel; both jobs finished within a
+second here, so both are under Finished, and the agent read their output and reported both.
 
-The build finished first. Its notice is the `System` block in the transcript, not a message in the
-user's colour, because nobody typed it; the agent read the output it named and said so. The suite is
-still running above it, its newest lines arriving on the right.
+![The test job in a tab: the command, its pid, 0:01, exit 0, and the output ending Passed! with 230 passed](28-job-tab.png "Terminal")
+![The same job's output in the browser, with Copy to transcript](28-job-tab-browser.png "Browser")
 
-The prompt told it not to poll. Without that, a local model checks `task_list` every few seconds and
-asks to `sleep` in between — work the exit notice already does.
-
-![The test job open in a tab, ending in Passed! 3211](28-job-tab.png)
-
-`↓` and `Enter` on a row open the job in a tab: the full command, its pid and state, and the output as
-it was written — every line, not a summary. Here that ends in `Passed! … 3211`. A running job's tab
-follows its output until you scroll up, and has a `Kill` button; once the job has finished, only
-`Copy to transcript` is left, which sends the end of the output with your next message rather than
-starting a turn.
-
-Both finished rows stay in the panel, with their exit codes, until you next say something.
+`View output ›` opens a job in a tab: the full command, its pid and state, and every line it wrote. A
+running job's tab follows its output and has a `Kill` button; once it has finished, only
+`Copy to transcript` is left, which sends the end of the output with your next message.
 
 ---
 
 ## A question on the side
 
-![An aside answering in its own block while the main agent is still working through the source files](29-btw-aside.png)
+![An aside block, not in the agent's memory, answering which backends work without ROCm, under the main turn's table of cxgpu/Gpu files](29-btw-aside.png "Terminal")
+![The same aside in the browser, and the composer in btw mode: Asking on the side — the main conversation is not changed](29-btw-aside-browser.png "Browser")
 
-[cxgpu](https://github.com/nickprotop/cxgpu) again, on a local model. The agent had just explained
-how the AMD backend falls back from sysfs to the CLI tools, and was off reading every file under
-`cxgpu/Gpu` for the next question. `/btw which of those fallbacks would run on a machine with no
-ROCm installed?` asked about the first answer without interrupting the second: the `glob` above the
-block and the 23 calls below it are the main turn, still running.
+The main agent was reading every file under `cxgpu/Gpu`. `/btw which of those backends would still
+work on a machine with no ROCm installed?` asked about it without interrupting; with one llama.cpp
+slot, the aside waited for the model and answered after the main turn's table. The block is headed
+`aside · not in the agent's memory`, and that is literal: the side agent starts from what the main
+agent last sent, and nothing it is asked or says goes into the conversation the agent re-reads.
 
-The block is headed `aside · not in the agent's memory`, and that is literal. The side agent starts
-from what the main agent last sent, so it knows what the agent knows, but nothing it is asked or says
-goes into the conversation the agent re-reads every turn. Its spend is the panel's `workers` line,
-not `this agent`, so the main agent's cache rate still describes the main conversation.
+The composer's line says `btw · Esc to return`, on both screens: Enter now talks to the aside, and a
+follow-up continues its thread.
 
-The composer's grip has changed colour and the line under it ends `btw · Esc to return`: Enter now
-talks to the aside, and a follow-up continues its thread. Nothing typed there runs as a command —
-`/clear` would be a question about `/clear`. The first Esc stops an answer, the next one leaves.
+![The aside asked to read /etc/hostname: run_shell refused, then the session's prompt — Read a file outside the working folder?, asked for by: aside](30-btw-permission.png "Terminal")
+![The same prompt in the browser, asked by aside, with Allow once, Always allow (/etc/) and Deny](30-btw-permission-browser.png "Browser")
 
-![The session's permission prompt for a read outside the folder, asked for by the aside](30-btw-permission.png)
-
-A side agent can only read — `read_file`, `glob` and `grep` — and it reads under the session's own
-rules. Inside this folder an always-allow rule covers it, so it reads without asking. `/etc/hostname`
-is outside, so it gets the same prompt the main agent would, marked `asked for by: aside`. Esc
-answers it no and the aside carries on without the file.
+A side agent can only read — `read_file`, `glob` and `grep`; its `run_shell` was refused. It reads
+under the session's own rules: `/etc/hostname` is outside the folder, so it gets the same prompt the
+main agent would, marked as the aside's. Esc answers it no and the aside carries on without the file.
 
 ---
 
 ## One goal, no window
 
-![Four headless runs in a shell: an answer, a pipe, JSON through jq, and a run that continues the one before](31-headless.png)
+![Four headless runs in a shell in invoice: a one-sentence answer, a pipe from git log, JSON through jq, and a -c run naming the two test methods, ending exit 0](31-headless.png)
 
-The same cxgpu checkout, from a plain shell. `cxagent -p` runs one goal and prints the answer — no
-window, nothing to press — so it slots into a pipe like any other command. The second run reads its
-input from `git log`: piped text is attached under the goal, not run as one.
+`cxagent -p` runs one goal and prints the answer — no window, nothing to press — so it slots into a
+pipe like any other command. The second run reads its input from `git log`; piped text is attached
+under the goal, not run as one, and when the model tried to run `git log` itself, that was denied —
+nobody was there to answer the prompt.
 
 `--output-format json` prints a single result object in Claude Code's shape, which is why `jq` can
 pick out `subtype` and `num_turns` without knowing anything about cxagent. The last run is `-c`: it
-continues the conversation the JSON run left behind, so "name them" needs no context — it knows what
-"them" was. `echo $?` is `0` because it answered; a turn limit is `3`, Ctrl+C `130`.
-
-Each of these is an ordinary session: `cxagent --resume` lists them, and any one opens in the TUI.
-Nobody is there to answer a permission prompt, so anything that would ask is refused and listed in
-the result — `--trust` here only trusts the folder for the run, and writes nothing.
+continues the conversation the JSON run left behind, so "name them" needs no context. `echo $?` is
+`0` because it answered; a turn limit is `3`, Ctrl+C `130`. `--trust` here only trusts the folder for
+the run, and writes nothing.
 
 ---
 
 ## A prompt you keep, as a command
 
-![A custom /review-branch command after it ran: the typed line, the git diff it ran, the review, and the / palette listing the project's commands](32-custom-commands.png)
+![/review-branch off-by-one errors after it ran: ran git diff main...HEAD, the review naming invoice.py:27, and the / palette listing review-branch from the project and release-notes from config](32-custom-commands.png "Terminal")
+![The same review in the browser with the same two commands in its palette](32-custom-commands-browser.png "Browser")
 
-A small repository with a branch that changed `qty >= 10` into `qty > 10`, and a file at
-`.cxagent/commands/review-branch.md`, in the same format Claude Code uses. Its body asks for
-a review and ends with a line ``!`git diff main...HEAD` ``.
+`invoice` has `.cxagent/commands/review-branch.md`, in the same format Claude Code uses. Its body asks
+for a review and ends with a line ``!`git diff main...HEAD` ``. Typing `/review-branch off-by-one
+errors` sent that file, not those four words; the diff ran after the same permission prompt the
+agent's own `run_shell` gets, and the notice under the row says what it ran and how much came back.
+The review finds the `> 10` at `invoice.py:27`, and then counts two bugs and lists three.
 
-Typing `/review-branch off-by-one errors` sent that file, not those four words. The row shows what was
-typed; what the model received is the file's text with the arguments added and the diff in place of
-the shell line. The diff ran only after the same permission prompt the agent's own `run_shell` gets —
-answered once here — and the notice under the row says what it ran and how much came back. The model
-then read `prices.py` itself to be sure of the line number.
-
-The palette below is `/re` typed again: both of the project's commands, each tagged with where it came
-from. A file from the repo and one from your config folder can share a name, and the nearer one wins —
-the tag is how you see which one is about to run. `/commands` lists them all, with anything shadowed or
-skipped and why.
+The palette is `/re` typed again, on both screens: the project's command and one from the config
+folder, each tagged with where it came from. The nearer one wins a name clash, and the tag is how you
+see which one is about to run.
 
 ---
 
 ## What it thought, and how hard
 
-![A run on a local model with each step's thinking folded between its tool calls, the latest opened with Ctrl+O, and the mode line showing the thinking level](33-thinking.png)
+![Thinking on: two Thought for 1s blocks around replace_in_file and run_shell, the second opened, and the mode line showing on (F10)](33-thinking.png "Terminal")
+![The same turn in the browser, the second thought opened](33-thinking-browser.png "Browser")
 
-The same repository, on a local Qwen served by llama.cpp. Each step that thought has its own block,
-placed before what that step did: open while the thinking streams, folded to `◆ Thought for 1s · 22
-words` as soon as the step moves on. The run reads as thought, calls, thought, calls, answer.
+The same repository with thinking switched on. Each step that thought has its own block, placed before
+what that step did, folded to `◆ Thought for 1s · 45 words` as soon as the step moves on. The run
+reads as thought, calls, thought, answer. A click opens one, and `Ctrl+O` the latest. The thinking is
+shown and nothing more: it is never sent back to the model and never saved.
 
-`Ctrl+O` opened the latest block — the reasoning behind the answer under it. The others open with a
-click, or Tab to one and Enter. The thinking is shown and nothing more: it is never sent back to the
-model and never saved.
+`F10` steps through what the server offers — here `off` and `on`; a Claude model offers its effort
+levels instead.
 
-The mode line ends with `◆ on (F10)`: this server's chat template takes a thinking switch, so it offers
-`off` and `on`. `F10` steps through them, and `/think` lists them. A Claude model offers its effort
-levels instead — `low` to `max` — and shows its thinking the same way.
+---
+
+## It remembers you
+
+![Remember for this project: run the tests with python3 -m unittest — the model writing a test-command note, and the panel's Memory line reading 1 system · 1 project](45-memory-note.png "Terminal")
+![The same moment in the browser, its Memory section listing test-framework-preference and test-command with Open and Forget](45-memory-note-browser.png "Browser")
+
+Told how this project runs its tests, the model wrote a project memory note. Notes are files in the
+config folder: system ones for every project, project ones for this folder. An index of them is in
+every session's instructions, so the next session here starts knowing. The browser lists them with
+`Open` and `Forget`.
 
 ---
 
 ## Configuration, in the app
 
-![The configuration dialog on its Providers tab: the Roles block above the instances, each saying its role and open tabs, the selected one's endpoint, key and model beside it](34-configuration.png)
+![F8's Providers tab: the Roles block with local as default and deepseek as reviewer, the rail of instances, and local selected with its endpoint, key set · …ocal, model and thinking, and the line saying its open tab](34-configuration.png "Terminal")
+![The browser's configuration page on Providers: the defaults, the instance list, and local's kind, model, endpoint, description and key](34-configuration-browser.png "Browser")
 
-`F8` opens one dialog, in four tabs: General, Providers, MCP servers and Agents. The Roles block at the top of Providers picks the
-default instance and the auto-mode reviewer. The rail lists every instance, its second line saying its
-role (`default`, `reviewer`), the open tabs on it (`1 tab`) and its model. Beside it, the
-selected one's fields: the endpoint, the model (`Change…` lists what the endpoint serves), the key —
-`set · …ocal`, its last four characters, never the key — and the thinking level new sessions start at.
-Advanced, folded, holds the rest.
+`F8` opens one dialog, in tabs; the browser's `Settings` is the same configuration, from the same
+drafts. The Roles block picks the default instance and the auto-mode reviewer. The rail lists every
+instance, its second line saying its role and its model. Beside it, the selected one's fields: the
+endpoint, the model (`Change…` lists what the endpoint serves), the key — `set · …ocal`, its last four
+characters, never the key — and the thinking level new sessions start at. A save applies at once, and
+the line above Save says what that means for the tab on it.
 
-A save applies at once. The line above Save says what that means for the tab on it: a new key reaches it
-in place and keeps its prompt cache; a new model or endpoint would re-send the conversation, so Save asks
-first — now, after compressing, at the tab's next clear or compaction, or only for new tabs.
+![The Agents tab: researcher, yours, with its description, briefing and Runs on set to These providers, local first as default](39-agent-types.png "Terminal")
+![The browser's Agent types tab on researcher: description, briefing, Runs on with deepseek and local ticked, max turns 20 and tools inherited](39-agent-types-browser.png "Browser")
 
-![The Agents tab: a researcher type of the user's own, its description and briefing, and Runs on set to two providers with the first as default](39-agent-types.png)
-
-The Agents tab lists every sub-agent type: `general`, the default child, then the ones that ship with
-cxagent, marked `built-in` (and `overridden` where config changes where one runs or what it may
-spend), then your own, marked `yours`. This one is the `researcher` from [CONFIG.md](../../CONFIG.md):
-a description saying when the model should reach for it, and a briefing saying how it works.
-
-**Runs on** is the per-sub-agent model. The session's model is what the parent runs on, and a spawn
-cannot choose. A list of providers makes the first the default, and a spawn may pick another from the
-list. Any provider has no default, so a spawn must name one. A shipped type's briefing is read-only
-here, since the code around it depends on it; where it runs and what it may spend are yours to set.
+The Agents tab lists every sub-agent type: `general`, the default child, the ones that ship with
+cxagent, then your own. This one is the `researcher` from [CONFIG.md](../../CONFIG.md): a description
+saying when the model should reach for it, and a briefing saying how it works. **Runs on** is the
+per-sub-agent model: a list of providers makes the first the default, and a spawn may pick another
+from the list.
 
 ---
 
@@ -481,14 +431,14 @@ model is picked from what the endpoint serves. The first save wires the session;
 
 ## Exporting a conversation
 
-![The export dialog over the sub-agents session: Full chosen, the clipboard as the destination, Advanced open with every part ticked, and 519 KB across 56 messages and 4 sub-agents](38-export.png)
+![The export dialog over the team session: whole session, Readable, saved to a file named 2026-11-07-put-a-team-on-this-one-worker.md, about 20 KB across 34 messages and 3 sub-agents](38-export.png "Terminal")
+![The browser's session pane at the same moment, with Readable and Full under Export](38-export-browser.png "Browser")
 
 `F12` — or `/export` — writes the conversation as markdown. *Readable* is for a person: what was said
 and done, each tool call a line, edits as diffs. *Full* is for another agent to carry on from: every
-tool result, the thinking, the system prompt. The four sub-agents counted at the bottom go into the
-file where they worked, each stretch under the call that started it, so it reads as a timeline. The
-size is known before anything is written, and `/sessions export` does the same for any earlier
-session without resuming it.
+tool result, the thinking, the system prompt. The three sub-agents counted at the bottom go into the
+file where they worked, so it reads as a timeline. The size is known before anything is written. The
+browser's session pane has the same two, `Readable` and `Full`, without the dialog's choices.
 
 ---
 
@@ -505,19 +455,12 @@ sent a note naming it instead, so the conversation goes on.
 
 ---
 
-## A second project, and a worker's receipts
+## One session, three screens
 
-![A session exploring a codebase, with two finished workers and the panel showing what it cost](session-overview.png)
+![The invoice session in the terminal: the bulk-discount fix and its tests, then "Run the tests once more", answered on the web, and 5 tests ran, 4 passed, 1 failed](47-web-terminal.png "Terminal")
+![The same session in a desktop browser: the same turns, the sidebar and the session pane](47-web-browser.png "Browser")
+![The same session on a phone: the last answer and the composer with its chips shortened](47-web-phone.png "Phone")
 
-A different run: two workers exploring [cxgpu](https://github.com/nickprotop/cxgpu), a GPU monitoring
-tool, and reporting back. The summary above the input is written from what they found rather than
-from the files — the parent never read them. The panel carries what that cost while it happened,
-splitting the 1.2M tokens the workers spent from the 61k this agent spent.
-
-The two `Worker` rows are collapsed. That is the same session with one of them open:
-
-![A worker's tool calls listed in a table, with arguments and durations](session-lsp-worker.png)
-
-Fifty-two calls across six tools in under four seconds, each with what it asked for and how long it
-took. Some are `csharp_definition` — a plugin's tools, listed among `glob`, `grep` and `read_file`
-with nothing to mark them as additions. A worker's report is a claim; this is the work behind it.
+`/web` serves the terminal's sessions to a browser. One session, three screens: the request was typed
+in the terminal, the permission prompt for the test run was answered on the web, and the answer is on
+all three. On a phone the sidebar and the session pane fold away behind the header's buttons.

@@ -40,7 +40,7 @@ its whole conversation, live, and the composer under it talks to that agent, not
 [Sessions](#sessions) has the detail.
 
 <div align="center">
-  <img src="docs/screenshots/36-agent-tab.png" alt="An agent's own tab while it runs: Stop in its toolbar, its brief and clock, each step's thinking folded between its tool calls, and a composer that sends it a message" width="800">
+  <img src="docs/screenshots/36-agent-tab.png" alt="A reviewer sub-agent's own tab after it finished: its name, model and time, the end of its report on the last commit, and a composer that asks it more" width="800">
 </div>
 
 **Sub-agents in the background, with a panel to watch and steer them.** A spawn returns at once; the
@@ -51,7 +51,7 @@ waiting on to the background mid-run. A finished sub-agent is kept, and `agent_s
 the same conversation. [Sub-agents](#sub-agents) has the detail.
 
 <div align="center">
-  <img src="docs/screenshots/37-background-agents.png" alt="The conversation with background agents: a finished agent's report as a table, a worker still running, and the tasks panel listing it above three finished ones" width="800">
+  <img src="docs/screenshots/37-background-agents.png" alt="The conversation after a team was put on the repository: explore, review and test workers in the transcript, and the tasks panel with two still running and the test run finished" width="800">
 </div>
 
 **A model per tab, and per sub-agent.** A `providers` entry is an instance: a name bound to one
@@ -62,14 +62,14 @@ list of them lets the spawn choose among them at the call. See [CONFIG.md](CONFI
 `agents` block.
 
 <div align="center">
-  <img src="docs/screenshots/13-model-switch.png" alt="Switching model mid-conversation: a 32k model answers a question given to a 212k model, with the status bar showing the new window" width="800">
+  <img src="docs/screenshots/13-model-switch.png" alt="Switching model mid-conversation: after the switch to a 32k instance, the notice that the window shrank from 212k, and the new model answering from the conversation what was built earlier" width="800">
 </div>
 
 The Agents tab of the configuration dialog (`F8`) sets this per type: the session's model, a list of
 providers whose first is the default, or any provider.
 
 <div align="center">
-  <img src="docs/screenshots/39-agent-types.png" alt="The Agents tab of the configuration dialog: a researcher type of the user's own, its description and briefing, and Runs on set to two providers with the first as default" width="800">
+  <img src="docs/screenshots/39-agent-types.png" alt="The Agents tab of the configuration dialog: a researcher type of the user's own, its description and briefing, and Runs on set to a list of providers with the first as default" width="800">
 </div>
 
 **Plugins, from a catalog.** `F2` opens the plugin manager. It lists what a catalog published on the
@@ -78,7 +78,7 @@ the catalog is **triggers**: work that starts without anybody typing, where a tu
 to arrive later in the same session. [Plugins](#plugins) has the rest.
 
 <div align="center">
-  <img src="docs/screenshots/18-plugin-marketplace.png" alt="The plugin manager, listing what the catalog offers" width="800">
+  <img src="docs/screenshots/18-plugin-marketplace.png" alt="The plugin manager with nothing installed and six plugins available, Calculator selected: not installed, contract 2, one tool that never asks" width="800">
 </div>
 
 **An editor, in a tab beside the conversation.** `/open` puts a file in a tab: line numbers, the
@@ -88,7 +88,7 @@ file you have open, a clean buffer reloads and a modified one keeps your edits a
 `Reload` and `See theirs`.
 
 <div align="center">
-  <img src="docs/screenshots/26-editor-changed.png" alt="A file changed by the agent underneath unsaved edits, showing the warning and its three buttons" width="800">
+  <img src="docs/screenshots/26-editor-changed.png" alt="A Python file with an unsaved line after the agent changed it on disk: Save, Reload and See theirs, and changed on disk — reload to see it" width="800">
 </div>
 
 **A question on the side, while the agent works.** `/btw <question>` asks without interrupting the
@@ -98,7 +98,7 @@ permissions, and can only read. A follow-up continues its thread; the first `Esc
 next one leaves.
 
 <div align="center">
-  <img src="docs/screenshots/29-btw-aside.png" alt="An aside answering in its own block while the main agent is still working through the source files" width="800">
+  <img src="docs/screenshots/29-btw-aside.png" alt="An aside, not in the agent's memory, answering which GPU backends work without ROCm, under the main turn's table of source files" width="800">
 </div>
 
 **A real terminal, for what a tool cannot do.** `/shell` opens a PTY in a tab beside the
@@ -107,7 +107,7 @@ running. Its toolbar has `copy back on exit`, off by default, and `Copy now`, wh
 shell has shown so far; either way it is queued and arrives with whatever you say next.
 
 <div align="center">
-  <img src="docs/screenshots/23-shell-terminal.png" alt="A shell in its own tab beside the Chat tab, with copy back on exit and Copy now in its toolbar" width="800">
+  <img src="docs/screenshots/23-shell-terminal.png" alt="A shell in its own tab beside the Chat tab, with copy back on exit and Copy now in its toolbar, after git status, git log and ls in colour" width="800">
 </div>
 
 **A screenshot, pasted into the conversation.** `Ctrl+V` pastes an image from the clipboard as a token,
