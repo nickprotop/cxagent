@@ -49,6 +49,31 @@ more useful, decided silently and then published. What was asked for was a CI fi
 release. Say what the fix turned up and what I would do about it; the decision is not mine to make
 on the way past.
 
+## Front ends
+
+**The terminal and the browser are at parity — a requirement, both ways.** A feature added to one is
+added to the other in the same piece of work: a command, a tab, a picker, a dialog, a setting. The
+terminal's F8 has its forms in the browser's config page, its F2 its marketplace, `/shell` and `/open`
+their tabs; whatever comes next gets its counterpart too. A feature that is in one and not the other
+is a bug, not a backlog item — someone driving a session from their phone hits the gap at exactly the
+moment they cannot walk to the terminal.
+
+**Share the rules, not a copy of them.** The browser's forms are built from the drafts the F8 tabs edit
+(`cxagent/UI/Config/*Draft.cs`) and saved through the same edits classes; its marketplace is
+`PluginManagerRows`, `PluginInstaller` and the session's own `/plugin` verbs. Logic a feature needs
+goes where both front ends can reach it — a draft, Core, a UI-free helper — never into one front end's
+window or one page's script. Two copies drift, and the browser then refuses or writes something the
+terminal would not.
+
+**What reaches beyond the conversation waits on a switch.** A browser login is reachable from wherever
+the server listens, so the shell, configuration, opening files outside the web roots and the plugin
+marketplace each sit behind `web.allow` in config.json, which only the terminal changes. A new feature
+of that kind gets its switch — or goes under an existing one — and the `web` block, cxagent's own
+folder and anything that would widen a login's own access stay out of a browser's reach.
+
+**Drive both.** A feature is done when it has been used in the terminal with cxdbg and in a browser,
+not when one of them compiles.
+
 ## Verifying
 
 Confirm the test count, not just the exit code. `dotnet test --filter` against a solution root exits 0
