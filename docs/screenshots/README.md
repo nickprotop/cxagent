@@ -50,30 +50,37 @@ agent, not the session. Closing the tab leaves the agent where it was.
 
 ## Stopping without losing what you typed
 
-![A long answer about tax and edge cases cut off by Stopped., with the queued line "and end with a list of open questions" back in the composer](03-escape.png)
+![A long answer about tax and edge cases cut off by Stopped., with the queued line "and end with a list of open questions" back in the composer](03-escape.png "Terminal")
+![The browser after Esc: an answer about a late-payment fee, discounts and rounding cut off by Stopped., with the queued line "and end with a list of open questions" back in its composer](03-escape-browser.png "Browser")
 
 Escape ends the turn. Anything queued goes back into the composer rather than being discarded — it
-was never sent, so stopping must not eat it.
+was never sent, so stopping must not eat it. Until then it waits above the composer, with *Cancel ·
+back to composer* to take it back without stopping anything. With both front ends on one session,
+the text goes back to whichever one pressed Escape.
 
 ---
 
 ## Asking the user
 
-![The model's first ask_user call open in the composer: question 1 of 3, Discount size, with 5%, 10% and Tiered, each described](04-question-step-1.png "Terminal")
-![The browser showing the same call as one form: all three questions — discount size, stacking and qualification — with their options, a free-text box under each, and Answer and Skip](04-question-step-1-browser.png "Browser")
+![The model's ask_user call open in the composer: question 1 of 3, Fee size, with a flat $25 or $50 fee or 5% or 10% of the invoice, each described](04-question-step-1.png "Terminal")
+![The same call in the browser at the same moment: Question 1 of 3 · Fee size, the four options with their descriptions, a box for your own answer, and Next and Skip all](04-question-step-1-browser.png "Browser")
 
-In `invoice`, asked for a loyalty discount and told to ask first: one call, three questions, each
+In `invoice`, asked for a late-payment fee and told to ask first: one call, three questions, each
 option saying what it means. Both front ends present them as steps — one question at a time, Back
 and Next — and both show your answers together before anything is sent.
 
-![Question 3 of 3, Qualification, with Number of past invoices highlighted and Alt+← to go back in the hint line](05-question-step-3.png)
+![Question 3 of 3, Compounding, with No — one-time fee highlighted and Alt+← to go back in the hint line](05-question-step-3.png "Terminal")
+![The browser on question 3 of 3, Compounding, with No — one-time fee chosen, and Back, Review and Skip all](05-question-step-3-browser.png "Browser")
 
 Every option carries a description. A list of bare labels asks the user to guess what the model was
-thinking. `Alt+←` appears from step 2 — an answer can be reconsidered while reading the next question.
+thinking. `Alt+←` appears from step 2 — `Back` in the browser — so an answer can be reconsidered while
+reading the next question.
 
-![The answers summary: Discount size 10%, Stacking Yes, stack both, Qualification Number of past invoices](06-question-summary.png)
+![The answers summary: Fee size Flat $50 fee, Grace period 14 days, Compounding No — one-time fee](06-question-summary.png "Terminal")
+![The browser's Your answers: the same three answers, with Send and Change the last one](06-question-summary-browser.png "Browser")
 
-Then every answer under its header before any of it is sent.
+Then every answer under its header before any of it is sent. Each front end steps through its own
+copy; whichever sends first answers, and the other's closes.
 
 ---
 
@@ -432,13 +439,13 @@ model is picked from what the endpoint serves. The first save wires the session;
 
 ## Exporting a conversation
 
-![The export dialog over the team session: whole session, Readable, saved to a file named 2026-11-07-put-a-team-on-this-one-worker.md, about 20 KB across 34 messages and 3 sub-agents](38-export.png "Terminal")
+![The export dialog over the invoice session: whole session, Readable, saved to a file named 2026-11-07-from-what-you-already-know-no.md, about 7 KB across 4 messages](38-export.png "Terminal")
 ![The browser's export form at the same moment: whole session, Readable, Download, and the same size line](38-export-browser.png "Browser")
 
 `F12` — or `/export` — writes the conversation as markdown. *Readable* is for a person: what was said
 and done, each tool call a line, edits as diffs. *Full* is for another agent to carry on from: every
-tool result, the thinking, the system prompt. The three sub-agents counted at the bottom go into the
-file where they worked, so it reads as a timeline. The size is known before anything is written. The
+tool result, the thinking, the system prompt. Sub-agents, counted at the bottom, go into the file
+where they worked, so it reads as a timeline. The size is known before anything is written. The
 browser's *Export…* opens the same choices — scope, detail, Advanced and the size line — with a download in place of
 the file.
 
