@@ -11,7 +11,7 @@ namespace CxAgent.UI.Config;
 /// The dialog's tabs, IN THEIR ORDER: a tab's index is its value, so the tabs are added in this order and nothing
 /// maps one to the other by hand. General first — the settings that shape every tab.
 /// </summary>
-public enum ConfigTab { General, Providers, Mcp, Agents, Hooks, Project }
+public enum ConfigTab { General, Web, Providers, Mcp, Agents, Hooks, Project }
 
 /// <summary>What the dialog needs from the app: where to draw, how a save becomes live, and who is in front.</summary>
 /// <param name="System">The window system.</param>
@@ -23,6 +23,9 @@ public sealed record ConfigDialogHost(
     ConsoleWindowSystem System, MainWindow Main, ConfigApplyContext Apply,
     Func<Session> ActiveSession, McpCommand McpCommand)
 {
+    /// <summary>Where /web is serving this terminal's sessions right now, or null when it is not — for the Web tab's status line.</summary>
+    public Func<Uri?>? WebUrl { get; init; }
+
     /// <summary>
     /// Wires the startup session when an instance is saved while it has no provider — on first run, or
     /// later from F8 when first run was closed unsaved. That session has no instance, so no rebind
@@ -56,6 +59,7 @@ public static class ConfigDialog
 
     private static TabControl? _tabs;
     private static GeneralTab? _general;
+    private static WebTab? _web;
     private static ProvidersTab? _providers;
     private static McpTab? _mcp;
     private static AgentsTab? _agents;
@@ -118,6 +122,8 @@ public static class ConfigDialog
         // IN ConfigTab'S ORDER, which is what makes a tab's index its value.
         _general = new GeneralTab(host, () => _window);
         _tabs.AddTab("General", WithPath(_general.Content));
+        _web = new WebTab(host, () => _window);
+        _tabs.AddTab("Web", WithPath(_web.Content));
         _providers = new ProvidersTab(host, () => _window);
         _tabs.AddTab("Providers", WithPath(_providers.Content));
         _mcp = new McpTab(host, () => _window);
@@ -143,7 +149,7 @@ public static class ConfigDialog
             foreach (var b in ActiveActions()) footer.Buttons.AddItem(b);
             // WHEN A SAVE TAKES EFFECT, which differs by tab: General's settings are read as a tab opens, the
             // rest reach running tabs at once.
-            footer.Hints.SetContent([$"[{DialogLook.Palette.Muted.ToMarkup()}]{(Active switch { ConfigTab.General => "Saved changes apply to tabs opened after saving", ConfigTab.Project => "Trust applies at once", _ => "Saved changes apply at once" })} · Esc closes[/]"]);
+            footer.Hints.SetContent([$"[{DialogLook.Palette.Muted.ToMarkup()}]{(Active switch { ConfigTab.General => "Saved changes apply to tabs opened after saving", ConfigTab.Web => "Saved changes apply when /web or cxagent web next starts", ConfigTab.Project => "Trust applies at once", _ => "Saved changes apply at once" })} · Esc closes[/]"]);
             footer.Buttons.AddItem(close);
             MarkActiveSave();
         }
@@ -187,6 +193,7 @@ public static class ConfigDialog
             switch (Active)
             {
                 case ConfigTab.General: _general?.SaveFromKey(); break;
+                case ConfigTab.Web: _web?.SaveFromKey(); break;
                 case ConfigTab.Mcp: _mcp?.SaveFromKey(); break;
                 case ConfigTab.Agents: _agents?.SaveFromKey(); break;
                 case ConfigTab.Hooks: _hooks?.SaveFromKey(); break;
@@ -205,6 +212,7 @@ public static class ConfigDialog
             _window = null;
             _tabs = null;
             _general = null;
+            _web = null;
             _providers = null;
             _mcp = null;
             _agents = null;
@@ -225,7 +233,7 @@ public static class ConfigDialog
         // model runs is the one thing to do. Shown once the window is up, so a card can take focus.
         if (firstRun) _providers.ShowGallery("cxagent needs one provider to start. Pick where your model runs.");
         // GENERAL HAS NO LIST TO FOCUS: its first choice takes the keyboard as Tab reaches it.
-        else if (Active != ConfigTab.General)
+        else if (Active is not (ConfigTab.General or ConfigTab.Web))
             window.FocusManager.SetFocus(Active switch { ConfigTab.Mcp => _mcp.Rail, ConfigTab.Agents => _agents.Rail, ConfigTab.Hooks => _hooks.Rail, _ => _providers.Rail }, FocusReason.Programmatic);
     }
 
@@ -247,6 +255,7 @@ public static class ConfigDialog
         if (_host is { } host)
         {
             if (_general?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, "General"); return true; }
+            if (_web?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, "Web"); return true; }
             if (_providers?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _providers.SelectedName!); return true; }
             if (_mcp?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _mcp.SelectedName!); return true; }
             if (_agents?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _agents.SelectedName!); return true; }
@@ -269,6 +278,7 @@ public static class ConfigDialog
     private static IReadOnlyList<ButtonControl> ActiveActions() => Active switch
     {
         ConfigTab.General => _general?.Actions ?? [],
+        ConfigTab.Web => _web?.Actions ?? [],
         ConfigTab.Mcp => _mcp?.Actions ?? [],
         ConfigTab.Agents => _agents?.Actions ?? [],
         ConfigTab.Hooks => _hooks?.Actions ?? [],
@@ -281,6 +291,7 @@ public static class ConfigDialog
         switch (Active)
         {
             case ConfigTab.General: _general?.MarkSave(); break;
+            case ConfigTab.Web: _web?.MarkSave(); break;
             case ConfigTab.Mcp: _mcp?.MarkSave(); break;
             case ConfigTab.Agents: _agents?.MarkSave(); break;
             case ConfigTab.Hooks: _hooks?.MarkSave(); break;

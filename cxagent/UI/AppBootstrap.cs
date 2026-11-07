@@ -619,11 +619,16 @@ public static class AppBootstrap
         // or the tab stays unable to take a goal until a restart. Assigned below, once WireRunner's
         // state exists; a no-op once the session has a provider.
         Action<ResolvedConfig>? wireStartup = null;
+
+        // THE BROWSER FRONT END /web RUNS IN THIS PROCESS, when it does — declared here so F8's Web tab can say whether
+        // it is serving and where. Started and stopped by /web below.
+        Web.WebServerHost? webHost = null;
         var configHost = new ConfigDialogHost(system, mainWindow,
             new ConfigApplyContext(paths, env, configNow, manager, mcp),
             () => mainWindow.SessionInFront ?? session, mcpCommand)
         {
             WireFirst = res => wireStartup?.Invoke(res),
+            WebUrl = () => webHost?.Url,
         };
 
 
@@ -931,7 +936,6 @@ public static class AppBootstrap
         // to the very sessions on screen: their prompts race between here and there, and a session the browser
         // starts or resumes opens as a tab here (TuiSessionOpener). The terminal keeps the locks; nothing unloads
         // idle; quitting ends both.
-        Web.WebServerHost? webHost = null;
         async Task StartWebAsync(Web.WebCliOptions? flags)
         {
             if (webHost is { } running)
