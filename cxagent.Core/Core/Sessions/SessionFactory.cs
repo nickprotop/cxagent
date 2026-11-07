@@ -476,6 +476,8 @@ internal static class SessionFactory
         // waiting for that applies now. On the new host, every wire, so a re-wire does not lose the hook.
         host.ContextCompressed += (_, _) => session.OnContextFresh();
         host.MemoryWritten += session.NoteAgentWroteMemory;
+        // THE SESSION'S OWN TALLY, kept across re-wires — each new host is subscribed, the tally stays.
+        host.TurnCompleted += (_, calls) => session.Tally.Record(calls);
 
         // THE LEVEL THE RESUMED SESSION WAS AT, the one place every resume passes — the command
         // line's -c and -r, the session picker, and a headless continue alike.

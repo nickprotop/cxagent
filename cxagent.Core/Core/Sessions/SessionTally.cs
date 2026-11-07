@@ -1,7 +1,10 @@
-namespace CxAgent.UI;
+namespace CxAgent.Core.Sessions;
 
 /// <summary>
 /// What one conversation has done: turns taken, tools called, and how long it has been open.
+///
+/// <para>THE SESSION'S, IN CORE, so every front end reads one count: the terminal's panel and a browser's each kept
+/// their own — started at different moments, counting different things — and showed 5 turns against 1.</para>
 ///
 /// <para>SEPARATE FROM THE PANEL THAT RENDERS IT, because one panel serves every tab. The right-hand
 /// column is a property of the WINDOW — there is one of it, and it shows whichever session is in
@@ -22,4 +25,15 @@ public sealed class SessionTally
     public int Turns { get; set; }
 
     public int ToolCalls { get; set; }
+
+    /// <summary>One model turn finished, having made <paramref name="calls"/> tool calls. From the turn's own thread, so
+    /// under a lock; a reader on another thread sees a count at most one turn behind.</summary>
+    internal void Record(int calls)
+    {
+        lock (this)
+        {
+            Turns++;
+            ToolCalls += calls;
+        }
+    }
 }

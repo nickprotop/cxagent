@@ -90,6 +90,32 @@ public class SessionFactoryTests
     }
 
     /// <summary>
+    /// THE SESSION KEEPS ITS OWN TALLY — turns taken and tools called — so the terminal's panel and a browser's read one
+    /// count. Each kept its own, started at a different moment and counted a different thing, and showed 5 against 1.
+    /// </summary>
+    [Fact]
+    public async Task The_session_counts_its_own_turns()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxagent-factory-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var session = new Session(dir);
+            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new AnswersWithUsageProvider(100)),
+                new SharedServices(),
+                new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+                AgentMode.Single);
+            await session.SendAndWait("one");
+            await session.SendAndWait("two");
+            Assert.Equal(2, session.Tally.Turns);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// A CLEARED CONVERSATION IS EMPTY, AND SAYS SO: the model's count of the request before the clear is not what the
     /// context holds after it, and a browser's gauge reads this, not the terminal's own.
     /// </summary>

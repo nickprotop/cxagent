@@ -759,6 +759,24 @@ public sealed partial class WebSessionHubTests
         finally { await server.StopAsync(); }
     }
 
+    [Fact]
+    public async Task The_panel_counts_turns_and_tool_calls_as_the_terminal_does()
+    {
+        File.WriteAllText(Path.Combine(Work, "notes.txt"), "hello");
+        _model.EnqueueResponse(LlmResponse.WithToolCall("read_file", new { path = "notes.txt" }));
+        _model.EnqueueResponse(Reply("read it"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "read notes.txt")));
+        await TurnDoneAsync(tab);
+
+        var session = _manager.Sessions.Single(s => s.Id == id);
+        Assert.Equal(2, session.Tally.Turns);
+        var panel = _hub.PanelFor(id)!;
+        Assert.Equal(session.Tally.Turns, panel["session"]!["turns"]!.GetValue<int>());
+        Assert.Equal(session.Tally.ToolCalls, panel["session"]!["toolCalls"]!.GetValue<int>());
+    }
+
     // ---- the composer: the terminal's completions, history keys and Shift+Tab ------------------------------------------
 
     private static async Task<JsonArray> CompletionsAsync(Tab tab, string id, string text, int? caret = null, int n = 1)

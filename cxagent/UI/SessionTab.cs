@@ -134,7 +134,10 @@ public sealed class SessionTab
     ///
     /// <para>Created WITH THE TAB, so the clock starts when the conversation does.</para>
     /// </summary>
-    public SessionTally Tally { get; } = new();
+    public SessionTally Tally => Session?.Tally ?? _unwired;
+
+    // A TAB BEFORE ITS SESSION IS WIRED still has a tally to show — zero — rather than a null the panel must guard.
+    private readonly SessionTally _unwired = new();
 
     /// <summary>
     /// The placeholder row standing for text queued behind a running turn, or null when none is.

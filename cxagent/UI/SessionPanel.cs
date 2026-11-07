@@ -90,7 +90,7 @@ public sealed class SessionPanel
     /// whichever it is showing. That also makes a tab switch correct for free: the numbers arrive
     /// with the tab rather than having to be restored after it.</para>
     /// </summary>
-    private SessionTally _tally = new();
+    private Core.Sessions.SessionTally _tally = new();
 
     /// <summary>
     /// The git block, pinned to the foot of the panel.
@@ -158,7 +158,7 @@ public sealed class SessionPanel
     /// <para>Called when a tab comes forward, so turns, tool calls and elapsed time describe the
     /// session the user is looking at rather than whichever one last completed a turn.</para>
     /// </summary>
-    public void Follow(SessionTally tally) => _tally = tally;
+    public void Follow(Core.Sessions.SessionTally tally) => _tally = tally;
 
     /// <summary>
     /// Reacts to a completed turn on the conversation this panel is showing.

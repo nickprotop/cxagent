@@ -210,8 +210,8 @@ public static class SessionWiring
             //
             // One writer, one place. RecordTurn is then purely the panel's own side of it — the git
             // invalidation and the repaint — which is why it is still called rather than inlined.
-            tab.Tally.Turns++;
-            tab.Tally.ToolCalls += calls;
+            // THE COUNT ITSELF IS THE SESSION'S — Session.Tally, recorded in Core for every front end; this is the panel's
+            // side of it, the git invalidation and the repaint.
             if (ReferenceEquals(tab, main.ActiveTab)) main.NoteTurnRecorded(calls);
 
             // THE PARENT'S SPLIT, matching the total beside it. The ledger's InputTokens and

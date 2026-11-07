@@ -76,9 +76,11 @@ internal static class WebPanel
             ["context"] = new JsonObject { ["used"] = session.ContextUsed, ["window"] = res?.ContextWindow },
             ["session"] = new JsonObject
             {
-                ["since"] = log.Started.ToString("O"),
-                ["turns"] = log.Turns,
-                ["toolCalls"] = log.ToolCalls,
+                // THE SESSION'S OWN TALLY, the one the terminal's panel shows — not this log's, which started when the
+                // first browser tab opened and counted user messages, not turns.
+                ["since"] = session.Tally.Started.ToString("O"),
+                ["turns"] = session.Tally.Turns,
+                ["toolCalls"] = session.Tally.ToolCalls,
                 ["working"] = session.IsBusy,
             },
             ["tokens"] = new JsonObject

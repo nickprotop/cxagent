@@ -16,6 +16,9 @@ public sealed partial class Session
     /// </summary>
     private Dictionary<string, string>? _memoryKnown;
 
+    /// <summary>What this session has done — turns, tool calls, how long it has been open — for every front end.</summary>
+    public SessionTally Tally { get; } = new();
+
     /// <summary>The notes this session reads and writes, or null when memory is off.</summary>
     public MemoryStore? Memory { get; private set; }
 
