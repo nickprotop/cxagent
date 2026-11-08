@@ -9,7 +9,7 @@ namespace CxAgent.Tests;
 
 /// <summary>
 /// <c>colleagues.enabled</c>: on in the app unless config turns it off, off for a library caller unless it turns it on —
-/// and the same switch in F8 › General and on the browser's config page, written through one draft.
+/// and the same switch in F8 › Colleagues and on the browser's config page, written through one draft.
 /// </summary>
 public sealed class ColleaguesSwitchTests : IDisposable
 {
@@ -88,8 +88,6 @@ public sealed class ColleaguesSwitchTests : IDisposable
     public void Browser_form_shows_and_writes_the_same_key()
     {
         var draft = GeneralDraft.From(Settings());
-
-        Assert.Contains("\"colleagues\"", WebConfigForms.General(draft).ToJsonString());
 
         WebConfigForms.SetGeneral(draft, new JsonObject { ["colleagues"] = "false" });
         Assert.False(draft.ColleaguesEnabled);

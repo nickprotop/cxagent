@@ -643,8 +643,9 @@ elsewhere while it worked here is told so in a line at the start of its next tas
 times in a row — it seems to hold a key or a password, or its answer never fits — is stepped past: it stays in the past
 word for word, is not learned from, and you are told once.
 
-It runs on the model it was kept on, which must have at least a 128k window. Turn colleagues off in F8 › General, or
-with [`colleagues.enabled`](CONFIG.md#colleagues--workers-kept-across-sessions) in config.json.
+It runs on the model it was kept on, which must have at least a 128k window. F8's **Colleagues** tab, and the
+Colleagues tab of the browser's config page, change where each one runs and where it distils, and turn colleagues off —
+as does [`colleagues.enabled`](CONFIG.md#colleagues--workers-kept-across-sessions) in config.json.
 
 ---
 

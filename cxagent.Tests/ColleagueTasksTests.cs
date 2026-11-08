@@ -95,6 +95,8 @@ public sealed class ColleagueTasksTests : IDisposable
         Assert.Contains("idle", text);
         Assert.DoesNotContain("explore", text);
         Assert.DoesNotContain("Finished", text);
+        // NO ⏹ ON AN IDLE COLLEAGUE: a drive showed the card's default button on one that had never had a control.
+        Assert.False(panel.ControlForTest(row.Key)!.Visible);
     }
 
     /// <summary>

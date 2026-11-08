@@ -487,6 +487,10 @@ public sealed class JobsPanel
         private readonly MarkupControl _title = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
         private readonly MarkupControl _facts = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
         private readonly MarkupControl _runsOn = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
+
+        // A COLLEAGUE'S STATE IN A CELL OF ITS OWN, sized to its text: padding the title out to the column's edge
+        // guesses the width, and a guess one column wide wrapped the state onto a line the card does not show.
+        private readonly MarkupControl _state = Ctl.Markup().Build();
         private readonly GridControl _top;
         private bool _hover;
         private bool _selected;
@@ -501,14 +505,16 @@ public sealed class JobsPanel
             Move.Visible = false;
 
             _top = Ctl.Grid()
-                .Columns(GridLength.Star(1), GridLength.Auto(), GridLength.Auto())
+                .Columns(GridLength.Star(1), GridLength.Auto(), GridLength.Auto(), GridLength.Auto())
                 .Rows(GridLength.Cells(1))
                 .Place(_title, 0, 0)
-                .Place(Move, 0, 1)
-                .Place(Button, 0, 2)
+                .Place(_state, 0, 1)
+                .Place(Move, 0, 2)
+                .Place(Button, 0, 3)
                 .WithAlignment(HorizontalAlignment.Stretch)
                 .Build();
             _runsOn.Visible = false;
+            _state.Visible = false;
             Box = Ctl.Panel().NoBorder().WithPadding(0).AddControl(_top).AddControl(_facts).AddControl(_runsOn).AddControl(Anchor).Build();
             Box.Margin = new Margin(0, 0, 0, 1);
 
@@ -579,7 +585,10 @@ public sealed class JobsPanel
             // EACH BUTTON TAKES THREE COLUMNS AT THE RIGHT — " ⏹ " — and the bar two at the left.
             var buttons = (_shown.Control is null ? 0 : 1) + (_shown.Movable ? 1 : 0);
             var room = Math.Max(1, _usable - 3 * buttons);
-            var title = $"{_shown.Mark} {Titled(_shown.Title, _shown.Status, room)}";
+            var stateRoom = _shown.Status is { } st ? Columns(st) + 1 : 0;
+            var title = $"{_shown.Mark} {Value(Cut(_shown.Title, Math.Max(1, room - stateRoom)))}";
+            if (_state.Visible != (_shown.Status is not null)) _state.Visible = _shown.Status is not null;
+            if (_shown.Status is { } shownState) SetIfChanged(_state, [$" {Muted(shownState)}"]);
             var facts = _shown.Facts.Any() ? $"  {Muted(Cut(string.Join(" · ", _shown.Facts), _usable))}" : null;
             // ASK… OPENS THE SAME TAB AS OPEN: the tab's composer is where a colleague is asked, and it has the keyboard.
             var link = _shown.Ask ? $"  [link=open]{Value(_shown.View)} ›[/]  [link=ask]Ask…[/]" : $"  [link=open]{Value(_shown.View)} ›[/]";
@@ -599,10 +608,12 @@ public sealed class JobsPanel
             SetIfChanged(Anchor, [bar + link]);
 
             if (Move.Visible != _shown.Movable) Move.Visible = _shown.Movable;
+            // VISIBILITY EVERY TIME, NOT ONLY ON A CHANGE: a card is built with ⏹ showing, and one that starts with no
+            // control at all — an idle colleague — has no change from null to compare against.
+            if (Button.Visible != (_shown.Control is not null)) Button.Visible = _shown.Control is not null;
             if (_glyph != _shown.Control)
             {
                 _glyph = _shown.Control;
-                Button.Visible = _glyph is not null;
                 if (_glyph is not null) Button.Text = _glyph;
             }
 
@@ -739,7 +750,7 @@ public sealed class JobsPanel
         };
     }
 
-    /// <summary>A title cut to leave room for its status, which is drawn muted at the right edge.</summary>
+    /// <summary>A title and its status as one line of text — the panel's RenderedText; the card draws the status in its own cell.</summary>
     private static string Titled(string title, string? status, int room)
     {
         if (status is null) return Value(Cut(title, room));

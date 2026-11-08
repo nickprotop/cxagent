@@ -456,7 +456,8 @@ function drawWorkerHead() {
   const said = w ? (w.colleague ? w.colleague.state : w.state.toLowerCase()) + (w.background && w.running ? " · background" : "") : view.badge ? "idle" : "";
   const facts = [view.badge ? view.name : view.workerType, view.model, said].filter(Boolean);
   head.append(el("span", "meta", facts.join(" · ")));
-  if (view.task) head.append(el("span", "meta", view.task));
+  // A COLLEAGUE'S WORKER IS DESCRIBED BY ITS NAME, already the header's title — as on its terminal tab.
+  if (view.task && !(view.badge && view.task === view.badge.name)) head.append(el("span", "meta", view.task));
   head.append(el("span", "spacer"));
   head.append(button("Back to session", "ghost", () => activate(view.parent)));
   if (running) {

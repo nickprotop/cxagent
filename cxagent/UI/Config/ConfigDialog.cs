@@ -11,7 +11,7 @@ namespace CxAgent.UI.Config;
 /// The dialog's tabs, IN THEIR ORDER: a tab's index is its value, so the tabs are added in this order and nothing
 /// maps one to the other by hand. General first — the settings that shape every tab.
 /// </summary>
-public enum ConfigTab { General, Web, Providers, Mcp, Agents, Hooks, Project }
+public enum ConfigTab { General, Web, Providers, Mcp, Agents, Colleagues, Hooks, Project }
 
 /// <summary>What the dialog needs from the app: where to draw, how a save becomes live, and who is in front.</summary>
 /// <param name="System">The window system.</param>
@@ -63,6 +63,7 @@ public static class ConfigDialog
     private static ProvidersTab? _providers;
     private static McpTab? _mcp;
     private static AgentsTab? _agents;
+    private static ColleaguesTab? _colleagues;
     private static HooksTab? _hooks;
     private static ProjectTab? _project;
     private static ConfigDialogHost? _host;
@@ -130,6 +131,8 @@ public static class ConfigDialog
         _tabs.AddTab("MCP servers", WithPath(_mcp.Content));
         _agents = new AgentsTab(host, () => _window);
         _tabs.AddTab("Agents", WithPath(_agents.Content));
+        _colleagues = new ColleaguesTab(host, () => _window);
+        _tabs.AddTab("Colleagues", WithPath(_colleagues.Content));
         _hooks = new HooksTab(host, () => _window);
         _tabs.AddTab("Hooks", WithPath(_hooks.Content));
         _project = new ProjectTab(host, () => SwitchTo(ConfigTab.Hooks));
@@ -149,7 +152,7 @@ public static class ConfigDialog
             foreach (var b in ActiveActions()) footer.Buttons.AddItem(b);
             // WHEN A SAVE TAKES EFFECT, which differs by tab: General's settings are read as a tab opens, the
             // rest reach running tabs at once.
-            footer.Hints.SetContent([$"[{DialogLook.Palette.Muted.ToMarkup()}]{(Active switch { ConfigTab.General => "Saved changes apply to tabs opened after saving", ConfigTab.Web => "Saved changes apply when /web or cxagent web next starts", ConfigTab.Project => "Trust applies at once", _ => "Saved changes apply at once" })} · Esc closes[/]"]);
+            footer.Hints.SetContent([$"[{DialogLook.Palette.Muted.ToMarkup()}]{(Active switch { ConfigTab.General => "Saved changes apply to tabs opened after saving", ConfigTab.Web => "Saved changes apply when /web or cxagent web next starts", ConfigTab.Colleagues => "The switch applies to tabs opened after saving, a colleague's models at its next bring", ConfigTab.Project => "Trust applies at once", _ => "Saved changes apply at once" })} · Esc closes[/]"]);
             footer.Buttons.AddItem(close);
             MarkActiveSave();
         }
@@ -196,6 +199,7 @@ public static class ConfigDialog
                 case ConfigTab.Web: _web?.SaveFromKey(); break;
                 case ConfigTab.Mcp: _mcp?.SaveFromKey(); break;
                 case ConfigTab.Agents: _agents?.SaveFromKey(); break;
+                case ConfigTab.Colleagues: _colleagues?.SaveFromKey(); break;
                 case ConfigTab.Hooks: _hooks?.SaveFromKey(); break;
                 case ConfigTab.Project: break;
                 default: _providers?.SaveFromKey(); break;
@@ -216,6 +220,7 @@ public static class ConfigDialog
             _providers = null;
             _mcp = null;
             _agents = null;
+            _colleagues = null;
             _hooks = null;
             _project = null;
             var closed = _onClosed;
@@ -234,7 +239,7 @@ public static class ConfigDialog
         if (firstRun) _providers.ShowGallery("cxagent needs one provider to start. Pick where your model runs.");
         // GENERAL HAS NO LIST TO FOCUS: its first choice takes the keyboard as Tab reaches it.
         else if (Active is not (ConfigTab.General or ConfigTab.Web))
-            window.FocusManager.SetFocus(Active switch { ConfigTab.Mcp => _mcp.Rail, ConfigTab.Agents => _agents.Rail, ConfigTab.Hooks => _hooks.Rail, _ => _providers.Rail }, FocusReason.Programmatic);
+            window.FocusManager.SetFocus(Active switch { ConfigTab.Mcp => _mcp.Rail, ConfigTab.Agents => _agents.Rail, ConfigTab.Colleagues => _colleagues.Rail, ConfigTab.Hooks => _hooks.Rail, _ => _providers.Rail }, FocusReason.Programmatic);
     }
 
     /// <summary>
@@ -259,6 +264,7 @@ public static class ConfigDialog
             if (_providers?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _providers.SelectedName!); return true; }
             if (_mcp?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _mcp.SelectedName!); return true; }
             if (_agents?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _agents.SelectedName!); return true; }
+            if (_colleagues?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, _colleagues.SelectedName); return true; }
             if (_hooks?.HasUnsaved == true) { _ = AskThenCloseAsync(host, window, "hooks"); return true; }
         }
         window.Close();
@@ -281,6 +287,7 @@ public static class ConfigDialog
         ConfigTab.Web => _web?.Actions ?? [],
         ConfigTab.Mcp => _mcp?.Actions ?? [],
         ConfigTab.Agents => _agents?.Actions ?? [],
+        ConfigTab.Colleagues => _colleagues?.Actions ?? [],
         ConfigTab.Hooks => _hooks?.Actions ?? [],
         ConfigTab.Project => _project?.Actions ?? [],
         _ => _providers?.Actions ?? [],
@@ -294,6 +301,7 @@ public static class ConfigDialog
             case ConfigTab.Web: _web?.MarkSave(); break;
             case ConfigTab.Mcp: _mcp?.MarkSave(); break;
             case ConfigTab.Agents: _agents?.MarkSave(); break;
+            case ConfigTab.Colleagues: _colleagues?.MarkSave(); break;
             case ConfigTab.Hooks: _hooks?.MarkSave(); break;
             case ConfigTab.Project: break;
             default: _providers?.MarkSave(); break;

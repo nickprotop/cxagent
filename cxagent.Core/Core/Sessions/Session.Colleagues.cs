@@ -138,7 +138,7 @@ public sealed partial class Session
         }
     }
 
-    private const string ColleaguesOff = "Colleagues are off. Turn them on in F8 › General, or with colleagues.enabled in config.json.";
+    private const string ColleaguesOff = "Colleagues are off. Turn them on in F8 › Colleagues, or with colleagues.enabled in config.json.";
 
     /// <summary><c>/colleagues</c>, with or without a verb — the same in every front end.</summary>
     public CommandStatus ColleaguesCommand(string? arguments)

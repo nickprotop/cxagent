@@ -310,7 +310,8 @@ public sealed class AgentTab : IDisposable
         var learning = badge is not null && Session.Colleagues?.Distilling.Contains(badge.Name, StringComparer.OrdinalIgnoreCase) == true;
         var facts = FactsFor(Kept, _now, badge, learning);
         lines.Add(Muted(facts));
-        if (Kept.Description is { Length: > 0 } description) lines.Add(Muted(description));
+        // A COLLEAGUE'S WORKER IS DESCRIBED BY ITS NAME, already the header's first line.
+        if (Kept.Description is { Length: > 0 } description && description != badge?.Name) lines.Add(Muted(description));
         if (Session.SubAgents.Ended) lines.Add(Muted("its session has ended — this agent was stopped with it"));
 
         // A VIEW, AND IT SAYS SO (decision 29): a tab strip mixes these with session and shell tabs, whose closing

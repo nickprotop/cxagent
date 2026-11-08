@@ -862,7 +862,7 @@ An application built on cxagent.Core has memory **off** unless it sets `AgentCon
 "colleagues": { "enabled": false }
 ```
 
-F8's **General** tab sets it too, in its *Colleagues* section, and so does the browser's config page.
+F8's **Colleagues** tab sets it too, under *Settings*, and so does the browser's config page.
 
 **On when absent.** The session's agent gets the `colleague` tool — list, bring one in, keep a worker,
 which asks you first — and, when there are any, a list of the colleagues in its system prompt.
@@ -872,6 +872,12 @@ warns at startup and leaves colleagues on.
 A colleague runs only on a model with a context window of at least 128k tokens, and starts with a
 quarter of that window (at most 100k) of its experience. A provider entry whose window cxagent cannot
 learn needs `contextWindow` set for a colleague to run on it.
+
+**Each colleague's models are its own,** in its `colleague.json`, not here: where it runs — the
+entry it was kept on, or the session's model — and where its rounds are distilled — its own model unless
+set. F8's Colleagues tab and the browser's page choose both from the provider entries, and refuse one
+whose `contextWindow` is under 128k. A save there is used at its next bring; one already working keeps
+its model.
 
 Colleagues live in this folder, under `colleagues/` — see [What else lives in that directory](#what-else-lives-in-that-directory).
 [`/colleagues`](COMMANDS.md#colleagues) lists them, keeps a worker and brings one in.

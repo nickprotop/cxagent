@@ -1187,7 +1187,7 @@ public static class AppBootstrap
         {
             if (current.Colleagues is not { } desk)
             {
-                current.Notify("Colleagues are off. Turn them on in F8 › General, or with colleagues.enabled in config.json.");
+                current.Notify("Colleagues are off. Turn them on in F8 › Colleagues, or with colleagues.enabled in config.json.");
                 return;
             }
             if (desk.OneToOne(name, out var refusal) is not { } opening)

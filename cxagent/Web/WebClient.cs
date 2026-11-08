@@ -982,6 +982,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "agents":
                 form = WebConfigForms.Agents(settings, item);
                 break;
+            case "colleagues":
+                form = WebConfigForms.Colleagues(settings, new Core.Colleagues.ColleagueStore(S.Paths.ConfigDir), item);
+                break;
             case "hooks":
                 if (HooksDraft() is not { } hooks) return;
                 form = WebConfigForms.Hooks(hooks, item);
@@ -1108,6 +1111,29 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 result = Config.Commit(edit, new Core.Config.ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), true, $"{name} saved"),
                     Core.Config.CacheChoice.ApplyNow);
                 item = name;
+                break;
+            }
+            case "colleagues" when item is null or WebConfigForms.ColleagueSettingsItem:
+            {
+                // THE SWITCH, THROUGH GENERAL'S DRAFT, as F8's Colleagues settings save it: only what changed is written.
+                var draft = CxAgent.UI.Config.GeneralDraft.From(settings, read.TavilyKeyAsWritten);
+                WebConfigForms.SetGeneral(draft, values);
+                if (!draft.IsDirty) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return; }
+                result = Config.Commit(draft.Apply, new Core.Config.ConfigChange(new HashSet<string>(), new Dictionary<string, string>(), false, "colleagues switched"),
+                    Core.Config.CacheChoice.ApplyNow);
+                item = WebConfigForms.ColleagueSettingsItem;
+                break;
+            }
+            case "colleagues":
+            {
+                // ONE COLLEAGUE'S MODELS, written to its own record in the library — config.json is not touched.
+                var library = new Core.Colleagues.ColleagueStore(S.Paths.ConfigDir);
+                if (library.Find(item) is not { } record) { Refused([$"There is no colleague called '{item}' any more — Reload."]); return; }
+                var draft = WebConfigForms.SetColleague(CxAgent.UI.Config.ColleagueDraft.For(record), values);
+                if (draft.Problem(settings) is { } problem) { Refused([problem]); return; }
+                if (!draft.IsDirty) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return; }
+                draft.Apply(library);
+                result = new WebConfigSave(true, []);
                 break;
             }
             case "project":

@@ -20,7 +20,7 @@ internal static class WebConfigForms
     /// <summary>The tabs, in F8's order. Web is shown read-only: who may log in and what a browser may reach are the terminal's.</summary>
     public static readonly IReadOnlyList<(string Id, string Title)> Tabs =
     [
-        ("general", "General"), ("providers", "Providers"), ("mcp", "MCP servers"), ("agents", "Agent types"),
+        ("general", "General"), ("providers", "Providers"), ("mcp", "MCP servers"), ("agents", "Agent types"), ("colleagues", "Colleagues"),
         ("hooks", "Hooks"), ("project", "Project"), ("web", "Web"), ("json", "config.json"),
     ];
 
@@ -58,11 +58,6 @@ internal static class WebConfigForms
             Radio("memory", "Notes across sessions", d.MemoryEnabled ? "true" : "false",
                 ("true", "Keep them", "The agent writes what it learns about you and the project to cxagent's folder, and reads it in later sessions. /memory lists them."),
                 ("false", "Do not keep any", "No memory tool and no notes in the prompt. Notes already kept stay on disk."))),
-        // AND F8's COLLEAGUES SECTION, word for word — both write GeneralDraft.ColleaguesEnabled.
-        Section("Colleagues",
-            Radio("colleagues", "Workers kept across sessions", d.ColleaguesEnabled ? "true" : "false",
-                ("true", "Keep colleagues", UI.Config.GeneralDraft.ColleaguesOnHelp),
-                ("false", "No colleagues", UI.Config.GeneralDraft.ColleaguesOffHelp))),
         Section("Sandbox",
             Radio("sandboxEnabled", "The model's shell commands", d.SandboxEnabled ? "true" : "false",
                 ("true", "Run inside the sandbox", "Writes only in the project, temp and package caches; credentials seen empty."),
@@ -379,6 +374,62 @@ internal static class WebConfigForms
             d.Removed.Clear();
             d.Removed.AddRange(Core.Jobs.Tool.KnownNames.Where(n => !ticked.Contains(n)).Order(StringComparer.Ordinal));
         }
+        return d;
+    }
+
+    // ---- Colleagues ----------------------------------------------------------------------------------------------
+
+    /// <summary>The rail item for the switch and the fixed rules — first, above the colleagues themselves.</summary>
+    public const string ColleagueSettingsItem = "+settings";
+
+    /// <summary>
+    /// The Colleagues tab, as F8's: Settings first — the switch, written to config.json through General's draft, and the
+    /// rules that are fixed — then each colleague with where it runs and where it distils, written to its own record.
+    /// </summary>
+    public static JsonObject Colleagues(ProviderSettings settings, Core.Colleagues.ColleagueStore library, string? item)
+    {
+        var all = library.List();
+        item ??= ColleagueSettingsItem;
+        var form = new JsonObject
+        {
+            ["items"] = new JsonArray([(JsonNode)Item(ColleagueSettingsItem, "Settings", "for every colleague"),
+                .. all.Select(r => (JsonNode)Item(r.Name, "◆ " + r.Name, r.Instance ?? "session's model"))]),
+            ["item"] = item,
+            ["actions"] = new JsonArray(),
+        };
+        if (item == ColleagueSettingsItem || all.FirstOrDefault(r => r.Name == item) is not { } record)
+        {
+            var d = GeneralDraft.From(settings);
+            form["item"] = ColleagueSettingsItem;
+            // THE SAME CHOICES, WORDS AND KEY AS F8's COLLEAGUES SETTINGS — both write GeneralDraft.ColleaguesEnabled.
+            form["sections"] = new JsonArray(
+                Section("Colleagues",
+                    Radio("colleagues", "Workers kept across sessions", d.ColleaguesEnabled ? "true" : "false",
+                        ("true", "Keep colleagues", GeneralDraft.ColleaguesOnHelp),
+                        ("false", "No colleagues", GeneralDraft.ColleaguesOffHelp))),
+                // PROSE, NOT FIELDS: these are shown, never set, and an info field draws as a value in monospace.
+                new JsonObject { ["title"] = "Rules every colleague keeps", ["help"] = string.Join(" ", ColleagueDraft.Rules), ["fields"] = new JsonArray() });
+            return form;
+        }
+
+        var draft = ColleagueDraft.For(record);
+        var options = ColleagueDraft.Options(settings, draft).Select(o => (o.Value, o.Label)).ToList();
+        var line = Core.Colleagues.ColleagueLine.Of(record);
+        form["sections"] = new JsonArray(
+            Section("◆ " + record.Name,
+                Field("about", "What it is", "info", record.Description.Length > 0 ? record.Description : "Not distilled yet."),
+                Field("facts", "Experience", "info", $"v{record.ExperienceVersion}" + (line.Knows.Count > 0 ? " · knows " + string.Join(", ", line.Knows) : ""))),
+            Section("Models",
+                Select("model", "Runs on", draft.Model ?? "", [("", ColleagueDraft.SessionModel), .. options], ColleagueDraft.ModelHelp),
+                Select("distillModel", "Distils on", draft.DistillModel ?? "", [("", ColleagueDraft.OwnModel), .. options], ColleagueDraft.DistillHelp)));
+        return form;
+    }
+
+    /// <summary>A colleague's draft set from the page's values; an empty choice is the inherited one.</summary>
+    public static ColleagueDraft SetColleague(ColleagueDraft d, JsonObject v)
+    {
+        if (Str(v, "model") is { } model) d.Model = model.Length == 0 ? null : model;
+        if (Str(v, "distillModel") is { } distil) d.DistillModel = distil.Length == 0 ? null : distil;
         return d;
     }
 
