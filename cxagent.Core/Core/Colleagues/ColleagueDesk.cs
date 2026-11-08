@@ -188,18 +188,34 @@ public sealed class ColleagueDesk : IDisposable
     /// incarnation here at once: its conversation so far is the first round of its past, distilled now, and its later
     /// runs are rounds.
     /// </summary>
-    public string Keep(KeepOrder order)
+    /// <summary>
+    /// Why <paramref name="order"/> cannot be kept, or null when it can — asked by the colleague tool BEFORE it puts the
+    /// question to the user, so nobody is asked to approve what would be refused anyway.
+    /// </summary>
+    public string? KeepRefusal(KeepOrder order) => Checked(order, out _, out _);
+
+    private string? Checked(KeepOrder order, out StoredAgent? kept, out string name)
     {
+        name = "";
         var handle = _workers.HandleFor(order.Worker.Trim());
-        if (_workers.Find(handle) is not { } kept) return $"There is no worker called '{order.Worker.Trim()}' in this session.";
+        kept = _workers.Find(handle);
+        if (kept is null) return $"There is no worker called '{order.Worker.Trim()}' in this session.";
         if (_workers.OriginOf(handle) is { } origin && origin.StartsWith(OriginPrefix, StringComparison.Ordinal))
             return $"{handle} is already the colleague {origin[OriginPrefix.Length..]}.";
         // NOT WHILE IT WORKS: the run under way would be split between the kept round and the next one.
         if (_workers.IsBusy(handle)) return $"{handle} is working; keep it when it has finished.";
 
-        var name = (order.Name ?? NameFrom(kept)).Trim();
+        name = (order.Name ?? NameFrom(kept)).Trim();
         if (ColleagueStore.NameRefusal(name) is { } bad) return bad;
         if (_parts.Library.Find(name) is { } taken) return $"There is already a colleague called '{taken.Name}'. Give this one another name.";
+        return null;
+    }
+
+    public string Keep(KeepOrder order)
+    {
+        if (Checked(order, out var found, out var name) is { } refused) return refused;
+        var kept = found!;
+        var handle = kept.Name;
 
         var now = DateTimeOffset.UtcNow;
         var record = new ColleagueRecord

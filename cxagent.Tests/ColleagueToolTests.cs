@@ -100,6 +100,27 @@ public sealed class ColleagueToolTests : IDisposable
         Assert.StartsWith($"Keep {handle} as a colleague? It is named from its work.", Assert.Single(asked).Question);
     }
 
+    /// <summary>
+    /// A live session's lead asked to keep the colleague it was already talking to; the user was asked a question with
+    /// no right answer. What keeping would refuse is refused before anyone is asked.
+    /// </summary>
+    [Fact]
+    public async Task Keep_of_what_cannot_be_kept_is_refused_without_asking()
+    {
+        var session = Open();
+        var handle = Worker(session);
+        session.Colleagues!.Keep(new KeepOrder(handle, "Charting"));
+        var asked = new List<UserQuestion>();
+        var tool = new ColleagueTool(session.Colleagues, Answering("Keep", asked), () => "lead");
+
+        var already = await tool.TryInvokeAsync(Call(new { action = "keep", worker = handle, name = "Charting" }), CancellationToken.None);
+        var nobody = await tool.TryInvokeAsync(Call(new { action = "keep", worker = "nobody" }), CancellationToken.None);
+
+        Assert.Empty(asked);
+        Assert.Contains("already the colleague Charting", already);
+        Assert.Contains("no worker called 'nobody'", nobody);
+    }
+
     [Fact]
     public async Task Keep_does_nothing_on_no()
     {

@@ -104,9 +104,13 @@ public sealed class ColleagueTool(ColleagueDesk desk,
     {
         var worker = Arg(call, "worker")?.Trim();
         if (string.IsNullOrEmpty(worker)) return "keep needs the worker's handle.";
+        var name = Arg(call, "name")?.Trim();
+
+        // REFUSED BEFORE ASKED: a question whose answer could only be refused — a worker that is already the colleague,
+        // one that does not exist — wastes the user's attention and teaches them to click without reading.
+        if (desk.KeepRefusal(new KeepOrder(worker, name)) is { } refused) return refused;
         if (ask is null) return "Keeping a colleague needs the user's yes, and there is no user to ask here.";
 
-        var name = Arg(call, "name")?.Trim();
         var asked = name is { Length: > 0 }
             ? $"Keep {worker} as a colleague named {name}?"
             : $"Keep {worker} as a colleague? It is named from its work.";
