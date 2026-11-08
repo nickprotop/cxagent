@@ -117,6 +117,9 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
             store.ClearUserStop(name);
         }
 
+        // ACCEPTED: it runs now, in the background or here — counted, by who sent it.
+        store.NoteSent(name, request.FromUser);
+
         // IN THE BACKGROUND WHERE IT CAN BE: a port to report through and a parent to report to. The
         // claim taken above is the run's; the runner releases it when the stretch ends.
         if (request.Background && delivery is not null && request.ParentAgentId is { } parent)
@@ -322,11 +325,12 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
     /// will drain on its own next turn; nothing new starts, so it waits no cap — which is what lets
     /// a parent correct a running child while every permit is held by other children.</para>
     /// </summary>
-    private static string Deliver(StoredAgent stored, string agentName, SendRequest request)
+    private string Deliver(StoredAgent stored, string agentName, SendRequest request)
     {
         if (!stored.Agent.Agent.Mailbox.TryEnqueue(request.Prompt, out var full,
                 from: request.FromUser ? Incoming.You : Incoming.Parent, images: request.Attachments?.Images))
             return $"error: could not reach '{agentName}' — {full}";
+        store.NoteSent(agentName, request.FromUser);
 
         // SHOWN WHEN DELIVERED, the moment the sender pressed Enter — the mailbox keeps the text and its images,
         // not how the line was shown, so whose it was is known here and nowhere later.

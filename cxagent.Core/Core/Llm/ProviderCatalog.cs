@@ -76,6 +76,10 @@ public sealed record ProviderCatalog(
     /// <see cref="Memory"/>.</summary>
     public bool? Colleagues { get; init; }
 
+    /// <summary>Whether a worker kept coming back to is offered as a colleague — see
+    /// <see cref="ProviderSettings.ColleagueSuggestions"/>. Null is on.</summary>
+    public bool? ColleagueSuggestions { get; init; }
+
     /// <summary>The user's <c>hooks</c> block — see <see cref="ProviderSettings.Hooks"/>.</summary>
     public Hooks.HooksSettings? Hooks { get; init; }
 

@@ -171,6 +171,20 @@ public sealed class ColleaguesTab
         _detail.AddControl(ListDetail.Section("Colleagues", kept.Control));
         _detail.AddControl(ListDetail.Gap());
 
+        // THE SAME WORDS AS THE BROWSER'S PAGE — both write GeneralDraft.ColleagueSuggestions.
+        var offers = new FieldGrid();
+        var suggest = new RadioGroup<bool>();
+        offers.AddBare(Label("Offer to keep a worker"));
+        offers.AddBare(new RadioControl<bool>(suggest, true, "Suggest"));
+        offers.AddBare(Help(GeneralDraft.SuggestOnHelp));
+        offers.AddBare(new MarkupControl([""]));
+        offers.AddBare(new RadioControl<bool>(suggest, false, "Don't suggest"));
+        offers.AddBare(Help(GeneralDraft.SuggestOffHelp));
+        suggest.SelectedValue = draft.ColleagueSuggestions;
+        suggest.SelectionChanged += (_, on) => { draft.ColleagueSuggestions = on; MarkSave(); };
+        _detail.AddControl(ListDetail.Section("Suggestions", offers.Control));
+        _detail.AddControl(ListDetail.Gap());
+
         // SHOWN, NOT SET: these hold every colleague to what keeps its experience from crowding out its task.
         var rules = new MarkupControl([.. ColleagueDraft.Rules.Select(r => $"· {MarkupParser.Escape(r)}")]) { Wrap = true };
         _detail.AddControl(ListDetail.Section("Rules every colleague keeps", rules));

@@ -476,6 +476,12 @@ public record ProviderSettings(
     public bool? Colleagues { get; init; }
 
     /// <summary>
+    /// <c>colleagues.suggest</c> — whether a worker the user or the agent keeps coming back to is offered as a colleague —
+    /// or null when config says nothing, which the app reads as on.
+    /// </summary>
+    public bool? ColleagueSuggestions { get; init; }
+
+    /// <summary>
     /// The <c>hooks</c> block, or null when the config has none. Held as written; each session parses it
     /// beside the repository's own hooks files — see <see cref="Hooks.HookSources"/>.
     /// </summary>
@@ -1095,14 +1101,23 @@ public static class ProviderConfigLoader
 
             // THE SAME RULE FOR COLLEAGUES: a block of the wrong shape warns and keeps the default.
             bool? colleagues = null;
+            bool? suggestions = null;
             if (root.TryGetProperty("colleagues", out var col))
             {
                 if (col.ValueKind != JsonValueKind.Object)
                     warnings.Add("colleagues must be an object, like { \"enabled\": false } — colleagues stay on.");
-                else if (col.TryGetProperty("enabled", out var on))
+                else
                 {
-                    if (on.ValueKind is JsonValueKind.True or JsonValueKind.False) colleagues = on.GetBoolean();
-                    else warnings.Add("colleagues.enabled must be true or false — colleagues stay on.");
+                    if (col.TryGetProperty("enabled", out var on))
+                    {
+                        if (on.ValueKind is JsonValueKind.True or JsonValueKind.False) colleagues = on.GetBoolean();
+                        else warnings.Add("colleagues.enabled must be true or false — colleagues stay on.");
+                    }
+                    if (col.TryGetProperty("suggest", out var suggest))
+                    {
+                        if (suggest.ValueKind is JsonValueKind.True or JsonValueKind.False) suggestions = suggest.GetBoolean();
+                        else warnings.Add("colleagues.suggest must be true or false — suggestions stay on.");
+                    }
                 }
             }
 
@@ -1434,6 +1449,7 @@ public static class ProviderConfigLoader
                 WebSearch = webSearch,
                 Memory = memory,
                 Colleagues = colleagues,
+                ColleagueSuggestions = suggestions,
                 Hooks = hooks,
                 Sandbox = sandbox,
                 Web = web,

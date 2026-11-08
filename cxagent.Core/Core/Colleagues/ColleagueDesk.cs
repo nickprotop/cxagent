@@ -8,6 +8,15 @@ using CxAgent.Core.Storage;
 
 namespace CxAgent.Core.Colleagues;
 
+/// <summary>A worker worth keeping as a colleague, and why it is offered — one line, never a blocking question.</summary>
+/// <param name="Handle">The worker.</param>
+/// <param name="Why">What it has been through: "you steered it 2 times", and the like.</param>
+public sealed record KeepSuggestion(string Handle, string Why)
+{
+    /// <summary>The line both front ends show above Keep and Not this one.</summary>
+    public string Line => $"{Handle} — {Why}. Keep it as a colleague? It would learn from its work and could be brought into any session.";
+}
+
 /// <summary>What forgetting a colleague asks: its name, or null when there is nothing to forget, and the words.</summary>
 public sealed record ForgetAsk(string? Name, string Text);
 
@@ -116,6 +125,9 @@ public sealed record ColleagueDeskParts
     /// <summary>The session's gate — what a colleague's recall asks through, as the caller, while the session is served.</summary>
     public Permissions.IPermissionGate? Gate { get; init; }
 
+    /// <summary>Whether a worker kept coming back to is offered as a colleague — config's <c>colleagues.suggest</c>.</summary>
+    public bool Suggest { get; init; } = true;
+
     /// <summary>Where each distilling call is recorded for <c>/stats</c> — the usage history; null records nothing.</summary>
     public Action<Storage.RunRecord>? SaveRun { get; init; }
 }
@@ -174,6 +186,7 @@ public sealed partial class ColleagueDesk : IDisposable
         _distiller.Spent += Record;
         _workers.SendBegan += OnBegan;
         _workers.SendEnded += OnEnded;
+        _workers.SendEnded += Weigh;
         _workers.Forgotten += OnWorkerForgotten;
         _workers.Badges = BadgeFor;
 
@@ -935,6 +948,62 @@ public sealed partial class ColleagueDesk : IDisposable
     public static WorkerBadge? BadgeFor(string origin) =>
         origin.StartsWith(OriginPrefix, StringComparison.Ordinal) ? new WorkerBadge("Colleague", origin[OriginPrefix.Length..], "◆") : null;
 
+    /// <summary>
+    /// Raised once for a worker the user or the agent keeps coming back to — for a front end to offer Keep and Not this one
+    /// under its answer. See <see cref="Weigh"/>.
+    /// </summary>
+    public event Action<KeepSuggestion>? KeepSuggested;
+
+    /// <summary>How many steers by the user make a worker worth offering — conservative, the spec's floor.</summary>
+    public const int SuggestAfterSteers = 2;
+
+    /// <summary>How many follow-ups from the agent make a worker worth offering.</summary>
+    public const int SuggestAfterFollowUps = 3;
+
+    /// <summary>How many rounds of work in this session — one session, one area — make a worker worth offering.</summary>
+    public const int SuggestAfterRounds = 4;
+
+    /// <summary>Workers already offered, or turned down with Not this one — each is asked about once.</summary>
+    private readonly ConcurrentDictionary<string, byte> _suggested = new(StringComparer.Ordinal);
+
+    /// <summary>Rounds each worker has ended here, by agent id.</summary>
+    private readonly ConcurrentDictionary<string, int> _stretches = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Keep, pressed under a suggestion: the worker kept under a name taken from what it was doing — as typing
+    /// <c>/colleagues keep</c> with no name does. Answers the line to show.
+    /// </summary>
+    public string KeepOffered(string handle)
+    {
+        _suggested[handle] = 0;
+        return Keep(new KeepOrder(handle, null));
+    }
+
+    /// <summary>Not this one: the worker is never offered again in this session.</summary>
+    public void Dismiss(string handle) => _suggested[handle] = 0;
+
+    /// <summary>
+    /// At the end of each stretch of a worker's work, whether it has earned an offer: steered twice by the user, followed
+    /// up three times by the agent, or four rounds here (spec §9, thresholds conservative). ONCE PER WORKER, and never for
+    /// a colleague's own worker, in a one-to-one, or with suggestions or colleagues off.
+    /// </summary>
+    private void Weigh(string agentId, string? outcome)
+    {
+        if (!_parts.Suggest || _parts.OneToOne || KeepSuggested is null) return;
+        if (_workers.FindByAgentId(agentId) is not { } kept || _workers.OriginOf(kept.Name) is not null) return;
+        var rounds = _stretches.AddOrUpdate(agentId, 1, (_, n) => n + 1);
+        if (_suggested.ContainsKey(kept.Name)) return;
+        var sends = _workers.SendsTo(kept.Name);
+        var why = sends.User >= SuggestAfterSteers ? $"you steered it {sends.User} times"
+            : sends.Lead >= SuggestAfterFollowUps ? $"the agent sent it {sends.Lead} follow-ups"
+            : rounds >= SuggestAfterRounds ? $"it has done {rounds} rounds of work here"
+            : null;
+        if (why is null || !_suggested.TryAdd(kept.Name, 0)) return;
+        // A LISTENER'S FAILURE IS ITS OWN: this runs inside the worker's release, as the round's capture does.
+        try { KeepSuggested.Invoke(new KeepSuggestion(kept.Name, why)); }
+        catch (Exception e) when (e is not OperationCanceledException) { }
+    }
+
     /// <summary>This desk's mark in a colleague's <c>live</c> folder — one per session, whatever its id becomes.</summary>
     private readonly string _holder = Guid.NewGuid().ToString("N");
 
@@ -1041,6 +1110,7 @@ public sealed partial class ColleagueDesk : IDisposable
         if (_workers.Badges == (Func<string, WorkerBadge?>)BadgeFor) _workers.Badges = null;
         _workers.SendBegan -= OnBegan;
         _workers.SendEnded -= OnEnded;
+        _workers.SendEnded -= Weigh;
         _workers.Forgotten -= OnWorkerForgotten;
         foreach (var name in _present.Keys) _parts.Library.MarkAbsent(name, _holder);
     }

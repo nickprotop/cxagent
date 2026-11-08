@@ -2062,6 +2062,22 @@ function event(m) {
       append(view, n);
       break;
     }
+    // A WORKER WORTH KEEPING, with the terminal's two buttons. Answered in any tab, every tab takes it away — and a
+    // tab replaying the log meets the answer right after the offer.
+    case "keepSuggestion": {
+      const n = el("div", "said Info keep-offer");
+      n.dataset.handle = m.handle;
+      n.append(el("div", null, m.text));
+      const btns = el("div", "btns");
+      const answer = (choice) => send({ type: "keepSuggestion", sessionId: view.id, handle: m.handle, choice });
+      btns.append(button("Keep", null, () => answer("keep")), button("Not this one", "ghost", () => answer("dismiss")));
+      n.append(btns);
+      append(view, n);
+      break;
+    }
+    case "keepAnswered":
+      for (const n of view.log.querySelectorAll(".keep-offer")) if (n.dataset.handle === m.handle) n.remove();
+      break;
     case "toolStarted": {
       if (m.jobType === "llm_agent") { startWorker(view, m); break; }
       const card = m.agent && view.agentId && m.agent !== view.agentId ? cardFor(view, m.agent) : null;

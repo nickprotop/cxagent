@@ -473,6 +473,20 @@ public sealed class SubAgentStore
 
     private readonly ConcurrentDictionary<string, string> _asked = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Counts one accepted send to this worker, by who sent it — the user's steers and the lead's follow-ups, which is how
+    /// a session learns which workers it keeps coming back to. COUNTED WHERE THE SEND IS ACCEPTED, a message left for a
+    /// running worker included; a refused one counts for nothing.
+    /// </summary>
+    public void NoteSent(string name, bool fromUser) =>
+        _sends.AddOrUpdate(name, _ => fromUser ? new WorkerSends(1, 0) : new WorkerSends(0, 1),
+            (_, was) => fromUser ? was with { User = was.User + 1 } : was with { Lead = was.Lead + 1 });
+
+    /// <summary>How many sends this worker has had here, by who sent them.</summary>
+    public WorkerSends SendsTo(string name) => _sends.GetValueOrDefault(name) ?? new WorkerSends(0, 0);
+
+    private readonly ConcurrentDictionary<string, WorkerSends> _sends = new(StringComparer.Ordinal);
+
     /// <summary>The word a release that announces none records — see <see cref="EndSend"/>.</summary>
     internal void NoteOutcome(string name, string outcome) => _noted[name] = outcome;
 
@@ -851,3 +865,8 @@ public sealed class SubAgentStore
         }
     }
 }
+
+/// <summary>The sends a worker has had in this session, by who sent them.</summary>
+/// <param name="User">Typed by the user — in its tab, or with /agents send.</param>
+/// <param name="Lead">Sent by the agent that owns it, with agent_send.</param>
+public sealed record WorkerSends(int User, int Lead);

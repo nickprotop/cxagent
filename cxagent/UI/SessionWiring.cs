@@ -153,6 +153,30 @@ public static class SessionWiring
         session.SubAgents.SendEnded += (agentId, outcome) =>
             system.EnqueueOnUIThread(() => tab.JobSink?.WorkerSettled(agentId, outcome), "sessionWiring.Subscribe");
 
+        // A WORKER WORTH KEEPING, offered once in the conversation its answers land in — never a blocking question. The
+        // browser shows the same line and buttons from the same event (WebSessionHub).
+        session.KeepSuggested += offer => system.EnqueueOnUIThread(() =>
+        {
+            var id = tab.Chat.AddMessage(SharpConsoleUI.Controls.ChatRole.System, offer.Line);
+            tab.Chat.SetActions(id,
+            [
+                new SharpConsoleUI.Controls.ChatMessageAction
+                {
+                    Id = "keep", Label = "Keep", AfterPress = SharpConsoleUI.Controls.ChatActionAfterPress.Hide,
+                    OnClick = _ => session.Notify(session.Colleagues?.KeepOffered(offer.Handle) ?? Session.ColleaguesOff),
+                },
+                new SharpConsoleUI.Controls.ChatMessageAction
+                {
+                    Id = "dismiss", Label = "Not this one", AfterPress = SharpConsoleUI.Controls.ChatActionAfterPress.Hide,
+                    OnClick = ctx =>
+                    {
+                        session.Colleagues?.Dismiss(offer.Handle);
+                        ctx.SetStatus("not suggested again", SharpConsoleUI.Core.NotificationSeverity.Info);
+                    },
+                },
+            ]);
+        }, "sessionWiring.Subscribe");
+
         // A FORGOTTEN CHILD'S CALLS GO WITH IT, through the tab's current sink for the reason the two above give.
         session.SubAgents.Forgotten += agentId =>
             system.EnqueueOnUIThread(() => tab.JobSink?.ForgetChild(agentId), "sessionWiring.Subscribe");

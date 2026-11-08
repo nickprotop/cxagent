@@ -627,6 +627,11 @@ conversation so far is the first round of its past, and every later task it fini
 to keep one it asks you, **Keep** or **Don't keep**; what could not be kept anyway — a worker that already is a
 colleague — is refused without asking.
 
+**Offered to you.** A worker you steered twice, the agent followed up three times, or that did four rounds of work here
+gets one line under its answer offering to keep it — **Keep** keeps it under a name from what it was doing, **Not this
+one** never asks again. Once per worker, never a question that waits; `colleagues.suggest` in config.json turns it off
+([CONFIG.md](CONFIG.md#colleagues--workers-kept-across-sessions)).
+
 **Bringing one in.** `/colleagues bring <name> [task]` — with a task, it starts on it in the background, and the agent
 gets its report; with none, it joins **idle**, to be given work in its tab or by the agent. A name with spaces needs no
 quotes. A colleague already here is not brought twice: a task is passed to it.

@@ -337,6 +337,16 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "colleagues":
                 ColleaguesPage(Str(m, "sessionId"));
                 break;
+            // KEEP OR NOT THIS ONE, under a worker offered as a colleague — the terminal's buttons, through the same desk.
+            case "keepSuggestion":
+                if (LiveSession(Str(m, "sessionId")) is { Colleagues: { } offering } offered && Str(m, "handle") is { Length: > 0 } offeredHandle)
+                {
+                    if (Str(m, "choice") == "keep") Notice(offered.Id, offering.KeepOffered(offeredHandle), "Info");
+                    else offering.Dismiss(offeredHandle);
+                    _hub.LogFor(offered).KeepAnswered(offeredHandle);
+                }
+                else Error("No such open session.");
+                break;
             // FORGET, FROM THE LIBRARY PAGE OR A TYPED /colleagues forget: asked first, then done on the page's yes.
             case "colleagueForget":
                 if (LiveSession(Str(m, "sessionId")) is { } losing)

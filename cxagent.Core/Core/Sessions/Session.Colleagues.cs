@@ -119,7 +119,14 @@ public sealed partial class Session
         }
         Colleagues?.Dispose();
         Colleagues = new ColleagueDesk(parts);
+        Colleagues.KeepSuggested += s => KeepSuggested?.Invoke(s);
     }
+
+    /// <summary>
+    /// A worker of this session worth keeping as a colleague — ON THE SESSION, so a front end subscribes once and hears it
+    /// whichever desk a config change gives the session. Each front end offers Keep and Not this one under it.
+    /// </summary>
+    public event Action<KeepSuggestion>? KeepSuggested;
 
     /// <summary>
     /// The one line a session opens with when the library is not empty: who can be called on, and what each knows.

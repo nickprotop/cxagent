@@ -319,6 +319,7 @@ internal static class SessionFactory
             Served = shared.Served,
             Gate = shared.Gate,
             SaveRun = shared.History is { } history ? history.SaveRun : null,
+            Suggest = resolution.ColleagueSuggestions,
         });
 
         // THE PORTS' OBSERVERS BECOME SUBSCRIBER ONE OF A FAN-OUT, and everything downstream is

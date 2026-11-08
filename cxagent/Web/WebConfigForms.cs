@@ -112,6 +112,7 @@ internal static class WebConfigForms
         if (Bool(v, "detach") is { } detach) d.DetachOnTimeout = detach;
         if (Bool(v, "memory") is { } memory) d.MemoryEnabled = memory;
         if (Bool(v, "colleagues") is { } colleagues) d.ColleaguesEnabled = colleagues;
+        if (Bool(v, "colleagueSuggest") is { } suggest) d.ColleagueSuggestions = suggest;
         if (Bool(v, "sandboxEnabled") is { } on) d.SandboxEnabled = on;
         if (Bool(v, "sandboxNetwork") is { } net) d.SandboxNetwork = net;
         if (Str(v, "writable") is { } w) d.WritableText = w;
@@ -407,6 +408,11 @@ internal static class WebConfigForms
                     Radio("colleagues", "Workers kept across sessions", d.ColleaguesEnabled ? "true" : "false",
                         ("true", "Keep colleagues", GeneralDraft.ColleaguesOnHelp),
                         ("false", "No colleagues", GeneralDraft.ColleaguesOffHelp))),
+                // THE SAME CHOICES AND WORDS AS F8's — both write GeneralDraft.ColleagueSuggestions.
+                Section("Suggestions",
+                    Radio("colleagueSuggest", "Offer to keep a worker", d.ColleagueSuggestions ? "true" : "false",
+                        ("true", "Suggest", GeneralDraft.SuggestOnHelp),
+                        ("false", "Don't suggest", GeneralDraft.SuggestOffHelp))),
                 // PROSE, NOT FIELDS: these are shown, never set, and an info field draws as a value in monospace.
                 new JsonObject { ["title"] = "Rules every colleague keeps", ["help"] = string.Join(" ", ColleagueDraft.Rules), ["fields"] = new JsonArray() });
             return form;

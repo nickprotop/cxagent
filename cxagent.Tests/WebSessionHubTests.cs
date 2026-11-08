@@ -515,6 +515,39 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         Assert.Null(library.Find("Charting"));
     }
 
+    /// <summary>
+    /// A worker the user keeps steering is offered as a colleague in the browser too — the same line, Keep and Not this
+    /// one — and Keep keeps it, the offer gone from every tab.
+    /// </summary>
+    [Fact]
+    public async Task A_suggestion_reaches_the_browser_with_its_buttons()
+    {
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        var session = _manager.Sessions.First(s => s.Id == id);
+        await session.Colleagues!.Idle();
+        var child = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = _model, Ledger = new TokenLedger(), MaxTurns = 3, ContextWindow = 200_000,
+            Tools = new AgentTools(Core.Jobs.JobRegistry.CreateWithBuiltins()),
+        }).Create();
+        child.Agent.Context.Replace([new ChatMessage { Role = "user", Content = "chart it" }, new ChatMessage { Role = "assistant", Content = "charted" }]);
+        var handle = session.SubAgents.Keep(child, "chart layout");
+        session.SubAgents.NoteSent(handle, fromUser: true);
+        session.SubAgents.NoteSent(handle, fromUser: true);
+        Assert.True(session.SubAgents.TryClaim(handle));
+        session.SubAgents.AnnounceBegin(handle, "go on");
+        session.SubAgents.EndSend(handle);
+
+        var offer = await tab.NextAsync(m => m["type"]?.GetValue<string>() == "event" && m["kind"]?.GetValue<string>() == "keepSuggestion");
+        Assert.Equal(handle, offer["handle"]!.GetValue<string>());
+        Assert.Contains("Keep it as a colleague?", offer["text"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        await tab.SendAsync(Msg("keepSuggestion", ("sessionId", id), ("handle", handle), ("choice", "keep")));
+        await tab.NextAsync(m => m["kind"]?.GetValue<string>() == "keepAnswered" && m["handle"]?.GetValue<string>() == handle);
+        Assert.NotNull(session.SubAgents.OriginOf(handle));
+    }
+
     [Fact]
     public async Task A_session_closed_elsewhere_tells_its_tabs()
     {

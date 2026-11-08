@@ -71,6 +71,7 @@ public sealed class WebSessionHub
     private readonly ConcurrentDictionary<string, Action<SessionChangeKind>> _clears = new();
     private readonly ConcurrentDictionary<string, Action<ToolCallReport>> _calls = new();
     private readonly ConcurrentDictionary<string, IDisposable> _queues = new();
+    private readonly ConcurrentDictionary<string, IDisposable> _offers = new();
     private int _listPending;
 
     /// <summary>A hub over <paramref name="services"/>, told whenever the manager closes a session.</summary>
@@ -189,6 +190,8 @@ public sealed class WebSessionHub
         _calls.Clear();
         foreach (var queue in _queues.Values) queue.Dispose();
         _queues.Clear();
+        foreach (var offer in _offers.Values) offer.Dispose();
+        _offers.Clear();
     }
 
     /// <summary>
@@ -256,6 +259,7 @@ public sealed class WebSessionHub
         if (_clears.TryRemove(session.Id, out var clear)) session.Changed -= clear;
         if (_calls.TryRemove(session.Id, out var call)) session.CallFinished -= call;
         if (_queues.TryRemove(session.Id, out var queue)) queue.Dispose();
+        if (_offers.TryRemove(session.Id, out var offer)) offer.Dispose();
         foreach (var c in _clients.Keys) c.SessionClosed(session.Id);
         ListChanged();
     }
@@ -427,6 +431,14 @@ public sealed class WebSessionHub
                     session.Drained -= drained;
                     session.Cancelled -= cancelled;
                 }
+            }
+            // A WORKER WORTH KEEPING, offered in the conversation with Keep and Not this one, as the terminal offers it.
+            // IN THE LOG, so a tab joining later sees an offer still open — and the answer, which takes it away.
+            if (!_offers.ContainsKey(session.Id))
+            {
+                Action<Core.Colleagues.KeepSuggestion> offered = log.KeepOffered;
+                session.KeepSuggested += offered;
+                if (!_offers.TryAdd(session.Id, new Unsubscribe(() => session.KeepSuggested -= offered))) session.KeepSuggested -= offered;
             }
             // ITS ASIDES TOO — /btw answered beside the conversation — as a watcher beside the terminal's own.
             var asides = session.WatchAsides(log);

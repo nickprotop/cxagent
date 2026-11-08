@@ -869,6 +869,11 @@ which asks you first — and, when there are any, a list of the colleagues in it
 `false` removes both; colleagues already kept stay on disk. A value that is not `true` or `false`
 warns at startup and leaves colleagues on.
 
+**Suggestions.** `"colleagues": { "suggest": false }` stops cxagent offering to keep a worker. On when absent: a
+worker you steered twice, the agent followed up three times, or that did four rounds of work in a session gets one
+line in the conversation — *Keep* or *Not this one* — once per worker, never a question that waits. F8's Colleagues
+tab and the browser's config page set it under *Settings*. A value that is not `true` or `false` warns and leaves it on.
+
 A colleague runs only on a model with a context window of at least 128k tokens, and starts with a
 quarter of that window (at most 100k) of its experience. A provider entry whose window cxagent cannot
 learn needs `contextWindow` set for a colleague to run on it.

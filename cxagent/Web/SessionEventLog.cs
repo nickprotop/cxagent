@@ -391,6 +391,13 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     /// </summary>
     public void Queued(string text) => Append("queued", new JsonObject { ["text"] = text });
 
+    /// <summary>A worker offered as a colleague — the line the terminal shows, for the page to put Keep and Not this one under.</summary>
+    public void KeepOffered(Core.Colleagues.KeepSuggestion offer) =>
+        Append("keepSuggestion", new JsonObject { ["handle"] = offer.Handle, ["text"] = offer.Line });
+
+    /// <summary>The offer for <paramref name="handle"/> was answered, in some tab — every tab takes it away.</summary>
+    public void KeepAnswered(string handle) => Append("keepAnswered", new JsonObject { ["handle"] = handle });
+
     /// <summary>
     /// The conversation was cleared: what was kept goes, and a <c>cleared</c> event takes its place — so a tab watching
     /// empties its transcript as the terminal's does, a tab joining later starts from the clear, and one that saw the

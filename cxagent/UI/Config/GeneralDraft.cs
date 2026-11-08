@@ -35,6 +35,7 @@ public sealed class GeneralDraft
     private bool _originalDetach;
     private bool _originalMemory;
     private bool _originalColleagues;
+    private bool _originalSuggestions;
     private TurnCap _originalCap;
     private int? _originalCapNumber;
     private int? _originalCompact;
@@ -57,6 +58,7 @@ public sealed class GeneralDraft
             DetachOnTimeout = settings.ShellDetachOnTimeout ?? true,
             MemoryEnabled = settings.Memory ?? true,
             ColleaguesEnabled = settings.Colleagues ?? true,
+            ColleagueSuggestions = settings.ColleagueSuggestions ?? true,
             Cap = turns switch { null => TurnCap.Default, 0 => TurnCap.None, _ => TurnCap.Number },
             // A CAP OF 300 TO START FROM when there is none: the sub-agents' built-in ceiling, the number most
             // likely to be wanted by someone choosing "Cap at".
@@ -78,6 +80,7 @@ public sealed class GeneralDraft
         draft._originalDetach = draft.DetachOnTimeout;
         draft._originalMemory = draft.MemoryEnabled;
         draft._originalColleagues = draft.ColleaguesEnabled;
+        draft._originalSuggestions = draft.ColleagueSuggestions;
         draft._originalCap = draft.Cap;
         draft._originalCapNumber = turns;
         draft._originalCompact = settings.Orchestrator.ContextCompressThreshold;
@@ -151,6 +154,17 @@ public sealed class GeneralDraft
     /// <summary>Whether sessions keep colleagues — config's <c>colleagues.enabled</c>, on when absent.</summary>
     public bool ColleaguesEnabled { get; set; } = true;
 
+    /// <summary>What suggesting means — ONE TEXT for F8 and the browser's config page.</summary>
+    public const string SuggestOnHelp =
+        "A worker you steered twice, the agent followed up three times, or that did four rounds of work gets one line "
+        + "offering to keep it — Keep or Not this one. Once per worker; never a question that waits.";
+
+    /// <summary>What not suggesting means — see <see cref="SuggestOnHelp"/>.</summary>
+    public const string SuggestOffHelp = "No offers. /colleagues keep still keeps a worker.";
+
+    /// <summary>Whether a worker kept coming back to is offered as a colleague — config's <c>colleagues.suggest</c>, on when absent.</summary>
+    public bool ColleagueSuggestions { get; set; } = true;
+
     public TurnCap Cap { get; set; }
 
     /// <summary>The cap's number as typed; read only when <see cref="Cap"/> is <see cref="TurnCap.Number"/>.</summary>
@@ -181,6 +195,7 @@ public sealed class GeneralDraft
     private bool DetachChanged => DetachOnTimeout != _originalDetach;
     private bool MemoryChanged => MemoryEnabled != _originalMemory;
     private bool ColleaguesChanged => ColleaguesEnabled != _originalColleagues;
+    private bool SuggestionsChanged => ColleagueSuggestions != _originalSuggestions;
     private bool CapChanged => Cap != _originalCap || (Cap == TurnCap.Number && CapNumber != _originalCapNumber);
     private bool CompactChanged => Compact != _originalCompact || (Compact is null && CompactText.Trim().Length > 0);
     private bool ToolsChanged => !ToolBoxes.Same(Tools, _originalTools);
@@ -202,7 +217,7 @@ public sealed class GeneralDraft
     /// <summary>Remove the key on save, so searches use DuckDuckGo.</summary>
     public void ClearTavilyKey() => TavilyKey = "";
 
-    public bool IsDirty => DetachChanged || MemoryChanged || ColleaguesChanged || CapChanged || CompactChanged || ToolsChanged || TavilyKeyChanged || SandboxChanged;
+    public bool IsDirty => DetachChanged || MemoryChanged || ColleaguesChanged || SuggestionsChanged || CapChanged || CompactChanged || ToolsChanged || TavilyKeyChanged || SandboxChanged;
 
     /// <summary>
     /// What was just written becomes what the file says, so the draft is clean without being rebuilt — a rebuild
@@ -213,6 +228,7 @@ public sealed class GeneralDraft
         _originalDetach = DetachOnTimeout;
         _originalMemory = MemoryEnabled;
         _originalColleagues = ColleaguesEnabled;
+        _originalSuggestions = ColleagueSuggestions;
         _originalCap = Cap;
         _originalCapNumber = CapNumber;
         _originalCompact = Compact;
@@ -242,6 +258,7 @@ public sealed class GeneralDraft
         // ON IS THE DEFAULT, so on removes the key, and the block with it when nothing else is there.
         if (MemoryChanged) Set(root, "memory", "enabled", MemoryEnabled ? null : JsonValue.Create(false));
         if (ColleaguesChanged) Set(root, "colleagues", "enabled", ColleaguesEnabled ? null : JsonValue.Create(false));
+        if (SuggestionsChanged) Set(root, "colleagues", "suggest", ColleagueSuggestions ? null : JsonValue.Create(false));
 
         if (CapChanged) Set(root, "orchestrator", "maxTurns", CapNumber is { } n ? JsonValue.Create(n) : null);
         if (CompactChanged) Set(root, "orchestrator", "contextCompressThreshold", Compact is { } c ? JsonValue.Create(c) : null);
