@@ -30,6 +30,7 @@ public sealed class ColleagueDraft
         Original = original;
         Model = original.Instance;
         DistillModel = original.DistillInstance;
+        Frozen = original.Frozen;
     }
 
     /// <summary>The draft for a colleague as the library has it.</summary>
@@ -45,7 +46,13 @@ public sealed class ColleagueDraft
     /// <summary>The entry its rounds are distilled on, or null for <see cref="Model"/> (and, without one, the session's).</summary>
     public string? DistillModel { get; set; }
 
-    public bool IsDirty => Blank(Model) != Original.Instance || Blank(DistillModel) != Original.DistillInstance;
+    /// <summary>
+    /// Frozen: it works and its rounds are kept, but it learns nothing. Applied through the store's Freeze and Unfreeze,
+    /// never written onto the record — unfreezing records the stretch lived frozen, so it is never learned from.
+    /// </summary>
+    public bool Frozen { get; set; }
+
+    public bool IsDirty => Blank(Model) != Original.Instance || Blank(DistillModel) != Original.DistillInstance || Frozen != Original.Frozen;
 
     /// <summary>Why this cannot be saved as it stands, against the entries configured now, or null.</summary>
     public string? Problem(ProviderSettings settings) =>
@@ -72,6 +79,11 @@ public sealed class ColleagueDraft
         var model = Blank(Model);
         var distil = Blank(DistillModel);
         library.Update(Name, r => r with { Instance = model, DistillInstance = distil });
+        if (Frozen != Original.Frozen)
+        {
+            if (Frozen) library.Freeze(Name);
+            else library.Unfreeze(Name);
+        }
     }
 
     /// <summary>
@@ -102,6 +114,14 @@ public sealed class ColleagueDraft
     public const string OwnModel = "Its own model";
 
     public const string ModelHelp = "Where it works when brought in. A bring that names a model overrides this.";
+    /// <summary>What learning means — the words F8's radio and the browser's both show.</summary>
+    public const string LearnsHelp = "After each task, what it did is distilled into its experience.";
+
+    /// <summary>What frozen means — see <see cref="LearnsHelp"/>.</summary>
+    public const string FrozenHelp =
+        "It works as before and its rounds are kept, but its experience stays as it is. Unfrozen, it learns again from "
+        + "that moment: what it did while frozen is never learned from.";
+
     public const string DistillHelp = "Where what it did is distilled into experience, after each task.";
 
     /// <summary>

@@ -307,8 +307,8 @@ public sealed class AgentTab : IDisposable
         {
             badge is null ? $"[bold]{MarkupParser.Escape(Kept.Name)}[/]" : $"[bold]{badge.Glyph} {MarkupParser.Escape(badge.Name)}[/]",
         };
-        var learning = badge is not null && Session.Colleagues?.Distilling.Contains(badge.Name, StringComparer.OrdinalIgnoreCase) == true;
-        var facts = FactsFor(Kept, _now, badge, learning);
+        var card = badge is null ? null : Session.Colleagues?.CardOf(Kept.Name);
+        var facts = FactsFor(Kept, _now, badge, card);
         lines.Add(Muted(facts));
         // A COLLEAGUE'S WORKER IS DESCRIBED BY ITS NAME, already the header's first line.
         if (Kept.Description is { Length: > 0 } description && description != badge?.Name) lines.Add(Muted(description));
@@ -337,8 +337,8 @@ public sealed class AgentTab : IDisposable
     /// <param name="kept">The agent.</param>
     /// <param name="now">How it stands, or null for one never given work.</param>
     /// <param name="badge">What it is, or null for an ordinary worker.</param>
-    /// <param name="learning">A colleague's rounds are being distilled now.</param>
-    public static string FactsFor(StoredAgent kept, AgentRowView? now, WorkerBadge? badge, bool learning)
+    /// <param name="card">A colleague's card — whether it is learning or frozen — or null for a worker, or one not known.</param>
+    public static string FactsFor(StoredAgent kept, AgentRowView? now, WorkerBadge? badge, CxAgent.Core.Colleagues.ColleagueCard? card)
     {
         var model = kept.Agent.ModelId is { Length: > 0 } runsOn ? runsOn : null;
         string facts;
@@ -348,7 +348,7 @@ public sealed class AgentTab : IDisposable
         if (badge is not null)
         {
             var state = now?.State ?? AgentRowState.Done;
-            facts += $" · {AgentRows.ColleagueWord(state, learning)}";
+            facts += $" · {(card is null ? AgentRows.ColleagueWord(state, learning: false) : AgentRows.ColleagueWord(state, card))}";
             if (now is { Running: true } running) facts += $" · {JobsPanel.Clock(running.Elapsed)}";
         }
         else if (now is { } row) facts += $" · {AgentRows.Word(row.State)} · {JobsPanel.Clock(row.Elapsed)}";

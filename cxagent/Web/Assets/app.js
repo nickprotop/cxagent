@@ -2392,7 +2392,7 @@ function drawColleagueCards(pane, p, sid) {
     // long name was cut to "Explore SharpConso…", and the state and task wrapped down the pane.
     const card = el("div", "colleague-card" + (w.running ? " working" : ""));
     const head = el("div", "cc-head");
-    head.append(el("span", "dot " + (w.running ? "working" : c.learning ? "held" : "")), el("b", null, w.badge.glyph + " " + w.badge.name));
+    head.append(el("span", "dot " + (w.running ? "working" : c.learning && !c.frozen ? "held" : "")), el("b", null, w.badge.glyph + " " + w.badge.name));
     head.title = w.badge.name;
     const state = el("div", "cc-state" + (w.running ? " working" : /failed/.test(c.state) ? " failed" : ""),
       w.running ? c.state + " · " + clock(w.seconds * 1000) : c.state);

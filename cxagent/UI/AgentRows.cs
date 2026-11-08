@@ -112,6 +112,13 @@ public static class AgentRows
         _ => "idle",
     };
 
+    /// <summary>
+    /// A colleague's word for a state, from its card — the one both front ends draw: frozen says so after the state, and a
+    /// frozen colleague is never "learning", since nothing of it is distilled.
+    /// </summary>
+    public static string ColleagueWord(AgentRowState state, CxAgent.Core.Colleagues.ColleagueCard card) =>
+        ColleagueWord(state, card.Learning && !card.Frozen) + (card.Frozen ? " · frozen" : "");
+
     private static AgentRowState Working(StoredAgent kept) =>
         kept.Agent.Agent.IsWaitingOnPermission ? AgentRowState.WaitingForPermission : AgentRowState.Running;
 

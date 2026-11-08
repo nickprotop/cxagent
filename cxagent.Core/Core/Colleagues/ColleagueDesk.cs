@@ -273,6 +273,7 @@ public sealed partial class ColleagueDesk : IDisposable
             var handle = _workers.NameOfOrigin(OriginPrefix + r.Name);
             var busy = distilling.Contains(r.Name, StringComparer.OrdinalIgnoreCase);
             var state = handle is not null && _workers.IsBusy(handle) ? "working" : busy ? "distilling" : handle is null ? "" : "idle";
+            if (r.Frozen) state = state.Length == 0 ? "frozen" : state + " · frozen";
             return new ColleaguePanelRow(r.Name, r.Description, handle, state)
             {
                 AgentId = handle is null ? null : _workers.Find(handle)?.Agent.Agent.Id,
@@ -295,8 +296,19 @@ public sealed partial class ColleagueDesk : IDisposable
         if (_parts.Library.Find(found.Name) is not { } record) return null;
         var task = _workers.AskedOf(handle)?.Trim().Split('\n', 2)[0].Trim();
         return new ColleagueCard(ColleagueLine.Of(record).Knows, record.ExperienceVersion,
-            Distilling.Contains(record.Name, StringComparer.OrdinalIgnoreCase), task);
+            Distilling.Contains(record.Name, StringComparer.OrdinalIgnoreCase), task)
+        {
+            Frozen = record.Frozen,
+        };
     }
+
+    /// <summary>What every front end says when a colleague is frozen — one text, so none words it differently.</summary>
+    public static string FrozenLine(string name) =>
+        $"{name} is frozen: it works and its rounds are kept, but it learns nothing until unfrozen.";
+
+    /// <summary>What every front end says when a colleague is unfrozen.</summary>
+    public static string UnfrozenLine(string name) =>
+        $"{name} learns again, from now on — what it did while frozen stays in its past, never in its experience.";
 
     /// <summary>Completes once every distilling this desk started has finished — for a caller that must wait.</summary>
     public Task Idle()

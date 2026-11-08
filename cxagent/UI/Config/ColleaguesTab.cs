@@ -198,6 +198,19 @@ public sealed class ColleaguesTab
         models.Add("Runs on", ColleagueDraft.ModelHelp, Picker(ColleagueDraft.SessionModel, options, draft.Model, v => draft.Model = v));
         models.Add("Distils on", ColleagueDraft.DistillHelp, Picker(ColleagueDraft.OwnModel, options, draft.DistillModel, v => draft.DistillModel = v));
         _detail.AddControl(ListDetail.Section("Models", models.Control));
+        _detail.AddControl(ListDetail.Gap());
+
+        // THE SAME WORDS AS THE BROWSER'S PAGE (WebConfigForms.Colleagues) — both set ColleagueDraft.Frozen.
+        var learning = new FieldGrid();
+        var frozen = new RadioGroup<bool>();
+        learning.AddBare(new RadioControl<bool>(frozen, false, "Learns"));
+        learning.AddBare(Help(ColleagueDraft.LearnsHelp));
+        learning.AddBare(new MarkupControl([""]));
+        learning.AddBare(new RadioControl<bool>(frozen, true, "Frozen"));
+        learning.AddBare(Help(ColleagueDraft.FrozenHelp));
+        frozen.SelectedValue = draft.Frozen;
+        frozen.SelectionChanged += (_, on) => { draft.Frozen = on; MarkSave(); };
+        _detail.AddControl(ListDetail.Section("Learning", learning.Control));
     }
 
     /// <summary>A dropdown whose first choice is the inherited one (null) and the rest the entries by name.</summary>

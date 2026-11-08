@@ -134,11 +134,51 @@ public sealed partial class ColleagueStore(string configDir)
         return LastSeq(Path.Combine(folder, "past.seq"), Path.Combine(folder, "past.jsonl"));
     }
 
-    /// <summary>Every round after the watermark, in order.</summary>
+    /// <summary>
+    /// Every round after the watermark still to be learned from, in order — none while the colleague is frozen, and never
+    /// one lived frozen.
+    ///
+    /// <para>EMPTY WHILE FROZEN, ASKED EVERY TIME: a drain asks again after each batch, so a freeze made while one is under
+    /// way stops it at the next batch rather than after every round waiting.</para>
+    /// </summary>
     public IReadOnlyList<PastRound> Undistilled(string name)
     {
-        var through = Find(name)?.DistilledThrough ?? 0;
-        return Past(name).Where(r => r.Seq > through).ToList();
+        if (Find(name) is not { } record) return [];
+        if (record.Frozen) return [];
+        return Past(name).Where(r => r.Seq > record.DistilledThrough && !record.Unlearned.Any(u => u.Holds(r.Seq))).ToList();
+    }
+
+    /// <summary>
+    /// Freezes a colleague: from now on its rounds are kept and none is learned from. A colleague already frozen stays
+    /// frozen from where it began. Null for no such colleague.
+    /// </summary>
+    public ColleagueRecord? Freeze(string name) =>
+        Update(name, r => r.Frozen ? r : r with { Frozen = true, FrozenAfter = HeldCount(name) });
+
+    /// <summary>
+    /// Lets a colleague learn again FROM NOW ON (user, 2026-11-08): the rounds it lived frozen stay in its past for recall
+    /// and never become experience — "do not learn from this stretch" is what freezing was for. Null for no such colleague.
+    /// </summary>
+    public ColleagueRecord? Unfreeze(string name) =>
+        Update(name, r =>
+        {
+            if (!r.Frozen) return r;
+            var now = HeldCount(name);
+            return r with
+            {
+                Frozen = false,
+                Unlearned = now > r.FrozenAfter ? [.. r.Unlearned, new SeqRange(r.FrozenAfter + 1, now)] : r.Unlearned,
+            };
+        });
+
+    /// <summary>
+    /// The round count read under the past's own lock — the one every append holds — so a round being appended as the
+    /// count is taken lands wholly before it or wholly after.
+    /// </summary>
+    private long HeldCount(string name)
+    {
+        using var held = Hold(Path.Combine(FolderOf(name), "past.lock"));
+        return RoundCount(name);
     }
 
     /// <summary>Every round, in order. A line that cannot be read is skipped: one damaged round costs that round.</summary>

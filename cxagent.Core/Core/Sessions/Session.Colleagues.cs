@@ -180,8 +180,11 @@ public sealed partial class Session
             // neither has nowhere to show one.
             case "open":
                 return Told("A one-to-one opens in the terminal or a browser: /colleagues open <name> there, or Open in the library.");
+            case "freeze":
+            case "unfreeze":
+                return Freeze(desk, Unquoted(rest), verb.Equals("freeze", StringComparison.OrdinalIgnoreCase));
             default:
-                return Told($"/colleagues knows keep, bring and open, not '{verb}'. /colleagues alone lists them.");
+                return Told($"/colleagues knows keep, bring, open, freeze and unfreeze, not '{verb}'. /colleagues alone lists them.");
         }
     }
 
@@ -246,6 +249,15 @@ public sealed partial class Session
                 : $"{name} is working as {handle}.");
         }
         return Told(answer);
+    }
+
+    /// <summary><c>/colleagues freeze|unfreeze &lt;name&gt;</c> — the same switch as F8's and the browser's, through the store.</summary>
+    private CommandStatus Freeze(ColleagueDesk desk, string name, bool freeze)
+    {
+        if (name.Length == 0) return Told($"Say who: /colleagues {(freeze ? "freeze" : "unfreeze")} <name>.");
+        var record = freeze ? desk.Library.Freeze(name) : desk.Library.Unfreeze(name);
+        if (record is null) return Told($"There is no colleague called '{name}'. /colleagues lists them.");
+        return Told(freeze ? ColleagueDesk.FrozenLine(record.Name) : ColleagueDesk.UnfrozenLine(record.Name));
     }
 
     private CommandStatus ListColleagues(ColleagueDesk desk)

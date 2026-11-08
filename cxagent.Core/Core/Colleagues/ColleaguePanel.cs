@@ -12,7 +12,8 @@ public sealed record ColleaguePanel(IReadOnlyList<ColleaguePanelRow> Rows, IRead
 /// <param name="Name">Its name.</param>
 /// <param name="Description">Its one line.</param>
 /// <param name="Handle">Its worker's handle in this session, or null when it is not here — then the panel offers Bring.</param>
-/// <param name="State">"working", "idle" or "distilling" for one here; "distilling" or "" for one not here.</param>
+/// <param name="State">"working", "idle" or "distilling" for one here; "distilling" or "" for one not here — followed by
+/// " · frozen", or "frozen" alone for one not here, while it is frozen.</param>
 public sealed record ColleaguePanelRow(string Name, string Description, string? Handle, string State)
 {
     /// <summary>Its worker's agent id when it is here — what opens its tab.</summary>
@@ -28,4 +29,8 @@ public sealed record ColleaguePanelRow(string Name, string Description, string? 
 /// <param name="Version">Its experience's version.</param>
 /// <param name="Learning">Its rounds are being distilled now.</param>
 /// <param name="Task">The first line of what it was last asked, or null when it has not been asked anything here.</param>
-public sealed record ColleagueCard(IReadOnlyList<string> Knows, long Version, bool Learning, string? Task);
+public sealed record ColleagueCard(IReadOnlyList<string> Knows, long Version, bool Learning, string? Task)
+{
+    /// <summary>Frozen by the user: it works, and learns nothing until unfrozen.</summary>
+    public bool Frozen { get; init; }
+}

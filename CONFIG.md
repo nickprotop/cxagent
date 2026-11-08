@@ -881,7 +881,8 @@ read outside the `web.roots` folders asks, and so does recalling what was read t
 entry it was kept on, or the session's model — and where its rounds are distilled — its own model unless
 set. F8's Colleagues tab and the browser's page choose both from the provider entries, and refuse one
 whose `contextWindow` is under 128k. A save there is used at its next bring; one already working keeps
-its model.
+its model. The same page sets whether it **learns** or is **frozen** — frozen, its rounds are kept and none is
+distilled, and unfrozen it learns again from that moment ([`/colleagues freeze`](COMMANDS.md#colleagues) does the same).
 
 Colleagues live in this folder, under `colleagues/` — see [What else lives in that directory](#what-else-lives-in-that-directory).
 [`/colleagues`](COMMANDS.md#colleagues) lists them, keeps a worker and brings one in.

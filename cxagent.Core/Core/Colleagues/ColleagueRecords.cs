@@ -58,6 +58,29 @@ public sealed record ColleagueRecord
     /// library's total is the colleague's own and not whichever usage history one machine happens to hold.
     /// </summary>
     public DistillTotals Spend { get; init; } = new();
+
+    /// <summary>
+    /// Frozen by the user: it works and its rounds are kept, but none is distilled — the user's lever for keeping a good
+    /// experience as it is (2026-11-08).
+    /// </summary>
+    public bool Frozen { get; init; }
+
+    /// <summary>How many rounds its past held when it was frozen — the stretch lived frozen starts after this one.</summary>
+    public long FrozenAfter { get; init; }
+
+    /// <summary>
+    /// Stretches lived frozen, which are never distilled. KEPT AS RANGES BESIDE THE WATERMARK, NOT BY MOVING IT: rounds
+    /// waiting from before a freeze are still to be learned from, and they come before the stretch.
+    /// </summary>
+    public IReadOnlyList<SeqRange> Unlearned { get; init; } = [];
+}
+
+/// <summary>Rounds <paramref name="From"/> to <paramref name="Through"/> of a past, both included.</summary>
+public sealed record SeqRange(long From, long Through)
+{
+    public bool Holds(long seq) => seq >= From && seq <= Through;
+
+    public long Count => Through - From + 1;
 }
 
 /// <summary>Calls to the distiller and the tokens they took.</summary>

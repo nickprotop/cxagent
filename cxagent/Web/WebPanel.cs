@@ -22,6 +22,7 @@ internal static class WebPanel
             ["knows"] = new JsonArray([.. card.Knows.Select(k => (JsonNode?)JsonValue.Create(k))]),
             ["version"] = card.Version,
             ["learning"] = card.Learning,
+            ["frozen"] = card.Frozen,
             ["task"] = card.Task,
             ["state"] = state,
         };
@@ -56,7 +57,7 @@ internal static class WebPanel
                 ["agentId"] = row.AgentId,
                 ["name"] = row.Kept.Name,
                 ["type"] = row.Badge is null ? row.Kept.TypeName : null,
-                ["colleague"] = card is null ? null : ColleagueCard(card, AgentRows.ColleagueWord(row.State, card.Learning)),
+                ["colleague"] = card is null ? null : ColleagueCard(card, AgentRows.ColleagueWord(row.State, card)),
                 ["task"] = row.Kept.Description,
                 ["state"] = row.State.ToString(),
                 ["running"] = row.Running,

@@ -174,7 +174,7 @@ public sealed class ColleagueTasksTests : IDisposable
         var kept = session.SubAgents.Find("charting")!;
 
         var facts = AgentTab.FactsFor(kept, AgentRows.Describe(session.SubAgents, kept, DateTimeOffset.UtcNow),
-            session.SubAgents.BadgeOf(kept.Name), learning: false);
+            session.SubAgents.BadgeOf(kept.Name), card: null);
 
         Assert.StartsWith("colleague · charting", facts);
         Assert.Contains("idle", facts);

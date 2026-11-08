@@ -421,7 +421,12 @@ internal static class WebConfigForms
                 Field("facts", "Experience", "info", $"v{record.ExperienceVersion}" + (line.Knows.Count > 0 ? " · knows " + string.Join(", ", line.Knows) : ""))),
             Section("Models",
                 Select("model", "Runs on", draft.Model ?? "", [("", ColleagueDraft.SessionModel), .. options], ColleagueDraft.ModelHelp),
-                Select("distillModel", "Distils on", draft.DistillModel ?? "", [("", ColleagueDraft.OwnModel), .. options], ColleagueDraft.DistillHelp)));
+                Select("distillModel", "Distils on", draft.DistillModel ?? "", [("", ColleagueDraft.OwnModel), .. options], ColleagueDraft.DistillHelp)),
+            // THE SAME CHOICES AND WORDS AS F8's — both set ColleagueDraft.Frozen.
+            Section("Learning",
+                Radio("frozen", "Learning", draft.Frozen ? "true" : "false",
+                    ("false", "Learns", ColleagueDraft.LearnsHelp),
+                    ("true", "Frozen", ColleagueDraft.FrozenHelp))));
         return form;
     }
 
@@ -430,6 +435,7 @@ internal static class WebConfigForms
     {
         if (Str(v, "model") is { } model) d.Model = model.Length == 0 ? null : model;
         if (Str(v, "distillModel") is { } distil) d.DistillModel = distil.Length == 0 ? null : distil;
+        if (Bool(v, "frozen") is { } frozen) d.Frozen = frozen;
         return d;
     }
 

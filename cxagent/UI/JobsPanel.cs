@@ -733,7 +733,7 @@ public sealed class JobsPanel
     private static CardText ColleagueCardText(AgentRow row, CxAgent.Core.Colleagues.ColleagueCard card)
     {
         var view = row.View;
-        var word = AgentRows.ColleagueWord(view.State, card.Learning);
+        var word = AgentRows.ColleagueWord(view.State, card);
         var status = view.Running ? $"● {word} {DisplayNumber.Took(view.Elapsed)}" : word;
         // THE VERSION FIRST: the folders it knows grow with every workplace, and the column cuts from the right.
         var knows = card.Knows.Count > 0 ? $"v{card.Version} · knows {string.Join(" · ", card.Knows)}" : $"v{card.Version}";

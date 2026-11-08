@@ -20,6 +20,12 @@ public sealed record LibraryFacts(long Version, long Rounds, long Distilled, int
 {
     /// <summary>What distilling it has cost, every process's calls together.</summary>
     public DistillTotals Spend { get; init; } = new();
+
+    /// <summary>Frozen by the user: it learns nothing until unfrozen.</summary>
+    public bool Frozen { get; init; }
+
+    /// <summary>Rounds it lived frozen — kept in its past, never learned from.</summary>
+    public long Unlearned { get; init; }
 }
 
 /// <summary>One part of a colleague's experience.</summary>
@@ -51,6 +57,8 @@ public static class LibraryView
                 new LibraryFacts(r.ExperienceVersion, store.RoundCount(r.Name), r.DistilledThrough, r.Skipped.Count, r.Type, r.Instance)
                 {
                     Spend = r.Spend,
+                    Frozen = r.Frozen,
+                    Unlearned = r.Unlearned.Sum(u => u.Count),
                 },
                 parts);
         })];
@@ -64,6 +72,8 @@ public static class LibraryView
         var line = $"v{f.Version} · {f.Rounds} round{(f.Rounds == 1 ? "" : "s")}, {f.Distilled} distilled"
                    + (f.Skipped > 0 ? $", {f.Skipped} skipped" : "")
                    + (f.Model is { } m ? $" on {m}" : "");
+        if (f.Frozen) line += " · frozen";
+        if (f.Unlearned > 0) line += $" · {f.Unlearned} round{(f.Unlearned == 1 ? "" : "s")} lived frozen, not learned from";
         if (f.Spend.Calls > 0)
             line += $" · distilling: {f.Spend.Calls} call{(f.Spend.Calls == 1 ? "" : "s")}, "
                     + $"{Helpers.DisplayNumber.Compact(f.Spend.InputTokens + f.Spend.OutputTokens)} tokens";

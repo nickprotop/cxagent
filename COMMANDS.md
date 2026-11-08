@@ -57,6 +57,7 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/colleagues keep <worker> [name]` | Keep a worker of this session as a colleague |
 | `/colleagues bring <name> [task]` | Bring a colleague in — on a task, or idle to be given one |
 | `/colleagues open <name>` | Talk with a colleague one-to-one, in a session of its own |
+| `/colleagues freeze <name>` · `unfreeze <name>` | Stop a colleague learning, or let it learn again from now on |
 | `/commands` | List your custom commands, and any file that was shadowed or skipped |
 | `/commands <name>` | Show that command's file, as it will be sent |
 | `/<name> [args]` | Run a custom command, or a skill by name — see [`/commands`](#commands) |
@@ -642,6 +643,11 @@ updated, invoice added (v3)* — or that there was nothing new.
 itself, in a session tab of its own titled *with <name>*, in the folder it last worked in. It can read, never write or
 run anything; ask it what it knows, teach it, correct it — every exchange is a round, distilled like any other. Opening
 it again returns to the same conversation. It is never listed by `/sessions` or picked by `-c`.
+
+**Freezing one.** `/colleagues freeze <name>` — or *Frozen* on its page in F8's Colleagues tab or the browser's
+config page — keeps its experience as it is: it works as before and its rounds are kept, but none is distilled. Its card,
+tab and library entry say *frozen*. `/colleagues unfreeze <name>` lets it learn again **from that moment**: what it did
+while frozen stays in its past for recall and is never learned from; rounds still waiting from before the freeze are.
 
 **What it reaches.** Brought in, a colleague starts from its experience and can reach the rest: **recall** searches
 its past for words, reads one round whole, or reads the current version of its experience — the newest, if it grew in
