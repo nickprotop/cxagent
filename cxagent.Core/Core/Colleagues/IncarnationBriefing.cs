@@ -27,7 +27,8 @@ public static class IncarnationBriefing
         // HOW TO WEIGH ITS OWN MARKS, as the user approved it (2026-11-08) — the distiller writes them, the colleague reads them.
         sb.Append("\nEach statement in it says how it is known: seen in a round, or concluded from what was seen. Rely on ")
             .Append("what was seen; check what was concluded before you build on it. Your past and the current version of ")
-            .Append("your experience are a recall away — including the round behind any statement.\n");
+            .Append("your experience are a recall away — including the round behind any statement. A statement with no mark was ")
+            .Append("learned before marks were kept: weigh it as concluded.\n");
         if (record.Workplaces.Count > 0)
         {
             sb.Append("\nYou have worked in: ")

@@ -99,6 +99,20 @@ public sealed class DistillerPrinciplesTests : IDisposable
             Assert.DoesNotContain(specific, text);
     }
 
+    /// <summary>
+    /// A statement learned before marks were kept stays unmarked until a round bears on it: a live distilling of a round
+    /// that only recalled stamped all 22 statements of an older experience "(seen, round 14)" — a wrong one among them —
+    /// because "it keeps the mark it had" said nothing about statements that had none.
+    /// </summary>
+    [Fact]
+    public void An_unmarked_statement_stays_unmarked_until_a_round_bears_on_it()
+    {
+        Assert.Contains("A statement with no mark was learned before marks were kept", Distiller.InstructionsForTest);
+        Assert.Contains("rewriting it is not seeing it", Distiller.InstructionsForTest);
+        Assert.Contains("A statement with no mark was learned before marks were kept",
+            IncarnationBriefing.For(Library.Find("Charting")!, "", new IncarnationSetting(true, [])));
+    }
+
     [Fact]
     public void The_old_correction_line_is_replaced() =>
         Assert.DoesNotContain("When a round shows an earlier statement was wrong, correct it", Distiller.InstructionsForTest);
