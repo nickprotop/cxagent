@@ -47,6 +47,7 @@ internal static class WebPanel
                 ["running"] = row.Running,
                 ["background"] = !row.Foreground,
                 ["seconds"] = (int)row.Elapsed.TotalSeconds,
+                ["badge"] = Badge(row.Badge),
             });
 
         var commands = new JsonArray();
@@ -143,4 +144,8 @@ internal static class WebPanel
             },
         };
     }
+
+    /// <summary>A worker's badge as the page reads it — the same three facts the terminal shows — or null.</summary>
+    internal static JsonObject? Badge(Core.Agents.WorkerBadge? badge) =>
+        badge is null ? null : new JsonObject { ["kind"] = badge.Kind, ["name"] = badge.Name, ["glyph"] = badge.Glyph };
 }

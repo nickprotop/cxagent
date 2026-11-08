@@ -510,3 +510,5 @@ textarea.form-input { resize: vertical; }
 
 /* THE TERMINAL'S QUESTION STEPS: a summary row per answer. */
 .answer-row { display: flex; gap: 14px; padding: 2px 0; }
+/* A COLLEAGUE'S TAG stands apart from a worker's, as the terminal marks it with its own word and glyph. */
+.tag.colleague { background: var(--accent); color: var(--on-accent, #fff); }

@@ -241,7 +241,9 @@ public sealed class WebSessionHub
         if (!_logs.TryGetValue(session.Id, out var entry)) return;
         var agentId = child.Child.Agent.Id;
         var stored = session.SubAgents.FindByAgentId(agentId);
-        entry.Log.Worker(child.JobId, agentId, stored?.Name ?? agentId, stored?.TypeName, stored?.Description);
+        // THE BADGE FROM THE CHILD'S OWN ORIGIN: the spawn hook runs before the store keeps it, so the store has no mark yet.
+        var badge = child.Child.Origin is { } origin ? session.SubAgents.Badges?.Invoke(origin) : null;
+        entry.Log.Worker(child.JobId, agentId, stored?.Name ?? agentId, stored?.TypeName, stored?.Description, badge);
     }
 
     // A SESSION CLOSED ANYWHERE — /exit in the terminal, a browser, idle — leaves every tab that had it open, told.

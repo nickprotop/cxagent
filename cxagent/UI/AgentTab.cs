@@ -226,9 +226,15 @@ public sealed class AgentTab : IDisposable
     public ButtonControl MoveForTest => _move;
 
     /// <summary>The tab title: the state first, as a job tab's.</summary>
-    public string Title()
+    public string Title() => TitleFor(Kept, _now);
+
+    /// <summary>
+    /// A worker tab's title: its state first, then — for a colleague — its glyph and its name, which says more than a
+    /// handle slugged from it.
+    /// </summary>
+    public static string TitleFor(StoredAgent kept, AgentRowView? now)
     {
-        var glyph = _now?.State switch
+        var glyph = now?.State switch
         {
             AgentRowState.Queued => "○",
             AgentRowState.Running or AgentRowState.WaitingForPermission => "●",
@@ -236,8 +242,10 @@ public sealed class AgentTab : IDisposable
             null => "·",
             _ => "✗",
         };
-        var name = Kept.Name;
-        return $"{glyph} {(name.Length <= 24 ? name : name[..23] + "…")}";
+        var badge = now?.Badge;
+        var name = badge?.Name ?? kept.Name;
+        var shown = name.Length <= 24 ? name : name[..23] + "…";
+        return badge is null ? $"{glyph} {shown}" : $"{glyph} {badge.Glyph} {shown}";
     }
 
     /// <summary>One clock tick: the state, the header, what the composer row offers, and the live rows' clocks.</summary>
@@ -290,9 +298,14 @@ public sealed class AgentTab : IDisposable
 
     private List<string> HeaderLines()
     {
-        var lines = new List<string> { $"[bold]{MarkupParser.Escape(Kept.Name)}[/]" };
+        var badge = Session.SubAgents.BadgeOf(Kept.Name);
+        var lines = new List<string>
+        {
+            badge is null ? $"[bold]{MarkupParser.Escape(Kept.Name)}[/]" : $"[bold]{badge.Glyph} {MarkupParser.Escape(badge.Name)}[/]",
+        };
         // THE FULL name:model here — the tab is where a child is looked at closely.
         var facts = Kept.Agent.ModelId is { Length: > 0 } runsOn ? $"{Kept.TypeName} · {runsOn}" : Kept.TypeName;
+        if (badge is not null) facts = $"{badge.Kind.ToLowerInvariant()} · {Kept.Name} · {facts}";
         if (Kept.Agent.Root is { } folder) facts += $" · in {folder}";
         if (_now is { } row)
         {

@@ -236,6 +236,15 @@ public sealed class SubAgentStore
     /// <summary>Where the worker under <paramref name="name"/> came from, or null for an ordinary one.</summary>
     public string? OriginOf(string name) => _origins.GetValueOrDefault(name);
 
+    /// <summary>
+    /// Turns an origin into a badge, or null for none — set by the module that gives origins (the colleagues' desk),
+    /// so the store can say what a worker is without knowing what any origin means.
+    /// </summary>
+    public Func<string, WorkerBadge?>? Badges { get; set; }
+
+    /// <summary>What the worker under <paramref name="name"/> is, when it is more than an ordinary one; else null.</summary>
+    public WorkerBadge? BadgeOf(string name) => OriginOf(name) is { } origin ? Badges?.Invoke(origin) : null;
+
     /// <summary>The handle of the live worker from <paramref name="origin"/>, or null when none is kept now.</summary>
     public string? NameOfOrigin(string origin) =>
         _origins.FirstOrDefault(o => o.Value == origin && _byName.ContainsKey(o.Key)).Key;

@@ -313,7 +313,7 @@ function drawTabs() {
     tab.type = "button";
     const dot = config ? (view.dirty ? "waiting" : "") : shell ? (view.ended ? "" : "working") : file ? (view.dirty ? "waiting" : "") : command ? (view.running ? "working" : "") : worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle");
     tab.append(el("span", "dot " + dot),
-      document.createTextNode(plugins ? "⧉ Plugins" : config ? "⚙ config.json" + (view.dirty ? " •" : "") : shell ? "❯ " + view.title : file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? "⤷ " + view.name : view.title || "session"));
+      document.createTextNode(plugins ? "⧉ Plugins" : config ? "⚙ config.json" + (view.dirty ? " •" : "") : shell ? "❯ " + view.title : file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? workerLabel(view) : view.title || "session"));
     if (file) tab.title = view.path;
     tab.addEventListener("click", () => activate(id));
     if (sub) {
@@ -364,10 +364,13 @@ function openedWorker(m) {
   const fresh = !view;
   if (!view) view = newView(m.sessionId, "worker");
   Object.assign(view, { parent: m.parent, agentId: m.agentId, name: m.name, workerType: m.workerType, task: m.task,
-    model: m.model, folder: m.folder, title: m.name });
+    model: m.model, folder: m.folder, title: m.name, badge: m.badge || null });
   if (fresh || state.active === m.sessionId) activate(m.sessionId);
   else drawTabs();
 }
+
+// A WORKER TAB'S LABEL: the terminal's — a colleague by its glyph and name, any other worker by its handle.
+function workerLabel(view) { return view.badge ? view.badge.glyph + " " + view.badge.name : "⤷ " + view.name; }
 
 function openWorker(sessionId, agentId) {
   const key = sessionId + "~" + agentId;
@@ -401,7 +404,7 @@ function activate(id) {
   // the session they were opened from, as the terminal's title keeps its folder whatever dialog is open.
   const where = view && !view.folder && view.parent ? state.views.get(view.parent) : view;
   $("crumb").textContent = where ? where.folder || "" : "";
-  $("phone-title").textContent = view ? (view.kind === "worker" ? "⤷ " + view.name : view.kind === "command" ? "▭ " + view.title : view.title) : "";
+  $("phone-title").textContent = view ? (view.kind === "worker" ? workerLabel(view) : view.kind === "command" ? "▭ " + view.title : view.title) : "";
   if (view && (view.kind === "file" || view.kind === "config")) setTimeout(() => view.ta.focus(), 0);
   if (view && view.kind === "shell") setTimeout(() => { if (view.fit) view.fit.fit(); if (view.term) view.term.focus(); }, 0);
   drawWorkerHead();
@@ -441,7 +444,9 @@ function drawWorkerHead() {
   const w = workerRunning(view);
   const running = !!(w && w.running);
   head.append(running ? el("span", "spin violet") : el("span", w && w.state === "Failed" ? "mark-bad" : "mark-ok", w && w.state === "Failed" ? "✗" : "✓"));
-  head.append(el("span", "tag", "Worker"), el("b", null, view.name));
+  // A COLLEAGUE SAYS SO, with its name — the badge the terminal's tab and card show too.
+  head.append(el("span", "tag" + (view.badge ? " colleague" : ""), view.badge ? view.badge.kind : "Worker"),
+    el("b", null, view.badge ? view.badge.glyph + " " + view.badge.name : view.name));
   const facts = [view.workerType, view.model, w ? w.state.toLowerCase() + (w.background ? " · background" : "") : ""].filter(Boolean);
   head.append(el("span", "meta", facts.join(" · ")));
   if (view.task) head.append(el("span", "meta", view.task));
@@ -1723,7 +1728,9 @@ function startWorker(view, m) {
   const model = el("span", "model", m.runsOn ? shortModel(m.runsOn) : "");
   const task = el("span", "for", target);
   const progress = el("span", "progress", m.progress || "starting…");
-  summary.append(mark, el("span", "tag", "Worker"), who, model, task, progress);
+  // THE TERMINAL'S WORD FOR THE ROW — "Colleague" for one brought in — sent with the event.
+  const author = m.author || "Worker";
+  summary.append(mark, el("span", "tag" + (author === "Colleague" ? " colleague" : ""), author), who, model, task, progress);
   const body = el("div", "body");
   const facts = el("pre");
   facts.hidden = true;
@@ -1991,6 +1998,7 @@ function event(m) {
       card.agentId = m.agentId;
       card.open.disabled = false;
       if (m.workerType) card.who.textContent = m.workerType;
+      if (m.badge) card.who.textContent = m.badge.glyph + " " + m.badge.name + (m.workerType ? " · " + m.workerType : "");
       // THE TITLE STAYS THE TITLE, as the terminal's row keeps its short description: the full brief is the card's hover,
       // and the worker's own tab shows it in full.
       if (m.task) card.task.title = m.task;
@@ -2269,8 +2277,8 @@ function drawTasksPane(p, sid) {
   for (const w of p.workers) {
     const acts = [button("Open", null, () => { openWorker(sid, w.agentId); if (!wide()) setPanel(false); })];
     if (w.running) acts.push(button("Stop", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "stop" })));
-    const sub = [w.type, w.state.toLowerCase(), clock(w.seconds * 1000), w.background ? "background" : ""].filter(Boolean).join(" · ");
-    const row = taskRow(w.running ? "working" : w.state === "Failed" ? "held" : "", el("b", null, w.name), sub, acts);
+    const sub = [w.badge ? w.badge.kind.toLowerCase() : "", w.type, w.state.toLowerCase(), clock(w.seconds * 1000), w.background ? "background" : ""].filter(Boolean).join(" · ");
+    const row = taskRow(w.running ? "working" : w.state === "Failed" ? "held" : "", el("b", null, w.badge ? w.badge.glyph + " " + w.badge.name : w.name), sub, acts);
     if (w.task) row.querySelector(".t").append(el("small", "task-text", w.task));
     pane.append(row);
   }

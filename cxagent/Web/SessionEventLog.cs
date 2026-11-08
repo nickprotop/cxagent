@@ -146,8 +146,11 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     /// A worker started for the row <paramref name="job"/>: who it is, so its card can name it and open it. Its type
     /// goes out as "workerType": every event already has a "type", which says it is an event.
     /// </summary>
-    public void Worker(string job, string agentId, string name, string? type, string? task) =>
-        Append("worker", new JsonObject { ["job"] = job, ["agentId"] = agentId, ["name"] = name, ["workerType"] = type, ["task"] = task });
+    public void Worker(string job, string agentId, string name, string? type, string? task, Core.Agents.WorkerBadge? badge = null) =>
+        Append("worker", new JsonObject
+        {
+            ["job"] = job, ["agentId"] = agentId, ["name"] = name, ["workerType"] = type, ["task"] = task, ["badge"] = WebPanel.Badge(badge),
+        });
 
     /// <inheritdoc/>
     public void UserTurnAdded(ChatMessageId id, string text) => AddUserTurn(id, text, counted: true);
@@ -252,6 +255,8 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
                 ["name"] = job.DisplayName,
                 ["agent"] = job.AgentId,
                 ["jobType"] = job.JobType,
+                // THE TERMINAL'S OWN WORD for the row — Worker, Colleague, Tool — so a card and a row agree.
+                ["author"] = UI.InlineJobSink.Author(job),
                 ["runsOn"] = job.RunsOn,
                 ["progress"] = job.ProgressMessage,
             });

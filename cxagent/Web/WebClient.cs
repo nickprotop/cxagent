@@ -464,6 +464,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             ["task"] = stored.Description,
             ["model"] = stored.Agent.ModelId,
             ["folder"] = stored.Agent.Root ?? session.WorkingDirectory,
+            ["badge"] = WebPanel.Badge(session.SubAgents.BadgeOf(stored.Name)),
         });
         log.Subscribe(since, Send, replay =>
         {

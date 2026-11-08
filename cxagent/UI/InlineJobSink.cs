@@ -741,6 +741,9 @@ public sealed class InlineJobSink : IToolObserver
 
     public static string AuthorForTest(Job job) => AuthorFor(job);
 
+    /// <summary>A row's author word — "Worker", "Colleague", "Tool" — shared with the browser's card, so both say the same.</summary>
+    public static string Author(Job job) => AuthorFor(job);
+
     private static string AuthorFor(Job job)
     {
         // Compression is not a tool the model called — it is housekeeping the app did to its own
@@ -749,6 +752,9 @@ public sealed class InlineJobSink : IToolObserver
         if (job.JobType == "compress") return "Context";
 
         if (job.JobType != "llm_agent") return "Tool";
+
+        // A COLLEAGUE BROUGHT IN, drawn as a spawn is, and named for what it is.
+        if (job.PlanLocalId == CxAgent.Core.Jobs.Tool.Colleague) return "Colleague";
 
         // Name the ROLE when the plan specified one — "Worker · reviewer" says which of the four
         // built-ins (planner/implementer/reviewer/debugger) actually ran, which is the difference

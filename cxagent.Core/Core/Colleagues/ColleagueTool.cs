@@ -52,7 +52,13 @@ public sealed class ColleagueTool(ColleagueDesk desk,
             """).RootElement.Clone());
 
     /// <summary>Runs the call, or returns null if it is not this tool's.</summary>
-    public async Task<string?> TryInvokeAsync(ToolCall call, CancellationToken ct)
+    public Task<string?> TryInvokeAsync(ToolCall call, CancellationToken ct) => TryInvokeAsync(call, null, ct);
+
+    /// <summary>
+    /// Runs the call, or returns null if it is not this tool's. <paramref name="onChild"/> is told a brought-in
+    /// colleague the moment it is built — the hook the agent tool's spawn row uses, so a bring is drawn the same way.
+    /// </summary>
+    public async Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct)
     {
         if (!string.Equals(call.Name, ToolName, StringComparison.Ordinal)) return null;
         try
@@ -60,7 +66,7 @@ public sealed class ColleagueTool(ColleagueDesk desk,
             return Arg(call, "action")?.Trim().ToLowerInvariant() switch
             {
                 "list" => List(),
-                "bring" => await BringAsync(call, ct),
+                "bring" => await BringAsync(call, onChild, ct),
                 "keep" => await KeepAsync(call, ct),
                 _ => "colleague needs an action: list, bring or keep.",
             };
@@ -82,13 +88,16 @@ public sealed class ColleagueTool(ColleagueDesk desk,
         return sb.ToString().TrimEnd();
     }
 
-    private Task<string> BringAsync(ToolCall call, CancellationToken ct)
+    private Task<string> BringAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct)
     {
         var name = Arg(call, "name")?.Trim();
         var task = Arg(call, "task")?.Trim();
         if (string.IsNullOrEmpty(name)) return Task.FromResult("bring needs the colleague's name.");
         if (string.IsNullOrEmpty(task)) return Task.FromResult("bring needs a task — say what it should do and what to report.");
-        return desk.BringAsync(new BringOrder(name, task, Arg(call, "model")?.Trim(), Args.ReadBool(call, "background") ?? true, parentId()), ct);
+        return desk.BringAsync(new BringOrder(name, task, Arg(call, "model")?.Trim(), Args.ReadBool(call, "background") ?? true, parentId())
+        {
+            OnChild = onChild,
+        }, ct);
     }
 
     private async Task<string> KeepAsync(ToolCall call, CancellationToken ct)

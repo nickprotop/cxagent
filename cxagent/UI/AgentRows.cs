@@ -17,6 +17,9 @@ public sealed record AgentRowView(StoredAgent Kept, AgentRowState State, bool Fo
 {
     public string AgentId => Kept.Agent.Agent.Id;
 
+    /// <summary>What it is when more than an ordinary worker — a colleague — or null.</summary>
+    public WorkerBadge? Badge { get; init; }
+
     public bool Running => State is AgentRowState.Queued or AgentRowState.Running or AgentRowState.WaitingForPermission;
 }
 
@@ -32,7 +35,10 @@ public static class AgentRows
     /// <summary>
     /// How this agent stands now, or null for one that has never been given work.
     /// </summary>
-    public static AgentRowView? Describe(SubAgentStore store, StoredAgent kept, DateTimeOffset now)
+    public static AgentRowView? Describe(SubAgentStore store, StoredAgent kept, DateTimeOffset now) =>
+        DescribeState(store, kept, now) is { } row ? row with { Badge = store.BadgeOf(kept.Name) } : null;
+
+    private static AgentRowView? DescribeState(SubAgentStore store, StoredAgent kept, DateTimeOffset now)
     {
         var name = kept.Name;
         var run = store.BackgroundOf(name);

@@ -19,7 +19,11 @@ public sealed record KeepOrder(string Worker, string? Name);
 /// <param name="Model">A provider entry to run on instead of its own, or null.</param>
 /// <param name="Background">Whether it runs in the background where it can.</param>
 /// <param name="ParentAgentId">The session agent's id, so its report finds its way back.</param>
-public sealed record BringOrder(string Name, string Task, string? Model, bool Background, string ParentAgentId);
+public sealed record BringOrder(string Name, string Task, string? Model, bool Background, string ParentAgentId)
+{
+    /// <summary>Told the child the moment it is built, before it runs — how the lead draws a bring as a live worker row.</summary>
+    public Action<SubAgent>? OnChild { get; init; }
+}
 
 /// <summary>A model a colleague can run or be distilled on.</summary>
 /// <param name="Provider">The provider.</param>
@@ -112,6 +116,7 @@ public sealed class ColleagueDesk : IDisposable
         _distiller.Distilled += OnDistilled;
         _workers.SendBegan += OnBegan;
         _workers.SendEnded += OnEnded;
+        _workers.Badges = BadgeFor;
 
         // ROUNDS LEFT FROM BEFORE — a process that ended mid-drain, a drain that failed — are taken up now.
         Drain();
@@ -308,7 +313,12 @@ public sealed class ColleagueDesk : IDisposable
             Handle = ColleagueStore.Slug(record.Name),
             Background = order.Background,
             ParentAgentId = order.ParentAgentId,
-        }, c => child = c, ct) ?? "This session cannot start workers.";
+        }, c =>
+        {
+            child = c;
+            // THE CALLER'S OWN HOOK TOO — the lead's, which draws the spawn as a worker row live.
+            order.OnChild?.Invoke(c);
+        }, ct) ?? "This session cannot start workers.";
 
         // AN ORDINARY WORKER IF THE DOOR REFUSED, AND MARKED AS ONE: left marked, its rounds would reach a colleague it is
         // not, and a keep of it would be refused as one it already is.
@@ -519,8 +529,13 @@ public sealed class ColleagueDesk : IDisposable
         return name.Length > 0 ? name : kept.Name;
     }
 
+    /// <summary>A colleague's origin as a badge — the one way every surface names an incarnation.</summary>
+    public static WorkerBadge? BadgeFor(string origin) =>
+        origin.StartsWith(OriginPrefix, StringComparison.Ordinal) ? new WorkerBadge("Colleague", origin[OriginPrefix.Length..], "◆") : null;
+
     public void Dispose()
     {
+        if (_workers.Badges == (Func<string, WorkerBadge?>)BadgeFor) _workers.Badges = null;
         _workers.SendBegan -= OnBegan;
         _workers.SendEnded -= OnEnded;
     }

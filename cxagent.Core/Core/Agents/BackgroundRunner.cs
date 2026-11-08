@@ -141,7 +141,7 @@ internal static class BackgroundRunner
             // A STOPPED RUN'S SHELLS ARE SWEPT AGAIN NOW IT HAS ENDED: the stop killed what was running
             // then, but the child's last tool call may have handed a command to the background after it.
             if (stopped) store.StopShellsOf(kept.Name);
-            var shown = Shown(run, state, stopped);
+            var shown = Shown(run, state, stopped, badge: store.BadgeOf(kept.Name));
             run.Handoff.Complete(ReportFor(work, envelope, stoppedAsItFinished: overtaken is not null), text => DeliveryOutcomes.Delivered(stopped
                 ? work.Delivery.Leave(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))
                 : work.Delivery.Tell(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))),
@@ -204,11 +204,14 @@ internal static class BackgroundRunner
     /// <param name="state">The envelope's word for how it ended.</param>
     /// <param name="stopped">Whether something stopped it.</param>
     /// <param name="took">How long it ran; null measures up to now, which is every caller but a test.</param>
-    internal static string Shown(BackgroundRun run, string state, bool stopped, TimeSpan? took = null)
+    internal static string Shown(BackgroundRun run, string state, bool stopped, TimeSpan? took = null, WorkerBadge? badge = null)
     {
         var elapsed = Helpers.DisplayNumber.Took(took ?? DateTimeOffset.UtcNow - run.Started);
-        return stopped
-            ? $"background agent '{run.Start.Name}' stopped · {elapsed}"
-            : $"background agent '{run.Start.Name}' finished · {state} · {elapsed}";
+        var who = Who(badge, run.Start.Name);
+        return stopped ? $"{who} stopped · {elapsed}" : $"{who} finished · {state} · {elapsed}";
     }
+
+    /// <summary>Who a report line is about: "colleague Charting" for a badged worker, else "background agent 'x'".</summary>
+    public static string Who(WorkerBadge? badge, string name) =>
+        badge is { } b ? $"{b.Kind.ToLowerInvariant()} {b.Name}" : $"background agent '{name}'";
 }

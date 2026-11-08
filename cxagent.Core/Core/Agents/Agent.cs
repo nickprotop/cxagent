@@ -3033,7 +3033,8 @@ public sealed class Agent
             Id = jobId,
             PlanLocalId = call.Name,
             AgentId = agentId,
-            JobType = ToolJobType(call.Name),
+            // A COLLEAGUE BROUGHT IN IS A WORKER ROW, as a spawn is — its live body, its card in the browser — not a tool row.
+            JobType = IsColleagueBring(call) ? "llm_agent" : ToolJobType(call.Name),
             DisplayName = DescribeCall(call, _workingDir),
             State = JobState.Running,
             CreatedAt = DateTimeOffset.UtcNow,
@@ -3059,7 +3060,7 @@ public sealed class Agent
         // THE PROMPT THIS CHILD WAS GIVEN, read from the call rather than from the child: the child
         // holds it as a user message inside a buffered context, and digging it back out would couple
         // the row to the message layout. Read once — it never changes.
-        var childPrompt = ReadArg(call, "prompt");
+        var childPrompt = ReadArg(call, "prompt") ?? ReadArg(call, "task");
 
         void OnChildSpawned(SubAgent child)
         {
@@ -3331,7 +3332,8 @@ public sealed class Agent
                 // Memory answers from its store, like the plan from its list: agent-owned, no executor.
                 ?? Text(_memoryTool?.TryInvoke(call))
                 // Colleagues answer from the session's desk, like memory from its store.
-                ?? Text(_colleagueTool is null ? null : await _colleagueTool.TryInvokeAsync(call, ct))
+                // WITH THE SPAWN ROW'S HOOK: a colleague brought in is drawn as the agent tool's worker is, live.
+                ?? Text(_colleagueTool is null ? null : await _colleagueTool.TryInvokeAsync(call, OnChildSpawned, ct))
                 // Null when there is no user — the call then falls through to "no such tool", which
                 // is the honest answer for a tool this agent was never offered.
                 ?? Text(_askUser is null ? null : await _askUser.TryInvokeAsync(call, ct))
@@ -4166,8 +4168,23 @@ public sealed class Agent
         _ => "file",
     };
 
+    /// <summary>A colleague call that brings one in — a spawn, as far as its row is concerned.</summary>
+    private static bool IsColleagueBring(ToolCall call) =>
+        string.Equals(call.Name, Jobs.Tool.Colleague, StringComparison.Ordinal)
+        && string.Equals(ReadArg(call, "action")?.Trim(), "bring", StringComparison.OrdinalIgnoreCase);
+
     public static string DescribeCall(ToolCall call, string? workingDir)
     {
+        // A COLLEAGUE CALL IS NAMED BY WHAT IT DOES AND TO WHOM — "colleague · Charting" for a bring, whose row is then
+        // titled like a spawn's "{type} · {description}", the kind first.
+        if (string.Equals(call.Name, Jobs.Tool.Colleague, StringComparison.Ordinal))
+        {
+            var action = ReadArg(call, "action")?.Trim().ToLowerInvariant();
+            var who = action == "keep" ? ReadArg(call, "worker") : ReadArg(call, "name");
+            return action == "bring" ? $"colleague · {who?.Trim()}"
+                : string.IsNullOrWhiteSpace(who) ? $"colleague · {action}" : $"colleague · {action} {who!.Trim()}";
+        }
+
         // A SPAWN IS NAMED BY ITS TYPE AND ITS DESCRIPTION, not by raw JSON. The generic branch below
         // truncates the serialised arguments at 60 characters, and a spawn's JSON opens with
         // `{"description":"…` — so the description ate the budget and `type`, which serialises last,

@@ -616,13 +616,9 @@ public sealed class JobsPanel
     private static CardText AgentCard(AgentRow row)
     {
         var view = row.View;
-        var title = view.Kept.Description is { Length: > 0 } d ? d : view.Kept.Name;
-        var facts = new List<string> { "Agent" };
-        if (view.State is not (AgentRowState.Running or AgentRowState.Done)) facts.Add(AgentRows.Word(view.State));
-        if (view.Foreground && view.Running) facts.Add("foreground");
-        facts.Add(DisplayNumber.Took(view.Elapsed));
-
-        return new CardText(Mark(view.Running, view.State == AgentRowState.Done, "◇"), OutputTail.OneLine(title),
+        var facts = AgentFacts(view);
+        var title = view.Badge?.Name ?? (view.Kept.Description is { Length: > 0 } d ? d : view.Kept.Name);
+        return new CardText(Mark(view.Running, view.State == AgentRowState.Done, view.Badge?.Glyph ?? "◇"), OutputTail.OneLine(title),
             CardControl(view.Running), new EquatableList(facts), "View transcript", Movable: view is { Running: true, Foreground: true })
         {
             // WHERE IT RUNS, always — a card for a paid child must not read like one for a free one.
@@ -630,6 +626,19 @@ public sealed class JobsPanel
             Root = view.Kept.Agent.Root,
         };
     }
+
+    /// <summary>An agent card's facts: its kind — "Colleague" for a badged one — then how it stands.</summary>
+    private static List<string> AgentFacts(AgentRowView view)
+    {
+        var facts = new List<string> { view.Badge?.Kind ?? "Agent" };
+        if (view.State is not (AgentRowState.Running or AgentRowState.Done)) facts.Add(AgentRows.Word(view.State));
+        if (view.Foreground && view.Running) facts.Add("foreground");
+        facts.Add(DisplayNumber.Took(view.Elapsed));
+        return facts;
+    }
+
+    /// <summary>Test seam: an agent card's facts.</summary>
+    internal static IReadOnlyList<string> AgentCardFactsForTest(AgentRowView view) => AgentFacts(view);
 
     /// <summary>A card's mark, as markup: the kind while it runs, ✓ or ✗ once it has ended (decision 16).</summary>
     private static string Mark(bool running, bool succeeded, string kind) =>
