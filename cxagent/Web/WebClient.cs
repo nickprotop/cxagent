@@ -325,6 +325,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 if (LiveSession(Str(m, "sessionId")) is { } reading) OpenMemory(reading, Str(m, "name") ?? "");
                 else Error("No such open session.");
                 break;
+            case "deleteSession":
+                DeleteSession(Str(m, "id") ?? "", m["confirm"]?.GetValue<bool>() == true);
+                break;
             case "memoryForget":
                 if (LiveSession(Str(m, "sessionId")) is { } forgetting)
                     ForgetMemory(forgetting, Str(m, "name") ?? "", m["confirm"]?.GetValue<bool>() == true);
@@ -755,6 +758,14 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "/memory" when args.StartsWith("forget", StringComparison.OrdinalIgnoreCase):
                 ForgetMemory(session, args[6..], confirmed: false);
                 return true;
+            // ASKED HERE, AS THE LIST'S × ASKS: the terminal's own verb asks in its window.
+            case "/sessions" when args.StartsWith("delete", StringComparison.OrdinalIgnoreCase):
+            {
+                var ask = session.AskDeleteSession(args[6..]);
+                if (ask.Uid is { } uid) DeleteSession(uid, confirmed: false);
+                else Notice(session.Id, ask.Text, "Warning");
+                return true;
+            }
             default:
                 return false;
         }
@@ -804,6 +815,30 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     }
 
     /// <summary><c>/memory forget</c>: asked first, as the terminal asks, then deleted.</summary>
+    /// <summary>
+    /// Deletes a saved session for good, asking first — the list's ×, or <c>/sessions delete</c> typed here. The rule
+    /// and its words are Core's (<see cref="SessionDeletion"/>); this adds only the browser's own limit: a session
+    /// outside the web roots is not this login's to see, and so not its to delete.
+    /// </summary>
+    private void DeleteSession(string uid, bool confirmed)
+    {
+        if (S.Store.List(all: true).FirstOrDefault(i => i.Uid == uid) is { WorkingDir: { } dir } && !WebSessionHub.InsideRoots(dir, S.Roots))
+        {
+            Error("No saved session has that id.");
+            return;
+        }
+        var ask = SessionDeletion.Ask(S.Store, S.Manager, uid);
+        if (ask.Uid is null) { Error(ask.Text); return; }
+        if (!confirmed)
+        {
+            Send(new JsonObject { ["type"] = "confirmDelete", ["id"] = ask.Uid, ["text"] = ask.Text });
+            return;
+        }
+        var said = SessionDeletion.Delete(S.Store, S.Manager, ask.Uid);
+        if (!said.StartsWith("Deleted", StringComparison.Ordinal)) Error(said);
+        _hub.ListChanged();
+    }
+
     private void ForgetMemory(Session session, string name, bool confirmed)
     {
         var ask = session.AskForgetMemory(name);

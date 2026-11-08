@@ -74,6 +74,7 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/sessions new [folder]` | Open another conversation in its own tab |
 | `/sessions resume <n\|id>` | Restore one, by its number in the list or its id |
 | `/sessions all` | Every folder, not just this one |
+| `/sessions delete <n\|id>` | Delete one for good, after confirming |
 | `/sessions export <n\|id>` | Export an earlier session as markdown, without resuming it — an id works for any folder's |
 | `/export` | Export this conversation as markdown — a dialog; `F12` opens the same |
 | `/export last [N]` · `/export full` | Open it set to the last turn (or last N), or to everything the model saw |
@@ -903,6 +904,12 @@ Thirty days rather than the week this started with. Seven was right when these r
 invisible crash buffer, where nothing was lost by dropping one because nobody could name it. They
 are now a listing you read and an id you resume by, which makes the question *how far back would
 someone look* rather than *how long until a crash is stale*.
+
+**Deleting one yourself.** `/sessions delete <number|id>` names a session the way `resume` does and asks
+before it removes anything: its conversation, logs and workers' histories go, with every older copy its
+resumes carried on from, and nothing brings them back. Spend in `/stats` is kept. In a browser, hovering a
+saved session in the list shows a ×, which asks the same question in the row. A session open here is
+closed first; one another cxagent holds cannot be deleted while it does.
 
 ---
 

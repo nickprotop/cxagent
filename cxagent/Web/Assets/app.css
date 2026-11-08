@@ -97,6 +97,9 @@ body.no-panel .panel { display: none; }
 .row .t small { display: block; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .x { visibility: hidden; padding: 0 5px; font-size: 14px; }
 .row:hover .x, .row.on .x { visibility: visible; }
+.row.asking { cursor: default; background: var(--raised); }
+.row .ask { flex: 1; min-width: 0; }
+.row .ask small { display: block; color: var(--strong); font-size: 12px; white-space: normal; margin-bottom: 6px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; flex: none; background: var(--faint); }
 .dot.working { background: var(--accent); animation: pulse 1.4s infinite; }
 .dot.waiting { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 20%, transparent); }

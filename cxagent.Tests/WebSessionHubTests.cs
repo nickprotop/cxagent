@@ -441,6 +441,28 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         Assert.Contains(rows, r => r!["id"]!.GetValue<string>() == opened.Id);
     }
 
+    /// <summary>
+    /// A SAVED SESSION DELETED FROM THE LIST, never opened: the browser asks with the Core rule's words, and only a
+    /// confirmed delete removes it.
+    /// </summary>
+    [Fact]
+    public async Task A_saved_session_is_deleted_from_the_list_after_asking()
+    {
+        new FolderSessionStore(_paths).SaveTurn(new FolderSessionStore.ResumeTurn("SAVED", [new ChatMessage { Role = "user", Content = "chart the sales" }], 1, 1, Work));
+        await using var tab = await Tab.OpenAsync(_server.Bound.Port);
+
+        await tab.SendAsync(Msg("deleteSession", ("id", "SAVED")));
+        var ask = await tab.NextAsync(Type("confirmDelete"));
+        Assert.Equal("SAVED", ask["id"]!.GetValue<string>());
+        Assert.Contains("cannot be brought back", ask["text"]!.GetValue<string>());
+        Assert.True(Directory.Exists(new SessionFolder(_paths, "SAVED").Dir));
+
+        await tab.SendAsync(new JsonObject { ["type"] = "deleteSession", ["id"] = "SAVED", ["confirm"] = true });
+        await tab.NextAsync(m => m["type"]?.GetValue<string>() == "sessions"
+            && m["rows"]!.AsArray().All(r => r!["id"]!.GetValue<string>() != "SAVED"));
+        Assert.False(Directory.Exists(new SessionFolder(_paths, "SAVED").Dir));
+    }
+
     [Fact]
     public async Task A_session_closed_elsewhere_tells_its_tabs()
     {

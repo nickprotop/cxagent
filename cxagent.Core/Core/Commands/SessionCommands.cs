@@ -119,6 +119,9 @@ public static class SessionCommands
             new("resume <number|id>", "restore one — the number from this list, or its id",
                 Completes: false, Values: ValueSources.Sessions),
             new("all", "every folder, not just this one"),
+            // ASKS FIRST, in each front end's way — see SessionDeletion — because nothing brings a deleted one back.
+            new("delete <number|id>", "delete one for good, after confirming",
+                Completes: false, Values: ValueSources.Sessions),
         ]),
         // The registry of configured instances belongs to the composition root, and this table holds
         // nothing but the conversation. ONE ARGUMENT, and it is a live value — so the palette offers

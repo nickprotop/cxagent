@@ -153,6 +153,32 @@ public sealed partial class Session
     /// earlier sessions", which is a lie a user cannot detect — the same reason
     /// <see cref="SayUsage"/> reports its own read failures.</para>
     /// </summary>
+    /// <summary>
+    /// What <c>/sessions delete</c> asks before it deletes, or why it cannot — the session named the way
+    /// <c>/sessions resume</c> names one: its number in this folder's list, or its id.
+    /// </summary>
+    public SessionDeleting AskDeleteSession(string what)
+    {
+        if (Services?.Resume is not { } store || Manager is not { } manager)
+            return new SessionDeleting(null, "No session history is available here.");
+        var resolved = Commands.SessionsCommand.Resolve(what.Trim(), Commands.SessionsCommand.Offered(store.List(WorkingDirectory)));
+        return resolved.ResumeUid is { } uid
+            ? SessionDeletion.Ask(store, manager, uid)
+            : new SessionDeleting(null, resolved.Reply.Text.Replace("/sessions resume", "/sessions delete", StringComparison.Ordinal));
+    }
+
+    /// <summary>Deletes a saved session the user confirmed, and says so.</summary>
+    public CommandStatus DeleteSession(string uid)
+    {
+        if (Services?.Resume is not { } store || Manager is not { } manager)
+        {
+            Say(new Message("No session history is available here.", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+        Say(new Message(SessionDeletion.Delete(store, manager, uid), Severity.Info));
+        return CommandStatus.Reported;
+    }
+
     public CommandStatus ListSessions(string arguments)
     {
         // THE STORE AND THE MANAGER ARE THIS SESSION'S OWN. They were parameters, which meant a

@@ -147,6 +147,7 @@ function handle(m) {
       break;
     }
     case "confirmClose": confirmClose(m); break;
+    case "confirmDelete": confirmDelete(m); break;
     case "confirmForget": confirmForget(m); break;
     case "completions": if (m.n === completeN && m.sessionId === activeSessionId()) completion(m.rows); break;
     case "closed": closed(m.sessionId); break;
@@ -258,6 +259,7 @@ function drawSessions() {
 
 function sessionRow(r) {
   const row = el("div", "row" + (r.id === activeSessionId() ? " on" : ""));
+  row.dataset.id = r.id;
   row.append(el("span", "dot " + r.state));
   const t = el("div", "t");
   t.append(el("b", null, title(r)));
@@ -270,6 +272,13 @@ function sessionRow(r) {
     x.type = "button";
     x.title = "Close this session";
     x.addEventListener("click", (e) => { e.stopPropagation(); send({ type: "close", sessionId: r.id }); });
+    row.append(x);
+  } else if (r.state === "recent") {
+    // A SAVED ONE IS DELETED FROM HERE, without opening it — the server asks first, in the row itself.
+    const x = el("button", "x icon", "×");
+    x.type = "button";
+    x.title = "Delete this session";
+    x.addEventListener("click", (e) => { e.stopPropagation(); send({ type: "deleteSession", id: r.id }); });
     row.append(x);
   }
   row.addEventListener("click", () => {
@@ -2427,6 +2436,22 @@ function confirmForget(m) {
     button("Keep", null, () => box.remove()));
   box.append(btns);
   $("prompts").append(box);
+}
+
+// THE QUESTION IN THE ROW IT IS ABOUT: no session needs to be open to delete one. The next redraw of the list puts the
+// row back as it was, which is also what Keep does.
+function confirmDelete(m) {
+  const row = [...document.querySelectorAll("#sessions .row")].find((r) => r.dataset.id === m.id);
+  if (!row) { flash(m.text); return; }
+  row.classList.add("asking");
+  const ask = el("div", "ask");
+  ask.append(el("small", null, m.text));
+  const btns = el("div", "btns");
+  btns.append(button("Delete", "danger", (e) => { e?.stopPropagation(); send({ type: "deleteSession", id: m.id, confirm: true }); }),
+    button("Keep", null, (e) => { e?.stopPropagation(); drawSessions(); }));
+  ask.append(btns);
+  ask.addEventListener("click", (e) => e.stopPropagation());
+  row.replaceChildren(ask);
 }
 
 function confirmClose(m) {

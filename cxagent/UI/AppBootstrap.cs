@@ -1172,6 +1172,31 @@ public static class AppBootstrap
                 return true;
             });
 
+        // A SAVED SESSION DELETED FOR GOOD, asked in the conversation with memory's buttons — the browser's list asks with
+        // the same words, from the same rule (Core.Sessions.SessionDeletion).
+        manager.Commands.RegisterVerb("/sessions",
+            new CommandArgument("delete <number|id>", "delete one for good, after confirming", Completes: false, Values: ValueSources.Sessions),
+            (current, arguments) =>
+            {
+                var ask = current.AskDeleteSession((arguments ?? "").Split(' ', 2) is [_, var rest] ? rest : "");
+                var id = mainWindow.Chat.AddMessage(ChatRole.System, ask.Text);
+                if (ask.Uid is not { } uid) return true;
+                mainWindow.Chat.SetActions(id,
+                [
+                    new ChatMessageAction
+                    {
+                        Id = "delete", Label = "Delete it", Variant = ChatActionVariant.Danger, AfterPress = ChatActionAfterPress.Hide,
+                        OnClick = _ => current.DeleteSession(uid),
+                    },
+                    new ChatMessageAction
+                    {
+                        Id = "keep", Label = "Keep", AfterPress = ChatActionAfterPress.Hide,
+                        OnClick = ctx => ctx.SetStatus("kept", SharpConsoleUI.Core.NotificationSeverity.Info),
+                    },
+                ]);
+                return true;
+            });
+
         // ASYNC VOID AT THE EDGE, deliberately: the command handler is synchronous and the picker is
         // a dialog that resolves whenever the user is done with it. Everything inside is in a try —
         // an async void that throws reaches no caller and takes the app with it.

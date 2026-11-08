@@ -255,6 +255,48 @@ public sealed class FolderSessionStore(AppPaths paths)
     /// <summary>Ended cleanly; nothing to come back to.</summary>
     public void MarkFinished(string agentId) => Retire(agentId, SessionEndState.Exited);
 
+    /// <summary>
+    /// Deletes a saved session for good: its folder and every older copy its resumes carried on from — each named by the
+    /// first line of the next one's history — with every worker's history nested inside them. Answers how many folders
+    /// went.
+    ///
+    /// <para>THE WHOLE CHAIN, because the older copies are this same conversation: left behind, they would be hidden
+    /// rows nobody can reach, holding what the user asked to be rid of until the retention window ran out.</para>
+    /// </summary>
+    public int Delete(string agentId)
+    {
+        var deleted = 0;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var id = agentId; id is not null && seen.Add(id);)
+        {
+            var dir = new SessionFolder(paths, id).Dir;
+            var previous = PreviousOf(dir);
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+                deleted++;
+            }
+            id = previous;
+        }
+        return deleted;
+    }
+
+    /// <summary>The agent whose conversation the one in <paramref name="dir"/> carries on, or null.</summary>
+    private static string? PreviousOf(string dir)
+    {
+        var history = Path.Combine(dir, "history.jsonl");
+        try
+        {
+            if (!File.Exists(history) || File.ReadLines(history).FirstOrDefault() is not { } first) return null;
+            var line = System.Text.Json.JsonSerializer.Deserialize<HistoryLine>(first);
+            return line is { Kind: HistoryLine.Kinds.Continues } ? line.Previous : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Replaced by a resume; kept, but never offered again.</summary>
     public void MarkSuperseded(string agentId) => Retire(agentId, SessionEndState.Superseded);
 
