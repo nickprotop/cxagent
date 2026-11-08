@@ -368,8 +368,10 @@ blocked), each command asks whether to run uncontained. `/sandbox` shows what a 
 
 `cxagent web` serves your sessions to a browser, with no terminal. Inside the terminal, `/web` serves
 the sessions it already has, so you can follow them and answer their prompts from a phone. One page
-fits the screen it is on: a session list beside the chat on a desktop, tabs on a tablet, and on a
-phone a list with what is waiting on you at the top, then the chat full screen.
+fits the screen it is on: on a desktop a session list beside the chat, with the session's own tabs —
+its chat, then the workers, colleagues, commands and pages opened from it — above it; tabs for every
+open view on a tablet; and on a phone a list with what is waiting on you at the top, then the chat full
+screen.
 
 ```bash
 cxagent web                       # http://localhost:5180, this machine only

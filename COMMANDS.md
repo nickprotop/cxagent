@@ -627,9 +627,13 @@ colleague — is refused without asking.
 gets its report; with none, it joins **idle**, to be given work in its tab or by the agent. A name with spaces needs no
 quotes. A colleague already here is not brought twice: a task is passed to it.
 
-**Seeing them.** A session with colleagues says so as it opens. The panel's **Colleagues** section lists every one —
-those here with their state and a link to their tab, the others with **Bring**. One at work is marked as a colleague
-wherever a worker shows: *Colleague* on its transcript row, `◆ <name>` on its tab and card. While its experience is being
+**Seeing them.** A session with colleagues says so as it opens. **Tasks** (F7, and the browser's Tasks pane) has a
+**Colleagues** section of its own, above the workers: each one here as a card — how it stands (*working*, *queued*,
+*waiting for permission*, *learning*, *idle*, or *idle · last task failed*; never finished), what it was last asked, its
+version and the folders it knows, with **Open**, **Ask…** and, while it works, **Stop** — and under **Available** the
+library's others, each with **Bring**. It follows the session in front. A colleague shows no worker type anywhere: it is
+what it has learned. One at work is marked as a colleague wherever a worker shows: *Colleague* on its transcript row,
+`◆ <name>` on its tab and card. While its experience is being
 distilled the status line says *distilling <name>…*, and when that ends the session says what it learned — *core
 updated, invoice added (v3)* — or that there was nothing new.
 
