@@ -544,7 +544,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
                 if (keptAs is not null)
                 {
                     announced = true;
-                    _store!.AnnounceBegin(keptAs);
+                    _store!.AnnounceBegin(keptAs, prompt);
                 }
 
                 // THE BRIEF IS THE PARENT'S, shown as its note in the child's own transcript.

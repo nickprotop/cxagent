@@ -67,7 +67,7 @@ internal static class BackgroundRunner
                     run.MarkRunning();
                     if (inFlight is null)
                     {
-                        store.AnnounceBegin(kept.Name);
+                        store.AnnounceBegin(kept.Name, work.Prompt);
 
                         // EVERY BACKGROUND STRETCH IS THE PARENT'S ASK: a user's send waits in the foreground instead.
                         kept.Agent.Agent.EchoPrompt(work.Prompt, fromUser: false);

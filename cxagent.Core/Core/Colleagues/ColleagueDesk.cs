@@ -231,19 +231,16 @@ public sealed class ColleagueDesk : IDisposable
     /// <summary>
     /// The Tasks panel's card for the worker <paramref name="handle"/>, or null when it is not a colleague's.
     ///
-    /// <para>THE TASK IS WHAT STARTED ITS RUN — the first message it was given after the run began, the running one's or
-    /// the last one's — so a task sent with agent_send after the bring shows as well as the bring's own. NOT THE LAST
-    /// USER-ROLE MESSAGE: the app's own warnings arrive in that role mid-run, and a live card read "task: You have
-    /// called grep with the same arguments 3 times…".</para>
+    /// <para>THE TASK IS WHAT STARTED ITS RUN, as the store recorded it when the run began — a bring's, a send's or a
+    /// tab's — never read from its conversation: the app's own warnings arrive there as user-role messages (a live card
+    /// read "task: You have called grep with the same arguments 3 times…"), and the list is the worker's own, appended
+    /// to and compacted by its loop while a panel reads on the UI's thread.</para>
     /// </summary>
     public ColleagueCard? CardOf(string handle)
     {
         if (_workers.Find(handle) is not { } kept || Incarnation(kept.Agent.Agent.Id) is not { } found) return null;
         if (_parts.Library.Find(found.Name) is not { } record) return null;
-        var id = kept.Agent.Agent.Id;
-        var task = _rounds.TryGetValue(id, out var start)
-            ? Asked(kept.Agent.Agent.Context.Messages, start.Last)
-            : _asked.GetValueOrDefault(id);
+        var task = _workers.AskedOf(handle)?.Trim().Split('\n', 2)[0].Trim();
         return new ColleagueCard(ColleagueLine.Of(record).Knows, record.ExperienceVersion,
             Distilling.Contains(record.Name, StringComparer.OrdinalIgnoreCase), task);
     }
@@ -543,28 +540,12 @@ public sealed class ColleagueDesk : IDisposable
         _rounds[agentId] = new RoundStart(found.Kept.Agent.Agent.Context.Messages.LastOrDefault(m => m.Role != "system"), DateTimeOffset.UtcNow);
     }
 
-    /// <summary>What each incarnation's last run was asked, by agent id — the card's task once the run has ended.</summary>
-    private readonly ConcurrentDictionary<string, string> _asked = new(StringComparer.Ordinal);
-
     /// <summary>The note a colleague is given when its experience grew elsewhere — the desk's own words, not a task.</summary>
     private const string GrowthNote = "[Your experience has grown since you started here";
-
-    /// <summary>
-    /// The first line of the first message given after <paramref name="after"/> — the one that started the run — or
-    /// null. Tool results and the desk's growth note are passed over; a warning the app adds comes later in the run.
-    /// </summary>
-    private static string? Asked(IReadOnlyList<ChatMessage> messages, ChatMessage? after)
-    {
-        var at = after is null ? -1 : messages.ToList().FindLastIndex(m => ReferenceEquals(m, after));
-        var asked = messages.Skip(at + 1).FirstOrDefault(m => m.Role == "user" && m.ToolCallId is null
-            && !string.IsNullOrWhiteSpace(m.Content) && !m.Content.StartsWith(GrowthNote, StringComparison.Ordinal));
-        return asked?.Content.Trim().Split('\n', 2)[0].Trim();
-    }
 
     private void OnEnded(string agentId, string? outcome)
     {
         if (!_rounds.TryRemove(agentId, out var start) || Incarnation(agentId) is not { } found) return;
-        if (Asked(found.Kept.Agent.Agent.Context.Messages, start.Last) is { } asked) _asked[agentId] = asked;
 
         // ONE ROUND'S FAILURE COSTS THAT ROUND: this runs on the store's end announcement, inside the worker's own
         // release, and must never throw into it.

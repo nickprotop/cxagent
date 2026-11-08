@@ -84,6 +84,18 @@ public sealed class ColleagueTasksTests : IDisposable
         Assert.Equal("chart the panes", session.Colleagues!.CardOf("charting")!.Task);
     }
 
+    /// <summary>
+    /// What a worker was asked is recorded as its run begins, on the run's own thread: the card read it from the worker's
+    /// live conversation on the UI clock instead, a list the worker's own loop appends to and compacts in place.
+    /// </summary>
+    [Fact]
+    public async Task What_it_was_asked_is_recorded_when_its_run_begins()
+    {
+        var session = await WithCharting("chart the panes\nwith the legend");
+
+        Assert.Equal("chart the panes\nwith the legend", session.SubAgents.AskedOf("charting"));
+    }
+
     [Theory]
     [InlineData(AgentRowState.Running, false, "working")]
     [InlineData(AgentRowState.Queued, false, "queued")]

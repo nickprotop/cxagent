@@ -462,6 +462,17 @@ public sealed class SubAgentStore
     /// <summary>How this agent's latest stretch ended; null before any has.</summary>
     public AgentEnd? LastEnd(string name) => _ends.GetValueOrDefault(name);
 
+    /// <summary>
+    /// What this worker's latest run was asked — the brief, a send's prompt or a tab's question — or null for one never
+    /// given work here.
+    ///
+    /// <para>RECORDED AS THE RUN BEGINS, by the code that starts it. Read from the worker's conversation instead, a panel
+    /// would enumerate a list the worker's own loop appends to and compacts, from the UI's thread.</para>
+    /// </summary>
+    public string? AskedOf(string name) => _asked.GetValueOrDefault(name);
+
+    private readonly ConcurrentDictionary<string, string> _asked = new(StringComparer.Ordinal);
+
     /// <summary>The word a release that announces none records — see <see cref="EndSend"/>.</summary>
     internal void NoteOutcome(string name, string outcome) => _noted[name] = outcome;
 
@@ -579,9 +590,10 @@ public sealed class SubAgentStore
     /// begins working. Pairing it with <see cref="EndSend"/> is what keeps the begin/end announcements
     /// balanced; announcing twice for one claim would start two runs and archive one.</para>
     /// </summary>
-    internal void AnnounceBegin(string name)
+    internal void AnnounceBegin(string name, string? asked = null)
     {
         _since[name] = _clock.GetUtcNow();
+        if (!string.IsNullOrWhiteSpace(asked)) _asked[name] = asked;
 
         // ANNOUNCED, BECAUSE NOTHING ELSE MARKS THE START OF A SEND. agent_send never becomes a job,
         // so no row is created for it and no tool report fires until the child's first call FINISHES
