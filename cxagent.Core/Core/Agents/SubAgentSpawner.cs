@@ -409,7 +409,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         var parentAgentId = order.ParentAgentId;
         var turnTools = order.TurnTools;
         var prompt = order.Prompt;
-        if (string.IsNullOrWhiteSpace(prompt))
+        if (order.Run && string.IsNullOrWhiteSpace(prompt))
             return "error: 'prompt' is required — say what the agent should do and what to return.";
 
         // THREE CHANNELS, AND description IS NOT ONE OF THEM (D9).
@@ -481,6 +481,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         // wants to ask how far it has got or tell it something it needs. Kept only on completion, it
         // would be invisible to task_list for the whole of its run.
         var keptAs = _store?.Keep(child, order.Description, order.Handle);
+
+        // JOINED, NOT RUN: kept and reachable, waiting for the work a send gives it.
+        if (!order.Run)
+            return keptAs is null ? "error: nothing here keeps workers, so one cannot join idle." : SubAgentEnvelope.Joined(EnvelopeChild.Of(child), keptAs);
 
         // BACKGROUND BY DEFAULT, WHERE IT CAN WORK: a store (or nothing could reach or stop the child), a delivery
         // port and a parent id (or nobody could be told it ended), and a runtime that allows it — headless

@@ -42,7 +42,7 @@ public sealed class ColleagueTool(ColleagueDesk desk,
               "properties": {
                 "action": { "type": "string", "enum": ["list", "bring", "keep"] },
                 "name": { "type": "string", "description": "bring: the colleague. keep: the name to give it (optional — one is taken from its work)." },
-                "task": { "type": "string", "description": "bring: what it should do, as you would brief a worker." },
+                "task": { "type": "string", "description": "bring: what it should do, as you would brief a worker. Leave it out to have it join idle and give it work later with agent_send." },
                 "model": { "type": "string", "description": "bring: a provider entry to run it on instead of its own (optional)." },
                 "background": { "type": "boolean", "description": "bring: run in the background and report when done (default true)." },
                 "worker": { "type": "string", "description": "keep: the worker's handle." }
@@ -93,8 +93,8 @@ public sealed class ColleagueTool(ColleagueDesk desk,
         var name = Arg(call, "name")?.Trim();
         var task = Arg(call, "task")?.Trim();
         if (string.IsNullOrEmpty(name)) return Task.FromResult("bring needs the colleague's name.");
-        if (string.IsNullOrEmpty(task)) return Task.FromResult("bring needs a task — say what it should do and what to report.");
-        return desk.BringAsync(new BringOrder(name, task, Arg(call, "model")?.Trim(), Args.ReadBool(call, "background") ?? true, parentId())
+        // NO TASK JOINS IT IDLE, to be given work by agent_send.
+        return desk.BringAsync(new BringOrder(name, task ?? "", Arg(call, "model")?.Trim(), Args.ReadBool(call, "background") ?? true, parentId())
         {
             OnChild = onChild,
         }, ct);

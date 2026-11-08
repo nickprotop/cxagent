@@ -38,6 +38,12 @@ public sealed record SpawnOrder
     /// <summary>Whether it runs in the background where it can.</summary>
     public bool Background { get; init; } = true;
 
+    /// <summary>
+    /// Whether it starts work at once. FALSE JOINS IT IDLE — built, kept and reachable, given work later by agent_send.
+    /// An order's only, as the origin is: the agent tool always runs what it spawns, so its prompt stays required.
+    /// </summary>
+    public bool Run { get; init; } = true;
+
     /// <summary>Where the worker came from, opaque to the worker code — see <see cref="SubAgentFactory.ChildRequest.Origin"/>.</summary>
     public string? Origin { get; init; }
 

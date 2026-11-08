@@ -88,7 +88,9 @@ internal static class WorkerRevival
             .Where(s => s is not null)
             .SelectMany(s => s!.Entries)
             .ToList();
-        if (entries.Count == 0) return "its record is missing";
+        // A WORKER THAT JOINED IDLE AND NEVER RAN has no record of its own, and none is missing: its spawn line is all
+        // there is, and it comes back as it was — idle, with an empty conversation.
+        if (entries.Count == 0 && !spawn.Marked) return "its record is missing";
 
         // AS IT WAS SPAWNED: its type as configured now, on the provider the spawn asked for, in the folder the spawn
         // confined it to — a worker revived unconfined could write where it never could. A type since removed or
@@ -120,19 +122,27 @@ internal static class WorkerRevival
             Origin = spawn.Origin,
         });
 
-        child.Agent.Context.Replace(ContextOf(entries));
-        child.Agent.History?.Adopt(child.Agent.Context.Messages);
+        if (entries.Count == 0)
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (!store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(null, now, now))) return "its name is taken";
+        }
+        else
+        {
+            child.Agent.Context.Replace(ContextOf(entries));
+            child.Agent.History?.Adopt(child.Agent.Context.Messages);
 
-        // ITS PAST, FOR ITS TAB: a view attaching to the feed is played what the feed has seen.
-        if (child.Feed is { } feed)
-            SessionReplay.PlayWorker(new ExportSource(new ExportHeader(spawn.AgentId, null, session.Header.WorkingDir,
-                null, null, 0, 0), entries, true, entries[^1].Dir), feed);
+            // ITS PAST, FOR ITS TAB: a view attaching to the feed is played what the feed has seen.
+            if (child.Feed is { } feed)
+                SessionReplay.PlayWorker(new ExportSource(new ExportHeader(spawn.AgentId, null, session.Header.WorkingDir,
+                    null, null, 0, 0), entries, true, entries[^1].Dir), feed);
 
-        // ITS LAST END AS ITS HISTORY HAS IT: the state of the last report it sent, over its last run — from the last
-        // message it was sent to the last it wrote. Not its whole record, which spans every run it had.
-        var lastRun = entries.LastOrDefault(e => e.Message is { Role: "user", ToolCallId: null, IsTaskList: false })?.At ?? entries[0].At;
-        if (!store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(spawn.LastState, lastRun, entries[^1].At)))
-            return "its name is taken";
+            // ITS LAST END AS ITS HISTORY HAS IT: the state of the last report it sent, over its last run — from the last
+            // message it was sent to the last it wrote. Not its whole record, which spans every run it had.
+            var lastRun = entries.LastOrDefault(e => e.Message is { Role: "user", ToolCallId: null, IsTaskList: false })?.At ?? entries[0].At;
+            if (!store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(spawn.LastState, lastRun, entries[^1].At)))
+                return "its name is taken";
+        }
 
         // BACK, BUT NOT AS IT WAS: an origin nothing could equip again — no module now (the feature is off), or one that
         // failed — leaves an ordinary worker with its conversation, and the session says so rather than letting the user
@@ -190,6 +200,9 @@ internal static class WorkerRevival
         /// <summary>Where it came from, as the last origin line about it said, or null for an ordinary worker.</summary>
         public string? Origin { get; set; }
 
+        /// <summary>Spawned by an origin line rather than the agent tool — which may never have run.</summary>
+        public bool Marked { get; init; }
+
         /// <summary>The provider the spawn asked for, or null for its type's own.</summary>
         public string? Provider { get; init; }
 
@@ -224,6 +237,7 @@ internal static class WorkerRevival
                         Provider = mark.Provider,
                         Root = mark.Root,
                         Instance = mark.Instance,
+                        Marked = true,
                     };
                 if (spawns.TryGetValue(mark.AgentId, out var marked)) marked.Origin = mark.Origin;
                 continue;

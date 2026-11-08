@@ -303,9 +303,11 @@ public sealed class ColleagueDesk : IDisposable
         // type's own routing, which may be another, smaller model than the one the preload was sized for.
         var instance = choice.Instance;
         SubAgent? child = null;
+        // NO TASK, NO RUN: it joins idle, and work reaches it as it reaches any worker.
         var envelope = await spawner.SpawnAsync(new SpawnOrder
         {
             Prompt = order.Task,
+            Run = order.Task.Trim().Length > 0,
             Description = record.Name,
             Type = record.Type,
             Instance = instance,

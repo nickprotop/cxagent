@@ -273,6 +273,13 @@ public static class SubAgentEnvelope
     public static bool WasMoved(string? envelope) =>
         StateOf(envelope) == Running && envelope!.Contains(MovedByTheUser, StringComparison.Ordinal);
 
+    /// <summary>The receipt for a child that joined idle: kept, not running, and how to give it work.</summary>
+    public static string Joined(EnvelopeChild child, string name) =>
+        $"<sub_agent id=\"{child.Id}\" name=\"{name}\" state=\"idle\"{WhereAttributes(child)}>\n"
+        + "Joined idle: it has not started any work and will not until it is given some.\n"
+        + $"To give it work: agent_send {{\"to\": \"{name}\", \"prompt\": \"...\"}}"
+        + "\n</sub_agent>";
+
     public static string Receipt(EnvelopeChild child, string name, bool canWrite) =>
         $"<sub_agent id=\"{child.Id}\" name=\"{name}\" state=\"{Running}\"{WhereAttributes(child)}>\n"
         + "Running in the background. Its report will come to you as a message when it finishes — in this "

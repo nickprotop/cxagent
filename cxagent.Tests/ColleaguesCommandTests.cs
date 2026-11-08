@@ -105,20 +105,23 @@ public sealed class ColleaguesCommandTests : IDisposable
         Assert.Contains("on: draw the sales chart", session.TakeColleagueNote());
     }
 
-    /// <summary>A live use typed the whole name and no task; it was answered "no colleague called 'Explore'".</summary>
+    /// <summary>
+    /// The whole name and no task — once answered "no colleague called 'Explore'", now a colleague joining idle (user,
+    /// 2026-11-08).
+    /// </summary>
     [Theory]
     [InlineData("Explore SharpConsoleUI API")]
     [InlineData("explore sharpconsoleui api  ")]
     [InlineData("\"Explore SharpConsoleUI API\"")]
-    public async Task Bring_with_a_name_and_no_task_asks_for_the_task(string typed)
+    public async Task Bring_with_a_name_and_no_task_joins_idle(string typed)
     {
         Library.Create(new ColleagueRecord { Name = "Explore SharpConsoleUI API", Type = "general", Created = DateTimeOffset.UtcNow });
         var session = Open();
 
         await session.BringColleagueAsync(typed);
 
-        Assert.Contains(_seen.Notices, n => n.Contains("What should Explore SharpConsoleUI API do?", StringComparison.Ordinal));
-        Assert.Empty(session.SubAgents.All());
+        Assert.Contains(_seen.Notices, n => n.Contains("Explore SharpConsoleUI API joined as explore-sharpconsoleui-api, idle", StringComparison.Ordinal));
+        Assert.NotNull(session.SubAgents.Find("explore-sharpconsoleui-api"));
     }
 
     [Fact]

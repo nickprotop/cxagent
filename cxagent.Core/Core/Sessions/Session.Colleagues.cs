@@ -211,21 +211,23 @@ public sealed partial class Session
 
     private async Task<CommandStatus> BringNamedAsync(ColleagueDesk desk, string name, string task)
     {
-        if (name.Length == 0) return Told("Say who and what: /colleagues bring <name> <task>.");
-        if (task.Length == 0)
-        {
-            var known = desk.Library.Find(name)?.Name ?? name;
-            return Told($"What should {known} do? /colleagues bring {known} <task> — the task is its first message.");
-        }
+        if (name.Length == 0) return Told("Say who: /colleagues bring <name> [task]. /colleagues lists them.");
         if (SessionId is not { } lead) return Told("This session has no agent to report to yet.");
 
         var answer = await desk.BringAsync(new BringOrder(name, task, null, Background: true, lead), CancellationToken.None);
         if (Agents.SubAgentEnvelope.NameOf(answer) is { } handle)
         {
+            // NO TASK, IT JOINED IDLE — and the lead is told it is there to be given work.
+            var joined = task.Length == 0;
             lock (_brought)
-                _brought.Add($"[The user brought the colleague {name} in as the worker {handle}, on: {task}. Its report "
-                             + "reaches you when it finishes; agent_send reaches it meanwhile.]");
-            return Told($"{name} is working as {handle}.");
+                _brought.Add(joined
+                    ? $"[The user brought the colleague {name} in as the worker {handle}, idle — it has no task yet. Give it "
+                      + "work with agent_send when there is something it knows.]"
+                    : $"[The user brought the colleague {name} in as the worker {handle}, on: {task}. Its report "
+                      + "reaches you when it finishes; agent_send reaches it meanwhile.]");
+            return Told(joined
+                ? $"{name} joined as {handle}, idle — give it work in its tab, or the agent will."
+                : $"{name} is working as {handle}.");
         }
         return Told(answer);
     }
