@@ -47,6 +47,8 @@ $("theme").addEventListener("click", () => {
 // ON A DESKTOP THE PANEL IS A COLUMN, open unless closed (and remembered); narrower, it slides over and starts shut.
 const wide = () => window.matchMedia("(min-width: 1100px)").matches;
 const narrow = () => window.matchMedia("(max-width: 699px)").matches;
+// A WINDOW WIDENED OR NARROWED PAST THE LINE swaps the strip between one session's tabs and every open view.
+window.matchMedia("(min-width: 1100px)").addEventListener("change", () => drawTabs());
 function setPanel(open) {
   if (wide()) {
     document.body.classList.toggle("no-panel", !open);
@@ -297,10 +299,23 @@ function workerRunning(view) {
   return w || null;
 }
 
+// WHICH VIEWS THE STRIP HOLDS. Wide, the sidebar switches sessions, so the strip is the session in front and what was
+// opened from it — its chat first, then its workers, colleagues, commands, files, shell and pages — as the terminal's
+// strip is. Narrow, the sidebar is a drawer, and the strip keeps every open view so one tap reaches any of them.
+function tabsShown() {
+  const all = [...state.views];
+  if (!wide()) return all;
+  const sid = activeSessionId();
+  if (!sid) return [];
+  return all.filter(([id, v]) => id === sid || (v.kind !== "session" && v.parent === sid))
+    .sort(([, a], [, b]) => (a.kind === "session" ? 0 : 1) - (b.kind === "session" ? 0 : 1));
+}
+
 function drawTabs() {
   const tabs = $("tabs");
   tabs.replaceChildren();
-  for (const [id, view] of state.views) {
+  const scoped = wide();
+  for (const [id, view] of tabsShown()) {
     const worker = view.kind === "worker";
     const command = view.kind === "command";
     const file = view.kind === "file";
@@ -315,7 +330,7 @@ function drawTabs() {
     tab.type = "button";
     const dot = config ? (view.dirty ? "waiting" : "") : shell ? (view.ended ? "" : "working") : file ? (view.dirty ? "waiting" : "") : command ? (view.running ? "working" : "") : worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle");
     tab.append(el("span", "dot " + dot),
-      document.createTextNode(colleagues ? "◆ Colleagues" : plugins ? "⧉ Plugins" : config ? "⚙ config.json" + (view.dirty ? " •" : "") : shell ? "❯ " + view.title : file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? workerLabel(view) : view.title || "session"));
+      document.createTextNode(scoped && !sub ? "Chat" : colleagues ? "◆ Colleagues" : plugins ? "⧉ Plugins" : config ? "⚙ Config" + (view.dirty ? " •" : "") : shell ? "❯ " + view.title : file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? workerLabel(view) : view.title || "session"));
     if (file) tab.title = view.path;
     tab.addEventListener("click", () => activate(id));
     if (sub) {
@@ -327,11 +342,14 @@ function drawTabs() {
     }
     tabs.append(tab);
   }
-  const plus = el("button", "tab", "+");
-  plus.type = "button";
-  plus.title = "New session";
-  plus.addEventListener("click", openPicker);
-  tabs.append(plus);
+  // NO "+" WHERE THE SIDEBAR HAS "+ New session": the strip there is one session's, and a new one is not opened from it.
+  if (!scoped) {
+    const plus = el("button", "tab", "+");
+    plus.type = "button";
+    plus.title = "New session";
+    plus.addEventListener("click", openPicker);
+    tabs.append(plus);
+  }
 }
 
 // ---- views ------------------------------------------------------------------------------------------------------
@@ -428,7 +446,9 @@ function dropView(id) {
   if (view && view.kind !== "session" && view.kind !== "config" && view.kind !== "plugins") send({ type: "leave", sessionId: id });
   if (view && view.term) view.term.dispose();
   state.views.delete(id);
-  if (state.active === id) activate(state.views.keys().next().value || null);
+  // BACK TO THE SESSION IT WAS OPENED FROM, the tab beside it — not whichever view happened to be opened first.
+  const back = view && view.parent && state.views.has(view.parent) ? view.parent : state.views.keys().next().value || null;
+  if (state.active === id) activate(back);
   else drawTabs();
 }
 
