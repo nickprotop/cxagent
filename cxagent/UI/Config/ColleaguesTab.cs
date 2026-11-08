@@ -193,6 +193,14 @@ public sealed class ColleaguesTab
         _detail.AddControl(ListDetail.Section("What it is", new MarkupControl(about) { Wrap = true }));
         _detail.AddControl(ListDetail.Gap());
 
+        // ITS NAME, AS THE BROWSER'S PAGE HAS IT — saved through the same rename as /colleagues rename.
+        var naming = new FieldGrid();
+        var nameBox = ListDetail.Input(new PromptControl { Input = record.Name, HorizontalAlignment = HorizontalAlignment.Stretch });
+        nameBox.InputChanged += (_, text) => { draft.NewName = text; MarkSave(); };
+        naming.Add("Name", ColleagueDraft.NameHelp, nameBox);
+        _detail.AddControl(ListDetail.Section("Name", naming.Control));
+        _detail.AddControl(ListDetail.Gap());
+
         var options = ColleagueDraft.Options(_settings!, draft);
         var models = new FieldGrid();
         models.Add("Runs on", ColleagueDraft.ModelHelp, Picker(ColleagueDraft.SessionModel, options, draft.Model, v => draft.Model = v));
@@ -232,13 +240,15 @@ public sealed class ColleaguesTab
         {
             if (draft.Problem(_settings) is { } problem) { SetStatus($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(problem)}[/]"); return; }
             // THE LIBRARY, NOT config.json: nothing running moves, and its next bring reads it.
-            try { draft.Apply(Library); }
+            string? refused;
+            try { refused = draft.Apply(Library, new Core.Storage.FolderSessionStore(_host.Apply.Paths)); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 SetStatus($"[{ColorScheme.DangerMarkup}]✖ {MarkupParser.Escape(e.Message)}[/]");
                 return;
             }
-            var name = draft.Name;
+            if (refused is not null) { SetStatus($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(refused)}[/]"); return; }
+            var name = draft.SavedName;
             Reload(name);
             SetStatus($"[{ColorScheme.AffirmativeMarkup}]✔ {MarkupParser.Escape(name)} saved.[/] [{ColorScheme.MutedMarkup}]Its next bring uses it; one working now keeps its model.[/]");
             return;

@@ -417,6 +417,7 @@ internal static class WebConfigForms
         var line = Core.Colleagues.ColleagueLine.Of(record);
         form["sections"] = new JsonArray(
             Section("◆ " + record.Name,
+                Field("name", "Name", "text", record.Name, ColleagueDraft.NameHelp),
                 Field("about", "What it is", "info", record.Description.Length > 0 ? record.Description : "Not distilled yet."),
                 Field("facts", "Experience", "info", $"v{record.ExperienceVersion}" + (line.Knows.Count > 0 ? " · knows " + string.Join(", ", line.Knows) : ""))),
             Section("Models",
@@ -436,6 +437,7 @@ internal static class WebConfigForms
         if (Str(v, "model") is { } model) d.Model = model.Length == 0 ? null : model;
         if (Str(v, "distillModel") is { } distil) d.DistillModel = distil.Length == 0 ? null : distil;
         if (Bool(v, "frozen") is { } frozen) d.Frozen = frozen;
+        if (Str(v, "name") is { } name) d.NewName = name;
         return d;
     }
 

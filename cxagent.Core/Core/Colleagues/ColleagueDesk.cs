@@ -270,7 +270,7 @@ public sealed partial class ColleagueDesk : IDisposable
         var distilling = Distilling;
         var rows = all.Select(r =>
         {
-            var handle = _workers.NameOfOrigin(OriginPrefix + r.Name);
+            var handle = HandleOf(r);
             var busy = distilling.Contains(r.Name, StringComparer.OrdinalIgnoreCase);
             var state = handle is not null && _workers.IsBusy(handle) ? "working" : busy ? "distilling" : handle is null ? "" : "idle";
             if (r.Frozen) state = state.Length == 0 ? "frozen" : state + " · frozen";
@@ -280,6 +280,34 @@ public sealed partial class ColleagueDesk : IDisposable
             };
         }).ToList();
         return new ColleaguePanel(rows, distilling);
+    }
+
+    /// <summary>
+    /// Its worker in this session, under its name now or one it had — A WORKER BROUGHT IN BEFORE A RENAME ELSEWHERE still
+    /// carries the old name in its origin, and is still this colleague.
+    /// </summary>
+    private string? HandleOf(ColleagueRecord record) =>
+        ColleagueRenaming.Origins(record).Select(_workers.NameOfOrigin).FirstOrDefault(h => h is not null);
+
+    /// <summary>
+    /// Renames a colleague and answers the line to show — see <see cref="ColleagueRenaming"/>. Its incarnation here takes
+    /// the new name at once, recorded for a resume, so its card, its rounds and what is said when it learns all follow.
+    /// </summary>
+    public string Rename(string name, string newName)
+    {
+        var was = _parts.Library.Find(name.Trim());
+        if (ColleagueRenaming.Rename(_parts.Library, _parts.Sessions, new RenameOrder(name, newName)) is { } why) return why;
+        var record = _parts.Library.Find(newName.Trim())!;
+        if (HandleOf(record) is { } handle && _workers.Find(handle) is { } kept && _workers.OriginOf(handle) is { } old)
+        {
+            var origin = OriginPrefix + record.Name;
+            _workers.SetOrigin(handle, origin);
+            _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, origin));
+            if (_given.TryRemove(old, out var given)) _given[origin] = given;
+            if (_windows.TryRemove(old, out var window)) _windows[origin] = window;
+        }
+        StateChanged?.Invoke();
+        return $"{was?.Name ?? name.Trim()} is now called {record.Name}. Sessions that knew it by its old name still bring it back.";
     }
 
     /// <summary>
@@ -543,7 +571,10 @@ public sealed partial class ColleagueDesk : IDisposable
             return null;
         }
         var tag = OriginPrefix + record.Name;
-        var saved = _parts.Sessions?.ListTagged(tag).FirstOrDefault();
+        // UNDER ANY NAME IT HAS HAD: a one-to-one begun before a rename is saved under the name it had then.
+        var saved = _parts.Sessions is { } sessions
+            ? ColleagueRenaming.Origins(record).SelectMany(sessions.ListTagged).FirstOrDefault()
+            : null;
 
         // ONE WRITER PER CONVERSATION, as /sessions has it: open in another process, resuming it here would carry on a
         // second copy beside the first.
@@ -863,9 +894,11 @@ public sealed partial class ColleagueDesk : IDisposable
     private Found? Incarnation(string agentId)
     {
         if (_workers.FindByAgentId(agentId) is not { } kept) return null;
-        return _workers.OriginOf(kept.Name) is { } origin && origin.StartsWith(OriginPrefix, StringComparison.Ordinal)
-            ? new Found(kept, origin[OriginPrefix.Length..])
-            : null;
+        if (_workers.OriginOf(kept.Name) is not { } origin || !origin.StartsWith(OriginPrefix, StringComparison.Ordinal)) return null;
+        // BY ITS NAME NOW: a worker brought in before a rename elsewhere still carries the old one, and its rounds, its
+        // growth and what is said when it learns all go by the colleague's name as the library has it.
+        var name = origin[OriginPrefix.Length..];
+        return new Found(kept, _parts.Library.Find(name)?.Name ?? name);
     }
 
     private string Known()

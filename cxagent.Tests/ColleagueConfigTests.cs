@@ -46,7 +46,7 @@ public sealed class ColleagueConfigTests : IDisposable
         draft.DistillModel = "blind";
         Assert.True(draft.IsDirty);
         Assert.Null(draft.Problem(Settings()));
-        draft.Apply(Library);
+        Assert.Null(draft.Apply(Library, null));
 
         var saved = Library.Find("Charting")!;
         Assert.Equal("blind", saved.DistillInstance);
@@ -61,7 +61,7 @@ public sealed class ColleagueConfigTests : IDisposable
 
         draft.Model = null;
         draft.DistillModel = null;
-        draft.Apply(Library);
+        Assert.Null(draft.Apply(Library, null));
 
         var saved = Library.Find("Charting")!;
         Assert.Null(saved.Instance);

@@ -11,6 +11,12 @@ public sealed record ColleagueRecord
     /// <summary>Its name as the user gave it — what the prompt lists and the handle it works under.</summary>
     public required string Name { get; init; }
 
+    /// <summary>
+    /// The names it had before, oldest first — what a session that recorded one of its workers as <c>colleague:OldName</c>
+    /// still finds it by, and names no other colleague may take (user, 2026-11-09).
+    /// </summary>
+    public IReadOnlyList<string> FormerNames { get; init; } = [];
+
     /// <summary>The agent type it was kept as, resolved against the catalog as configured when it is brought in.</summary>
     public required string Type { get; init; }
 

@@ -43,15 +43,24 @@ public sealed partial class Session
             if (_colleaguesKnown is not { } known || Colleagues is not { } desk) return brought;
             var now = desk.List();
             var parts = new List<string>();
+            var names = now.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
             foreach (var c in now)
             {
-                if (!known.TryGetValue(c.Name, out var was))
+                // RENAMED, NOT KEPT AND FORGOTTEN: a name the lead knew, now among this colleague's former names, is the
+                // same colleague — what it knows came with it.
+                var former = c.FormerNames.LastOrDefault(f => known.ContainsKey(f) && !names.Contains(f));
+                if (!known.TryGetValue(c.Name, out var was) && former is not null)
+                {
+                    parts.Add($"'{former}' is now called '{c.Name}'");
+                    if (known[former] != Fingerprint(c)) parts.Add($"'{c.Name}' has grown — {Described(c)}");
+                }
+                else if (was is null)
                     parts.Add($"'{c.Name}' was kept — {Described(c)}");
                 else if (was != Fingerprint(c))
                     parts.Add($"'{c.Name}' has grown — {Described(c)}");
             }
-            var names = now.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
-            parts.AddRange(known.Keys.Where(k => !names.Contains(k)).Order(StringComparer.Ordinal).Select(k => $"'{k}' was forgotten"));
+            var renamed = now.SelectMany(c => c.FormerNames).ToHashSet(StringComparer.Ordinal);
+            parts.AddRange(known.Keys.Where(k => !names.Contains(k) && !renamed.Contains(k)).Order(StringComparer.Ordinal).Select(k => $"'{k}' was forgotten"));
             if (parts.Count == 0) return brought;
 
             _colleaguesKnown = now.ToDictionary(c => c.Name, Fingerprint, StringComparer.Ordinal);
@@ -180,11 +189,13 @@ public sealed partial class Session
             // neither has nowhere to show one.
             case "open":
                 return Told("A one-to-one opens in the terminal or a browser: /colleagues open <name> there, or Open in the library.");
+            case "rename":
+                return Rename(desk, rest);
             case "freeze":
             case "unfreeze":
                 return Freeze(desk, Unquoted(rest), verb.Equals("freeze", StringComparison.OrdinalIgnoreCase));
             default:
-                return Told($"/colleagues knows keep, bring, open, freeze and unfreeze, not '{verb}'. /colleagues alone lists them.");
+                return Told($"/colleagues knows keep, bring, open, rename, freeze and unfreeze, not '{verb}'. /colleagues alone lists them.");
         }
     }
 
@@ -249,6 +260,30 @@ public sealed partial class Session
                 : $"{name} is working as {handle}.");
         }
         return Told(answer);
+    }
+
+    /// <summary>
+    /// <c>/colleagues rename &lt;name&gt; [to] &lt;new name&gt;</c>. THE NAME MAY HOLD SPACES, so the longest colleague name the
+    /// text starts with is the one renamed — or a quoted one — and an optional "to" separates the new name.
+    /// </summary>
+    private CommandStatus Rename(ColleagueDesk desk, string rest)
+    {
+        const string how = "Say who and what to: /colleagues rename <name> to <new name>.";
+        string name, after;
+        if (rest.Length > 1 && rest[0] is '"' or '\'' && rest.IndexOf(rest[0], 1) is var close and > 1)
+            (name, after) = (rest[1..close].Trim(), rest[(close + 1)..].Trim());
+        else
+        {
+            var known = desk.List().SelectMany(c => c.FormerNames.Prepend(c.Name))
+                .Where(n => rest.StartsWith(n + " ", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(n => n.Length).FirstOrDefault();
+            (name, after) = known is not null ? (known, rest[known.Length..].Trim())
+                : rest.Split(' ', 2) is [var first, var tail] ? (first, tail.Trim()) : (rest, "");
+        }
+        if (after.StartsWith("to ", StringComparison.OrdinalIgnoreCase)) after = after[3..].Trim();
+        after = Unquoted(after);
+        if (name.Length == 0 || after.Length == 0) return Told(how);
+        return Told(desk.Rename(name, after));
     }
 
     /// <summary><c>/colleagues freeze|unfreeze &lt;name&gt;</c> — the same switch as F8's and the browser's, through the store.</summary>

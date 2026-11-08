@@ -52,7 +52,13 @@ public sealed class ColleagueDraft
     /// </summary>
     public bool Frozen { get; set; }
 
-    public bool IsDirty => Blank(Model) != Original.Instance || Blank(DistillModel) != Original.DistillInstance || Frozen != Original.Frozen;
+    /// <summary>The name it is to have, or null to keep its own. Its old name stays one it is found by.</summary>
+    public string? NewName { get; set; }
+
+    private bool Renaming => Blank(NewName?.Trim()) is { } to && !string.Equals(to, Original.Name, StringComparison.Ordinal);
+
+    public bool IsDirty => Blank(Model) != Original.Instance || Blank(DistillModel) != Original.DistillInstance || Frozen != Original.Frozen
+                           || Renaming;
 
     /// <summary>Why this cannot be saved as it stands, against the entries configured now, or null.</summary>
     public string? Problem(ProviderSettings settings) =>
@@ -73,17 +79,29 @@ public sealed class ColleagueDraft
             ? ExperienceBudget.WindowRefusal(window, entry)
             : null;
 
-    /// <summary>Writes both models to the colleague's record; the rest of it stays as the library has it now.</summary>
-    public void Apply(ColleagueStore library)
+    /// <summary>The name it has once saved — the new one when it is renamed.</summary>
+    public string SavedName => Renaming ? NewName!.Trim() : Name;
+
+    /// <summary>
+    /// Writes the draft to the colleague's record — the rest of it stays as the library has it now — and answers why it
+    /// could not, or null.
+    ///
+    /// <para>THE RENAME FIRST, through the one operation every way in uses (<see cref="ColleagueRenaming"/>): refused, it
+    /// has written nothing, so a save is never half made. The one-to-one check needs <paramref name="sessions"/>.</para>
+    /// </summary>
+    public string? Apply(ColleagueStore library, Core.Storage.FolderSessionStore? sessions)
     {
+        if (Renaming && ColleagueRenaming.Rename(library, sessions, new RenameOrder(Name, NewName!)) is { } refused) return refused;
+        var name = SavedName;
         var model = Blank(Model);
         var distil = Blank(DistillModel);
-        library.Update(Name, r => r with { Instance = model, DistillInstance = distil });
+        library.Update(name, r => r with { Instance = model, DistillInstance = distil });
         if (Frozen != Original.Frozen)
         {
-            if (Frozen) library.Freeze(Name);
-            else library.Unfreeze(Name);
+            if (Frozen) library.Freeze(name);
+            else library.Unfreeze(name);
         }
+        return null;
     }
 
     /// <summary>
@@ -114,6 +132,10 @@ public sealed class ColleagueDraft
     public const string OwnModel = "Its own model";
 
     public const string ModelHelp = "Where it works when brought in. A bring that names a model overrides this.";
+    /// <summary>What renaming does — the words F8's field and the browser's both show.</summary>
+    public const string NameHelp =
+        "Renamed, it is still found by its old names: a session that knew it by one brings it back.";
+
     /// <summary>What learning means — the words F8's radio and the browser's both show.</summary>
     public const string LearnsHelp = "After each task, what it did is distilled into its experience.";
 

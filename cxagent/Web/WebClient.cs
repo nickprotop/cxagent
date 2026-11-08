@@ -1176,8 +1176,12 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 if (draft.Problem(settings) is { } problem) { Refused([problem]); return; }
                 if (!draft.IsDirty) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return; }
                 // THE LIBRARY IS FILES ON DISK: a write that fails is said, as F8's tab says it, never thrown into the loop.
-                try { draft.Apply(library); }
+                string? refused;
+                try { refused = draft.Apply(library, new Core.Storage.FolderSessionStore(S.Paths)); }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Refused([e.Message]); return; }
+                if (refused is not null) { Refused([refused]); return; }
+                // RENAMED, THE PAGE FOLLOWS IT under its new name.
+                item = draft.SavedName;
                 result = new WebConfigSave(true, []);
                 break;
             }

@@ -40,7 +40,7 @@ public sealed partial class ColleagueStore(string configDir)
     public IReadOnlyList<ColleagueRecord> List()
     {
         if (!Directory.Exists(Root)) return [];
-        return Directory.EnumerateDirectories(Root)
+        return Folders()
             .Select(d => ReadRecord(Path.Combine(d, "colleague.json")))
             .OfType<ColleagueRecord>()
             .OrderByDescending(LastWorked)
@@ -75,9 +75,15 @@ public sealed partial class ColleagueStore(string configDir)
     }
 
     /// <summary>Rewrites a colleague's identity whole, through a temporary file so a reader never sees half of it.</summary>
-    public void Save(ColleagueRecord record)
+    public void Save(ColleagueRecord record) => SaveTo(FolderOf(record.Name), record);
+
+    /// <summary>
+    /// Writes a record into the folder it was read from. NOT FOUND BY THE RECORD'S NAME: a rename writes the new name into
+    /// a folder that, until it is written, is known only by the old one.
+    /// </summary>
+    private static void SaveTo(string folder, ColleagueRecord record)
     {
-        var path = Path.Combine(FolderOf(record.Name), "colleague.json");
+        var path = Path.Combine(folder, "colleague.json");
         var temp = path + "." + Environment.ProcessId + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(record, Json));
         File.Move(temp, path, overwrite: true);
@@ -91,12 +97,26 @@ public sealed partial class ColleagueStore(string configDir)
     /// </summary>
     public ColleagueRecord? Update(string name, Func<ColleagueRecord, ColleagueRecord> change)
     {
-        if (NameRefusal(name) is not null || !Directory.Exists(FolderOf(name))) return null;
-        using var held = Hold(Path.Combine(FolderOf(name), "colleague.lock"));
-        if (Find(name) is not { } now) return null;
-        var changed = change(now);
-        Save(changed);
-        return changed;
+        if (NameRefusal(name) is not null) return null;
+        var folder = FolderOf(name);
+        if (!Directory.Exists(folder)) return null;
+        FileStream held;
+        try
+        {
+            held = Hold(Path.Combine(folder, "colleague.lock"));
+        }
+        // A FOLDER GONE BETWEEN THE LOOK AND THE HOLD is a colleague forgotten meanwhile: nothing to change.
+        catch (Exception e) when (e is DirectoryNotFoundException or FileNotFoundException)
+        {
+            return null;
+        }
+        using (held)
+        {
+            if (ReadRecord(Path.Combine(folder, "colleague.json")) is not { } now) return null;
+            var changed = change(now);
+            SaveTo(folder, changed);
+            return changed;
+        }
     }
 
     /// <summary>Appends one whole round to the past and returns the place it was given.</summary>
@@ -231,8 +251,36 @@ public sealed partial class ColleagueStore(string configDir)
         WriteText(Path.Combine(folder, codebase + ".md"), text);
     }
 
-    /// <summary>The folder a colleague of this name lives in.</summary>
-    public string FolderOf(string name) => Path.Combine(Root, Slug(name));
+    /// <summary>
+    /// The folder a colleague of this name lives in — by its name now or a former one, in any case — or, for a name no
+    /// colleague has had, the folder it would be made in.
+    ///
+    /// <para>THE FOLDER IS NAMED AFTER THE FIRST NAME AND NEVER MOVES: a rename rewrites the record only, since other
+    /// processes may be appending to the folder as it happens. So a name is found by its folder first — the common case —
+    /// then by reading the records.</para>
+    /// </summary>
+    public string FolderOf(string name)
+    {
+        var own = Path.Combine(Root, Slug(name));
+        if (File.Exists(Path.Combine(own, "colleague.json"))) return own;
+        var wanted = name.Trim();
+        foreach (var folder in Folders())
+            if (ReadRecord(Path.Combine(folder, "colleague.json")) is { } r
+                && (Same(r.Name, wanted) || r.FormerNames.Any(f => Same(f, wanted))))
+                return folder;
+        return own;
+    }
+
+    private static bool Same(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Every colleague's folder. ONE STARTING WITH A DOT IS NONE: a colleague being forgotten is first moved aside under a
+    /// dot name, so nothing finds it while it is deleted.
+    /// </summary>
+    private IEnumerable<string> Folders() =>
+        Directory.Exists(Root)
+            ? Directory.EnumerateDirectories(Root).Where(d => !Path.GetFileName(d).StartsWith('.'))
+            : [];
 
     /// <summary>The folder name and handle a name becomes: lower case, spaces as '-'.</summary>
     public static string Slug(string name) => name.Trim().ToLowerInvariant().Replace(' ', '-');

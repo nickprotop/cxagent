@@ -57,6 +57,7 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/colleagues keep <worker> [name]` | Keep a worker of this session as a colleague |
 | `/colleagues bring <name> [task]` | Bring a colleague in — on a task, or idle to be given one |
 | `/colleagues open <name>` | Talk with a colleague one-to-one, in a session of its own |
+| `/colleagues rename <name> to <new name>` | Rename a colleague; its old names still find it |
 | `/colleagues freeze <name>` · `unfreeze <name>` | Stop a colleague learning, or let it learn again from now on |
 | `/commands` | List your custom commands, and any file that was shadowed or skipped |
 | `/commands <name>` | Show that command's file, as it will be sent |
@@ -643,6 +644,10 @@ updated, invoice added (v3)* — or that there was nothing new.
 itself, in a session tab of its own titled *with <name>*, in the folder it last worked in. It can read, never write or
 run anything; ask it what it knows, teach it, correct it — every exchange is a round, distilled like any other. Opening
 it again returns to the same conversation. It is never listed by `/sessions` or picked by `-c`.
+
+**Renaming one.** `/colleagues rename <name> to <new name>` — or its *Name* in F8's Colleagues tab or the browser's
+config page. Its old names stay with it: a session that knew a worker as the old name still brings back this colleague,
+and no other colleague can take them. Not while its one-to-one is open, nor while a colleague is being distilled.
 
 **Freezing one.** `/colleagues freeze <name>` — or *Frozen* on its page in F8's Colleagues tab or the browser's
 config page — keeps its experience as it is: it works as before and its rounds are kept, but none is distilled. Its card,

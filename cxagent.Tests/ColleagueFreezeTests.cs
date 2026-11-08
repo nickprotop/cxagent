@@ -154,7 +154,7 @@ public sealed class ColleagueFreezeTests : IDisposable
         draft.Frozen = true;
 
         Assert.True(draft.IsDirty);
-        draft.Apply(Library);
+        Assert.Null(draft.Apply(Library, null));
 
         Assert.True(Library.Find("Charting")!.Frozen);
         Assert.Equal(1, Library.Find("Charting")!.FrozenAfter);
