@@ -250,6 +250,12 @@ internal static class WorkerRevival
             // one re-marks a worker already spawned, and the last one about a worker is what it is now.
             if (e is { Kind: HistoryLine.Kinds.Origin, Worker: { } mark })
             {
+                // DELETED BY THE USER, so not rebuilt — by its agent id, so a later worker given the same name still is.
+                if (mark.Deleted)
+                {
+                    spawns.Remove(mark.AgentId);
+                    continue;
+                }
                 if (mark.Name is { Length: > 0 } name && !spawns.ContainsKey(mark.AgentId))
                     spawns[mark.AgentId] = new Spawn(mark.AgentId, name,
                         mark.Type is { Length: > 0 } t ? t : AgentTypeCatalog.DefaultTypeName, mark.Description)

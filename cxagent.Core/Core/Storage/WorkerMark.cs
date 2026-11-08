@@ -32,4 +32,10 @@ public sealed record WorkerMark(
 
     /// <summary>The folder it was confined to, relative to its parent's, or null for the parent's.</summary>
     [JsonPropertyName("root")] public string? Root { get; init; }
+
+    /// <summary>
+    /// The user deleted it here. A resume rebuilds every worker its parent's history names, and without this line it
+    /// rebuilt one the user had deleted.
+    /// </summary>
+    [JsonPropertyName("deleted")] public bool Deleted { get; init; }
 }

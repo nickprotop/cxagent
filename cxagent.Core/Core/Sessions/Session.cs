@@ -44,6 +44,10 @@ public sealed partial class Session
     public Session(string workingDirectory)
     {
         WorkingDirectory = workingDirectory;
+
+        // A DELETE IS WRITTEN DOWN, in the history a resume rebuilds the workers from — once per session, here, because
+        // the store outlives every re-wire and its event would otherwise gain a listener per wire.
+        SubAgents.Forgotten += agentId => Host?.NoteWorker(new Storage.WorkerMark(agentId, null) { Deleted = true });
     }
 
     /// <summary>

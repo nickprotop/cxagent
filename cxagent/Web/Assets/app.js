@@ -154,6 +154,8 @@ function handle(m) {
     }
     case "confirmClose": confirmClose(m); break;
     case "confirmDelete": confirmDelete(m); break;
+    case "confirmWorkerDelete": confirmWorkerDelete(m); break;
+    case "workerDeleted": { const key = m.sessionId + "~" + m.agentId; if (state.views.has(key)) dropView(key); break; }
     case "confirmForget": confirmForget(m); break;
     case "completions": if (m.n === completeN && m.sessionId === activeSessionId()) completion(m.rows); break;
     case "closed": closed(m.sessionId); break;
@@ -2427,6 +2429,8 @@ function drawTasksPane(p, sid) {
   for (const w of workers) {
     const acts = [button("Open", null, () => { openWorker(sid, w.agentId); if (!wide()) setPanel(false); })];
     if (w.running) acts.push(button("Stop", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "stop" })));
+    // F7's x ON A FINISHED CARD: the worker and its conversation go; the server asks first if its commands still run.
+    else acts.push(button("Delete", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "delete" })));
     const sub = [w.badge ? w.badge.kind.toLowerCase() : "", w.type, w.state.toLowerCase(), clock(w.seconds * 1000), w.background ? "background" : ""].filter(Boolean).join(" · ");
     const row = taskRow(w.running ? "working" : w.state === "Failed" ? "held" : "", el("b", null, w.badge ? w.badge.glyph + " " + w.badge.name : w.name), sub, acts);
     if (w.task) row.querySelector(".t").append(el("small", "task-text", w.task));
@@ -2610,6 +2614,19 @@ function confirmDelete(m) {
   ask.append(btns);
   ask.addEventListener("click", (e) => e.stopPropagation());
   row.replaceChildren(ask);
+}
+
+// A FINISHED WORKER WHOSE COMMANDS STILL RUN: the terminal's three answers — stop them, keep them, or not now.
+function confirmWorkerDelete(m) {
+  const box = el("div", "prompt");
+  box.append(el("div", "q", m.text));
+  const btns = el("div", "btns");
+  const answer = (keep) => { box.remove(); send({ type: "workerAction", sessionId: m.sessionId, agentId: m.agentId, action: "delete", keepCommands: keep }); };
+  btns.append(button("Stop them and delete", "danger", () => answer(false)),
+    button("Keep them running", null, () => answer(true)),
+    button("Cancel", null, () => box.remove()));
+  box.append(btns);
+  $("prompts").append(box);
 }
 
 function confirmClose(m) {

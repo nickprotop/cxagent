@@ -272,7 +272,10 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 OpenWorker(Str(m, "sessionId"), Str(m, "agentId"), Long(m, "since") ?? 0);
                 break;
             case "workerAction":
-                WorkerAction(Str(m, "sessionId"), Str(m, "agentId"), Str(m, "action"));
+                WorkerAction(new WorkerRequest(Str(m, "sessionId"), Str(m, "agentId"), Str(m, "action"))
+                {
+                    KeepCommands = m["keepCommands"] is JsonValue kv && kv.TryGetValue<bool>(out var keep) ? keep : null,
+                });
                 break;
             case "stopCommand":
                 StopCommand(Str(m, "sessionId"), Long(m, "pid"));
@@ -488,12 +491,46 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         _open[key] = handle;
     }
 
-    private void WorkerAction(string? sessionId, string? agentId, string? action)
+    /// <summary>What a worker's card asked for — and, for a delete, what to do with the commands it left running.</summary>
+    private sealed record WorkerRequest(string? SessionId, string? AgentId, string? Action)
     {
+        /// <summary>Keep its running commands (true), stop them (false), or not asked yet (null).</summary>
+        public bool? KeepCommands { get; init; }
+    }
+
+    private void WorkerAction(WorkerRequest request)
+    {
+        var (sessionId, agentId, action) = (request.SessionId, request.AgentId, request.Action);
         if (LiveSession(sessionId) is not { } session || agentId is null
             || session.SubAgents.FindByAgentId(agentId) is not { } stored) { Error("That worker is no longer there."); return; }
         switch (action)
         {
+            // F7's x ON A FINISHED CARD: asked first when its commands still run, with the terminal's three answers.
+            case "delete":
+                var commands = session.SubAgents.LiveShellsOf(stored.Name);
+                if (commands > 0 && request.KeepCommands is null)
+                {
+                    Send(new JsonObject
+                    {
+                        ["type"] = "confirmWorkerDelete", ["sessionId"] = session.Id, ["agentId"] = agentId,
+                        ["text"] = $"'{stored.Name}' still has {commands} command{(commands == 1 ? "" : "s")} running. Deleting it stops them unless you keep them.",
+                    });
+                    break;
+                }
+                // ON THE POOL: stopping its commands waits for each to exit.
+                _ = Task.Run(() =>
+                {
+                    var outcome = session.ForgetAgent(stored.Name, request.KeepCommands == true);
+                    if (outcome == Core.Agents.ForgetOutcome.Forgotten)
+                        Send(new JsonObject { ["type"] = "workerDeleted", ["sessionId"] = session.Id, ["agentId"] = agentId });
+                    else Notice(session.Id, outcome switch
+                    {
+                        Core.Agents.ForgetOutcome.Working => $"'{stored.Name}' is working — stop it first.",
+                        Core.Agents.ForgetOutcome.ReportOwed => $"'{stored.Name}''s report could not reach the parent yet — delete it once it has.",
+                        _ => $"'{stored.Name}' is no longer there.",
+                    }, "Warning");
+                });
+                break;
             case "stop":
                 _ = Task.Run(() => session.StopAgent(stored.Name));
                 break;

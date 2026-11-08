@@ -463,6 +463,34 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         Assert.False(Directory.Exists(new SessionFolder(_paths, "SAVED").Dir));
     }
 
+    /// <summary>
+    /// A finished worker is deleted from the browser as F7's x deletes it — the browser had no way to — and the deletion
+    /// is written to the session's history, so a resume does not bring it back.
+    /// </summary>
+    [Fact]
+    public async Task A_finished_worker_is_deleted_from_the_browser_and_stays_deleted()
+    {
+        _model.EnqueueResponse(new LlmResponse { Text = "hello there", StopReason = "end_turn" });   // the turn that saves the session
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "hi")));
+        await TurnDoneAsync(tab);
+        var session = _manager.Sessions.First(s => s.Id == id);
+        var child = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = _model, Ledger = new TokenLedger(), MaxTurns = 3, ContextWindow = 200_000,
+            Tools = new AgentTools(Core.Jobs.JobRegistry.CreateWithBuiltins()),
+        }).Create();
+        var handle = session.SubAgents.Keep(child, "finished work");
+
+        await tab.SendAsync(Msg("workerAction", ("sessionId", id), ("agentId", child.Agent.Id), ("action", "delete")));
+        await tab.NextAsync(m => m["type"]?.GetValue<string>() == "workerDeleted" && m["agentId"]?.GetValue<string>() == child.Agent.Id);
+
+        Assert.Null(session.SubAgents.Find(handle));
+        var history = Path.Combine(new SessionFolder(_paths, session.SessionId!).Dir, "history.jsonl");
+        Assert.Contains(File.ReadLines(history), l => l.Contains("\"deleted\":true", StringComparison.Ordinal) && l.Contains(child.Agent.Id, StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task A_session_closed_elsewhere_tells_its_tabs()
     {

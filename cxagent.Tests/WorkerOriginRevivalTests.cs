@@ -159,6 +159,23 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         Assert.Contains("recall", store.Find("charting")!.Agent.Agent.OfferedToolNames());
     }
 
+    /// <summary>
+    /// A worker the user deleted stays deleted: a resumed session rebuilt it from the spawn in its parent's history, as if
+    /// the delete had never happened.
+    /// </summary>
+    [Fact]
+    public void A_deleted_worker_is_not_brought_back()
+    {
+        var parent = Parent();
+        parent.Record(SpawnedByTool());
+        parent.NoteWorker(new WorkerMark("CHILD01", null) { Deleted = true });
+
+        var (store, report) = Revive(null);
+
+        Assert.Null(store.Find("charting"));
+        Assert.Empty(report.Left);
+    }
+
     [Fact]
     public void A_bare_mark_after_an_agent_spawn_sets_the_origin()
     {
