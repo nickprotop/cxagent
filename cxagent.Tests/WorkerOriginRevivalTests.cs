@@ -140,6 +140,25 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         Assert.False(store.LastEnd("charting")!.Succeeded);
     }
 
+    private sealed class Recall : IAgentTool
+    {
+        public ToolDefinition Definition { get; } = new("recall", "past", JsonSerializer.SerializeToElement(new { type = "object" }));
+        public CxAgent.Core.Permissions.PermissionRequest? Gate(JobParameters call) => null;
+        public Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct) =>
+            Task.FromResult(new JobResult { Success = true, Output = new() { ["text"] = "x" } });
+    }
+
+    /// <summary>A resumed colleague gets its tools back through the same door: revival builds it through the factory.</summary>
+    [Fact]
+    public void Revival_brings_the_door_s_tools_back()
+    {
+        Parent().NoteWorker(new WorkerMark("CHILD01", "colleague:Charting") { Name = "charting", Type = "general", Description = "Charting" });
+
+        var (store, _) = Revive(_ => new ChildAugment { Context = "EXP", ExtraTools = [new Recall()] });
+
+        Assert.Contains("recall", store.Find("charting")!.Agent.Agent.OfferedToolNames());
+    }
+
     [Fact]
     public void A_bare_mark_after_an_agent_spawn_sets_the_origin()
     {

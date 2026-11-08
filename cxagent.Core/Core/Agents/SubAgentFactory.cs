@@ -41,6 +41,12 @@ public sealed record SubAgent(Agent Agent, BufferedChatSink Sink, BufferedJobPan
 
     /// <summary>Why the origin's hook failed and the child was built plain, or null when it did not.</summary>
     public string? AugmentRefusal { get; init; }
+
+    /// <summary>
+    /// Names of the hook's tools left out because a built-in or another injected tool holds them. APART FROM
+    /// <see cref="AugmentRefusal"/>, which un-marks the worker: a tool left out costs that tool, never what the worker is.
+    /// </summary>
+    public IReadOnlyList<string> ToolsLeftOut { get; init; } = [];
 }
 
 /// <summary>
@@ -411,6 +417,10 @@ public sealed class SubAgentFactory
     {
         var briefing = request.Briefing;
         var (augment, refusal) = AugmentFor(request.Origin);
+        var door = DoorTools.For(augment?.ExtraTools ?? [], _runtime.Tools.Injected ?? []);
+        // ITS OWN FOLDER'S BOUNDARY FIRST, THEN THE MODULE'S READS: what the door adds reads beyond the child's folder,
+        // never instead of it.
+        var policy = request.Root is { } root ? _runtime.Guards.Policy?.NarrowedTo(root.Absolute) : _runtime.Guards.Policy;
         var callerContext = augment?.Context is { Length: > 0 } context
             ? request.CallerContext is { Length: > 0 } passed ? context + "\n\n" + passed : context
             : request.CallerContext;
@@ -505,8 +515,11 @@ public sealed class SubAgentFactory
             {
                 Spawner = null,
                 ModelFacingCommands = null,
-                Selection = Jobs.ToolSelection.Then(
-                    Jobs.ToolSelection.Then(_runtime.Tools.Selection, turnTools), type?.Tools),
+                // UNTOUCHED WHEN THE DOOR ADDS NOTHING, so a worker with no origin is built exactly as before.
+                Injected = door.Added.Count == 0 ? _runtime.Tools.Injected : [.. _runtime.Tools.Injected ?? [], .. door.Added],
+                Held = door.Held,
+                Selection = door.Selection(Jobs.ToolSelection.Then(
+                    Jobs.ToolSelection.Then(_runtime.Tools.Selection, turnTools), type?.Tools)),
             },
 
             // THE SESSION'S GUARDS, with the policy narrowed to the child's own folder when it has one, and NO WAY
@@ -514,7 +527,7 @@ public sealed class SubAgentFactory
             // null check is what makes a null one "never speculate" rather than a crash.
             Guards = _runtime.Guards with
             {
-                Policy = request.Root is { } root ? _runtime.Guards.Policy?.NarrowedTo(root.Absolute) : _runtime.Guards.Policy,
+                Policy = augment?.ReadAlso is { } readAlso ? policy?.WithReadAlso(readAlso) : policy,
                 AskUser = null,
             },
 
@@ -556,8 +569,38 @@ public sealed class SubAgentFactory
             Root = request.Root?.Relative,
             Origin = request.Origin,
             AugmentRefusal = refusal,
+            ToolsLeftOut = door.LeftOut,
             Instance = runtime.InstanceName,
         };
+    }
+
+    /// <summary>
+    /// The hook's tools sorted into those added and those left out, with the names the added ones hold.
+    ///
+    /// <para>THE SELECTION GAINS A <c>+name</c> PER ADDED TOOL ONLY WHEN THERE IS ONE: with none, every injected tool is
+    /// offered already, and a selection of the added names alone would be the worker's whole tool set.</para>
+    /// </summary>
+    private sealed record DoorTools(IReadOnlyList<Jobs.IAgentTool> Added, IReadOnlyList<string> LeftOut)
+    {
+        public IReadOnlySet<string>? Held => Added.Count == 0 ? null : Added.Select(t => t.Definition.Name).ToHashSet(StringComparer.Ordinal);
+
+        public Jobs.ToolSelection? Selection(Jobs.ToolSelection? composed) =>
+            composed is null || Added.Count == 0 ? composed
+                : Jobs.ToolSelection.Then(composed, new Jobs.ToolSelection([.. Added.Select(t => "+" + t.Definition.Name)]));
+
+        public static DoorTools For(IReadOnlyList<Jobs.IAgentTool> extra, IReadOnlyList<Jobs.IAgentTool> injected)
+        {
+            var taken = injected.Select(t => t.Definition.Name).ToHashSet(StringComparer.Ordinal);
+            var added = new List<Jobs.IAgentTool>();
+            var leftOut = new List<string>();
+            foreach (var tool in extra)
+            {
+                var name = tool.Definition.Name;
+                if (Jobs.Tool.IsKnown(name) || !taken.Add(name)) leftOut.Add(name);
+                else added.Add(tool);
+            }
+            return new DoorTools(added, leftOut);
+        }
     }
 
     /// <summary>

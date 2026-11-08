@@ -22,4 +22,17 @@ public sealed record ChildAugment
     /// resume unless the same door supplies it again.</para>
     /// </summary>
     public string? Context { get; init; }
+
+    /// <summary>
+    /// Tools the module adds — a colleague's <c>recall</c>. ADD ONLY: a name a built-in or another injected tool already
+    /// holds is left out (see <see cref="SubAgent.ToolsLeftOut"/>), so nothing can shadow what the worker already has.
+    /// Offered whatever the worker's type narrowed its tools to, as they are the module's, not the type's.
+    /// </summary>
+    public IReadOnlyList<Jobs.IAgentTool> ExtraTools { get; init; } = [];
+
+    /// <summary>
+    /// Folders whose files the worker may read without asking — a colleague's workplaces — through its policy's own
+    /// derivation (<see cref="Permissions.PermissionPolicy.WithReadAlso"/>): reads only, while each is trusted.
+    /// </summary>
+    public Permissions.ReadAlso? ReadAlso { get; init; }
 }

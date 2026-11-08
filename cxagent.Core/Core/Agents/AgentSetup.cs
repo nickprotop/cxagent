@@ -116,6 +116,13 @@ public sealed record AgentTools(JobRegistry Executors)
     public IReadOnlyList<IAgentTool>? Injected { get; init; }
 
     /// <summary>
+    /// Names this agent's own module tools hold — the factory's door gave them. A plugin tool of the same name is left
+    /// out for this agent: two tools of one name are a request a provider refuses, and the module's is the one the
+    /// worker was given.
+    /// </summary>
+    public IReadOnlySet<string>? Held { get; init; }
+
+    /// <summary>
     /// A second, LIVE source of tools — read fresh each turn rather than captured, so a tool that starts existing
     /// after this agent was constructed (a plugin loaded at a later turn boundary) is still offered. Null for every
     /// session with no such source.

@@ -1245,10 +1245,12 @@ public sealed class Agent
         // so filtering it once at construction would go stale the moment the source's contents did.
         _pluginInstructions = pluginInstructions;
 
+        // AND NOT A NAME THIS AGENT'S MODULE TOOLS HOLD — see AgentTools.Held — whenever the plugin arrived.
+        var held = setup.Tools.Held;
         _dynamicTools = dynamicTools is null
             ? null
-            : isSubAgent
-                ? () => dynamicTools().Where(t => t.OfferToSubAgents).ToList()
+            : isSubAgent || held is { Count: > 0 }
+                ? () => dynamicTools().Where(t => (!isSubAgent || t.OfferToSubAgents) && held?.Contains(t.Definition.Name) != true).ToList()
                 : dynamicTools;
         _toolSelection = toolSelection;
 
