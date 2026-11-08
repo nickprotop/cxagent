@@ -642,6 +642,21 @@ itself, in a session tab of its own titled *with <name>*, in the folder it last 
 run anything; ask it what it knows, teach it, correct it — every exchange is a round, distilled like any other. Opening
 it again returns to the same conversation. It is never listed by `/sessions` or picked by `-c`.
 
+**What it reaches.** Brought in, a colleague starts from its experience and can reach the rest: **recall** searches
+its past for words, reads one round whole, or reads the current version of its experience — the newest, if it grew in
+another session meanwhile. A recall shows in its tab as `recall · search "…"`, `recall · round 9` or
+`recall · experience <codebase>`. It reads files in its **workplaces** — the folders it has worked in — without asking,
+while each is still trusted; a write, a move or a command there asks as anywhere else, and a workplace that has moved or
+been deleted is named in its briefing as gone. While the session is served to a browser, a read — or a recall of what
+was read — in a folder that browser cannot reach asks first. Its one-to-one has recall too, and asks before any read
+outside its folder.
+
+**How it knows what it knows.** Each statement in its experience ends with how it is known: *(seen, round N)* when a
+round showed it, *(concluded, round N)* when it was inferred — and a claim that something does not exist or cannot be
+done stays concluded until a round shows it. When a later round shows a statement was wrong, it is replaced and one line
+is kept under **Corrected**, so it is not learned again. What it learns is filed where it is true: about a codebase in
+that codebase's part, what holds everywhere in its core. The round behind any statement is a recall away.
+
 A colleague can be in several sessions at once. Rounds from every session are distilled one at a time; one that grew
 elsewhere while it worked here is told so in a line at the start of its next task. A round the distiller refuses three
 times in a row — it seems to hold a key or a password, or its answer never fits — is stepped past: it stays in the past

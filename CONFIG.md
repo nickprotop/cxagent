@@ -873,6 +873,10 @@ A colleague runs only on a model with a context window of at least 128k tokens, 
 quarter of that window (at most 100k) of its experience. A provider entry whose window cxagent cannot
 learn needs `contextWindow` set for a colleague to run on it.
 
+**Workplaces are read without asking.** A colleague reads files in the folders it has worked in without a prompt, while
+each folder is trusted (`/trust`) and still there — reads only. While `cxagent web` or `/web` serves the session, such a
+read outside the `web.roots` folders asks, and so does recalling what was read there.
+
 **Each colleague's models are its own,** in its `colleague.json`, not here: where it runs — the
 entry it was kept on, or the session's model — and where its rounds are distilled — its own model unless
 set. F8's Colleagues tab and the browser's page choose both from the provider entries, and refuse one
