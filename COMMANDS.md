@@ -651,11 +651,14 @@ been deleted is named in its briefing as gone. While the session is served to a 
 was read — in a folder that browser cannot reach asks first. Its one-to-one has recall too, and asks before any read
 outside its folder.
 
-**How it knows what it knows.** Each statement in its experience ends with how it is known: *(seen, round N)* when a
-round showed it, *(concluded, round N)* when it was inferred — and a claim that something does not exist or cannot be
-done stays concluded until a round shows it. When a later round shows a statement was wrong, it is replaced and one line
-is kept under **Corrected**, so it is not learned again. What it learns is filed where it is true: about a codebase in
-that codebase's part, what holds everywhere in its core. The round behind any statement is a recall away.
+**How it knows what it knows.** Each statement in its experience ends with its kind and the round behind it:
+*(observed, round N)* for what a round read, ran or got back; *(learned, round N)* for what was understood or inferred
+from that, or told; *(concluded, round N)* for what a round set out to check and established. A statement rises only on
+new evidence — recalling or repeating it never does — and a claim that something does not exist or cannot be done is at
+most learned until a round establishes it. What no longer holds moves: under **Mistaken** when it was never true, under
+**Superseded** when it held and stopped holding, so it is not learned again. What it learns is filed where it is true:
+about a codebase in that codebase's part, what holds everywhere in its core. The round behind any statement is a recall
+away.
 
 A colleague can be in several sessions at once. Rounds from every session are distilled one at a time; one that grew
 elsewhere while it worked here is told so in a line at the start of its next task. A round the distiller refuses three

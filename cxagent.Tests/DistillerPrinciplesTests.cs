@@ -8,7 +8,8 @@ namespace CxAgent.Tests;
 
 /// <summary>
 /// Where knowledge belongs and how it is known: a round says where it read, and the distiller is given four general
-/// principles — how each statement is known, that absence stays concluded, that newer evidence wins, and where each
+/// principles — how each statement is known (observed, learned, concluded), that absence is at most learned, that newer
+/// evidence wins and moves what no longer holds under Mistaken or Superseded, and where each
 /// statement is filed (user-approved wording, 2026-11-08). The colleague's briefing says how to weigh the marks.
 /// </summary>
 public sealed class DistillerPrinciplesTests : IDisposable
@@ -88,28 +89,30 @@ public sealed class DistillerPrinciplesTests : IDisposable
     {
         var text = Distiller.InstructionsForTest;
 
-        Assert.Contains("(seen, round N)", text);
+        Assert.Contains("(observed, round N)", text);
+        Assert.Contains("(learned, round N)", text);
         Assert.Contains("(concluded, round N)", text);
-        Assert.Contains("absence is the easiest thing to misread", text);
+        Assert.Contains("Write what was observed and what was understood from it as separate statements", text);
+        Assert.Contains("recalling it, repeating it, or being told it again never raises it", text);
+        Assert.Contains("is at most learned until a round establishes it", text);
         Assert.Contains("Newer evidence wins", text);
-        Assert.Contains("is not new evidence", text);
         Assert.Contains("You can write only the core and the codebases listed below", text);
         Assert.Contains("in the core only if it holds generally", text);
+        Assert.DoesNotContain("(seen, round N)", text);
         foreach (var specific in new[] { "CS0", "C#", "Python", "grep", "NuGet" })
             Assert.DoesNotContain(specific, text);
     }
 
     /// <summary>
-    /// A statement learned before marks were kept stays unmarked until a round bears on it: a live distilling of a round
-    /// that only recalled stamped all 22 statements of an older experience "(seen, round 14)" — a wrong one among them —
-    /// because "it keeps the mark it had" said nothing about statements that had none.
+    /// A statement learned before kinds were kept is read by what its old mark meant: "seen" was what a round showed, and
+    /// "concluded" covered every inference — the weaker kind now — so neither is promoted by being rewritten.
     /// </summary>
     [Fact]
-    public void An_unmarked_statement_stays_unmarked_until_a_round_bears_on_it()
+    public void Older_marks_and_unmarked_statements_keep_their_weight()
     {
-        Assert.Contains("A statement with no mark was learned before marks were kept", Distiller.InstructionsForTest);
-        Assert.Contains("rewriting it is not seeing it", Distiller.InstructionsForTest);
-        Assert.Contains("A statement with no mark was learned before marks were kept",
+        Assert.Contains("A statement with no kind was learned before kinds were kept; an older \"seen\" mark means observed, an older \"concluded\" means learned",
+            Distiller.InstructionsForTest);
+        Assert.Contains("A statement with no kind was learned before kinds were kept: weigh it as learned",
             IncarnationBriefing.For(Library.Find("Charting")!, "", new IncarnationSetting(true, [])));
     }
 
@@ -118,13 +121,16 @@ public sealed class DistillerPrinciplesTests : IDisposable
         Assert.DoesNotContain("When a round shows an earlier statement was wrong, correct it", Distiller.InstructionsForTest);
 
     [Fact]
-    public void Both_experiences_have_a_short_Corrected_section()
+    public void Both_experiences_keep_what_was_mistaken_apart_from_what_was_superseded()
     {
         var text = Distiller.InstructionsForTest;
 
-        Assert.Contains("## How you work\n## Lessons\n## Corrected\n## Codebases", text);
-        Assert.Contains("## Open threads\n## Corrected", text);
-        Assert.Contains("only the few corrections that still matter", text);
+        Assert.Contains("## How you work\n## Lessons\n## Mistaken\n## Superseded\n## Codebases", text);
+        Assert.Contains("## Open threads\n## Mistaken\n## Superseded", text);
+        Assert.Contains("under ## Mistaken if it was never true", text);
+        Assert.Contains("under ## Superseded if it held and stopped holding", text);
+        Assert.Contains("Keep only the few that still matter", text);
+        Assert.DoesNotContain("## Corrected", text);
     }
 
     private async Task<DistillOutcome> Distil(string answer)
@@ -158,12 +164,13 @@ public sealed class DistillerPrinciplesTests : IDisposable
     }
 
     [Fact]
-    public void The_briefing_explains_the_marks()
+    public void The_briefing_explains_the_kinds()
     {
         var briefing = IncarnationBriefing.For(Library.Find("Charting")!, "", new IncarnationSetting(true, []));
 
-        Assert.Contains("seen in a round, or concluded from what was seen", briefing);
-        Assert.Contains("check what was concluded before you build on it", briefing);
+        Assert.Contains("concluded — established by a check; observed — seen as it came back; learned — understood or inferred, or told", briefing);
+        Assert.Contains("Rely on concluded, read observed as what was seen at the time, and check learned before you build on it", briefing);
+        Assert.Contains("Mistaken holds what you once believed wrongly; Superseded holds what used to be true", briefing);
         Assert.Contains("including the round behind any statement", briefing);
     }
 }

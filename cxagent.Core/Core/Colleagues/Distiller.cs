@@ -351,27 +351,29 @@ public sealed partial class Distiller(ColleagueStore store)
         + "way, how each codebase is built and why. Not a diary of what happened; what is true and useful now. Merge "
         + "what overlaps; drop what is no longer useful. Never write secrets — keys, passwords, tokens — even when the "
         + "round shows one.\n\n"
-        // THE PRINCIPLES IN GENERAL WORDS, as the user approved them (2026-11-08): a rule tailored to a bug seen in one
-        // language or tool teaches yesterday's mistake and carries nowhere else.
-        + "Say how each statement is known: end it with (seen, round N) when a round showed it — something the colleague "
-        + "read or ran, and what came back — or (concluded, round N) when it was inferred. One mark per statement, the "
-        + "latest round that bears on it; none on the Codebases index. What a round recalls of the colleague's own past, "
-        + "or is told by whoever asked, is not new evidence: it keeps the mark it had. A statement with no mark was learned "
-        + "before marks were kept: leave it unmarked until a round shows or contradicts it — rewriting it is not seeing "
-        + "it. A statement that something does not "
-        + "exist, does not work or cannot be done stays concluded until a round shows it directly — absence is the "
-        + "easiest thing to misread.\n\n"
-        + "Newer evidence wins. When a round contradicts a statement, replace it, and under ## Corrected keep one line — "
-        + "what was believed, what is true, the round — so it is not written back. Keep only the few corrections that "
-        + "still matter.\n\n"
+        // THE PRINCIPLES IN GENERAL WORDS, as the user approved them (2026-11-08, the kinds 2026-11-09): a rule tailored to
+        // a bug seen in one language or tool teaches yesterday's mistake and carries nowhere else. THREE KINDS, NOT TWO:
+        // "concluded" once covered every inference, and an inference written as a finding is how a guess became knowledge;
+        // only what a round set out to check and established is concluded now.
+        + "Say how each statement is known, ending it with its kind and the latest round that bears on it: (observed, "
+        + "round N) for what a round read, ran or got back, as it came back; (learned, round N) for what was understood or "
+        + "inferred from that, or was told by whoever asked; (concluded, round N) for what a round set out to check and "
+        + "established. None on the Codebases index. Write what was observed and what was understood from it as separate "
+        + "statements. A statement rises only when a round gives it new evidence of that kind — recalling it, repeating "
+        + "it, or being told it again never raises it. That something does not exist, does not work or cannot be done is "
+        + "at most learned until a round establishes it. A statement with no kind was learned before kinds were kept; an "
+        + "older \"seen\" mark means observed, an older \"concluded\" means learned.\n\n"
+        + "Newer evidence wins. When a statement no longer holds, move it: under ## Mistaken if it was never true — what "
+        + "was believed, what is true, the round; under ## Superseded if it held and stopped holding — what held, what "
+        + "holds now, from when, the round. Keep only the few that still matter.\n\n"
         + "File each statement where it is true: about a codebase in that codebase's experience; what holds everywhere in "
         + "the core. You can write only the core and the codebases listed below; what belongs to another waits until it "
         + "is listed. A round names the folders it read outside every codebase listed — keep what was learned there in "
         + "the core only if it holds generally.\n\n"
-        + "The core experience has these sections:\n## How you work\n## Lessons\n## Corrected\n## Codebases\n"
+        + "The core experience has these sections:\n## How you work\n## Lessons\n## Mistaken\n## Superseded\n## Codebases\n"
         + "(Codebases is an index: one line per codebase it knows.) At most 8,000 tokens.\n\n"
         + "Each codebase's experience has these sections:\n## Architecture\n## Conventions\n## Pitfalls\n## Decisions\n"
-        + "## Open threads\n## Corrected\nAt most 24,000 tokens each.\n\n"
+        + "## Open threads\n## Mistaken\n## Superseded\nAt most 24,000 tokens each.\n\n"
         // THE FORM IN WORDS, NOT A TEMPLATE WITH GAPS: a local model shown "<core>...</core>" answered "..." for the
         // core and the description, word for word.
         + "Answer with tagged parts, each rewritten whole. Put the complete new core between <core> and </core>. For "

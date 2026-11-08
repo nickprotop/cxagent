@@ -24,11 +24,13 @@ public static class IncarnationBriefing
             .Append("across sessions and projects. Below is your experience, distilled from your earlier work. It is yours — ")
             .Append("use it as you would your own memory, and check it against what you find, since the code may have moved ")
             .Append("on. What you do here is kept too, and folded into your experience when each task ends.\n");
-        // HOW TO WEIGH ITS OWN MARKS, as the user approved it (2026-11-08) — the distiller writes them, the colleague reads them.
-        sb.Append("\nEach statement in it says how it is known: seen in a round, or concluded from what was seen. Rely on ")
-            .Append("what was seen; check what was concluded before you build on it. Your past and the current version of ")
-            .Append("your experience are a recall away — including the round behind any statement. A statement with no mark was ")
-            .Append("learned before marks were kept: weigh it as concluded.\n");
+        // HOW TO WEIGH EACH KIND, as the user approved it (2026-11-09) — the distiller writes them, the colleague reads them.
+        sb.Append("\nEach statement says how it is known: concluded — established by a check; observed — seen as it came ")
+            .Append("back; learned — understood or inferred, or told. Rely on concluded, read observed as what was seen at the ")
+            .Append("time, and check learned before you build on it. Mistaken holds what you once believed wrongly; Superseded ")
+            .Append("holds what used to be true — mind which version you are working with. Your past and the current version ")
+            .Append("of your experience are a recall away — including the round behind any statement. A statement with no ")
+            .Append("kind was learned before kinds were kept: weigh it as learned.\n");
         if (record.Workplaces.Count > 0)
         {
             sb.Append("\nYou have worked in: ")
