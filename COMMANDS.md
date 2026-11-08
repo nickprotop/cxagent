@@ -625,7 +625,9 @@ said in one line at the front of your next message. When the agent wants to keep
 
 A colleague can be in several sessions at once. Each runs as an ordinary worker — `/agents`, its tab and
 `agent_send` reach it — and resumes with its session. Rounds from every session are distilled one at a
-time; one that grew elsewhere while it worked here is told so in a line at the start of its next task.
+time; one that grew elsewhere while it worked here is told so in a line at the start of its next task. A
+round the distiller refuses three times in a row — it seems to hold a key or a password, or its answer never
+fits — is stepped past: it stays in the past word for word, is not learned from, and you are told once.
 
 It runs on the model it was kept on, which must have at least a 128k window. Turn colleagues off in F8 ›
 General, or with [`colleagues.enabled`](CONFIG.md#colleagues--workers-kept-across-sessions) in config.json.

@@ -107,10 +107,20 @@ public sealed partial class Distiller(ColleagueStore store)
     /// </summary>
     private async Task<string?> DrainOneAsync(DistillRequest request, CancellationToken ct)
     {
+        var name = request.Colleague;
         try
         {
-            while (store.Undistilled(request.Colleague) is { Count: > 0 } waiting)
-                if (await DistilAsync(request, Batch(waiting), ct) is { } why) return why;
+            while (store.Undistilled(name) is { Count: > 0 } waiting)
+            {
+                var batch = Batch(waiting);
+                var failure = await DistilAsync(request, batch, ct);
+                if (failure is null)
+                {
+                    if (store.Find(name) is { Failures: > 0 }) store.Update(name, r => r with { FailingRound = 0, Failures = 0 });
+                    continue;
+                }
+                if (!failure.AboutTheRound || !StepPast(name, batch[0].Seq, failure.Why)) return failure.Why;
+            }
             return null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException)
@@ -118,6 +128,39 @@ public sealed partial class Distiller(ColleagueStore store)
             return $"its library could not be written: {e.Message}";
         }
     }
+
+    /// <summary>How many drains in a row may refuse one round before it is stepped past.</summary>
+    public const int TriesBeforeSkipping = 3;
+
+    /// <summary>
+    /// Counts a refusal of the round at <paramref name="seq"/>, and steps past it at the third in a row — true when it did.
+    ///
+    /// <para>STEPPED PAST, NOT DROPPED (the user's choice, 2026-11-08): a round the distiller refuses every time — one
+    /// holding a real secret, or a false "looks like a key" match — would otherwise hold back every round behind it,
+    /// and the colleague would stop learning. Its words stay in the past; the library records it as not learned from,
+    /// and the user is told once. ONLY FOR REFUSALS OF THE ROUND ITSELF: a model that is down skips nothing.</para>
+    /// </summary>
+    private bool StepPast(string name, long seq, string why)
+    {
+        var record = store.Update(name, r => r.FailingRound == seq
+            ? r with { Failures = r.Failures + 1 }
+            : r with { FailingRound = seq, Failures = 1 });
+        if (record is null || record.Failures < TriesBeforeSkipping) return false;
+
+        store.Update(name, r => r with
+        {
+            DistilledThrough = Math.Max(r.DistilledThrough, seq),
+            FailingRound = 0,
+            Failures = 0,
+            Skipped = [.. r.Skipped, new SkippedRound(seq, why, DateTimeOffset.UtcNow)],
+        });
+        Failed?.Invoke(name, $"round {seq} was refused {TriesBeforeSkipping} times and is skipped — it stays in the past but "
+                             + $"is not learned from ({why})");
+        return true;
+    }
+
+    /// <summary>Why a batch was not distilled, and whether the round itself is the reason rather than the model or the disk.</summary>
+    private sealed record Failure(string Why, bool AboutTheRound);
 
     /// <summary>The waiting rounds one call can take, in order — at least one.</summary>
     private static List<PastRound> Batch(IReadOnlyList<PastRound> waiting)
@@ -135,7 +178,7 @@ public sealed partial class Distiller(ColleagueStore store)
     }
 
     /// <summary>Distils one batch, and answers why it could not, or null when it did.</summary>
-    private async Task<string?> DistilAsync(DistillRequest request, List<PastRound> batch, CancellationToken ct)
+    private async Task<Failure?> DistilAsync(DistillRequest request, List<PastRound> batch, CancellationToken ct)
     {
         var name = request.Colleague;
         var last = batch[^1].Seq;
@@ -147,7 +190,7 @@ public sealed partial class Distiller(ColleagueStore store)
             return null;
         }
 
-        if (request.ProviderFor(null) is not { } model) return "its distilling model is not configured here";
+        if (request.ProviderFor(null) is not { } model) return new Failure("its distilling model is not configured here", false);
 
         var experience = store.ReadExperience(name);
         var touched = Touched(batch);
@@ -169,22 +212,22 @@ public sealed partial class Distiller(ColleagueStore store)
                 messages.Add(new ChatMessage { Role = "user", Content = $"{over} Answer again in the same form, shorter: merge "
                     + "what overlaps and drop what is least useful." });
                 answer = await AskAsync(model, messages, touched, ct);
-                if (answer is { Changed: true } && Oversized(answer) is { } still) return still + " The previous experience is kept.";
+                if (answer is { Changed: true } && Oversized(answer) is { } still) return new Failure(still + " The previous experience is kept.", true);
                 // "NO CHANGE" TO A REQUEST TO SHORTEN is no answer to it: taking it would throw away what the first answer
                 // learned and count the rounds as distilled.
-                if (answer is { Changed: false }) return "asked to shorten, the distiller answered no change; the rounds wait";
+                if (answer is { Changed: false }) return new Failure("asked to shorten, the distiller answered no change; the rounds wait", true);
             }
         }
         catch (CutOffException)
         {
-            return "the distiller's answer was cut off before it ended; nothing of it is kept";
+            return new Failure("the distiller's answer was cut off before it ended; nothing of it is kept", true);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            return $"the distilling call failed: {e.Message}";
+            return new Failure($"the distilling call failed: {e.Message}", false);
         }
 
-        if (answer is null) return "the distiller's answer could not be read";
+        if (answer is null) return new Failure("the distiller's answer could not be read", true);
 
         if (!answer.Changed)
         {
@@ -194,7 +237,8 @@ public sealed partial class Distiller(ColleagueStore store)
 
         // A SECRET NEVER REACHES DISK, the memory tool's rule: an experience travels to every session, model and project
         // the colleague is brought into.
-        if (answer.Texts().Any(MemoryStore.LooksSecret)) return "the distilled experience looked like it held a secret; the previous one is kept";
+        if (answer.Texts().Any(MemoryStore.LooksSecret))
+            return new Failure("the distilled experience looked like it held a secret; the previous one is kept", true);
 
         if (answer.Core is { } core) store.WriteCore(name, core);
         foreach (var (key, text) in answer.Codebases) store.WriteCodebase(name, key, text);

@@ -409,6 +409,50 @@ public sealed class DistillerTests : IDisposable
         Assert.Single(_store.Undistilled("Charting"));
     }
 
+    /// <summary>
+    /// A ROUND REFUSED THREE TIMES IN A ROW IS STEPPED PAST (the user's choice, 2026-11-08): its words stay in the past,
+    /// the library records it as not learned from, the user is told once, and the rounds behind it are learned from.
+    /// </summary>
+    [Fact]
+    public async Task A_round_refused_three_times_is_skipped_and_the_next_is_learned_from()
+    {
+        Append("I laid the chart out — the FIRST round.");
+        Append("I moved the legend under the plot — the SECOND round.");
+        var secret = Distilled("The key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz", "## Architecture\nPanes.");
+        var told = new List<string>();
+        var distiller = new Distiller(_store);
+        distiller.Failed += (_, w) => told.Add(w);
+
+        Answer(secret);
+        Assert.Equal(DistillOutcome.Failed, await Drain(distiller));
+        Answer(secret);
+        Assert.Equal(DistillOutcome.Failed, await Drain(distiller));
+        Assert.Equal(0, _store.Find("Charting")!.DistilledThrough);
+
+        Answer(secret);
+        Answer(Distilled("## How you work\nLegends under plots.", "## Architecture\nPanes."));
+        Assert.Equal(DistillOutcome.Done, await Drain(distiller));
+
+        var record = _store.Find("Charting")!;
+        Assert.Equal(2, record.DistilledThrough);
+        Assert.Equal([1L], record.Skipped.Select(k => k.Seq));
+        Assert.Contains("secret", record.Skipped[0].Why);
+        Assert.Equal("## How you work\nLegends under plots.", _store.ReadExperience("Charting").Core);
+        Assert.Contains(told, t => t.Contains("skipped", StringComparison.Ordinal));
+        Assert.Equal(2, _store.Past("Charting").Count);   // the past keeps it, word for word
+    }
+
+    [Fact]
+    public async Task A_model_that_is_down_never_skips_a_round()
+    {
+        Append();
+        // NOTHING QUEUED: every call throws, as an endpoint that is down does.
+        for (var i = 0; i < 4; i++) Assert.Equal(DistillOutcome.Failed, await Drain());
+
+        Assert.Equal(0, _store.Find("Charting")!.DistilledThrough);
+        Assert.Empty(_store.Find("Charting")!.Skipped);
+    }
+
     [Fact]
     public async Task A_codebase_the_round_did_not_touch_is_never_written()
     {

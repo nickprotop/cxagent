@@ -43,7 +43,22 @@ public sealed record ColleagueRecord
 
     /// <summary>The session folders its latest growth came from, most recent first — named in the "grown" line.</summary>
     public IReadOnlyList<string> GrownIn { get; init; } = [];
+
+    /// <summary>The first waiting round, while the distiller keeps refusing it; 0 when nothing is failing.</summary>
+    public long FailingRound { get; init; }
+
+    /// <summary>How many drains in a row refused <see cref="FailingRound"/>.</summary>
+    public int Failures { get; init; }
+
+    /// <summary>Rounds stepped past without being learned from — still in the past, word for word.</summary>
+    public IReadOnlyList<SkippedRound> Skipped { get; init; } = [];
 }
+
+/// <summary>A round the distiller kept refusing and was stepped past.</summary>
+/// <param name="Seq">Its place in the past.</param>
+/// <param name="Why">The last refusal.</param>
+/// <param name="At">When it was stepped past.</param>
+public sealed record SkippedRound(long Seq, string Why, DateTimeOffset At);
 
 /// <summary>A folder a colleague worked in as a session's folder.</summary>
 /// <param name="Codebase">The codebase key the folder belongs to — see <see cref="Colleagues.Codebase.Key"/>.</param>
