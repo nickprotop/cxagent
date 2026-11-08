@@ -13,7 +13,10 @@ namespace CxAgent.Core.Colleagues;
 public static class IncarnationBriefing
 {
     /// <summary>The briefing for <paramref name="record"/>, with <paramref name="preload"/> as its experience.</summary>
-    public static string For(ColleagueRecord record, string preload)
+    /// <param name="record">Who it is.</param>
+    /// <param name="preload">The experience it starts with.</param>
+    /// <param name="setting">What it may reach here — see <see cref="IncarnationSetting"/>.</param>
+    public static string For(ColleagueRecord record, string preload, IncarnationSetting setting)
     {
         var sb = new StringBuilder();
         sb.Append("# Who you are\n\n");
@@ -26,9 +29,23 @@ public static class IncarnationBriefing
             sb.Append("\nYou have worked in: ")
                 .Append(string.Join(", ", record.Workplaces.OrderByDescending(w => w.Last).Select(w => w.Folder)))
                 .Append(".\n");
+            // SAID AS IT IS, WITH ITS LIMITS: a read that then asks would otherwise read as a broken promise.
+            if (setting.ReadsWorkplaces)
+                sb.Append("You can read files in them without asking, unless a folder is no longer trusted or this session is ")
+                    .Append("shared to a browser that cannot see it.\n");
+            if (setting.GoneWorkplaces.Count > 0)
+                sb.Append("Some are gone since you worked there — moved or deleted, so not readable: ")
+                    .Append(string.Join(", ", setting.GoneWorkplaces)).Append(".\n");
         }
+        sb.Append("\nYour past and the current version of your experience are a recall away.\n");
         sb.Append("\n# Your experience\n\n");
         sb.Append(preload.Length > 0 ? preload : "Nothing is distilled yet: this is early in your work.\n");
         return sb.ToString().TrimEnd();
     }
 }
+
+/// <summary>What an incarnation may reach where it is brought in, as its briefing says it.</summary>
+/// <param name="ReadsWorkplaces">Its workplaces' files are readable without asking here — an incarnation's, not a
+/// one-to-one's, where the user is present to answer.</param>
+/// <param name="GoneWorkplaces">Workplaces whose folders are no longer there.</param>
+public sealed record IncarnationSetting(bool ReadsWorkplaces, IReadOnlyList<string> GoneWorkplaces);

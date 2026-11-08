@@ -86,6 +86,10 @@ public sealed record ColleagueDeskParts
 
     /// <summary>Tells the user something that is news, not trouble — what a colleague learned.</summary>
     public Action<string>? Tell { get; init; }
+
+    /// <summary>What a browser may reach while the session is served to one — read by an incarnation's workplace reads
+    /// and its recall at each decision.</summary>
+    public Web.ServedFolders? Served { get; init; }
 }
 
 /// <summary>
@@ -500,7 +504,8 @@ public sealed class ColleagueDesk : IDisposable
         var window = (record.Instance is { } own ? _parts.Models(own)?.Window : null) ?? _parts.Models(null)?.Window ?? ExperienceBudget.MinimumWindow;
         var preload = ExperienceBudget.Preload(_parts.Library.ReadExperience(record.Name),
             new ExperienceFocus(Codebase.Key(folder), record.Workplaces, ExperienceBudget.For(window)));
-        var briefing = IncarnationBriefing.For(record, preload) + "\n\n# Talking with the user\n\n"
+        // NO SILENT READS IN A ONE-TO-ONE: the user is there to answer a prompt, and the briefing does not claim them.
+        var briefing = IncarnationBriefing.For(record, preload, new IncarnationSetting(ReadsWorkplaces: false, [])) + "\n\n# Talking with the user\n\n"
             + "You are talking with the user directly — not working for a lead agent on a task. Answer what they ask from "
             + "what you know, and say plainly when you do not know. What they teach or correct here becomes part of your "
             + "experience. You can read files to check what you say; you cannot change anything.";
@@ -564,7 +569,17 @@ public sealed class ColleagueDesk : IDisposable
         var preload = ExperienceBudget.Preload(_parts.Library.ReadExperience(record.Name),
             new ExperienceFocus(Codebase.Key(_parts.Folder), record.Workplaces, ExperienceBudget.For(window)));
         _given[origin] = record.ExperienceVersion;
-        return new ChildAugment { Context = IncarnationBriefing.For(record, preload) };
+
+        // ITS WORKPLACES AS THEY ARE NOW: one moved or deleted is said in the briefing, never read — a folder that is no
+        // longer there is not one the colleague knows the contents of.
+        var here = record.Workplaces.Where(w => Directory.Exists(w.Folder)).Select(w => w.Folder).ToList();
+        var gone = record.Workplaces.Where(w => !Directory.Exists(w.Folder)).Select(w => w.Folder).ToList();
+        return new ChildAugment
+        {
+            Context = IncarnationBriefing.For(record, preload, new IncarnationSetting(ReadsWorkplaces: here.Count > 0, gone)),
+            ExtraTools = [new RecallTool(new RecallScope(_parts.Library, record.Name, _parts.Served))],
+            ReadAlso = new Permissions.ReadAlso(here, _parts.Served),
+        };
     }
 
     private void OnBegan(string agentId)
@@ -572,6 +587,14 @@ public sealed class ColleagueDesk : IDisposable
         if (Incarnation(agentId) is not { } found) return;
         _rounds[agentId] = new RoundStart(found.Kept.Agent.Agent.Context.Messages.LastOrDefault(m => m.Role != "system"), DateTimeOffset.UtcNow);
     }
+
+    /// <summary>
+    /// What a colleague is told at the start of its next run when its experience grew in other sessions while it worked
+    /// here: its starting experience stays fixed for the session, so where to read the newer one is part of the line.
+    /// </summary>
+    public static string GrowthLine(IReadOnlyList<string> elsewhere) =>
+        $"{GrowthNote} (from sessions in {string.Join(", ", elsewhere)}). "
+        + "What you were given at the start is still yours; what changed is in your colleague's library — recall reads the current version.]";
 
     /// <summary>The note a colleague is given when its experience grew elsewhere — the desk's own words, not a task.</summary>
     private const string GrowthNote = "[Your experience has grown since you started here";
@@ -621,9 +644,7 @@ public sealed class ColleagueDesk : IDisposable
         var elsewhere = record.GrownIn.Where(f => !string.Equals(f, _parts.Folder, StringComparison.Ordinal)).ToList();
         _given[origin] = record.ExperienceVersion;
         if (elsewhere.Count == 0) return;
-        found.Kept.Agent.Agent.Mailbox.TryEnqueue(
-            $"{GrowthNote} (from sessions in {string.Join(", ", elsewhere)}). "
-            + "What you were given at the start is still yours; what changed is in your colleague's library.]",
+        found.Kept.Agent.Agent.Mailbox.TryEnqueue(GrowthLine(elsewhere),
             out _, wakes: false);
     }
 

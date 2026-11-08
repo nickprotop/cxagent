@@ -4187,6 +4187,19 @@ public sealed class Agent
                 : string.IsNullOrWhiteSpace(who) ? $"colleague · {action}" : $"colleague · {action} {who!.Trim()}";
         }
 
+        // A RECALL IS NAMED BY WHAT IT LOOKED FOR — the words, the round, the codebase — as a colleague's tab shows it.
+        if (string.Equals(call.Name, Colleagues.RecallTool.ToolName, StringComparison.Ordinal))
+        {
+            var action = ReadArg(call, "action")?.Trim().ToLowerInvariant();
+            return action switch
+            {
+                "search" => $"recall · search \"{ReadArg(call, "query")?.Trim()}\"",
+                // A NUMBER, read raw: ReadArg reads strings, and a round is sent as an integer.
+                "read" => $"recall · round {(call.Arguments.ValueKind == System.Text.Json.JsonValueKind.Object && call.Arguments.TryGetProperty("round", out var round) ? round.ToString() : "")}",
+                _ => ReadArg(call, "codebase") is { Length: > 0 } codebase ? $"recall · {action} {codebase.Trim()}" : $"recall · {action}",
+            };
+        }
+
         // A SPAWN IS NAMED BY ITS TYPE AND ITS DESCRIPTION, not by raw JSON. The generic branch below
         // truncates the serialised arguments at 60 characters, and a spawn's JSON opens with
         // `{"description":"…` — so the description ate the budget and `type`, which serialises last,

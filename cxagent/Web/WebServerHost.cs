@@ -120,6 +120,10 @@ public sealed class WebServerHost : IAsyncDisposable
             : null;
 
         host._server = new HttpServer(new HttpServerOptions(bind, s.Port, certificate), host.HandleAsync);
+
+        // WHAT A BROWSER MAY REACH, FOR THE SESSIONS IT CAN SEE: a colleague's workplace reads and recalls outside these
+        // folders ask from now on — cxagent web and the terminal's /web alike, since both start here.
+        r.Manager.Shared.Served.Roots = roots;
         try
         {
             await host._server.StartAsync().ConfigureAwait(false);
@@ -145,6 +149,7 @@ public sealed class WebServerHost : IAsyncDisposable
     {
         if (_stop.IsCancellationRequested) return;
         await _stop.CancelAsync().ConfigureAwait(false);
+        _request.Manager.Shared.Served.Roots = null;
         try
         {
             await Hub.DisconnectAllAsync("The server stopped.").ConfigureAwait(false);

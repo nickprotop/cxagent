@@ -316,6 +316,7 @@ internal static class SessionFactory
             Delivery = delivery,
             Sessions = shared.Resume,
             OneToOne = session.OneToOne is not null,
+            Served = shared.Served,
         });
 
         // THE PORTS' OBSERVERS BECOME SUBSCRIBER ONE OF A FAN-OUT, and everything downstream is
@@ -413,7 +414,11 @@ internal static class SessionFactory
                     Mcp = session.OneToOne is null ? shared.Mcp : null,
                     Spawner = subAgents,
                     // Already gated above. The host hands these to its agent and to every child.
-                    Injected = agentTools,
+                    // A ONE-TO-ONE ADDS ITS COLLEAGUE'S RECALL, on this host only and unwrapped as an incarnation's is:
+                    // reading its own past is not a request to ask about.
+                    Injected = session.OneToOne is { } talking && session.Colleagues is { } desk
+                        ? [.. agentTools ?? [], new Colleagues.RecallTool(new Colleagues.RecallScope(desk.Library, talking.Colleague, shared.Served))]
+                        : agentTools,
                     Dynamic = dynamicTools,
                     PluginInstructions = session.Plugins.InstructionsForPrompt,
                     // THE HOST'S OWN AGENT ONLY, like AskUser below and for the same reason: a child has

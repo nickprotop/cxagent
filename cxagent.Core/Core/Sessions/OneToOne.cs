@@ -14,5 +14,5 @@ public sealed record OneToOne(string Colleague, string Tag, string Briefing, str
     /// ITS TOOLS: reading, and nothing else. It is there to be asked and taught, not to change anything — a write or a
     /// shell command from a conversation with no project of its own would land wherever its workplace happens to be.
     /// </summary>
-    public static readonly Jobs.ToolSelection Tools = new([Jobs.Tool.ReadFile, Jobs.Tool.Glob, Jobs.Tool.Grep]);
+    public static readonly Jobs.ToolSelection Tools = new([Jobs.Tool.ReadFile, Jobs.Tool.Glob, Jobs.Tool.Grep, Colleagues.RecallTool.ToolName]);
 }
