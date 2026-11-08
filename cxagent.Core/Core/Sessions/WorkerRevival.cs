@@ -138,7 +138,7 @@ internal static class WorkerRevival
         // failed — leaves an ordinary worker with its conversation, and the session says so rather than letting the user
         // believe it is what it was.
         if (spawn.Origin is not null && (child.AugmentRefusal is not null || !factory.CanAugment))
-            return new Outcome(child.AugmentRefusal ?? "nothing here knows where it came from", Plain: true);
+            return new Outcome(child.AugmentRefusal ?? "what it came from is switched off here", Plain: true);
         return null;
     }
 

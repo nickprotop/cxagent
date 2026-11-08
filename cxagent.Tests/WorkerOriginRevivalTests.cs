@@ -120,7 +120,7 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         var kept = store.Find("charting")!;
         Assert.Equal(["work", "worked"], kept.Agent.Agent.Context.Messages.Select(m => m.Content));
         Assert.Empty(report.Left);
-        Assert.Contains(report.Plain, l => l.StartsWith("charting (", StringComparison.Ordinal));
+        Assert.Contains("charting (what it came from is switched off here)", report.Plain);
     }
 
     [Fact]
