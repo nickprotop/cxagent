@@ -247,7 +247,9 @@ public sealed class AgentTab : IDisposable
         };
         var name = badge?.Name ?? kept.Name;
         var shown = name.Length <= 24 ? name : name[..23] + "…";
-        return badge is null ? $"{glyph} {shown}" : $"{glyph} {badge.Glyph} {shown}";
+        // A COLLEAGUE'S TITLE CARRIES NO ✓ OR ✗: between tasks it is idle, and only working shows beside its glyph.
+        if (badge is null) return $"{glyph} {shown}";
+        return now is { Running: true } ? $"{glyph} {badge.Glyph} {shown}" : $"{badge.Glyph} {shown}";
     }
 
     /// <summary>One clock tick: the state, the header, what the composer row offers, and the live rows' clocks.</summary>
@@ -305,15 +307,8 @@ public sealed class AgentTab : IDisposable
         {
             badge is null ? $"[bold]{MarkupParser.Escape(Kept.Name)}[/]" : $"[bold]{badge.Glyph} {MarkupParser.Escape(badge.Name)}[/]",
         };
-        // THE FULL name:model here — the tab is where a child is looked at closely.
-        var facts = Kept.Agent.ModelId is { Length: > 0 } runsOn ? $"{Kept.TypeName} · {runsOn}" : Kept.TypeName;
-        if (badge is not null) facts = $"{badge.Kind.ToLowerInvariant()} · {Kept.Name} · {facts}";
-        if (Kept.Agent.Root is { } folder) facts += $" · in {folder}";
-        if (_now is { } row)
-        {
-            facts += $" · {AgentRows.Word(row.State)} · {JobsPanel.Clock(row.Elapsed)}";
-            if (row.Foreground && row.Running) facts += " · the parent is waiting on it";
-        }
+        var learning = badge is not null && Session.Colleagues?.Distilling.Contains(badge.Name, StringComparer.OrdinalIgnoreCase) == true;
+        var facts = FactsFor(Kept, _now, badge, learning);
         lines.Add(Muted(facts));
         if (Kept.Description is { Length: > 0 } description) lines.Add(Muted(description));
         if (Session.SubAgents.Ended) lines.Add(Muted("its session has ended — this agent was stopped with it"));
@@ -324,6 +319,9 @@ public sealed class AgentTab : IDisposable
             lines.Add(Muted("Ctrl+B or Background moves it to the background · Stop ends it, and the parent goes on"));
         else if (_now is { Running: true, Foreground: false })
             lines.Add(Muted("keeps running when you close this tab · Stop, or x in Tasks (F7), stops it"));
+        // A COLLEAGUE BETWEEN TASKS IS NOT A FINISHED TASK: x has nothing to delete on its card.
+        else if (badge is not null && _now is not { Running: true })
+            lines.Add(Muted("closing this tab keeps it here · ask it below, or from its card in Tasks (F7)"));
         else if (_now is { Running: false })
             lines.Add(Muted("closing this tab keeps it · x in Tasks (F7) deletes it"));
         lines.Add("");
@@ -331,11 +329,39 @@ public sealed class AgentTab : IDisposable
     }
 
     /// <summary>
+    /// The header's facts line. A worker's: its type and full name:model — the tab is where a child is looked at
+    /// closely — then how it stands. A colleague's: "colleague · handle · model", NO TYPE (a colleague is what it has
+    /// learned, not the worker it was kept from), and its own state words — idle between tasks, never done.
+    /// </summary>
+    /// <param name="kept">The agent.</param>
+    /// <param name="now">How it stands, or null for one never given work.</param>
+    /// <param name="badge">What it is, or null for an ordinary worker.</param>
+    /// <param name="learning">A colleague's rounds are being distilled now.</param>
+    public static string FactsFor(StoredAgent kept, AgentRowView? now, WorkerBadge? badge, bool learning)
+    {
+        var model = kept.Agent.ModelId is { Length: > 0 } runsOn ? runsOn : null;
+        string facts;
+        if (badge is null) facts = model is null ? kept.TypeName : $"{kept.TypeName} · {model}";
+        else facts = $"{badge.Kind.ToLowerInvariant()} · {kept.Name}" + (model is null ? "" : $" · {model}");
+        if (kept.Agent.Root is { } folder) facts += $" · in {folder}";
+        if (badge is not null)
+        {
+            var state = now?.State ?? AgentRowState.Done;
+            facts += $" · {AgentRows.ColleagueWord(state, learning)}";
+            if (now is { Running: true } running) facts += $" · {JobsPanel.Clock(running.Elapsed)}";
+        }
+        else if (now is { } row) facts += $" · {AgentRows.Word(row.State)} · {JobsPanel.Clock(row.Elapsed)}";
+        if (now is { Foreground: true, Running: true }) facts += " · the parent is waiting on it";
+        return facts;
+    }
+
+    /// <summary>
     /// The line under the field: the agent's type and model, as the session's mode line names its own, then what Enter
     /// does now.
     /// </summary>
     private string Hint() =>
-        Muted($" {Kept.Agent.TypeName} · {Kept.Agent.ModelId} · " + (
+        // A COLLEAGUE'S NAME IN PLACE OF A TYPE, as its header has it.
+        Muted($" {(Session.SubAgents.BadgeOf(Kept.Name)?.Name ?? Kept.Agent.TypeName)} · {Kept.Agent.ModelId} · " + (
             _now is { Foreground: true, Running: true } ? "read-only — the parent is waiting on this agent's answer"
             : Session.SubAgents.Ended ? "its session has ended"
             : _now is { Running: true } ? "Enter tells it — it reads this on its next turn"

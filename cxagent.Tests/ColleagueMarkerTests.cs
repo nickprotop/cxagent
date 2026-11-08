@@ -106,7 +106,7 @@ public sealed class ColleagueMarkerTests : IDisposable
         var kept = session.SubAgents.Find("charting")!;
 
         Assert.Null(AgentRows.Describe(session.SubAgents, kept, DateTimeOffset.UtcNow));
-        Assert.Equal("· ◆ Charting", AgentTab.TitleFor(kept, null, session.SubAgents.BadgeOf(kept.Name)));
+        Assert.Equal("◆ Charting", AgentTab.TitleFor(kept, null, session.SubAgents.BadgeOf(kept.Name)));
     }
 
     /// <summary>

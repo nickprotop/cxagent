@@ -55,6 +55,12 @@ public sealed class JobsPanel
     /// <param name="View">The agent and how it stands — see <see cref="AgentRows"/>.</param>
     public sealed record AgentRow(AgentRowView View) : PanelRow
     {
+        /// <summary>
+        /// A colleague's card facts, or null for a worker. A colleague's row sits in the Colleagues section whatever it
+        /// is doing — it is a teammate in the room between tasks, never a finished task.
+        /// </summary>
+        public CxAgent.Core.Colleagues.ColleagueCard? Colleague { get; init; }
+
         public override bool Running => View.Running;
         public override DateTimeOffset Began => View.Began;
         public override string Key => $"agent:{View.AgentId}";
@@ -67,7 +73,18 @@ public sealed class JobsPanel
     /// says, and both read <see cref="MainWindow.RunningTasksOf"/> — running shells and every working agent,
     /// foreground children and the user's sends included (decision 22), which is the number of running rows.</para>
     /// </summary>
-    public sealed record JobsShown(IReadOnlyList<PanelRow> Rows, int Running);
+    public sealed record JobsShown(IReadOnlyList<PanelRow> Rows, int Running)
+    {
+        /// <summary>Colleagues in the library that are not in this session — listed under the cards, with Bring.</summary>
+        public IReadOnlyList<AvailableColleague> Available { get; init; } = [];
+    }
+
+    /// <summary>A colleague that could be brought into the session in front.</summary>
+    public sealed record AvailableColleague(string Name, string Description);
+
+    /// <summary>The library's colleagues that are not here, from the desk's panel — empty without one.</summary>
+    public static IReadOnlyList<AvailableColleague> AvailableOf(CxAgent.Core.Colleagues.ColleaguePanel? panel) =>
+        panel is null ? [] : [.. panel.Rows.Where(r => r.Handle is null).Select(r => new AvailableColleague(r.Name, r.Description))];
 
     /// <summary>What a key or a click on a card asks for.</summary>
     public enum RowAction
@@ -102,8 +119,11 @@ public sealed class JobsPanel
 
     private readonly MarkupControl _heading = Ctl.Markup().WithMargin(1, 1, 1, 0).Build();
     private readonly MarkupControl _empty = Ctl.Markup().WithMargin(1, 1, 1, 0).Build();
+    private readonly Section _colleagues;
     private readonly Section _running;
     private readonly Section _finished;
+    private readonly MarkupControl _available = Ctl.Markup().WithMargin(1, 0, 1, 1).Build();
+    private IReadOnlyList<AvailableColleague> _availableShown = [];
     private readonly ScrollablePanelControl _host;
     private int _count;
     private int _width = SessionPanel.MaxWidth;
@@ -111,18 +131,27 @@ public sealed class JobsPanel
     /// <summary>A card was chosen — by a click, Enter, its ⏹ or ✕, or <c>x</c>.</summary>
     public event Action<RowChoice>? RowChosen;
 
+    /// <summary>An available colleague's Bring was clicked — its name, for the window to bring it in.</summary>
+    public event Action<string>? BringChosen;
+
     public JobsPanel()
     {
         // NO HEADING OVER THE RUNNING CARDS: the panel's own title says how many run, and a "Running" under it
         // said the same thing twice. Finished keeps its heading — it is what separates the two.
+        _colleagues = new Section(this, "Colleagues");
         _running = new Section(this, title: null);
         _finished = new Section(this, "Finished");
 
+        _available.Visible = false;
+        _available.LinkClicked += (_, e) =>
+        {
+            if (e.Url.StartsWith('b') && int.TryParse(e.Url.AsSpan(1), out var i)) FollowAvailableForTest(i);
+        };
         _host = Ctl.ScrollablePanel().WithVerticalAlignment(VerticalAlignment.Fill).Build();
         _host.BackgroundColor = ColorScheme.PanelSurface;
         // EACH SECTION'S KEY HINT SITS UNDER IT, so "x stop" is read beside the running cards it stops and "x delete"
         // beside the finished ones — a single hint at the foot of the column reads as being about whatever is last.
-        foreach (var control in new IWindowControl[] { _heading, _empty, _running.Panel, _running.Hint, _finished.Panel, _finished.Hint })
+        foreach (var control in new IWindowControl[] { _heading, _empty, _colleagues.Panel, _colleagues.Hint, _available, _running.Panel, _running.Hint, _finished.Panel, _finished.Hint })
             _host.AddControl(control);
     }
 
@@ -208,7 +237,9 @@ public sealed class JobsPanel
     /// </summary>
     public bool ActOnSelected()
     {
-        if (SelectedCard()?.Row is not { } row) return false;
+        // AN IDLE COLLEAGUE HAS NOTHING FOR x TO DO: it is not a finished task to delete, and leaving the session is
+        // not something a stray key should decide.
+        if (SelectedCard()?.Row is not { } row || row is AgentRow { Colleague: not null, Running: false }) return false;
         RowChosen?.Invoke(new RowChoice(row, RowAction.StopOrForget));
         return true;
     }
@@ -224,8 +255,14 @@ public sealed class JobsPanel
         return true;
     }
 
+    /// <summary>Brings the available colleague at <paramref name="index"/> — what its Bring link does.</summary>
+    public void FollowAvailableForTest(int index)
+    {
+        if (index >= 0 && index < _availableShown.Count) BringChosen?.Invoke(_availableShown[index].Name);
+    }
+
     /// <summary>Redraws with the last rows given — for a change of focus or selection between ticks.</summary>
-    public void Redraw() => Refresh(new JobsShown(AllRows(), _count), _width);
+    public void Redraw() => Refresh(new JobsShown(AllRows(), _count) { Available = _availableShown }, _width);
 
     /// <param name="shown">The rows and the running count.</param>
     /// <param name="width">The column's width as laid out — see SessionPanel.SessionPanelState.Width.</param>
@@ -236,8 +273,12 @@ public sealed class JobsPanel
         var usable = Math.Max(1, width - Chrome);
         var hadFocus = RowsHaveFocus;
         var before = AllRows().Select(r => r.Key).ToList();
-        _running.Show([.. shown.Rows.Where(r => r.Running)], usable);
-        _finished.Show([.. shown.Rows.Where(r => !r.Running)], usable);
+        static bool Colleague(PanelRow r) => r is AgentRow { Colleague: not null };
+        _colleagues.Show([.. shown.Rows.Where(Colleague)], usable);
+        // WORKERS GET A HEADING ONLY UNDER COLLEAGUES: without one, the workers' cards read as more colleagues.
+        _running.Retitle(_colleagues.Cards.Count > 0 ? "Workers" : null);
+        _running.Show([.. shown.Rows.Where(r => r.Running && !Colleague(r))], usable);
+        _finished.Show([.. shown.Rows.Where(r => !r.Running && !Colleague(r))], usable);
 
         // THE SELECTION FOLLOWS ITS CARD, across sections too: a card that stops moves from Running to Finished and
         // stays selected, so the x-then-x of decision 13 deletes the card it stopped. A card that is gone hands the
@@ -256,7 +297,27 @@ public sealed class JobsPanel
         var heading = $"[bold {ColorScheme.AccentMarkup}]{(_count > 0 ? $"Tasks · {_count} running" : "Tasks")}[/]";
         SetIfChanged(_heading, [heading]);
 
-        var nothing = shown.Rows.Count == 0;
+        // HERE AND AVAILABLE, TOLD APART: the cards are the colleagues in this session; the library's others are one
+        // line each with Bring — read from the session in front, so switching sessions switches the list.
+        _availableShown = shown.Available;
+        List<string> available = [];
+        if (shown.Available.Count > 0)
+        {
+            // THE SECTION'S HEADING WHEN NONE IS HERE, so the list still reads as colleagues.
+            if (_colleagues.Cards.Count == 0) available.Add("[bold]Colleagues[/]");
+            available.Add(Muted("Available"));
+            for (var i = 0; i < shown.Available.Count; i++)
+            {
+                var a = shown.Available[i];
+                var room = Math.Max(1, width - 4 - 9);
+                var line = Cut(a.Description.Length > 0 ? $"{a.Name} · {a.Description}" : a.Name, room);
+                available.Add($"◇ {Value(line)}  [link=b{i}]Bring[/]");
+            }
+        }
+        _available.Visible = available.Count > 0;
+        SetIfChanged(_available, available);
+
+        var nothing = shown.Rows.Count == 0 && shown.Available.Count == 0;
         List<string> empty = nothing
             ? [Muted("Nothing running in the background."), "", Muted("A command or sub-agent started in the background appears here.")]
             : [];
@@ -271,17 +332,23 @@ public sealed class JobsPanel
             chosen is null || !section.Holds(chosen) ? ""
             : Muted(Cut(chosen.Row switch
             {
+                AgentRow { Colleague: not null, Running: false } => "",
                 AgentRow { View: { Foreground: true, Running: true } } => "x stop · b background",
                 { Running: true } => "x stop",
                 _ => "x delete",
             }, width - 4));
+        var colleaguesHint = HintFor(_colleagues);
         var runningHint = HintFor(_running);
         var finishedHint = HintFor(_finished);
+        _colleagues.ShowHint(colleaguesHint);
         _running.ShowHint(runningHint);
         _finished.ShowHint(finishedHint);
 
         var text = new List<string> { heading };
         text.AddRange(empty);
+        text.AddRange(_colleagues.Text());
+        if (colleaguesHint.Length > 0) text.Add(colleaguesHint);
+        text.AddRange(available);
         text.AddRange(_running.Text());
         if (runningHint.Length > 0) text.Add(runningHint);
         text.AddRange(_finished.Text());
@@ -292,8 +359,8 @@ public sealed class JobsPanel
     /// <summary>The selected card's row key; null before anything has been selected.</summary>
     private string? _selected;
 
-    /// <summary>Every card, Running's then Finished's — the order ↑ and ↓ walk.</summary>
-    private List<Card> AllCards() => [.. _running.Cards, .. _finished.Cards];
+    /// <summary>Every card, Colleagues', Running's then Finished's — the order ↑ and ↓ walk.</summary>
+    private List<Card> AllCards() => [.. _colleagues.Cards, .. _running.Cards, .. _finished.Cards];
 
     private List<PanelRow> AllRows() => [.. AllCards().Select(c => c.Row)];
 
@@ -333,7 +400,7 @@ public sealed class JobsPanel
     private sealed class Section
     {
         private readonly JobsPanel _owner;
-        private readonly string? _title;
+        private string? _title;
 
         /// <param name="title">The section's heading; null for none.</param>
         public Section(JobsPanel owner, string? title)
@@ -353,6 +420,15 @@ public sealed class JobsPanel
         public List<Card> Cards { get; } = [];
 
         public bool Holds(Card card) => Cards.Contains(card);
+
+        /// <summary>Gives the section a heading, or takes it away with null.</summary>
+        public void Retitle(string? title)
+        {
+            if (_title == title) return;
+            _title = title;
+            Panel.ShowHeader = title is not null;
+            Panel.Title = title ?? "";
+        }
 
         public void ShowHint(string hint)
         {
@@ -503,11 +579,13 @@ public sealed class JobsPanel
             // EACH BUTTON TAKES THREE COLUMNS AT THE RIGHT — " ⏹ " — and the bar two at the left.
             var buttons = (_shown.Control is null ? 0 : 1) + (_shown.Movable ? 1 : 0);
             var room = Math.Max(1, _usable - 3 * buttons);
-            var title = $"{_shown.Mark} {Value(Cut(_shown.Title, room))}";
-            var facts = $"  {Muted(Cut(string.Join(" · ", _shown.Facts), _usable))}";
-            var link = $"  [link=open]{Value(_shown.View)} ›[/]";
+            var title = $"{_shown.Mark} {Titled(_shown.Title, _shown.Status, room)}";
+            var facts = _shown.Facts.Any() ? $"  {Muted(Cut(string.Join(" · ", _shown.Facts), _usable))}" : null;
+            // ASK… OPENS THE SAME TAB AS OPEN: the tab's composer is where a colleague is asked, and it has the keyboard.
+            var link = _shown.Ask ? $"  [link=open]{Value(_shown.View)} ›[/]  [link=ask]Ask…[/]" : $"  [link=open]{Value(_shown.View)} ›[/]";
             SetIfChanged(_title, [bar + title]);
-            SetIfChanged(_facts, [bar + facts]);
+            if (_facts.Visible != (facts is not null)) _facts.Visible = facts is not null;
+            if (facts is not null) SetIfChanged(_facts, [bar + facts]);
             // WHERE IT RUNS, ON ITS OWN LINE: the facts line is cut at the panel's width, and a label of
             // thirty-odd characters there would push out how the agent stands and how long it has run.
             // THE FOLDER SURVIVES THE CUT: a long model name gives way, never "in sub", which is what says
@@ -529,10 +607,14 @@ public sealed class JobsPanel
             }
 
             var controls = _shown.Movable ? $"⇥ {_shown.Control}" : _shown.Control;
-            var titleLine = $"{_shown.Mark} {TitleLine(_shown.Title, controls, _usable)}";
-            Text = runsOn is null
-                ? [titleLine, facts, $"  {Value(_shown.View)} ›"]
-                : [titleLine, facts, runsOn, $"  {Value(_shown.View)} ›"];
+            var titleLine = _shown.Status is null
+                ? $"{_shown.Mark} {TitleLine(_shown.Title, controls, _usable)}"
+                : $"{_shown.Mark} {Titled(_shown.Title, _shown.Status, room)}" + (controls is null ? "" : $" {Muted(controls)}");
+            var lines = new List<string> { titleLine };
+            if (facts is not null) lines.Add(facts);
+            if (runsOn is not null) lines.Add(runsOn);
+            lines.Add(_shown.Ask ? $"  {Value(_shown.View)} ›  Ask…" : $"  {Value(_shown.View)} ›");
+            Text = lines;
         }
 
         /// <summary>The card's surface — hovered, selected or plain — from the theme's current colours.</summary>
@@ -565,6 +647,12 @@ public sealed class JobsPanel
         /// <summary>Where an agent runs, `name:model`, shown on a line of its own; null for a shell card.</summary>
         public string? RunsOn { get; init; }
 
+        /// <summary>How it stands, at the title's right edge — a colleague's card only; null puts it in the facts.</summary>
+        public string? Status { get; init; }
+
+        /// <summary>Its link line also offers Ask… — a colleague's card.</summary>
+        public bool Ask { get; init; }
+
         /// <summary>The folder an agent works in relative to its parent's, shown after <see cref="RunsOn"/>;
         /// null when it works where its parent does.</summary>
         public string? Root { get; init; }
@@ -572,6 +660,7 @@ public sealed class JobsPanel
         public static CardText For(PanelRow row) => row switch
         {
             JobRow job => ShellCard(job),
+            AgentRow { Colleague: { } card } agent => ColleagueCardText(agent, card),
             AgentRow agent => AgentCard(agent),
             _ => throw new ArgumentOutOfRangeException(nameof(row)),
         };
@@ -625,6 +714,38 @@ public sealed class JobsPanel
             RunsOn = view.Kept.Agent.ModelId is { Length: > 0 } m ? CxAgent.Core.Llm.ModelNames.ShortLabel(m) : null,
             Root = view.Kept.Agent.Root,
         };
+    }
+
+    /// <summary>
+    /// A colleague's card: its glyph and name with how it stands at the right, what it was last asked, what it knows and
+    /// its version, then Open and Ask. NO TYPE — a colleague is what it has learned, not the worker it was kept from —
+    /// and no ✓ or ✕: between tasks it is idle, not finished. ⏹ only while it works.
+    /// </summary>
+    private static CardText ColleagueCardText(AgentRow row, CxAgent.Core.Colleagues.ColleagueCard card)
+    {
+        var view = row.View;
+        var word = AgentRows.ColleagueWord(view.State, card.Learning);
+        var status = view.Running ? $"● {word} {DisplayNumber.Took(view.Elapsed)}" : word;
+        // THE VERSION FIRST: the folders it knows grow with every workplace, and the column cuts from the right.
+        var knows = card.Knows.Count > 0 ? $"v{card.Version} · knows {string.Join(" · ", card.Knows)}" : $"v{card.Version}";
+        List<string> facts = card.Task is { Length: > 0 } task ? [$"task: {task}"] : [];
+        return new CardText(view.Badge?.Glyph ?? "◆", view.Badge?.Name ?? view.Kept.Name, view.Running ? "⏹" : null,
+            new EquatableList(facts), "Open", Movable: view is { Running: true, Foreground: true })
+        {
+            Status = status,
+            Ask = true,
+            RunsOn = knows,
+            Root = view.Kept.Agent.Root,
+        };
+    }
+
+    /// <summary>A title cut to leave room for its status, which is drawn muted at the right edge.</summary>
+    private static string Titled(string title, string? status, int room)
+    {
+        if (status is null) return Value(Cut(title, room));
+        var left = Math.Max(1, room - Columns(status) - 1);
+        var text = Cut(title, left);
+        return $"{Value(text)}{new string(' ', Math.Max(1, room - Columns(text) - Columns(status)))}{Muted(status)}";
     }
 
     /// <summary>An agent card's facts: its kind — "Colleague" for a badged one — then how it stands.</summary>

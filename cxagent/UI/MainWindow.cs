@@ -1781,6 +1781,11 @@ public sealed class MainWindow : IDisposable
         // A CARD OPENS ITS TAB, AND ⏹ OR x STOPS OR FORGETS IT — by kind; closing a tab only closes the view.
         // Wired once here: the panel and the strip are the window's, however many sessions come and go.
         JobsPanel.RowChosen += OnRowChosen;
+        // BRING FROM THE TASKS PANEL goes into the session whose tasks it shows — idle, to be given work.
+        JobsPanel.BringChosen += name =>
+        {
+            if (JobsSession is { } session) _ = session.BringColleagueAsync(name);
+        };
 
         // THE PANEL'S COLLEAGUE LINKS: open one here in its tab, or bring one in — idle, to be given work.
         SessionPanel.LinkChosen += link =>
@@ -2922,9 +2927,14 @@ public sealed class MainWindow : IDisposable
         var shells = Jobs.For(session.Owns).Select(e => (JobsPanel.PanelRow)new JobsPanel.JobRow(
             e.View(), OutputTail.LastLines(e.Job.OutputPath, JobsPanel.TailLines), AgentName(session, e.Job.AgentId)));
         var agents = AgentRows.For(session.SubAgents, DateTimeOffset.UtcNow)
-            .Select(a => (JobsPanel.PanelRow)new JobsPanel.AgentRow(a));
-        JobsPanel.Refresh(new JobsPanel.JobsShown(JobsPanel.Order(shells.Concat(agents)), RunningTasksOf(session, Jobs)),
-            _panelWidth);
+            .Select(a => (JobsPanel.PanelRow)new JobsPanel.AgentRow(a)
+            {
+                Colleague = a.Badge is null ? null : session.Colleagues?.CardOf(a.Kept.Name),
+            });
+        JobsPanel.Refresh(new JobsPanel.JobsShown(JobsPanel.Order(shells.Concat(agents)), RunningTasksOf(session, Jobs))
+        {
+            Available = JobsPanel.AvailableOf(session.Colleagues?.Panel()),
+        }, _panelWidth);
     }
 
     /// <summary>Null for the session's own agent; the sub-agent's name otherwise, a deleted one's included.</summary>

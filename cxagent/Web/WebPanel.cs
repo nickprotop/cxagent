@@ -15,6 +15,17 @@ namespace CxAgent.Web;
 /// </summary>
 internal static class WebPanel
 {
+    /// <summary>A colleague's Tasks card for the page, with its state word; null for none.</summary>
+    internal static JsonObject? ColleagueCard(CxAgent.Core.Colleagues.ColleagueCard? card, string state) =>
+        card is null ? null : new JsonObject
+        {
+            ["knows"] = new JsonArray([.. card.Knows.Select(k => (JsonNode?)JsonValue.Create(k))]),
+            ["version"] = card.Version,
+            ["learning"] = card.Learning,
+            ["task"] = card.Task,
+            ["state"] = state,
+        };
+
     /// <summary>The panel for <paramref name="session"/>, whose browser log is <paramref name="log"/>.</summary>
     public static JsonObject Build(Session session, SessionEventLog log, SessionManager manager)
     {
@@ -37,11 +48,15 @@ internal static class WebPanel
 
         var workers = new JsonArray();
         foreach (var row in AgentRows.For(session.SubAgents, now))
+        {
+            // A COLLEAGUE CARRIES ITS CARD AND NO TYPE — the facts F7's card draws, in the terminal's own words.
+            var card = row.Badge is null ? null : session.Colleagues?.CardOf(row.Kept.Name);
             workers.Add(new JsonObject
             {
                 ["agentId"] = row.AgentId,
                 ["name"] = row.Kept.Name,
-                ["type"] = row.Kept.TypeName,
+                ["type"] = row.Badge is null ? row.Kept.TypeName : null,
+                ["colleague"] = card is null ? null : ColleagueCard(card, AgentRows.ColleagueWord(row.State, card.Learning)),
                 ["task"] = row.Kept.Description,
                 ["state"] = row.State.ToString(),
                 ["running"] = row.Running,
@@ -49,6 +64,7 @@ internal static class WebPanel
                 ["seconds"] = (int)row.Elapsed.TotalSeconds,
                 ["badge"] = Badge(row.Badge),
             });
+        }
 
         var commands = new JsonArray();
         foreach (var entry in BackgroundJobBoard.Default.For(session.Owns))

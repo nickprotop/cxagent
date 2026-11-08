@@ -446,11 +446,15 @@ function drawWorkerHead() {
   head.replaceChildren();
   const w = workerRunning(view);
   const running = !!(w && w.running);
-  head.append(running ? el("span", "spin violet") : el("span", w && w.state === "Failed" ? "mark-bad" : "mark-ok", w && w.state === "Failed" ? "✗" : "✓"));
+  // A COLLEAGUE BETWEEN TASKS IS IDLE, NOT FINISHED: no ✓ or ✗ beside it, as on its terminal tab.
+  if (running) head.append(el("span", "spin violet"));
+  else if (!view.badge) head.append(el("span", w && w.state === "Failed" ? "mark-bad" : "mark-ok", w && w.state === "Failed" ? "✗" : "✓"));
   // A COLLEAGUE SAYS SO, with its name — the badge the terminal's tab and card show too.
   head.append(el("span", "tag" + (view.badge ? " colleague" : ""), view.badge ? view.badge.kind : "Worker"),
     el("b", null, view.badge ? view.badge.glyph + " " + view.badge.name : view.name));
-  const facts = [view.workerType, view.model, w ? w.state.toLowerCase() + (w.background ? " · background" : "") : ""].filter(Boolean);
+  // A COLLEAGUE'S FACTS NAME NO TYPE, and its state in the terminal's colleague words (idle, learning, …).
+  const said = w ? (w.colleague ? w.colleague.state : w.state.toLowerCase()) + (w.background && w.running ? " · background" : "") : view.badge ? "idle" : "";
+  const facts = [view.badge ? view.name : view.workerType, view.model, said].filter(Boolean);
   head.append(el("span", "meta", facts.join(" · ")));
   if (view.task) head.append(el("span", "meta", view.task));
   head.append(el("span", "spacer"));
@@ -1125,7 +1129,7 @@ function drawColleaguesPage(view) {
     detail.append(el("h2", null, "◆ " + e.name));
     if (e.description) detail.append(el("p", null, e.description));
     detail.append(el("p", "meta", ["v" + f.version, f.rounds + " rounds, " + f.distilled + " distilled" + (f.skipped ? ", " + f.skipped + " skipped" : ""),
-      f.type + (f.model ? " on " + f.model : "")].join(" · ")));
+      f.model ? "on " + f.model : ""].filter(Boolean).join(" · ")));
     if (e.knows.length) detail.append(el("p", "meta", "knows: " + e.knows.join(", ")));
     const acts = el("div", "btns");
     acts.append(button("Open", null, () => send({ type: "colleagueOpen", sessionId: view.parent, name: e.name })),
@@ -2070,7 +2074,7 @@ function event(m) {
       card.agentId = m.agentId;
       card.open.disabled = false;
       if (m.workerType) card.who.textContent = m.workerType;
-      if (m.badge) card.who.textContent = m.badge.glyph + " " + m.badge.name + (m.workerType ? " · " + m.workerType : "");
+      if (m.badge) card.who.textContent = m.badge.glyph + " " + m.badge.name;
       // THE TITLE STAYS THE TITLE, as the terminal's row keeps its short description: the full brief is the card's hover,
       // and the worker's own tab shows it in full.
       if (m.task) card.task.title = m.task;
@@ -2358,11 +2362,43 @@ function taskRow(dot, head, sub, actions) {
   return r;
 }
 
+// THE TERMINAL'S F7 COLLEAGUES SECTION: the ones here as cards — how each stands, what it was asked, what it knows —
+// and the library's others under Available with Bring. Both read from this session, so a switch switches them. No type
+// and never "done": a colleague is what it has learned, and idle between tasks.
+function drawColleagueCards(pane, p, sid) {
+  const here = p.workers.filter((w) => w.colleague);
+  const away = p.colleagues ? p.colleagues.rows.filter((c) => !c.handle) : [];
+  if (!here.length && !away.length) return;
+  pane.append(el("h3", null, "Colleagues"));
+  for (const w of here) {
+    const c = w.colleague;
+    const open = () => { openWorker(sid, w.agentId); if (!wide()) setPanel(false); };
+    const acts = [button("Open", null, open), button("Ask…", null, () => { open(); setTimeout(() => $("input").focus(), 0); })];
+    if (w.running) acts.push(button("Stop", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "stop" })));
+    const status = w.running ? c.state + " · " + clock(w.seconds * 1000) : c.state;
+    const knows = "v" + c.version + (c.knows.length ? " · knows " + c.knows.join(" · ") : "");
+    const row = taskRow(w.running ? "working" : c.learning ? "held" : "", el("b", null, w.badge.glyph + " " + w.badge.name), status, acts);
+    const t = row.querySelector(".t");
+    if (c.task) t.append(el("small", "task-text", "task: " + c.task));
+    t.append(el("small", null, knows));
+    pane.append(row);
+  }
+  if (away.length) {
+    pane.append(el("p", "none", "Available"));
+    for (const c of away)
+      pane.append(taskRow("", el("b", null, c.name), c.description || "",
+        [button("Bring", null, () => send({ type: "colleagueBring", sessionId: sid, name: c.name }))]));
+  }
+}
+
 function drawTasksPane(p, sid) {
   const pane = $("pane-tasks");
-  pane.replaceChildren(el("h3", null, "Workers"));
-  if (!p.workers.length) pane.append(el("p", "none", "No workers in this session."));
-  for (const w of p.workers) {
+  pane.replaceChildren();
+  drawColleagueCards(pane, p, sid);
+  pane.append(el("h3", null, "Workers"));
+  const workers = p.workers.filter((w) => !w.colleague);
+  if (!workers.length) pane.append(el("p", "none", "No workers in this session."));
+  for (const w of workers) {
     const acts = [button("Open", null, () => { openWorker(sid, w.agentId); if (!wide()) setPanel(false); })];
     if (w.running) acts.push(button("Stop", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "stop" })));
     const sub = [w.badge ? w.badge.kind.toLowerCase() : "", w.type, w.state.toLowerCase(), clock(w.seconds * 1000), w.background ? "background" : ""].filter(Boolean).join(" · ");

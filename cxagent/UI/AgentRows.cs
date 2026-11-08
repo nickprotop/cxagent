@@ -69,13 +69,22 @@ public static class AgentRows
     }
 
     /// <summary>
-    /// The agents the panel shows: every kept one that has been given work, working or ended (decision 4′).
+    /// The agents the panel shows: every kept one that has been given work, working or ended (decision 4′), and every
+    /// colleague here — one brought without a task has never worked, and is still a teammate in the room.
     ///
     /// <para>NO FILTER HERE. Nothing clears on its own, and what the user forgets has left the store, so the store's
     /// list is the panel's.</para>
     /// </summary>
     public static IReadOnlyList<AgentRowView> For(SubAgentStore store, DateTimeOffset now) =>
-        [.. store.All().Select(kept => Describe(store, kept, now)).OfType<AgentRowView>()];
+        [.. store.All().Select(kept => Describe(store, kept, now)
+            ?? (store.BadgeOf(kept.Name) is { } badge ? Idle(kept) with { Badge = badge } : null)).OfType<AgentRowView>()];
+
+    /// <summary>
+    /// A row for one that has never been given work — as idle as one whose last task ended, which is what a colleague
+    /// is between tasks. Sorted after every row that has a time of its own.
+    /// </summary>
+    public static AgentRowView Idle(StoredAgent kept) =>
+        new(kept, AgentRowState.Done, false, TimeSpan.Zero, DateTimeOffset.MinValue, null);
 
     /// <summary>The word a row and a tab header use for a state.</summary>
     public static string Word(AgentRowState state) => state switch
@@ -86,6 +95,21 @@ public static class AgentRows
         AgentRowState.Done => "done",
         AgentRowState.Stopped => "stopped",
         _ => "failed",
+    };
+
+    /// <summary>
+    /// A colleague's word for a state. NEVER "done" or "finished": a colleague stays in the room between tasks, so an
+    /// ended task leaves it idle — and a failed one says so beside "idle" rather than calling the colleague failed.
+    /// While its rounds are being distilled it is learning, unless it has been given work again meanwhile.
+    /// </summary>
+    public static string ColleagueWord(AgentRowState state, bool learning) => state switch
+    {
+        AgentRowState.Running => "working",
+        AgentRowState.Queued => "queued",
+        AgentRowState.WaitingForPermission => "waiting for permission",
+        _ when learning => "learning",
+        AgentRowState.Failed => "idle · last task failed",
+        _ => "idle",
     };
 
     private static AgentRowState Working(StoredAgent kept) =>

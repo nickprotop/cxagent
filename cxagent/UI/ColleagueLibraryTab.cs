@@ -101,7 +101,7 @@ public sealed class ColleagueLibraryTab
         var lines = new List<string> { $"[bold]◆ {MarkupParser.Escape(e.Name)}[/]" };
         if (e.Description.Length > 0) lines.Add(MarkupParser.Escape(e.Description));
         lines.Add($"[{muted}]v{f.Version} · {f.Rounds} round{(f.Rounds == 1 ? "" : "s")}, {f.Distilled} distilled"
-                  + (f.Skipped > 0 ? $", {f.Skipped} skipped" : "") + $" · {MarkupParser.Escape(f.Type)}"
+                  + (f.Skipped > 0 ? $", {f.Skipped} skipped" : "")
                   + (f.Model is { } m ? $" on {MarkupParser.Escape(m)}" : "") + "[/]");
         if (e.Knows.Count > 0) lines.Add($"[{muted}]knows: {MarkupParser.Escape(string.Join(", ", e.Knows))}[/]");
         return lines;

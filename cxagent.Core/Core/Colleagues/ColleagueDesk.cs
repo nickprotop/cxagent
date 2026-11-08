@@ -221,6 +221,23 @@ public sealed class ColleagueDesk : IDisposable
         return new ColleaguePanel(rows, distilling);
     }
 
+    /// <summary>
+    /// The Tasks panel's card for the worker <paramref name="handle"/>, or null when it is not a colleague's.
+    ///
+    /// <para>THE TASK IS READ FROM ITS CONVERSATION — the last message the user or the lead gave it, not a tool's
+    /// result — so a task sent with agent_send after the bring shows as well as the bring's own.</para>
+    /// </summary>
+    public ColleagueCard? CardOf(string handle)
+    {
+        if (_workers.Find(handle) is not { } kept || Incarnation(kept.Agent.Agent.Id) is not { } found) return null;
+        if (_parts.Library.Find(found.Name) is not { } record) return null;
+        var asked = kept.Agent.Agent.Context.Messages.LastOrDefault(m => m.Role == "user" && m.ToolCallId is null
+            && !string.IsNullOrWhiteSpace(m.Content));
+        var task = asked?.Content.Trim().Split('\n', 2)[0].Trim();
+        return new ColleagueCard(ColleagueLine.Of(record).Knows, record.ExperienceVersion,
+            Distilling.Contains(record.Name, StringComparer.OrdinalIgnoreCase), task);
+    }
+
     /// <summary>Completes once every distilling this desk started has finished — for a caller that must wait.</summary>
     public Task Idle()
     {
