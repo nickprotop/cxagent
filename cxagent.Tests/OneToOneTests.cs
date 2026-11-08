@@ -145,6 +145,31 @@ public sealed class OneToOneTests : IDisposable
         Assert.Equal(uid, again.Resume?.AgentId);
     }
 
+    /// <summary>
+    /// Inside its own one-to-one a colleague is not offered to itself: a live drive showed the fan-out warning, the
+    /// opening "Colleagues: Charting…" line, and the panel's Bring for Charting — in the conversation with Charting.
+    /// </summary>
+    [Fact]
+    public void A_one_to_one_says_nothing_about_colleagues_or_fan_out()
+    {
+        Charting();
+        var lead = Wire(new Session(_project), new MockLlmProvider());
+        var opening = lead.Colleagues!.OneToOne("Charting", out _)!;
+        var seen = new BufferedChatSink();
+        var session = new Session(opening.Folder);
+        session.BecomeOneToOne(opening.Setup);
+        var resolution = ResolvedConfig.ForTesting(new MockLlmProvider()) is var r
+            ? r with { Model = r.Model! with { ContextWindow = 200_000 }, Catalog = r.Catalog with { Colleagues = true } }
+            : null!;
+        SessionFactory.Wire(session, resolution,
+            new SharedServices { GlobalInstructionsDir = _config, Resume = Store, Logs = new LogFileManager(_paths) },
+            new SessionPorts { Observer = seen, ToolObserver = new BufferedJobPanel() }, AgentMode.FanOut);
+
+        Assert.DoesNotContain(seen.Notices, n => n.Contains("fan-out", StringComparison.Ordinal));
+        Assert.DoesNotContain(seen.Notices, n => n.StartsWith("Colleagues:", StringComparison.Ordinal));
+        Assert.Null(session.Colleagues!.Panel());
+    }
+
     [Fact]
     public void An_unknown_colleague_is_refused()
     {

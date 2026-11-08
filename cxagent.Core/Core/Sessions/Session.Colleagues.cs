@@ -118,7 +118,8 @@ public sealed partial class Session
     /// </summary>
     internal void SayColleagues()
     {
-        if (Colleagues?.List() is not { Count: > 0 } all) return;
+        // NOT IN A ONE-TO-ONE: the conversation is with a colleague, not a place to call them in.
+        if (OneToOne is not null || Colleagues?.List() is not { Count: > 0 } all) return;
         var each = all.Select(ColleagueLine.Of).Select(c => c.Knows.Count > 0 ? $"{c.Name} (knows {string.Join(", ", c.Knows)})" : c.Name);
         Notify($"Colleagues: {string.Join("; ", each)} — /colleagues to see them.");
     }

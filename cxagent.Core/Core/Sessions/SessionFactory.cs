@@ -315,6 +315,7 @@ internal static class SessionFactory
             Tell = session.Notify,
             Delivery = delivery,
             Sessions = shared.Resume,
+            OneToOne = session.OneToOne is not null,
         });
 
         // THE PORTS' OBSERVERS BECOME SUBSCRIBER ONE OF A FAN-OUT, and everything downstream is
@@ -482,7 +483,9 @@ internal static class SessionFactory
 
         // AFTER NoteObserver, because Say is a no-op before it — the fallback above happens where
         // both facts are known, and is reported here where there is somebody to report it to.
-        if (spawnWithheld)
+        // A ONE-TO-ONE HAS NO WORKERS BY DESIGN — its read-only tools leave out the agent tool — so single mode there is
+        // what it is, not a fallback worth a warning.
+        if (spawnWithheld && session.OneToOne is null)
             session.SayFallbackToSingle();
         session.NotePolicy(ports.Policy);
 

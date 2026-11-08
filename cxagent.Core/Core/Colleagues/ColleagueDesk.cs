@@ -65,6 +65,9 @@ public sealed record ColleagueDeskParts
     /// <summary>A model by provider entry name, null asking for the session's own; null when there is no such entry.</summary>
     public required Func<string?, ModelChoice?> Models { get; init; }
 
+    /// <summary>Whether this desk's session is a colleague's one-to-one.</summary>
+    public bool OneToOne { get; init; }
+
     /// <summary>Where sessions are saved — where a colleague's one-to-one is found again by its tag.</summary>
     public Storage.FolderSessionStore? Sessions { get; init; }
 
@@ -200,6 +203,8 @@ public sealed class ColleagueDesk : IDisposable
     /// </summary>
     public ColleaguePanel? Panel()
     {
+        // A ONE-TO-ONE'S DESK SHOWS NOTHING: Bring and Open there would offer the colleague to itself.
+        if (_parts.OneToOne) return null;
         var all = List();
         if (all.Count == 0) return null;
         var distilling = Distilling;
