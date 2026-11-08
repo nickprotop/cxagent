@@ -135,6 +135,45 @@ public sealed class ColleagueStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Two_stores_keeping_one_name_at_once_make_one_colleague()
+    {
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(i => Task.Run(() =>
+        {
+            try { new ColleagueStore(_config).Create(Record("Charting") with { Description = "store " + i }); return true; }
+            catch (ArgumentException) { return false; }
+        })));
+
+        Assert.Single(results, r => r);
+    }
+
+    /// <summary>A process that died mid-append left a last line with no newline; the next round must not join it.</summary>
+    [Fact]
+    public void A_torn_last_line_does_not_swallow_the_next_round()
+    {
+        var store = Store();
+        store.Create(Record("Charting"));
+        store.Append("Charting", Round("first"));
+        File.AppendAllText(Path.Combine(store.FolderOf("Charting"), "past.jsonl"), "{\"seq\":2,\"session\":\"s1\",\"mess");
+
+        var seq = store.Append("Charting", Round("third"));
+
+        Assert.Equal(2, seq);
+        Assert.Equal(["first", "third"], store.Past("Charting").Select(r => r.Messages[1].Content));
+    }
+
+    [Fact]
+    public void A_colleague_whose_folder_is_gone_fails_at_once()
+    {
+        var store = Store();
+        store.Create(Record("Charting"));
+        Directory.Delete(store.FolderOf("Charting"), recursive: true);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        Assert.ThrowsAny<IOException>(() => store.Append("Charting", Round()));
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(1), $"took {clock.Elapsed}");
+    }
+
+    [Fact]
     public void A_damaged_past_line_is_skipped_not_fatal()
     {
         var store = Store();

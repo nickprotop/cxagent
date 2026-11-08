@@ -57,9 +57,19 @@ public sealed partial class ColleagueStore(string configDir)
         // REFUSED BEFORE ANY PATH IS BUILT FROM IT: the name becomes a folder, and "../x" would be one outside the library.
         if (NameRefusal(record.Name) is { } why) throw new ArgumentException(why, nameof(record));
         var folder = FolderOf(record.Name);
-        // THE FOLDER IS THE CLAIM, case-folded by the slug: two names differing only in case would share it.
-        if (Directory.Exists(folder)) throw new ArgumentException($"There is already a colleague called '{Find(record.Name)?.Name ?? record.Name}'.", nameof(record));
         Directory.CreateDirectory(Path.Combine(folder, "experience"));
+
+        // colleague.json, CREATED NEW, IS THE CLAIM — case-folded by the slug, so two names differing only in case share
+        // it, and atomic, so two processes keeping one name at once cannot both win. A folder left without it by a keep
+        // that failed half-way is no claim.
+        try
+        {
+            using (new FileStream(Path.Combine(folder, "colleague.json"), FileMode.CreateNew, FileAccess.Write)) { }
+        }
+        catch (IOException) when (File.Exists(Path.Combine(folder, "colleague.json")))
+        {
+            throw new ArgumentException($"There is already a colleague called '{Find(record.Name)?.Name ?? record.Name}'.", nameof(record));
+        }
         Save(record);
         return record;
     }
@@ -95,16 +105,25 @@ public sealed partial class ColleagueStore(string configDir)
         var folder = FolderOf(name);
         using var held = Hold(Path.Combine(folder, "past.lock"));
         var path = Path.Combine(folder, "past.jsonl");
-        var seq = LastSeq(path) + 1;
+        var seqPath = Path.Combine(folder, "past.seq");
+        var seq = LastSeq(seqPath, path) + 1;
 
         // ONE WRITE OF ONE LINE, under the lock: two sessions finishing rounds together must never interleave bytes.
+        // A LAST LINE WITH NO NEWLINE — a process that died mid-append — is ended first, so this round is a line of its
+        // own rather than the tail of a line no reader can parse.
         var line = JsonSerializer.Serialize(round with { Seq = seq }, Line) + "\n";
-        using (var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read))
+        using (var stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read))
         {
-            var bytes = Encoding.UTF8.GetBytes(line);
-            stream.Write(bytes);
+            if (stream.Length > 0)
+            {
+                stream.Seek(-1, SeekOrigin.End);
+                if (stream.ReadByte() != '\n') line = "\n" + line;
+            }
+            stream.Seek(0, SeekOrigin.End);
+            stream.Write(Encoding.UTF8.GetBytes(line));
             stream.Flush(flushToDisk: true);
         }
+        File.WriteAllText(seqPath, seq.ToString(System.Globalization.CultureInfo.InvariantCulture));
         return seq;
     }
 
@@ -199,9 +218,17 @@ public sealed partial class ColleagueStore(string configDir)
         File.Move(temp, path, overwrite: true);
     }
 
-    /// <summary>The highest place in the past, read from its last whole line.</summary>
-    private static long LastSeq(string path)
+    /// <summary>
+    /// The highest place in the past: from <c>past.seq</c>, written beside every append, so a round's end does not read
+    /// a past that may run to hundreds of megabytes. A past from before it, or one whose counter was lost, is read once.
+    /// </summary>
+    private static long LastSeq(string seqPath, string path)
     {
+        try
+        {
+            if (File.Exists(seqPath) && long.TryParse(File.ReadAllText(seqPath).Trim(), out var kept)) return kept;
+        }
+        catch (IOException) { }
         if (!File.Exists(path)) return 0;
         long last = 0;
         foreach (var line in File.ReadLines(path))
@@ -229,7 +256,9 @@ public sealed partial class ColleagueStore(string configDir)
             {
                 return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
             }
-            catch (IOException) when (attempt < 600)
+            // A FOLDER THAT IS GONE IS NOT A HELD LOCK: retried, it would cost seconds on a worker's release thread before
+            // failing anyway.
+            catch (IOException e) when (attempt < 600 && e is not (DirectoryNotFoundException or FileNotFoundException))
             {
                 Thread.Sleep(10 + Random.Shared.Next(10));
             }

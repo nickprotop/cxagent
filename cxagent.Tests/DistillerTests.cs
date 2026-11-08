@@ -204,7 +204,7 @@ public sealed class DistillerTests : IDisposable
     }
 
     [Fact]
-    public void A_dead_holder_is_taken_over()
+    public void A_stale_lock_file_is_no_lock()
     {
         Directory.CreateDirectory(_store.Root);
         File.WriteAllText(Path.Combine(_store.Root, "distilling.lock"), "999999");
@@ -212,6 +212,40 @@ public sealed class DistillerTests : IDisposable
         using var taken = DistillingLock.TryTake(_store.Root);
 
         Assert.NotNull(taken);
+    }
+
+    /// <summary>
+    /// ANOTHER PROCESS HOLDS THE LOCK, THEN DIES: held, it keeps this one out; dead, it does not. A child dotnet process
+    /// takes the lock through the same API and is killed holding it.
+    /// </summary>
+    [Fact]
+    public async Task A_holder_that_dies_is_taken_over()
+    {
+        Directory.CreateDirectory(_store.Root);
+        var lockPath = Path.Combine(_store.Root, "distilling.lock");
+        // flock, as .NET's FileShare.None takes on Linux and macOS: the holder here is a plain process, killed outright.
+        if (OperatingSystem.IsWindows()) return;
+        using var holder = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("flock",
+            ["--exclusive", lockPath, "sleep", "60"]) { RedirectStandardError = true })!;
+        try
+        {
+            for (var i = 0; i < 50 && DistillingLock.TryTake(_store.Root) is { } early; i++)
+            {
+                early.Dispose();
+                await Task.Delay(100);
+            }
+            Assert.Null(DistillingLock.TryTake(_store.Root));
+
+            holder.Kill(entireProcessTree: true);
+            await holder.WaitForExitAsync();
+
+            using var taken = DistillingLock.TryTake(_store.Root);
+            Assert.NotNull(taken);
+        }
+        finally
+        {
+            if (!holder.HasExited) holder.Kill(entireProcessTree: true);
+        }
     }
 
     [Fact]
