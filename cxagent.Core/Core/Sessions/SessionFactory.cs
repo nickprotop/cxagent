@@ -525,8 +525,11 @@ internal static class SessionFactory
 
         // A ONE-TO-ONE'S EVERY EXCHANGE IS A ROUND OF THE COLLEAGUE'S PAST, distilled like any other.
         if (session.OneToOne is { } oneToOne)
-            host.GoalCompleted += () => session.Colleagues?.CaptureOneToOne(oneToOne.Colleague, session.SessionId ?? "",
-                session.WorkingDirectory, host.Context.Messages);
+        {
+            session.Colleagues?.OneToOneWired(oneToOne.Colleague, host.Context.Messages);
+            host.GoalCompleted += () => session.Colleagues?.CaptureOneToOne(new Colleagues.OneToOneExchange(oneToOne.Colleague,
+                session.SessionId ?? "", session.WorkingDirectory, host.Context.Messages));
+        }
 
         // THE LEVEL THE RESUMED SESSION WAS AT, the one place every resume passes — the command
         // line's -c and -r, the session picker, and a headless continue alike.

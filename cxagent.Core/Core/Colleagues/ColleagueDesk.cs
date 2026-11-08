@@ -29,6 +29,13 @@ public sealed record BringOrder(string Name, string Task, string? Model, bool Ba
 /// <param name="Folder">Its most recent workplace that still exists — or the session's own folder.</param>
 /// <param name="Resume">Its saved one-to-one, to return to; null the first time.</param>
 /// <param name="Setup">What makes the session its one-to-one — <see cref="Sessions.Session.BecomeOneToOne"/>.</param>
+/// <summary>A one-to-one's conversation as it stands when a turn ends — what <see cref="ColleagueDesk.CaptureOneToOne"/> keeps from.</summary>
+/// <param name="Colleague">Whose one-to-one it is.</param>
+/// <param name="SessionId">The session it is in now.</param>
+/// <param name="Folder">The folder it was opened in.</param>
+/// <param name="Messages">Its conversation.</param>
+public sealed record OneToOneExchange(string Colleague, string SessionId, string Folder, IReadOnlyList<ChatMessage> Messages);
+
 public sealed record OneToOneOpening(string Folder, Storage.SessionSnapshot? Resume, Sessions.OneToOne Setup);
 
 /// <summary>A model a colleague can run or be distilled on.</summary>
@@ -460,24 +467,38 @@ public sealed class ColleagueDesk : IDisposable
         return new OneToOneOpening(folder, resume, new Sessions.OneToOne(record.Name, tag, briefing, $"with {record.Name}"));
     }
 
-    /// <summary>The last message of each one-to-one already kept as a round, by session — where the next round starts.</summary>
-    private readonly ConcurrentDictionary<string, ChatMessage> _oneToOneKept = new(StringComparer.Ordinal);
+    /// <summary>
+    /// The last message of each one-to-one already kept as a round, by colleague — where the next round starts.
+    ///
+    /// <para>BY COLLEAGUE, NOT SESSION ID: a resume and a re-wire each give the session a new id, and a mark under the old
+    /// one was missed, so the whole conversation was appended again and distilled a second time.</para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, ChatMessage?> _oneToOneKept = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Keeps a one-to-one's latest exchange as a round of <paramref name="name"/>'s past, and distils it. Everything after
-    /// the last message kept before — found by the message itself, as an incarnation's round is.
+    /// Marks everything a one-to-one holds as already kept — called as it is wired, which is always between turns: what a
+    /// resume restored was kept by the process that lived it, and a re-wire's copy of the conversation holds nothing new.
     /// </summary>
-    public void CaptureOneToOne(string name, string sessionId, string folder, IReadOnlyList<ChatMessage> messages)
+    public void OneToOneWired(string name, IReadOnlyList<ChatMessage> messages) =>
+        _oneToOneKept[name] = messages.LastOrDefault(m => m.Role != "system");
+
+    /// <summary>
+    /// Keeps a one-to-one's latest exchange as a round of its colleague's past, and distils it. Everything after the last
+    /// message kept before — found by the message itself, as an incarnation's round is.
+    /// </summary>
+    public void CaptureOneToOne(OneToOneExchange exchange)
     {
+        var name = exchange.Colleague;
         try
         {
-            var all = messages.Where(m => m.Role != "system").ToList();
-            var at = _oneToOneKept.TryGetValue(sessionId, out var last) ? all.FindLastIndex(m => ReferenceEquals(m, last)) : -1;
+            var all = exchange.Messages.Where(m => m.Role != "system").ToList();
+            var at = _oneToOneKept.TryGetValue(name, out var last) && last is not null
+                ? all.FindLastIndex(m => ReferenceEquals(m, last)) : -1;
             var round = all.Skip(at + 1).ToList();
             if (round.Count == 0 || _parts.Library.Find(name) is null) return;
-            _oneToOneKept[sessionId] = round[^1];
-            Append(name, new PastRound(0, sessionId, folder, round[0].Timestamp == default ? DateTimeOffset.UtcNow : round[0].Timestamp,
-                DateTimeOffset.UtcNow, round));
+            _oneToOneKept[name] = round[^1];
+            Append(name, new PastRound(0, exchange.SessionId, exchange.Folder,
+                round[0].Timestamp == default ? DateTimeOffset.UtcNow : round[0].Timestamp, DateTimeOffset.UtcNow, round));
             Drain();
         }
         catch (Exception e) when (e is not OperationCanceledException)

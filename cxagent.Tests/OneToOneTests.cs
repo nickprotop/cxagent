@@ -146,6 +146,34 @@ public sealed class OneToOneTests : IDisposable
     }
 
     /// <summary>
+    /// After a restart the conversation is resumed, and only what is said from then on is a new round: a review found the
+    /// whole earlier conversation appended again on the first exchange after a resume, and distilled a second time.
+    /// </summary>
+    [Fact]
+    public async Task After_a_restart_only_the_new_exchange_is_a_round()
+    {
+        Charting();
+        var model = new MockLlmProvider();
+        model.EnqueueResponse(new LlmResponse { Text = "hello", StopReason = "end_turn" });
+        model.EnqueueResponse(new LlmResponse { Text = "NO CHANGE", StopReason = "end_turn" });
+        model.EnqueueResponse(new LlmResponse { Text = "panes first", StopReason = "end_turn" });
+        model.EnqueueResponse(new LlmResponse { Text = "NO CHANGE", StopReason = "end_turn" });
+        var (first, _) = Opened(model);
+        await first.SendAndWait("hi");
+        await first.Colleagues!.Idle();
+
+        var (again, opening) = Opened(model);   // a new process: a new desk, the conversation resumed from disk
+        Assert.NotNull(opening.Resume);
+        await again.SendAndWait("why panes?");
+        await again.Colleagues!.Idle();
+
+        var past = Library.Past("Charting");
+        Assert.Equal(2, past.Count);
+        Assert.DoesNotContain(past[1].Messages, m => m.Content == "hi");
+        Assert.Contains(past[1].Messages, m => m.Content == "why panes?");
+    }
+
+    /// <summary>
     /// Inside its own one-to-one a colleague is not offered to itself: a live drive showed the fan-out warning, the
     /// opening "Colleagues: Charting…" line, and the panel's Bring for Charting — in the conversation with Charting.
     /// </summary>
