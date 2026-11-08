@@ -79,6 +79,47 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         Assert.Equal(["work", "worked"], kept.Agent.Agent.Context.Messages.Select(m => m.Content));
     }
 
+    /// <summary>
+    /// A worker no report describes — a colleague the colleague tool brought, asked from its tab — comes back as its own
+    /// history ended, not as failed: after a restart a live card read "idle · last task failed" for a colleague whose
+    /// last run had answered.
+    /// </summary>
+    [Fact]
+    public void A_worker_no_report_describes_comes_back_as_its_own_history_ended()
+    {
+        Parent().NoteWorker(new WorkerMark("CHILD01", "colleague:Charting") { Name = "charting", Type = "general", Description = "Charting" });
+
+        var (store, _) = Revive(_ => new ChildAugment { Context = "EXP" });
+
+        Assert.True(store.LastEnd("charting")!.Succeeded);
+    }
+
+    /// <summary>One that joined idle and never ran comes back with no end at all — never worked, not failed.</summary>
+    [Fact]
+    public void One_that_never_ran_comes_back_with_no_end()
+    {
+        Directory.CreateDirectory(Path.Combine(_parent, "IDLE01"));
+        Parent().NoteWorker(new WorkerMark("IDLE01", "colleague:Parser") { Name = "parser", Type = "general", Description = "Parser" });
+
+        var (store, _) = Revive(_ => new ChildAugment { Context = "EXP" });
+
+        Assert.NotNull(store.Find("parser"));
+        Assert.Null(store.LastEnd("parser"));
+    }
+
+    /// <summary>A run that stopped mid-tool, with no answer, is not called completed.</summary>
+    [Fact]
+    public void A_last_run_that_ended_without_an_answer_is_not_completed()
+    {
+        new HistoryRecorder(Path.Combine(_parent, "CHILD01", "history.jsonl")).Record([M("user", "again"),
+            new() { Role = "assistant", Content = "", ToolCalls = [new ToolCall { Id = "t1", Name = "glob", Arguments = JsonDocument.Parse("{}").RootElement.Clone() }] }]);
+        Parent().NoteWorker(new WorkerMark("CHILD01", "colleague:Charting") { Name = "charting", Type = "general", Description = "Charting" });
+
+        var (store, _) = Revive(_ => new ChildAugment { Context = "EXP" });
+
+        Assert.False(store.LastEnd("charting")!.Succeeded);
+    }
+
     [Fact]
     public void A_bare_mark_after_an_agent_spawn_sets_the_origin()
     {

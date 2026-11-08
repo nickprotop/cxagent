@@ -122,10 +122,10 @@ internal static class WorkerRevival
             Origin = spawn.Origin,
         });
 
+        // NEVER RAN, NO END: one that joined idle comes back idle. An end with no word reads as a failure.
         if (entries.Count == 0)
         {
-            var now = DateTimeOffset.UtcNow;
-            if (!store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(null, now, now))) return "its name is taken";
+            if (!store.Restore(spawn.Name, child, spawn.Description, null)) return "its name is taken";
         }
         else
         {
@@ -140,7 +140,7 @@ internal static class WorkerRevival
             // ITS LAST END AS ITS HISTORY HAS IT: the state of the last report it sent, over its last run — from the last
             // message it was sent to the last it wrote. Not its whole record, which spans every run it had.
             var lastRun = entries.LastOrDefault(e => e.Message is { Role: "user", ToolCallId: null, IsTaskList: false })?.At ?? entries[0].At;
-            if (!store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(spawn.LastState, lastRun, entries[^1].At)))
+            if (!store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(spawn.LastState ?? OwnEnding(entries), lastRun, entries[^1].At)))
                 return "its name is taken";
         }
 
@@ -214,6 +214,20 @@ internal static class WorkerRevival
 
         public string? LastState { get; set; }
     }
+
+    /// <summary>
+    /// How a worker's last run ended, read from its own history when no report says: "completed" when it ended on an
+    /// answer — what a completed run is — and null otherwise.
+    ///
+    /// <para>FOR A WORKER NO REPORT DESCRIBES: a colleague the colleague tool brought, and every run asked from its tab,
+    /// reach the parent's history as no agent or agent_send result. Without this every such worker came back from a
+    /// restart as "last task failed", a run that had answered among them.</para>
+    /// </summary>
+    private static string? OwnEnding(IReadOnlyList<ExportEntry> entries) =>
+        entries.LastOrDefault(e => e.Message is not null)?.Message is { Role: "assistant", ToolCalls: null or { Count: 0 } } last
+            && !string.IsNullOrWhiteSpace(last.Content)
+            ? SubAgentEnvelope.WordFor(SendOutcome.Completed)
+            : null;
 
     /// <summary>Every worker the session's own agent spawned, once each, in the order they were spawned, with the state
     /// its last report gave.</summary>

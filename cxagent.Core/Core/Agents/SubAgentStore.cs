@@ -298,14 +298,15 @@ public sealed class SubAgentStore
     /// <param name="name">The handle it had — the one the model's history uses.</param>
     /// <param name="agent">The worker, rebuilt from its history.</param>
     /// <param name="description">What it was spawned to do, as its spawn described it.</param>
-    /// <param name="ended">How its last run ended — what a list shows for it, which lists only workers that have run.</param>
-    public bool Restore(string name, SubAgent agent, string? description, AgentEnd ended)
+    /// <param name="ended">How its last run ended — what a list shows for it, which lists only workers that have run —
+    /// or null for one that never ran: a colleague that joined idle is not a run that failed.</param>
+    public bool Restore(string name, SubAgent agent, string? description, AgentEnd? ended)
     {
         lock (_naming)
         {
             if (_byName.ContainsKey(name) || _forgotten.ContainsKey(name)) return false;
-            _byName[name] = new StoredAgent(name, agent.TypeName, description, ended.Began, agent);
-            _ends[name] = ended;
+            _byName[name] = new StoredAgent(name, agent.TypeName, description, ended?.Began ?? _clock.GetUtcNow(), agent);
+            if (ended is not null) _ends[name] = ended;
             Mark(name, agent.Origin);
             return true;
         }
