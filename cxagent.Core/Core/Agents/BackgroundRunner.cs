@@ -141,7 +141,7 @@ internal static class BackgroundRunner
             // A STOPPED RUN'S SHELLS ARE SWEPT AGAIN NOW IT HAS ENDED: the stop killed what was running
             // then, but the child's last tool call may have handed a command to the background after it.
             if (stopped) store.StopShellsOf(kept.Name);
-            var shown = Shown(run, state, stopped, badge: store.BadgeOf(kept.Name));
+            var shown = Shown(run, new RunEnding(state, stopped) { Badge = store.BadgeOf(kept.Name) });
             run.Handoff.Complete(ReportFor(work, envelope, stoppedAsItFinished: overtaken is not null), text => DeliveryOutcomes.Delivered(stopped
                 ? work.Delivery.Leave(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))
                 : work.Delivery.Tell(run.Start.ParentAgentId, new AgentNotice(Shown: shown, ForModel: text))),
@@ -201,17 +201,25 @@ internal static class BackgroundRunner
 
     /// <summary>The line the user sees when a run ends.</summary>
     /// <param name="run">The run that ended.</param>
-    /// <param name="state">The envelope's word for how it ended.</param>
-    /// <param name="stopped">Whether something stopped it.</param>
+    /// <param name="ending">How it ended.</param>
     /// <param name="took">How long it ran; null measures up to now, which is every caller but a test.</param>
-    internal static string Shown(BackgroundRun run, string state, bool stopped, TimeSpan? took = null, WorkerBadge? badge = null)
+    internal static string Shown(BackgroundRun run, RunEnding ending, TimeSpan? took = null)
     {
         var elapsed = Helpers.DisplayNumber.Took(took ?? DateTimeOffset.UtcNow - run.Started);
-        var who = Who(badge, run.Start.Name);
-        return stopped ? $"{who} stopped · {elapsed}" : $"{who} finished · {state} · {elapsed}";
+        var who = Who(ending.Badge, run.Start.Name);
+        return ending.Stopped ? $"{who} stopped · {elapsed}" : $"{who} finished · {ending.State} · {elapsed}";
     }
 
     /// <summary>Who a report line is about: "colleague Charting" for a badged worker, else "background agent 'x'".</summary>
     public static string Who(WorkerBadge? badge, string name) =>
         badge is { } b ? $"{b.Kind.ToLowerInvariant()} {b.Name}" : $"background agent '{name}'";
+}
+
+/// <summary>How a background run ended, as its report line says it.</summary>
+/// <param name="State">The envelope's word for how it ended.</param>
+/// <param name="Stopped">Whether something stopped it.</param>
+internal sealed record RunEnding(string State, bool Stopped)
+{
+    /// <summary>What the worker is when more than a worker — a colleague — or null.</summary>
+    public WorkerBadge? Badge { get; init; }
 }

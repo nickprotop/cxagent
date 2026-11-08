@@ -168,7 +168,7 @@ public sealed class SessionEventLogTests
     public void A_worker_event_keeps_its_type_apart_from_the_message_type()
     {
         var log = new SessionEventLog("S");
-        log.Worker("W1", "agent-1", "planner", "general", "find tests");
+        log.Worker(new CxAgent.Web.WorkerShown("W1", "agent-1", "planner", "general", "find tests"));
         var e = log.Since(0).Events.Single();
         Assert.Equal("event", e["type"]!.GetValue<string>());
         Assert.Equal("general", e["workerType"]!.GetValue<string>());

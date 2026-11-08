@@ -117,7 +117,7 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
         var view = new Uncounted(this);
         return SessionReplay.Play(past, new ReplayTarget(view, view)
         {
-            Worker = w => Worker(w.JobId, w.AgentId, w.Name, w.Type, w.Task),
+            Worker = w => Worker(new WorkerShown(w.JobId, w.AgentId, w.Name, w.Type, w.Task)),
 
             // NO Called: a session's replay reports the calls in its own history — its own agent's, which the page
             // already shows as tool rows. A past worker's calls live in the worker's history, which this does not read.
@@ -143,13 +143,14 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
     }
 
     /// <summary>
-    /// A worker started for the row <paramref name="job"/>: who it is, so its card can name it and open it. Its type
-    /// goes out as "workerType": every event already has a "type", which says it is an event.
+    /// A worker started for its row: who it is, so its card can name it and open it. Its type goes out as "workerType":
+    /// every event already has a "type", which says it is an event.
     /// </summary>
-    public void Worker(string job, string agentId, string name, string? type, string? task, Core.Agents.WorkerBadge? badge = null) =>
+    public void Worker(WorkerShown worker) =>
         Append("worker", new JsonObject
         {
-            ["job"] = job, ["agentId"] = agentId, ["name"] = name, ["workerType"] = type, ["task"] = task, ["badge"] = WebPanel.Badge(badge),
+            ["job"] = worker.Job, ["agentId"] = worker.AgentId, ["name"] = worker.Name, ["workerType"] = worker.Type,
+            ["task"] = worker.Task, ["badge"] = WebPanel.Badge(worker.Badge),
         });
 
     /// <inheritdoc/>
@@ -439,4 +440,16 @@ public sealed class SessionEventLog(string sessionId, int capacity = 20_000) : I
             lock (log._gate) log._subscribers.Remove(live);
         }
     }
+}
+
+/// <summary>A worker as its card in the page names it.</summary>
+/// <param name="Job">The row it was started for.</param>
+/// <param name="AgentId">Its agent id — what opens its tab.</param>
+/// <param name="Name">Its handle.</param>
+/// <param name="Type">Its agent type, or null.</param>
+/// <param name="Task">What it was spawned to do, or null.</param>
+public sealed record WorkerShown(string Job, string AgentId, string Name, string? Type, string? Task)
+{
+    /// <summary>What it is when more than a worker — a colleague — or null.</summary>
+    public Core.Agents.WorkerBadge? Badge { get; init; }
 }

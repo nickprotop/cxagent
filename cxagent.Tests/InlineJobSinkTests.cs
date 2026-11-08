@@ -958,7 +958,7 @@ public class InlineJobSinkTests
             Brief: "b", Description: "find thing", IsResume: false), new CxAgent.Core.Jobs.ResultHandoff(_ => true));
 
         var row = InlineJobSink.CompactHeaderForTest(job);
-        var notice = BackgroundRunner.Shown(run, "completed", stopped: false, took);
+        var notice = BackgroundRunner.Shown(run, new RunEnding("completed", Stopped: false), took);
 
         Assert.Contains($"done · {expected}", row);
         Assert.EndsWith($"· {expected}", notice);
