@@ -180,6 +180,28 @@ public sealed class ColleagueDesk : IDisposable
     /// <summary>Every colleague, the most recently worked first.</summary>
     public IReadOnlyList<ColleagueRecord> List() => _parts.Library.List();
 
+    /// <summary>
+    /// The panel's Colleagues section, or null when the library is empty — then neither front end shows the section.
+    /// One here is "working" while a run holds it, else "distilling" while its rounds are, else "idle".
+    /// </summary>
+    public ColleaguePanel? Panel()
+    {
+        var all = List();
+        if (all.Count == 0) return null;
+        var distilling = Distilling;
+        var rows = all.Select(r =>
+        {
+            var handle = _workers.NameOfOrigin(OriginPrefix + r.Name);
+            var busy = distilling.Contains(r.Name, StringComparer.OrdinalIgnoreCase);
+            var state = handle is not null && _workers.IsBusy(handle) ? "working" : busy ? "distilling" : handle is null ? "" : "idle";
+            return new ColleaguePanelRow(r.Name, r.Description, handle, state)
+            {
+                AgentId = handle is null ? null : _workers.Find(handle)?.Agent.Agent.Id,
+            };
+        }).ToList();
+        return new ColleaguePanel(rows, distilling);
+    }
+
     /// <summary>Completes once every distilling this desk started has finished — for a caller that must wait.</summary>
     public Task Idle()
     {

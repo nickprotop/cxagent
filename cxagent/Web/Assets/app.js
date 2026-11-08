@@ -2148,8 +2148,10 @@ function drawStatusline(panel) {
   if (!panel) { line.textContent = ""; return; }
   const c = panel.context;
   const pct = c.used && c.window ? Math.round(100 * c.used / c.window) + "% context" : "";
+  // WHO IS BEING DISTILLED, as the terminal's status bar says it.
+  const distilling = panel.colleagues && panel.colleagues.distilling.length ? "distilling " + panel.colleagues.distilling.join(", ") + "…" : "";
   line.textContent = [shortFolder(panel.here.folder), panel.here.git, panel.model, pct, tokens(panel.tokens.total) + " tokens",
-    money(panel.tokens.cost)].filter(Boolean).join("  ·  ");
+    money(panel.tokens.cost), distilling].filter(Boolean).join("  ·  ");
 }
 
 function drawSessionPane(p) {
@@ -2256,6 +2258,20 @@ function drawSessionPane(p) {
       ];
       pane.append(taskRow("", el("b", null, n.name), [n.scope, n.description].filter(Boolean).join(" · "), acts));
     }
+  }
+  drawColleagues(pane, p);
+}
+
+// EVERY COLLEAGUE, as the terminal's panel lists them — one here opens its tab, one not here is brought in, idle.
+function drawColleagues(pane, p) {
+  if (!p.colleagues) return;
+  pane.append(el("h3", null, "Colleagues"));
+  for (const c of p.colleagues.rows) {
+    const acts = c.handle
+      ? [button("Open", null, () => { if (c.agentId) openWorker(activeSessionId(), c.agentId); if (!wide()) setPanel(false); })]
+      : [button("Bring", null, () => send({ type: "colleagueBring", sessionId: activeSessionId(), name: c.name }))];
+    const sub = [c.handle ? c.state : c.state === "distilling" ? "distilling" : "", c.description].filter(Boolean).join(" · ");
+    pane.append(taskRow(c.state === "working" ? "working" : "", el("b", null, (c.handle ? "◆ " : "") + c.name), sub, acts));
   }
 }
 

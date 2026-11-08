@@ -325,6 +325,11 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 if (LiveSession(Str(m, "sessionId")) is { } reading) OpenMemory(reading, Str(m, "name") ?? "");
                 else Error("No such open session.");
                 break;
+            // THE PANE'S BRING: the session's own, the terminal's panel link's — it joins idle, to be given work.
+            case "colleagueBring":
+                if (LiveSession(Str(m, "sessionId")) is { } bringing) _ = bringing.BringColleagueAsync(Str(m, "name") ?? "");
+                else Error("No such open session.");
+                break;
             case "deleteSession":
                 DeleteSession(Str(m, "id") ?? "", m["confirm"]?.GetValue<bool>() == true);
                 break;

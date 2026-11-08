@@ -119,6 +119,8 @@ internal static class WebPanel
                     ["description"] = n.Description,
                 })])
                 : null,
+            // THE SAME ROWS THE TERMINAL'S SECTION DRAWS; null with no colleagues, so the pane leaves it out.
+            ["colleagues"] = Colleagues(session.Colleagues?.Panel()),
             ["model"] = res?.InstanceName,
             ["thinking"] = new JsonObject
             {
@@ -148,4 +150,15 @@ internal static class WebPanel
     /// <summary>A worker's badge as the page reads it — the same three facts the terminal shows — or null.</summary>
     internal static JsonObject? Badge(Core.Agents.WorkerBadge? badge) =>
         badge is null ? null : new JsonObject { ["kind"] = badge.Kind, ["name"] = badge.Name, ["glyph"] = badge.Glyph };
+
+    /// <summary>The panel's colleagues as the page reads them, or null when there are none to show.</summary>
+    internal static JsonObject? Colleagues(Core.Colleagues.ColleaguePanel? panel) =>
+        panel is null ? null : new JsonObject
+        {
+            ["rows"] = new JsonArray([.. panel.Rows.Select(r => (JsonNode)new JsonObject
+            {
+                ["name"] = r.Name, ["description"] = r.Description, ["handle"] = r.Handle, ["agentId"] = r.AgentId, ["state"] = r.State,
+            })]),
+            ["distilling"] = new JsonArray([.. panel.Distilling.Select(n => (JsonNode)JsonValue.Create(n)!)]),
+        };
 }

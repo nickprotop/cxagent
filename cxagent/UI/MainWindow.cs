@@ -1779,6 +1779,14 @@ public sealed class MainWindow : IDisposable
         // A CARD OPENS ITS TAB, AND ⏹ OR x STOPS OR FORGETS IT — by kind; closing a tab only closes the view.
         // Wired once here: the panel and the strip are the window's, however many sessions come and go.
         JobsPanel.RowChosen += OnRowChosen;
+
+        // THE PANEL'S COLLEAGUE LINKS: open one here in its tab, or bring one in — idle, to be given work.
+        SessionPanel.LinkChosen += link =>
+        {
+            if (ActiveSession is not { } session) return;
+            if (link.Action == "open") OpenAgentTab(session, link.Value);
+            else _ = session.BringColleagueAsync(link.Value);
+        };
         Tabs.TabCloseRequested += OnJobTabCloseRequested;
         Tabs.TabCloseRequested += OnAgentTabCloseRequested;
 
@@ -3329,7 +3337,9 @@ public sealed class MainWindow : IDisposable
             SkillCount = SkillCount,
             LoadedSkills = LoadedSkills,
             MemoryNotes = ActiveSession?.Memory?.List(),
+            Colleagues = ActiveSession?.Colleagues?.Panel(),
         });
+        SetDistilling(ActiveSession?.Colleagues?.Distilling ?? []);
     }
 
     /// <summary>How many skills discovery found. Set by the composition root, which owns the read.</summary>
@@ -4442,6 +4452,25 @@ public sealed class MainWindow : IDisposable
         var label = $"[{colour}]{text}[/]";
         if (_sandboxItem is null) _sandboxItem = StatusBar.AddRight(string.Empty, label);
         else { _sandboxItem.Label = label; _sandboxItem.IsVisible = true; }
+    }
+
+    private StatusBarItem? _distillItem;
+
+    /// <summary>The status bar's distilling word, or null when nothing is distilling — the browser's status line says the same.</summary>
+    public static string? DistillingText(IReadOnlyList<string> names) =>
+        names.Count == 0 ? null : $"distilling {string.Join(", ", names)}…";
+
+    /// <summary>Shows who is being distilled, or hides the word when nobody is.</summary>
+    private void SetDistilling(IReadOnlyList<string> names)
+    {
+        if (DistillingText(names) is not { } text)
+        {
+            if (_distillItem is not null) _distillItem.IsVisible = false;
+            return;
+        }
+        var label = $"[{ColorScheme.AccentMarkup}]{SharpConsoleUI.Parsing.MarkupParser.Escape(text)}[/]";
+        if (_distillItem is null) _distillItem = StatusBar.AddRight(string.Empty, label);
+        else { _distillItem.Label = label; _distillItem.IsVisible = true; }
     }
 
     private int _sandboxProbing;
