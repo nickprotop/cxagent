@@ -37,6 +37,13 @@ public class PermissionPolicy
     // session's policy outright. Null for a session's own policy.
     private readonly PermissionPolicy? _parent;
 
+    // NARROWED IS ITS OWN FACT, not "has a parent": a read-also policy has one too — so a /mode switch reaches it live —
+    // but its boundary, and the sandbox drawn from it, are the session's.
+    private readonly bool _narrowed;
+
+    // FOLDERS BEYOND THE BOUNDARY WHOSE FILES MAY BE READ WITHOUT ASKING — see WithReadAlso. Null for almost every policy.
+    private readonly ReadAlso? _readAlso;
+
     private EditMode _edits;
     private ActionClassifier? _classifier;
 
@@ -67,10 +74,36 @@ public class PermissionPolicy
         _rules = parent._rules;
         _boundary = folder;
         _parent = parent;
+        _narrowed = true;
+        _readAlso = parent._readAlso;
         SessionId = parent.SessionId;
         LogDir = parent.LogDir;
         TrustOverride = parent.TrustOverride;
     }
+
+    private PermissionPolicy(PermissionPolicy parent, ReadAlso readAlso)
+    {
+        _root = parent._root;
+        _rules = parent._rules;
+        _boundary = parent._boundary;
+        _parent = parent;
+        _narrowed = parent._narrowed;
+        _readAlso = readAlso with { Folders = [.. readAlso.Folders.Select(RealFolder)] };
+        SessionId = parent.SessionId;
+        LogDir = parent.LogDir;
+        TrustOverride = parent.TrustOverride;
+    }
+
+    /// <summary>
+    /// This policy, with files in <paramref name="readAlso"/>'s folders readable without asking — a colleague's
+    /// workplaces, the codebases it already knows.
+    ///
+    /// <para>READS ONLY, AND NOTHING ELSE MOVES. The boundary, the sandbox drawn from it, trust, rules, the mode and the
+    /// reviewer are this policy's; writes, a move's or a delete's source, and shell commands are judged exactly as before.
+    /// Each folder counts only while it exists and is trusted in its own right, and — while the session is served to a
+    /// browser — only inside what that browser may reach.</para>
+    /// </summary>
+    public PermissionPolicy WithReadAlso(ReadAlso readAlso) => new(this, readAlso);
 
     /// <summary>
     /// A policy for a sub-agent working in <paramref name="folder"/>, inside this one's boundary.
@@ -206,7 +239,7 @@ public class PermissionPolicy
 
     /// <summary>True for a sub-agent's policy narrowed to a folder of its own: its sandboxed commands write only
     /// there, as its file tools do.</summary>
-    public bool IsNarrowed => _parent is not null;
+    public bool IsNarrowed => _narrowed;
 
     private Hooks.HookRunner? _hooks;
 
@@ -717,6 +750,9 @@ public class PermissionPolicy
                 return true;
         }
 
+        // BEFORE THE RULE CHECK, which returns for any request with no rule — a file read among them.
+        if (ReadsAlso(request)) return true;
+
         if (request.AlwaysRule is null) return false;
 
         var subject = RuleSubject(request);
@@ -919,6 +955,30 @@ public class PermissionPolicy
         // real up to its own name, and resolving it would follow the link back inside.
         && (request.ActsOn is not { } entry || entry == request.Display || PathResolver.Contains(_boundary, entry))
         && !IsExecutableConfig(request);
+
+    /// <summary>
+    /// Whether <paramref name="request"/> is a plain file READ inside one of the read-also folders, each of which counts
+    /// only while it exists, could be trusted at all, is trusted, and — while the session is served to a browser — holds
+    /// the file inside what the browser may reach.
+    ///
+    /// <para>A MOVE'S SOURCE IS NOT A READ HERE: it is sent as one, and removing the file is what the move does. Nor is a
+    /// request acting on an entry outside the folder. The file is resolved by the policy's own resolver, so <c>..</c> and
+    /// a link out of the folder count as outside.</para>
+    /// </summary>
+    private bool ReadsAlso(PermissionRequest request)
+    {
+        if (_readAlso is not { } also || request.Kind != PermissionKind.FileRead || request.RemovesSource) return false;
+        var resolved = Paths.AsFileTool(request.Display);
+        if (resolved is null) return false;
+        if (also.Served?.Roots is { } served && !served.Any(root => PathResolver.Contains(root, resolved))) return false;
+        return also.Folders.Any(folder =>
+            PathResolver.Contains(folder, resolved)
+            && (request.ActsOn is not { } entry || PathResolver.Contains(folder, entry))
+            && Directory.Exists(folder)
+            && Path.GetPathRoot(folder) is { Length: > 0 } root
+            && Path.TrimEndingDirectorySeparator(root) != Path.TrimEndingDirectorySeparator(folder)
+            && _rules.GetTrust(folder) == TrustState.Trusted);
+    }
 
     /// <summary>
     /// Whether this is a READ of a file under <see cref="LogDir"/>.

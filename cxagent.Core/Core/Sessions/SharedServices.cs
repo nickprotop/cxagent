@@ -64,6 +64,12 @@ public sealed record SharedServices
     public Mcp.McpToolset? Mcp { get; init; }
 
     /// <summary>
+    /// What a browser may reach while this process serves its sessions to one — set by the web host as it starts and
+    /// cleared as it stops, and read at each permission decision, so a colleague's workplace reads ask from then on.
+    /// </summary>
+    public Web.ServedFolders Served { get; init; } = new();
+
+    /// <summary>
     /// What the MCP servers are doing right now, or null when this host has none.
     ///
     /// <para>A SUPPLIER RATHER THAN THE MANAGER. Listing needs connection state and per-server
