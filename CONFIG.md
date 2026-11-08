@@ -1399,7 +1399,7 @@ commands may link anywhere.
 | `CXAGENT.md` | Your global instructions, if you wrote any. |
 | `memory/system/<name>.md` | System notes: what the agent keeps about you, read in every folder. Markdown with a `name` and `description` up front; edit or delete them freely. |
 | `memory/projects/<folder>-<hash>/` | One project's notes, beside a `path` file naming the folder they belong to. The hash is of the folder's full path, so two folders of one name keep separate notes. |
-| `colleagues/<name>/` | One colleague: `colleague.json` (who it is, where it has worked), `experience/core.md` and one `experience/<codebase>.md` per codebase it knows, and `past.jsonl` — every round it worked, word for word, appended and never edited. `distilling.lock` beside them lets one process distil at a time. |
+| `colleagues/<name>/` | One colleague, in a folder named after its first name — a rename changes the record, never the folder: `colleague.json` (who it is, its former names, where it has worked, whether it is frozen, what distilling has cost), `experience/core.md` and one `experience/<codebase>.md` per codebase it knows, `past.jsonl` — every round it worked, word for word, appended and never edited — and `live/`, one mark per session it is live in now. `distilling.lock` beside them lets one process distil at a time. |
 
 ### A folder is a session
 
