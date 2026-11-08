@@ -207,7 +207,7 @@ public sealed partial class Distiller(ColleagueStore store)
         var size = 0;
         foreach (var round in waiting)
         {
-            var length = Render(round).Length;
+            var length = PastRounds.Render(round).Length;
             if (batch.Count > 0 && size + length > MaxRoundChars) break;
             batch.Add(round);
             size += length;
@@ -370,40 +370,8 @@ public sealed partial class Distiller(ColleagueStore store)
             sb.Append(experience.Codebases.TryGetValue(key, out var text) && text.Length > 0 ? text : "(none yet)").Append("\n\n");
         }
         sb.Append("# The rounds to fold in, oldest first\n\n");
-        foreach (var round in batch) sb.Append(Render(round)).Append('\n');
+        foreach (var round in batch) sb.Append(PastRounds.Render(round)).Append('\n');
         return sb.ToString();
-    }
-
-    /// <summary>One round as the distiller reads it: who said what, each tool result clipped to its first lines.</summary>
-    private static string Render(PastRound round)
-    {
-        var sb = new StringBuilder();
-        sb.Append("## Round ").Append(round.Seq).Append(" — in ").Append(round.Folder).Append(", ")
-            .Append(round.Ended.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)).Append('\n');
-        foreach (var m in round.Messages)
-        {
-            if (m.Role == "system") continue;
-            if (m.ToolCallId is not null)
-            {
-                sb.Append("[tool result]\n").Append(Clip(m.Content)).Append('\n');
-                continue;
-            }
-            if (m.Content.Length > 0) sb.Append('[').Append(m.Role).Append("]\n").Append(m.Content).Append('\n');
-            foreach (var call in m.ToolCalls ?? [])
-                sb.Append("[tool call] ").Append(call.Name).Append(' ').Append(call.Arguments.ValueKind == System.Text.Json.JsonValueKind.Undefined ? "" : call.Arguments.GetRawText()).Append('\n');
-        }
-        var text = sb.ToString();
-        if (text.Length <= MaxRoundChars) return text;
-        var half = MaxRoundChars / 2;
-        return text[..half] + $"\n[… {text.Length - MaxRoundChars} characters of this round left out …]\n" + text[^half..];
-    }
-
-    private static string Clip(string result)
-    {
-        var lines = result.Split('\n');
-        return lines.Length <= ToolResultLines
-            ? result
-            : string.Join('\n', lines.Take(ToolResultLines)) + $"\n[… {lines.Length - ToolResultLines} more lines]";
     }
 
     /// <summary>What the distiller answered: no change, or the parts it rewrote.</summary>
