@@ -237,6 +237,33 @@ public sealed class ColleagueDeskTests : IDisposable
         Assert.Empty(Library.Undistilled("Charting"));
     }
 
+    /// <summary>
+    /// ITS OWN LEARNING IS NOT NEWS FROM ELSEWHERE: a live colleague was told after every round that it had "grown since
+    /// you started here (from sessions in ConsoleEx)" — growth it had done itself, here.
+    /// </summary>
+    [Fact]
+    public async Task Its_own_distilling_is_not_told_as_growth_elsewhere()
+    {
+        // AN EARLIER LIFE ELSEWHERE, as the live one had: its growth list already names another folder.
+        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Update("Charting", r => r with { GrownIn = ["/home/dev/source/ConsoleEx"] });
+        _model.Distil = $"<core>\nPanes first.\n</core>\n<description>charts</description>";
+        var session = Open();
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, false, session.SessionId!), CancellationToken.None);
+
+        // TWO ROUNDS OF REAL WORK HERE — each distilled by this session, each a new version of its experience.
+        await Send(session, "charting", "lay the chart out " + new string('p', 400));
+        await session.Colleagues.Idle();
+        await Send(session, "charting", "now the legend " + new string('l', 400));
+        await session.Colleagues.Idle();
+        await Send(session, "charting", "and the title");
+        await session.Colleagues.Idle();
+
+        // THE LINE IS READ AT THE START OF THE NEXT RUN, so it shows as a round's message — or nowhere.
+        Assert.True(Library.Find("Charting")!.ExperienceVersion >= 2);
+        Assert.DoesNotContain(Library.Past("Charting").SelectMany(r => r.Messages), m => m.Content.Contains("grown since", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Off_in_config_means_no_desk()
     {
@@ -266,11 +293,14 @@ public sealed class ColleagueDeskTests : IDisposable
         public bool SupportsToolCalling => true;
         public bool SupportsStreaming => false;
 
+        /// <summary>What it answers when asked to distil.</summary>
+        public string Distil { get; set; } = "NO CHANGE";
+
         public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct) =>
             Task.FromResult(new LlmResponse
             {
                 Text = messages.Any(m => m.Role == "system" && m.Content.StartsWith("You keep the experience", StringComparison.Ordinal))
-                    ? "NO CHANGE"
+                    ? Distil
                     : "done — moved it and checked the render",
                 StopReason = "end_turn",
             });

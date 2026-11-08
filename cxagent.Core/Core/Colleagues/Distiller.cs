@@ -401,17 +401,20 @@ public sealed partial class Distiller(ColleagueStore store)
         /// </summary>
         public static Answer? Parse(string text, Dictionary<string, string> touched)
         {
-            var trimmed = text.Trim();
-            if (trimmed.StartsWith("NO CHANGE", StringComparison.Ordinal))
+            // REASONING IS SET ASIDE, and the answer is the LAST of each part: a local model writes its thinking into the
+            // text, and thinking about the answer names its tags — "put the core between <core> and </core>" — so the
+            // first <core> can be inside it. Taken first, the reasoning was written as the colleague's experience.
+            var trimmed = ThinkBlock().Replace(text, "").Trim();
+            if (trimmed.EndsWith("NO CHANGE", StringComparison.Ordinal) || trimmed.StartsWith("NO CHANGE", StringComparison.Ordinal))
                 return new Answer(text, false, null, new Dictionary<string, string>(), null);
 
             // A PART WITH NO WORDS IN IT WAS NOT GIVEN — "..." or "…" in place of a text keeps the text that was there.
-            var core = CorePattern().Match(trimmed) is { Success: true } c ? Given(c.Groups[1].Value) : null;
+            var core = CorePattern().Matches(trimmed).LastOrDefault() is { } c ? Given(c.Groups[1].Value) : null;
             var codebases = CodebasePattern().Matches(trimmed)
                 .Where(m => touched.ContainsKey(m.Groups[1].Value) && Given(m.Groups[2].Value) is not null)
                 .GroupBy(m => m.Groups[1].Value)
                 .ToDictionary(g => g.Key, g => g.Last().Groups[2].Value.Trim(), StringComparer.Ordinal);
-            var description = DescriptionPattern().Match(trimmed) is { Success: true } d ? Given(d.Groups[1].Value) : null;
+            var description = DescriptionPattern().Matches(trimmed).LastOrDefault() is { } d ? Given(d.Groups[1].Value) : null;
             // TAGS WITH NOTHING USABLE IN THEM — placeholders, a key the model invented — are not "no change": the model
             // meant to answer and did not, so the rounds wait rather than count as learned from.
             return core is null && codebases.Count == 0 && description is null
@@ -426,12 +429,17 @@ public sealed partial class Distiller(ColleagueStore store)
         }
     }
 
-    [GeneratedRegex(@"<core>\s*(.*?)\s*</core>", RegexOptions.Singleline)]
+    [GeneratedRegex(@"<think>.*?(</think>|$)", RegexOptions.Singleline)]
+    private static partial Regex ThinkBlock();
+
+    // EACH PART HOLDS NO OPENING TAG OF ITS OWN KIND: prose that mentions "<core>" without closing it must not swallow
+    // everything up to the real part's end.
+    [GeneratedRegex(@"<core>\s*((?:(?!<core>).)*?)\s*</core>", RegexOptions.Singleline)]
     private static partial Regex CorePattern();
 
-    [GeneratedRegex(@"<codebase\s+key=""([^""]+)"">\s*(.*?)\s*</codebase>", RegexOptions.Singleline)]
+    [GeneratedRegex(@"<codebase\s+key=""([^""]+)"">\s*((?:(?!<codebase).)*?)\s*</codebase>", RegexOptions.Singleline)]
     private static partial Regex CodebasePattern();
 
-    [GeneratedRegex(@"<description>\s*(.*?)\s*</description>", RegexOptions.Singleline)]
+    [GeneratedRegex(@"<description>\s*((?:(?!<description>).)*?)\s*</description>", RegexOptions.Singleline)]
     private static partial Regex DescriptionPattern();
 }

@@ -453,6 +453,37 @@ public sealed class DistillerTests : IDisposable
         Assert.Empty(_store.Find("Charting")!.Skipped);
     }
 
+    /// <summary>
+    /// A live local model wrote its reasoning into the answer, and the reasoning named the tags — "put the complete new
+    /// core between &lt;core&gt; and &lt;/core&gt;". The first &lt;core&gt; was inside it, and the reasoning was written as
+    /// the colleague's experience. Reasoning is set aside, and the answer is the last of each part.
+    /// </summary>
+    [Fact]
+    public async Task Reasoning_that_names_the_tags_is_never_written_as_experience()
+    {
+        Append();
+        Answer($"<think>\nThe prompt says put the complete new core between <core> and </core>. I will format exactly as requested.\n</think>\n\n"
+            + Distilled("## How you work\nPanes first.", "## Architecture\nThree panes."));
+
+        Assert.Equal(DistillOutcome.Done, await Drain());
+
+        Assert.Equal("## How you work\nPanes first.", _store.ReadExperience("Charting").Core);
+        Assert.Equal("## Architecture\nThree panes.", _store.ReadExperience("Charting").Codebases[Key]);
+    }
+
+    [Fact]
+    public async Task Reasoning_with_no_think_tags_is_passed_over_too()
+    {
+        Append();
+        Answer("Wait, the prompt says use <core> and </core> around the core, and <description> too. Proceeds.\n\n"
+            + Distilled("## How you work\nPanes first.", "## Architecture\nThree panes.", "Lays out charts"));
+
+        Assert.Equal(DistillOutcome.Done, await Drain());
+
+        Assert.Equal("## How you work\nPanes first.", _store.ReadExperience("Charting").Core);
+        Assert.Equal("Lays out charts", _store.Find("Charting")!.Description);
+    }
+
     [Fact]
     public async Task A_codebase_the_round_did_not_touch_is_never_written()
     {

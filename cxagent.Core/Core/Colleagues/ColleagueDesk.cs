@@ -163,6 +163,11 @@ public sealed class ColleagueDesk : IDisposable
 
     private void OnDistilled(DistillChange change)
     {
+        // WHAT THIS SESSION'S OWN DISTILLING MADE IS NOT NEWS FROM ELSEWHERE: the incarnation here learned it. Counted as
+        // known, or each round of its own was followed by "your experience has grown … from sessions in …".
+        var origin = OriginPrefix + change.Colleague;
+        if (_given.TryGetValue(origin, out var given) && change.Version > given) _given[origin] = change.Version;
+
         if (!_owned.TryRemove(change.Colleague, out _)) return;
         if (change.Nothing)
         {
