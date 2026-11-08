@@ -186,18 +186,26 @@ public sealed partial class Session
         if (rest.Length > 1 && rest[0] is '"' or '\'' && rest.IndexOf(rest[0], 1) is var close and > 1)
             return await BringNamedAsync(desk, rest[1..close].Trim(), rest[(close + 1)..].Trim());
 
+        // THE LONGEST COLLEAGUE NAME THE TEXT IS, OR STARTS WITH — the whole text included, so a name typed with no task is
+        // known as that name and asked for its task, rather than cut at its first space into a name nobody has.
+        var typed = rest.Trim();
         var match = desk.List().Select(c => c.Name)
-            .Where(n => rest.StartsWith(n + " ", StringComparison.OrdinalIgnoreCase))
+            .Where(n => typed.Equals(n, StringComparison.OrdinalIgnoreCase) || typed.StartsWith(n + " ", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(n => n.Length).FirstOrDefault();
         var (name, task) = match is not null
-            ? (match, rest[(match.Length + 1)..].Trim())
-            : rest.Split(' ', 2) is [var first, var after] ? (first, after.Trim()) : (rest, "");
+            ? (match, typed[match.Length..].Trim())
+            : typed.Split(' ', 2) is [var first, var after] ? (first, after.Trim()) : (typed, "");
         return await BringNamedAsync(desk, name, task);
     }
 
     private async Task<CommandStatus> BringNamedAsync(ColleagueDesk desk, string name, string task)
     {
-        if (name.Length == 0 || task.Length == 0) return Told("Say who and what: /colleagues bring <name> <task>.");
+        if (name.Length == 0) return Told("Say who and what: /colleagues bring <name> <task>.");
+        if (task.Length == 0)
+        {
+            var known = desk.Library.Find(name)?.Name ?? name;
+            return Told($"What should {known} do? /colleagues bring {known} <task> — the task is its first message.");
+        }
         if (SessionId is not { } lead) return Told("This session has no agent to report to yet.");
 
         var answer = await desk.BringAsync(new BringOrder(name, task, null, Background: true, lead), CancellationToken.None);

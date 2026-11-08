@@ -105,6 +105,33 @@ public sealed class ColleaguesCommandTests : IDisposable
         Assert.Contains("on: draw the sales chart", session.TakeColleagueNote());
     }
 
+    /// <summary>A live use typed the whole name and no task; it was answered "no colleague called 'Explore'".</summary>
+    [Theory]
+    [InlineData("Explore SharpConsoleUI API")]
+    [InlineData("explore sharpconsoleui api  ")]
+    [InlineData("\"Explore SharpConsoleUI API\"")]
+    public async Task Bring_with_a_name_and_no_task_asks_for_the_task(string typed)
+    {
+        Library.Create(new ColleagueRecord { Name = "Explore SharpConsoleUI API", Type = "general", Created = DateTimeOffset.UtcNow });
+        var session = Open();
+
+        await session.BringColleagueAsync(typed);
+
+        Assert.Contains(_seen.Notices, n => n.Contains("What should Explore SharpConsoleUI API do?", StringComparison.Ordinal));
+        Assert.Empty(session.SubAgents.All());
+    }
+
+    [Fact]
+    public async Task Bring_matches_a_name_in_any_case()
+    {
+        Library.Create(new ColleagueRecord { Name = "Explore SharpConsoleUI API", Type = "general", Created = DateTimeOffset.UtcNow });
+        var session = Open();
+
+        await session.BringColleagueAsync("explore sharpconsoleui api look at the dialogs");
+
+        Assert.NotNull(session.SubAgents.Find("explore-sharpconsoleui-api"));
+    }
+
     [Fact]
     public void Keep_takes_a_quoted_name()
     {
