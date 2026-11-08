@@ -226,13 +226,16 @@ public sealed class AgentTab : IDisposable
     public ButtonControl MoveForTest => _move;
 
     /// <summary>The tab title: the state first, as a job tab's.</summary>
-    public string Title() => TitleFor(Kept, _now);
+    public string Title() => TitleFor(Kept, _now, Session.SubAgents.BadgeOf(Kept.Name));
 
     /// <summary>
     /// A worker tab's title: its state first, then — for a colleague — its glyph and its name, which says more than a
     /// handle slugged from it.
     /// </summary>
-    public static string TitleFor(StoredAgent kept, AgentRowView? now)
+    /// <param name="kept">The agent.</param>
+    /// <param name="now">How it stands, or null for one never given work.</param>
+    /// <param name="badge">What it is — read from the store, not the row: one that joined idle has no row yet.</param>
+    public static string TitleFor(StoredAgent kept, AgentRowView? now, WorkerBadge? badge)
     {
         var glyph = now?.State switch
         {
@@ -242,7 +245,6 @@ public sealed class AgentTab : IDisposable
             null => "·",
             _ => "✗",
         };
-        var badge = now?.Badge;
         var name = badge?.Name ?? kept.Name;
         var shown = name.Length <= 24 ? name : name[..23] + "…";
         return badge is null ? $"{glyph} {shown}" : $"{glyph} {badge.Glyph} {shown}";

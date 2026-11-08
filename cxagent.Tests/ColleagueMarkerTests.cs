@@ -91,9 +91,22 @@ public sealed class ColleagueMarkerTests : IDisposable
         var (session, kept) = await Brought();
         var row = AgentRows.Describe(session.SubAgents, kept, DateTimeOffset.UtcNow);
 
-        Assert.Contains("◆ Charting", AgentTab.TitleFor(kept, row));
+        Assert.Contains("◆ Charting", AgentTab.TitleFor(kept, row, session.SubAgents.BadgeOf(kept.Name)));
         var card = JobsPanel.AgentCardFactsForTest(row!);
         Assert.Equal("Colleague", card[0]);
+    }
+
+    /// <summary>A colleague that joined idle has never run, so no row — its tab still names it (a live drive showed "· charting").</summary>
+    [Fact]
+    public async Task A_tab_names_a_colleague_that_has_not_run_yet()
+    {
+        Charting();
+        var session = Open();
+        await session.BringColleagueAsync("Charting");
+        var kept = session.SubAgents.Find("charting")!;
+
+        Assert.Null(AgentRows.Describe(session.SubAgents, kept, DateTimeOffset.UtcNow));
+        Assert.Equal("· ◆ Charting", AgentTab.TitleFor(kept, null, session.SubAgents.BadgeOf(kept.Name)));
     }
 
     /// <summary>
