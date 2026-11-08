@@ -24,6 +24,10 @@ public static class IncarnationBriefing
             .Append("across sessions and projects. Below is your experience, distilled from your earlier work. It is yours — ")
             .Append("use it as you would your own memory, and check it against what you find, since the code may have moved ")
             .Append("on. What you do here is kept too, and folded into your experience when each task ends.\n");
+        // HOW TO WEIGH ITS OWN MARKS, as the user approved it (2026-11-08) — the distiller writes them, the colleague reads them.
+        sb.Append("\nEach statement in it says how it is known: seen in a round, or concluded from what was seen. Rely on ")
+            .Append("what was seen; check what was concluded before you build on it. Your past and the current version of ")
+            .Append("your experience are a recall away — including the round behind any statement.\n");
         if (record.Workplaces.Count > 0)
         {
             sb.Append("\nYou have worked in: ")
@@ -37,7 +41,7 @@ public static class IncarnationBriefing
                 sb.Append("Some are gone since you worked there — moved or deleted, so not readable: ")
                     .Append(string.Join(", ", setting.GoneWorkplaces)).Append(".\n");
         }
-        sb.Append("\nYour past and the current version of your experience are a recall away.\n");
+
         sb.Append("\n# Your experience\n\n");
         sb.Append(preload.Length > 0 ? preload : "Nothing is distilled yet: this is early in your work.\n");
         return sb.ToString().TrimEnd();

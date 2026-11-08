@@ -79,6 +79,12 @@ public sealed record PastRound(long Seq, string Session, string Folder, DateTime
 {
     /// <summary>Other workplaces whose files the round read — distilled into their codebases too.</summary>
     public IReadOnlyList<string> AlsoRead { get; init; } = [];
+
+    /// <summary>
+    /// Folders the round read outside the session's codebase and every workplace — named to the distiller, so what was
+    /// learned there is not filed under the session's codebase. Empty for rounds kept before it was recorded.
+    /// </summary>
+    public IReadOnlyList<string> ReadElsewhere { get; init; } = [];
 }
 
 /// <summary>What a colleague has distilled: its core, and one text per codebase key.</summary>

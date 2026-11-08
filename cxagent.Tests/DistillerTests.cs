@@ -381,9 +381,13 @@ public sealed class DistillerTests : IDisposable
         Assert.Empty(_store.Undistilled("Parser"));
     }
 
+    /// <summary>
+    /// Placeholders where a text should be: the model meant to answer and did not, so the rounds wait. (A part for a
+    /// codebase that was not listed is a different case — dropped, and the answer counted as no change; see
+    /// DistillerPrinciplesTests.)
+    /// </summary>
     [Theory]
     [InlineData("<core>\n...\n</core>\n<description>…</description>")]
-    [InlineData("<codebase key=\"invented-12345678\">\nSomething.\n</codebase>")]
     public async Task Tags_with_nothing_usable_fail_and_the_round_waits(string answer)
     {
         Append();

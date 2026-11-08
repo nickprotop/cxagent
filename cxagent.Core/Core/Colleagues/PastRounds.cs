@@ -20,6 +20,9 @@ internal static class PastRounds
         var sb = new StringBuilder();
         sb.Append("## Round ").Append(round.Seq).Append(" — in ").Append(round.Folder).Append(", ")
             .Append(round.Ended.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)).Append('\n');
+        if (round.AlsoRead.Count > 0) sb.Append("Also read in: ").Append(string.Join(", ", round.AlsoRead)).Append('\n');
+        if (round.ReadElsewhere.Count > 0)
+            sb.Append("Read outside every codebase listed: ").Append(string.Join(", ", round.ReadElsewhere)).Append('\n');
         foreach (var m in round.Messages)
         {
             if (m.Role == "system") continue;

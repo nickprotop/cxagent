@@ -34,6 +34,14 @@ public sealed record BringOrder(string Name, string Task, string? Model, bool Ba
 /// <param name="SessionId">The session it is in now.</param>
 /// <param name="Folder">The folder it was opened in.</param>
 /// <param name="Messages">Its conversation.</param>
+/// <summary>What <see cref="ColleagueDesk.ReadsOf"/> sorts: one round's messages, whose colleague, and the folder it ran in.</summary>
+public sealed record RoundReadsRequest(IReadOnlyList<ChatMessage> Round, ColleagueRecord Record, string Folder);
+
+/// <summary>Where a round read beyond its own codebase.</summary>
+/// <param name="Workplaces">Other workplaces of the colleague's, by their recorded folder.</param>
+/// <param name="Elsewhere">Folders outside every workplace, by their codebase's root.</param>
+public sealed record RoundReads(IReadOnlyList<string> Workplaces, IReadOnlyList<string> Elsewhere);
+
 public sealed record OneToOneExchange(string Colleague, string SessionId, string Folder, IReadOnlyList<ChatMessage> Messages);
 
 public sealed record OneToOneOpening(string Folder, Storage.SessionSnapshot? Resume, Sessions.OneToOne Setup);
@@ -542,8 +550,14 @@ public sealed class ColleagueDesk : IDisposable
             var round = all.Skip(at + 1).ToList();
             if (round.Count == 0 || _parts.Library.Find(name) is null) return;
             _oneToOneKept[name] = round[^1];
+            // A ONE-TO-ONE READS ACROSS FOLDERS TOO, and what it learned there belongs where it was read.
+            var reads = _parts.Library.Find(name) is { } record ? ReadsOf(new RoundReadsRequest(round, record, exchange.Folder)) : new RoundReads([], []);
             Append(name, new PastRound(0, exchange.SessionId, exchange.Folder,
-                round[0].Timestamp == default ? DateTimeOffset.UtcNow : round[0].Timestamp, DateTimeOffset.UtcNow, round));
+                round[0].Timestamp == default ? DateTimeOffset.UtcNow : round[0].Timestamp, DateTimeOffset.UtcNow, round)
+            {
+                AlsoRead = reads.Workplaces,
+                ReadElsewhere = reads.Elsewhere,
+            });
             Drain();
         }
         catch (Exception e) when (e is not OperationCanceledException)
@@ -617,9 +631,12 @@ public sealed class ColleagueDesk : IDisposable
 
             var record = _parts.Library.Find(found.Name);
             if (record is null) return;
+            // FROM WHERE THE WORKER RAN — its own folder when it was given one — as its paths were resolved when it worked.
+            var reads = ReadsOf(new RoundReadsRequest(round, record, found.Kept.Agent.Agent.Setup.Identity.WorkingDir ?? _parts.Folder));
             Append(found.Name, new PastRound(0, _parts.SessionId() ?? "", _parts.Folder, start.At, DateTimeOffset.UtcNow, round)
             {
-                AlsoRead = OtherWorkplacesRead(round, record, _parts.Folder),
+                AlsoRead = reads.Workplaces,
+                ReadElsewhere = reads.Elsewhere,
             });
             TellOfGrowth(found, record);
             Drain();
@@ -710,28 +727,52 @@ public sealed class ColleagueDesk : IDisposable
     };
 
     /// <summary>
-    /// Folders of the colleague's other workplaces whose files the round's tool calls named. A path no file can have —
-    /// one a model wrote with a NUL in it — names no workplace and is passed over.
+    /// The folders a round read beyond the session's codebase: other workplaces it knows — distilled into their codebases
+    /// too — and folders outside every one, named to the distiller so what was learned there is not filed under the
+    /// session's codebase.
+    ///
+    /// <para>BY CODEBASE, NOT FOLDER NAME: a worktree and its main checkout are one codebase. Paths are resolved as the
+    /// policy resolves them, from the folder the worker ran in, with <c>~</c> as home; a shell command's paths are found
+    /// by the same parser the permission check uses. A path no file can have — one a model wrote with a NUL in it — is
+    /// passed over. Folders outside every workplace are named by their codebase's root, at most five.</para>
     /// </summary>
-    internal static IReadOnlyList<string> OtherWorkplacesRead(List<ChatMessage> round, ColleagueRecord record, string folder)
+    internal static RoundReads ReadsOf(RoundReadsRequest request)
     {
+        var folder = Permissions.PermissionPolicy.RealFolder(request.Folder);
         var here = Codebase.Key(folder);
-        var others = record.Workplaces.Where(w => w.Codebase != here).ToList();
-        if (others.Count == 0) return [];
-        var read = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var call in round.SelectMany(m => m.ToolCalls ?? []))
+        var known = request.Record.Workplaces.Where(w => w.Codebase != here)
+            .GroupBy(w => w.Codebase).ToDictionary(g => g.Key, g => g.First().Folder, StringComparer.Ordinal);
+        var workplaces = new List<string>();
+        var elsewhere = new List<string>();
+        foreach (var path in request.Round.SelectMany(m => m.ToolCalls ?? []).SelectMany(call => PathsOf(call, folder)))
         {
-            if (call.Arguments.ValueKind != JsonValueKind.Object || !call.Arguments.TryGetProperty("path", out var p)
-                || p.ValueKind != JsonValueKind.String || p.GetString() is not { Length: > 0 } path) continue;
-            string full;
-            try { full = Path.GetFullPath(path, folder); }
-            catch (ArgumentException) { continue; }
-            if (full.Contains('\0')) continue;
-            foreach (var w in others)
-                if (full.StartsWith(Path.TrimEndingDirectorySeparator(w.Folder) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-                    read.Add(w.Folder);
+            if (path.Contains('\0') || Permissions.PathResolver.Contains(folder, path)) continue;
+            var dir = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
+            if (dir is null) continue;
+            string key, root;
+            try { (key, root) = (Codebase.Key(dir), Codebase.Root(dir)); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { continue; }
+            if (key == here) continue;
+            if (known.TryGetValue(key, out var workplace)) { if (!workplaces.Contains(workplace)) workplaces.Add(workplace); }
+            else if (!elsewhere.Contains(root) && elsewhere.Count < 5) elsewhere.Add(root);
         }
-        return [.. read];
+        return new RoundReads(workplaces, elsewhere);
+    }
+
+    /// <summary>The paths one tool call names, resolved: a file tool's <c>path</c>, or what a shell command touches.</summary>
+    private static IEnumerable<string> PathsOf(ToolCall call, string folder)
+    {
+        if (call.Arguments.ValueKind != JsonValueKind.Object) return [];
+        if (call.Name == Jobs.Tool.RunShell)
+            return call.Arguments.TryGetProperty("command", out var c) && c.ValueKind == JsonValueKind.String
+                ? Permissions.CommandSubjects.Of(c.GetString(), new Permissions.PathResolver(folder)).Paths
+                : [];
+        if (!call.Arguments.TryGetProperty("path", out var p) || p.ValueKind != JsonValueKind.String
+            || p.GetString() is not { Length: > 0 } raw || raw.Contains('\0')) return [];
+        var spelled = raw.StartsWith("~/", StringComparison.Ordinal)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), raw[2..]) : raw;
+        try { return [Permissions.PermissionPolicy.ResolveAgainst(spelled, folder) ?? Path.GetFullPath(spelled, folder)]; }
+        catch (ArgumentException) { return []; }
     }
 
     private Found? Incarnation(string agentId)

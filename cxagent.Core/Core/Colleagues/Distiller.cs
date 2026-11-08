@@ -340,18 +340,36 @@ public sealed partial class Distiller(ColleagueStore store)
         return null;
     }
 
+    /// <summary>Test seam: what the distiller is told.</summary>
+    internal static string InstructionsForTest => Instructions;
+
     private const string Instructions =
         "You keep the experience of a colleague: an AI worker that lives across many sessions and projects. After each "
         + "round of its work you fold what it learned into its experience, which is what every new session of it starts "
         + "from.\n\n"
         + "Write plain, short statements a colleague would want to know next time: how it works, what it learned the hard "
-        + "way, how each codebase is built and why. Not a diary of what happened; what is true and useful now. When a "
-        + "round shows an earlier statement was wrong, correct it. Merge what overlaps; drop what is no longer useful. "
-        + "Never write secrets — keys, passwords, tokens — even when the round shows one.\n\n"
-        + "The core experience has these sections:\n## How you work\n## Lessons\n## Codebases\n"
+        + "way, how each codebase is built and why. Not a diary of what happened; what is true and useful now. Merge "
+        + "what overlaps; drop what is no longer useful. Never write secrets — keys, passwords, tokens — even when the "
+        + "round shows one.\n\n"
+        // THE PRINCIPLES IN GENERAL WORDS, as the user approved them (2026-11-08): a rule tailored to a bug seen in one
+        // language or tool teaches yesterday's mistake and carries nowhere else.
+        + "Say how each statement is known: end it with (seen, round N) when a round showed it — something the colleague "
+        + "read or ran, and what came back — or (concluded, round N) when it was inferred. One mark per statement, the "
+        + "latest round that bears on it; none on the Codebases index. What a round recalls of the colleague's own past, "
+        + "or is told by whoever asked, is not new evidence: it keeps the mark it had. A statement that something does not "
+        + "exist, does not work or cannot be done stays concluded until a round shows it directly — absence is the "
+        + "easiest thing to misread.\n\n"
+        + "Newer evidence wins. When a round contradicts a statement, replace it, and under ## Corrected keep one line — "
+        + "what was believed, what is true, the round — so it is not written back. Keep only the few corrections that "
+        + "still matter.\n\n"
+        + "File each statement where it is true: about a codebase in that codebase's experience; what holds everywhere in "
+        + "the core. You can write only the core and the codebases listed below; what belongs to another waits until it "
+        + "is listed. A round names the folders it read outside every codebase listed — keep what was learned there in "
+        + "the core only if it holds generally.\n\n"
+        + "The core experience has these sections:\n## How you work\n## Lessons\n## Corrected\n## Codebases\n"
         + "(Codebases is an index: one line per codebase it knows.) At most 8,000 tokens.\n\n"
         + "Each codebase's experience has these sections:\n## Architecture\n## Conventions\n## Pitfalls\n## Decisions\n"
-        + "## Open threads\nAt most 24,000 tokens each.\n\n"
+        + "## Open threads\n## Corrected\nAt most 24,000 tokens each.\n\n"
         // THE FORM IN WORDS, NOT A TEMPLATE WITH GAPS: a local model shown "<core>...</core>" answered "..." for the
         // core and the description, word for word.
         + "Answer with tagged parts, each rewritten whole. Put the complete new core between <core> and </core>. For "
@@ -401,9 +419,13 @@ public sealed partial class Distiller(ColleagueStore store)
             var description = DescriptionPattern().Matches(trimmed).LastOrDefault() is { } d ? Given(d.Groups[1].Value) : null;
             // TAGS WITH NOTHING USABLE IN THEM — placeholders, a key the model invented — are not "no change": the model
             // meant to answer and did not, so the rounds wait rather than count as learned from.
-            return core is null && codebases.Count == 0 && description is null
-                ? null
-                : new Answer(text, true, core, codebases, description);
+            if (core is not null || codebases.Count > 0 || description is not null) return new Answer(text, true, core, codebases, description);
+
+            // A PART ONLY FOR A CODEBASE THE ROUNDS DID NOT LIST is no change, not an unreadable answer: the model was told
+            // it can write only what is listed, and a refusal counted three times would step the round past for it.
+            return CodebasePattern().Matches(trimmed).Any(m => Given(m.Groups[2].Value) is not null)
+                ? new Answer(text, false, null, new Dictionary<string, string>(), null)
+                : null;
         }
 
         private static string? Given(string part)

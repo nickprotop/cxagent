@@ -154,9 +154,9 @@ public sealed class ColleagueDeskReviewTests : IDisposable
                 ToolCalls = [new ToolCall { Id = "k", Name = "read_file", Arguments = JsonSerializer.SerializeToElement(new { path }) }],
             };
 
-            var read = ColleagueDesk.OtherWorkplacesRead([Read("a\0b"), Read(Path.Combine(other, "lib.cs"))], record, _project);
+            var read = ColleagueDesk.ReadsOf(new RoundReadsRequest([Read("a\0b"), Read(Path.Combine(other, "lib.cs"))], record, _project));
 
-            Assert.Equal([other], read);
+            Assert.Equal([other], read.Workplaces);
         }
         finally
         {
