@@ -236,6 +236,36 @@ public sealed class DistillerTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// A live drive's local model answered the core and the description with "..." — the template's own placeholder.
+    /// A part with no words in it was not given: what was there stays.
+    /// </summary>
+    [Fact]
+    public async Task A_placeholder_part_keeps_what_was_there()
+    {
+        _store.WriteExperience("Charting", "## Lessons\nPanes first.", null, null);
+        _store.Update("Charting", r => r with { Description = "Lays out charts" });
+        Append();
+        Answer($"<core>\n...\n</core>\n<codebase key=\"{Key}\">\n## Architecture\nThree panes.\n</codebase>\n<description>…</description>");
+
+        Assert.Equal(DistillOutcome.Done, await Drain());
+
+        Assert.Equal("## Lessons\nPanes first.", _store.ReadExperience("Charting").Core);
+        Assert.Equal("Lays out charts", _store.Find("Charting")!.Description);
+        Assert.Equal("## Architecture\nThree panes.", _store.ReadExperience("Charting").Codebases[Key]);
+    }
+
+    [Fact]
+    public async Task The_answer_form_shows_no_placeholder_to_copy()
+    {
+        Append();
+        Answer("NO CHANGE");
+
+        await Drain();
+
+        Assert.DoesNotContain("...", _model.LastMessages!.First(m => m.Role == "system").Content);
+    }
+
     [Fact]
     public async Task A_codebase_the_round_did_not_touch_is_never_written()
     {

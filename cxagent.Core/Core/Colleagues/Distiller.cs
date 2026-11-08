@@ -198,11 +198,12 @@ public sealed partial class Distiller(ColleagueStore store)
         + "(Codebases is an index: one line per codebase it knows.) At most 8,000 tokens.\n\n"
         + "Each codebase's experience has these sections:\n## Architecture\n## Conventions\n## Pitfalls\n## Decisions\n"
         + "## Open threads\nAt most 24,000 tokens each.\n\n"
-        + "Answer in exactly this form, rewriting each part whole:\n"
-        + "<core>\n...the whole new core...\n</core>\n"
-        + "<codebase key=\"KEY\">\n...the whole new text for that codebase...\n</codebase>  (one per codebase listed below "
-        + "that changed)\n"
-        + "<description>one line saying what this colleague is good at</description>\n\n"
+        // THE FORM IN WORDS, NOT A TEMPLATE WITH GAPS: a local model shown "<core>...</core>" answered "..." for the
+        // core and the description, word for word.
+        + "Answer with tagged parts, each rewritten whole. Put the complete new core between <core> and </core>. For "
+        + "each codebase listed below whose experience changed, put its complete new text between <codebase key=\"KEY\"> "
+        + "and </codebase>, with KEY exactly as listed. Put one line saying what this colleague is good at between "
+        + "<description> and </description>. Leave out a part that did not change.\n\n"
         + "If the rounds teach nothing worth keeping, answer only: NO CHANGE";
 
     private static string Ask(Experience experience, Dictionary<string, string> touched, List<PastRound> batch)
@@ -266,15 +267,24 @@ public sealed partial class Distiller(ColleagueStore store)
             if (trimmed.StartsWith("NO CHANGE", StringComparison.Ordinal))
                 return new Answer(text, false, null, new Dictionary<string, string>(), null);
 
-            var core = CorePattern().Match(trimmed) is { Success: true } c ? c.Groups[1].Value.Trim() : null;
+            // A PART WITH NO WORDS IN IT WAS NOT GIVEN — "..." or "…" in place of a text keeps the text that was there.
+            var core = CorePattern().Match(trimmed) is { Success: true } c ? Given(c.Groups[1].Value) : null;
             var codebases = CodebasePattern().Matches(trimmed)
-                .Where(m => touched.ContainsKey(m.Groups[1].Value))
+                .Where(m => touched.ContainsKey(m.Groups[1].Value) && Given(m.Groups[2].Value) is not null)
                 .GroupBy(m => m.Groups[1].Value)
                 .ToDictionary(g => g.Key, g => g.Last().Groups[2].Value.Trim(), StringComparer.Ordinal);
-            var description = DescriptionPattern().Match(trimmed) is { Success: true } d ? d.Groups[1].Value.Trim() : null;
-            return core is null && codebases.Count == 0 && description is null
-                ? null
-                : new Answer(text, true, core, codebases, description);
+            var description = DescriptionPattern().Match(trimmed) is { Success: true } d ? Given(d.Groups[1].Value) : null;
+            if (core is null && codebases.Count == 0 && description is null)
+                return CorePattern().IsMatch(trimmed) || CodebasePattern().IsMatch(trimmed) || DescriptionPattern().IsMatch(trimmed)
+                    ? new Answer(text, false, null, new Dictionary<string, string>(), null)
+                    : null;
+            return new Answer(text, true, core, codebases, description);
+        }
+
+        private static string? Given(string part)
+        {
+            var trimmed = part.Trim();
+            return trimmed.Any(char.IsLetterOrDigit) ? trimmed : null;
         }
     }
 
