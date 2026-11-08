@@ -72,7 +72,16 @@ public sealed record SandboxHome(string Home, string? ConfigDir, string? Runtime
 /// <param name="Home">The machine's folders.</param>
 /// <param name="Settings">The user's sandbox settings.</param>
 public sealed record SandboxLayoutRequest(string AgentFolder, string RunFolder, bool Narrowed, string? Logs,
-    SandboxHome Home, SandboxSettings Settings);
+    SandboxHome Home, SandboxSettings Settings)
+{
+    /// <summary>Where cleaned copies of credential files are written — the user's own, outside every project.</summary>
+    public string CleanedDir { get; init; } = Path.Combine(Path.GetTempPath(), $"cxagent-cleaned-{Environment.UserName}");
+}
+
+/// <summary>A file shown inside the sandbox in place of another: a cleaned copy over the real one.</summary>
+/// <param name="Source">The copy, outside.</param>
+/// <param name="Target">Where it is seen, inside — the real file's path.</param>
+public sealed record ReplacedFile(string Source, string Target);
 
 /// <summary>
 /// Every folder a contained command is given, resolved on this machine: real paths, only ones that exist.
@@ -110,6 +119,9 @@ public sealed record SandboxLayout
     /// <summary>Files replaced by <c>/dev/null</c>.</summary>
     public required IReadOnlyList<string> HiddenFiles { get; init; }
 
+    /// <summary>Credential files shown as a cleaned copy rather than hidden — see <see cref="CleanedCredentials"/>.</summary>
+    public IReadOnlyList<ReplacedFile> ReplacedFiles { get; init; } = [];
+
     /// <summary>
     /// The agent's log folder, bound back READ-ONLY after the config folder above it is hidden: a later command
     /// reads an earlier one's spill file and background output there. cxagent writes those files itself, from
@@ -135,7 +147,7 @@ public sealed record SandboxLayout
     [
         ".ssh", ".aws", ".gnupg", ".azure", ".kube", ".docker/config.json", ".netrc", ".git-credentials", ".config/gh",
         ".config/hub", ".config/gcloud", ".npmrc", ".pypirc", ".pgpass", ".my.cnf", ".vault-token", ".password-store",
-        ".cargo/credentials", ".cargo/credentials.toml", ".nuget/NuGet/NuGet.Config",
+        ".cargo/credentials", ".cargo/credentials.toml",
         ".claude/.credentials.json", ".codex/auth.json",
     ];
 
@@ -215,6 +227,15 @@ public sealed record SandboxLayout
             else if (File.Exists(real)) hiddenFiles.Add(real);
         }
         foreach (var c in Credentials) Hide(Path.Combine(home.Home, c));
+
+        // NUGET'S CONFIG, CLEANED RATHER THAN HIDDEN: a build cannot restore without it. One that cannot be cleaned is
+        // hidden as before.
+        var replaced = new List<ReplacedFile>();
+        if (Real(Path.Combine(home.Home, ".nuget", "NuGet", "NuGet.Config")) is { } nuget && File.Exists(nuget))
+        {
+            if (CleanedCredentials.NuGetConfig(nuget, request.CleanedDir) is { } cleaned) replaced.Add(new ReplacedFile(cleaned, nuget));
+            else Hide(nuget);
+        }
         if (home.ConfigDir is { } config) Hide(config);
         // THE SESSION'S SOCKETS. A read-only bind does not stop connect() on a unix socket: through the session
         // bus `systemd-run --user` starts a process with no sandbox at all, the SSH agent signs with the user's
@@ -231,6 +252,7 @@ public sealed record SandboxLayout
             ReadOnly = [.. readOnly.Distinct()],
             HiddenFolders = [.. hiddenFolders.Distinct()],
             HiddenFiles = [.. hiddenFiles.Distinct()],
+            ReplacedFiles = replaced,
             Logs = request.Logs is { } logs && Directory.Exists(logs) ? Real(logs) : null,
             Network = request.Settings.Network,
         };

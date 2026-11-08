@@ -33,6 +33,7 @@ public static class SandboxProfile
         foreach (var r in layout.ReadOnly) args.AddRange(["--ro-bind", r, r]);
         foreach (var h in layout.HiddenFolders) args.AddRange(["--tmpfs", h]);
         foreach (var h in layout.HiddenFiles) args.AddRange(["--ro-bind", "/dev/null", h]);
+        foreach (var r in layout.ReplacedFiles) args.AddRange(["--ro-bind", r.Source, r.Target]);
         if (layout.Logs is { } logs) args.AddRange(["--ro-bind", logs, logs]);
 
         foreach (var (name, value) in run.Set) args.AddRange(["--setenv", name, value]);
