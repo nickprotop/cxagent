@@ -346,6 +346,10 @@ public sealed class FolderSessionStore(AppPaths paths)
             // Running is likewise untouched: it has not ended at all.
             if (h.State != SessionEndState.Exited) continue;
             if (h.UpdatedAt > cutoff) continue;
+
+            // NOR A TAGGED ONE: a colleague's one-to-one lasts as long as the colleague. Pruned after its retention, Open
+            // started the conversation over; it is the colleague's own to end.
+            if (h.Tag is not null) continue;
             try
             {
                 Directory.Delete(folder.Dir, recursive: true);

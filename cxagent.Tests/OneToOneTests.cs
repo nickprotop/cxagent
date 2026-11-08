@@ -195,6 +195,44 @@ public sealed class OneToOneTests : IDisposable
     }
 
     /// <summary>
+    /// A one-to-one lasts as long as its colleague: pruning took one left untouched for 30 days, and Open then started a
+    /// new conversation.
+    /// </summary>
+    [Fact]
+    public void Pruning_never_takes_a_one_to_one()
+    {
+        Store.SaveTurn(new FolderSessionStore.ResumeTurn("OLD121", [new ChatMessage { Role = "user", Content = "a" }], 1, 1, _project) { Tag = "colleague:Charting" });
+        Store.SaveTurn(new FolderSessionStore.ResumeTurn("OLDPLAIN", [new ChatMessage { Role = "user", Content = "b" }], 1, 1, _project));
+        Store.MarkFinished("OLD121");
+        Store.MarkFinished("OLDPLAIN");
+
+        Store.Prune(TimeSpan.FromDays(-1));   // everything finished is past its retention
+
+        Assert.Equal(["OLD121"], Store.ListTagged("colleague:Charting").Select(i => i.Uid));
+        Assert.DoesNotContain(Store.List(all: true), i => i.Uid == "OLDPLAIN");
+    }
+
+    /// <summary>Opening a one-to-one again retires the copy it continued, so only one copy of the conversation is live.</summary>
+    [Fact]
+    public async Task Open_again_retires_the_copy_it_continued()
+    {
+        Charting();
+        var model = new MockLlmProvider();
+        model.EnqueueResponse(new LlmResponse { Text = "hello", StopReason = "end_turn" });
+        model.EnqueueResponse(new LlmResponse { Text = "NO CHANGE", StopReason = "end_turn" });
+        model.EnqueueResponse(new LlmResponse { Text = "again", StopReason = "end_turn" });
+        model.EnqueueResponse(new LlmResponse { Text = "NO CHANGE", StopReason = "end_turn" });
+        var (first, _) = Opened(model);
+        await first.SendAndWait("hi");
+        await first.Colleagues!.Idle();
+        var (again, _) = Opened(model);
+        await again.SendAndWait("more");
+        await again.Colleagues!.Idle();
+
+        Assert.Equal([again.SessionId], Store.ListTagged("colleague:Charting").Select(i => i.Uid));
+    }
+
+    /// <summary>
     /// After a restart the conversation is resumed, and only what is said from then on is a new round: a review found the
     /// whole earlier conversation appended again on the first exchange after a resume, and distilled a second time.
     /// </summary>

@@ -529,6 +529,10 @@ internal static class SessionFactory
         if (session.OneToOne is { } oneToOne)
         {
             session.Colleagues?.OneToOneWired(oneToOne.Colleague, host.Context.Messages);
+
+            // THE COPY IT CONTINUED IS RETIRED HERE, the one place every one-to-one open passes — the terminal's and a
+            // browser's alike. Left open, each Open added another live copy of the one conversation.
+            if (resumeSnapshot is not null) shared.Resume?.MarkSuperseded(resumeSnapshot.AgentId);
             host.GoalCompleted += () => session.Colleagues?.CaptureOneToOne(new Colleagues.OneToOneExchange(oneToOne.Colleague,
                 session.SessionId ?? "", session.WorkingDirectory, host.Context.Messages));
         }
