@@ -86,6 +86,20 @@ public sealed class ColleagueToolTests : IDisposable
         Assert.NotNull(Library.Find("Charting"));
     }
 
+    /// <summary>A live drive's lead left the name out; the question read "named (a name from its work)".</summary>
+    [Fact]
+    public async Task Keep_without_a_name_asks_plainly()
+    {
+        var session = Open();
+        var handle = Worker(session);
+        var asked = new List<UserQuestion>();
+        var tool = new ColleagueTool(session.Colleagues!, Answering("Don't keep", asked), () => "lead");
+
+        await tool.TryInvokeAsync(Call(new { action = "keep", worker = handle }), CancellationToken.None);
+
+        Assert.StartsWith($"Keep {handle} as a colleague? It is named from its work.", Assert.Single(asked).Question);
+    }
+
     [Fact]
     public async Task Keep_does_nothing_on_no()
     {

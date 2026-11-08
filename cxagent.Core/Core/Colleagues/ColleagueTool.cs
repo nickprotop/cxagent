@@ -98,9 +98,11 @@ public sealed class ColleagueTool(ColleagueDesk desk,
         if (ask is null) return "Keeping a colleague needs the user's yes, and there is no user to ask here.";
 
         var name = Arg(call, "name")?.Trim();
+        var asked = name is { Length: > 0 }
+            ? $"Keep {worker} as a colleague named {name}?"
+            : $"Keep {worker} as a colleague? It is named from its work.";
         var question = new UserQuestion(
-            $"Keep {worker} as a colleague named {name ?? "(a name from its work)"}? It goes into the library, keeps "
-            + "learning from its work, and can be brought into any session.",
+            asked + " It goes into the library, keeps learning from its work, and can be brought into any session.",
             "Keep colleague",
             [new QuestionOption(KeepAnswer, "Keep it in the library"), new QuestionOption("Don't keep", "Leave it an ordinary worker")]);
         var answer = await ask([question], ct);
