@@ -75,7 +75,17 @@ public sealed record SandboxLayoutRequest(string AgentFolder, string RunFolder, 
     SandboxHome Home, SandboxSettings Settings)
 {
     /// <summary>Where cleaned copies of credential files are written — the user's own, outside every project.</summary>
-    public string CleanedDir { get; init; } = Path.Combine(Path.GetTempPath(), $"cxagent-cleaned-{Environment.UserName}");
+    public string CleanedDir { get; init; } = CleanedDirFor(Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR"));
+
+    /// <summary>
+    /// Where the cleaned copies go: the user's own runtime folder when the system has one — private to them, gone at
+    /// logout — else a name in the temp folder. THE RUNTIME FOLDER FIRST because a temp name is one anyone can predict
+    /// and create first; the copy is refused when its folder is not the user's to set, but better not to be raced at all.
+    /// </summary>
+    public static string CleanedDirFor(string? runtimeDir) =>
+        runtimeDir is { Length: > 0 } && Path.IsPathRooted(runtimeDir)
+            ? Path.Combine(runtimeDir, "cxagent-cleaned")
+            : Path.Combine(Path.GetTempPath(), $"cxagent-cleaned-{Environment.UserName}");
 }
 
 /// <summary>A file shown inside the sandbox in place of another: a cleaned copy over the real one.</summary>

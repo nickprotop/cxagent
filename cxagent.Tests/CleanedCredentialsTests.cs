@@ -63,6 +63,57 @@ public sealed class CleanedCredentialsTests : IDisposable
             Assert.DoesNotContain(secret, text);
     }
 
+    /// <summary>
+    /// A token carried in a feed's own address goes too: a login in the URL is taken out of it, and a feed whose query
+    /// carries a token, key, signature or password is left out — it fails to restore in the sandbox, as a feed with a
+    /// credential section does (user, 2026-11-08).
+    /// </summary>
+    [Fact]
+    public void A_token_in_a_feed_s_address_is_not_copied()
+    {
+        File.WriteAllText(Config, """
+            <?xml version="1.0" encoding="utf-8"?>
+            <configuration>
+              <packageSources>
+                <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+                <add key="login" value="https://me:ghp_secret1@nuget.pkg.github.com/me/index.json" />
+                <add key="query" value="https://feed.example.com/v3/index.json?token=qsecret2" />
+                <add key="local" value="/home/me/packages" />
+              </packageSources>
+            </configuration>
+            """);
+
+        var text = File.ReadAllText(CleanedCredentials.NuGetConfig(Config, Cleaned)!);
+
+        Assert.Contains("https://api.nuget.org/v3/index.json", text);
+        Assert.Contains("https://nuget.pkg.github.com/me/index.json", text);
+        Assert.Contains("/home/me/packages", text);
+        Assert.DoesNotContain("ghp_secret1", text);
+        Assert.DoesNotContain("qsecret2", text);
+        Assert.DoesNotContain("key=\"query\"", text);
+    }
+
+    /// <summary>A folder for the copy that is a link to somewhere else is refused: the config then stays hidden.</summary>
+    [Fact]
+    public void A_linked_folder_for_the_copy_is_refused()
+    {
+        File.WriteAllText(Config, WithSecrets);
+        var elsewhere = Path.Combine(_base, "elsewhere");
+        Directory.CreateDirectory(elsewhere);
+        Directory.CreateSymbolicLink(Cleaned, elsewhere);
+
+        Assert.Null(CleanedCredentials.NuGetConfig(Config, Cleaned));
+        Assert.Empty(Directory.GetFiles(elsewhere));
+    }
+
+    /// <summary>The copy lives in the user's own runtime folder when there is one, not a name anyone can predict in /tmp.</summary>
+    [Fact]
+    public void The_copy_goes_to_the_user_s_runtime_folder()
+    {
+        Assert.Equal(Path.Combine("/run/user/1000", "cxagent-cleaned"), SandboxLayoutRequest.CleanedDirFor("/run/user/1000"));
+        Assert.StartsWith(Path.GetTempPath(), SandboxLayoutRequest.CleanedDirFor(null));
+    }
+
     [Fact]
     public void A_config_that_cannot_be_read_is_not_cleaned()
     {
