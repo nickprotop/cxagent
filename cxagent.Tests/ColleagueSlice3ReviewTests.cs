@@ -248,6 +248,24 @@ public sealed class ColleagueSlice3ReviewTests : IDisposable
         Assert.Empty(reads.Elsewhere);
     }
 
+    /// <summary>
+    /// A shell command that changes into a workplace reads it: a live round ran "cd ~/source/ConsoleEx && git show
+    /// v2.10.9:…" to check the library's source, and with the cd target uncounted, what it learned was not filed under
+    /// that codebase — its old, wrong statement there stayed.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_command_run_in_a_workplace_reads_it(bool fromHome)
+    {
+        var cd = fromHome ? "~/" + Path.GetFileName(_workplace) : _workplace;
+        var reads = ColleagueDesk.ReadsOf(new RoundReadsRequest(
+            [Calls(Call("run_shell", new { command = $"cd {cd} && git show v2.10.9:src/Flows.cs | head -50" }))],
+            Library.Find("Charting")!, _project) { Home = _root });
+
+        Assert.Equal([_workplace], reads.Workplaces);
+    }
+
     // ---- 11: a codebase's search finds its worktrees' rounds ---------------------------------------------------------
 
     [Fact]

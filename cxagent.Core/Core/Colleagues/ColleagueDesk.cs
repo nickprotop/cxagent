@@ -43,6 +43,9 @@ public sealed record RoundReadsRequest(IReadOnlyList<ChatMessage> Round, Colleag
 
     /// <summary>cxagent's own folder, whose logs a backgrounded command writes and a worker reads: never "elsewhere".</summary>
     public string? Ignore { get; init; }
+
+    /// <summary>The home folder a <c>~</c> stands for — the user's own unless a test says otherwise.</summary>
+    public string Home { get; init; } = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 }
 
 /// <summary>Where a round read beyond its own codebase.</summary>
@@ -119,7 +122,7 @@ public sealed record ColleagueDeskParts
 /// through the factory's door and revived from its history like any worker; this class only prepares those and listens
 /// to the store's begin and end announcements. The worker code never learns the word.</para>
 /// </summary>
-public sealed class ColleagueDesk : IDisposable
+public sealed partial class ColleagueDesk : IDisposable
 {
     /// <summary>The origin prefix a colleague's incarnation carries.</summary>
     public const string OriginPrefix = "colleague:";
@@ -780,7 +783,7 @@ public sealed class ColleagueDesk : IDisposable
         var elsewhere = new List<string>();
         foreach (var path in request.Round.SelectMany(m => m.ToolCalls ?? [])
                      .Where(call => Reads.Contains(call.Name) && (call.Id is null || !failed.Contains(call.Id)))
-                     .SelectMany(call => PathsOf(call, from)))
+                     .SelectMany(call => PathsOf(call, from, request.Home)))
         {
             if (path.Contains('\0') || Permissions.PathResolver.Contains(folder, path) || Permissions.PathResolver.Contains(from, path)
                 || (ignore is not null && Permissions.PathResolver.Contains(ignore, path))) continue;
@@ -796,21 +799,32 @@ public sealed class ColleagueDesk : IDisposable
         return new RoundReads(workplaces, elsewhere);
     }
 
+    /// <summary>A <c>~/</c> at the start of a word — a home-relative path as a shell would expand it.</summary>
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?<=^|[\s;&|(=])~/")]
+    private static partial System.Text.RegularExpressions.Regex TildeAtWord();
+
     /// <summary>The tools whose paths are reads — a write teaches where something was put, not what is there.</summary>
     private static readonly HashSet<string> Reads = new([Jobs.Tool.ReadFile, Jobs.Tool.Glob, Jobs.Tool.Grep, Jobs.Tool.RunShell], StringComparer.Ordinal);
 
     /// <summary>The paths one tool call names, resolved: a file tool's <c>path</c>, or what a shell command touches.</summary>
-    private static IEnumerable<string> PathsOf(ToolCall call, string folder)
+    private static IEnumerable<string> PathsOf(ToolCall call, string folder, string home)
     {
         if (call.Arguments.ValueKind != JsonValueKind.Object) return [];
         if (call.Name == Jobs.Tool.RunShell)
-            return call.Arguments.TryGetProperty("command", out var c) && c.ValueKind == JsonValueKind.String
-                ? Permissions.CommandSubjects.Of(c.GetString(), new Permissions.PathResolver(folder)).Paths
-                : [];
+        {
+            if (!call.Arguments.TryGetProperty("command", out var c) || c.ValueKind != JsonValueKind.String) return [];
+            // ~ EXPANDED HERE, AND ONLY HERE: the permission check's parser rightly leaves it alone — a second resolver
+            // there is how the boundary and the prompt come to disagree — but this decides only where knowledge is filed,
+            // and "cd ~/source/lib && git show …" is the common way a library's source is read.
+            var command = TildeAtWord().Replace(c.GetString() ?? "", Path.TrimEndingDirectorySeparator(home) + "/");
+            var subjects = Permissions.CommandSubjects.Of(command, new Permissions.PathResolver(folder));
+            return subjects.ChangesTo is { Length: > 0 } cd
+                ? subjects.Paths.Append(Path.GetFullPath(cd, folder))
+                : subjects.Paths;
+        }
         if (!call.Arguments.TryGetProperty("path", out var p) || p.ValueKind != JsonValueKind.String
             || p.GetString() is not { Length: > 0 } raw || raw.Contains('\0')) return [];
-        var spelled = raw.StartsWith("~/", StringComparison.Ordinal)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), raw[2..]) : raw;
+        var spelled = raw.StartsWith("~/", StringComparison.Ordinal) ? Path.Combine(home, raw[2..]) : raw;
         try { return [Permissions.PermissionPolicy.ResolveAgainst(spelled, folder) ?? Path.GetFullPath(spelled, folder)]; }
         catch (ArgumentException) { return []; }
     }
