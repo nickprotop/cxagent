@@ -58,6 +58,7 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/colleagues bring <name> [task]` | Bring a colleague in — on a task, or idle to be given one |
 | `/colleagues open <name>` | Talk with a colleague one-to-one, in a session of its own |
 | `/colleagues rename <name> to <new name>` | Rename a colleague; its old names still find it |
+| `/colleagues forget <name>` | Forget a colleague for good, after confirming |
 | `/colleagues freeze <name>` · `unfreeze <name>` | Stop a colleague learning, or let it learn again from now on |
 | `/commands` | List your custom commands, and any file that was shadowed or skipped |
 | `/commands <name>` | Show that command's file, as it will be sent |
@@ -618,7 +619,7 @@ into any session, in any folder, it starts from that experience.
 **The library.** `/colleagues` opens it — a tab in the terminal, a page in the browser: every colleague, and for the
 one picked, its description, the folders it knows, its version, rounds and model, what distilling it has cost so far,
 and its experience to read. **Open**
-starts a one-to-one; **Bring in** brings it into the session.
+starts a one-to-one; **Bring in** brings it into the session; **Forget…** asks whether to forget it.
 
 **Keeping one.** `/colleagues keep <worker> [name]` keeps one of this session's workers — typing it is your yes;
 without a name, one is taken from what the worker was doing. From then on the worker *is* the colleague: its
@@ -648,6 +649,12 @@ it again returns to the same conversation. It is never listed by `/sessions` or 
 **Renaming one.** `/colleagues rename <name> to <new name>` — or its *Name* in F8's Colleagues tab or the browser's
 config page. Its old names stay with it: a session that knew a worker as the old name still brings back this colleague,
 and no other colleague can take them. Not while its one-to-one is open, nor while a colleague is being distilled.
+
+**Forgetting one.** `/colleagues forget <name>`, or **Forget…** in the library, asks first — naming its past, its
+experience, what it learned in the folders it worked in (the folders themselves are untouched) and how many sessions it
+is live in now. On yes its folder is deleted, and its one-to-one with it. Where it is live it carries on as an ordinary
+worker: here at once, in another session when its task ends. Sessions keep their own histories. Not while its one-to-one
+is open, nor while a colleague is being distilled — then it says to try again.
 
 **Freezing one.** `/colleagues freeze <name>` — or *Frozen* on its page in F8's Colleagues tab or the browser's
 config page — keeps its experience as it is: it works as before and its rounds are kept, but none is distilled. Its card,

@@ -189,13 +189,17 @@ public sealed partial class Session
             // neither has nowhere to show one.
             case "open":
                 return Told("A one-to-one opens in the terminal or a browser: /colleagues open <name> there, or Open in the library.");
+            // FORGETTING ASKS FIRST, and asking is a front end's: the terminal and the browser each put the question with
+            // its buttons; a host with neither has no way to say yes.
+            case "forget":
+                return Told("Forgetting asks first, in the terminal or a browser: /colleagues forget <name> there, or Forget in the library.");
             case "rename":
                 return Rename(desk, rest);
             case "freeze":
             case "unfreeze":
                 return Freeze(desk, Unquoted(rest), verb.Equals("freeze", StringComparison.OrdinalIgnoreCase));
             default:
-                return Told($"/colleagues knows keep, bring, open, rename, freeze and unfreeze, not '{verb}'. /colleagues alone lists them.");
+                return Told($"/colleagues knows keep, bring, open, rename, freeze, unfreeze and forget, not '{verb}'. /colleagues alone lists them.");
         }
     }
 

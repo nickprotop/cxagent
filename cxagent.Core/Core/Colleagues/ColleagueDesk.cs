@@ -8,6 +8,9 @@ using CxAgent.Core.Storage;
 
 namespace CxAgent.Core.Colleagues;
 
+/// <summary>What forgetting a colleague asks: its name, or null when there is nothing to forget, and the words.</summary>
+public sealed record ForgetAsk(string? Name, string Text);
+
 /// <summary>Keep a session's worker as a colleague.</summary>
 /// <param name="Worker">Its handle or agent id.</param>
 /// <param name="Name">The colleague's name, or null to take one from what the worker was doing.</param>
@@ -171,6 +174,7 @@ public sealed partial class ColleagueDesk : IDisposable
         _distiller.Spent += Record;
         _workers.SendBegan += OnBegan;
         _workers.SendEnded += OnEnded;
+        _workers.Forgotten += OnWorkerForgotten;
         _workers.Badges = BadgeFor;
 
         // ROUNDS LEFT FROM BEFORE — a process that ended mid-drain, a drain that failed — are taken up now.
@@ -422,6 +426,7 @@ public sealed partial class ColleagueDesk : IDisposable
         var marked = OriginPrefix + name;
         _workers.SetOrigin(handle, marked);
         _given[marked] = 0;
+        Present(name);
         // IN THE SESSION'S HISTORY, so a resume brings it back as the colleague and not as the worker it was.
         _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, marked));
         Drain();
@@ -665,6 +670,7 @@ public sealed partial class ColleagueDesk : IDisposable
         var preload = ExperienceBudget.Preload(_parts.Library.ReadExperience(record.Name),
             new ExperienceFocus(Codebase.Key(_parts.Folder), record.Workplaces, ExperienceBudget.For(window)));
         _given[origin] = record.ExperienceVersion;
+        Present(record.Name);
 
         // ITS WORKPLACES AS THEY ARE NOW: one moved or deleted is said in the briefing, never read — a folder that is no
         // longer there is not one the colleague knows the contents of.
@@ -719,8 +725,13 @@ public sealed partial class ColleagueDesk : IDisposable
             var round = messages.Skip(at + 1).ToList();
             if (round.Count == 0) return;
 
-            var record = _parts.Library.Find(found.Name);
-            if (record is null) return;
+            // FORGOTTEN — HERE OR IN ANOTHER SESSION — IT CARRIES ON AS AN ORDINARY WORKER: nothing is kept, no folder is
+            // made, and the plain origin is recorded so a resume does not bring back a colleague nobody has.
+            if (_parts.Library.Find(found.Name) is not { } record)
+            {
+                Unmark(found.Kept);
+                return;
+            }
             // FROM WHERE THE WORKER RAN — its own folder when it was given one — as its paths were resolved when it worked.
             var reads = ReadsOf(new RoundReadsRequest(round, record, _parts.Folder)
             {
@@ -924,11 +935,114 @@ public sealed partial class ColleagueDesk : IDisposable
     public static WorkerBadge? BadgeFor(string origin) =>
         origin.StartsWith(OriginPrefix, StringComparison.Ordinal) ? new WorkerBadge("Colleague", origin[OriginPrefix.Length..], "◆") : null;
 
+    /// <summary>This desk's mark in a colleague's <c>live</c> folder — one per session, whatever its id becomes.</summary>
+    private readonly string _holder = Guid.NewGuid().ToString("N");
+
+    /// <summary>The colleagues this desk has marked live.</summary>
+    private readonly ConcurrentDictionary<string, byte> _present = new(StringComparer.OrdinalIgnoreCase);
+
+    private void Present(string name)
+    {
+        _present[name] = 0;
+        _parts.Library.MarkPresent(name, _holder);
+    }
+
+    /// <summary>A worker let go here: a colleague with no incarnation left here is no longer live in this session.</summary>
+    private void OnWorkerForgotten(string agentId)
+    {
+        foreach (var name in _present.Keys)
+            if (_parts.Library.Find(name) is not { } record || HandleOf(record) is null)
+            {
+                _present.TryRemove(name, out _);
+                _parts.Library.MarkAbsent(name, _holder);
+            }
+    }
+
+    /// <summary>A worker of a colleague that is gone, made an ordinary one — in memory, and recorded for a resume.</summary>
+    private void Unmark(StoredAgent kept)
+    {
+        _workers.SetOrigin(kept.Name, null);
+        _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, null));
+    }
+
+    /// <summary>
+    /// The question forgetting asks — ONE TEXT FOR BOTH FRONT ENDS — naming what goes and where it is live; or, with no
+    /// name, why there is nothing to ask.
+    /// </summary>
+    public ForgetAsk AskForget(string name)
+    {
+        if (_parts.Library.Find(name.Trim()) is not { } record)
+            return new ForgetAsk(null, $"There is no colleague called '{name.Trim()}'. {Known()}");
+        var rounds = _parts.Library.RoundCount(record.Name);
+        var folders = record.Workplaces.OrderByDescending(w => w.Last).Select(w => w.Folder).ToList();
+        var sb = new StringBuilder();
+        sb.Append($"Forget {record.Name} for good? Its past ({rounds} round{(rounds == 1 ? "" : "s")}), its experience ")
+          .Append($"(v{record.ExperienceVersion})");
+        if (folders.Count > 0) sb.Append($" and what it learned in the folders it worked in ({string.Join(", ", folders)}) — the folders themselves are untouched —");
+        sb.Append(" are deleted, and its one-to-one with them.");
+        var live = _parts.Library.LiveSessions(record.Name);
+        if (live > 0) sb.Append($" It is live in {live} session{(live == 1 ? "" : "s")} now; there it carries on as an ordinary worker.");
+        return new ForgetAsk(record.Name, sb.ToString());
+    }
+
+    /// <summary>
+    /// Forgets a colleague, as the user has said yes to, and answers the line to show. Sessions keep their own histories.
+    ///
+    /// <para>IN THIS ORDER, so a refusal changes nothing: its one-to-one open anywhere refuses (it would carry on keeping
+    /// rounds for nobody); then the distilling lock, so no distiller writes into what is being deleted; then the folder,
+    /// moved aside in one step; and only once it is gone, its one-to-one sessions and its workers here.</para>
+    /// </summary>
+    public string Forget(string name)
+    {
+        if (_parts.Library.Find(name.Trim()) is not { } record) return $"There is no colleague called '{name.Trim()}'.";
+        if (_parts.Sessions is { } sessions)
+            foreach (var tag in ColleagueRenaming.Origins(record))
+                foreach (var saved in sessions.ListTagged(tag))
+                    if (sessions.HolderOf(saved.Uid) is { } held)
+                        return $"{record.Name}'s one-to-one is {Storage.SessionLock.HeldMessage(held)} — close it first.";
+
+        DistillingLock? lockHeld;
+        try { lockHeld = DistillingLock.TryTake(_parts.Library.Root); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return $"Could not forget {record.Name}: {e.Message}"; }
+        if (lockHeld is null) return "A colleague is being distilled — try again in a moment.";
+        using (lockHeld)
+        {
+            try { _parts.Library.Retire(record.Name); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return $"Could not forget {record.Name} — something holds its folder ({e.Message}). Nothing was deleted; try again.";
+            }
+        }
+
+        var notes = new List<string>();
+        if (_parts.Sessions is { } store)
+            foreach (var tag in ColleagueRenaming.Origins(record))
+                foreach (var saved in store.ListTagged(tag))
+                    try { store.Delete(saved.Uid); }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { notes.Add($"its one-to-one could not be deleted: {e.Message}"); }
+        if (HandleOf(record) is { } handle && _workers.Find(handle) is { } kept)
+        {
+            Unmark(kept);
+            notes.Add($"{handle} carries on here as an ordinary worker");
+        }
+        _present.TryRemove(record.Name, out _);
+        foreach (var origin in ColleagueRenaming.Origins(record))
+        {
+            _given.TryRemove(origin, out _);
+            _windows.TryRemove(origin, out _);
+        }
+        _owned.TryRemove(record.Name, out _);
+        StateChanged?.Invoke();
+        return $"{record.Name} is forgotten." + (notes.Count > 0 ? " " + string.Join("; ", notes) + "." : "");
+    }
+
     public void Dispose()
     {
         if (_workers.Badges == (Func<string, WorkerBadge?>)BadgeFor) _workers.Badges = null;
         _workers.SendBegan -= OnBegan;
         _workers.SendEnded -= OnEnded;
+        _workers.Forgotten -= OnWorkerForgotten;
+        foreach (var name in _present.Keys) _parts.Library.MarkAbsent(name, _holder);
     }
 
     private readonly record struct RoundStart(ChatMessage? Last, DateTimeOffset At);

@@ -1214,6 +1214,46 @@ public static class AppBootstrap
                 return true;
             });
 
+        // A COLLEAGUE FORGOTTEN FOR GOOD, asked in the conversation with memory's buttons — the browser asks with the same
+        // words, from the same desk (ColleagueDesk.AskForget).
+        void AskForgetColleague(ColleagueForgetting forgetting)
+        {
+            var current = forgetting.Session;
+            if (current.Colleagues is not { } desk)
+            {
+                current.Notify(Session.ColleaguesOff);
+                return;
+            }
+            var ask = desk.AskForget(forgetting.Name);
+            var id = mainWindow.Chat.AddMessage(ChatRole.System, ask.Text);
+            if (ask.Name is not { } name) return;
+            mainWindow.Chat.SetActions(id,
+            [
+                new ChatMessageAction
+                {
+                    Id = "forget", Label = "Forget it", Variant = ChatActionVariant.Danger, AfterPress = ChatActionAfterPress.Hide,
+                    OnClick = _ =>
+                    {
+                        current.Notify(desk.Forget(name));
+                        forgetting.Then?.Invoke();
+                    },
+                },
+                new ChatMessageAction
+                {
+                    Id = "keep", Label = "Keep", AfterPress = ChatActionAfterPress.Hide,
+                    OnClick = ctx => ctx.SetStatus("kept", SharpConsoleUI.Core.NotificationSeverity.Info),
+                },
+            ]);
+        }
+        mainWindow.ColleagueForgetter = AskForgetColleague;
+        manager.Commands.RegisterVerb("/colleagues",
+            new CommandArgument("forget <name>", "forget a colleague for good, after confirming", Completes: false, Values: ValueSources.Colleagues),
+            (current, arguments) =>
+            {
+                AskForgetColleague(new ColleagueForgetting(current, ((arguments ?? "").Split(' ', 2) is [_, var rest] ? rest : "").Trim().Trim('"', '\'')));
+                return true;
+            });
+
         // A SAVED SESSION DELETED FOR GOOD, asked in the conversation with memory's buttons — the browser's list asks with
         // the same words, from the same rule (Core.Sessions.SessionDeletion).
         manager.Commands.RegisterVerb("/sessions",

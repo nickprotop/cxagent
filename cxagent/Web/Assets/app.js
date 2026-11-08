@@ -157,6 +157,7 @@ function handle(m) {
     case "confirmWorkerDelete": confirmWorkerDelete(m); break;
     case "workerDeleted": { const key = m.sessionId + "~" + m.agentId; if (state.views.has(key)) dropView(key); break; }
     case "confirmForget": confirmForget(m); break;
+    case "confirmColleagueForget": confirmColleagueForget(m); break;
     case "completions": if (m.n === completeN && m.sessionId === activeSessionId()) completion(m.rows); break;
     case "closed": closed(m.sessionId); break;
     case "gone":
@@ -1161,7 +1162,9 @@ function drawColleaguesPage(view) {
     if (e.knows.length) detail.append(el("p", "meta", "knows: " + e.knows.join(", ")));
     const acts = el("div", "btns");
     acts.append(button("Open", null, () => send({ type: "colleagueOpen", sessionId: view.parent, name: e.name })),
-      button("Bring in", null, () => send({ type: "colleagueBring", sessionId: view.parent, name: e.name })));
+      button("Bring in", null, () => send({ type: "colleagueBring", sessionId: view.parent, name: e.name })),
+      // ASKED FIRST, in the session's conversation — the terminal's Forget… asks there too.
+      button("Forget…", "danger", () => send({ type: "colleagueForget", sessionId: view.parent, name: e.name })));
     detail.append(acts);
     // READ-ONLY, AS DISTILLED: a colleague is corrected by talking to it (Open), not by editing it behind its back.
     for (const part of e.experience) {
@@ -2594,6 +2597,22 @@ function confirmForget(m) {
   const btns = el("div", "btns");
   btns.append(button("Forget it", "danger", () => { box.remove(); send({ type: "memoryForget", sessionId: m.sessionId, name: m.name, confirm: true }); }),
     button("Keep", null, () => box.remove()));
+  box.append(btns);
+  $("prompts").append(box);
+}
+
+// A COLLEAGUE FORGOTTEN FOR GOOD: the desk's question, word for word as the terminal asks it, with its buttons. A yes
+// asks the library again when its page is open here, so the page drops the colleague — and never opens it otherwise.
+function confirmColleagueForget(m) {
+  if (activeSessionId() !== m.sessionId) activate(m.sessionId);
+  const box = el("div", "prompt");
+  box.append(el("div", "q", m.text));
+  const btns = el("div", "btns");
+  btns.append(button("Forget it", "danger", () => {
+    box.remove();
+    send({ type: "colleagueForget", sessionId: m.sessionId, name: m.name, confirm: true });
+    if (state.views.has(COLLEAGUES_ID)) send({ type: "colleagues", sessionId: m.sessionId });
+  }), button("Keep", null, () => box.remove()));
   box.append(btns);
   $("prompts").append(box);
 }

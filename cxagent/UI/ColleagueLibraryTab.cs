@@ -7,16 +7,23 @@ using SharpConsoleUI.Parsing;
 
 namespace CxAgent.UI;
 
+/// <summary>A question to forget a colleague, put in <paramref name="Session"/>'s conversation.</summary>
+/// <param name="Session">Whose conversation asks, and whose desk forgets.</param>
+/// <param name="Name">The colleague, by any name it has had.</param>
+/// <param name="Then">Run after a yes — a library tab reloading.</param>
+public sealed record ColleagueForgetting(CxAgent.Core.Sessions.Session Session, string Name, Action? Then = null);
+
 /// <summary>
 /// The terminal's library: a rail of colleagues and, for the one picked, what it is, what it knows and its experience
-/// — read-only — with Open (one-to-one) and Bring in. The browser's page draws the same <see cref="LibraryView"/>.
+/// — read-only — with Open (one-to-one), Bring in and Forget. The browser's page draws the same <see cref="LibraryView"/>.
 /// </summary>
 public sealed class ColleagueLibraryTab
 {
     /// <summary>What the tab's buttons do, by colleague name — carried out by the window that owns the session.</summary>
     /// <param name="Bring">Brings it into the session, idle.</param>
     /// <param name="Open">Opens its one-to-one.</param>
-    public sealed record Actions(Action<string> Bring, Action<string> Open);
+    /// <param name="Forget">Asks, in the session's conversation, whether to forget it.</param>
+    public sealed record Actions(Action<string> Bring, Action<string> Open, Action<string> Forget);
 
     private const int RailCells = 26;
 
@@ -79,9 +86,11 @@ public sealed class ColleagueLibraryTab
 
         var open = Controls.Button(" Open ").OnClick((_, _) => _actions.Open(e.Name)).Build();
         var bring = Controls.Button(" Bring in ").OnClick((_, _) => _actions.Bring(e.Name)).Build();
+        var forget = Controls.Button(" Forget… ").OnClick((_, _) => _actions.Forget(e.Name)).Build();
         var buttons = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         buttons.AddItem(open);
         buttons.AddItem(bring);
+        buttons.AddItem(forget);
 
         _detail.AddControl(new MarkupControl(Facts(e)) { Wrap = true });
         _detail.AddControl(buttons);
@@ -112,6 +121,9 @@ public sealed class ColleagueLibraryTab
 
     /// <summary>Test seam: the Bring in button of the one shown.</summary>
     internal void BringForTest() { if (_shown is { } e) _actions.Bring(e.Name); }
+
+    /// <summary>Test seam: the Forget button of the one shown.</summary>
+    internal void ForgetForTest() { if (_shown is { } e) _actions.Forget(e.Name); }
 
     /// <summary>Test seam: the Open button of the one shown.</summary>
     internal void OpenForTest() { if (_shown is { } e) _actions.Open(e.Name); }

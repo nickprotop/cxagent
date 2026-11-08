@@ -72,7 +72,7 @@ public sealed class ColleagueLibraryTests : IDisposable
         Charting();
         Library.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow.AddDays(-1) });
 
-        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }));
+        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, _ => { }));
 
         Assert.Equal(["Charting", "Parser"], tab.RailNamesForTest);
         Assert.Contains("Panes first.", tab.DetailTextForTest);
@@ -86,7 +86,7 @@ public sealed class ColleagueLibraryTests : IDisposable
         Charting();
         var brought = new List<string>();
         var opened = new List<string>();
-        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(brought.Add, opened.Add));
+        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(brought.Add, opened.Add, _ => { }));
 
         tab.BringForTest();
         tab.OpenForTest();
@@ -117,5 +117,20 @@ public sealed class ColleagueLibraryTests : IDisposable
         Assert.Contains("openedColleagues", js);
         Assert.Contains("colleagueOpen", js);
         Assert.Contains("colleagueBring", js);
+        Assert.Contains("type: \"colleagueForget\"", js);
+        Assert.Contains("case \"confirmColleagueForget\"", js);
+        Assert.Contains("e.factsLine", js);
+    }
+
+    [Fact]
+    public void The_terminal_library_has_Forget()
+    {
+        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        var forgotten = new List<string>();
+        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, forgotten.Add));
+
+        tab.ForgetForTest();
+
+        Assert.Equal(["Charting"], forgotten);
     }
 }

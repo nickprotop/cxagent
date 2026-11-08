@@ -337,6 +337,12 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "colleagues":
                 ColleaguesPage(Str(m, "sessionId"));
                 break;
+            // FORGET, FROM THE LIBRARY PAGE OR A TYPED /colleagues forget: asked first, then done on the page's yes.
+            case "colleagueForget":
+                if (LiveSession(Str(m, "sessionId")) is { } losing)
+                    ForgetColleague(losing, Str(m, "name") ?? "", m["confirm"] is JsonValue fc && fc.TryGetValue<bool>(out var yes) && yes);
+                else Error("No such open session.");
+                break;
             // THE PANE'S BRING: the session's own, the terminal's panel link's — it joins idle, to be given work.
             case "colleagueBring":
                 if (LiveSession(Str(m, "sessionId")) is { } bringing) _ = bringing.BringColleagueAsync(Str(m, "name") ?? "");
@@ -802,6 +808,10 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "/config":
                 ConfigForm("general");
                 return true;
+            // ASKED HERE, with the page's buttons — Core's own answer to forget says a front end must ask.
+            case "/colleagues" when args.StartsWith("forget", StringComparison.OrdinalIgnoreCase) && session.Colleagues is not null:
+                ForgetColleague(session, args[6..].Trim().Trim('"', '\''), confirmed: false);
+                return true;
             case "/colleagues" when args.StartsWith("open", StringComparison.OrdinalIgnoreCase):
                 OpenOneToOne(session, args[4..].Trim().Trim('"', '\''));
                 return true;
@@ -937,6 +947,23 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             ["sessionId"] = session.Id,
             ["rows"] = WebLibrary.Json(Core.Colleagues.LibraryView.Build(desk.Library)),
         });
+    }
+
+    /// <summary>
+    /// Forgetting a colleague: the desk's question, in the same words the terminal shows, until the page says yes.
+    /// </summary>
+    private void ForgetColleague(Session session, string name, bool confirmed)
+    {
+        if (session.Colleagues is not { } desk) { Notice(session.Id, Session.ColleaguesOff, "Warning"); return; }
+        var ask = desk.AskForget(name);
+        if (ask.Name is not { } found) { Notice(session.Id, ask.Text, "Warning"); return; }
+        if (!confirmed)
+        {
+            Send(new JsonObject { ["type"] = "confirmColleagueForget", ["sessionId"] = session.Id, ["name"] = found, ["text"] = ask.Text });
+            return;
+        }
+        Notice(session.Id, desk.Forget(found), "Info");
+        if (_hub.PanelFor(session.Id) is { } panel) SendPanel(session.Id, panel);
     }
 
     private void ForgetMemory(Session session, string name, bool confirmed)

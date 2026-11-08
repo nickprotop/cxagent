@@ -4465,9 +4465,17 @@ public sealed class MainWindow : IDisposable
     public void OpenColleagueLibrary(Session session)
     {
         if (session.Colleagues is not { } desk) return;
-        var tab = new ColleagueLibraryTab(desk.Library, new ColleagueLibraryTab.Actions(
+        ColleagueLibraryTab? tab = null;
+        tab = new ColleagueLibraryTab(desk.Library, new ColleagueLibraryTab.Actions(
             Bring: name => _ = session.BringColleagueAsync(name),
-            Open: name => OpenColleague(session, name)));
+            Open: name => OpenColleague(session, name),
+            // ASKED IN THE SESSION'S CONVERSATION, with its buttons, as /colleagues forget asks: the question names what
+            // goes, and a yes there reloads this tab.
+            Forget: name =>
+            {
+                ShowSession(session);
+                ColleagueForgetter?.Invoke(new ColleagueForgetting(session, name, () => tab?.Reload()));
+            }));
         AddTab("◆ Colleagues", tab.Control, owner: session);
         Tabs.ActiveTabIndex = Tabs.TabCount - 1;
     }
@@ -4477,6 +4485,9 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>What opens a one-to-one; set by the composition root, the place that can build a session tab.</summary>
     public Action<Session, string>? ColleagueOpener { get; set; }
+
+    /// <summary>What asks whether to forget a colleague; set by the composition root, which owns the conversation's buttons.</summary>
+    public Action<ColleagueForgetting>? ColleagueForgetter { get; set; }
 
     private StatusBarItem? _distillItem;
 

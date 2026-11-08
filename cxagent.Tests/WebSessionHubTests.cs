@@ -48,9 +48,10 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         rules.SetTrust(Work, TrustState.Trusted);
         var composer = new SessionComposer(new ComposerServices(_manager, _paths, rules, null, null) { Prompts = _prompts });
         _model = new MockLlmProvider("m");
-        // MEMORY ON, as the app has it by default — so the browser's /memory and its panel rows have notes to show.
+        // MEMORY AND COLLEAGUES ON, as the app has them by default — so the browser's /memory, its panel rows and its
+        // colleagues' library have something to show.
         var resolved = ResolvedConfig.ForTesting(_model);
-        var opener = new ComposerSessionOpener(composer, resolved with { Catalog = resolved.Catalog with { Memory = true } }, AgentMode.Single);
+        var opener = new ComposerSessionOpener(composer, resolved with { Catalog = resolved.Catalog with { Memory = true, Colleagues = true } }, AgentMode.Single);
         _hub = new WebSessionHub(new WebHubServices(_manager, _prompts, new FolderSessionStore(_paths), _paths, [Projects], opener, _clock)
         {
             IdleMinutes = 30,
@@ -489,6 +490,29 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         Assert.Null(session.SubAgents.Find(handle));
         var history = Path.Combine(new SessionFolder(_paths, session.SessionId!).Dir, "history.jsonl");
         Assert.Contains(File.ReadLines(history), l => l.Contains("\"deleted\":true", StringComparison.Ordinal) && l.Contains(child.Agent.Id, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Forgetting a colleague from the browser asks first, in the same words as the terminal, and forgets on yes — its
+    /// folder gone from the library.
+    /// </summary>
+    [Fact]
+    public async Task Forgetting_a_colleague_from_the_browser_asks_first()
+    {
+        var library = new Core.Colleagues.ColleagueStore(_paths.ConfigDir);
+        library.Create(new Core.Colleagues.ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await _manager.Sessions.First(s => s.Id == id).Colleagues!.Idle();
+
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/colleagues forget Charting")));
+        var ask = await tab.NextAsync(Type("confirmColleagueForget"));
+        Assert.Contains("Forget Charting for good?", ask["text"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.NotNull(library.Find("Charting"));
+
+        await tab.SendAsync(Msg("colleagueForget", ("sessionId", id), ("name", "Charting"), ("confirm", true)));
+        await tab.NextAsync(m => m["type"]?.GetValue<string>() == "notice" && m["text"]!.GetValue<string>().Contains("is forgotten", StringComparison.Ordinal));
+        Assert.Null(library.Find("Charting"));
     }
 
     [Fact]

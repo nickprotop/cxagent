@@ -252,6 +252,84 @@ public sealed partial class ColleagueStore(string configDir)
     }
 
     /// <summary>
+    /// Marks a colleague as live in <paramref name="holder"/> — one session of this process — so another session asking to
+    /// forget it can say where it is live. A FILE PER SESSION, named by the process and the session: one that dies leaves
+    /// a file whose process is gone, and that is not counted.
+    ///
+    /// <para>NEVER MAKES THE COLLEAGUE'S FOLDER: written for one forgotten meanwhile, it would bring back half of it.</para>
+    /// </summary>
+    public void MarkPresent(string name, string holder)
+    {
+        var folder = FolderOf(name);
+        if (!File.Exists(Path.Combine(folder, "colleague.json"))) return;
+        try
+        {
+            var live = Directory.CreateDirectory(Path.Combine(folder, "live"));
+            File.WriteAllText(Path.Combine(live.FullName, $"{Environment.ProcessId}-{holder}"), "");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
+    /// <summary>Takes the mark <see cref="MarkPresent"/> made.</summary>
+    public void MarkAbsent(string name, string holder)
+    {
+        try { File.Delete(Path.Combine(FolderOf(name), "live", $"{Environment.ProcessId}-{holder}")); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
+    /// <summary>
+    /// How many sessions it is live in now, across processes. A mark whose process is gone — or whose pid now belongs to a
+    /// process started after the mark was made — is deleted as it is read.
+    /// </summary>
+    public int LiveSessions(string name)
+    {
+        var live = Path.Combine(FolderOf(name), "live");
+        if (!Directory.Exists(live)) return 0;
+        var count = 0;
+        foreach (var file in Directory.EnumerateFiles(live))
+        {
+            var mark = Path.GetFileName(file);
+            var dash = mark.IndexOf('-');
+            if (dash > 0 && int.TryParse(mark.AsSpan(0, dash), out var pid) && Running(pid, File.GetLastWriteTimeUtc(file))) count++;
+            else
+                try { File.Delete(file); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        return count;
+    }
+
+    /// <summary>Whether <paramref name="pid"/> is a process that was already running when <paramref name="marked"/>.</summary>
+    private static bool Running(int pid, DateTime marked)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return !process.HasExited && process.StartTime.ToUniversalTime() <= marked.AddSeconds(1);
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception
+                                       or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Takes a colleague out of the library for good. FIRST MOVED ASIDE, under a dot name nothing reads, in one step: a
+    /// round being appended or a record being saved by another process either lands before the move or finds no
+    /// colleague — never half a folder. Then deleted, as far as it can be; what a held file keeps is left under the dot
+    /// name, invisible. Throws <see cref="IOException"/> when it cannot be moved, and then nothing has changed.
+    /// </summary>
+    public void Retire(string name)
+    {
+        var folder = FolderOf(name);
+        if (!File.Exists(Path.Combine(folder, "colleague.json"))) return;
+        var aside = Path.Combine(Root, ".forgotten-" + Guid.NewGuid().ToString("N"));
+        Directory.Move(folder, aside);
+        try { Directory.Delete(aside, recursive: true); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
+    /// <summary>
     /// The folder a colleague of this name lives in — by its name now or a former one, in any case — or, for a name no
     /// colleague has had, the folder it would be made in.
     ///
