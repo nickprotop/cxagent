@@ -168,6 +168,7 @@ function handle(m) {
     case "configForm": openedConfigForm(m); break;
     case "configConfirm": configConfirm(m); break;
     case "plugins": openedPlugins(m); break;
+    case "colleagues": openedColleagues(m); break;
     case "pluginResult": pluginResult(m); break;
     case "configAsk": configAsk(m); break;
     case "configRefused": configRefused(m); break;
@@ -306,14 +307,15 @@ function drawTabs() {
     const shell = view.kind === "shell";
     const config = view.kind === "config";
     const plugins = view.kind === "plugins";
-    const sub = worker || command || file || shell || config || plugins;
+    const colleagues = view.kind === "colleagues";
+    const sub = worker || command || file || shell || config || plugins || colleagues;
     const row = sub ? null : state.rows.find((r) => r.id === id);
     const w = worker ? workerRunning(view) : null;
     const tab = el("button", "tab" + (id === state.active ? " on" : "") + (sub ? " worker" : ""));
     tab.type = "button";
     const dot = config ? (view.dirty ? "waiting" : "") : shell ? (view.ended ? "" : "working") : file ? (view.dirty ? "waiting" : "") : command ? (view.running ? "working" : "") : worker ? (w && w.running ? "working" : "") : (row ? row.state : "idle");
     tab.append(el("span", "dot " + dot),
-      document.createTextNode(plugins ? "⧉ Plugins" : config ? "⚙ config.json" + (view.dirty ? " •" : "") : shell ? "❯ " + view.title : file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? workerLabel(view) : view.title || "session"));
+      document.createTextNode(colleagues ? "◆ Colleagues" : plugins ? "⧉ Plugins" : config ? "⚙ config.json" + (view.dirty ? " •" : "") : shell ? "❯ " + view.title : file ? view.title + (view.dirty ? " •" : "") : command ? "▭ " + view.title : worker ? workerLabel(view) : view.title || "session"));
     if (file) tab.title = view.path;
     tab.addEventListener("click", () => activate(id));
     if (sub) {
@@ -438,6 +440,7 @@ function drawWorkerHead() {
   if (view && view.kind === "shell") { drawShellHead(view, head); return; }
   if (view && view.kind === "config") { drawConfigHead(view, head); return; }
   if (view && view.kind === "plugins") { drawPluginsHead(view, head); return; }
+  if (view && view.kind === "colleagues") { drawColleaguesHead(view, head); return; }
   if (!view || view.kind !== "worker") { head.hidden = true; return; }
   head.hidden = false;
   head.replaceChildren();
@@ -1080,6 +1083,75 @@ function drawConfigHead(view, head) {
 
 // F2 FOR A BROWSER, behind web.allow.plugins: the same rows — installed, updates, needs attention, available — and the
 // same actions. Loading still shows a plugin's hash and asks, and a download still asks first, as prompts here.
+// THE COLLEAGUES' LIBRARY: the terminal's tab as a page — a list, and for the one picked its facts and its experience,
+// read-only — with Open (one-to-one) and Bring in. One page; it follows the session it was last opened from.
+const COLLEAGUES_ID = "colleagues:";
+
+function openColleagues() {
+  const sid = activeSessionId();
+  if (!sid) { flash("Open a session first: colleagues are brought into a session."); return; }
+  state.colleaguesWanted = true;
+  send({ type: "colleagues", sessionId: sid });
+}
+
+function openedColleagues(m) {
+  let view = state.views.get(COLLEAGUES_ID);
+  const fresh = !view;
+  if (!view) { view = newView(COLLEAGUES_ID, "colleagues"); view.picked = null; }
+  view.parent = m.sessionId;
+  view.data = m;
+  if (!view.picked || !m.rows.some((r) => r.name === view.picked)) view.picked = m.rows.length ? m.rows[0].name : null;
+  drawColleaguesPage(view);
+  const wanted = fresh || state.colleaguesWanted;
+  state.colleaguesWanted = false;
+  if (wanted) activate(COLLEAGUES_ID); else if (state.active === view.id) drawWorkerHead();
+}
+
+function drawColleaguesPage(view) {
+  const box = el("div", "library");
+  const rail = el("div", "rail");
+  const detail = el("div", "detail");
+  box.append(rail, detail);
+  if (!view.data.rows.length)
+    detail.append(el("p", "none", "No colleagues yet. Keep a worker of a session as one: /colleagues keep <worker> [name], or ask the agent to."));
+  for (const r of view.data.rows) {
+    const item = el("div", "item" + (r.name === view.picked ? " on" : ""), r.name);
+    item.addEventListener("click", () => { view.picked = r.name; drawColleaguesPage(view); });
+    rail.append(item);
+  }
+  const e = view.data.rows.find((r) => r.name === view.picked);
+  if (e) {
+    const f = e.facts;
+    detail.append(el("h2", null, "◆ " + e.name));
+    if (e.description) detail.append(el("p", null, e.description));
+    detail.append(el("p", "meta", ["v" + f.version, f.rounds + " rounds, " + f.distilled + " distilled" + (f.skipped ? ", " + f.skipped + " skipped" : ""),
+      f.type + (f.model ? " on " + f.model : "")].join(" · ")));
+    if (e.knows.length) detail.append(el("p", "meta", "knows: " + e.knows.join(", ")));
+    const acts = el("div", "btns");
+    acts.append(button("Open", null, () => send({ type: "colleagueOpen", sessionId: view.parent, name: e.name })),
+      button("Bring in", null, () => send({ type: "colleagueBring", sessionId: view.parent, name: e.name })));
+    detail.append(acts);
+    // READ-ONLY, AS DISTILLED: a colleague is corrected by talking to it (Open), not by editing it behind its back.
+    for (const part of e.experience) {
+      detail.append(el("h3", null, part.title));
+      const md = el("div", "md");
+      md.innerHTML = render(part.markdown);
+      detail.append(md);
+    }
+    if (!e.experience.length) detail.append(el("p", "none", "Nothing distilled yet."));
+  }
+  view.log.replaceChildren(box);
+}
+
+function drawColleaguesHead(view, head) {
+  head.hidden = false;
+  head.replaceChildren();
+  head.append(el("span", "tag colleague", "Colleagues"));
+  head.append(el("span", "spacer"));
+  head.append(button("Back to session", "ghost", () => activate(view.parent)));
+  head.append(button("Refresh", null, () => send({ type: "colleagues", sessionId: view.parent })));
+}
+
 const PLUGINS_ID = "plugins:";
 const SECTION_TITLES = { Installed: "Installed", Updates: "Updates", NeedsAttention: "Needs attention", Available: "Available" };
 const ACTION_LABELS = { install: "Install", update: "Update", activate: "Activate", deactivate: "Deactivate",

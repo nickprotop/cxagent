@@ -325,6 +325,10 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 if (LiveSession(Str(m, "sessionId")) is { } reading) OpenMemory(reading, Str(m, "name") ?? "");
                 else Error("No such open session.");
                 break;
+            // THE LIBRARY PAGE: the same entries the terminal's tab draws.
+            case "colleagues":
+                ColleaguesPage(Str(m, "sessionId"));
+                break;
             // THE PANE'S BRING: the session's own, the terminal's panel link's — it joins idle, to be given work.
             case "colleagueBring":
                 if (LiveSession(Str(m, "sessionId")) is { } bringing) _ = bringing.BringColleagueAsync(Str(m, "name") ?? "");
@@ -756,6 +760,10 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "/config":
                 ConfigForm("general");
                 return true;
+            // BARE, THE LIBRARY PAGE — as the terminal's bare /colleagues opens its tab; the verbs run as typed.
+            case "/colleagues" when args.Length == 0 && session.Colleagues is not null:
+                ColleaguesPage(session.Id);
+                return true;
             // THE VERBS ONLY: the bare listing is Core's and runs as typed. These would otherwise reach the terminal's
             // verbs, which open its tab and ask in its window.
             case "/memory" when args.StartsWith("open", StringComparison.OrdinalIgnoreCase):
@@ -843,6 +851,17 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         var said = SessionDeletion.Delete(S.Store, S.Manager, ask.Uid);
         if (!said.StartsWith("Deleted", StringComparison.Ordinal)) Error(said);
         _hub.ListChanged();
+    }
+
+    private void ColleaguesPage(string? sessionId)
+    {
+        if (LiveSession(sessionId) is not { Colleagues: { } desk } session) { Error("Colleagues are off in this session."); return; }
+        Send(new JsonObject
+        {
+            ["type"] = "colleagues",
+            ["sessionId"] = session.Id,
+            ["rows"] = WebLibrary.Json(Core.Colleagues.LibraryView.Build(desk.Library)),
+        });
     }
 
     private void ForgetMemory(Session session, string name, bool confirmed)

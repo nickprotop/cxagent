@@ -512,3 +512,12 @@ textarea.form-input { resize: vertical; }
 .answer-row { display: flex; gap: 14px; padding: 2px 0; }
 /* A COLLEAGUE'S TAG stands apart from a worker's, as the terminal marks it with its own word and glyph. */
 .tag.colleague { background: var(--accent); color: var(--on-accent, #fff); }
+/* THE LIBRARY: a rail of colleagues beside the one picked, as the terminal's tab lays it out. */
+.library { display: flex; gap: 16px; align-items: flex-start; }
+.library .rail { flex: 0 0 200px; display: flex; flex-direction: column; gap: 2px; }
+.library .rail .item { padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.library .rail .item:hover, .library .rail .item.on { background: var(--raised); }
+.library .detail { flex: 1; min-width: 0; }
+.library .detail .meta { color: var(--muted); font-size: 12px; }
+@media (max-width: 700px) { .library { flex-direction: column; } .library .rail { flex: none; width: 100%; } }
+

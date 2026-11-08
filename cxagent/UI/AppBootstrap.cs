@@ -1172,6 +1172,15 @@ public static class AppBootstrap
                 return true;
             });
 
+        // THE LIBRARY, AS A TAB: bare /colleagues opens it; its verbs stay Core's, the browser's own. With colleagues off,
+        // Core's answer says how to turn them on.
+        manager.Commands.Register(SessionCommands.All.First(c => c.Name == "/colleagues"), (current, arguments) =>
+        {
+            if (!string.IsNullOrWhiteSpace(arguments) || current.Colleagues is null) return current.ColleaguesCommand(arguments).Handled();
+            mainWindow.OpenColleagueLibrary(current);
+            return true;
+        });
+
         // A SAVED SESSION DELETED FOR GOOD, asked in the conversation with memory's buttons — the browser's list asks with
         // the same words, from the same rule (Core.Sessions.SessionDeletion).
         manager.Commands.RegisterVerb("/sessions",

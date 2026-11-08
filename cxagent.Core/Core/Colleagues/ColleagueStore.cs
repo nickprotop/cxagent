@@ -127,6 +127,13 @@ public sealed partial class ColleagueStore(string configDir)
         return seq;
     }
 
+    /// <summary>How many rounds its past holds — from <c>past.seq</c>, so a large past is not read to count it.</summary>
+    public long RoundCount(string name)
+    {
+        var folder = FolderOf(name);
+        return LastSeq(Path.Combine(folder, "past.seq"), Path.Combine(folder, "past.jsonl"));
+    }
+
     /// <summary>Every round after the watermark, in order.</summary>
     public IReadOnlyList<PastRound> Undistilled(string name)
     {

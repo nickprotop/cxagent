@@ -4454,6 +4454,23 @@ public sealed class MainWindow : IDisposable
         else { _sandboxItem.Label = label; _sandboxItem.IsVisible = true; }
     }
 
+    /// <summary>
+    /// Opens the colleagues' library in a tab of its own beside <paramref name="session"/> — its Bring and Open act on
+    /// that session, as the browser's page acts on the session it was opened from.
+    /// </summary>
+    public void OpenColleagueLibrary(Session session)
+    {
+        if (session.Colleagues is not { } desk) return;
+        var tab = new ColleagueLibraryTab(desk.Library, new ColleagueLibraryTab.Actions(
+            Bring: name => _ = session.BringColleagueAsync(name),
+            Open: name => OpenColleague(session, name)));
+        AddTab("◆ Colleagues", tab.Control, owner: session);
+        Tabs.ActiveTabIndex = Tabs.TabCount - 1;
+    }
+
+    /// <summary>Opens a colleague's one-to-one — see <see cref="Session.ColleaguesCommand"/>'s open verb.</summary>
+    public void OpenColleague(Session session, string name) => session.ColleaguesCommand($"open {name}");
+
     private StatusBarItem? _distillItem;
 
     /// <summary>The status bar's distilling word, or null when nothing is distilling — the browser's status line says the same.</summary>
