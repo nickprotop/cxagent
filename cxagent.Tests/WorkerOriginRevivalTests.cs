@@ -94,6 +94,26 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         Assert.True(store.LastEnd("charting")!.Succeeded);
     }
 
+    /// <summary>
+    /// The later of its last report and its own last run decides how it comes back: a run asked from its tab after a
+    /// report said "failed" answered, and the worker still came back failed.
+    /// </summary>
+    [Fact]
+    public void A_later_run_of_its_own_beats_an_older_report()
+    {
+        var parent = Parent();
+        parent.Record([M("user", "go"),
+            new() { Role = "assistant", Content = "", ToolCalls = [new ToolCall { Id = "c1", Name = "agent",
+                Arguments = JsonDocument.Parse("""{"type":"general","description":"charting","prompt":"work"}""").RootElement.Clone() }] },
+            new() { Role = "tool", ToolCallId = "c1", Content = """<sub_agent id="CHILD01" name="charting" state="failed">broke</sub_agent>""" }]);
+        Thread.Sleep(20);
+        new HistoryRecorder(Path.Combine(_parent, "CHILD01", "history.jsonl")).Record([M("user", "try again"), M("assistant", "done now")]);
+
+        var (store, _) = Revive(null);
+
+        Assert.True(store.LastEnd("charting")!.Succeeded);
+    }
+
     /// <summary>One that joined idle and never ran comes back with no end at all — never worked, not failed.</summary>
     [Fact]
     public void One_that_never_ran_comes_back_with_no_end()

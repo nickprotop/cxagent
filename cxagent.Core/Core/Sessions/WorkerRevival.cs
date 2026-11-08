@@ -140,7 +140,10 @@ internal static class WorkerRevival
             // ITS LAST END AS ITS HISTORY HAS IT: the state of the last report it sent, over its last run — from the last
             // message it was sent to the last it wrote. Not its whole record, which spans every run it had.
             var lastRun = entries.LastOrDefault(e => e.Message is { Role: "user", ToolCallId: null, IsTaskList: false })?.At ?? entries[0].At;
-            if (!store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(spawn.LastState ?? OwnEnding(entries), lastRun, entries[^1].At)))
+            // THE LATER ACCOUNT DECIDES: a run asked from its tab after its last report — which no report describes — is
+            // how it last ended, and the report's older word would call it failed.
+            var state = spawn.LastStateAt is { } reported && entries[^1].At <= reported ? spawn.LastState : OwnEnding(entries);
+            if (!store.Restore(spawn.Name, child, spawn.Description, new AgentEnd(state, lastRun, entries[^1].At)))
                 return "its name is taken";
         }
 
@@ -213,6 +216,9 @@ internal static class WorkerRevival
         public string? Instance { get; init; }
 
         public string? LastState { get; set; }
+
+        /// <summary>When the report <see cref="LastState"/> came from was written — set against its own last run.</summary>
+        public DateTimeOffset? LastStateAt { get; set; }
     }
 
     /// <summary>
@@ -273,7 +279,11 @@ internal static class WorkerRevival
                         Provider = Arg(call, "provider"),
                         Root = Arg(call, "root"),
                     };
-                if (spawns.TryGetValue(childId, out var spawn)) spawn.LastState = SubAgentEnvelope.StateOf(result.Message.Content);
+                if (spawns.TryGetValue(childId, out var spawn))
+                {
+                    spawn.LastState = SubAgentEnvelope.StateOf(result.Message.Content);
+                    spawn.LastStateAt = result.At;
+                }
             }
         }
         return [.. spawns.Values];
