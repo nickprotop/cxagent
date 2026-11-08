@@ -445,7 +445,8 @@ public sealed class WebSessionHub
             {
                 ["id"] = s.Id,
                 ["agentId"] = s.SessionId,
-                ["title"] = s.SessionId is { } id && titles.GetValueOrDefault(id) is { } t ? t : "",
+                // A ONE-TO-ONE IS NAMED FOR ITS COLLEAGUE, as its terminal tab is.
+                ["title"] = s.OneToOne?.Title ?? (s.SessionId is { } id && titles.GetValueOrDefault(id) is { } t ? t : ""),
                 // THE ID AND TOKENS /sessions SHOWS, so a row here can be told apart and named there.
                 ["short"] = s.SessionId is { } sid ? Core.Commands.SessionsCommand.Short(sid) : null,
                 ["tokens"] = s.SessionId is { } tid && savedById.TryGetValue(tid, out var had) ? Core.Commands.SessionsCommand.TokensOf(had) : null,

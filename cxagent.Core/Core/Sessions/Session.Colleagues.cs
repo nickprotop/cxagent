@@ -76,6 +76,16 @@ public sealed partial class Session
 
     private static string Described(ColleagueRecord c) => c.Description.Length > 0 ? c.Description : "no description yet";
 
+    /// <summary>What makes this session a colleague's one-to-one, or null for an ordinary session.</summary>
+    public OneToOne? OneToOne { get; private set; }
+
+    /// <summary>
+    /// Makes this session a colleague's one-to-one — before it is wired, which reads it: the briefing, the read-only
+    /// tools and the tag all go in at the wire. A front end opening a one-to-one calls this between creating the session
+    /// and wiring it; see <see cref="ColleagueDesk.OneToOne"/>.
+    /// </summary>
+    public void BecomeOneToOne(OneToOne setup) => OneToOne = setup;
+
     /// <summary>This session's desk for colleagues, or null when colleagues are off.</summary>
     public ColleagueDesk? Colleagues { get; private set; }
 
@@ -164,8 +174,12 @@ public sealed partial class Session
                 // NOT AWAITED, the spawn runs on; BringColleagueAsync says its own outcome, failures included.
                 _ = BringColleagueAsync(rest);
                 return CommandStatus.Reported;
+            // OPENING A SESSION IS A FRONT END'S: the terminal and the browser register their own open; a host with
+            // neither has nowhere to show one.
+            case "open":
+                return Told("A one-to-one opens in the terminal or a browser: /colleagues open <name> there, or Open in the library.");
             default:
-                return Told($"/colleagues knows keep and bring, not '{verb}'. /colleagues alone lists them.");
+                return Told($"/colleagues knows keep, bring and open, not '{verb}'. /colleagues alone lists them.");
         }
     }
 

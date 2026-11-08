@@ -130,7 +130,9 @@ internal static class SessionFactory
         // Config comes second so a machine can narrow further than the app it runs — or reopen with
         // an `all`, which is the user's call about their own box.
         var managerSelection = Jobs.ToolSelection.Then(shared.ToolSelection, resolution.Tools);
-        var toolSelection = Jobs.ToolSelection.Then(managerSelection, ports.ToolSelection);
+        var toolSelection = Jobs.ToolSelection.Then(Jobs.ToolSelection.Then(managerSelection, ports.ToolSelection),
+            // A COLLEAGUE'S ONE-TO-ONE READS AND NOTHING ELSE — composed last, so nothing earlier reopens what it closes.
+            session.OneToOne is null ? null : OneToOne.Tools);
 
         // FAN-OUT WITHOUT THE SPAWN TOOL IS A CONTRADICTION, and this is the one moment both facts
         // are known: the mode arrives as an argument, the selection was just composed.
@@ -216,6 +218,8 @@ internal static class SessionFactory
             MemoryIndex = session.MemoryIndex,
             // THE SAME FOR THE COLLEAGUES' LIST: one snapshot for the session, so a re-wire lists what it listed.
             ColleagueIndex = session.ColleagueIndex,
+            // A ONE-TO-ONE'S AGENT IS THE COLLEAGUE: who it is heads its prompt. A child's own briefing replaces this.
+            Briefing = session.OneToOne?.Briefing,
         };
 
         var childFactory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
@@ -310,6 +314,7 @@ internal static class SessionFactory
             Notify = session.NotifyWarning,
             Tell = session.Notify,
             Delivery = delivery,
+            Sessions = shared.Resume,
         });
 
         // THE PORTS' OBSERVERS BECOME SUBSCRIBER ONE OF A FAN-OUT, and everything downstream is
@@ -447,6 +452,9 @@ internal static class SessionFactory
                 // Every completed turn lands here, so a crash leaves something to resume from.
                 Resume = shared.Resume,
 
+                // TAGGED, A ONE-TO-ONE IS SAVED OUT OF EVERY LIST — and found again by its tag.
+                Tag = session.OneToOne?.Tag,
+
                 // And here, for /stats — a separate archive that outlives the session.
                 History = shared.History,
                 Logs = shared.Logs,
@@ -511,6 +519,11 @@ internal static class SessionFactory
         host.MemoryWritten += session.NoteAgentWroteMemory;
         // THE SESSION'S OWN TALLY, kept across re-wires — each new host is subscribed, the tally stays.
         host.TurnCompleted += (_, calls) => session.Tally.Record(calls);
+
+        // A ONE-TO-ONE'S EVERY EXCHANGE IS A ROUND OF THE COLLEAGUE'S PAST, distilled like any other.
+        if (session.OneToOne is { } oneToOne)
+            host.GoalCompleted += () => session.Colleagues?.CaptureOneToOne(oneToOne.Colleague, session.SessionId ?? "",
+                session.WorkingDirectory, host.Context.Messages);
 
         // THE LEVEL THE RESUMED SESSION WAS AT, the one place every resume passes — the command
         // line's -c and -r, the session picker, and a headless continue alike.

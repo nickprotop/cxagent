@@ -32,7 +32,11 @@ public sealed class FolderSessionStore(AppPaths paths)
     /// </remarks>
     public readonly record struct ResumeTurn(string AgentId, IReadOnlyList<ChatMessage> Context,
         int InputTokens, int OutputTokens, string? WorkingDir = null, EditMode? Edits = null,
-        string? Thinking = null);
+        string? Thinking = null)
+    {
+        /// <summary>What the session is for, when it is not an ordinary one — see <see cref="SessionHeader.Tag"/>.</summary>
+        public string? Tag { get; init; }
+    }
 
     /// <summary>Which process has <paramref name="agentId"/>'s session open, or null when none does.</summary>
     public HeldBy? HolderOf(string agentId) => SessionLock.Probe(paths.LocksDir, agentId);
@@ -65,7 +69,7 @@ public sealed class FolderSessionStore(AppPaths paths)
             SessionHeader.Write(folder, new SessionHeader(
                 turn.AgentId, KeptTitle(folder) ?? TitleOf(turn.Context), turn.WorkingDir,
                 turn.InputTokens, turn.OutputTokens,
-                SessionEndState.Running, DateTimeOffset.UtcNow, turn.Edits, turn.Thinking));
+                SessionEndState.Running, DateTimeOffset.UtcNow, turn.Edits, turn.Thinking, turn.Tag));
         }
         catch (Exception)
         {
@@ -176,7 +180,7 @@ public sealed class FolderSessionStore(AppPaths paths)
     {
         foreach (var h in Headers())
         {
-            if (h.State != SessionEndState.Running) continue;
+            if (h.State != SessionEndState.Running || h.Tag is not null) continue;
             if (workingDir is not null && !PathsMatch(h.WorkingDir, workingDir)) continue;
             if (LoadById(h.AgentId) is { } snap) return snap;
         }
@@ -195,7 +199,7 @@ public sealed class FolderSessionStore(AppPaths paths)
     {
         foreach (var h in Headers())
         {
-            if (h.State == SessionEndState.Superseded) continue;
+            if (h.State == SessionEndState.Superseded || h.Tag is not null) continue;
             if (workingDir is not null && !PathsMatch(h.WorkingDir, workingDir)) continue;
             if (LoadById(h.AgentId) is { } snap) return snap;
         }
@@ -218,6 +222,9 @@ public sealed class FolderSessionStore(AppPaths paths)
         var rows = new List<SessionInfo>();
         foreach (var h in Headers())
         {
+            // A TAGGED SESSION IS REACHED BY WHAT IT IS FOR — a colleague's one-to-one, from the library — never from a
+            // folder's list, the resume picker or -c.
+            if (h.Tag is not null) continue;
             if (!all && (h.WorkingDir is null || !PathsMatch(h.WorkingDir, workingDir))) continue;
             rows.Add(new SessionInfo(h.AgentId, h.Title, h.WorkingDir, h.InputTokens,
                 h.OutputTokens, h.State != SessionEndState.Running, h.UpdatedAt,
@@ -254,6 +261,11 @@ public sealed class FolderSessionStore(AppPaths paths)
 
     /// <summary>Ended cleanly; nothing to come back to.</summary>
     public void MarkFinished(string agentId) => Retire(agentId, SessionEndState.Exited);
+
+    /// <summary>The sessions tagged <paramref name="tag"/>, newest first, a resume's retired copies left out.</summary>
+    public IReadOnlyList<SessionInfo> ListTagged(string tag) =>
+        [.. Headers().Where(h => h.Tag == tag && h.State != SessionEndState.Superseded).Select(h => new SessionInfo(h.AgentId, h.Title,
+            h.WorkingDir, h.InputTokens, h.OutputTokens, h.State != SessionEndState.Running, h.UpdatedAt, false, HolderOf(h.AgentId)))];
 
     /// <summary>
     /// Deletes a saved session for good: its folder and every older copy its resumes carried on from — each named by the

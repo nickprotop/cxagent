@@ -126,7 +126,13 @@ public sealed class NewSessionCommand
     /// <para>THE SAME DOOR FOR A BROWSER. Under /web, a session a browser starts or resumes opens here, as a tab, so
     /// nothing lives in this process that the terminal cannot see or close.</para>
     /// </summary>
-    public Session? OpenFolder(string folder, SessionSnapshot? resume = null)
+    public Session? OpenFolder(string folder, SessionSnapshot? resume = null) => OpenFolder(folder, resume, null);
+
+    /// <summary>
+    /// Opens a folder in a tab, with <paramref name="prepare"/> called on the session before it is wired — how a
+    /// colleague's one-to-one is made one (see <see cref="Session.BecomeOneToOne"/>).
+    /// </summary>
+    public Session? OpenFolder(string folder, SessionSnapshot? resume, Action<Session>? prepare)
     {
         string full;
         try
@@ -148,6 +154,7 @@ public sealed class NewSessionCommand
         }
 
         var session = new Session(full);
+        prepare?.Invoke(session);
         if (resume is not null) session.PendResume(resume);
         var tab = _host.Main.AddSessionTab(session);
 

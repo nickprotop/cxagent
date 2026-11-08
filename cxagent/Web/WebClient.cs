@@ -325,6 +325,11 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 if (LiveSession(Str(m, "sessionId")) is { } reading) OpenMemory(reading, Str(m, "name") ?? "");
                 else Error("No such open session.");
                 break;
+            // OPEN, FROM THE LIBRARY PAGE: the colleague's one-to-one, as the terminal's Open.
+            case "colleagueOpen":
+                if (LiveSession(Str(m, "sessionId")) is { } from) OpenOneToOne(from, Str(m, "name") ?? "");
+                else Error("No such open session.");
+                break;
             // THE LIBRARY PAGE: the same entries the terminal's tab draws.
             case "colleagues":
                 ColleaguesPage(Str(m, "sessionId"));
@@ -760,6 +765,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "/config":
                 ConfigForm("general");
                 return true;
+            case "/colleagues" when args.StartsWith("open", StringComparison.OrdinalIgnoreCase):
+                OpenOneToOne(session, args[4..].Trim().Trim('"', '\''));
+                return true;
             // BARE, THE LIBRARY PAGE — as the terminal's bare /colleagues opens its tab; the verbs run as typed.
             case "/colleagues" when args.Length == 0 && session.Colleagues is not null:
                 ColleaguesPage(session.Id);
@@ -850,6 +858,30 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         }
         var said = SessionDeletion.Delete(S.Store, S.Manager, ask.Uid);
         if (!said.StartsWith("Deleted", StringComparison.Ordinal)) Error(said);
+        _hub.ListChanged();
+    }
+
+    /// <summary>
+    /// A colleague's one-to-one, opened in this tab — or returned to when it is open already. Core says where and how
+    /// (<see cref="Core.Colleagues.ColleagueDesk.OneToOne"/>); the opener makes the session, a terminal tab too when the
+    /// terminal serves this page.
+    /// </summary>
+    private void OpenOneToOne(Session from, string name)
+    {
+        if (from.Colleagues is not { } desk) { Notice(from.Id, "Colleagues are off in this session.", "Warning"); return; }
+        if (desk.OneToOne(name, out var refusal) is not { } opening)
+        {
+            Notice(from.Id, refusal ?? "That colleague cannot be opened.", "Warning");
+            return;
+        }
+        if (WebSessionHub.Resolved(opening.Folder, S.Roots) is null)
+        {
+            Notice(from.Id, $"Its workplace, {opening.Folder}, is outside the folders this server opens.", "Warning");
+            return;
+        }
+        var session = S.Manager.Sessions.FirstOrDefault(s => s.OneToOne?.Tag == opening.Setup.Tag)
+            ?? S.Opener.Open(new SessionOpening(opening.Folder, opening.Resume, s => s.BecomeOneToOne(opening.Setup)));
+        Attach(session, 0);
         _hub.ListChanged();
     }
 

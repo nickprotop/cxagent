@@ -49,6 +49,7 @@ public sealed class TuiWebTests : IDisposable
         public bool UnloadsIdle => false;
         public Session Create(string folder) => inner.Create(folder);
         public Session Resume(SessionSnapshot snapshot) => inner.Resume(snapshot);
+        public Session Open(SessionOpening opening) => inner.Open(opening);
         public Task<bool> CloseAsync(Session session) => inner.CloseAsync(session);
     }
 

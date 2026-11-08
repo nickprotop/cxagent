@@ -13,8 +13,20 @@ namespace CxAgent.Web;
 /// How a browser's "new session" or "resume" becomes a live session — and how one ends. Standalone, the web server
 /// wires it itself; under <c>/web</c>, the terminal opens it as a tab.
 /// </summary>
+/// <summary>A session to open: its folder, the conversation to return to, and anything to set on it before it is wired.</summary>
+/// <param name="Folder">Where it works.</param>
+/// <param name="Resume">The saved conversation to return to, or null for a new one.</param>
+/// <param name="Prepare">Called with the session before it is wired — a colleague's one-to-one is made one here.</param>
+public sealed record SessionOpening(string Folder, SessionSnapshot? Resume, Action<Session>? Prepare);
+
 public interface ISessionOpener
 {
+    /// <summary>
+    /// Opens a session as <paramref name="opening"/> says — the door a colleague's one-to-one comes through, the same in
+    /// the terminal (a tab) and a browser-served process (a session).
+    /// </summary>
+    Session Open(SessionOpening opening);
+
     /// <summary>A new session in <paramref name="folder"/>, wired and running.</summary>
     Session Create(string folder);
 
@@ -79,6 +91,17 @@ public sealed class ComposerSessionOpener : ISessionOpener
     }
 
     /// <inheritdoc/>
+    public Session Open(SessionOpening opening)
+    {
+        var session = new Session(opening.Folder);
+        opening.Prepare?.Invoke(session);
+        if (opening.Resume is { } snapshot) session.PendResume(snapshot);
+        var edits = opening.Resume?.Edits ?? (opening.Resume is null ? _mode.Edits : EditMode.AlwaysAsk);
+        _composer.Wire(new WireRequest(session, _config, _mode with { Edits = edits }), _front);
+        Settle(session);
+        return session;
+    }
+
     public Session Resume(SessionSnapshot snapshot)
     {
         var session = new Session(snapshot.WorkingDir ?? throw new InvalidOperationException("That session has no folder."));

@@ -1181,6 +1181,38 @@ public static class AppBootstrap
             return true;
         });
 
+        // A COLLEAGUE'S ONE-TO-ONE, IN A SESSION TAB OF ITS OWN — returned to if it is open already. The browser opens the
+        // same thing from the same Core answer (ColleagueDesk.OneToOne).
+        void OpenOneToOne(Session current, string name)
+        {
+            if (current.Colleagues is not { } desk)
+            {
+                current.Notify("Colleagues are off. Turn them on in F8 › General, or with colleagues.enabled in config.json.");
+                return;
+            }
+            if (desk.OneToOne(name, out var refusal) is not { } opening)
+            {
+                current.Notify(refusal ?? "That colleague cannot be opened.");
+                return;
+            }
+            if (manager.Sessions.FirstOrDefault(s => s.OneToOne?.Tag == opening.Setup.Tag) is { } open)
+            {
+                mainWindow.ShowSession(open);
+                return;
+            }
+            new NewSessionCommand(new NewSessionCommand.Host(system, mainWindow, manager, composer,
+                    current.NewSessionResolution ?? configNow.Value, current.Mode, paths.ConfigDir))
+                .OpenFolder(opening.Folder, opening.Resume, s => s.BecomeOneToOne(opening.Setup));
+        }
+        mainWindow.ColleagueOpener = OpenOneToOne;
+        manager.Commands.RegisterVerb("/colleagues",
+            new CommandArgument("open <name>", "talk with a colleague one-to-one, in a session of its own", Completes: false, Values: ValueSources.Colleagues),
+            (current, arguments) =>
+            {
+                OpenOneToOne(current, ((arguments ?? "").Split(' ', 2) is [_, var rest] ? rest : "").Trim().Trim('"', '\''));
+                return true;
+            });
+
         // A SAVED SESSION DELETED FOR GOOD, asked in the conversation with memory's buttons — the browser's list asks with
         // the same words, from the same rule (Core.Sessions.SessionDeletion).
         manager.Commands.RegisterVerb("/sessions",

@@ -25,6 +25,12 @@ public sealed record BringOrder(string Name, string Task, string? Model, bool Ba
     public Action<SubAgent>? OnChild { get; init; }
 }
 
+/// <summary>What a front end needs to open a colleague's one-to-one: where, the conversation to return to, and the setup.</summary>
+/// <param name="Folder">Its most recent workplace that still exists — or the session's own folder.</param>
+/// <param name="Resume">Its saved one-to-one, to return to; null the first time.</param>
+/// <param name="Setup">What makes the session its one-to-one — <see cref="Sessions.Session.BecomeOneToOne"/>.</param>
+public sealed record OneToOneOpening(string Folder, Storage.SessionSnapshot? Resume, Sessions.OneToOne Setup);
+
 /// <summary>A model a colleague can run or be distilled on.</summary>
 /// <param name="Provider">The provider.</param>
 /// <param name="Label">How a person knows it — <c>entry:model</c>.</param>
@@ -58,6 +64,9 @@ public sealed record ColleagueDeskParts
 
     /// <summary>A model by provider entry name, null asking for the session's own; null when there is no such entry.</summary>
     public required Func<string?, ModelChoice?> Models { get; init; }
+
+    /// <summary>Where sessions are saved — where a colleague's one-to-one is found again by its tag.</summary>
+    public Storage.FolderSessionStore? Sessions { get; init; }
 
     /// <summary>The port a background worker's report reaches the lead through — what agent_send itself is given.</summary>
     public IAgentDelivery? Delivery { get; init; }
@@ -387,6 +396,64 @@ public sealed class ColleagueDesk : IDisposable
         if (refused is not null)
             note = (note is null ? "" : note + " ") + $"It came in without its experience: {refused}.";
         return note is null ? envelope : note + "\n" + envelope;
+    }
+
+    /// <summary>
+    /// What it takes to open <paramref name="name"/>'s one-to-one, or null with why not — ONE ANSWER FOR BOTH FRONT ENDS,
+    /// which each only open a session with it: the terminal in a tab, the browser as a session.
+    ///
+    /// <para>THE SAME CONVERSATION EVERY TIME: its saved one-to-one, found by its tag, is returned to rather than a new one
+    /// begun — what it was taught there is in its context as well as its experience.</para>
+    /// </summary>
+    public OneToOneOpening? OneToOne(string name, out string? refusal)
+    {
+        refusal = null;
+        if (_parts.Library.Find(name.Trim()) is not { } record)
+        {
+            refusal = $"There is no colleague called '{name.Trim()}'. {Known()}";
+            return null;
+        }
+        var tag = OriginPrefix + record.Name;
+        var resume = _parts.Sessions?.ListTagged(tag).FirstOrDefault() is { } saved ? _parts.Sessions.LoadById(saved.Uid) : null;
+
+        // ITS MOST RECENT WORKPLACE THAT STILL EXISTS — where it can read what it knows — else the session's own folder.
+        var folder = resume?.WorkingDir is { } was && Directory.Exists(was) ? was
+            : record.Workplaces.OrderByDescending(w => w.Last).Select(w => w.Folder).FirstOrDefault(Directory.Exists) ?? _parts.Folder;
+
+        var window = (record.Instance is { } own ? _parts.Models(own)?.Window : null) ?? _parts.Models(null)?.Window ?? ExperienceBudget.MinimumWindow;
+        var preload = ExperienceBudget.Preload(_parts.Library.ReadExperience(record.Name),
+            new ExperienceFocus(Codebase.Key(folder), record.Workplaces, ExperienceBudget.For(window)));
+        var briefing = IncarnationBriefing.For(record, preload) + "\n\n# Talking with the user\n\n"
+            + "You are talking with the user directly — not working for a lead agent on a task. Answer what they ask from "
+            + "what you know, and say plainly when you do not know. What they teach or correct here becomes part of your "
+            + "experience. You can read files to check what you say; you cannot change anything.";
+        return new OneToOneOpening(folder, resume, new Sessions.OneToOne(record.Name, tag, briefing, $"with {record.Name}"));
+    }
+
+    /// <summary>The last message of each one-to-one already kept as a round, by session — where the next round starts.</summary>
+    private readonly ConcurrentDictionary<string, ChatMessage> _oneToOneKept = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Keeps a one-to-one's latest exchange as a round of <paramref name="name"/>'s past, and distils it. Everything after
+    /// the last message kept before — found by the message itself, as an incarnation's round is.
+    /// </summary>
+    public void CaptureOneToOne(string name, string sessionId, string folder, IReadOnlyList<ChatMessage> messages)
+    {
+        try
+        {
+            var all = messages.Where(m => m.Role != "system").ToList();
+            var at = _oneToOneKept.TryGetValue(sessionId, out var last) ? all.FindLastIndex(m => ReferenceEquals(m, last)) : -1;
+            var round = all.Skip(at + 1).ToList();
+            if (round.Count == 0 || _parts.Library.Find(name) is null) return;
+            _oneToOneKept[sessionId] = round[^1];
+            Append(name, new PastRound(0, sessionId, folder, round[0].Timestamp == default ? DateTimeOffset.UtcNow : round[0].Timestamp,
+                DateTimeOffset.UtcNow, round));
+            Drain();
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            _parts.Notify?.Invoke($"Could not keep {name}'s latest one-to-one exchange: {e.Message}");
+        }
     }
 
     /// <summary>

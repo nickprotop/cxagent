@@ -386,6 +386,9 @@ public sealed class AgentHost : IDisposable
 
         /// <summary>Per-job logs, nested under the agent that produced them.</summary>
         public Storage.LogFileManager? Logs { get; init; }
+
+        /// <summary>What every save of this session is tagged — see <see cref="Storage.SessionHeader.Tag"/>.</summary>
+        public string? Tag { get; init; }
     }
 
     /// <summary>
@@ -609,8 +612,16 @@ public sealed class AgentHost : IDisposable
             // In a finally because a goal stopped before any response (Ctrl+C on a first turn) has
             // had no per-turn save at all, and its session id would then name nothing.
             SaveResume(_agent);
+            GoalCompleted?.Invoke();
         }
     }
+
+    /// <summary>
+    /// Raised once a goal is over — the user's message answered, however it ended — after the session is saved. Not
+    /// <see cref="TurnCompleted"/>, which fires per model response: a module that takes a whole exchange (a colleague's
+    /// one-to-one round) needs its end.
+    /// </summary>
+    public event Action? GoalCompleted;
 
     /// <summary>
     /// Writes the resume header now, for a setting changed between turns — the thinking level, the
@@ -635,7 +646,7 @@ public sealed class AgentHost : IDisposable
     private void SaveResume(Agent agent) =>
         _stores.Resume?.SaveTurn(new FolderSessionStore.ResumeTurn(
             agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
-            _runtime.WorkingDir, Mode.Edits, SavedLevel()));
+            _runtime.WorkingDir, Mode.Edits, SavedLevel()) { Tag = _stores.Tag });
 
     // "default" FOR THE MODEL'S OWN, NOT NULL: null is what a header with nothing saved reads as,
     // and a resume would then take the config's level over the one the user chose. Null only where

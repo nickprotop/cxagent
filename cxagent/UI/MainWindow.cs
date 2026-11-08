@@ -812,7 +812,7 @@ public sealed class MainWindow : IDisposable
 
         _sessionTabs.Add(tab);
         WireOnce(tab.Input);
-        AddTab(session.WorkingDirectory, tab.Content);
+        AddTab(session.OneToOne?.Title ?? session.WorkingDirectory, tab.Content);
 
         // WHERE IT ACTUALLY LANDED, which is the end of the strip — not the end of the session list.
         // Those are the same number only while nothing else has opened a tab.
@@ -877,9 +877,11 @@ public sealed class MainWindow : IDisposable
             var strip = _sessionStripIndex[i];
             if (strip < 0 || strip >= _tabTitles.Count) continue;
 
-            _sessionTabs[i].Label = labels[i];
-            _tabTitles[strip] = labels[i];
-            Tabs.SetTabTitle(strip, _waitingTabs.Contains(strip) ? labels[i] + " •" : labels[i]);
+            // A ONE-TO-ONE IS NAMED FOR ITS COLLEAGUE — "with Charting" — not its folder, which it shares with others.
+            var label = _sessionTabs[i].Session?.OneToOne?.Title ?? labels[i];
+            _sessionTabs[i].Label = label;
+            _tabTitles[strip] = label;
+            Tabs.SetTabTitle(strip, _waitingTabs.Contains(strip) ? label + " •" : label);
         }
     }
     /// <summary>
@@ -4468,8 +4470,11 @@ public sealed class MainWindow : IDisposable
         Tabs.ActiveTabIndex = Tabs.TabCount - 1;
     }
 
-    /// <summary>Opens a colleague's one-to-one — see <see cref="Session.ColleaguesCommand"/>'s open verb.</summary>
-    public void OpenColleague(Session session, string name) => session.ColleaguesCommand($"open {name}");
+    /// <summary>Opens a colleague's one-to-one — the composition root's, which can open a session tab.</summary>
+    public void OpenColleague(Session session, string name) => ColleagueOpener?.Invoke(session, name);
+
+    /// <summary>What opens a one-to-one; set by the composition root, the place that can build a session tab.</summary>
+    public Action<Session, string>? ColleagueOpener { get; set; }
 
     private StatusBarItem? _distillItem;
 
@@ -4515,6 +4520,16 @@ public sealed class MainWindow : IDisposable
     /// work that would go with it, the same refusal while a turn runs. False when there is no such tab or it is the
     /// last one, which a browser cannot close out from under the terminal.
     /// </summary>
+    /// <summary>Brings <paramref name="session"/>'s tab to the front; false when it has none here.</summary>
+    public bool ShowSession(Core.Sessions.Session session)
+    {
+        if (TabFor(session) is not { } tab) return false;
+        var strip = StripIndexOf(tab);
+        if (strip < 0) return false;
+        Tabs.ActiveTabIndex = strip;
+        return true;
+    }
+
     public bool CloseSessionTab(Core.Sessions.Session session)
     {
         if (TabFor(session) is not { } tab) return false;

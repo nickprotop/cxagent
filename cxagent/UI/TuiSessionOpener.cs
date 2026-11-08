@@ -25,6 +25,10 @@ public sealed class TuiSessionOpener(ConsoleWindowSystem system, MainWindow main
         OnUi(() => newSession().OpenFolder(folder)) ?? throw new InvalidOperationException("The terminal could not open that folder.");
 
     /// <inheritdoc/>
+    public Session Open(SessionOpening opening) =>
+        OnUi(() => newSession().OpenFolder(opening.Folder, opening.Resume, opening.Prepare))
+        ?? throw new InvalidOperationException("The terminal could not open that session.");
+
     public Session Resume(SessionSnapshot snapshot) =>
         OnUi(() => newSession().OpenFolder(snapshot.WorkingDir ?? throw new InvalidOperationException("That session has no folder."), snapshot))
         ?? throw new InvalidOperationException("The terminal could not open that session.");

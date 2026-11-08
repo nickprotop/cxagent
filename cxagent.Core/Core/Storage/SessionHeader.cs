@@ -26,6 +26,9 @@ internal static class SessionEndState
 ///
 /// <para>THE TITLE IS STORED RATHER THAN DERIVED. It came from the messages on every read before;
 /// computed once at save — when they are already in hand — it costs nothing at listing time.</para>
+///
+/// <para>A TAG says what a session is for when it is not an ordinary conversation — <c>colleague:Charting</c> for a
+/// colleague's one-to-one. A tagged session is reached by its tag, never offered from a folder's list.</para>
 /// </summary>
 public sealed record SessionHeader(
     string AgentId,
@@ -36,7 +39,8 @@ public sealed record SessionHeader(
     int State,
     DateTimeOffset UpdatedAt,
     EditMode? EditMode = null,
-    string? Thinking = null)
+    string? Thinking = null,
+    string? Tag = null)
 {
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
 
