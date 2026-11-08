@@ -47,6 +47,10 @@ $("theme").addEventListener("click", () => {
 // ON A DESKTOP THE PANEL IS A COLUMN, open unless closed (and remembered); narrower, it slides over and starts shut.
 const wide = () => window.matchMedia("(min-width: 1100px)").matches;
 const narrow = () => window.matchMedia("(max-width: 699px)").matches;
+// THE APP'S OWN PAGES, in every session's strip: config, the colleagues library and the marketplace are not one
+// session's, and tied to the one they were opened from, a switch left them open with no tab to reach them by.
+const APP_PAGES = ["config", "plugins", "colleagues"];
+
 // A WINDOW WIDENED OR NARROWED PAST THE LINE swaps the strip between one session's tabs and every open view.
 window.matchMedia("(min-width: 1100px)").addEventListener("change", () => drawTabs());
 function setPanel(open) {
@@ -306,8 +310,7 @@ function tabsShown() {
   const all = [...state.views];
   if (!wide()) return all;
   const sid = activeSessionId();
-  if (!sid) return [];
-  return all.filter(([id, v]) => id === sid || (v.kind !== "session" && v.parent === sid))
+  return all.filter(([id, v]) => (sid && id === sid) || APP_PAGES.includes(v.kind) || (sid && v.kind !== "session" && v.parent === sid))
     .sort(([, a], [, b]) => (a.kind === "session" ? 0 : 1) - (b.kind === "session" ? 0 : 1));
 }
 
@@ -406,6 +409,10 @@ function activeSessionId() {
 
 function activate(id) {
   const view = id ? state.views.get(id) : null;
+  // AN APP PAGE BELONGS TO THE SESSION IN FRONT when it is brought up: kept on the one it was opened from, clicking its
+  // tab after a switch swung the strip back to that session's tabs.
+  const was = activeSessionId();
+  if (view && APP_PAGES.includes(view.kind) && was) view.parent = was;
   const arriving = view && state.active !== id;
   state.active = view ? id : null;
   if (arriving && view.kind === "plugins") setTimeout(relistPlugins, 0);

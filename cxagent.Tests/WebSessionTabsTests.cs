@@ -34,6 +34,21 @@ public sealed class WebSessionTabsTests
         Assert.Contains("\"Chat\"", js);
     }
 
+    /// <summary>
+    /// The app's own pages — config, the colleagues library, the marketplace — are in every session's strip: tied to the
+    /// session they were opened from, a switch left one open with no tab to reach it by.
+    /// </summary>
+    [Fact]
+    public void The_app_s_pages_are_in_every_session_s_strip()
+    {
+        var js = Asset("/app.js");
+        var shown = js[js.IndexOf("function tabsShown(", StringComparison.Ordinal)..];
+        shown = shown[..shown.IndexOf("\n}", StringComparison.Ordinal)];
+
+        Assert.Contains("APP_PAGES", shown);
+        Assert.Contains("const APP_PAGES = [\"config\", \"plugins\", \"colleagues\"]", js);
+    }
+
     [Fact]
     public void Closing_a_tab_returns_to_the_session_it_was_opened_from()
     {
