@@ -33,6 +33,12 @@ public sealed record SubAgent(Agent Agent, BufferedChatSink Sink, BufferedJobPan
     /// <summary>Where it came from, as the request said — opaque here, saved and restored, never read.</summary>
     public string? Origin { get; init; }
 
+    /// <summary>
+    /// The provider entry it runs on, or null for an unnamed one. CARRIED, NOT PARSED FROM <see cref="ModelId"/>: a bare
+    /// model id can hold a colon of its own — <c>qwen3:32b</c> — and would be read as an entry called <c>qwen3</c>.
+    /// </summary>
+    public string? Instance { get; init; }
+
     /// <summary>Why the origin's hook failed and the child was built plain, or null when it did not.</summary>
     public string? AugmentRefusal { get; init; }
 }
@@ -550,6 +556,7 @@ public sealed class SubAgentFactory
             Root = request.Root?.Relative,
             Origin = request.Origin,
             AugmentRefusal = refusal,
+            Instance = runtime.InstanceName,
         };
     }
 

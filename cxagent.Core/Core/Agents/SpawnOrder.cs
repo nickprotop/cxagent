@@ -24,7 +24,8 @@ public sealed record SpawnOrder
     /// <summary>
     /// A provider entry to run on whatever the type offers, or null to follow <see cref="Provider"/> and the type. AN
     /// ORDER'S ONLY, like the origin: a module that chose a model for a worker — a colleague's own — needs it honoured
-    /// even on a type that offers no choice, and a model must not be able to step outside its types' lists this way.
+    /// even on a type that offers no choice. The agent tool never sets it; what the module lets its own caller choose —
+    /// the colleague tool's model override — is that module's rule, checked there.
     /// </summary>
     public string? Instance { get; init; }
 

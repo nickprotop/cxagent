@@ -82,6 +82,27 @@ public sealed class ColleagueIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task A_session_without_the_tool_gets_no_section()
+    {
+        Colleague("Charting", "lays out GPU charts");
+        var provider = new CapturingProvider();
+        var resolution = ResolvedConfig.ForTesting(provider) is var r
+            ? r with
+            {
+                Model = r.Model! with { ContextWindow = 200_000 },
+                Catalog = r.Catalog with { Colleagues = true, Tools = new ToolSelection([Tool.Inherited, Tool.Not.Colleague]) },
+            }
+            : null!;
+        var session = new Session(_project);
+        SessionFactory.Wire(session, resolution, new SharedServices { GlobalInstructionsDir = _config },
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
+
+        await session.SendAndWait("one");
+
+        Assert.DoesNotContain("# Colleagues", System(provider, 0));
+    }
+
+    [Fact]
     public void A_child_gets_no_colleagues_section()
     {
         string Prompt(bool child) => SystemPrompt.Build(new SystemPromptContext(

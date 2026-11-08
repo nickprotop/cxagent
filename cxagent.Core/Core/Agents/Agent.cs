@@ -1632,7 +1632,10 @@ public sealed class Agent
                     // THE SNAPSHOT, never the files: a note written this session must not move the cached prefix.
                     Memory = _memoryTool is not null && SelectionAllows(Jobs.Tool.Memory, turnTools) ? _memoryIndex() : null,
                     // THE LEAD'S ONLY, and the session's snapshot: a child is never told of colleagues.
-                    Colleagues = Setup.Identity.IsSubAgent ? null : Setup.Brief.ColleagueIndex?.Invoke(),
+                    // AND ONLY WITH THE TOOL IT NAMES: a turn without it, or a session whose colleagues were switched off,
+                    // must not be told to use a tool it does not have.
+                    Colleagues = _colleagueTool is not null && SelectionAllows(Jobs.Tool.Colleague, turnTools)
+                        ? Setup.Brief.ColleagueIndex?.Invoke() : null,
                     ModelFacingCommands = _modelFacingCommands?.Invoke() ?? [],
                 })
                 // AFTER the general prompt, so a project can override it.

@@ -128,6 +128,19 @@ public sealed partial class Session
         }
         var text = (arguments ?? "").Trim();
         var (verb, rest) = text.Split(' ', 2) is [var v, var r] ? (v, r.Trim()) : (text, "");
+        // THE LIBRARY IS FILES ON DISK: one that cannot be read is said, never thrown into the front end's command loop.
+        try
+        {
+            return RunColleagues(desk, verb, rest);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            return Told($"The colleagues' library could not be read: {e.Message}");
+        }
+    }
+
+    private CommandStatus RunColleagues(ColleagueDesk desk, string verb, string rest)
+    {
         switch (verb.ToLowerInvariant())
         {
             case "":
@@ -137,6 +150,7 @@ public sealed partial class Session
                 var (worker, name) = rest.Split(' ', 2) is [var w, var n] ? (w, n.Trim()) : (rest, (string?)null);
                 return Told(desk.Keep(new KeepOrder(worker, name is { Length: > 0 } ? name : null)));
             case "bring":
+                // NOT AWAITED, the spawn runs on; BringColleagueAsync says its own outcome, failures included.
                 _ = BringColleagueAsync(rest);
                 return CommandStatus.Reported;
             default:
@@ -152,6 +166,18 @@ public sealed partial class Session
     /// tried last.</para>
     /// </summary>
     public async Task<CommandStatus> BringColleagueAsync(string rest)
+    {
+        try
+        {
+            return await BringColleagueCoreAsync(rest);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            return Told($"Could not bring the colleague in: {e.Message}");
+        }
+    }
+
+    private async Task<CommandStatus> BringColleagueCoreAsync(string rest)
     {
         if (Colleagues is not { } desk) return Told(ColleaguesOff);
         var match = desk.List().Select(c => c.Name)

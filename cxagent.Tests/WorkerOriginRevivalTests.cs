@@ -117,6 +117,9 @@ public sealed class WorkerOriginRevivalTests : IDisposable
 
         var (store, report) = Revive(augment: null);
 
+        // THE MARK STAYS while the feature is merely off: switched back on, the next resume equips it again.
+        Assert.Equal("colleague:Charting", store.OriginOf("charting"));
+
         var kept = store.Find("charting")!;
         Assert.Equal(["work", "worked"], kept.Agent.Agent.Context.Messages.Select(m => m.Content));
         Assert.Empty(report.Left);
@@ -132,6 +135,8 @@ public sealed class WorkerOriginRevivalTests : IDisposable
 
         var (store, report) = Revive(_ => throw new InvalidOperationException("no such colleague"));
 
+        // NO MARK LEFT: an ordinary worker now, which a keep may make a colleague again and no colleague's rounds reach.
+        Assert.Null(store.OriginOf("charting"));
         Assert.NotNull(store.Find("charting"));
         Assert.Contains(report.Plain, l => l.Contains("no such colleague", StringComparison.Ordinal));
     }

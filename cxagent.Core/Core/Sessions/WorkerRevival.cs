@@ -138,7 +138,12 @@ internal static class WorkerRevival
         // failed — leaves an ordinary worker with its conversation, and the session says so rather than letting the user
         // believe it is what it was.
         if (spawn.Origin is not null && (child.AugmentRefusal is not null || !factory.CanAugment))
+        {
+            // REFUSED, IT IS AN ORDINARY WORKER NOW, and its mark goes. Merely switched off, the mark stays: turned back on,
+            // the next resume equips it again, and with nothing answering origins the mark is never read meanwhile.
+            if (child.AugmentRefusal is not null) store.SetOrigin(spawn.Name, null);
             return new Outcome(child.AugmentRefusal ?? "what it came from is switched off here", Plain: true);
+        }
         return null;
     }
 

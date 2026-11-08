@@ -142,7 +142,7 @@ public sealed class ColleagueDesk : IDisposable
         {
             Name = name,
             Type = kept.TypeName,
-            Instance = InstanceOf(kept.Agent.ModelId),
+            Instance = kept.Agent.Instance,
             Created = now,
             Description = kept.Description ?? "",
         };
@@ -155,8 +155,19 @@ public sealed class ColleagueDesk : IDisposable
             return $"Could not keep {handle}: {e.Message}";
         }
 
-        var messages = kept.Agent.Agent.Context.Messages.Where(m => m.Role != "system").ToList();
-        Append(name, new PastRound(0, _parts.SessionId() ?? "", _parts.Folder, kept.At, now, messages));
+        // ALL OR NOTHING: a colleague with no past, and a worker not marked as it, would be refused a second keep under
+        // the same name — so a keep that fails after the folder exists takes the folder away again.
+        try
+        {
+            var messages = kept.Agent.Agent.Context.Messages.Where(m => m.Role != "system").ToList();
+            Append(name, new PastRound(0, _parts.SessionId() ?? "", _parts.Folder, kept.At, now, messages));
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            try { Directory.Delete(_parts.Library.FolderOf(name), recursive: true); }
+            catch (Exception gone) when (gone is IOException or UnauthorizedAccessException) { }
+            return $"Could not keep {handle}: {e.Message}";
+        }
 
         var marked = OriginPrefix + name;
         _workers.SetOrigin(handle, marked);
@@ -183,6 +194,26 @@ public sealed class ColleagueDesk : IDisposable
             return $"{record.Name} is already here as {live} — give it work with agent_send.";
         if (_parts.Spawner is not { } spawner) return "This session cannot start workers.";
 
+        // ONE BRING AT A TIME PER COLLEAGUE: two at once — the lead's and the user's, or two tool calls in one turn —
+        // would both pass the check above and leave two incarnations of one colleague in one session.
+        if (!_bringing.TryAdd(origin, 0)) return $"{record.Name} is already being brought in.";
+        try
+        {
+            return await BringAsync(order, record, spawner, ct);
+        }
+        finally
+        {
+            _bringing.TryRemove(origin, out _);
+        }
+    }
+
+    /// <summary>Colleagues being brought in now, by origin.</summary>
+    private readonly ConcurrentDictionary<string, byte> _bringing = new(StringComparer.Ordinal);
+
+    private async Task<string> BringAsync(BringOrder order, ColleagueRecord record, ISubAgentSpawner spawner, CancellationToken ct)
+    {
+        var origin = OriginPrefix + record.Name;
+
         // ITS OWN MODEL, OR THE ONE ASKED FOR — and the session's, said, when its own is not configured here.
         string? note = null;
         ModelChoice? choice;
@@ -204,8 +235,9 @@ public sealed class ColleagueDesk : IDisposable
         if (ExperienceBudget.WindowRefusal(choice.Window, choice.Label) is { } small) return small;
 
         _windows[origin] = choice.Window!.Value;
-        var session = _parts.Models(null);
-        var instance = choice.Instance is { } i && i != session?.Instance ? i : null;
+        // THE ENTRY THAT PASSED THE CHECK, NAMED EVEN WHEN IT IS THE SESSION'S OWN: left out, the spawner would take the
+        // type's own routing, which may be another, smaller model than the one the preload was sized for.
+        var instance = choice.Instance;
         SubAgent? child = null;
         var envelope = await spawner.SpawnAsync(new SpawnOrder
         {
@@ -219,14 +251,20 @@ public sealed class ColleagueDesk : IDisposable
             ParentAgentId = order.ParentAgentId,
         }, c => child = c, ct) ?? "This session cannot start workers.";
 
+        // AN ORDINARY WORKER IF THE DOOR REFUSED, AND MARKED AS ONE: left marked, its rounds would reach a colleague it is
+        // not, and a keep of it would be refused as one it already is.
+        var refused = child?.AugmentRefusal;
+        var handle = SubAgentEnvelope.NameOf(envelope);
+        if (refused is not null && handle is not null) _workers.SetOrigin(handle, null);
+
         // A SPAWN THE AGENT TOOL DID NOT MAKE, WRITTEN DOWN AS ONE, so a resume rebuilds it as it rebuilds every worker.
-        if (child is not null && SubAgentEnvelope.NameOf(envelope) is { } handle)
-            _parts.NoteWorker(new WorkerMark(child.Agent.Id, origin)
+        if (child is not null && handle is not null)
+            _parts.NoteWorker(new WorkerMark(child.Agent.Id, refused is null ? origin : null)
             {
                 Name = handle, Type = record.Type, Instance = instance, Description = record.Name,
             });
 
-        if (child?.AugmentRefusal is { } refused)
+        if (refused is not null)
             note = (note is null ? "" : note + " ") + $"It came in without its experience: {refused}.";
         return note is null ? envelope : note + "\n" + envelope;
     }
@@ -277,12 +315,14 @@ public sealed class ColleagueDesk : IDisposable
             if (record is null) return;
             Append(found.Name, new PastRound(0, _parts.SessionId() ?? "", _parts.Folder, start.At, DateTimeOffset.UtcNow, round)
             {
-                AlsoRead = OtherWorkplacesRead(round, record),
+                AlsoRead = OtherWorkplacesRead(round, record, _parts.Folder),
             });
             TellOfGrowth(found, record);
             Drain();
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
+        // EVERYTHING BUT A CANCELLATION: this runs inside the worker's own release, and an exception escaping it would skip
+        // the listeners after this one — the run's own archive among them.
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             _parts.Notify?.Invoke($"Could not keep {found.Name}'s latest round: {e.Message}");
         }
@@ -362,10 +402,13 @@ public sealed class ColleagueDesk : IDisposable
         return choice is not null && ExperienceBudget.WindowRefusal(choice.Window, choice.Label) is null ? choice.Provider : null;
     };
 
-    /// <summary>Folders of the colleague's other workplaces whose files the round's tool calls named.</summary>
-    private IReadOnlyList<string> OtherWorkplacesRead(List<ChatMessage> round, ColleagueRecord record)
+    /// <summary>
+    /// Folders of the colleague's other workplaces whose files the round's tool calls named. A path no file can have —
+    /// one a model wrote with a NUL in it — names no workplace and is passed over.
+    /// </summary>
+    internal static IReadOnlyList<string> OtherWorkplacesRead(List<ChatMessage> round, ColleagueRecord record, string folder)
     {
-        var here = Codebase.Key(_parts.Folder);
+        var here = Codebase.Key(folder);
         var others = record.Workplaces.Where(w => w.Codebase != here).ToList();
         if (others.Count == 0) return [];
         var read = new HashSet<string>(StringComparer.Ordinal);
@@ -373,7 +416,10 @@ public sealed class ColleagueDesk : IDisposable
         {
             if (call.Arguments.ValueKind != JsonValueKind.Object || !call.Arguments.TryGetProperty("path", out var p)
                 || p.ValueKind != JsonValueKind.String || p.GetString() is not { Length: > 0 } path) continue;
-            var full = Path.GetFullPath(path, _parts.Folder);
+            string full;
+            try { full = Path.GetFullPath(path, folder); }
+            catch (ArgumentException) { continue; }
+            if (full.Contains('\0')) continue;
             foreach (var w in others)
                 if (full.StartsWith(Path.TrimEndingDirectorySeparator(w.Folder) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
                     read.Add(w.Folder);
@@ -399,16 +445,14 @@ public sealed class ColleagueDesk : IDisposable
     private static string NameFrom(StoredAgent kept)
     {
         var sb = new StringBuilder();
+        // THE LETTERS A NAME MAY HOLD, and only those — ASCII, as NameRefusal allows — so "Café menu" becomes "Caf menu"
+        // rather than a refusal of a name the user never typed.
         foreach (var ch in kept.Description ?? kept.Name)
-            sb.Append(char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : ' ');
+            sb.Append(char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_' ? ch : ' ');
         var name = string.Join(' ', sb.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
         if (name.Length > 40) name = name[..40].TrimEnd();
         return name.Length > 0 ? name : kept.Name;
     }
-
-    /// <summary>The provider entry in an <c>entry:model</c> label, or null for a bare model.</summary>
-    private static string? InstanceOf(string? modelId) =>
-        modelId is { } id && id.IndexOf(':') is var colon and > 0 ? id[..colon] : null;
 
     public void Dispose()
     {
