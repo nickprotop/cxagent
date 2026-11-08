@@ -87,6 +87,12 @@ public sealed partial class Distiller(ColleagueStore store)
     public event Action<string>? Finished;
 
     /// <summary>
+    /// Raised after every call to the distiller, with what it cost — the call to shorten included, and a call whose
+    /// answer is then refused: it was paid for either way. The colleague's own total is already added to when this runs.
+    /// </summary>
+    public event Action<DistillSpend>? Spent;
+
+    /// <summary>
     /// Distils every colleague's waiting rounds, if no other distiller is at work — Done when all are distilled,
     /// Failed when one or more could not be (each said through <see cref="Failed"/>), Busy when the lock is held.
     ///
@@ -238,10 +244,11 @@ public sealed partial class Distiller(ColleagueStore store)
             new() { Role = "user", Content = Ask(experience, touched, batch) },
         };
 
+        var call = new DistillCall(name, model, touched);
         Answer? answer;
         try
         {
-            answer = await AskAsync(model, messages, touched, ct);
+            answer = await AskAsync(call, messages, ct);
             if (answer is { Changed: true } && Oversized(answer) is { } over)
             {
                 // ONCE, AND ONLY ONCE: a model that cannot shorten on the second ask will not on the third, and every ask
@@ -249,7 +256,7 @@ public sealed partial class Distiller(ColleagueStore store)
                 messages.Add(new ChatMessage { Role = "assistant", Content = answer.Raw });
                 messages.Add(new ChatMessage { Role = "user", Content = $"{over} Answer again in the same form, shorter: merge "
                     + "what overlaps and drop what is least useful." });
-                answer = await AskAsync(model, messages, touched, ct);
+                answer = await AskAsync(call, messages, ct);
                 if (answer is { Changed: true } && Oversized(answer) is { } still) return new Failure(still + " The previous experience is kept.", true);
                 // "NO CHANGE" TO A REQUEST TO SHORTEN is no answer to it: taking it would throw away what the first answer
                 // learned and count the rounds as distilled.
@@ -313,13 +320,36 @@ public sealed partial class Distiller(ColleagueStore store)
     /// One call to the distiller. AN ANSWER CUT OFF AT ITS LENGTH LIMIT IS REFUSED WHOLE: its last part is missing its
     /// closing tag and would be dropped while the parts before it were written, and the rounds counted as learned from.
     /// </summary>
-    private static async Task<Answer?> AskAsync(ILlmProvider model, List<ChatMessage> messages,
-        Dictionary<string, string> touched, CancellationToken ct)
+    private async Task<Answer?> AskAsync(DistillCall call, List<ChatMessage> messages, CancellationToken ct)
     {
+        var (name, model, touched) = (call.Colleague, call.Model, call.Touched);
+        var started = DateTimeOffset.UtcNow;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         var response = await model.ChatAsync([.. messages], tools: null, ct);
+
+        // COUNTED BEFORE THE ANSWER IS JUDGED: a cut-off answer is refused whole, and is the costliest call there is.
+        Count(new DistillSpend(name, model.ModelId, response.Usage.InputTokens, response.Usage.OutputTokens, started, clock.ElapsedMilliseconds));
+
         if (response.StopReason is "max_tokens" or "length") throw new CutOffException();
         return Answer.Parse(response.Text ?? "", touched);
     }
+
+    /// <summary>
+    /// Adds one call to the colleague's total and says so. A RECORD THAT CANNOT BE WRITTEN LOSES THE COUNT, NOT THE
+    /// DISTILLING: the spend is a figure beside the experience, and the answer already paid for is still worth keeping.
+    /// </summary>
+    private void Count(DistillSpend call)
+    {
+        try
+        {
+            store.Update(call.Colleague, r => r with { Spend = r.Spend.Add(call) });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
+        Spent?.Invoke(call);
+    }
+
+    /// <summary>Who a call distils for, the model asked, and the codebases its answer may write.</summary>
+    private sealed record DistillCall(string Colleague, ILlmProvider Model, Dictionary<string, string> Touched);
 
     private sealed class CutOffException : Exception;
 

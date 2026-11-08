@@ -52,7 +52,38 @@ public sealed record ColleagueRecord
 
     /// <summary>Rounds stepped past without being learned from — still in the past, word for word.</summary>
     public IReadOnlyList<SkippedRound> Skipped { get; init; } = [];
+
+    /// <summary>
+    /// What distilling has cost it, every process's calls together — kept HERE, beside the experience it paid for, so the
+    /// library's total is the colleague's own and not whichever usage history one machine happens to hold.
+    /// </summary>
+    public DistillTotals Spend { get; init; } = new();
 }
+
+/// <summary>Calls to the distiller and the tokens they took.</summary>
+public sealed record DistillTotals
+{
+    public long Calls { get; init; }
+    public long InputTokens { get; init; }
+    public long OutputTokens { get; init; }
+
+    /// <summary>These totals with one more call.</summary>
+    public DistillTotals Add(DistillSpend call) => this with
+    {
+        Calls = Calls + 1,
+        InputTokens = InputTokens + call.InputTokens,
+        OutputTokens = OutputTokens + call.OutputTokens,
+    };
+}
+
+/// <summary>One call to the distiller, as it was paid for.</summary>
+/// <param name="Colleague">Whose rounds it distilled.</param>
+/// <param name="ModelId">The model that answered, as the provider names it.</param>
+/// <param name="InputTokens">What it read.</param>
+/// <param name="OutputTokens">What it wrote.</param>
+/// <param name="StartedAt">When the call began.</param>
+/// <param name="DurationMs">How long it took.</param>
+public sealed record DistillSpend(string Colleague, string? ModelId, int InputTokens, int OutputTokens, DateTimeOffset StartedAt, long DurationMs);
 
 /// <summary>A round the distiller kept refusing and was stepped past.</summary>
 /// <param name="Seq">Its place in the past.</param>

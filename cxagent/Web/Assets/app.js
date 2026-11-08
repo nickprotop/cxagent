@@ -1155,11 +1155,9 @@ function drawColleaguesPage(view) {
   }
   const e = view.data.rows.find((r) => r.name === view.picked);
   if (e) {
-    const f = e.facts;
     detail.append(el("h2", null, "◆ " + e.name));
     if (e.description) detail.append(el("p", null, e.description));
-    detail.append(el("p", "meta", ["v" + f.version, f.rounds + " rounds, " + f.distilled + " distilled" + (f.skipped ? ", " + f.skipped + " skipped" : ""),
-      f.model ? "on " + f.model : ""].filter(Boolean).join(" · ")));
+    detail.append(el("p", "meta", e.factsLine));
     if (e.knows.length) detail.append(el("p", "meta", "knows: " + e.knows.join(", ")));
     const acts = el("div", "btns");
     acts.append(button("Open", null, () => send({ type: "colleagueOpen", sessionId: view.parent, name: e.name })),

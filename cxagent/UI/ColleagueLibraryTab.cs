@@ -97,12 +97,9 @@ public sealed class ColleagueLibraryTab
     private static List<string> Facts(LibraryEntry e)
     {
         var muted = ColorScheme.MutedMarkup;
-        var f = e.Facts;
         var lines = new List<string> { $"[bold]◆ {MarkupParser.Escape(e.Name)}[/]" };
         if (e.Description.Length > 0) lines.Add(MarkupParser.Escape(e.Description));
-        lines.Add($"[{muted}]v{f.Version} · {f.Rounds} round{(f.Rounds == 1 ? "" : "s")}, {f.Distilled} distilled"
-                  + (f.Skipped > 0 ? $", {f.Skipped} skipped" : "")
-                  + (f.Model is { } m ? $" on {MarkupParser.Escape(m)}" : "") + "[/]");
+        lines.Add($"[{muted}]{MarkupParser.Escape(LibraryView.FactsLine(e.Facts))}[/]");
         if (e.Knows.Count > 0) lines.Add($"[{muted}]knows: {MarkupParser.Escape(string.Join(", ", e.Knows))}[/]");
         return lines;
     }

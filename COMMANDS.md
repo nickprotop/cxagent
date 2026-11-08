@@ -32,7 +32,7 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/trust` · `/trust yes` · `/trust no` | Show or set whether this folder is trusted |
 | `/compress` | Summarise the conversation to free room |
 | `/btw [question]` | Ask a side question about the conversation without adding it to the conversation |
-| `/stats` | Usage: tokens, projects, agent types, what fills the context |
+| `/stats` | Usage: tokens, projects, agent types, distilling per colleague, what fills the context |
 | `/stats 30` · `/stats all` | Widen the window (default: 7 days) |
 | `/stats clear` | Delete all usage history, after confirming |
 | `/hooks` | List the hooks this session runs: where each comes from, and whether it fires here |
@@ -614,7 +614,8 @@ distilled into its **experience** — what it knows about how it works and about
 into any session, in any folder, it starts from that experience.
 
 **The library.** `/colleagues` opens it — a tab in the terminal, a page in the browser: every colleague, and for the
-one picked, its description, the folders it knows, its version, rounds and model, and its experience to read. **Open**
+one picked, its description, the folders it knows, its version, rounds and model, what distilling it has cost so far,
+and its experience to read. **Open**
 starts a one-to-one; **Bring in** brings it into the session.
 
 **Keeping one.** `/colleagues keep <worker> [name]` keeps one of this session's workers — typing it is your yes;

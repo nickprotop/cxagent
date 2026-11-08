@@ -95,6 +95,7 @@ public static class StatsCommand
             Projects = StatsQuery.ByProject(sessions),
             Models = StatsQuery.ByModel(sessions),
             Types = StatsQuery.ByType(runs),
+            Distilling = StatsQuery.Distilling(runs),
             Tools = StatsQuery.ByTool(calls),
 
             // THE SPARKLINE IS CAPPED AT 30 COLUMNS regardless of the window. "/stats all" over a

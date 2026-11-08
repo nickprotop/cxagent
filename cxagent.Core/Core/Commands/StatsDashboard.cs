@@ -142,6 +142,9 @@ public static class StatsDashboard
         public required IReadOnlyList<ModelStat> Models { get; init; }
         public required IReadOnlyList<TypeStat> Types { get; init; }
         public required IReadOnlyList<ToolStat> Tools { get; init; }
+
+        /// <summary>What distilling each colleague cost — empty with no colleagues, and then no section is drawn.</summary>
+        public IReadOnlyList<DistillStat> Distilling { get; init; } = [];
         public required IReadOnlyList<(DateOnly Day, int Tokens)> Daily { get; init; }
         public (int Runs, int Reclaimed, int Manual) Compaction { get; init; }
         public PermissionCounts Permissions { get; init; } = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
@@ -324,6 +327,30 @@ public static class StatsDashboard
                     foreach (var m in t.Models)
                         rows.AppendLine($"  {new string(' ', 12)}{Pad(Short(m.ModelId), 24)}"
                                     + $"{Pad(Compact(m.Tokens), 9)}{m.Runs} run(s)");
+            }
+            AppendDrawn(sb, rows);
+        }
+
+        // --- distilling -----------------------------------------------------------------------------
+        //
+        // PER COLLEAGUE, APART FROM THE TYPES: a distilling call is no agent's run, and what a user weighs here is
+        // whether a colleague's learning is worth what it costs.
+        if (view.Distilling.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine(Head("Distilling"));
+            sb.AppendLine();
+            var rows = new StringBuilder();
+            rows.AppendLine("  " + Pad("colleague", 20) + Pad("calls", 7) + "tokens");
+            var max = (double)view.Distilling.Max(d => d.Tokens);
+            foreach (var d in view.Distilling)
+            {
+                rows.AppendLine($"  {Pad(d.Colleague, 20)}{Pad(d.Calls.ToString(), 7)}{Compact(d.Tokens)}");
+                rows.AppendLine($"  {new string(' ', 20)}{Bar(max > 0 ? d.Tokens / max : 0, 18)}"
+                                + (d.Models.Count == 1 ? "  " + Short(d.Models[0].ModelId) : ""));
+                if (d.Models.Count > 1)
+                    foreach (var m in d.Models)
+                        rows.AppendLine($"  {new string(' ', 20)}{Pad(Short(m.ModelId), 24)}{Pad(Compact(m.Tokens), 9)}{m.Runs} call(s)");
             }
             AppendDrawn(sb, rows);
         }

@@ -16,7 +16,11 @@ public sealed record LibraryEntry(string Name, string Description, IReadOnlyList
 /// <param name="Skipped">Rounds stepped past without being learned from.</param>
 /// <param name="Type">The agent type it works as.</param>
 /// <param name="Model">The provider entry it runs on, or null for the session's.</param>
-public sealed record LibraryFacts(long Version, long Rounds, long Distilled, int Skipped, string Type, string? Model);
+public sealed record LibraryFacts(long Version, long Rounds, long Distilled, int Skipped, string Type, string? Model)
+{
+    /// <summary>What distilling it has cost, every process's calls together.</summary>
+    public DistillTotals Spend { get; init; } = new();
+}
 
 /// <summary>One part of a colleague's experience.</summary>
 /// <param name="Title">"Core", or the codebase's folder name.</param>
@@ -44,7 +48,25 @@ public static class LibraryView
             foreach (var (key, text) in experience.Codebases)
                 if (r.Workplaces.All(w => w.Codebase != key) && text.Length > 0) parts.Add(new ExperiencePart(key, text));
             return new LibraryEntry(r.Name, r.Description, line.Knows,
-                new LibraryFacts(r.ExperienceVersion, store.RoundCount(r.Name), r.DistilledThrough, r.Skipped.Count, r.Type, r.Instance),
+                new LibraryFacts(r.ExperienceVersion, store.RoundCount(r.Name), r.DistilledThrough, r.Skipped.Count, r.Type, r.Instance)
+                {
+                    Spend = r.Spend,
+                },
                 parts);
         })];
+
+    /// <summary>
+    /// The facts under a colleague's name, as one plain line — ONE TEXT FOR BOTH FRONT ENDS, so the terminal's tab and the
+    /// browser's page cannot word a fact differently or leave one out.
+    /// </summary>
+    public static string FactsLine(LibraryFacts f)
+    {
+        var line = $"v{f.Version} · {f.Rounds} round{(f.Rounds == 1 ? "" : "s")}, {f.Distilled} distilled"
+                   + (f.Skipped > 0 ? $", {f.Skipped} skipped" : "")
+                   + (f.Model is { } m ? $" on {m}" : "");
+        if (f.Spend.Calls > 0)
+            line += $" · distilling: {f.Spend.Calls} call{(f.Spend.Calls == 1 ? "" : "s")}, "
+                    + $"{Helpers.DisplayNumber.Compact(f.Spend.InputTokens + f.Spend.OutputTokens)} tokens";
+        return line;
+    }
 }

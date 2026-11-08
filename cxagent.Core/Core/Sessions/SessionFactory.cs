@@ -318,6 +318,7 @@ internal static class SessionFactory
             OneToOne = session.OneToOne is not null,
             Served = shared.Served,
             Gate = shared.Gate,
+            SaveRun = shared.History is { } history ? history.SaveRun : null,
         });
 
         // THE PORTS' OBSERVERS BECOME SUBSCRIBER ONE OF A FAN-OUT, and everything downstream is

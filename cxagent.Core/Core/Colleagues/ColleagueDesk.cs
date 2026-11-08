@@ -112,6 +112,9 @@ public sealed record ColleagueDeskParts
 
     /// <summary>The session's gate — what a colleague's recall asks through, as the caller, while the session is served.</summary>
     public Permissions.IPermissionGate? Gate { get; init; }
+
+    /// <summary>Where each distilling call is recorded for <c>/stats</c> — the usage history; null records nothing.</summary>
+    public Action<Storage.RunRecord>? SaveRun { get; init; }
 }
 
 /// <summary>
@@ -165,6 +168,7 @@ public sealed partial class ColleagueDesk : IDisposable
         // OFF THE LIST AS ITS OWN ROUNDS ARE DONE: waiting for the whole drain named the first of several colleagues as
         // distilling — and its card as learning — until the last was done.
         _distiller.Finished += Distilled;
+        _distiller.Spent += Record;
         _workers.SendBegan += OnBegan;
         _workers.SendEnded += OnEnded;
         _workers.Badges = BadgeFor;
@@ -224,6 +228,21 @@ public sealed partial class ColleagueDesk : IDisposable
         parts.AddRange(change.Updated.Select(k => $"{FolderName(record, k)} updated"));
         parts.AddRange(change.Added.Select(k => $"{FolderName(record, k)} added"));
         _parts.Tell?.Invoke($"{change.Colleague} learned from its work: {string.Join(", ", parts)} (v{change.Version}).");
+    }
+
+    /// <summary>
+    /// One distilling call as a run in the usage history, under the colleague's name — whichever session's drain made it,
+    /// since that is the machine that paid. A history that cannot be written loses the row, never the distilling.
+    /// </summary>
+    private void Record(DistillSpend call)
+    {
+        try
+        {
+            _parts.SaveRun?.Invoke(new Storage.RunRecord(Guid.NewGuid().ToString("N"), _parts.SessionId() ?? "",
+                Storage.StatsQuery.DistillPrefix + call.Colleague, call.ModelId, call.InputTokens, call.OutputTokens,
+                Turns: 1, ToolCalls: 0, Outcome: "completed", call.StartedAt, call.DurationMs, WorkingDir: null));
+        }
+        catch (Exception e) when (e is not OutOfMemoryException) { }
     }
 
     /// <summary>A codebase as a person knows it — its folder's own name — rather than its key with a hash.</summary>

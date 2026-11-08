@@ -16,7 +16,11 @@ public static class WebLibrary
             {
                 ["version"] = e.Facts.Version, ["rounds"] = e.Facts.Rounds, ["distilled"] = e.Facts.Distilled,
                 ["skipped"] = e.Facts.Skipped, ["type"] = e.Facts.Type, ["model"] = e.Facts.Model,
+                ["spendCalls"] = e.Facts.Spend.Calls,
+                ["spendTokens"] = e.Facts.Spend.InputTokens + e.Facts.Spend.OutputTokens,
             },
+            // THE LINE THE TERMINAL'S TAB SHOWS, word for word — drawn as given, never rebuilt in the page.
+            ["factsLine"] = LibraryView.FactsLine(e.Facts),
             ["experience"] = new JsonArray([.. e.Experience.Select(p => (JsonNode)new JsonObject
             {
                 ["title"] = p.Title, ["markdown"] = p.Markdown,

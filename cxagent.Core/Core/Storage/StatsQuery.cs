@@ -97,6 +97,13 @@ public sealed record TypeStat(
 /// <param name="Runs">How many of the type's runs were on it.</param>
 public sealed record ModelSpend(string ModelId, int Tokens, int Runs);
 
+/// <summary>What distilling one colleague cost.</summary>
+/// <param name="Colleague">Its name as the run recorded it.</param>
+/// <param name="Calls">Calls to the distiller.</param>
+/// <param name="Tokens">In and out together.</param>
+/// <param name="Models">Which models answered, costliest first.</param>
+public sealed record DistillStat(string Colleague, int Calls, long Tokens, IReadOnlyList<ModelSpend> Models);
+
 /// <summary>
 /// One tool's record. The answer to "what is actually filling my context".
 /// </summary>
@@ -199,6 +206,9 @@ public static class StatsQuery
     /// </summary>
     public static IReadOnlyList<TypeStat> ByType(IReadOnlyList<RunRecord> runs) =>
         [.. runs
+            // DISTILLING IS NOT AN AGENT TYPE: no agent ran, one call folded a colleague's rounds into its experience. It
+            // has a section of its own, per colleague — see Distilling.
+            .Where(r => !r.TypeName.StartsWith(DistillPrefix, StringComparison.Ordinal))
             .GroupBy(r => r.TypeName)
             .Select(g => new TypeStat(
                 g.Key,
@@ -217,6 +227,24 @@ public static class StatsQuery
                          m.Key, m.Sum(r => r.InputTokens + r.OutputTokens), m.Count()))
                      .OrderByDescending(m => m.Tokens)]))
             .OrderByDescending(t => t.Tokens)];
+
+    /// <summary>The type name a distilling call is recorded under, followed by the colleague's name.</summary>
+    public const string DistillPrefix = "distill:";
+
+    /// <summary>What distilling cost, per colleague, costliest first — one row per call recorded under <see cref="DistillPrefix"/>.</summary>
+    public static IReadOnlyList<DistillStat> Distilling(IReadOnlyList<RunRecord> runs) =>
+        [.. runs
+            .Where(r => r.TypeName.StartsWith(DistillPrefix, StringComparison.Ordinal))
+            .GroupBy(r => r.TypeName[DistillPrefix.Length..])
+            .Select(g => new DistillStat(
+                g.Key,
+                g.Count(),
+                g.Sum(r => (long)r.InputTokens + r.OutputTokens),
+                [.. g.Where(r => !string.IsNullOrWhiteSpace(r.ModelId))
+                     .GroupBy(r => r.ModelId!)
+                     .Select(m => new ModelSpend(m.Key, m.Sum(r => r.InputTokens + r.OutputTokens), m.Count()))
+                     .OrderByDescending(m => m.Tokens)]))
+            .OrderByDescending(d => d.Tokens)];
 
     /// <summary>
     /// Tools by what they put into contexts, heaviest first.
