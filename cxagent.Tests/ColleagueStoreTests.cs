@@ -126,7 +126,8 @@ public sealed class ColleagueStoreTests : IDisposable
         var store = Store();
         store.Create(Record("Charting"));
 
-        store.WriteExperience("Charting", core: "## How you work\nCarefully.", codebase: "repo-ab12cd34", text: "## Architecture\nLayers.");
+        store.WriteCore("Charting", "## How you work\nCarefully.");
+        store.WriteCodebase("Charting", "repo-ab12cd34", "## Architecture\nLayers.");
 
         var experience = store.ReadExperience("Charting");
         Assert.Equal("## How you work\nCarefully.", experience.Core);

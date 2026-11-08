@@ -50,7 +50,7 @@ public sealed class ColleagueBudgetTests : IDisposable
         var now = DateTimeOffset.UtcNow;
         Workplace At(string key, int daysAgo) => new(key, "/x/" + key, 1, now.AddDays(-daysAgo));
 
-        var text = ExperienceBudget.Preload(experience, "b", [At("c", 1), At("a", 2), At("b", 0)], budget: 3_100);
+        var text = ExperienceBudget.Preload(experience, new ExperienceFocus("b", [At("c", 1), At("a", 2), At("b", 0)], Budget: 3_100));
 
         var core = text.IndexOf("C" + block, StringComparison.Ordinal);
         var current = text.IndexOf("B" + block, StringComparison.Ordinal);

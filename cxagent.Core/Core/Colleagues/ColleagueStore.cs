@@ -147,18 +147,22 @@ public sealed partial class ColleagueStore(string configDir)
         return new Experience(core, codebases);
     }
 
-    /// <summary>Writes the core, a codebase's text, or both — each through a temporary file.</summary>
-    public void WriteExperience(string name, string? core, string? codebase, string? text)
+    /// <summary>Rewrites a colleague's core experience, through a temporary file.</summary>
+    public void WriteCore(string name, string text)
     {
         var folder = Path.Combine(FolderOf(name), "experience");
         Directory.CreateDirectory(folder);
-        if (core is not null) WriteText(Path.Combine(folder, "core.md"), core);
-        if (codebase is not null && text is not null)
-        {
-            // A KEY IS MADE BY Codebase.Key, never typed — but it becomes a file name, so it is checked as one.
-            if (!KeyPattern().IsMatch(codebase)) throw new ArgumentException($"'{codebase}' is not a codebase key.", nameof(codebase));
-            WriteText(Path.Combine(folder, codebase + ".md"), text);
-        }
+        WriteText(Path.Combine(folder, "core.md"), text);
+    }
+
+    /// <summary>Rewrites one codebase's experience, through a temporary file.</summary>
+    public void WriteCodebase(string name, string codebase, string text)
+    {
+        // A KEY IS MADE BY Codebase.Key, never typed — but it becomes a file name, so it is checked as one.
+        if (!KeyPattern().IsMatch(codebase)) throw new ArgumentException($"'{codebase}' is not a codebase key.", nameof(codebase));
+        var folder = Path.Combine(FolderOf(name), "experience");
+        Directory.CreateDirectory(folder);
+        WriteText(Path.Combine(folder, codebase + ".md"), text);
     }
 
     /// <summary>The folder a colleague of this name lives in.</summary>

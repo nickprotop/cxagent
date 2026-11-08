@@ -104,9 +104,6 @@ public sealed class ColleagueDesk : IDisposable
     /// <summary>The library this desk keeps colleagues in.</summary>
     public ColleagueStore Library => _parts.Library;
 
-    /// <summary>Raised when a colleague was kept or its experience changed — the prompt's list is then out of date.</summary>
-    public event Action? Changed;
-
     /// <summary>Points the desk at a re-wired session's spawner and models. The workers' store does not change.</summary>
     public void Rewire(ColleagueDeskParts parts) => _parts = parts;
 
@@ -163,7 +160,6 @@ public sealed class ColleagueDesk : IDisposable
         _given[marked] = 0;
         // IN THE SESSION'S HISTORY, so a resume brings it back as the colleague and not as the worker it was.
         _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, marked));
-        Changed?.Invoke();
         Drain(name);
         return $"Kept {handle} as the colleague {name}. Its experience is being distilled from its work so far; from now on "
                + "every task it finishes is added.";
@@ -243,8 +239,8 @@ public sealed class ColleagueDesk : IDisposable
 
         var window = _windows.TryGetValue(origin, out var w) ? w
             : (record.Instance is { } own ? _parts.Models(own)?.Window : null) ?? _parts.Models(null)?.Window ?? ExperienceBudget.MinimumWindow;
-        var preload = ExperienceBudget.Preload(_parts.Library.ReadExperience(record.Name), Codebase.Key(_parts.Folder),
-            record.Workplaces, ExperienceBudget.For(window));
+        var preload = ExperienceBudget.Preload(_parts.Library.ReadExperience(record.Name),
+            new ExperienceFocus(Codebase.Key(_parts.Folder), record.Workplaces, ExperienceBudget.For(window)));
         _given[origin] = record.ExperienceVersion;
         return new ChildAugment { Context = IncarnationBriefing.For(record, preload) };
     }
@@ -332,7 +328,6 @@ public sealed class ColleagueDesk : IDisposable
                 for (var attempt = 0; attempt < 6; attempt++)
                 {
                     var outcome = await _distiller.DrainAsync(new DistillRequest(name, DistillModel(name)), CancellationToken.None);
-                    if (outcome == DistillOutcome.Done) Changed?.Invoke();
                     if (outcome != DistillOutcome.Busy) return;
                     await Task.Delay(TimeSpan.FromSeconds(5));
                 }

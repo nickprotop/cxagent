@@ -119,7 +119,7 @@ public sealed class DistillerTests : IDisposable
     [Fact]
     public async Task Over_cap_twice_keeps_the_previous_experience()
     {
-        _store.WriteExperience("Charting", "before", null, null);
+        _store.WriteCore("Charting", "before");
         Append();
         var big = Distilled(new string('x', ExperienceBudget.CoreCap * 4 + 400), "## Architecture\nPanes.");
         Answer(big);
@@ -138,7 +138,7 @@ public sealed class DistillerTests : IDisposable
     [Fact]
     public async Task A_secret_keeps_the_previous_and_reports()
     {
-        _store.WriteExperience("Charting", "before", null, null);
+        _store.WriteCore("Charting", "before");
         Append();
         Answer(Distilled("The key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz", "## Architecture\nPanes."));
         string? why = null;
@@ -154,7 +154,7 @@ public sealed class DistillerTests : IDisposable
     [Fact]
     public async Task A_thrown_call_keeps_the_previous()
     {
-        _store.WriteExperience("Charting", "before", null, null);
+        _store.WriteCore("Charting", "before");
         Append();
         // NOTHING QUEUED: the mock throws, as an endpoint that is down does.
 
@@ -243,7 +243,7 @@ public sealed class DistillerTests : IDisposable
     [Fact]
     public async Task A_placeholder_part_keeps_what_was_there()
     {
-        _store.WriteExperience("Charting", "## Lessons\nPanes first.", null, null);
+        _store.WriteCore("Charting", "## Lessons\nPanes first.");
         _store.Update("Charting", r => r with { Description = "Lays out charts" });
         Append();
         Answer($"<core>\n...\n</core>\n<codebase key=\"{Key}\">\n## Architecture\nThree panes.\n</codebase>\n<description>…</description>");

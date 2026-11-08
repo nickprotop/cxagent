@@ -2,6 +2,12 @@ using System.Text;
 
 namespace CxAgent.Core.Colleagues;
 
+/// <summary>What a preload is for: the codebase the incarnation works in, where else it has worked, and how much fits.</summary>
+/// <param name="CurrentKey">The session's codebase key — always loaded.</param>
+/// <param name="Workplaces">Where it has worked; the most recent are loaded first after the current one.</param>
+/// <param name="Budget">How many tokens the preload may take.</param>
+public sealed record ExperienceFocus(string CurrentKey, IReadOnlyList<Workplace> Workplaces, int Budget);
+
 /// <summary>
 /// How much experience an incarnation starts with, and which model may carry a colleague at all.
 ///
@@ -50,8 +56,9 @@ public static class ExperienceBudget
     /// the most recently worked first, while the budget lasts. A codebase that does not fit whole is left out, never
     /// cut — half an account reads as the whole of one, and the rest is a recall away.
     /// </summary>
-    public static string Preload(Experience experience, string currentKey, IReadOnlyList<Workplace> byRecency, int budget)
+    public static string Preload(Experience experience, ExperienceFocus focus)
     {
+        var (currentKey, byRecency, budget) = (focus.CurrentKey, focus.Workplaces, focus.Budget);
         var sb = new StringBuilder();
         var used = 0;
 

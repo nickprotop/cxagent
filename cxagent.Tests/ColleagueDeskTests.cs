@@ -93,7 +93,7 @@ public sealed class ColleagueDeskTests : IDisposable
     public async Task Bring_spawns_a_worker_whose_prompt_carries_its_experience()
     {
         Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
-        Library.WriteExperience("Charting", "## Lessons\nLegends follow the series.", null, null);
+        Library.WriteCore("Charting", "## Lessons\nLegends follow the series.");
         var session = Open();
 
         var envelope = await session.Colleagues!.BringAsync(new BringOrder("Charting", "draw the sales chart", null, false, session.SessionId!), CancellationToken.None);
@@ -199,7 +199,7 @@ public sealed class ColleagueDeskTests : IDisposable
     public void Augment_equips_a_known_colleague_and_refuses_a_forgotten_one()
     {
         Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
-        Library.WriteExperience("Charting", "## Lessons\nPanes first.", null, null);
+        Library.WriteCore("Charting", "## Lessons\nPanes first.");
         var session = Open();
 
         Assert.Contains("Panes first.", session.Colleagues!.Augment("colleague:Charting")!.Context);

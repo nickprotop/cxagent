@@ -142,8 +142,8 @@ public sealed partial class Distiller(ColleagueStore store)
         // the colleague is brought into.
         if (answer.Texts().Any(MemoryStore.LooksSecret)) return "the distilled experience looked like it held a secret; the previous one is kept";
 
-        if (answer.Core is { } core) store.WriteExperience(name, core, null, null);
-        foreach (var (key, text) in answer.Codebases) store.WriteExperience(name, null, key, text);
+        if (answer.Core is { } core) store.WriteCore(name, core);
+        foreach (var (key, text) in answer.Codebases) store.WriteCodebase(name, key, text);
 
         var folders = batch.Select(r => r.Folder).Reverse().Distinct(StringComparer.Ordinal).ToList();
         store.Update(name, r => r with
