@@ -92,7 +92,11 @@ public sealed class ColleagueTool(ColleagueDesk desk,
     {
         var name = Arg(call, "name")?.Trim();
         var task = Arg(call, "task")?.Trim();
-        if (string.IsNullOrEmpty(name)) return Task.FromResult("bring needs the colleague's name.");
+        // POINTED AT THE LIST, NEVER GIVEN ONE: which colleague fits is the lead's judgment to make from what each knows,
+        // and a refusal with nothing to go on was simply tried again (user, 2026-11-08).
+        if (string.IsNullOrEmpty(name))
+            return Task.FromResult("bring needs a colleague's name. Call colleague with action list to see who exists and what each "
+                                   + "knows, then bring the one whose experience fits the task.");
         // NO TASK JOINS IT IDLE, to be given work by agent_send.
         return desk.BringAsync(new BringOrder(name, task ?? "", Arg(call, "model")?.Trim(), Args.ReadBool(call, "background") ?? true, parentId())
         {

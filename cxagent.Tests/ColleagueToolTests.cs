@@ -159,6 +159,24 @@ public sealed class ColleagueToolTests : IDisposable
         Assert.Equal("charting", SubAgentEnvelope.NameOf(answer));
     }
 
+    /// <summary>
+    /// A live lead brought "a colleague" with a task and no name, twice, and was refused twice with nothing to go on. It
+    /// is pointed at the list to choose from — never given one picked for it (user, 2026-11-08).
+    /// </summary>
+    [Fact]
+    public async Task Bring_without_a_name_points_to_the_list_to_choose_from()
+    {
+        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        var session = Open();
+        var tool = new ColleagueTool(session.Colleagues!, null, () => session.SessionId!);
+
+        var answer = await tool.TryInvokeAsync(Call(new { action = "bring", task = "chart the sales" }), CancellationToken.None);
+
+        Assert.Contains("action list", answer);
+        Assert.Contains("whose experience fits", answer);
+        Assert.Empty(session.SubAgents.All());
+    }
+
     [Fact]
     public async Task Another_tool_s_call_is_not_answered()
     {

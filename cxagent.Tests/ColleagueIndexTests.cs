@@ -79,6 +79,9 @@ public sealed class ColleagueIndexTests : IDisposable
 
         Assert.Contains("# Colleagues", System(provider, 0));
         Assert.Contains("- Charting — lays out GPU charts · knows: cxgpu", System(provider, 0));
+        // THE GUIDANCE IS A ROLE, NOT A CHECKLIST (user, 2026-11-08): teammates, asked before guessing or repeating.
+        Assert.Contains("teammates who have worked where you have not", System(provider, 0));
+        Assert.Contains("ask before you guess", System(provider, 0));
     }
 
     [Fact]

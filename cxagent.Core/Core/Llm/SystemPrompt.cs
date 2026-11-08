@@ -649,10 +649,12 @@ internal static class SystemPrompt
         sb.AppendLine();
         sb.AppendLine("# Colleagues");
         sb.AppendLine();
-        sb.AppendLine("Colleagues are workers the user chose to keep: each has worked before and starts from what it "
-                    + "learned. When a task touches a codebase one of them knows, bring it in with the colleague tool "
-                    + "rather than starting a fresh worker there; it then works as any worker does. The list was taken "
-                    + "when this conversation began.");
+        // A ROLE, NOT A CHECKLIST (user, 2026-11-08): a model told who they are acts on it in cases no list of
+        // situations would name — and the one that mattered live was going in circles alone beside one who knew.
+        sb.AppendLine("Colleagues are teammates who have worked where you have not. Treat what they know as you would a "
+                    + "teammate's: when you are unsure about something in their area, ask before you guess — and "
+                    + "especially before you try the same thing again. Bring one in with the colleague tool; one already "
+                    + "here is asked with agent_send. The list was taken when this conversation began.");
         sb.AppendLine();
         sb.Append(CxAgent.Core.Colleagues.ColleagueIndex.Render(colleagues, CxAgent.Core.Colleagues.ColleagueIndex.DefaultCap));
     }
