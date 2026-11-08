@@ -80,6 +80,20 @@ public sealed class OneToOneTests : IDisposable
         Assert.Equal(["ONE"], Store.ListTagged("colleague:Charting").Select(i => i.Uid));
     }
 
+    /// <summary>
+    /// A one-to-one named by its id (-r, a browser's resume) is known for what it is, so it opens as the one-to-one —
+    /// resumed as an ordinary session it had every tool, and its tag fell off at its next save.
+    /// </summary>
+    [Fact]
+    public void A_saved_one_to_one_is_known_by_its_tag()
+    {
+        Store.SaveTurn(new FolderSessionStore.ResumeTurn("TAGGED", [new ChatMessage { Role = "user", Content = "a" }], 1, 1, _project) { Tag = "colleague:Charting" });
+        Store.SaveTurn(new FolderSessionStore.ResumeTurn("PLAIN2", [new ChatMessage { Role = "user", Content = "b" }], 1, 1, _project));
+
+        Assert.Equal("Charting", ColleagueDesk.OneToOneOf(Store.LoadById("TAGGED")));
+        Assert.Null(ColleagueDesk.OneToOneOf(Store.LoadById("PLAIN2")));
+    }
+
     [Fact]
     public void Its_tools_are_read_only()
     {
@@ -192,6 +206,20 @@ public sealed class OneToOneTests : IDisposable
         var again = Wire(new Session(_project), model).Colleagues!.OneToOne("Charting", out _)!;
 
         Assert.Equal(uid, again.Resume?.AgentId);
+    }
+
+    /// <summary>One writer per conversation: a one-to-one open in another process is refused, as /sessions refuses one.</summary>
+    [Fact]
+    public void A_one_to_one_open_elsewhere_is_refused()
+    {
+        Charting();
+        Store.SaveTurn(new FolderSessionStore.ResumeTurn("HELD121", [new ChatMessage { Role = "user", Content = "a" }], 1, 1, _project) { Tag = "colleague:Charting" });
+        using var held = SessionLock.TryAcquire(_paths.LocksDir, "HELD121", LockHolder.Web);
+        Assert.NotNull(held);
+        var lead = Wire(new Session(_project), new MockLlmProvider());
+
+        Assert.Null(lead.Colleagues!.OneToOne("Charting", out var refusal));
+        Assert.Contains("open on the web", refusal);
     }
 
     /// <summary>

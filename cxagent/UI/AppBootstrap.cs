@@ -1187,17 +1187,18 @@ public static class AppBootstrap
         {
             if (current.Colleagues is not { } desk)
             {
-                current.Notify("Colleagues are off. Turn them on in F8 › Colleagues, or with colleagues.enabled in config.json.");
+                current.Notify(Session.ColleaguesOff);
+                return;
+            }
+            // ONE OPEN HERE ALREADY IS SHOWN, looked for first: an opening refuses a conversation open anywhere.
+            if (desk.OneToOneTag(name) is { } tag && manager.Sessions.FirstOrDefault(s => s.OneToOne?.Tag == tag) is { } open)
+            {
+                mainWindow.ShowSession(open);
                 return;
             }
             if (desk.OneToOne(name, out var refusal) is not { } opening)
             {
                 current.Notify(refusal ?? "That colleague cannot be opened.");
-                return;
-            }
-            if (manager.Sessions.FirstOrDefault(s => s.OneToOne?.Tag == opening.Setup.Tag) is { } open)
-            {
-                mainWindow.ShowSession(open);
                 return;
             }
             new NewSessionCommand(new NewSessionCommand.Host(system, mainWindow, manager, composer,
@@ -1419,10 +1420,16 @@ public static class AppBootstrap
         Message? resumeNotice = null;
         // A BARE --resume ASKS TO PICK, and the list is the picker: /sessions resume N opens one.
         var listSessionsAtStart = options.Resume.Kind == ResumeKind.Pick;
+        string? oneToOneAtStart = null;
         if (options.Resume.Kind is ResumeKind.Continue or ResumeKind.ById)
         {
             var target = Startup.FindResumeTarget(sessions, session.WorkingDirectory, options.Resume);
-            if (target.Snapshot is { } snapshot)
+
+            // A ONE-TO-ONE NAMED BY ITS ID OPENS AS ONE, in a tab of its own once the window is up — read-only, with its
+            // briefing — and this session starts fresh. Resumed here it had every tool, and lost its tag at its next save.
+            if (Core.Colleagues.ColleagueDesk.OneToOneOf(target.Snapshot) is { } colleague)
+                oneToOneAtStart = colleague;
+            else if (target.Snapshot is { } snapshot)
             {
                 session.PendResume(snapshot);
 
@@ -2546,6 +2553,8 @@ public static class AppBootstrap
             // twice over.
             if (listSessionsAtStart)
                 session.ListSessions("");
+            else if (oneToOneAtStart is { } colleague)
+                OpenOneToOne(session, colleague);
             else if (!options.Resume.Wanted)
                 StartupHint();
         }, "appBootstrap.AskTrustThenLoadPluginsAsync");

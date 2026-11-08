@@ -868,7 +868,14 @@ internal sealed class WebClient : IPromptResponder, IDisposable
     /// </summary>
     private void OpenOneToOne(Session from, string name)
     {
-        if (from.Colleagues is not { } desk) { Notice(from.Id, "Colleagues are off in this session.", "Warning"); return; }
+        if (from.Colleagues is not { } desk) { Notice(from.Id, Session.ColleaguesOff, "Warning"); return; }
+
+        // ONE OPEN ALREADY IS ATTACHED, looked for first: an opening refuses a conversation open anywhere.
+        if (desk.OneToOneTag(name) is { } tag && S.Manager.Sessions.FirstOrDefault(s => s.OneToOne?.Tag == tag) is { } open)
+        {
+            Attach(open, 0);
+            return;
+        }
         if (desk.OneToOne(name, out var refusal) is not { } opening)
         {
             Notice(from.Id, refusal ?? "That colleague cannot be opened.", "Warning");
@@ -879,15 +886,14 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             Notice(from.Id, $"Its workplace, {opening.Folder}, is outside the folders this server opens.", "Warning");
             return;
         }
-        var session = S.Manager.Sessions.FirstOrDefault(s => s.OneToOne?.Tag == opening.Setup.Tag)
-            ?? S.Opener.Open(new SessionOpening(opening.Folder, opening.Resume, s => s.BecomeOneToOne(opening.Setup)));
+        var session = S.Opener.Open(new SessionOpening(opening.Folder, opening.Resume, s => s.BecomeOneToOne(opening.Setup)));
         Attach(session, 0);
         _hub.ListChanged();
     }
 
     private void ColleaguesPage(string? sessionId)
     {
-        if (LiveSession(sessionId) is not { Colleagues: { } desk } session) { Error("Colleagues are off in this session."); return; }
+        if (LiveSession(sessionId) is not { Colleagues: { } desk } session) { Error(Session.ColleaguesOff); return; }
         Send(new JsonObject
         {
             ["type"] = "colleagues",

@@ -78,6 +78,10 @@ public static class HeadlessRun
         var target = Startup.FindResumeTarget(stores.Sessions, r.WorkingDir, r.Options.Resume);
         if (target.Problem is { } problem) return Usage(problem);
 
+        // A ONE-TO-ONE IS OPENED THROUGH ITS COLLEAGUE, read-only with its briefing — which a headless run does not build.
+        if (Core.Colleagues.ColleagueDesk.OneToOneOf(target.Snapshot) is { } colleague)
+            return Usage(Core.Colleagues.ColleagueDesk.OneToOneElsewhere(colleague));
+
         // EVERY USAGE ERROR BEFORE ANYTHING IS BUILT OR RESUMED. A mistyped --plugin on a -c run must
         // exit with the conversation it named still the one -c finds next time.
         var folders = PluginDiscovery.SearchFolders(resolution.PluginPaths, r.WorkingDir, r.Paths.ConfigDir);

@@ -139,7 +139,7 @@ public sealed class FolderSessionStore(AppPaths paths)
         if (context is null) return null;
 
         return new SessionSnapshot(header.AgentId, context, header.InputTokens,
-            header.OutputTokens, header.UpdatedAt, header.EditMode, header.WorkingDir, header.Thinking);
+            header.OutputTokens, header.UpdatedAt, header.EditMode, header.WorkingDir, header.Thinking) { Tag = header.Tag };
     }
 
     private static IReadOnlyList<ChatMessage>? ReadContext(SessionFolder folder)
@@ -484,4 +484,10 @@ public sealed record SessionSnapshot(
     /// from disk: its tab already shows it, and its workers are still kept.
     /// </summary>
     public bool Carried { get; init; }
+
+    /// <summary>
+    /// What kind of session it is when not an ordinary one — <c>colleague:&lt;Name&gt;</c> for a one-to-one — so a
+    /// resume by id opens it as what it is.
+    /// </summary>
+    public string? Tag { get; init; }
 }

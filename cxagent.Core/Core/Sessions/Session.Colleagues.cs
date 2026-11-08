@@ -138,7 +138,8 @@ public sealed partial class Session
         }
     }
 
-    private const string ColleaguesOff = "Colleagues are off. Turn them on in F8 › Colleagues, or with colleagues.enabled in config.json.";
+    /// <summary>What every front end says when colleagues are off — one text, so the terminal and a browser cannot differ.</summary>
+    public const string ColleaguesOff = "Colleagues are off. Turn them on in F8 › Colleagues, or with colleagues.enabled in config.json.";
 
     /// <summary><c>/colleagues</c>, with or without a verb — the same in every front end.</summary>
     public CommandStatus ColleaguesCommand(string? arguments)

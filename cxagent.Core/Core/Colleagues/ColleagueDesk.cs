@@ -442,6 +442,22 @@ public sealed class ColleagueDesk : IDisposable
         return note is null ? envelope : note + "\n" + envelope;
     }
 
+    /// <summary>The colleague whose one-to-one <paramref name="snapshot"/> is, or null for an ordinary session.</summary>
+    public static string? OneToOneOf(Storage.SessionSnapshot? snapshot) =>
+        snapshot?.Tag is { } tag && tag.StartsWith(OriginPrefix, StringComparison.Ordinal) ? tag[OriginPrefix.Length..] : null;
+
+    /// <summary>The refusal where a one-to-one is resumed by id with no library to open it through — a headless run, a
+    /// browser's resume of a saved session.</summary>
+    public static string OneToOneElsewhere(string colleague) =>
+        $"That is a one-to-one with {colleague}: open it with /colleagues open {colleague}, or Open in the library.";
+
+    /// <summary>
+    /// The tag <paramref name="name"/>'s one-to-one is saved under, or null for no such colleague — what a front end looks
+    /// for among its open sessions BEFORE asking for an opening, which refuses a conversation open anywhere, its own
+    /// window included.
+    /// </summary>
+    public string? OneToOneTag(string name) => _parts.Library.Find(name.Trim()) is { } record ? OriginPrefix + record.Name : null;
+
     /// <summary>
     /// What it takes to open <paramref name="name"/>'s one-to-one, or null with why not — ONE ANSWER FOR BOTH FRONT ENDS,
     /// which each only open a session with it: the terminal in a tab, the browser as a session.
@@ -458,7 +474,16 @@ public sealed class ColleagueDesk : IDisposable
             return null;
         }
         var tag = OriginPrefix + record.Name;
-        var resume = _parts.Sessions?.ListTagged(tag).FirstOrDefault() is { } saved ? _parts.Sessions.LoadById(saved.Uid) : null;
+        var saved = _parts.Sessions?.ListTagged(tag).FirstOrDefault();
+
+        // ONE WRITER PER CONVERSATION, as /sessions has it: open in another process, resuming it here would carry on a
+        // second copy beside the first.
+        if (saved is not null && _parts.Sessions!.HolderOf(saved.Uid) is { } held)
+        {
+            refusal = $"{record.Name}'s one-to-one is {Storage.SessionLock.HeldMessage(held)}.";
+            return null;
+        }
+        var resume = saved is not null ? _parts.Sessions!.LoadById(saved.Uid) : null;
 
         // ITS MOST RECENT WORKPLACE THAT STILL EXISTS — where it can read what it knows — else the session's own folder.
         var folder = resume?.WorkingDir is { } was && Directory.Exists(was) ? was

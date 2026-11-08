@@ -286,6 +286,13 @@ public sealed class WebSessionHub
             }
             var snapshot = services.Store.LoadById(agentId);
             if (snapshot is null) { refusal = "gone"; return null; }
+
+            // A ONE-TO-ONE OPENS THROUGH ITS COLLEAGUE — read-only, with its briefing — never as an ordinary session.
+            if (Core.Colleagues.ColleagueDesk.OneToOneOf(snapshot) is { } colleague)
+            {
+                refusal = Core.Colleagues.ColleagueDesk.OneToOneElsewhere(colleague);
+                return null;
+            }
             if (snapshot.WorkingDir is not { } dir || !InsideRoots(dir, services.Roots))
             {
                 refusal = "That session is outside the folders this server opens.";
