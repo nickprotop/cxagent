@@ -99,6 +99,9 @@ public sealed class ColleagueDesk : IDisposable
         _distiller.Failed += (name, why) => _parts.Notify?.Invoke($"Could not distil {name}'s latest work: {why}");
         _workers.SendBegan += OnBegan;
         _workers.SendEnded += OnEnded;
+
+        // ROUNDS LEFT FROM BEFORE — a process that ended mid-drain, a drain that failed — are taken up now.
+        Drain();
     }
 
     /// <summary>The library this desk keeps colleagues in.</summary>
@@ -160,7 +163,7 @@ public sealed class ColleagueDesk : IDisposable
         _given[marked] = 0;
         // IN THE SESSION'S HISTORY, so a resume brings it back as the colleague and not as the worker it was.
         _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, marked));
-        Drain(name);
+        Drain();
         return $"Kept {handle} as the colleague {name}. Its experience is being distilled from its work so far; from now on "
                + "every task it finishes is added.";
     }
@@ -171,6 +174,9 @@ public sealed class ColleagueDesk : IDisposable
         var name = order.Name.Trim();
         if (_parts.Library.Find(name) is not { } record)
             return $"There is no colleague called '{name}'. {Known()}";
+
+        // WHAT IT HAS NOT YET LEARNED FROM is taken up now, so this incarnation's next one starts from it.
+        Drain();
 
         var origin = OriginPrefix + record.Name;
         if (_workers.NameOfOrigin(origin) is { } live)
@@ -274,7 +280,7 @@ public sealed class ColleagueDesk : IDisposable
                 AlsoRead = OtherWorkplacesRead(round, record),
             });
             TellOfGrowth(found, record);
-            Drain(found.Name);
+            Drain();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
@@ -315,24 +321,37 @@ public sealed class ColleagueDesk : IDisposable
         });
     }
 
+    /// <summary>How long a drain that found the lock held waits before looking again.</summary>
+    internal TimeSpan BusyRetry { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>Set while a drain is queued and not yet started, so a burst of rounds queues one drain, not one each.</summary>
+    private int _drainQueued;
+
     /// <summary>
-    /// Distils in the background. A busy lock is another distiller draining; it is tried again a few times, since the
-    /// holder may have looked at this colleague's rounds just before this one was appended.
+    /// Distils every colleague's waiting rounds in the background — see <see cref="Distiller.DrainAllAsync"/>.
+    ///
+    /// <para>A HELD LOCK IS WAITED OUT, for as long as any round is still waiting: the holder drains everything it
+    /// finds, but it may have looked just before this round was appended, and giving up would leave the round until
+    /// that colleague's next one — which may never come.</para>
     /// </summary>
-    private void Drain(string name)
+    private void Drain()
     {
+        if (Interlocked.Exchange(ref _drainQueued, 1) == 1) return;
         lock (_drainGate)
         {
             _drains = _drains.ContinueWith(async _ =>
             {
-                for (var attempt = 0; attempt < 6; attempt++)
-                {
-                    var outcome = await _distiller.DrainAsync(new DistillRequest(name, DistillModel(name)), CancellationToken.None);
-                    if (outcome != DistillOutcome.Busy) return;
-                    await Task.Delay(TimeSpan.FromSeconds(5));
-                }
+                Interlocked.Exchange(ref _drainQueued, 0);
+                while (await _distiller.DrainAllAsync(DistillModel, CancellationToken.None) == DistillOutcome.Busy && AnyWaiting())
+                    await Task.Delay(BusyRetry);
             }, TaskScheduler.Default).Unwrap();
         }
+    }
+
+    private bool AnyWaiting()
+    {
+        try { return _parts.Library.List().Any(r => _parts.Library.Undistilled(r.Name).Count > 0); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
     }
 
     /// <summary>The distilling model for a colleague: its own setting, else its model, else the session's — 128k or more.</summary>

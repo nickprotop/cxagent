@@ -53,23 +53,70 @@ public sealed partial class Distiller(ColleagueStore store)
     /// <summary>Raised with the colleague's name and why, when its rounds could not be distilled.</summary>
     public event Action<string, string>? Failed;
 
-    /// <summary>Distils every waiting round of <paramref name="request"/>'s colleague, if no other distiller is at work.</summary>
-    public async Task<DistillOutcome> DrainAsync(DistillRequest request, CancellationToken ct)
+    /// <summary>
+    /// Distils every colleague's waiting rounds, if no other distiller is at work — Done when all are distilled,
+    /// Failed when one or more could not be (each said through <see cref="Failed"/>), Busy when the lock is held.
+    ///
+    /// <para>EVERY COLLEAGUE, NOT ONLY THE ONE ASKING: a drain that finds the lock held does nothing, trusting the
+    /// holder — so the holder must take what the others left, or a colleague never used again keeps a round nobody
+    /// learns from. Looked at again before letting go, for rounds appended while it worked.</para>
+    ///
+    /// <para>A COLLEAGUE THAT FAILS IS LEFT FOR THIS DRAIN, and the rest go on: one model that is down, or one round
+    /// refused, must not stop every other colleague learning.</para>
+    /// </summary>
+    /// <param name="modelsFor">For a colleague's name, how to reach a model by provider entry — see
+    /// <see cref="DistillRequest.ProviderFor"/>.</param>
+    /// <param name="ct">Stops the drain between calls.</param>
+    public async Task<DistillOutcome> DrainAllAsync(Func<string, Func<string?, ILlmProvider?>> modelsFor, CancellationToken ct)
     {
-        using var held = DistillingLock.TryTake(store.Root);
+        DistillingLock? held;
+        try
+        {
+            held = DistillingLock.TryTake(store.Root);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Failed?.Invoke("the library", $"could not take the distilling lock: {e.Message}");
+            return DistillOutcome.Failed;
+        }
         if (held is null) return DistillOutcome.Busy;
 
-        while (store.Undistilled(request.Colleague) is { Count: > 0 } waiting)
+        using (held)
         {
-            var batch = Batch(waiting);
-            var why = await DistilAsync(request, batch, ct);
-            if (why is not null)
+            var failed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            while (Waiting(failed) is { } name)
             {
-                Failed?.Invoke(request.Colleague, why);
-                return DistillOutcome.Failed;
+                var why = await DrainOneAsync(new DistillRequest(name, modelsFor(name)), ct);
+                if (why is null) continue;
+                failed.Add(name);
+                Failed?.Invoke(name, why);
             }
+            return failed.Count == 0 ? DistillOutcome.Done : DistillOutcome.Failed;
         }
-        return DistillOutcome.Done;
+    }
+
+    /// <summary>A colleague with rounds still to distil, other than those that failed in this drain, or null.</summary>
+    private string? Waiting(HashSet<string> failed) =>
+        store.List().Select(r => r.Name).FirstOrDefault(n => !failed.Contains(n) && store.Undistilled(n).Count > 0);
+
+    /// <summary>
+    /// Distils one colleague's waiting rounds, batch by batch, and answers why it stopped short, or null.
+    ///
+    /// <para>NOTHING HERE THROWS OUT OF THE DRAIN: the store's own failures — a full disk, a folder gone — are a reason
+    /// like the model's, said and left for the next drain.</para>
+    /// </summary>
+    private async Task<string?> DrainOneAsync(DistillRequest request, CancellationToken ct)
+    {
+        try
+        {
+            while (store.Undistilled(request.Colleague) is { Count: > 0 } waiting)
+                if (await DistilAsync(request, Batch(waiting), ct) is { } why) return why;
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException)
+        {
+            return $"its library could not be written: {e.Message}";
+        }
     }
 
     /// <summary>The waiting rounds one call can take, in order — at least one.</summary>
@@ -123,7 +170,14 @@ public sealed partial class Distiller(ColleagueStore store)
                     + "what overlaps and drop what is least useful." });
                 answer = await AskAsync(model, messages, touched, ct);
                 if (answer is { Changed: true } && Oversized(answer) is { } still) return still + " The previous experience is kept.";
+                // "NO CHANGE" TO A REQUEST TO SHORTEN is no answer to it: taking it would throw away what the first answer
+                // learned and count the rounds as distilled.
+                if (answer is { Changed: false }) return "asked to shorten, the distiller answered no change; the rounds wait";
             }
+        }
+        catch (CutOffException)
+        {
+            return "the distiller's answer was cut off before it ended; nothing of it is kept";
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -150,7 +204,7 @@ public sealed partial class Distiller(ColleagueStore store)
         {
             DistilledThrough = Math.Max(r.DistilledThrough, last),
             ExperienceVersion = r.ExperienceVersion + 1,
-            Description = answer.Description is { Length: > 0 } d ? d[..Math.Min(d.Length, 200)] : r.Description,
+            Description = answer.Description is { Length: > 0 } d ? OneLine(d) : r.Description,
             GrownIn = [.. folders.Concat(r.GrownIn.Where(g => !folders.Contains(g))).Take(5)],
         });
         return null;
@@ -169,11 +223,25 @@ public sealed partial class Distiller(ColleagueStore store)
         return touched;
     }
 
+    /// <summary>
+    /// One call to the distiller. AN ANSWER CUT OFF AT ITS LENGTH LIMIT IS REFUSED WHOLE: its last part is missing its
+    /// closing tag and would be dropped while the parts before it were written, and the rounds counted as learned from.
+    /// </summary>
     private static async Task<Answer?> AskAsync(ILlmProvider model, List<ChatMessage> messages,
         Dictionary<string, string> touched, CancellationToken ct)
     {
         var response = await model.ChatAsync([.. messages], tools: null, ct);
+        if (response.StopReason is "max_tokens" or "length") throw new CutOffException();
         return Answer.Parse(response.Text ?? "", touched);
+    }
+
+    private sealed class CutOffException : Exception;
+
+    /// <summary>A description is one line in the prompt's list: whitespace collapsed, at most 200 characters.</summary>
+    private static string OneLine(string text)
+    {
+        var line = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return line[..Math.Min(line.Length, 200)];
     }
 
     private static string? Oversized(Answer answer)
@@ -274,11 +342,11 @@ public sealed partial class Distiller(ColleagueStore store)
                 .GroupBy(m => m.Groups[1].Value)
                 .ToDictionary(g => g.Key, g => g.Last().Groups[2].Value.Trim(), StringComparer.Ordinal);
             var description = DescriptionPattern().Match(trimmed) is { Success: true } d ? Given(d.Groups[1].Value) : null;
-            if (core is null && codebases.Count == 0 && description is null)
-                return CorePattern().IsMatch(trimmed) || CodebasePattern().IsMatch(trimmed) || DescriptionPattern().IsMatch(trimmed)
-                    ? new Answer(text, false, null, new Dictionary<string, string>(), null)
-                    : null;
-            return new Answer(text, true, core, codebases, description);
+            // TAGS WITH NOTHING USABLE IN THEM — placeholders, a key the model invented — are not "no change": the model
+            // meant to answer and did not, so the rounds wait rather than count as learned from.
+            return core is null && codebases.Count == 0 && description is null
+                ? null
+                : new Answer(text, true, core, codebases, description);
         }
 
         private static string? Given(string part)

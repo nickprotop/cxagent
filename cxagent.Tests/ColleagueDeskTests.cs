@@ -188,6 +188,38 @@ public sealed class ColleagueDeskTests : IDisposable
     }
 
     [Fact]
+    public async Task A_round_left_from_before_is_distilled_when_the_desk_opens()
+    {
+        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Append("Charting", new PastRound(0, "old", _project, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+            [new ChatMessage { Role = "user", Content = "chart it" }, new ChatMessage { Role = "assistant", Content = new string('c', 400) }]));
+
+        var session = Open();
+        await session.Colleagues!.Idle();
+
+        Assert.Empty(Library.Undistilled("Charting"));
+    }
+
+    [Fact]
+    public async Task A_held_lock_is_waited_out_while_rounds_wait()
+    {
+        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        var held = DistillingLock.TryTake(Library.Root)!;
+        Library.Append("Charting", new PastRound(0, "old", _project, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+            [new ChatMessage { Role = "user", Content = "chart it" }, new ChatMessage { Role = "assistant", Content = new string('c', 400) }]));
+        var session = Open();
+        session.Colleagues!.BusyRetry = TimeSpan.FromMilliseconds(50);
+
+        // ANOTHER DISTILLER HOLDS THE LOCK FOR A WHILE — longer than the old six tries would have waited at this pace.
+        await Task.Delay(600);
+        Assert.Single(Library.Undistilled("Charting"));
+        held.Dispose();
+        await session.Colleagues.Idle();
+
+        Assert.Empty(Library.Undistilled("Charting"));
+    }
+
+    [Fact]
     public void Off_in_config_means_no_desk()
     {
         var session = Open(on: false);

@@ -46,13 +46,14 @@ public sealed class DistillerTests : IDisposable
         });
     }
 
-    private void Answer(string text) => _model.EnqueueResponse(new LlmResponse { Text = text, StopReason = "end_turn" });
+    private void Answer(string text, string stop = "end_turn") => _model.EnqueueResponse(new LlmResponse { Text = text, StopReason = stop });
 
     private string Distilled(string core, string codebase, string description = "Lays out charts") =>
         $"<core>\n{core}\n</core>\n<codebase key=\"{Key}\">\n{codebase}\n</codebase>\n<description>{description}</description>";
 
-    private Task<DistillOutcome> Drain() =>
-        new Distiller(_store).DrainAsync(new DistillRequest("Charting", _ => _model), CancellationToken.None);
+    private Task<DistillOutcome> Drain() => Drain(new Distiller(_store));
+
+    private Task<DistillOutcome> Drain(Distiller distiller) => distiller.DrainAllAsync(_ => _ => _model, CancellationToken.None);
 
     [Fact]
     public async Task A_round_is_folded_into_core_and_its_codebase()
@@ -128,7 +129,7 @@ public sealed class DistillerTests : IDisposable
         var distiller = new Distiller(_store);
         distiller.Failed += (_, w) => why = w;
 
-        Assert.Equal(DistillOutcome.Failed, await distiller.DrainAsync(new DistillRequest("Charting", _ => _model), CancellationToken.None));
+        Assert.Equal(DistillOutcome.Failed, await Drain(distiller));
 
         Assert.Equal("before", _store.ReadExperience("Charting").Core);
         Assert.Single(_store.Undistilled("Charting"));
@@ -145,7 +146,7 @@ public sealed class DistillerTests : IDisposable
         var distiller = new Distiller(_store);
         distiller.Failed += (_, w) => why = w;
 
-        Assert.Equal(DistillOutcome.Failed, await distiller.DrainAsync(new DistillRequest("Charting", _ => _model), CancellationToken.None));
+        Assert.Equal(DistillOutcome.Failed, await Drain(distiller));
 
         Assert.Equal("before", _store.ReadExperience("Charting").Core);
         Assert.Contains("secret", why);
@@ -264,6 +265,112 @@ public sealed class DistillerTests : IDisposable
         await Drain();
 
         Assert.DoesNotContain("...", _model.LastMessages!.First(m => m.Role == "system").Content);
+    }
+
+    /// <summary>
+    /// THE HOLDER DRAINS EVERY COLLEAGUE: another colleague's drain that found the lock busy relies on it, and a
+    /// colleague never used again would otherwise keep a round nobody learns from.
+    /// </summary>
+    [Fact]
+    public async Task A_drain_takes_every_colleague_s_waiting_rounds()
+    {
+        _store.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow });
+        Append();
+        _store.Append("Parser", new PastRound(0, "s2", _project, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+            [new ChatMessage { Role = "user", Content = "parse it" }, new ChatMessage { Role = "assistant", Content = new string('p', 400) }]));
+        Answer("NO CHANGE");
+        Answer("NO CHANGE");
+
+        Assert.Equal(DistillOutcome.Done, await Drain());
+
+        Assert.Empty(_store.Undistilled("Charting"));
+        Assert.Empty(_store.Undistilled("Parser"));
+    }
+
+    [Fact]
+    public async Task One_colleague_s_failure_does_not_stop_another_s()
+    {
+        _store.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow });
+        Append();
+        _store.Append("Parser", new PastRound(0, "s2", _project, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+            [new ChatMessage { Role = "user", Content = "parse it" }, new ChatMessage { Role = "assistant", Content = new string('p', 400) }]));
+        var models = new Dictionary<string, ILlmProvider?> { ["Charting"] = null, ["Parser"] = _model };
+        Answer("NO CHANGE");
+
+        Assert.Equal(DistillOutcome.Failed, await new Distiller(_store).DrainAllAsync(name => _ => models[name], CancellationToken.None));
+
+        Assert.Single(_store.Undistilled("Charting"));
+        Assert.Empty(_store.Undistilled("Parser"));
+    }
+
+    [Theory]
+    [InlineData("<core>\n...\n</core>\n<description>…</description>")]
+    [InlineData("<codebase key=\"invented-12345678\">\nSomething.\n</codebase>")]
+    public async Task Tags_with_nothing_usable_fail_and_the_round_waits(string answer)
+    {
+        Append();
+        Answer(answer);
+
+        Assert.Equal(DistillOutcome.Failed, await Drain());
+
+        Assert.Single(_store.Undistilled("Charting"));
+    }
+
+    [Fact]
+    public async Task No_change_to_a_shorten_request_fails_and_the_round_waits()
+    {
+        Append();
+        Answer(Distilled(new string('x', ExperienceBudget.CoreCap * 4 + 400), "## Architecture\nPanes."));
+        Answer("NO CHANGE");
+
+        Assert.Equal(DistillOutcome.Failed, await Drain());
+
+        Assert.Single(_store.Undistilled("Charting"));
+        Assert.Equal("", _store.ReadExperience("Charting").Core);
+    }
+
+    [Theory]
+    [InlineData("max_tokens")]
+    [InlineData("length")]
+    public async Task A_cut_off_answer_fails_and_writes_nothing(string stop)
+    {
+        Append();
+        Answer(Distilled("## How you work\nPanes first.", "## Architecture\nThree"), stop);
+
+        Assert.Equal(DistillOutcome.Failed, await Drain());
+
+        Assert.Equal("", _store.ReadExperience("Charting").Core);
+        Assert.Single(_store.Undistilled("Charting"));
+    }
+
+    [Fact]
+    public async Task A_description_is_kept_on_one_line()
+    {
+        Append();
+        Answer(Distilled("## How you work\nPanes.", "## Architecture\nPanes.", "Lays out charts\n\nand legends,   too"));
+
+        await Drain();
+
+        Assert.Equal("Lays out charts and legends, too", _store.Find("Charting")!.Description);
+    }
+
+    [Fact]
+    public async Task A_store_failure_fails_the_drain_and_says_so()
+    {
+        // THE EXPERIENCE FOLDER IS A FILE: every write into it throws, as a full disk or a permission change would.
+        var experience = Path.Combine(_store.FolderOf("Charting"), "experience");
+        Directory.Delete(experience, recursive: true);
+        File.WriteAllText(experience, "not a folder");
+        Append();
+        Answer(Distilled("## How you work\nPanes.", "## Architecture\nPanes."));
+        string? why = null;
+        var distiller = new Distiller(_store);
+        distiller.Failed += (_, w) => why = w;
+
+        Assert.Equal(DistillOutcome.Failed, await Drain(distiller));
+
+        Assert.NotNull(why);
+        Assert.Single(_store.Undistilled("Charting"));
     }
 
     [Fact]
