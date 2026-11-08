@@ -437,8 +437,19 @@ public sealed class WebSessionHub
             if (!_offers.ContainsKey(session.Id))
             {
                 Action<Core.Colleagues.KeepSuggestion> offered = log.KeepOffered;
+                // ANSWERED ANYWHERE — this page, another tab, the terminal — every tab takes the buttons away.
+                Action<string> answered = log.KeepAnswered;
                 session.KeepSuggested += offered;
-                if (!_offers.TryAdd(session.Id, new Unsubscribe(() => session.KeepSuggested -= offered))) session.KeepSuggested -= offered;
+                session.OfferAnswered += answered;
+                if (!_offers.TryAdd(session.Id, new Unsubscribe(() =>
+                    {
+                        session.KeepSuggested -= offered;
+                        session.OfferAnswered -= answered;
+                    })))
+                {
+                    session.KeepSuggested -= offered;
+                    session.OfferAnswered -= answered;
+                }
             }
             // ITS ASIDES TOO — /btw answered beside the conversation — as a watcher beside the terminal's own.
             var asides = session.WatchAsides(log);

@@ -289,7 +289,10 @@ public sealed partial class Session
 
         try
         {
-            Say(Commands.StatsCommand.Render(history, arguments));
+            // A RENAMED COLLEAGUE IS ONE ROW, under its name now — its runs were recorded under the name it had then.
+            var library = Colleagues?.Library;
+            Say(Commands.StatsCommand.Render(history, arguments,
+                library is null ? null : name => library.Find(name)?.Name ?? name));
         }
         catch (Exception ex)
         {

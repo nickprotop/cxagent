@@ -252,10 +252,15 @@ public sealed class ColleaguesTab
         if (!HasUnsaved) { SetStatus($"[{ColorScheme.MutedMarkup}]Nothing to save.[/]"); return; }
         if (_draft is { } draft)
         {
-            if (draft.Problem(_settings) is { } problem) { SetStatus($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(problem)}[/]"); return; }
+            var sessions = new Core.Storage.FolderSessionStore(_host.Apply.Paths);
+            if ((draft.Problem(_settings) ?? draft.RenameProblem(Library, sessions)) is { } problem)
+            {
+                SetStatus($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(problem)}[/]");
+                return;
+            }
             // THE LIBRARY, NOT config.json: nothing running moves, and its next bring reads it.
             string? refused;
-            try { refused = draft.Apply(Library, new Core.Storage.FolderSessionStore(_host.Apply.Paths)); }
+            try { refused = draft.Apply(Library, sessions); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 SetStatus($"[{ColorScheme.DangerMarkup}]✖ {MarkupParser.Escape(e.Message)}[/]");

@@ -38,4 +38,10 @@ public sealed record WorkerMark(
     /// rebuilt one the user had deleted.
     /// </summary>
     [JsonPropertyName("deleted")] public bool Deleted { get; init; }
+
+    /// <summary>
+    /// The user answered "Not this one" when it was offered as a colleague. Kept for a resume, which would otherwise
+    /// offer again a worker the user already turned down. A line that says only this changes nothing else about it.
+    /// </summary>
+    [JsonPropertyName("declined")] public bool Declined { get; init; }
 }

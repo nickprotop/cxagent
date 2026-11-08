@@ -487,6 +487,17 @@ public sealed class SubAgentStore
 
     private readonly ConcurrentDictionary<string, WorkerSends> _sends = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Records that the user turned this worker down as a colleague — "Not this one" — so it is never offered again: IN
+    /// THE STORE, which a resume rebuilds, rather than in whichever desk heard the answer.
+    /// </summary>
+    public void Decline(string name) => _declined[name] = 0;
+
+    /// <summary>Whether the user turned this worker down as a colleague.</summary>
+    public bool Declined(string name) => _declined.ContainsKey(name);
+
+    private readonly ConcurrentDictionary<string, byte> _declined = new(StringComparer.Ordinal);
+
     /// <summary>The word a release that announces none records — see <see cref="EndSend"/>.</summary>
     internal void NoteOutcome(string name, string outcome) => _noted[name] = outcome;
 

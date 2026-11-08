@@ -341,9 +341,10 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "keepSuggestion":
                 if (LiveSession(Str(m, "sessionId")) is { Colleagues: { } offering } offered && Str(m, "handle") is { Length: > 0 } offeredHandle)
                 {
+                    // THE DESK ANNOUNCES THE ANSWER, and every front end showing the offer — this page's tabs through the
+                    // hub, the terminal through its own subscription — takes its buttons away.
                     if (Str(m, "choice") == "keep") Notice(offered.Id, offering.KeepOffered(offeredHandle), "Info");
                     else offering.Dismiss(offeredHandle);
-                    _hub.LogFor(offered).KeepAnswered(offeredHandle);
                 }
                 else Error("No such open session.");
                 break;
@@ -819,7 +820,7 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 ConfigForm("general");
                 return true;
             // ASKED HERE, with the page's buttons — Core's own answer to forget says a front end must ask.
-            case "/colleagues" when args.StartsWith("forget", StringComparison.OrdinalIgnoreCase) && session.Colleagues is not null:
+            case "/colleagues" when args.StartsWith("forget", StringComparison.OrdinalIgnoreCase):
                 ForgetColleague(session, args[6..].Trim().Trim('"', '\''), confirmed: false);
                 return true;
             case "/colleagues" when args.StartsWith("open", StringComparison.OrdinalIgnoreCase):
@@ -1210,11 +1211,12 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 var library = new Core.Colleagues.ColleagueStore(S.Paths.ConfigDir);
                 if (library.Find(item) is not { } record) { Refused([$"There is no colleague called '{item}' any more — Reload."]); return; }
                 var draft = WebConfigForms.SetColleague(CxAgent.UI.Config.ColleagueDraft.For(record), values);
-                if (draft.Problem(settings) is { } problem) { Refused([problem]); return; }
+                var oneToOnes = new Core.Storage.FolderSessionStore(S.Paths);
+                if ((draft.Problem(settings) ?? draft.RenameProblem(library, oneToOnes)) is { } problem) { Refused([problem]); return; }
                 if (!draft.IsDirty) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return; }
                 // THE LIBRARY IS FILES ON DISK: a write that fails is said, as F8's tab says it, never thrown into the loop.
                 string? refused;
-                try { refused = draft.Apply(library, new Core.Storage.FolderSessionStore(S.Paths)); }
+                try { refused = draft.Apply(library, oneToOnes); }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Refused([e.Message]); return; }
                 if (refused is not null) { Refused([refused]); return; }
                 // RENAMED, THE PAGE FOLLOWS IT under its new name.

@@ -48,7 +48,7 @@ public static class ColleagueRenaming
         DistillingLock? held;
         try
         {
-            held = DistillingLock.TryTake(library.Root);
+            held = DistillingLock.TakeWithin(library.Root, DistillingLock.BriefWait);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -57,6 +57,9 @@ public static class ColleagueRenaming
         if (held is null) return "A colleague is being distilled — try again in a moment.";
         using (held)
         {
+            // ASKED AGAIN UNDER THE LOCK: another process renaming to the same name, or opening the one-to-one, between
+            // the first look and the lock would otherwise pass both.
+            if (Refusal(library, sessions, order) is { } now) return now;
             try
             {
                 var renamed = library.Update(order.Name.Trim(), r => string.Equals(r.Name, to, StringComparison.Ordinal) ? r : r with

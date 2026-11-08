@@ -176,6 +176,24 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         Assert.Empty(report.Left);
     }
 
+    /// <summary>
+    /// "Not this one" outlives a resume: the worker comes back turned down, and a declined line changes nothing else about
+    /// it — not the origin a later line gave it.
+    /// </summary>
+    [Fact]
+    public void A_declined_worker_comes_back_declined_and_otherwise_as_it_was()
+    {
+        var parent = Parent();
+        parent.Record(SpawnedByTool());
+        parent.NoteWorker(new WorkerMark("CHILD01", "colleague:Charting"));
+        parent.NoteWorker(new WorkerMark("CHILD01", null) { Declined = true });
+
+        var (store, _) = Revive(_ => new ChildAugment { Context = "EXP" });
+
+        Assert.True(store.Declined("charting"));
+        Assert.Equal("colleague:Charting", store.OriginOf("charting"));
+    }
+
     [Fact]
     public void A_bare_mark_after_an_agent_spawn_sets_the_origin()
     {

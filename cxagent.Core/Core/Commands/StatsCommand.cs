@@ -69,7 +69,10 @@ public static class StatsCommand
             + "Sessions, sub-agent runs, tool calls, compactions and "
             + "permission decisions. This cannot be undone.";
 
-    public static Message Render(UsageHistoryStore history, string? argument)
+    /// <param name="history">The usage history.</param>
+    /// <param name="argument">The window, as typed.</param>
+    /// <param name="colleagueName">A colleague's name now, from any name it had, or null with no library to ask.</param>
+    public static Message Render(UsageHistoryStore history, string? argument, Func<string, string>? colleagueName = null)
     {
         if (ParseDays(argument) is not { } days)
             // NAMED, like the unknown-command reply: "bogus" and "clear" are the same failure to
@@ -95,7 +98,7 @@ public static class StatsCommand
             Projects = StatsQuery.ByProject(sessions),
             Models = StatsQuery.ByModel(sessions),
             Types = StatsQuery.ByType(runs),
-            Distilling = StatsQuery.Distilling(runs),
+            Distilling = StatsQuery.Distilling(runs, colleagueName),
             Tools = StatsQuery.ByTool(calls),
 
             // THE SPARKLINE IS CAPPED AT 30 COLUMNS regardless of the window. "/stats all" over a

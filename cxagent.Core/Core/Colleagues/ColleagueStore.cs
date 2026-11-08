@@ -58,6 +58,8 @@ public sealed partial class ColleagueStore(string configDir)
         if (NameRefusal(record.Name) is { } why) throw new ArgumentException(why, nameof(record));
         var folder = FolderOf(record.Name);
         Directory.CreateDirectory(Path.Combine(folder, "experience"));
+        // MADE WITH THE COLLEAGUE, so marking a session live never has to make a folder — see MarkPresent.
+        Directory.CreateDirectory(Path.Combine(folder, "live"));
 
         // colleague.json, CREATED NEW, IS THE CLAIM — case-folded by the slug, so two names differing only in case share
         // it, and atomic, so two processes keeping one name at once cannot both win. A folder left without it by a keep
@@ -262,10 +264,22 @@ public sealed partial class ColleagueStore(string configDir)
     {
         var folder = FolderOf(name);
         if (!File.Exists(Path.Combine(folder, "colleague.json"))) return;
+        var live = Path.Combine(folder, "live");
         try
         {
-            var live = Directory.CreateDirectory(Path.Combine(folder, "live"));
-            File.WriteAllText(Path.Combine(live.FullName, $"{Environment.ProcessId}-{holder}"), "");
+            // A COLLEAGUE KEPT BEFORE PRESENCE WAS RECORDED has no live folder yet; one is made only beside its record.
+            Directory.CreateDirectory(live);
+            File.WriteAllText(Path.Combine(live, $"{Environment.ProcessId}-{holder}"), "");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+
+        // FORGOTTEN BETWEEN THE LOOK AND THE WRITE, the folder this made is all there is of it: taken back, or a colleague
+        // later given the name would count this mark as a session it is live in.
+        if (File.Exists(Path.Combine(folder, "colleague.json"))) return;
+        try
+        {
+            Directory.Delete(live, recursive: true);
+            if (!Directory.EnumerateFileSystemEntries(folder).Any()) Directory.Delete(folder);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
@@ -314,10 +328,23 @@ public sealed partial class ColleagueStore(string configDir)
     }
 
     /// <summary>
+    /// Deletes what forgetting left behind — a folder moved aside whose delete failed, a file held open at the time. Run
+    /// as a drain starts, under the distilling lock; what is still held stays for the next.
+    /// </summary>
+    public void SweepForgotten()
+    {
+        if (!Directory.Exists(Root)) return;
+        foreach (var aside in Directory.EnumerateDirectories(Root, ".forgotten-*"))
+            try { Directory.Delete(aside, recursive: true); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
+    /// <summary>
     /// Takes a colleague out of the library for good. FIRST MOVED ASIDE, under a dot name nothing reads, in one step: a
     /// round being appended or a record being saved by another process either lands before the move or finds no
     /// colleague — never half a folder. Then deleted, as far as it can be; what a held file keeps is left under the dot
-    /// name, invisible. Throws <see cref="IOException"/> when it cannot be moved, and then nothing has changed.
+    /// name, invisible, and swept by a later drain. Throws <see cref="IOException"/> when it cannot be moved, and then
+    /// nothing has changed.
     /// </summary>
     public void Retire(string name)
     {

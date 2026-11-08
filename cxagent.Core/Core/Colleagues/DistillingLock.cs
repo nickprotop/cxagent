@@ -35,5 +35,23 @@ public sealed class DistillingLock : IDisposable
         }
     }
 
+    /// <summary>
+    /// The lock, waited for a moment when another holds it — long enough for a drain that finds nothing to do to let go,
+    /// never as long as one at work: a rename or a forget would then hang on a model's answer. Null when still held.
+    /// </summary>
+    public static DistillingLock? TakeWithin(string root, TimeSpan wait)
+    {
+        var until = DateTime.UtcNow + wait;
+        while (true)
+        {
+            if (TryTake(root) is { } held) return held;
+            if (DateTime.UtcNow >= until) return null;
+            Thread.Sleep(50);
+        }
+    }
+
+    /// <summary>How long a rename or a forget waits for the lock before saying try again.</summary>
+    public static readonly TimeSpan BriefWait = TimeSpan.FromSeconds(3);
+
     public void Dispose() => _held.Dispose();
 }

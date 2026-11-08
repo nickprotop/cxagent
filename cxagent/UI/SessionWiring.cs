@@ -155,9 +155,16 @@ public static class SessionWiring
 
         // A WORKER WORTH KEEPING, offered once in the conversation its answers land in — never a blocking question. The
         // browser shows the same line and buttons from the same event (WebSessionHub).
+        // ANSWERED IN A BROWSER, its buttons go here too — one answer per offer.
+        var offers = new System.Collections.Concurrent.ConcurrentDictionary<string, SharpConsoleUI.Controls.ChatMessageId>(StringComparer.Ordinal);
+        session.OfferAnswered += handle => system.EnqueueOnUIThread(() =>
+        {
+            if (offers.TryRemove(handle, out var shown)) tab.Chat.ClearActions(shown);
+        }, "sessionWiring.Subscribe");
         session.KeepSuggested += offer => system.EnqueueOnUIThread(() =>
         {
             var id = tab.Chat.AddMessage(SharpConsoleUI.Controls.ChatRole.System, offer.Line);
+            offers[offer.Handle] = id;
             tab.Chat.SetActions(id,
             [
                 new SharpConsoleUI.Controls.ChatMessageAction

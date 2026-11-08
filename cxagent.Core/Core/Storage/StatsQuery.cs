@@ -232,10 +232,13 @@ public static class StatsQuery
     public const string DistillPrefix = "distill:";
 
     /// <summary>What distilling cost, per colleague, costliest first — one row per call recorded under <see cref="DistillPrefix"/>.</summary>
-    public static IReadOnlyList<DistillStat> Distilling(IReadOnlyList<RunRecord> runs) =>
+    /// <param name="runs">The runs in the window.</param>
+    /// <param name="nameOf">A colleague's name now, from any name it had — so a renamed colleague is one row. Null keeps
+    /// each name as recorded.</param>
+    public static IReadOnlyList<DistillStat> Distilling(IReadOnlyList<RunRecord> runs, Func<string, string>? nameOf = null) =>
         [.. runs
             .Where(r => r.TypeName.StartsWith(DistillPrefix, StringComparison.Ordinal))
-            .GroupBy(r => r.TypeName[DistillPrefix.Length..])
+            .GroupBy(r => nameOf is null ? r.TypeName[DistillPrefix.Length..] : nameOf(r.TypeName[DistillPrefix.Length..]))
             .Select(g => new DistillStat(
                 g.Key,
                 g.Count(),

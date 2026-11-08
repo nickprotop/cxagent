@@ -120,7 +120,11 @@ public sealed partial class Session
         Colleagues?.Dispose();
         Colleagues = new ColleagueDesk(parts);
         Colleagues.KeepSuggested += s => KeepSuggested?.Invoke(s);
+        Colleagues.OfferAnswered += h => OfferAnswered?.Invoke(h);
     }
+
+    /// <summary>An offer to keep a worker was answered, in some front end — each takes its buttons away.</summary>
+    public event Action<string>? OfferAnswered;
 
     /// <summary>
     /// A worker of this session worth keeping as a colleague — ON THE SESSION, so a front end subscribes once and hears it
@@ -301,9 +305,7 @@ public sealed partial class Session
     private CommandStatus Freeze(ColleagueDesk desk, string name, bool freeze)
     {
         if (name.Length == 0) return Told($"Say who: /colleagues {(freeze ? "freeze" : "unfreeze")} <name>.");
-        var record = freeze ? desk.Library.Freeze(name) : desk.Library.Unfreeze(name);
-        if (record is null) return Told($"There is no colleague called '{name}'. /colleagues lists them.");
-        return Told(freeze ? ColleagueDesk.FrozenLine(record.Name) : ColleagueDesk.UnfrozenLine(record.Name));
+        return Told(desk.Freeze(name, freeze));
     }
 
     private CommandStatus ListColleagues(ColleagueDesk desk)

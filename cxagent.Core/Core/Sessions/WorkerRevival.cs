@@ -147,6 +147,9 @@ internal static class WorkerRevival
                 return "its name is taken";
         }
 
+        // TURNED DOWN AS A COLLEAGUE BEFORE, it stays turned down: "Not this one" is the user's answer, not this run's.
+        if (spawn.Declined) store.Decline(spawn.Name);
+
         // BACK, BUT NOT AS IT WAS: an origin nothing could equip again — no module now (the feature is off), or one that
         // failed — leaves an ordinary worker with its conversation, and the session says so rather than letting the user
         // believe it is what it was.
@@ -203,6 +206,9 @@ internal static class WorkerRevival
         /// <summary>Where it came from, as the last origin line about it said, or null for an ordinary worker.</summary>
         public string? Origin { get; set; }
 
+        /// <summary>The user turned it down as a colleague — see <see cref="WorkerMark.Declined"/>.</summary>
+        public bool Declined { get; set; }
+
         /// <summary>Spawned by an origin line rather than the agent tool — which may never have run.</summary>
         public bool Marked { get; init; }
 
@@ -254,6 +260,13 @@ internal static class WorkerRevival
                 if (mark.Deleted)
                 {
                     spawns.Remove(mark.AgentId);
+                    continue;
+                }
+                // TURNED DOWN AS A COLLEAGUE: noted on the worker, and nothing else about it changes — this line carries
+                // no origin to apply.
+                if (mark.Declined)
+                {
+                    if (spawns.TryGetValue(mark.AgentId, out var declined)) declined.Declined = true;
                     continue;
                 }
                 if (mark.Name is { Length: > 0 } name && !spawns.ContainsKey(mark.AgentId))

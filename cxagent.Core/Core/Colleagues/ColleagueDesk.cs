@@ -225,14 +225,14 @@ public sealed partial class ColleagueDesk : IDisposable
     {
         // WHAT THIS SESSION'S OWN DISTILLING MADE IS NOT NEWS FROM ELSEWHERE: the incarnation here learned it. Counted as
         // known, or each round of its own was followed by "your experience has grown … from sessions in …".
-        var origin = OriginPrefix + change.Colleague;
-        if (_given.TryGetValue(origin, out var given) && change.Version > given) _given[origin] = change.Version;
+        var key = KeyOf(change.Colleague);
+        if (_given.TryGetValue(key, out var given) && change.Version > given) _given[key] = change.Version;
 
         // THE ROUND THIS DESK APPENDED, BY NUMBER: still waiting, it is not this change's; distilled before it — with
         // nothing to learn, which raises nothing, or by another process — its claim goes, and this change is another
         // session's news. A flag kept the claim, and the next distilling of someone else's round was said here.
-        if (!_owned.TryGetValue(change.Colleague, out var mine) || mine > change.Through) return;
-        _owned.TryRemove(change.Colleague, out _);
+        if (!_owned.TryGetValue(key, out var mine) || mine > change.Through) return;
+        _owned.TryRemove(key, out _);
         if (mine < change.From) return;
         if (change.Nothing)
         {
@@ -315,14 +315,7 @@ public sealed partial class ColleagueDesk : IDisposable
         var was = _parts.Library.Find(name.Trim());
         if (ColleagueRenaming.Rename(_parts.Library, _parts.Sessions, new RenameOrder(name, newName)) is { } why) return why;
         var record = _parts.Library.Find(newName.Trim())!;
-        if (HandleOf(record) is { } handle && _workers.Find(handle) is { } kept && _workers.OriginOf(handle) is { } old)
-        {
-            var origin = OriginPrefix + record.Name;
-            _workers.SetOrigin(handle, origin);
-            _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, origin));
-            if (_given.TryRemove(old, out var given)) _given[origin] = given;
-            if (_windows.TryRemove(old, out var window)) _windows[origin] = window;
-        }
+        if (HandleOf(record) is { } handle && _workers.Find(handle) is { } kept) Reorigin(kept, record.Name);
         StateChanged?.Invoke();
         return $"{was?.Name ?? name.Trim()} is now called {record.Name}. Sessions that knew it by its old name still bring it back.";
     }
@@ -438,7 +431,7 @@ public sealed partial class ColleagueDesk : IDisposable
 
         var marked = OriginPrefix + name;
         _workers.SetOrigin(handle, marked);
-        _given[marked] = 0;
+        _given[KeyOf(name)] = 0;
         Present(name);
         // IN THE SESSION'S HISTORY, so a resume brings it back as the colleague and not as the worker it was.
         _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, marked));
@@ -511,7 +504,7 @@ public sealed partial class ColleagueDesk : IDisposable
         if (choice is null) return "There is no model to run it on.";
         if (ExperienceBudget.WindowRefusal(choice.Window, choice.Label) is { } small) return small;
 
-        _windows[origin] = choice.Window!.Value;
+        _windows[KeyOf(record.Name)] = choice.Window!.Value;
         // THE ENTRY THAT PASSED THE CHECK, NAMED EVEN WHEN IT IS THE SESSION'S OWN: left out, the spawner would take the
         // type's own routing, which may be another, smaller model than the one the preload was sized for.
         var instance = choice.Instance;
@@ -678,11 +671,11 @@ public sealed partial class ColleagueDesk : IDisposable
         var record = _parts.Library.Find(name)
             ?? throw new InvalidOperationException($"there is no colleague called {name} any more");
 
-        var window = _windows.TryGetValue(origin, out var w) ? w
+        var window = _windows.TryGetValue(KeyOf(record.Name), out var w) ? w
             : (record.Instance is { } own ? _parts.Models(own)?.Window : null) ?? _parts.Models(null)?.Window ?? ExperienceBudget.MinimumWindow;
         var preload = ExperienceBudget.Preload(_parts.Library.ReadExperience(record.Name),
             new ExperienceFocus(Codebase.Key(_parts.Folder), record.Workplaces, ExperienceBudget.For(window)));
-        _given[origin] = record.ExperienceVersion;
+        _given[KeyOf(record.Name)] = record.ExperienceVersion;
         Present(record.Name);
 
         // ITS WORKPLACES AS THEY ARE NOW: one moved or deleted is said in the briefing, never read — a folder that is no
@@ -773,11 +766,11 @@ public sealed partial class ColleagueDesk : IDisposable
     /// </summary>
     private void TellOfGrowth(Found found, ColleagueRecord record)
     {
-        var origin = OriginPrefix + found.Name;
-        var given = _given.GetOrAdd(origin, record.ExperienceVersion);
+        var key = KeyOf(found.Name);
+        var given = _given.GetOrAdd(key, record.ExperienceVersion);
         if (record.ExperienceVersion <= given) return;
         var elsewhere = record.GrownIn.Where(f => !string.Equals(f, _parts.Folder, StringComparison.Ordinal)).ToList();
-        _given[origin] = record.ExperienceVersion;
+        _given[key] = record.ExperienceVersion;
         if (elsewhere.Count == 0) return;
         found.Kept.Agent.Agent.Mailbox.TryEnqueue(GrowthLine(elsewhere),
             out _, wakes: false);
@@ -785,7 +778,7 @@ public sealed partial class ColleagueDesk : IDisposable
 
     private void Append(string name, PastRound round)
     {
-        _owned[name] = _parts.Library.Append(name, round);
+        _owned[KeyOf(name)] = _parts.Library.Append(name, round);
         var key = Codebase.Key(_parts.Folder);
         var firstHere = _counted.TryAdd(name + "\u0001" + key, 0);
         _parts.Library.Update(name, r =>
@@ -922,7 +915,10 @@ public sealed partial class ColleagueDesk : IDisposable
         // BY ITS NAME NOW: a worker brought in before a rename elsewhere still carries the old one, and its rounds, its
         // growth and what is said when it learns all go by the colleague's name as the library has it.
         var name = origin[OriginPrefix.Length..];
-        return new Found(kept, _parts.Library.Find(name)?.Name ?? name);
+        if (_parts.Library.Find(name) is not { } record) return new Found(kept, name);
+        // RENAMED ELSEWHERE — F8, a browser, another process — the worker takes the name now, as a rename here gives it.
+        if (!string.Equals(record.Name, name, StringComparison.Ordinal)) Reorigin(kept, record.Name);
+        return new Found(kept, record.Name);
     }
 
     private string Known()
@@ -976,11 +972,41 @@ public sealed partial class ColleagueDesk : IDisposable
     public string KeepOffered(string handle)
     {
         _suggested[handle] = 0;
-        return Keep(new KeepOrder(handle, null));
+        var said = Keep(new KeepOrder(handle, null));
+        OfferAnswered?.Invoke(handle);
+        return said;
     }
 
-    /// <summary>Not this one: the worker is never offered again in this session.</summary>
-    public void Dismiss(string handle) => _suggested[handle] = 0;
+    /// <summary>
+    /// Not this one: the worker is never offered again — recorded in the session's history, so a resume does not offer
+    /// it either.
+    /// </summary>
+    public void Dismiss(string handle)
+    {
+        _suggested[handle] = 0;
+        _workers.Decline(handle);
+        if (_workers.Find(handle) is { } kept)
+            _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, _workers.OriginOf(handle)) { Declined = true });
+        OfferAnswered?.Invoke(handle);
+    }
+
+    /// <summary>
+    /// An offer was answered — Keep or Not this one, in either front end — so every front end showing it takes its
+    /// buttons away. One answer per offer: the other front end's buttons would otherwise keep a worker turned down.
+    /// </summary>
+    public event Action<string>? OfferAnswered;
+
+    /// <summary>
+    /// Freezes or unfreezes a colleague and answers the line to show; the panel and cards redraw to say so. Null record:
+    /// no such colleague.
+    /// </summary>
+    public string Freeze(string name, bool freeze)
+    {
+        var record = freeze ? _parts.Library.Freeze(name) : _parts.Library.Unfreeze(name);
+        if (record is null) return $"There is no colleague called '{name}'. /colleagues lists them.";
+        StateChanged?.Invoke();
+        return freeze ? FrozenLine(record.Name) : UnfrozenLine(record.Name);
+    }
 
     /// <summary>
     /// At the end of each stretch of a worker's work, whether it has earned an offer: steered twice by the user, followed
@@ -990,7 +1016,7 @@ public sealed partial class ColleagueDesk : IDisposable
     private void Weigh(string agentId, string? outcome)
     {
         if (!_parts.Suggest || _parts.OneToOne || KeepSuggested is null) return;
-        if (_workers.FindByAgentId(agentId) is not { } kept || _workers.OriginOf(kept.Name) is not null) return;
+        if (_workers.FindByAgentId(agentId) is not { } kept || _workers.OriginOf(kept.Name) is not null || _workers.Declined(kept.Name)) return;
         var rounds = _stretches.AddOrUpdate(agentId, 1, (_, n) => n + 1);
         if (_suggested.ContainsKey(kept.Name)) return;
         var sends = _workers.SendsTo(kept.Name);
@@ -1030,6 +1056,8 @@ public sealed partial class ColleagueDesk : IDisposable
     /// <summary>A worker of a colleague that is gone, made an ordinary one — in memory, and recorded for a resume.</summary>
     private void Unmark(StoredAgent kept)
     {
+        // NOT OFFERED BACK AS A COLLEAGUE: the user just forgot the one it was, and its sends were counted while it was.
+        _suggested[kept.Name] = 0;
         _workers.SetOrigin(kept.Name, null);
         _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, null));
     }
@@ -1064,18 +1092,17 @@ public sealed partial class ColleagueDesk : IDisposable
     public string Forget(string name)
     {
         if (_parts.Library.Find(name.Trim()) is not { } record) return $"There is no colleague called '{name.Trim()}'.";
-        if (_parts.Sessions is { } sessions)
-            foreach (var tag in ColleagueRenaming.Origins(record))
-                foreach (var saved in sessions.ListTagged(tag))
-                    if (sessions.HolderOf(saved.Uid) is { } held)
-                        return $"{record.Name}'s one-to-one is {Storage.SessionLock.HeldMessage(held)} — close it first.";
+        if (OneToOneOpen(record) is { } open) return open;
+        var key = KeyOf(record.Name);
 
         DistillingLock? lockHeld;
-        try { lockHeld = DistillingLock.TryTake(_parts.Library.Root); }
+        try { lockHeld = DistillingLock.TakeWithin(_parts.Library.Root, DistillingLock.BriefWait); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return $"Could not forget {record.Name}: {e.Message}"; }
         if (lockHeld is null) return "A colleague is being distilled — try again in a moment.";
         using (lockHeld)
         {
+            // ASKED AGAIN UNDER THE LOCK: a one-to-one opened since the first look would lose its session beneath it.
+            if (OneToOneOpen(record) is { } since) return since;
             try { _parts.Library.Retire(record.Name); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
@@ -1095,14 +1122,36 @@ public sealed partial class ColleagueDesk : IDisposable
             notes.Add($"{handle} carries on here as an ordinary worker");
         }
         _present.TryRemove(record.Name, out _);
-        foreach (var origin in ColleagueRenaming.Origins(record))
-        {
-            _given.TryRemove(origin, out _);
-            _windows.TryRemove(origin, out _);
-        }
-        _owned.TryRemove(record.Name, out _);
+        _given.TryRemove(key, out _);
+        _windows.TryRemove(key, out _);
+        _owned.TryRemove(key, out _);
         StateChanged?.Invoke();
         return $"{record.Name} is forgotten." + (notes.Count > 0 ? " " + string.Join("; ", notes) + "." : "");
+    }
+
+    /// <summary>Why its one-to-one, open in some process, stops a forget — or null when none is open.</summary>
+    private string? OneToOneOpen(ColleagueRecord record)
+    {
+        if (_parts.Sessions is not { } sessions) return null;
+        foreach (var tag in ColleagueRenaming.Origins(record))
+            foreach (var saved in sessions.ListTagged(tag))
+                if (sessions.HolderOf(saved.Uid) is { } held)
+                    return $"{record.Name}'s one-to-one is {Storage.SessionLock.HeldMessage(held)} — close it first.";
+        return null;
+    }
+
+    /// <summary>
+    /// What the desk keys a colleague's state by: its folder, which a rename never moves — so what was given, what was
+    /// sized and which round is this session's survive a rename made anywhere, here or not.
+    /// </summary>
+    private string KeyOf(string name) => _parts.Library.FolderOf(name);
+
+    /// <summary>A worker of a renamed colleague, given its name now — in memory, and recorded for a resume.</summary>
+    private void Reorigin(StoredAgent kept, string name)
+    {
+        var origin = OriginPrefix + name;
+        _workers.SetOrigin(kept.Name, origin);
+        _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, origin));
     }
 
     public void Dispose()

@@ -548,6 +548,21 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         Assert.NotNull(session.SubAgents.OriginOf(handle));
     }
 
+    /// <summary>An offer answered in the terminal leaves the browser too — the desk announces the answer, not the page.</summary>
+    [Fact]
+    public async Task An_offer_answered_elsewhere_leaves_the_browser()
+    {
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        var session = _manager.Sessions.First(s => s.Id == id);
+        await session.Colleagues!.Idle();
+        Assert.NotNull(_hub.LogFor(session));
+
+        session.Colleagues!.Dismiss("someone");
+
+        await tab.NextAsync(m => m["kind"]?.GetValue<string>() == "keepAnswered" && m["handle"]?.GetValue<string>() == "someone");
+    }
+
     [Fact]
     public async Task A_session_closed_elsewhere_tells_its_tabs()
     {

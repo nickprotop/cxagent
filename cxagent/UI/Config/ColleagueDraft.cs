@@ -79,6 +79,13 @@ public sealed class ColleagueDraft
             ? ExperienceBudget.WindowRefusal(window, entry)
             : null;
 
+    /// <summary>
+    /// Why the new name cannot be taken, or null — the same checks the save makes, asked first so the page says so beside
+    /// the field rather than after the rest was looked at.
+    /// </summary>
+    public string? RenameProblem(ColleagueStore library, Core.Storage.FolderSessionStore? sessions) =>
+        Renaming ? ColleagueRenaming.Refusal(library, sessions, new RenameOrder(Name, NewName!)) : null;
+
     /// <summary>The name it has once saved — the new one when it is renamed.</summary>
     public string SavedName => Renaming ? NewName!.Trim() : Name;
 

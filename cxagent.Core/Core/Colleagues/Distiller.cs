@@ -122,6 +122,8 @@ public sealed partial class Distiller(ColleagueStore store)
 
         using (held)
         {
+            // WHAT A FORGET COULD NOT DELETE goes now, under the same lock every forget takes.
+            store.SweepForgotten();
             var failed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             while (Waiting(failed) is { } name)
             {

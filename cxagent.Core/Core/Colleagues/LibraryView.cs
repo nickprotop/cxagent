@@ -54,7 +54,11 @@ public static class LibraryView
             foreach (var (key, text) in experience.Codebases)
                 if (r.Workplaces.All(w => w.Codebase != key) && text.Length > 0) parts.Add(new ExperiencePart(key, text));
             return new LibraryEntry(r.Name, r.Description, line.Knows,
-                new LibraryFacts(r.ExperienceVersion, store.RoundCount(r.Name), r.DistilledThrough, r.Skipped.Count, r.Type, r.Instance)
+                // DISTILLED IS THE WATERMARK LESS THE ROUNDS LIVED FROZEN beneath it: the watermark passes over them, and
+                // they are counted on their own, as never learned from.
+                new LibraryFacts(r.ExperienceVersion, store.RoundCount(r.Name),
+                    r.DistilledThrough - r.Unlearned.Sum(u => Math.Max(0, Math.Min(u.Through, r.DistilledThrough) - u.From + 1)),
+                    r.Skipped.Count, r.Type, r.Instance)
                 {
                     Spend = r.Spend,
                     Frozen = r.Frozen,
