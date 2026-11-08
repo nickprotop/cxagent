@@ -157,18 +157,7 @@ public sealed class GatedAgentTool : IAgentTool
             PermissionOutcome outcome;
             try
             {
-                outcome = await _gate.RequestAsync(
-                    request with
-                    {
-                        Requester = context.Requester,
-                        RequesterRunsOn = (context as Execution.JobContext)?.RequesterRunsOn,
-                        RequesterRoot = (context as Execution.JobContext)?.RequesterRoot,
-                        // THE ID TOO, from the concrete context: IJobContext is published and carries no agent id.
-                        RequesterAgentId = (context as Execution.JobContext)?.AgentId,
-                        // THE CALLER'S POLICY FIRST — see JobContext.Policy.
-                        Policy = (context as Execution.JobContext)?.Policy ?? _policy,
-                        OnReviewing = context.ReportReviewing,
-                    }, ct);
+                outcome = await new CallAsker(_gate, _policy).AskAsync(request, context, ct);
             }
             finally
             {
@@ -218,4 +207,27 @@ public sealed class GatedAgentTool : IAgentTool
         // calls should not have this silently clobber a decision it recorded.
         return decidedBy is null || result.DecidedBy is not null ? result : result with { DecidedBy = decidedBy };
     }
+}
+
+/// <summary>
+/// One call's own question, put to the gate as the caller — who asks, where it runs, and the caller's policy first.
+/// SHARED by <see cref="GatedAgentTool"/> and a tool that must ask partway through its own work (a colleague's recall,
+/// which knows what it would return only once it has looked), so the two cannot fill a request differently.
+/// </summary>
+/// <param name="Gate">The session's gate.</param>
+/// <param name="Fallback">The policy to judge by when the caller's context carries none.</param>
+public sealed record CallAsker(IPermissionGate Gate, PermissionPolicy? Fallback)
+{
+    public Task<PermissionOutcome> AskAsync(PermissionRequest request, IJobContext context, CancellationToken ct) =>
+        Gate.RequestAsync(request with
+        {
+            Requester = context.Requester,
+            RequesterRunsOn = (context as Execution.JobContext)?.RequesterRunsOn,
+            RequesterRoot = (context as Execution.JobContext)?.RequesterRoot,
+            // THE ID TOO, from the concrete context: IJobContext is published and carries no agent id.
+            RequesterAgentId = (context as Execution.JobContext)?.AgentId,
+            // THE CALLER'S POLICY FIRST — see JobContext.Policy.
+            Policy = (context as Execution.JobContext)?.Policy ?? Fallback,
+            OnReviewing = context.ReportReviewing,
+        }, ct);
 }

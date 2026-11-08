@@ -132,26 +132,4 @@ public sealed class RecallToolTests : IDisposable
         Assert.DoesNotContain("sk-abcdefghijklmnopqrstuvwxyz0123456789", text);
         Assert.Contains("set the key", text);
     }
-
-    /// <summary>
-    /// While the session is served to a browser, a recall that would return what was read in a folder the browser may
-    /// not reach asks first — through the same check a direct read there makes (user, 2026-11-08: "colleague must know").
-    /// </summary>
-    [Fact]
-    public void Recall_while_served_asks_for_outside_rounds()
-    {
-        var served = new ServedFolders { Roots = ["/home/dev/source/invoice"] };
-        var tool = Tool(served);
-
-        Assert.Null(tool.Gate(Call(("action", "read"), ("round", 2))));
-        var read = tool.Gate(Call(("action", "read"), ("round", 1)));
-        Assert.Equal(PermissionKind.FileRead, read!.Kind);
-        Assert.Equal(_cxgpu, read.Display);
-        Assert.NotNull(tool.Gate(Call(("action", "search"), ("query", "legend"))));
-        Assert.Null(tool.Gate(Call(("action", "search"), ("query", "legend"), ("codebase", "invoice"))));
-        Assert.Null(tool.Gate(Call(("action", "experience"))));
-
-        served.Roots = null;
-        Assert.Null(tool.Gate(Call(("action", "read"), ("round", 1))));
-    }
 }

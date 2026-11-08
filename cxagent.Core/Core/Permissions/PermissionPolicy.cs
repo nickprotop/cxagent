@@ -967,7 +967,10 @@ public class PermissionPolicy
     /// </summary>
     private bool ReadsAlso(PermissionRequest request)
     {
-        if (_readAlso is not { } also || request.Kind != PermissionKind.FileRead || request.RemovesSource) return false;
+        // AN UNTRUSTED SESSION READS NOTHING SILENTLY, its colleague's workplaces included: trust bounds what a session
+        // does without asking (user, 2026-11-08).
+        if (_readAlso is not { } also || request.Kind != PermissionKind.FileRead || request.RemovesSource
+            || RootTrust != TrustState.Trusted) return false;
         var resolved = Paths.AsFileTool(request.Display);
         if (resolved is null) return false;
         if (also.Served?.Roots is { } served && !served.Any(root => PathResolver.Contains(root, resolved))) return false;

@@ -35,7 +35,15 @@ public sealed record BringOrder(string Name, string Task, string? Model, bool Ba
 /// <param name="Folder">The folder it was opened in.</param>
 /// <param name="Messages">Its conversation.</param>
 /// <summary>What <see cref="ColleagueDesk.ReadsOf"/> sorts: one round's messages, whose colleague, and the folder it ran in.</summary>
-public sealed record RoundReadsRequest(IReadOnlyList<ChatMessage> Round, ColleagueRecord Record, string Folder);
+/// <param name="Folder">The session's folder — its codebase is the one the round is about.</param>
+public sealed record RoundReadsRequest(IReadOnlyList<ChatMessage> Round, ColleagueRecord Record, string Folder)
+{
+    /// <summary>Where the worker ran, when it was given a folder of its own — its relative paths mean that folder.</summary>
+    public string? ResolveFrom { get; init; }
+
+    /// <summary>cxagent's own folder, whose logs a backgrounded command writes and a worker reads: never "elsewhere".</summary>
+    public string? Ignore { get; init; }
+}
 
 /// <summary>Where a round read beyond its own codebase.</summary>
 /// <param name="Workplaces">Other workplaces of the colleague's, by their recorded folder.</param>
@@ -98,6 +106,9 @@ public sealed record ColleagueDeskParts
     /// <summary>What a browser may reach while the session is served to one — read by an incarnation's workplace reads
     /// and its recall at each decision.</summary>
     public Web.ServedFolders? Served { get; init; }
+
+    /// <summary>The session's gate — what a colleague's recall asks through, as the caller, while the session is served.</summary>
+    public Permissions.IPermissionGate? Gate { get; init; }
 }
 
 /// <summary>
@@ -446,6 +457,10 @@ public sealed class ColleagueDesk : IDisposable
 
         // AN ORDINARY WORKER IF THE DOOR REFUSED, AND MARKED AS ONE: left marked, its rounds would reach a colleague it is
         // not, and a keep of it would be refused as one it already is.
+        // A TOOL OF ITS OWN LEFT OUT IS SAID: another tool in this session holds the name, and the colleague is told it
+        // has what it now has not.
+        if (child is { ToolsLeftOut.Count: > 0 })
+            _parts.Notify?.Invoke($"{record.Name}: {string.Join(", ", child.ToolsLeftOut)} left out — another tool in this session holds that name.");
         var refused = child?.AugmentRefusal;
         var handle = SubAgentEnvelope.NameOf(envelope);
         if (refused is not null && handle is not null) _workers.SetOrigin(handle, null);
@@ -551,7 +566,9 @@ public sealed class ColleagueDesk : IDisposable
             if (round.Count == 0 || _parts.Library.Find(name) is null) return;
             _oneToOneKept[name] = round[^1];
             // A ONE-TO-ONE READS ACROSS FOLDERS TOO, and what it learned there belongs where it was read.
-            var reads = _parts.Library.Find(name) is { } record ? ReadsOf(new RoundReadsRequest(round, record, exchange.Folder)) : new RoundReads([], []);
+            var reads = _parts.Library.Find(name) is { } record
+                ? ReadsOf(new RoundReadsRequest(round, record, exchange.Folder) { Ignore = Path.GetDirectoryName(_parts.Library.Root) })
+                : new RoundReads([], []);
             Append(name, new PastRound(0, exchange.SessionId, exchange.Folder,
                 round[0].Timestamp == default ? DateTimeOffset.UtcNow : round[0].Timestamp, DateTimeOffset.UtcNow, round)
             {
@@ -591,7 +608,7 @@ public sealed class ColleagueDesk : IDisposable
         return new ChildAugment
         {
             Context = IncarnationBriefing.For(record, preload, new IncarnationSetting(ReadsWorkplaces: here.Count > 0, gone)),
-            ExtraTools = [new RecallTool(new RecallScope(_parts.Library, record.Name, _parts.Served))],
+            ExtraTools = [new RecallTool(RecallScopeFor(record.Name))],
             ReadAlso = new Permissions.ReadAlso(here, _parts.Served),
         };
     }
@@ -601,6 +618,14 @@ public sealed class ColleagueDesk : IDisposable
         if (Incarnation(agentId) is not { } found) return;
         _rounds[agentId] = new RoundStart(found.Kept.Agent.Agent.Context.Messages.LastOrDefault(m => m.Role != "system"), DateTimeOffset.UtcNow);
     }
+
+    /// <summary>A colleague's recall: its library, the served folders, and the session's gate to ask through.</summary>
+    internal RecallScope RecallScopeFor(string colleague) => new(_parts.Library, colleague, _parts.Served)
+    {
+        Ask = _parts.Gate is { } gate
+            ? async (request, context, ct) => (await new Jobs.CallAsker(gate, null).AskAsync(request, context, ct)).Allowed
+            : null,
+    };
 
     /// <summary>
     /// What a colleague is told at the start of its next run when its experience grew in other sessions while it worked
@@ -632,7 +657,11 @@ public sealed class ColleagueDesk : IDisposable
             var record = _parts.Library.Find(found.Name);
             if (record is null) return;
             // FROM WHERE THE WORKER RAN — its own folder when it was given one — as its paths were resolved when it worked.
-            var reads = ReadsOf(new RoundReadsRequest(round, record, found.Kept.Agent.Agent.Setup.Identity.WorkingDir ?? _parts.Folder));
+            var reads = ReadsOf(new RoundReadsRequest(round, record, _parts.Folder)
+            {
+                ResolveFrom = found.Kept.Agent.Agent.Setup.Identity.WorkingDir,
+                Ignore = Path.GetDirectoryName(_parts.Library.Root),
+            });
             Append(found.Name, new PastRound(0, _parts.SessionId() ?? "", _parts.Folder, start.At, DateTimeOffset.UtcNow, round)
             {
                 AlsoRead = reads.Workplaces,
@@ -739,14 +768,22 @@ public sealed class ColleagueDesk : IDisposable
     internal static RoundReads ReadsOf(RoundReadsRequest request)
     {
         var folder = Permissions.PermissionPolicy.RealFolder(request.Folder);
+        var from = request.ResolveFrom is { } r ? Permissions.PermissionPolicy.RealFolder(r) : folder;
+        var ignore = request.Ignore is { } i ? Permissions.PermissionPolicy.RealFolder(i) : null;
         var here = Codebase.Key(folder);
         var known = request.Record.Workplaces.Where(w => w.Codebase != here)
             .GroupBy(w => w.Codebase).ToDictionary(g => g.Key, g => g.First().Folder, StringComparer.Ordinal);
+        // READS THAT HAPPENED: a failed call read nothing, so its folder taught nothing.
+        var failed = request.Round.Where(m => m.ToolCallId is { } id && m.Content.TrimStart().StartsWith("error", StringComparison.OrdinalIgnoreCase))
+            .Select(m => m.ToolCallId!).ToHashSet(StringComparer.Ordinal);
         var workplaces = new List<string>();
         var elsewhere = new List<string>();
-        foreach (var path in request.Round.SelectMany(m => m.ToolCalls ?? []).SelectMany(call => PathsOf(call, folder)))
+        foreach (var path in request.Round.SelectMany(m => m.ToolCalls ?? [])
+                     .Where(call => Reads.Contains(call.Name) && (call.Id is null || !failed.Contains(call.Id)))
+                     .SelectMany(call => PathsOf(call, from)))
         {
-            if (path.Contains('\0') || Permissions.PathResolver.Contains(folder, path)) continue;
+            if (path.Contains('\0') || Permissions.PathResolver.Contains(folder, path) || Permissions.PathResolver.Contains(from, path)
+                || (ignore is not null && Permissions.PathResolver.Contains(ignore, path))) continue;
             var dir = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
             if (dir is null) continue;
             string key, root;
@@ -758,6 +795,9 @@ public sealed class ColleagueDesk : IDisposable
         }
         return new RoundReads(workplaces, elsewhere);
     }
+
+    /// <summary>The tools whose paths are reads — a write teaches where something was put, not what is there.</summary>
+    private static readonly HashSet<string> Reads = new([Jobs.Tool.ReadFile, Jobs.Tool.Glob, Jobs.Tool.Grep, Jobs.Tool.RunShell], StringComparer.Ordinal);
 
     /// <summary>The paths one tool call names, resolved: a file tool's <c>path</c>, or what a shell command touches.</summary>
     private static IEnumerable<string> PathsOf(ToolCall call, string folder)

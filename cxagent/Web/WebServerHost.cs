@@ -121,9 +121,6 @@ public sealed class WebServerHost : IAsyncDisposable
 
         host._server = new HttpServer(new HttpServerOptions(bind, s.Port, certificate), host.HandleAsync);
 
-        // WHAT A BROWSER MAY REACH, FOR THE SESSIONS IT CAN SEE: a colleague's workplace reads and recalls outside these
-        // folders ask from now on — cxagent web and the terminal's /web alike, since both start here.
-        r.Manager.Shared.Served.Roots = roots;
         try
         {
             await host._server.StartAsync().ConfigureAwait(false);
@@ -132,6 +129,11 @@ public sealed class WebServerHost : IAsyncDisposable
         {
             throw new WebStartRefused($"Could not listen on {s.Bind}:{s.Port} — {e.Message}");
         }
+
+        // WHAT A BROWSER MAY REACH, FOR THE SESSIONS IT CAN SEE — set once it is serving, so a start that failed leaves
+        // nothing behind: a colleague's workplace reads and recalls outside these folders ask from now on, cxagent web
+        // and the terminal's /web alike, since both start here.
+        r.Manager.Shared.Served.Roots = roots;
 
         var shown = loopback ? "localhost" : bind.Equals(IPAddress.Any) || bind.Equals(IPAddress.IPv6Any) ? Environment.MachineName : bind.ToString();
         host.Url = new Uri($"{(certificate is null ? "http" : "https")}://{shown}:{host._server.Bound.Port}/");

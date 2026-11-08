@@ -422,11 +422,20 @@ public sealed partial class Distiller(ColleagueStore store)
             if (core is not null || codebases.Count > 0 || description is not null) return new Answer(text, true, core, codebases, description);
 
             // A PART ONLY FOR A CODEBASE THE ROUNDS DID NOT LIST is no change, not an unreadable answer: the model was told
-            // it can write only what is listed, and a refusal counted three times would step the round past for it.
-            return CodebasePattern().Matches(trimmed).Any(m => Given(m.Groups[2].Value) is not null)
+            // it can write only what is listed, and a refusal counted three times would step the round past for it. NOT when
+            // the answer also left a placeholder where a part should be, and NOT when the key names a listed codebase
+            // misspelt — by its name or its folder's — which is a mistake to retry: dropped, what it learned would be lost.
+            if (CorePattern().IsMatch(trimmed) || DescriptionPattern().IsMatch(trimmed)) return null;
+            var listed = touched.Keys.Select(KeyName).Concat(touched.Values.Select(f => Path.GetFileName(Path.TrimEndingDirectorySeparator(f))))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var parts = CodebasePattern().Matches(trimmed).Where(m => Given(m.Groups[2].Value) is not null).ToList();
+            return parts.Count > 0 && parts.All(m => !listed.Contains(KeyName(m.Groups[1].Value)))
                 ? new Answer(text, false, null, new Dictionary<string, string>(), null)
                 : null;
         }
+
+        /// <summary>A key's name without its hash — <c>invoice</c> for <c>invoice-7c114824</c> — as a model may write it.</summary>
+        private static string KeyName(string key) => Regex.Replace(key.Trim(), "-[0-9a-f]{8}$", "");
 
         private static string? Given(string part)
         {

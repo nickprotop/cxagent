@@ -13,7 +13,14 @@ namespace CxAgent.Core.Colleagues;
 /// <param name="Library">The library the colleague lives in.</param>
 /// <param name="Colleague">Whose past and experience.</param>
 /// <param name="Served">The served folders, or null for a session no browser sees.</param>
-public sealed record RecallScope(ColleagueStore Library, string Colleague, ServedFolders? Served);
+public sealed record RecallScope(ColleagueStore Library, string Colleague, ServedFolders? Served)
+{
+    /// <summary>
+    /// How a recall asks before returning what was read in a folder a served browser cannot reach — the session's gate,
+    /// with the caller's own policy. Null where nobody can be asked: such a recall is held back.
+    /// </summary>
+    public Func<PermissionRequest, IJobContext, CancellationToken, Task<bool>>? Ask { get; init; }
+}
 
 /// <summary>
 /// A colleague's way back into what it has done: words across its past, one round whole, and the current version of its
@@ -21,8 +28,9 @@ public sealed record RecallScope(ColleagueStore Library, string Colleague, Serve
 ///
 /// <para>ITS OWN LIBRARY, READ ONLY, AND NOT WRAPPED IN THE GATE: a colleague reading its own past is not a request to
 /// ask about. The one exception is a session served to a browser: a round holds, word for word, what was read in a folder
-/// that browser may not reach, so recalling it asks as reading the folder would (user, 2026-11-08: "colleague must know").
-/// </para>
+/// that browser may not reach — where it was lived, and every folder it read elsewhere — so recalling it asks as reading
+/// the folder would (user, 2026-11-08: "colleague must know"). ASKED WHILE IT WORKS, NOT BEFORE: which rounds it returns
+/// is known only once it has looked, and a search whose hits are all in view asks nothing.</para>
 ///
 /// <para>EVERY ANSWER FITS ONE RESULT, and says what it left out and how to narrow — a past grows without end, and a
 /// round can be hundreds of messages.</para>
@@ -59,31 +67,19 @@ public sealed class RecallTool(RecallScope scope) : IAgentTool
             required = new[] { "action" },
         }));
 
-    public PermissionRequest? Gate(JobParameters call)
-    {
-        if (scope.Served?.Roots is not { } roots) return null;
-        var outside = Action(call) switch
-        {
-            "read" => RoundNumber(call) is { } seq && Past().FirstOrDefault(r => r.Seq == seq) is { } round && !Inside(roots, round.Folder)
-                ? round.Folder : null,
-            // ONE QUESTION FOR A SEARCH, about the first folder it would reach outside: the user's yes is to recalling across
-            // folders the browser may not see, and a question per folder would ask the same thing again.
-            "search" => Rounds(call).Select(r => r.Folder).FirstOrDefault(f => !Inside(roots, f)),
-            _ => null,
-        };
-        return outside is null ? null
-            : new PermissionRequest(PermissionKind.FileRead, outside, outside + Path.DirectorySeparatorChar);
-    }
+    /// <summary>None up front: what a recall would return is known only once it has looked — see the class.</summary>
+    public PermissionRequest? Gate(JobParameters call) => null;
 
-    public Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)
+    public async Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)
     {
         string text;
         try
         {
+            var asked = new Asked(context, ct);
             text = Action(call) switch
             {
-                "search" => Search(call),
-                "read" => Read(call),
+                "search" => await SearchAsync(call, asked),
+                "read" => await ReadAsync(call, asked),
                 "experience" => ExperienceOf(Value(call, "codebase")),
                 var other => $"recall knows search, read and experience, not '{other}'.",
             };
@@ -92,16 +88,46 @@ public sealed class RecallTool(RecallScope scope) : IAgentTool
         {
             text = $"Your library could not be read: {e.Message}";
         }
-        return Task.FromResult(new JobResult { Success = true, Output = new() { ["content"] = Hidden(text) } });
+        return new JobResult { Success = true, Output = new() { ["content"] = Hidden(text) } };
     }
 
-    private string Search(JobParameters call)
+    /// <summary>The call's context and token, for the questions a recall may ask partway.</summary>
+    private sealed record Asked(IJobContext Context, CancellationToken Ct);
+
+    /// <summary>
+    /// Whether <paramref name="round"/> may be returned: always, unless the session is served to a browser and the round
+    /// was lived in, or read, a folder that browser cannot reach — then the user is asked, once per such folder in this call.
+    /// </summary>
+    private async Task<bool> MayReturnAsync(PastRound round, Asked asked, Dictionary<string, bool> answered)
+    {
+        if (scope.Served?.Roots is not { } roots) return true;
+        foreach (var folder in round.AlsoRead.Concat(round.ReadElsewhere).Prepend(round.Folder).Where(f => !Inside(roots, f)))
+        {
+            if (!answered.TryGetValue(folder, out var yes))
+            {
+                yes = scope.Ask is { } ask
+                    && await ask(new PermissionRequest(PermissionKind.FileRead, folder, folder + Path.DirectorySeparatorChar), asked.Context, asked.Ct);
+                answered[folder] = yes;
+            }
+            if (!yes) return false;
+        }
+        return true;
+    }
+
+    private async Task<string> SearchAsync(JobParameters call, Asked asked)
     {
         var words = (Value(call, "query") ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         if (words.Length == 0) return "Say what to look for: search needs a query.";
-        var hits = Rounds(call).Where(r => words.All(w => Text(r).Contains(w, StringComparison.OrdinalIgnoreCase))).ToList();
-        if (hits.Count == 0)
+        var found = Rounds(call).Where(r => words.All(w => Text(r).Contains(w, StringComparison.OrdinalIgnoreCase))).ToList();
+        if (found.Count == 0)
             return $"Nothing in your past holds all of: {string.Join(' ', words)}. Your experience may: recall with action experience.";
+        var answered = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var hits = new List<PastRound>();
+        foreach (var round in found)
+            if (await MayReturnAsync(round, asked, answered)) hits.Add(round);
+        var held = found.Count - hits.Count;
+        if (hits.Count == 0)
+            return $"{held} round(s) hold that, but they were lived or read where this session's browser cannot see, and recalling them was not allowed.";
 
         var sb = new StringBuilder();
         var shown = 0;
@@ -115,16 +141,22 @@ public sealed class RecallTool(RecallScope scope) : IAgentTool
         }
         if (hits.Count > shown)
             sb.Append($"… and {hits.Count - shown} more. Add words, or name a codebase, to narrow it.\n");
+        if (held > 0)
+            sb.Append($"{held} more held back: lived or read where this session's browser cannot see, and not allowed.\n");
         return sb.ToString().TrimEnd();
     }
 
-    private string Read(JobParameters call)
+    private async Task<string> ReadAsync(JobParameters call, Asked asked)
     {
         var past = Past();
         if (RoundNumber(call) is not { } seq || past.FirstOrDefault(r => r.Seq == seq) is not { } round)
             return past.Count == 0 ? "Your past is empty." : $"There is no such round; yours are {past[0].Seq} to {past[^1].Seq}.";
+        if (!await MayReturnAsync(round, asked, new Dictionary<string, bool>(StringComparer.Ordinal)))
+            return $"Round {seq} was not recalled: it was lived or read where this session's browser cannot see, and that was not allowed.";
 
-        var text = PastRounds.Render(round, full: true);
+        // HIDDEN BEFORE IT IS CUT: a secret line split across two parts would pass as two halves neither of which looks
+        // like one.
+        var text = Hidden(PastRounds.Render(round, full: true));
         var room = MaxChars - 200;
         var parts = Math.Max(1, (text.Length + room - 1) / room);
         if (parts == 1) return text;
@@ -149,7 +181,7 @@ public sealed class RecallTool(RecallScope scope) : IAgentTool
     {
         var rounds = Past().AsEnumerable().Reverse();
         if (Value(call, "codebase") is { Length: > 0 } codebase)
-            rounds = Workplace(codebase) is { } place ? rounds.Where(r => SameFolder(r.Folder, place.Folder)) : [];
+            rounds = Workplace(codebase) is { } place ? rounds.Where(r => SameCodebase(r.Folder, place)) : [];
         return rounds;
     }
 
@@ -190,8 +222,14 @@ public sealed class RecallTool(RecallScope scope) : IAgentTool
         return roots.Any(root => PathResolver.Contains(root, real));
     }
 
-    private static bool SameFolder(string a, string b) =>
-        string.Equals(Path.TrimEndingDirectorySeparator(a), Path.TrimEndingDirectorySeparator(b), StringComparison.Ordinal);
+    /// <summary>A round of this codebase: lived in its recorded folder, or in any folder of the same codebase — a worktree.</summary>
+    private static bool SameCodebase(string folder, Workplace place)
+    {
+        if (string.Equals(Path.TrimEndingDirectorySeparator(folder), Path.TrimEndingDirectorySeparator(place.Folder), StringComparison.Ordinal))
+            return true;
+        try { return Codebase.Key(folder) == place.Codebase; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { return false; }
+    }
 
     private static string FolderName(string folder) => Path.GetFileName(Path.TrimEndingDirectorySeparator(folder));
 
