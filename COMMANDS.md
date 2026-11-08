@@ -53,9 +53,10 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/memory` | List the notes the agent keeps across sessions |
 | `/memory open <name>` | Open a note in a tab, to read or edit |
 | `/memory forget <name>` | Delete a note, after confirming |
-| `/colleagues` | List the colleagues kept across sessions |
+| `/colleagues` | Open the library: every colleague, what it knows, its experience |
 | `/colleagues keep <worker> [name]` | Keep a worker of this session as a colleague |
-| `/colleagues bring <name> <task>` | Bring a colleague in to work on a task |
+| `/colleagues bring <name> [task]` | Bring a colleague in — on a task, or idle to be given one |
+| `/colleagues open <name>` | Talk with a colleague one-to-one, in a session of its own |
 | `/commands` | List your custom commands, and any file that was shadowed or skipped |
 | `/commands <name>` | Show that command's file, as it will be sent |
 | `/<name> [args]` | Run a custom command, or a skill by name — see [`/commands`](#commands) |
@@ -607,31 +608,43 @@ refused. Turn memory off in F8 › General, or with [`memory.enabled`](CONFIG.md
 
 ## `/colleagues`
 
-A colleague is a worker you chose to keep. It lives in cxagent's own folder, belongs to no session, and
-keeps learning: everything it does is kept word for word as its past, and when each task it was given
-ends, that round is distilled into its **experience** — what it knows about how it works and about each
-codebase it has worked in. Brought into any session, in any folder, it starts from that experience.
+A colleague is a worker you chose to keep. It lives in cxagent's own folder, belongs to no session, and keeps
+learning: everything it does is kept word for word as its past, and when each task it was given ends, that round is
+distilled into its **experience** — what it knows about how it works and about each codebase it has worked in. Brought
+into any session, in any folder, it starts from that experience.
 
-`/colleagues` lists them, with what each is good at and the folders it knows. `/colleagues keep <worker>
-[name]` keeps one of this session's workers — typing it is your yes; without a name, one is taken from
-what the worker was doing. From then on the worker *is* the colleague: its conversation so far is the
-first round of its past, and every later task it finishes is another. `/colleagues bring <name> <task>`
-starts it here as a worker on that task, in the background; the agent is told with your next message
-and gets its report when it finishes.
+**The library.** `/colleagues` opens it — a tab in the terminal, a page in the browser: every colleague, and for the
+one picked, its description, the folders it knows, its version, rounds and model, and its experience to read. **Open**
+starts a one-to-one; **Bring in** brings it into the session.
 
-The agent does the same with its `colleague` tool, and its prompt lists the colleagues — taken when the
-conversation begins and kept as it is until `/clear` or a compaction. A colleague kept or grown since is
-said in one line at the front of your next message. When the agent wants to keep a worker it asks you,
-**Keep** or **Don't keep**, every time.
+**Keeping one.** `/colleagues keep <worker> [name]` keeps one of this session's workers — typing it is your yes;
+without a name, one is taken from what the worker was doing. From then on the worker *is* the colleague: its
+conversation so far is the first round of its past, and every later task it finishes is another. When the agent wants
+to keep one it asks you, **Keep** or **Don't keep**; what could not be kept anyway — a worker that already is a
+colleague — is refused without asking.
 
-A colleague can be in several sessions at once. Each runs as an ordinary worker — `/agents`, its tab and
-`agent_send` reach it — and resumes with its session. Rounds from every session are distilled one at a
-time; one that grew elsewhere while it worked here is told so in a line at the start of its next task. A
-round the distiller refuses three times in a row — it seems to hold a key or a password, or its answer never
-fits — is stepped past: it stays in the past word for word, is not learned from, and you are told once.
+**Bringing one in.** `/colleagues bring <name> [task]` — with a task, it starts on it in the background, and the agent
+gets its report; with none, it joins **idle**, to be given work in its tab or by the agent. A name with spaces needs no
+quotes. A colleague already here is not brought twice: a task is passed to it.
 
-It runs on the model it was kept on, which must have at least a 128k window. Turn colleagues off in F8 ›
-General, or with [`colleagues.enabled`](CONFIG.md#colleagues--workers-kept-across-sessions) in config.json.
+**Seeing them.** A session with colleagues says so as it opens. The panel's **Colleagues** section lists every one —
+those here with their state and a link to their tab, the others with **Bring**. One at work is marked as a colleague
+wherever a worker shows: *Colleague* on its transcript row, `◆ <name>` on its tab and card. While its experience is being
+distilled the status line says *distilling <name>…*, and when that ends the session says what it learned — *core
+updated, invoice added (v3)* — or that there was nothing new.
+
+**One-to-one.** `/colleagues open <name>`, or **Open** in the library, starts a conversation with the colleague
+itself, in a session tab of its own titled *with <name>*, in the folder it last worked in. It can read, never write or
+run anything; ask it what it knows, teach it, correct it — every exchange is a round, distilled like any other. Opening
+it again returns to the same conversation. It is never listed by `/sessions` or picked by `-c`.
+
+A colleague can be in several sessions at once. Rounds from every session are distilled one at a time; one that grew
+elsewhere while it worked here is told so in a line at the start of its next task. A round the distiller refuses three
+times in a row — it seems to hold a key or a password, or its answer never fits — is stepped past: it stays in the past
+word for word, is not learned from, and you are told once.
+
+It runs on the model it was kept on, which must have at least a 128k window. Turn colleagues off in F8 › General, or
+with [`colleagues.enabled`](CONFIG.md#colleagues--workers-kept-across-sessions) in config.json.
 
 ---
 
