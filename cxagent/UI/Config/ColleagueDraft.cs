@@ -49,7 +49,17 @@ public sealed class ColleagueDraft
 
     /// <summary>Why this cannot be saved as it stands, against the entries configured now, or null.</summary>
     public string? Problem(ProviderSettings settings) =>
-        TooSmall(settings, Blank(Model)) ?? TooSmall(settings, Blank(DistillModel));
+        Unoffered(settings, Blank(Model)) ?? Unoffered(settings, Blank(DistillModel))
+        ?? TooSmall(settings, Blank(Model)) ?? TooSmall(settings, Blank(DistillModel));
+
+    /// <summary>
+    /// Why <paramref name="entry"/> is not one a picker offers — a configured entry, or one this colleague already holds —
+    /// or null. F8's dropdown cannot write anything else; a browser's form could, so the refusal lives here, for both.
+    /// </summary>
+    private string? Unoffered(ProviderSettings settings, string? entry) =>
+        entry is null || settings.Providers.ContainsKey(entry) || entry == Original.Instance || entry == Original.DistillInstance
+            ? null
+            : $"'{entry}' is not a provider entry in config.json.";
 
     private static string? TooSmall(ProviderSettings settings, string? entry) =>
         entry is not null && settings.Providers.TryGetValue(entry, out var cfg) && cfg.ContextWindow is { } window

@@ -83,6 +83,22 @@ public sealed class ColleagueConfigTests : IDisposable
         Assert.Contains(options, o => o.Value == "blind" && o.Label.Contains("window not set", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// Only what the pickers offer can be saved — a configured entry, or the one it already holds: F8's dropdown cannot
+    /// write anything else, and a browser's form could, so the rule is the draft's, for both.
+    /// </summary>
+    [Fact]
+    public void A_name_no_picker_offers_is_refused()
+    {
+        Charting(instance: "gone");
+        var draft = ColleagueDraft.For(Library.Find("Charting")!);
+        Assert.Null(draft.Problem(Settings()));          // what it already holds stays allowed
+
+        draft.DistillModel = "nonsense";
+
+        Assert.Contains("nonsense", draft.Problem(Settings()));
+    }
+
     [Fact]
     public void An_entry_no_longer_configured_is_still_offered_so_it_can_be_seen_and_changed()
     {

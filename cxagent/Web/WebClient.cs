@@ -1138,7 +1138,9 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 var draft = WebConfigForms.SetColleague(CxAgent.UI.Config.ColleagueDraft.For(record), values);
                 if (draft.Problem(settings) is { } problem) { Refused([problem]); return; }
                 if (!draft.IsDirty) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return; }
-                draft.Apply(library);
+                // THE LIBRARY IS FILES ON DISK: a write that fails is said, as F8's tab says it, never thrown into the loop.
+                try { draft.Apply(library); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Refused([e.Message]); return; }
                 result = new WebConfigSave(true, []);
                 break;
             }
