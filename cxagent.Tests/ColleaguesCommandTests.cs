@@ -90,6 +90,32 @@ public sealed class ColleaguesCommandTests : IDisposable
         Assert.Contains("on: draw the sales chart", note);
     }
 
+    /// <summary>A name with spaces typed in quotes, as a shell would want it: a live use read the quote as part of the name.</summary>
+    [Theory]
+    [InlineData("\"UI Charting\" draw the sales chart")]
+    [InlineData("'UI Charting' draw the sales chart")]
+    public async Task Bring_takes_a_quoted_name(string typed)
+    {
+        Library.Create(new ColleagueRecord { Name = "UI Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        var session = Open();
+
+        await session.BringColleagueAsync(typed);
+
+        Assert.NotNull(session.SubAgents.Find("ui-charting"));
+        Assert.Contains("on: draw the sales chart", session.TakeColleagueNote());
+    }
+
+    [Fact]
+    public void Keep_takes_a_quoted_name()
+    {
+        var session = Open();
+        var handle = Worker(session);
+
+        session.ColleaguesCommand($"keep {handle} \"UI Charting\"");
+
+        Assert.Equal("UI Charting", Library.Find("UI Charting")?.Name);
+    }
+
     [Fact]
     public void Completion_offers_worker_handles_after_keep_and_colleagues_after_bring()
     {

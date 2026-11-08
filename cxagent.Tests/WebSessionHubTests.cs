@@ -423,6 +423,24 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         Assert.Equal("a", row["title"]!.GetValue<string>());
     }
 
+    /// <summary>
+    /// A SESSION THE TERMINAL OPENS — /sessions new, before anything is typed in it — is listed in every tab at once,
+    /// without the tab asking: a list that changed only when a browser acted left it missing until a reload.
+    /// </summary>
+    [Fact]
+    public async Task A_session_opened_in_the_terminal_is_listed_in_every_tab()
+    {
+        await using var tab = await Tab.OpenAsync(_server.Bound.Port);
+        await tab.NextAsync(m => m["type"]?.GetValue<string>() == "sessions");
+
+        var opened = _manager.Open(Work, ResolvedConfig.ForTesting(_model),
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() });
+
+        var rows = (await tab.NextAsync(m => m["type"]?.GetValue<string>() == "sessions"
+            && m["rows"]!.AsArray().Any(r => r!["id"]!.GetValue<string>() == opened.Id)))["rows"]!.AsArray();
+        Assert.Contains(rows, r => r!["id"]!.GetValue<string>() == opened.Id);
+    }
+
     [Fact]
     public async Task A_session_closed_elsewhere_tells_its_tabs()
     {

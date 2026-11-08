@@ -79,7 +79,12 @@ public sealed class WebSessionHub
         this.services = services;
         _banners = services.Banners;
         services.Manager.SessionClosed += OnSessionClosed;
+        services.Manager.SessionOpened += OnSessionOpened;
     }
+
+    // A SESSION OPENED ANYWHERE — the terminal's /sessions new included — is listed in every tab at once, not at the next
+    // change a browser happens to make.
+    private void OnSessionOpened(Session session) => ListChanged();
 
     private sealed record LogEntry(SessionEventLog Log, IDisposable Observers, IDisposable Tools);
 
@@ -168,6 +173,7 @@ public sealed class WebSessionHub
     public void DetachAll()
     {
         services.Manager.SessionClosed -= OnSessionClosed;
+        services.Manager.SessionOpened -= OnSessionOpened;
         foreach (var id in _logs.Keys) Drop(id);
         foreach (var (id, spawn) in _spawns)
             if (services.Manager.Sessions.FirstOrDefault(s => s.Id == id) is { } session) session.WorkerSpawned -= spawn;

@@ -147,7 +147,7 @@ public sealed partial class Session
                 return ListColleagues(desk);
             case "keep":
                 if (rest.Length == 0) return Told("Name the worker: /colleagues keep <worker> [name]. /agents lists them.");
-                var (worker, name) = rest.Split(' ', 2) is [var w, var n] ? (w, n.Trim()) : (rest, (string?)null);
+                var (worker, name) = rest.Split(' ', 2) is [var w, var n] ? (w, Unquoted(n.Trim())) : (rest, (string?)null);
                 return Told(desk.Keep(new KeepOrder(worker, name is { Length: > 0 } ? name : null)));
             case "bring":
                 // NOT AWAITED, the spawn runs on; BringColleagueAsync says its own outcome, failures included.
@@ -180,12 +180,23 @@ public sealed partial class Session
     private async Task<CommandStatus> BringColleagueCoreAsync(string rest)
     {
         if (Colleagues is not { } desk) return Told(ColleaguesOff);
+
+        // A QUOTED NAME is taken as quoted — "UI Charting" or 'UI Charting' — the way a shell has taught people to type
+        // a name with spaces; read unquoted, the quote became part of the name and nothing matched.
+        if (rest.Length > 1 && rest[0] is '"' or '\'' && rest.IndexOf(rest[0], 1) is var close and > 1)
+            return await BringNamedAsync(desk, rest[1..close].Trim(), rest[(close + 1)..].Trim());
+
         var match = desk.List().Select(c => c.Name)
             .Where(n => rest.StartsWith(n + " ", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(n => n.Length).FirstOrDefault();
         var (name, task) = match is not null
             ? (match, rest[(match.Length + 1)..].Trim())
             : rest.Split(' ', 2) is [var first, var after] ? (first, after.Trim()) : (rest, "");
+        return await BringNamedAsync(desk, name, task);
+    }
+
+    private async Task<CommandStatus> BringNamedAsync(ColleagueDesk desk, string name, string task)
+    {
         if (name.Length == 0 || task.Length == 0) return Told("Say who and what: /colleagues bring <name> <task>.");
         if (SessionId is not { } lead) return Told("This session has no agent to report to yet.");
 
@@ -213,6 +224,10 @@ public sealed partial class Session
         Say(new Message(sb.ToString().Replace("**", ""), Severity.Info));
         return CommandStatus.Reported;
     }
+
+    /// <summary>The text without one pair of surrounding quotes, double or single.</summary>
+    private static string Unquoted(string text) =>
+        text.Length > 1 && text[0] is '"' or '\'' && text[^1] == text[0] ? text[1..^1].Trim() : text;
 
     private CommandStatus Told(string text)
     {

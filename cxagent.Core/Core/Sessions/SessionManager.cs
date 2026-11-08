@@ -818,8 +818,16 @@ public sealed class SessionManager : IDisposable
 
         HoldCurrentFolder(session);
 
+        // A FIRST OPENING ONLY: a re-wire is the same session, already listed wherever sessions are shown.
+        if (!reopened) SessionOpened?.Invoke(session);
         return session;
     }
+
+    /// <summary>
+    /// A session joined this manager — opened by the terminal, a browser or a resume — for anything that lists sessions
+    /// from outside them (a browser's list) and must show one before anything is typed in it.
+    /// </summary>
+    public event Action<Session>? SessionOpened;
 
     /// <summary>
     /// Adds or replaces one configured plugin, by name.
