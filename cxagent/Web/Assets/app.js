@@ -2356,20 +2356,7 @@ function drawSessionPane(p) {
       pane.append(taskRow("", el("b", null, n.name), [n.scope, n.description].filter(Boolean).join(" · "), acts));
     }
   }
-  drawColleagues(pane, p);
-}
-
-// EVERY COLLEAGUE, as the terminal's panel lists them — one here opens its tab, one not here is brought in, idle.
-function drawColleagues(pane, p) {
-  if (!p.colleagues) return;
-  pane.append(el("h3", null, "Colleagues"));
-  for (const c of p.colleagues.rows) {
-    const acts = c.handle
-      ? [button("Open", null, () => { if (c.agentId) openWorker(activeSessionId(), c.agentId); if (!wide()) setPanel(false); })]
-      : [button("Bring", null, () => send({ type: "colleagueBring", sessionId: activeSessionId(), name: c.name }))];
-    const sub = [c.handle ? c.state : c.state === "distilling" ? "distilling" : "", c.description].filter(Boolean).join(" · ");
-    pane.append(taskRow(c.state === "working" ? "working" : "", el("b", null, (c.handle ? "◆ " : "") + c.name), sub, acts));
-  }
+  // NO COLLEAGUES HERE: the Tasks pane has them — the ones here as cards, the rest with Bring — as the terminal's F7.
 }
 
 function taskRow(dot, head, sub, actions) {
@@ -2394,15 +2381,26 @@ function drawColleagueCards(pane, p, sid) {
   for (const w of here) {
     const c = w.colleague;
     const open = () => { openWorker(sid, w.agentId); if (!wide()) setPanel(false); };
-    const acts = [button("Open", null, open), button("Ask…", null, () => { open(); setTimeout(() => $("input").focus(), 0); })];
-    if (w.running) acts.push(button("Stop", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "stop" })));
-    const status = w.running ? c.state + " · " + clock(w.seconds * 1000) : c.state;
-    const knows = "v" + c.version + (c.knows.length ? " · knows " + c.knows.join(" · ") : "");
-    const row = taskRow(w.running ? "working" : c.learning ? "held" : "", el("b", null, w.badge.glyph + " " + w.badge.name), status, acts);
-    const t = row.querySelector(".t");
-    if (c.task) t.append(el("small", "task-text", "task: " + c.task));
-    t.append(el("small", null, knows));
-    pane.append(row);
+    // ITS OWN CARD, NOT A TASK ROW: the name gets the whole width and the buttons a row of their own — beside them a
+    // long name was cut to "Explore SharpConso…", and the state and task wrapped down the pane.
+    const card = el("div", "colleague-card" + (w.running ? " working" : ""));
+    const head = el("div", "cc-head");
+    head.append(el("span", "dot " + (w.running ? "working" : c.learning ? "held" : "")), el("b", null, w.badge.glyph + " " + w.badge.name));
+    head.title = w.badge.name;
+    const state = el("div", "cc-state" + (w.running ? " working" : /failed/.test(c.state) ? " failed" : ""),
+      w.running ? c.state + " · " + clock(w.seconds * 1000) : c.state);
+    card.append(head, state);
+    if (c.task) {
+      const task = el("div", "cc-task", c.task);
+      task.title = c.task;
+      card.append(task);
+    }
+    card.append(el("div", "cc-knows", "v" + c.version + (c.knows.length ? " · knows " + c.knows.join(", ") : "")));
+    const acts = el("div", "cc-acts");
+    acts.append(button("Open", null, open), button("Ask…", null, () => { open(); setTimeout(() => $("input").focus(), 0); }));
+    if (w.running) acts.append(button("Stop", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "stop" })));
+    card.append(acts);
+    pane.append(card);
   }
   if (away.length) {
     pane.append(el("p", "none", "Available"));

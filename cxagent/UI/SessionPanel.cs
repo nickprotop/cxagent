@@ -119,10 +119,6 @@ public sealed class SessionPanel
             .Build();
         _host.BackgroundColor = ColorScheme.PanelSurface;
         _host.AddControl(_body);
-        _body.LinkClicked += (_, e) =>
-        {
-            if (e.Url.StartsWith('c') && int.TryParse(e.Url.AsSpan(1), out var i) && i < _links.Count) LinkChosen?.Invoke(_links[i]);
-        };
 
         // Star over Auto: the scrollable body takes everything the git block does not, so the block
         // is pinned to the bottom edge however tall the panel is.
@@ -276,9 +272,6 @@ public sealed class SessionPanel
         /// <summary>The notes kept across sessions, as the files have them now; null when memory is off.</summary>
         public IReadOnlyList<Core.Memory.MemoryNote>? MemoryNotes { get; init; }
 
-        /// <summary>The colleagues, here and not; null when colleagues are off or none are kept.</summary>
-        public Core.Colleagues.ColleaguePanel? Colleagues { get; init; }
-
         /// <summary>
         /// The folder to show — what the session was given, or the process's own when it was given
         /// nothing.
@@ -421,7 +414,8 @@ public sealed class SessionPanel
             lines.Add(notes.Count == 0 ? Muted("no notes yet") : Value($"{mine} system · {project} project"));
         }
 
-        _links = state.Colleagues is { } colleagues ? ColleaguesSection(lines, colleagues) : [];
+        // NO COLLEAGUES HERE: they have a section of their own in Tasks (F7) — the ones here as cards, the rest with
+        // Bring — and a second list in this column said the same thing again.
 
         // THE MODEL'S PLAN IS NOT HERE, DELIBERATELY. It was, briefly, and the panel is the wrong
         // surface for it three ways: this column is 24 characters wide and a plan item is a
@@ -696,45 +690,6 @@ public sealed class SessionPanel
     /// </summary>
     private static string Money(decimal amount) =>
         amount < 1.00m ? $"${DisplayNumber.Fixed(amount, 4)}" : $"${DisplayNumber.Fixed(amount, 2)}";
-
-    /// <summary>A link the panel drew, and what it does: open a colleague's tab, or bring one in.</summary>
-    /// <param name="Action">"open" or "bring".</param>
-    /// <param name="Value">The handle to open, or the name to bring.</param>
-    public sealed record PanelLink(string Action, string Value);
-
-    /// <summary>Raised when a link in the panel is clicked — the window carries it out.</summary>
-    public event Action<PanelLink>? LinkChosen;
-
-    private IReadOnlyList<PanelLink> _links = [];
-
-    /// <summary>
-    /// The Colleagues section: every colleague, the ones here as "◆ Name · state" with open, the others with Bring —
-    /// the rows the browser's pane draws from the same record. Answers the links, in the order their markup names them.
-    ///
-    /// <para>LINKS BY NUMBER, NOT BY NAME: a colleague's name holds spaces, which a link's markup cannot carry.</para>
-    /// </summary>
-    internal static IReadOnlyList<PanelLink> ColleaguesSection(List<string> lines, Core.Colleagues.ColleaguePanel panel)
-    {
-        var links = new List<PanelLink>();
-        Section(lines, "Colleagues");
-        foreach (var row in panel.Rows)
-        {
-            if (row.Handle is { } handle)
-            {
-                lines.Add($"[bold]◆ {Value(row.Name)}[/]");
-                lines.Add($"  {Muted(row.State)} · [link=c{links.Count}]open ›[/]");
-                links.Add(new PanelLink("open", handle));
-            }
-            else
-            {
-                lines.Add(Value(row.Name));
-                var distilling = row.State == "distilling" ? Muted("distilling · ") : "";
-                lines.Add($"  {distilling}[link=c{links.Count}]Bring[/]");
-                links.Add(new PanelLink("bring", row.Name));
-            }
-        }
-        return links;
-    }
 
     private static void Section(List<string> lines, string title)
     {

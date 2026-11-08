@@ -1787,13 +1787,6 @@ public sealed class MainWindow : IDisposable
             if (JobsSession is { } session) _ = session.BringColleagueAsync(name);
         };
 
-        // THE PANEL'S COLLEAGUE LINKS: open one here in its tab, or bring one in — idle, to be given work.
-        SessionPanel.LinkChosen += link =>
-        {
-            if (ActiveSession is not { } session) return;
-            if (link.Action == "open") OpenAgentTab(session, link.Value);
-            else _ = session.BringColleagueAsync(link.Value);
-        };
         Tabs.TabCloseRequested += OnJobTabCloseRequested;
         Tabs.TabCloseRequested += OnAgentTabCloseRequested;
 
@@ -3349,7 +3342,6 @@ public sealed class MainWindow : IDisposable
             SkillCount = SkillCount,
             LoadedSkills = LoadedSkills,
             MemoryNotes = ActiveSession?.Memory?.List(),
-            Colleagues = ActiveSession?.Colleagues?.Panel(),
         });
         SetDistilling(ActiveSession?.Colleagues?.Distilling ?? []);
     }

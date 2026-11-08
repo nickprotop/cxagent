@@ -64,22 +64,19 @@ public sealed class ColleaguePanelTests : IDisposable
         Assert.Null(Open().Colleagues!.Panel());
     }
 
+    /// <summary>
+    /// One list of colleagues per front end, in Tasks: the session pane drew a second one, which the user found redundant
+    /// (2026-11-08).
+    /// </summary>
     [Fact]
-    public async Task Terminal_section_draws_each_with_open_or_bring()
+    public void The_session_pane_does_not_list_them_again()
     {
-        var panel = await TwoColleaguesOneHere();
-        var lines = new List<string>();
+        Assert.True(CxAgent.Web.Http.StaticAssets.TryGet("/app.js", out var body, out _));
+        var js = System.Text.Encoding.UTF8.GetString(body.Span);
 
-        var links = SessionPanel.ColleaguesSection(lines, panel);
-        var text = string.Join("\n", lines);
-
-        Assert.Contains("Colleagues", text);
-        Assert.Contains("◆ Charting", text);
-        Assert.Contains("idle", text);
-        Assert.Contains("Parser", text);
-        Assert.Contains("Bring", text);
-        Assert.Contains(links, l => l.Action == "open" && l.Value == "charting");
-        Assert.Contains(links, l => l.Action == "bring" && l.Value == "Parser");
+        Assert.DoesNotContain("function drawColleagues(", js);
+        Assert.Contains("function drawColleagueCards(", js);
+        Assert.Null(typeof(SessionPanel.SessionPanelState).GetProperty("Colleagues"));
     }
 
     [Fact]

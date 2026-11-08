@@ -488,9 +488,9 @@ public sealed class JobsPanel
         private readonly MarkupControl _facts = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
         private readonly MarkupControl _runsOn = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
 
-        // A COLLEAGUE'S STATE IN A CELL OF ITS OWN, sized to its text: padding the title out to the column's edge
-        // guesses the width, and a guess one column wide wrapped the state onto a line the card does not show.
-        private readonly MarkupControl _state = Ctl.Markup().Build();
+        // A COLLEAGUE'S STATE ON A LINE OF ITS OWN, under its name: beside the name, "idle · last task failed" left a
+        // long name a few columns, and the name is what says which colleague this is.
+        private readonly MarkupControl _state = Ctl.Markup().WithAlignment(HorizontalAlignment.Stretch).Build();
         private readonly GridControl _top;
         private bool _hover;
         private bool _selected;
@@ -505,17 +505,16 @@ public sealed class JobsPanel
             Move.Visible = false;
 
             _top = Ctl.Grid()
-                .Columns(GridLength.Star(1), GridLength.Auto(), GridLength.Auto(), GridLength.Auto())
+                .Columns(GridLength.Star(1), GridLength.Auto(), GridLength.Auto())
                 .Rows(GridLength.Cells(1))
                 .Place(_title, 0, 0)
-                .Place(_state, 0, 1)
-                .Place(Move, 0, 2)
-                .Place(Button, 0, 3)
+                .Place(Move, 0, 1)
+                .Place(Button, 0, 2)
                 .WithAlignment(HorizontalAlignment.Stretch)
                 .Build();
             _runsOn.Visible = false;
             _state.Visible = false;
-            Box = Ctl.Panel().NoBorder().WithPadding(0).AddControl(_top).AddControl(_facts).AddControl(_runsOn).AddControl(Anchor).Build();
+            Box = Ctl.Panel().NoBorder().WithPadding(0).AddControl(_top).AddControl(_state).AddControl(_facts).AddControl(_runsOn).AddControl(Anchor).Build();
             Box.Margin = new Margin(0, 0, 0, 1);
 
             // A CLICK ANYWHERE ON THE CARD SELECTS IT; the link opens it, the button does what x does.
@@ -585,10 +584,10 @@ public sealed class JobsPanel
             // EACH BUTTON TAKES THREE COLUMNS AT THE RIGHT — " ⏹ " — and the bar two at the left.
             var buttons = (_shown.Control is null ? 0 : 1) + (_shown.Movable ? 1 : 0);
             var room = Math.Max(1, _usable - 3 * buttons);
-            var stateRoom = _shown.Status is { } st ? Columns(st) + 1 : 0;
-            var title = $"{_shown.Mark} {Value(Cut(_shown.Title, Math.Max(1, room - stateRoom)))}";
-            if (_state.Visible != (_shown.Status is not null)) _state.Visible = _shown.Status is not null;
-            if (_shown.Status is { } shownState) SetIfChanged(_state, [$" {Muted(shownState)}"]);
+            var title = $"{_shown.Mark} {Value(Cut(_shown.Title, room))}";
+            var state = _shown.Status is { } st ? $"  {StateMarkup(Cut(st, _usable))}" : null;
+            if (_state.Visible != (state is not null)) _state.Visible = state is not null;
+            if (state is not null) SetIfChanged(_state, [bar + state]);
             var facts = _shown.Facts.Any() ? $"  {Muted(Cut(string.Join(" · ", _shown.Facts), _usable))}" : null;
             // ASK… OPENS THE SAME TAB AS OPEN: the tab's composer is where a colleague is asked, and it has the keyboard.
             var link = _shown.Ask ? $"  [link=open]{Value(_shown.View)} ›[/]  [link=ask]Ask…[/]" : $"  [link=open]{Value(_shown.View)} ›[/]";
@@ -618,10 +617,9 @@ public sealed class JobsPanel
             }
 
             var controls = _shown.Movable ? $"⇥ {_shown.Control}" : _shown.Control;
-            var titleLine = _shown.Status is null
-                ? $"{_shown.Mark} {TitleLine(_shown.Title, controls, _usable)}"
-                : $"{_shown.Mark} {Titled(_shown.Title, _shown.Status, room)}" + (controls is null ? "" : $" {Muted(controls)}");
+            var titleLine = $"{_shown.Mark} {TitleLine(_shown.Title, controls, _usable)}";
             var lines = new List<string> { titleLine };
+            if (state is not null) lines.Add(state);
             if (facts is not null) lines.Add(facts);
             if (runsOn is not null) lines.Add(runsOn);
             lines.Add(_shown.Ask ? $"  {Value(_shown.View)} ›  Ask…" : $"  {Value(_shown.View)} ›");
@@ -658,7 +656,7 @@ public sealed class JobsPanel
         /// <summary>Where an agent runs, `name:model`, shown on a line of its own; null for a shell card.</summary>
         public string? RunsOn { get; init; }
 
-        /// <summary>How it stands, at the title's right edge — a colleague's card only; null puts it in the facts.</summary>
+        /// <summary>How it stands, on its own line under the title — a colleague's card only; null puts it in the facts.</summary>
         public string? Status { get; init; }
 
         /// <summary>Its link line also offers Ask… — a colleague's card.</summary>
@@ -728,7 +726,7 @@ public sealed class JobsPanel
     }
 
     /// <summary>
-    /// A colleague's card: its glyph and name with how it stands at the right, what it was last asked, what it knows and
+    /// A colleague's card: its glyph and name, how it stands, what it was last asked, what it knows and
     /// its version, then Open and Ask. NO TYPE — a colleague is what it has learned, not the worker it was kept from —
     /// and no ✓ or ✕: between tasks it is idle, not finished. ⏹ only while it works.
     /// </summary>
@@ -750,14 +748,14 @@ public sealed class JobsPanel
         };
     }
 
-    /// <summary>A title and its status as one line of text — the panel's RenderedText; the card draws the status in its own cell.</summary>
-    private static string Titled(string title, string? status, int room)
-    {
-        if (status is null) return Value(Cut(title, room));
-        var left = Math.Max(1, room - Columns(status) - 1);
-        var text = Cut(title, left);
-        return $"{Value(text)}{new string(' ', Math.Max(1, room - Columns(text) - Columns(status)))}{Muted(status)}";
-    }
+    /// <summary>
+    /// A colleague's state in its colour: working in the accent, a failed last task in caution, the rest muted — so a
+    /// glance down the section finds the one that is busy or the one that needs a look.
+    /// </summary>
+    private static string StateMarkup(string state) =>
+        state.StartsWith('●') ? $"[{ColorScheme.AccentMarkup}]{Value(state)}[/]"
+        : state.Contains("failed", StringComparison.Ordinal) ? $"[{ColorScheme.CautionMarkup}]{Value(state)}[/]"
+        : Muted(state);
 
     /// <summary>An agent card's facts: its kind — "Colleague" for a badged one — then how it stands.</summary>
     private static List<string> AgentFacts(AgentRowView view)

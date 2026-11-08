@@ -25,7 +25,7 @@ public sealed class ColleagueTasksTests : IDisposable
 
     private ColleagueStore Library => new(_config);
 
-    private async Task<Session> WithCharting(string? task = null)
+    private async Task<Session> WithCharting(string? task = null, params LlmResponse[] before)
     {
         Library.Create(new ColleagueRecord { Name = "Charting", Type = "explore", Created = DateTimeOffset.UtcNow });
         Library.Update("Charting", r => r with
@@ -35,6 +35,7 @@ public sealed class ColleagueTasksTests : IDisposable
                 new Workplace("invoice-12345678", "/home/dev/source/invoice", 1, DateTimeOffset.UtcNow.AddDays(-1))],
         });
         var model = new MockLlmProvider();
+        foreach (var response in before) model.EnqueueResponse(response);
         model.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
         model.EnqueueResponse(new LlmResponse { Text = "NO CHANGE", StopReason = "end_turn" });
         var resolution = ResolvedConfig.ForTesting(model) is var r
@@ -60,6 +61,27 @@ public sealed class ColleagueTasksTests : IDisposable
         Assert.Equal(6, card.Version);
         Assert.False(card.Learning);
         Assert.Equal("verify the FlowChrome usings", card.Task);
+    }
+
+    /// <summary>
+    /// The task is what it was asked, never what the app told it on the way: a live card read "task: You have called grep
+    /// with the same arguments 3 times…" — the repeat warning, a user-role message added mid-run.
+    /// </summary>
+    [Fact]
+    public async Task The_task_is_what_it_was_asked_not_a_warning_it_got_on_the_way()
+    {
+        File.WriteAllText(Path.Combine(_project, "a.txt"), "x");
+        LlmResponse Same(int i) => new()
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = $"g{i}", Name = "glob", Arguments = System.Text.Json.JsonDocument.Parse("""{"pattern":"*.txt"}""").RootElement }],
+        };
+
+        var session = await WithCharting("chart the panes", Same(1), Same(2), Same(3));
+
+        var kept = session.SubAgents.Find("charting")!;
+        Assert.Contains(kept.Agent.Agent.Context.Messages, m => m.Content.StartsWith("You have called glob", StringComparison.Ordinal));
+        Assert.Equal("chart the panes", session.Colleagues!.CardOf("charting")!.Task);
     }
 
     [Theory]
