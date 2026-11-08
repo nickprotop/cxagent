@@ -309,6 +309,7 @@ internal static class SessionFactory
             Models = name => name is null ? SessionModel(resolution) : ModelFor(resolution, name),
             Notify = session.NotifyWarning,
             Tell = session.Notify,
+            Delivery = delivery,
         });
 
         // THE PORTS' OBSERVERS BECOME SUBSCRIBER ONE OF A FAN-OUT, and everything downstream is

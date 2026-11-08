@@ -55,6 +55,8 @@ public sealed class ColleagueDeskReviewTests : IDisposable
         var spawner = new Recording(_workers);
 
         await Desk(spawner).BringAsync(Bring(), CancellationToken.None);
+        // DISMISSED FIRST: a colleague still here would be handed the task rather than brought in again.
+        _workers.Forget("charting");
         await Desk(new Recording(_workers)).BringAsync(Bring("main"), CancellationToken.None);
 
         Assert.Equal("main", spawner.Orders.Single().Instance);

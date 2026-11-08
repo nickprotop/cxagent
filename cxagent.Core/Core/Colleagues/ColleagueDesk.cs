@@ -59,6 +59,9 @@ public sealed record ColleagueDeskParts
     /// <summary>A model by provider entry name, null asking for the session's own; null when there is no such entry.</summary>
     public required Func<string?, ModelChoice?> Models { get; init; }
 
+    /// <summary>The port a background worker's report reaches the lead through — what agent_send itself is given.</summary>
+    public IAgentDelivery? Delivery { get; init; }
+
     /// <summary>Tells the user something — a distilling that failed.</summary>
     public Action<string>? Notify { get; init; }
 
@@ -270,9 +273,17 @@ public sealed class ColleagueDesk : IDisposable
         Drain();
 
         var origin = OriginPrefix + record.Name;
-        if (_workers.NameOfOrigin(origin) is { } live)
-            return $"{record.Name} is already here as {live} — give it work with agent_send.";
         if (_parts.Spawner is not { } spawner) return "This session cannot start workers.";
+        if (_workers.NameOfOrigin(origin) is { } live)
+        {
+            if (order.Task.Trim().Length == 0) return $"{record.Name} is already here as {live} — give it work with agent_send.";
+
+            // ALREADY HERE, AND A TASK FOR IT: the task goes to it, as agent_send would take it. Answered "use
+            // agent_send" instead, a lead went on without sending it, and the work was lost (user, 2026-11-08).
+            return await new AgentReachTools(_workers, spawner.ConcurrencySlot, spawner.CanBackground ? _parts.Delivery : null)
+                .SendAsync(new SendRequest(To: live, Prompt: order.Task, Background: order.Background,
+                    ParentAgentId: order.ParentAgentId, FromUser: false), ct);
+        }
 
         // ONE BRING AT A TIME PER COLLEAGUE: two at once — the lead's and the user's, or two tool calls in one turn —
         // would both pass the check above and leave two incarnations of one colleague in one session.

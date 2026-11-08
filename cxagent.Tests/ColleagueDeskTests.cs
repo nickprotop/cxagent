@@ -105,6 +105,24 @@ public sealed class ColleagueDeskTests : IDisposable
         Assert.Equal("colleague:Charting", session.SubAgents.OriginOf("charting"));
     }
 
+    /// <summary>
+    /// A colleague already here, brought in again with a task, is given the task — a live session's lead was told
+    /// "use agent_send" and never did, and the task was lost (user, 2026-11-08: pass the task to it).
+    /// </summary>
+    [Fact]
+    public async Task Bring_of_one_already_here_passes_the_task_to_it()
+    {
+        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        var session = Open();
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "one", null, false, session.SessionId!), CancellationToken.None);
+
+        var answer = await session.Colleagues.BringAsync(new BringOrder("Charting", "now chart the costs", null, false, session.SessionId!), CancellationToken.None);
+
+        Assert.Single(session.SubAgents.All());
+        Assert.Contains(session.SubAgents.Find("charting")!.Agent.Agent.Context.Messages, m => m.Content == "now chart the costs");
+        Assert.Contains("done", answer);
+    }
+
     [Fact]
     public async Task Bring_twice_returns_the_live_handle()
     {
@@ -112,7 +130,7 @@ public sealed class ColleagueDeskTests : IDisposable
         var session = Open();
         await session.Colleagues!.BringAsync(new BringOrder("Charting", "one", null, false, session.SessionId!), CancellationToken.None);
 
-        var again = await session.Colleagues.BringAsync(new BringOrder("Charting", "two", null, false, session.SessionId!), CancellationToken.None);
+        var again = await session.Colleagues.BringAsync(new BringOrder("Charting", "", null, false, session.SessionId!), CancellationToken.None);
 
         Assert.Contains("already here as charting", again);
         Assert.Single(session.SubAgents.All());
