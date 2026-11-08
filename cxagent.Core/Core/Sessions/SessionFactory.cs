@@ -408,7 +408,9 @@ internal static class SessionFactory
                     // The toolset, but NOT the servers: ownership stays with the session. Handing
                     // those over would let a re-wire dispose them, killing every server on a
                     // provider change and leaving the new host with a toolset over dead pipes.
-                    Mcp = shared.Mcp,
+                    // NONE IN A ONE-TO-ONE: MCP is exempt from a tool selection by design, so the read-only list
+                    // would not hold it back, and a server's write tools reached a conversation that changes nothing.
+                    Mcp = session.OneToOne is null ? shared.Mcp : null,
                     Spawner = subAgents,
                     // Already gated above. The host hands these to its agent and to every child.
                     Injected = agentTools,

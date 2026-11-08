@@ -43,13 +43,13 @@ public sealed class OneToOneTests : IDisposable
         Library.WriteCore("Charting", "## Lessons\nPanes first.");
     }
 
-    private Session Wire(Session session, ILlmProvider model)
+    private Session Wire(Session session, ILlmProvider model, Core.Mcp.McpToolset? mcp = null)
     {
         var resolution = ResolvedConfig.ForTesting(model) is var r
             ? r with { Model = r.Model! with { ContextWindow = 200_000 }, Catalog = r.Catalog with { Colleagues = true } }
             : null!;
         SessionFactory.Wire(session, resolution,
-            new SharedServices { GlobalInstructionsDir = _config, Resume = Store, Logs = new LogFileManager(_paths) },
+            new SharedServices { GlobalInstructionsDir = _config, Resume = Store, Logs = new LogFileManager(_paths), Mcp = mcp },
             new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
         return session;
     }
@@ -92,6 +92,55 @@ public sealed class OneToOneTests : IDisposable
         Assert.Contains(Tool.Grep, tools);
         foreach (var never in new[] { Tool.WriteFile, Tool.ReplaceInFile, Tool.RunShell, Tool.Agent, Tool.Colleague, Tool.HttpRequest })
             Assert.DoesNotContain(never, tools);
+    }
+
+    private sealed class WritingServer : Core.Mcp.IMcpServer
+    {
+        public string Name => "files";
+        public string? Instructions => null;
+        public string? Error => null;
+        public IReadOnlyList<Core.Mcp.McpToolDef> Tools { get; } =
+            [new("write_file", "writes", System.Text.Json.JsonDocument.Parse("""{"type":"object","properties":{}}""").RootElement.Clone())];
+        public Task<string> CallToolAsync(string tool, System.Text.Json.JsonElement args, CancellationToken ct) => Task.FromResult("written");
+    }
+
+    /// <summary>
+    /// No MCP tool reaches a one-to-one: MCP is exempt from a tool selection by design, so a server the user enabled
+    /// offered its write tools to a conversation that "cannot change anything".
+    /// </summary>
+    [Fact]
+    public void No_MCP_tool_reaches_it()
+    {
+        Charting();
+        var lead = Wire(new Session(_project), new MockLlmProvider());
+        var opening = lead.Colleagues!.OneToOne("Charting", out _)!;
+        var session = new Session(opening.Folder);
+        session.BecomeOneToOne(opening.Setup);
+        var mcp = new Core.Mcp.McpToolset([new WritingServer()]);
+
+        Wire(session, new MockLlmProvider(), mcp);
+
+        Assert.DoesNotContain(session.OfferedToolNames(), n => n.Contains("write_file", StringComparison.Ordinal));
+        Assert.Contains(Wire(new Session(_project), new MockLlmProvider(), mcp).OfferedToolNames(), n => n.Contains("write_file", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Nothing is brought in or kept inside a one-to-one, by any path: a worker brought there would report into the
+    /// conversation, and its work would be distilled as the colleague's own — how a colleague is poisoned.
+    /// </summary>
+    [Fact]
+    public async Task Nothing_is_brought_in_or_kept_there()
+    {
+        Charting();
+        Library.Create(new ColleagueRecord { Name = "Builder", Type = "general", Created = DateTimeOffset.UtcNow });
+        var (session, _) = Opened(new MockLlmProvider());
+
+        var bring = await session.Colleagues!.BringAsync(new BringOrder("Builder", "fix it", null, true, session.SessionId ?? "x"), CancellationToken.None);
+        var keep = session.Colleagues.Keep(new KeepOrder("anyone", null));
+
+        Assert.Contains("one-to-one", bring);
+        Assert.Contains("one-to-one", keep);
+        Assert.Empty(session.SubAgents.All());
     }
 
     [Fact]

@@ -265,9 +265,18 @@ public sealed class ColleagueDesk : IDisposable
     /// </summary>
     public string? KeepRefusal(KeepOrder order) => Checked(order, out _, out _);
 
+    /// <summary>
+    /// Why nothing is brought in or kept in a one-to-one — by the command, the library's Bring, or a browser. A worker
+    /// there would report into the conversation, and its work would be distilled as the colleague's own.
+    /// </summary>
+    private const string InOneToOne =
+        "This is a one-to-one: nothing is brought in or kept here. Bring colleagues in, or keep workers, in a working session.";
+
     private string? Checked(KeepOrder order, out StoredAgent? kept, out string name)
     {
+        kept = null;
         name = "";
+        if (_parts.OneToOne) return InOneToOne;
         var handle = _workers.HandleFor(order.Worker.Trim());
         kept = _workers.Find(handle);
         if (kept is null) return $"There is no worker called '{order.Worker.Trim()}' in this session.";
@@ -333,6 +342,7 @@ public sealed class ColleagueDesk : IDisposable
     /// <summary>Brings a colleague into this session as a worker, and answers the spawn's envelope or why not.</summary>
     public async Task<string> BringAsync(BringOrder order, CancellationToken ct)
     {
+        if (_parts.OneToOne) return InOneToOne;
         var name = order.Name.Trim();
         if (_parts.Library.Find(name) is not { } record)
             return $"There is no colleague called '{name}'. {Known()}";
