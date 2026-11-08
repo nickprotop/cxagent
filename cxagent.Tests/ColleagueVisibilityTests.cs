@@ -48,7 +48,7 @@ public sealed class ColleagueVisibilityTests : IDisposable
         });
     }
 
-    private string Worker(Session session)
+    private string Worker(Session session, string answer = "")
     {
         var child = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
@@ -58,9 +58,9 @@ public sealed class ColleagueVisibilityTests : IDisposable
         child.Agent.Context.Replace(
         [
             new ChatMessage { Role = "user", Content = "lay the chart out in panes" },
-            new ChatMessage { Role = "assistant", Content = new string('w', 400) },
+            new ChatMessage { Role = "assistant", Content = answer.Length > 0 ? answer : new string('w', 400) },
         ]);
-        return session.SubAgents.Keep(child, "chart layout");
+        return session.SubAgents.Keep(child, "chart layout " + Guid.NewGuid().ToString("N")[..6]);
     }
 
     [Fact]
@@ -103,6 +103,31 @@ public sealed class ColleagueVisibilityTests : IDisposable
 
         Assert.Empty(Library.Undistilled("Charting"));
         Assert.DoesNotContain(_seen.Notices, n => n.StartsWith("Charting", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A round this session appended, distilled with nothing to learn, leaves no claim behind: a review found the claim
+    /// stayed set, and the next distilling of another session's round for the same colleague was announced here.
+    /// </summary>
+    [Fact]
+    public async Task A_trivial_round_of_its_own_does_not_claim_another_session_s_later_one()
+    {
+        var session = Open();
+        _model.Distil = "NO CHANGE";
+        session.Colleagues!.Keep(new KeepOrder(Worker(session, "ok"), "Charting"));   // trivial: no call, no event
+        await session.Colleagues.Idle();
+        var before = _seen.Notices.Count;
+
+        Library.Append("Charting", new PastRound(0, "elsewhere", "/home/dev/source/other", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+            [new ChatMessage { Role = "user", Content = "chart it" }, new ChatMessage { Role = "assistant", Content = new string('c', 400) }]));
+        _model.Distil = "<core>\nPanes first.\n</core>\n<description>charts</description>";
+        session.Colleagues.Keep(new KeepOrder(Worker(session), "Parser"));            // this session's own: drains both
+        await session.Colleagues.Idle();
+
+        Assert.Empty(Library.Undistilled("Charting"));
+        var since = _seen.Notices.Skip(before).ToList();
+        Assert.DoesNotContain(since, n => n.StartsWith("Charting", StringComparison.Ordinal));
+        Assert.Contains(since, n => n.StartsWith("Parser learned", StringComparison.Ordinal));
     }
 
     [Fact]

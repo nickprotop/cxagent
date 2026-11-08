@@ -29,6 +29,15 @@ public sealed record DistillChange(string Colleague, long Version, bool Core, IR
 {
     /// <summary>True when nothing was kept — the distiller answered no change.</summary>
     public bool Nothing => !Core && Updated.Count == 0 && Added.Count == 0;
+
+    /// <summary>
+    /// The first and last rounds this distilling covered — so a session announces only the rounds it lived, and lets go
+    /// of one distilled before, by another process or with nothing to learn.
+    /// </summary>
+    public long From { get; init; }
+
+    /// <inheritdoc cref="From"/>
+    public long Through { get; init; }
 }
 
 /// <summary>One colleague to distil, and how to reach a model by provider entry.</summary>
@@ -74,6 +83,9 @@ public sealed partial class Distiller(ColleagueStore store)
     /// </summary>
     public event Action<DistillChange>? Distilled;
 
+    /// <summary>Raised when a colleague's waiting rounds are all distilled — before the drain moves to the next one.</summary>
+    public event Action<string>? Finished;
+
     /// <summary>
     /// Distils every colleague's waiting rounds, if no other distiller is at work — Done when all are distilled,
     /// Failed when one or more could not be (each said through <see cref="Failed"/>), Busy when the lock is held.
@@ -108,7 +120,11 @@ public sealed partial class Distiller(ColleagueStore store)
             while (Waiting(failed) is { } name)
             {
                 var why = await DrainOneAsync(new DistillRequest(name, modelsFor(name)), ct);
-                if (why is null) continue;
+                if (why is null)
+                {
+                    Finished?.Invoke(name);
+                    continue;
+                }
                 failed.Add(name);
                 Failed?.Invoke(name, why);
             }
@@ -254,7 +270,7 @@ public sealed partial class Distiller(ColleagueStore store)
         if (!answer.Changed)
         {
             var kept = store.Update(name, r => r with { DistilledThrough = Math.Max(r.DistilledThrough, last) });
-            Distilled?.Invoke(new DistillChange(name, kept?.ExperienceVersion ?? 0, false, [], []));
+            Distilled?.Invoke(new DistillChange(name, kept?.ExperienceVersion ?? 0, false, [], []) { From = batch[0].Seq, Through = last });
             return null;
         }
 
@@ -276,7 +292,7 @@ public sealed partial class Distiller(ColleagueStore store)
         });
         Distilled?.Invoke(new DistillChange(name, updated?.ExperienceVersion ?? 0, answer.Core is not null,
             [.. answer.Codebases.Keys.Where(experience.Codebases.ContainsKey)],
-            [.. answer.Codebases.Keys.Where(k => !experience.Codebases.ContainsKey(k))]));
+            [.. answer.Codebases.Keys.Where(k => !experience.Codebases.ContainsKey(k))]) { From = batch[0].Seq, Through = last });
         return null;
     }
 

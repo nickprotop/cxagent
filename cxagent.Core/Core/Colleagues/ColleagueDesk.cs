@@ -136,6 +136,9 @@ public sealed class ColleagueDesk : IDisposable
             StateChanged?.Invoke();
         };
         _distiller.Distilled += OnDistilled;
+        // OFF THE LIST AS ITS OWN ROUNDS ARE DONE: waiting for the whole drain named the first of several colleagues as
+        // distilling — and its card as learning — until the last was done.
+        _distiller.Finished += Distilled;
         _workers.SendBegan += OnBegan;
         _workers.SendEnded += OnEnded;
         _workers.Badges = BadgeFor;
@@ -162,7 +165,7 @@ public sealed class ColleagueDesk : IDisposable
     /// Colleagues this desk appended rounds for since their last distilling — the only ones whose distilling this
     /// session announces: a round another session lived is that session's news, even when this one's drain distils it.
     /// </summary>
-    private readonly ConcurrentDictionary<string, byte> _owned = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, long> _owned = new(StringComparer.OrdinalIgnoreCase);
 
     private void Distilled(string name)
     {
@@ -178,7 +181,12 @@ public sealed class ColleagueDesk : IDisposable
         var origin = OriginPrefix + change.Colleague;
         if (_given.TryGetValue(origin, out var given) && change.Version > given) _given[origin] = change.Version;
 
-        if (!_owned.TryRemove(change.Colleague, out _)) return;
+        // THE ROUND THIS DESK APPENDED, BY NUMBER: still waiting, it is not this change's; distilled before it — with
+        // nothing to learn, which raises nothing, or by another process — its claim goes, and this change is another
+        // session's news. A flag kept the claim, and the next distilling of someone else's round was said here.
+        if (!_owned.TryGetValue(change.Colleague, out var mine) || mine > change.Through) return;
+        _owned.TryRemove(change.Colleague, out _);
+        if (mine < change.From) return;
         if (change.Nothing)
         {
             _parts.Tell?.Invoke($"{change.Colleague}: nothing new to keep from that task.");
@@ -621,8 +629,7 @@ public sealed class ColleagueDesk : IDisposable
 
     private void Append(string name, PastRound round)
     {
-        _parts.Library.Append(name, round);
-        _owned[name] = 0;
+        _owned[name] = _parts.Library.Append(name, round);
         var key = Codebase.Key(_parts.Folder);
         var firstHere = _counted.TryAdd(name + "\u0001" + key, 0);
         _parts.Library.Update(name, r =>

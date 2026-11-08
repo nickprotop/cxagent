@@ -55,6 +55,48 @@ public sealed class DistillerTests : IDisposable
 
     private Task<DistillOutcome> Drain(Distiller distiller) => distiller.DrainAllAsync(_ => _ => _model, CancellationToken.None);
 
+    /// <summary>
+    /// Each colleague is said finished as its own rounds are done, not when the whole drain is: "distilling" named the
+    /// first of several colleagues until the last was done.
+    /// </summary>
+    [Fact]
+    public async Task Each_colleague_is_finished_as_its_own_rounds_are_done()
+    {
+        _store.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow });
+        Append();
+        _store.Append("Parser", new PastRound(0, "s", _project, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+            [new ChatMessage { Role = "user", Content = "parse" }, new ChatMessage { Role = "assistant", Content = new string('p', 400) }]));
+        Answer("NO CHANGE");
+        Answer("NO CHANGE");
+        var distiller = new Distiller(_store);
+        var events = new List<string>();
+        distiller.Started += n => events.Add("start " + n);
+        distiller.Finished += n => events.Add("end " + n);
+
+        await Drain(distiller);
+
+        Assert.Equal(4, events.Count);
+        Assert.Equal(events[0].Replace("start ", "end "), events[1]);
+        Assert.Equal(events[2].Replace("start ", "end "), events[3]);
+    }
+
+    /// <summary>A distilling says which rounds it covered, so a session can tell its own round from another's.</summary>
+    [Fact]
+    public async Task A_change_names_the_rounds_it_covered()
+    {
+        var first = Append();
+        var second = Append();
+        Answer("NO CHANGE");
+        DistillChange? seen = null;
+        var distiller = new Distiller(_store);
+        distiller.Distilled += c => seen = c;
+
+        await Drain(distiller);
+
+        Assert.Equal(first, seen!.From);
+        Assert.Equal(second, seen.Through);
+    }
+
     [Fact]
     public async Task A_round_is_folded_into_core_and_its_codebase()
     {
