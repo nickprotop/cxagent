@@ -57,6 +57,9 @@ public sealed record ColleagueDeskParts
 
     /// <summary>Tells the user something — a distilling that failed.</summary>
     public Action<string>? Notify { get; init; }
+
+    /// <summary>Tells the user something that is news, not trouble — what a colleague learned.</summary>
+    public Action<string>? Tell { get; init; }
 }
 
 /// <summary>
@@ -96,7 +99,17 @@ public sealed class ColleagueDesk : IDisposable
         _parts = parts;
         _workers = parts.Workers;
         _distiller = new Distiller(parts.Library);
-        _distiller.Failed += (name, why) => _parts.Notify?.Invoke($"Could not distil {name}'s latest work: {why}");
+        _distiller.Failed += (name, why) =>
+        {
+            Distilled(name);
+            _parts.Notify?.Invoke($"Could not distil {name}'s latest work: {why}");
+        };
+        _distiller.Started += name =>
+        {
+            lock (_distilling) if (!_distilling.Contains(name)) _distilling.Add(name);
+            StateChanged?.Invoke();
+        };
+        _distiller.Distilled += OnDistilled;
         _workers.SendBegan += OnBegan;
         _workers.SendEnded += OnEnded;
 
@@ -106,6 +119,52 @@ public sealed class ColleagueDesk : IDisposable
 
     /// <summary>The library this desk keeps colleagues in.</summary>
     public ColleagueStore Library => _parts.Library;
+
+    /// <summary>Colleagues being distilled now, by this desk's drains.</summary>
+    public IReadOnlyList<string> Distilling
+    {
+        get { lock (_distilling) return [.. _distilling]; }
+    }
+
+    private readonly List<string> _distilling = [];
+
+    /// <summary>Raised when who is distilling changed — for a status line or a panel to redraw.</summary>
+    public event Action? StateChanged;
+
+    /// <summary>
+    /// Colleagues this desk appended rounds for since their last distilling — the only ones whose distilling this
+    /// session announces: a round another session lived is that session's news, even when this one's drain distils it.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, byte> _owned = new(StringComparer.OrdinalIgnoreCase);
+
+    private void Distilled(string name)
+    {
+        bool removed;
+        lock (_distilling) removed = _distilling.Remove(name);
+        if (removed) StateChanged?.Invoke();
+    }
+
+    private void OnDistilled(DistillChange change)
+    {
+        if (!_owned.TryRemove(change.Colleague, out _)) return;
+        if (change.Nothing)
+        {
+            _parts.Tell?.Invoke($"{change.Colleague}: nothing new to keep from that task.");
+            return;
+        }
+        var record = _parts.Library.Find(change.Colleague);
+        var parts = new List<string>();
+        if (change.Core) parts.Add("core updated");
+        parts.AddRange(change.Updated.Select(k => $"{FolderName(record, k)} updated"));
+        parts.AddRange(change.Added.Select(k => $"{FolderName(record, k)} added"));
+        _parts.Tell?.Invoke($"{change.Colleague} learned from its work: {string.Join(", ", parts)} (v{change.Version}).");
+    }
+
+    /// <summary>A codebase as a person knows it — its folder's own name — rather than its key with a hash.</summary>
+    private static string FolderName(ColleagueRecord? record, string key) =>
+        record?.Workplaces.FirstOrDefault(w => w.Codebase == key) is { } w
+            ? Path.GetFileName(Path.TrimEndingDirectorySeparator(w.Folder))
+            : System.Text.RegularExpressions.Regex.Replace(key, "-[0-9a-f]{8}$", "");
 
     /// <summary>Points the desk at a re-wired session's spawner and models. The workers' store does not change.</summary>
     public void Rewire(ColleagueDeskParts parts) => _parts = parts;
@@ -349,6 +408,7 @@ public sealed class ColleagueDesk : IDisposable
     private void Append(string name, PastRound round)
     {
         _parts.Library.Append(name, round);
+        _owned[name] = 0;
         var key = Codebase.Key(_parts.Folder);
         var firstHere = _counted.TryAdd(name + "\u0001" + key, 0);
         _parts.Library.Update(name, r =>
@@ -384,6 +444,11 @@ public sealed class ColleagueDesk : IDisposable
                 Interlocked.Exchange(ref _drainQueued, 0);
                 while (await _distiller.DrainAllAsync(DistillModel, CancellationToken.None) == DistillOutcome.Busy && AnyWaiting())
                     await Task.Delay(BusyRetry);
+
+                // NOTHING IS DISTILLING ONCE THE DRAIN ENDS, whatever it ended on.
+                bool any;
+                lock (_distilling) { any = _distilling.Count > 0; _distilling.Clear(); }
+                if (any) StateChanged?.Invoke();
             }, TaskScheduler.Default).Unwrap();
         }
     }

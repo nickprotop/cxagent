@@ -19,6 +19,18 @@ public enum DistillOutcome
     Failed,
 }
 
+/// <summary>What one distilling changed in a colleague's experience — nothing, when every list is empty and Core false.</summary>
+/// <param name="Colleague">Whose experience.</param>
+/// <param name="Version">Its experience version after this distilling.</param>
+/// <param name="Core">Whether its core was rewritten.</param>
+/// <param name="Updated">Codebase keys whose experience was rewritten.</param>
+/// <param name="Added">Codebase keys it had no experience of before.</param>
+public sealed record DistillChange(string Colleague, long Version, bool Core, IReadOnlyList<string> Updated, IReadOnlyList<string> Added)
+{
+    /// <summary>True when nothing was kept — the distiller answered no change.</summary>
+    public bool Nothing => !Core && Updated.Count == 0 && Added.Count == 0;
+}
+
 /// <summary>One colleague to distil, and how to reach a model by provider entry.</summary>
 /// <param name="Colleague">Its name.</param>
 /// <param name="ProviderFor">The provider for an entry name — null asks for the colleague's own distilling entry — or
@@ -52,6 +64,15 @@ public sealed partial class Distiller(ColleagueStore store)
 
     /// <summary>Raised with the colleague's name and why, when its rounds could not be distilled.</summary>
     public event Action<string, string>? Failed;
+
+    /// <summary>Raised with a colleague's name as its waiting rounds start being distilled.</summary>
+    public event Action<string>? Started;
+
+    /// <summary>
+    /// Raised after each distilling the model answered — what changed, or that nothing did. Not for rounds skipped as
+    /// trivial with no call: a stray keystroke sent to a worker is no news.
+    /// </summary>
+    public event Action<DistillChange>? Distilled;
 
     /// <summary>
     /// Distils every colleague's waiting rounds, if no other distiller is at work — Done when all are distilled,
@@ -110,6 +131,7 @@ public sealed partial class Distiller(ColleagueStore store)
         var name = request.Colleague;
         try
         {
+            if (store.Undistilled(name).Count > 0) Started?.Invoke(name);
             while (store.Undistilled(name) is { Count: > 0 } waiting)
             {
                 var batch = Batch(waiting);
@@ -231,7 +253,8 @@ public sealed partial class Distiller(ColleagueStore store)
 
         if (!answer.Changed)
         {
-            store.Update(name, r => r with { DistilledThrough = Math.Max(r.DistilledThrough, last) });
+            var kept = store.Update(name, r => r with { DistilledThrough = Math.Max(r.DistilledThrough, last) });
+            Distilled?.Invoke(new DistillChange(name, kept?.ExperienceVersion ?? 0, false, [], []));
             return null;
         }
 
@@ -244,13 +267,16 @@ public sealed partial class Distiller(ColleagueStore store)
         foreach (var (key, text) in answer.Codebases) store.WriteCodebase(name, key, text);
 
         var folders = batch.Select(r => r.Folder).Reverse().Distinct(StringComparer.Ordinal).ToList();
-        store.Update(name, r => r with
+        var updated = store.Update(name, r => r with
         {
             DistilledThrough = Math.Max(r.DistilledThrough, last),
             ExperienceVersion = r.ExperienceVersion + 1,
             Description = answer.Description is { Length: > 0 } d ? OneLine(d) : r.Description,
             GrownIn = [.. folders.Concat(r.GrownIn.Where(g => !folders.Contains(g))).Take(5)],
         });
+        Distilled?.Invoke(new DistillChange(name, updated?.ExperienceVersion ?? 0, answer.Core is not null,
+            [.. answer.Codebases.Keys.Where(experience.Codebases.ContainsKey)],
+            [.. answer.Codebases.Keys.Where(k => !experience.Codebases.ContainsKey(k))]));
         return null;
     }
 

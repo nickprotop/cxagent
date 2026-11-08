@@ -308,6 +308,7 @@ internal static class SessionFactory
             NoteWorker = mark => session.Host?.NoteWorker(mark),
             Models = name => name is null ? SessionModel(resolution) : ModelFor(resolution, name),
             Notify = session.NotifyWarning,
+            Tell = session.Notify,
         });
 
         // THE PORTS' OBSERVERS BECOME SUBSCRIBER ONE OF A FAN-OUT, and everything downstream is
@@ -464,6 +465,10 @@ internal static class SessionFactory
         session.NoteAgentTypes(agentTypes);
         session.NoteSpawner(subAgents);
         session.NoteObserver(observers);
+
+        // THE COLLEAGUES IT CAN CALL ON, said once as a session opens — after NoteObserver, since a line said before it
+        // reaches nobody.
+        if (firstWire) session.SayColleagues();
         session.NoteFanOuts(observers, toolObservers);
 
         // AFTER NoteObserver, because Say is a no-op before it — the fallback above happens where

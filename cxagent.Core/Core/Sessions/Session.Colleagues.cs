@@ -102,6 +102,17 @@ public sealed partial class Session
         Colleagues = new ColleagueDesk(parts);
     }
 
+    /// <summary>
+    /// The one line a session opens with when the library is not empty: who can be called on, and what each knows.
+    /// Nothing at all with no colleagues, so a user who never kept one sees no trace of the feature.
+    /// </summary>
+    internal void SayColleagues()
+    {
+        if (Colleagues?.List() is not { Count: > 0 } all) return;
+        var each = all.Select(ColleagueLine.Of).Select(c => c.Knows.Count > 0 ? $"{c.Name} (knows {string.Join(", ", c.Knows)})" : c.Name);
+        Notify($"Colleagues: {string.Join("; ", each)} — /colleagues to see them.");
+    }
+
     /// <summary>Colleagues the user brought in since the lead last heard, for the front of its next message.</summary>
     private readonly List<string> _brought = [];
 
