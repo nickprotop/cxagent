@@ -103,6 +103,7 @@ public class DocRendererTests
                 "# Commands\n\nSee [the config](CONFIG.md#no-such-heading).\n");
             File.WriteAllText(Path.Combine(fake, "CONFIG.md"), "# Configuration\n\nNothing here.\n");
             File.WriteAllText(Path.Combine(fake, "SCRIPTING.md"), "# Scripting\n\nNothing here.\n");
+            foreach (var rel in RootGuides) File.WriteAllText(Path.Combine(fake, rel), "# X\n\nNothing here.\n");
             foreach (var rel in new[] { "sdk/README.md", "sdk/docs/plugins.md", "sdk/docs/cli.md", "sdk/docs/testing.md",
                          "sdk/docs/c-sdk.md", "sdk/docs/publishing.md", "sdk/c/ABI.md" })
                 File.WriteAllText(Path.Combine(fake, "cxagent.Core", rel), "# X\n\nNothing here.\n");
@@ -212,6 +213,12 @@ public class DocRendererTests
     }
 
     /// <summary>
+    /// The guides at the repository's root that the renderer lists beside COMMANDS, CONFIG and SCRIPTING — each must exist
+    /// in a fake tree, or the renderer stops at the missing file before reaching what a test is about.
+    /// </summary>
+    private static readonly string[] RootGuides = ["COLLEAGUES.md", "INSTALL.md", "USING.md", "SAFETY.md", "EXTENDING.md"];
+
+    /// <summary>
     /// Renders <paramref name="markdown"/> as COMMANDS.md in a fake tree and returns commands.html. The tree
     /// holds every path the renderer may list — old and new — so it does not depend on which ones it does.
     /// </summary>
@@ -221,11 +228,11 @@ public class DocRendererTests
         var outDir = Directory.CreateTempSubdirectory("doc-construct-out-").FullName;
         try
         {
-            foreach (var rel in new[] { "CONFIG.md", "SCRIPTING.md", "docs/screenshots/README.md",
+            foreach (var rel in RootGuides.Concat(new[] { "CONFIG.md", "SCRIPTING.md", "docs/screenshots/README.md",
                          "cxagent.Core/docs/plugins.md", "cxagent.Core/sdk/README.md",
                          "cxagent.Core/sdk/docs/plugins.md", "cxagent.Core/sdk/docs/testing.md",
                          "cxagent.Core/sdk/docs/c-sdk.md", "cxagent.Core/sdk/docs/publishing.md",
-                         "cxagent.Core/sdk/docs/cli.md", "cxagent.Core/sdk/c/ABI.md" })
+                         "cxagent.Core/sdk/docs/cli.md", "cxagent.Core/sdk/c/ABI.md" }))
             {
                 var path = Path.Combine(fake, rel);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -254,11 +261,11 @@ public class DocRendererTests
         var outDir = Directory.CreateTempSubdirectory("doc-shots-out-").FullName;
         try
         {
-            foreach (var rel in new[] { "COMMANDS.md", "CONFIG.md", "SCRIPTING.md",
+            foreach (var rel in RootGuides.Concat(new[] { "COMMANDS.md", "CONFIG.md", "SCRIPTING.md",
                          "cxagent.Core/docs/plugins.md", "cxagent.Core/sdk/README.md",
                          "cxagent.Core/sdk/docs/plugins.md", "cxagent.Core/sdk/docs/testing.md",
                          "cxagent.Core/sdk/docs/c-sdk.md", "cxagent.Core/sdk/docs/publishing.md",
-                         "cxagent.Core/sdk/docs/cli.md", "cxagent.Core/sdk/c/ABI.md" })
+                         "cxagent.Core/sdk/docs/cli.md", "cxagent.Core/sdk/c/ABI.md" }))
             {
                 var path = Path.Combine(fake, rel);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
