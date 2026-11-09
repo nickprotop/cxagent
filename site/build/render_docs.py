@@ -28,6 +28,7 @@ RENDERED = OrderedDict([
     ("COMMANDS.md", "commands"),
     ("CONFIG.md", "config"),
     ("SCRIPTING.md", "scripting"),
+    ("COLLEAGUES.md", "colleagues"),
     ("docs/screenshots/README.md", "walkthrough"),
     # THE SDK, rendered from where it lives: everything about making a plugin is in cxagent.Core/sdk/.
     ("cxagent.Core/sdk/README.md", "sdk"),

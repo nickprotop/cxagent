@@ -887,10 +887,11 @@ entry it was kept on, or the session's model — and where its rounds are distil
 set. F8's Colleagues tab and the browser's page choose both from the provider entries, and refuse one
 whose `contextWindow` is under 128k. A save there is used at its next bring; one already working keeps
 its model. The same page renames it — its old names still find it — and sets whether it **learns** or is **frozen** — frozen, its rounds are kept and none is
-distilled, and unfrozen it learns again from that moment ([`/colleagues freeze`](COMMANDS.md#colleagues) does the same).
+distilled, and unfrozen it learns again from that moment ([`/colleagues freeze`](COLLEAGUES.md#how-it-works) does the same).
 
 Colleagues live in this folder, under `colleagues/` — see [What else lives in that directory](#what-else-lives-in-that-directory).
-[`/colleagues`](COMMANDS.md#colleagues) lists them, keeps a worker and brings one in.
+[`/colleagues`](COMMANDS.md#colleagues) lists them, keeps a worker and brings one in; [COLLEAGUES.md](COLLEAGUES.md) has the
+whole of it, with a tutorial.
 
 An application built on cxagent.Core has colleagues **off** unless it sets `AgentConfig.Colleagues = true`.
 

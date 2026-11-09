@@ -20,6 +20,7 @@ on:
       - 'COMMANDS.md'
       - 'CONFIG.md'
       - 'SCRIPTING.md'
+      - 'COLLEAGUES.md'
       # EVERY DOCUMENT render_docs.py RENDERS, AND ITS IMAGES. A rendered document missing from this
       # list publishes an edit only when some OTHER trigger happens to fire.
       - 'docs/screenshots/**'

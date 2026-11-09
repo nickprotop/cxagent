@@ -54,6 +54,15 @@ the same conversation. [Sub-agents](#sub-agents) has the detail.
   <img src="docs/screenshots/37-background-agents.png" alt="The conversation after a team was put on the repository: explore, review and test workers in the transcript, and the tasks panel with two still running and the test run finished" width="800">
 </div>
 
+**Colleagues: workers that keep what they learned.** Keep a worker and it becomes a colleague: after
+each task it is given, what it did is distilled into its experience, and it brings that into any session
+you call it into. Keep the one that learned a library in one repository and bring it into the next app
+that uses it. [COLLEAGUES.md](COLLEAGUES.md) has a tutorial, ways to use one and how each part works.
+
+<div align="center">
+  <img src="docs/screenshots/52-colleague-plan.png" alt="A colleague that learned SharpConsoleUI in cxgpu, brought into an empty repository: it recalls its experience of cxgpu, then plans the new app's first screen from what it observed there" width="800">
+</div>
+
 **A model per tab, and per sub-agent.** A `providers` entry is an instance: a name bound to one
 endpoint and one model. Each tab runs on its own, and switching mid-conversation carries the
 conversation across, along with a context window that follows the new model and spend that keeps
@@ -471,6 +480,15 @@ See [CONFIG.md](CONFIG.md) for the `agents` block, and [COMMANDS.md](COMMANDS.md
 - **A briefing is a request, not a permission.** "Never edit files" in a type's briefing asks the
   agent not to; it does not remove the tool. Permissions are the mechanism that constrains an agent,
   and they apply to sub-agents exactly as they apply to the main one.
+
+### Colleagues
+
+A worker you keep becomes a colleague: it lives in cxagent's own folder, belongs to no session, and after
+each task it is given, what it did is distilled into its experience — how it works, and what it knows
+about each codebase. `/colleagues` opens the library; `/colleagues bring <name> [task]` brings one into
+any session, and the agent can bring one in itself. Each statement in its experience says how it is
+known: observed, learned or concluded, and the round behind it. [COLLEAGUES.md](COLLEAGUES.md) has the
+tutorial and the whole of it.
 
 ## Skills
 

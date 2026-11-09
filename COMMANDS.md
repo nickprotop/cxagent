@@ -611,87 +611,13 @@ refused. Turn memory off in F8 › General, or with [`memory.enabled`](CONFIG.md
 
 ## `/colleagues`
 
-A colleague is a worker you chose to keep. It lives in cxagent's own folder, belongs to no session, and keeps
-learning: everything it does is kept word for word as its past, and when each task it was given ends, that round is
-distilled into its **experience** — what it knows about how it works and about each codebase it has worked in. Brought
-into any session, in any folder, it starts from that experience.
+A colleague is a worker you chose to keep. After each task it is given, what it did is distilled into its experience,
+and it brings that experience into any session you call it into. `/colleagues` opens the library, a tab in the
+terminal and a page in the browser; its verbs keep, bring, open, rename, freeze, unfreeze and forget one.
 
-**The library.** `/colleagues` opens it — a tab in the terminal, a page in the browser: every colleague, and for the
-one picked, its description, the folders it knows, its version, rounds and model, what distilling it has cost so far,
-and its experience to read. **Open**
-starts a one-to-one; **Bring in** brings it into the session; **Forget…** asks whether to forget it.
-
-**Keeping one.** `/colleagues keep <worker> [name]` keeps one of this session's workers — typing it is your yes;
-without a name, one is taken from what the worker was doing. From then on the worker *is* the colleague: its
-conversation so far is the first round of its past, and every later task it finishes is another. When the agent wants
-to keep one it asks you, **Keep** or **Don't keep**; what could not be kept anyway — a worker that already is a
-colleague — is refused without asking.
-
-**Offered to you.** A worker you steered twice, the agent followed up three times, or that did four rounds of work here
-gets one line under its answer offering to keep it — **Keep** keeps it under a name from what it was doing, **Not this
-one** never asks again. Once per worker, never a question that waits; `colleagues.suggest` in config.json turns it off
-([CONFIG.md](CONFIG.md#colleagues--workers-kept-across-sessions)).
-
-**Bringing one in.** `/colleagues bring <name> [task]` — with a task, it starts on it in the background, and the agent
-gets its report; with none, it joins **idle**, to be given work in its tab or by the agent. A name with spaces needs no
-quotes. A colleague already here is not brought twice: a task is passed to it.
-
-**Seeing them.** A session with colleagues says so as it opens. **Tasks** (F7, and the browser's Tasks pane) has a
-**Colleagues** section of its own, above the workers: each one here as a card — how it stands (*working*, *queued*,
-*waiting for permission*, *learning*, *idle*, or *idle · last task failed*; never finished), what it was last asked, its
-version and the folders it knows, with **Open**, **Ask…** and, while it works, **Stop** — and under **Available** the
-library's others, each with **Bring**. It follows the session in front. A colleague shows no worker type anywhere: it is
-what it has learned. One at work is marked as a colleague wherever a worker shows: *Colleague* on its transcript row,
-`◆ <name>` on its tab and card. While its experience is being
-distilled the status line says *distilling <name>…*, and when that ends the session says what it learned — *core
-updated, invoice added (v3)* — or that there was nothing new.
-
-**One-to-one.** `/colleagues open <name>`, or **Open** in the library, starts a conversation with the colleague
-itself, in a session tab of its own titled *with <name>*, in the folder it last worked in. It can read, never write or
-run anything; ask it what it knows, teach it, correct it — every exchange is a round, distilled like any other. Opening
-it again returns to the same conversation. It is never listed by `/sessions` or picked by `-c`.
-
-**Renaming one.** `/colleagues rename <name> to <new name>` — or its *Name* in F8's Colleagues tab or the browser's
-config page. Its old names stay with it: a session that knew a worker as the old name still brings back this colleague,
-and no other colleague can take them. Not while its one-to-one is open, nor while a colleague is being distilled.
-
-**Forgetting one.** `/colleagues forget <name>`, or **Forget…** in the library, asks first — naming its past, its
-experience, what it learned in the folders it worked in (the folders themselves are untouched) and how many sessions it
-is live in now. On yes its folder is deleted, and its one-to-one with it. Where it is live it carries on as an ordinary
-worker: here at once, in another session when its task ends. Sessions keep their own histories. Not while its one-to-one
-is open, nor while a colleague is being distilled — then it says to try again.
-
-**Freezing one.** `/colleagues freeze <name>` — or *Frozen* on its page in F8's Colleagues tab or the browser's
-config page — keeps its experience as it is: it works as before and its rounds are kept, but none is distilled. Its card,
-tab and library entry say *frozen*. `/colleagues unfreeze <name>` lets it learn again **from that moment**: what it did
-while frozen stays in its past for recall and is never learned from; rounds still waiting from before the freeze are.
-
-**What it reaches.** Brought in, a colleague starts from its experience and can reach the rest: **recall** searches
-its past for words, reads one round whole, or reads the current version of its experience — the newest, if it grew in
-another session meanwhile. A recall shows in its tab as `recall · search "…"`, `recall · round 9` or
-`recall · experience <codebase>`. It reads files in its **workplaces** — the folders it has worked in — without asking,
-while each is still trusted; a write, a move or a command there asks as anywhere else, and a workplace that has moved or
-been deleted is named in its briefing as gone. While the session is served to a browser, a read — or a recall of what
-was read — in a folder that browser cannot reach asks first. Its one-to-one has recall too, and asks before any read
-outside its folder.
-
-**How it knows what it knows.** Each statement in its experience ends with its kind and the round behind it:
-*(observed, round N)* for what a round read, ran or got back; *(learned, round N)* for what was understood or inferred
-from that, or told; *(concluded, round N)* for what a round set out to check and established. A statement rises only on
-new evidence — recalling or repeating it never does — and a claim that something does not exist or cannot be done is at
-most learned until a round establishes it. What no longer holds moves: under **Mistaken** when it was never true, under
-**Superseded** when it held and stopped holding, so it is not learned again. What it learns is filed where it is true:
-about a codebase in that codebase's part, what holds everywhere in its core. The round behind any statement is a recall
-away.
-
-A colleague can be in several sessions at once. Rounds from every session are distilled one at a time; one that grew
-elsewhere while it worked here is told so in a line at the start of its next task. A round the distiller refuses three
-times in a row — it seems to hold a key or a password, or its answer never fits — is stepped past: it stays in the past
-word for word, is not learned from, and you are told once.
-
-It runs on the model it was kept on, which must have at least a 128k window. F8's **Colleagues** tab, and the
-Colleagues tab of the browser's config page, change where each one runs and where it distils, and turn colleagues off —
-as does [`colleagues.enabled`](CONFIG.md#colleagues--workers-kept-across-sessions) in config.json.
+**[COLLEAGUES.md](COLLEAGUES.md)** has all of it: a tutorial from one codebase to the next, ways to use one, and how
+each part works — keeping, bringing, the one-to-one, recall and workplaces, how its experience says what it knows,
+renaming, freezing and forgetting.
 
 ---
 

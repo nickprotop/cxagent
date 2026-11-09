@@ -30,6 +30,7 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
   <a class="brand" href="../"><img class="brand-mark" src="../logo.svg" alt="" width="22" height="22"><span>cxagent</span></a>
   <a href="../install.html">Install</a>
   <a href="../plugins.html">Plugins</a>
+  <a href="../docs/colleagues.html">Colleagues</a>
   <a href="../core.html">CxAgent.Core</a>
   <a href="../docs/">Docs</a>
   <a href="https://github.com/nickprotop/cxagent">GitHub</a>
@@ -61,6 +62,13 @@ with the turn waiting on it, or in the background while the conversation carries
 <kbd>Ctrl+B</kbd> moves one that is waiting to the background. Each has a tab of its own, and you can
 send it a message while it works. Its spend is counted apart from the parent's — the panel's
 <code>workers</code> line. <a href="commands.html#agents">Workers →</a></p>
+
+<h3 id="colleague">Colleague</h3>
+<p>A <a href="#worker">worker</a> you chose to keep. It belongs to no session: after each task it is
+given, what it did is distilled into its <em>experience</em> — how it works, and what it knows about each
+codebase it has worked in — and it brings that experience into any session it is called into. Each
+statement in it says how it is known: <em>observed</em>, <em>learned</em> or <em>concluded</em>, with
+the round behind it. <a href="colleagues.html">Colleagues →</a></p>
 
 <h3 id="task">Task</h3>
 <p>Work running unattended: above all a long shell command that <code>run_shell</code> left running

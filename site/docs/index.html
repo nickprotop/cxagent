@@ -30,6 +30,7 @@ try { var t = localStorage.getItem("cxagent-theme"); if (t === "light" || t === 
   <a class="brand" href="../"><img class="brand-mark" src="../logo.svg" alt="" width="22" height="22"><span>cxagent</span></a>
   <a href="../install.html">Install</a>
   <a href="../plugins.html">Plugins</a>
+  <a href="../docs/colleagues.html">Colleagues</a>
   <a href="../core.html">CxAgent.Core</a>
   <a href="../docs/">Docs</a>
   <a href="https://github.com/nickprotop/cxagent">GitHub</a>
@@ -99,6 +100,13 @@ it more — while it works, or after. A finished worker stays, with everything i
 question. <a href="commands.html#agents">Workers →</a>
 <figure class="step-shot"><a href="../screenshots/37-background-agents.png"><img src="../screenshots/37-background-agents.png" alt="The lead's conversation with explore, review and test workers spawned in the background and a table of them, and the Tasks column with the explorer and reviewer running and the test run finished" loading="lazy"></a><figcaption>Three workers: <kbd>F7</kbd> lists what is running and what has finished.</figcaption></figure>
 </li>
+<li><strong>Keep the one that learned it.</strong> A worker you keep coming back to is offered as a
+<a href="glossary.html#colleague">colleague</a> — or keep one yourself with <code>/colleagues keep</code>.
+After each task it is given, what it did is distilled into its experience, and it brings that into any
+session you call it into: <code>/colleagues bring</code> it into a new app and it starts from what it
+learned in the last one. <a href="colleagues.html">Colleagues, with a tutorial →</a>
+<figure class="step-shot"><a href="../screenshots/52-colleague-plan.png"><img src="../screenshots/52-colleague-plan.png" alt="The colleague SharpConsoleUI Guide brought into an empty repository: it recalls its experience of cxgpu, then plans diskdash's first screen from what it observed there" loading="lazy"></a><figcaption>A colleague that learned SharpConsoleUI in one repository, planning a new app in another.</figcaption></figure>
+</li>
 <li><strong>It remembers you.</strong> Tell it how you work — <em>always write tests with xUnit and
 plain Assert</em> — and it keeps a note: system notes, about you, go with you to every project; project
 notes stay with this one; both in cxagent's own folder, never in your repository. The next session
@@ -128,6 +136,9 @@ in a browser →</a>
 <li><a href="../docs/commands.html">Commands</a>
     <span>— everything you can type in the composer: <code>/mode</code>, <code>/stats</code>,
     <code>/plugin</code>, <code>/skills</code>, and the keys</span></li>
+<li><a href="../docs/colleagues.html">Colleagues</a>
+    <span>— workers kept across sessions: a tutorial from one codebase to the next, ways to use one,
+    and how each part works</span></li>
 <li><a href="../docs/config.html">Configuration</a>
     <span>— every block of <code>config.json</code>, where the file lives on each OS, and what each
     key's absence means</span></li>
