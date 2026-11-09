@@ -57,7 +57,7 @@ the same conversation. [Sub-agents](#sub-agents) has the detail.
 **Colleagues: workers that keep what they learned.** Keep a worker and it becomes a colleague: after
 each task it is given, what it did is distilled into its experience, and it brings that into any session
 you call it into. Keep the one that learned a library in one repository and bring it into the next app
-that uses it. [COLLEAGUES.md](COLLEAGUES.md) has a tutorial, ways to use one and how each part works.
+that uses it. [Colleagues](#colleagues) has the detail, and [COLLEAGUES.md](COLLEAGUES.md) a tutorial.
 
 <div align="center">
   <img src="docs/screenshots/52-colleague-plan.png" alt="A colleague that learned SharpConsoleUI in cxgpu, brought into an empty repository: it recalls its experience of cxgpu, then plans the new app's first screen from what it observed there" width="800">
@@ -481,14 +481,38 @@ See [CONFIG.md](CONFIG.md) for the `agents` block, and [COMMANDS.md](COMMANDS.md
   agent not to; it does not remove the tool. Permissions are the mechanism that constrains an agent,
   and they apply to sub-agents exactly as they apply to the main one.
 
-### Colleagues
+## Colleagues
 
-A worker you keep becomes a colleague: it lives in cxagent's own folder, belongs to no session, and after
-each task it is given, what it did is distilled into its experience — how it works, and what it knows
-about each codebase. `/colleagues` opens the library; `/colleagues bring <name> [task]` brings one into
-any session, and the agent can bring one in itself. Each statement in its experience says how it is
-known: observed, learned or concluded, and the round behind it. [COLLEAGUES.md](COLLEAGUES.md) has the
-tutorial and the whole of it.
+A worker is gone when its session ends; a colleague carries on. Keep a worker and it becomes a colleague: it
+lives in cxagent's own folder, belongs to no session, and after each task it is given, what it did is distilled
+into its **experience** — how it works, and what it knows about each codebase it has worked in. Bring it into any
+session, in any folder, and it starts from that experience.
+
+```text
+/colleagues keep study-sharpconsoleui-dashboard SharpConsoleUI Guide    # keep a worker of this session
+/colleagues                                                             # the library: who knows what
+/colleagues bring SharpConsoleUI Guide Plan diskdash's first screen     # bring it into another app
+/colleagues open SharpConsoleUI Guide                                   # talk with it one-to-one
+```
+
+<div align="center">
+  <img src="docs/screenshots/49-colleague-library.png" alt="The colleagues' library: SharpConsoleUI Guide with its version, what distilling has cost and the codebase it knows, Open, Bring in and Forget, and its experience, each statement ending in its kind and round" width="800">
+</div>
+
+- **It says how it knows.** Each statement in its experience ends with *observed*, *learned* or *concluded*
+  and the round behind it, and the colleague checks what it only inferred before building on it. What no longer
+  holds moves under *Mistaken* or *Superseded*.
+- **It reaches the rest.** `recall` searches its past and reads its experience as it is now; it reads the folders
+  it has worked in without asking, while they are trusted.
+- **You stay in charge of what it learns.** Teach or correct it in its one-to-one; freeze it when it is good;
+  rename or forget it. It learns only from its own work, never from another worker's output.
+- **It is offered, never forced.** Steer a worker twice and one line under its answer offers **Keep** or
+  **Not this one**. The agent can bring a colleague in itself, and asks you before keeping one.
+- **Both front ends.** The library, the cards, the offers, the confirmations and the settings are in the
+  terminal and the browser alike. `/stats` shows what distilling costs, per colleague.
+
+**[COLLEAGUES.md](COLLEAGUES.md)** has a tutorial from one codebase to the next, taken from a real run, ways to
+use one, and how each part works.
 
 ## Skills
 
