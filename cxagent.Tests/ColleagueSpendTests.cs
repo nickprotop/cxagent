@@ -145,4 +145,22 @@ public sealed class ColleagueSpendTests : IDisposable
         Assert.Equal(("distill:Charting", "distil-model", 1200, 300, "session-1"),
             (run.TypeName, run.ModelId, run.InputTokens, run.OutputTokens, run.ParentAgentId));
     }
+
+    /// <summary>A long name keeps its gap: "SharpConsoleUI Guide" ran into its call count.</summary>
+    [Fact]
+    public void A_long_colleague_name_does_not_run_into_its_count()
+    {
+        var text = StatsDashboard.Render(new StatsDashboard.StatsView
+        {
+            Days = 1,
+            Totals = new StatsTotals(1, 10, 10, 0, 0, 0, 0, 0),
+            Projects = [], Models = [], Types = [], Tools = [], Daily = [],
+            Distilling = [new DistillStat("SharpConsoleUI Guide", 5, 35_500, []),
+                new DistillStat("An Unusually Long Colleague Name For Layouts", 1, 100, [])],
+        });
+
+        Assert.Matches(@"SharpConsoleUI Guide +5 ", text);
+        Assert.DoesNotContain("An Unusually Long Colleague Name For Layouts", text);
+        Assert.Contains("…", text);
+    }
 }

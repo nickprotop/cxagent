@@ -341,16 +341,20 @@ public static class StatsDashboard
             sb.AppendLine(Head("Distilling"));
             sb.AppendLine();
             var rows = new StringBuilder();
-            rows.AppendLine("  " + Pad("colleague", 20) + Pad("calls", 7) + "tokens");
+            // AS WIDE AS THE LONGEST NAME AND A GAP, within reason: a name is the user's, up to forty characters, and one
+            // the width of a fixed column ran straight into its count.
+            var width = Math.Clamp(view.Distilling.Max(d => d.Colleague.Length) + 2, 12, 26);
+            rows.AppendLine("  " + Pad("colleague", width) + Pad("calls", 7) + "tokens");
             var max = (double)view.Distilling.Max(d => d.Tokens);
             foreach (var d in view.Distilling)
             {
-                rows.AppendLine($"  {Pad(d.Colleague, 20)}{Pad(d.Calls.ToString(), 7)}{Compact(d.Tokens)}");
-                rows.AppendLine($"  {new string(' ', 20)}{Bar(max > 0 ? d.Tokens / max : 0, 18)}"
+                var name = d.Colleague.Length > width - 2 ? d.Colleague[..(width - 3)] + "…" : d.Colleague;
+                rows.AppendLine($"  {Pad(name, width)}{Pad(d.Calls.ToString(), 7)}{Compact(d.Tokens)}");
+                rows.AppendLine($"  {new string(' ', width)}{Bar(max > 0 ? d.Tokens / max : 0, 18)}"
                                 + (d.Models.Count == 1 ? "  " + Short(d.Models[0].ModelId) : ""));
                 if (d.Models.Count > 1)
                     foreach (var m in d.Models)
-                        rows.AppendLine($"  {new string(' ', 20)}{Pad(Short(m.ModelId), 24)}{Pad(Compact(m.Tokens), 9)}{m.Runs} call(s)");
+                        rows.AppendLine($"  {new string(' ', width)}{Pad(Short(m.ModelId), 24)}{Pad(Compact(m.Tokens), 9)}{m.Runs} call(s)");
             }
             AppendDrawn(sb, rows);
         }

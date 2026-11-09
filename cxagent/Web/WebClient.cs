@@ -1215,13 +1215,14 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                 if ((draft.Problem(settings) ?? draft.RenameProblem(library, oneToOnes)) is { } problem) { Refused([problem]); return; }
                 if (!draft.IsDirty) { Send(new JsonObject { ["type"] = "configSaved", ["warnings"] = new JsonArray("Nothing changed.") }); return; }
                 // THE LIBRARY IS FILES ON DISK: a write that fails is said, as F8's tab says it, never thrown into the loop.
+                var said = draft.SavedLine;
                 string? refused;
                 try { refused = draft.Apply(library, oneToOnes); }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Refused([e.Message]); return; }
                 if (refused is not null) { Refused([refused]); return; }
-                // RENAMED, THE PAGE FOLLOWS IT under its new name.
+                // RENAMED, THE PAGE FOLLOWS IT under its new name — and says what the save did, as F8's status line does.
                 item = draft.SavedName;
-                result = new WebConfigSave(true, []);
+                result = new WebConfigSave(true, [said]);
                 break;
             }
             case "project":

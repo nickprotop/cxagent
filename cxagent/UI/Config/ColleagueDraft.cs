@@ -86,6 +86,25 @@ public sealed class ColleagueDraft
     public string? RenameProblem(ColleagueStore library, Core.Storage.FolderSessionStore? sessions) =>
         Renaming ? ColleagueRenaming.Refusal(library, sessions, new RenameOrder(Name, NewName!)) : null;
 
+    /// <summary>
+    /// What a save of this draft did, in words — ONE TEXT FOR F8 AND THE BROWSER, read before the save, since it compares
+    /// the draft with the record it was made from. Each change says how it takes effect: a freeze at once, a model at the
+    /// next bring.
+    /// </summary>
+    public string SavedLine
+    {
+        get
+        {
+            var said = new List<string>();
+            if (Renaming) said.Add($"{Original.Name} is now called {SavedName}; its old names still find it.");
+            if (Blank(Model) != Original.Instance || Blank(DistillModel) != Original.DistillInstance)
+                said.Add("Its models are used at its next bring; one working now keeps its own.");
+            if (Frozen != Original.Frozen)
+                said.Add(Frozen ? ColleagueDesk.FrozenLine(SavedName) : ColleagueDesk.UnfrozenLine(SavedName));
+            return string.Join(" ", said);
+        }
+    }
+
     /// <summary>The name it has once saved — the new one when it is renamed.</summary>
     public string SavedName => Renaming ? NewName!.Trim() : Name;
 

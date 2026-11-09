@@ -197,4 +197,16 @@ public sealed class ColleagueFreezeTests : IDisposable
         var draft = WebConfigForms.SetColleague(ColleagueDraft.For(Library.Find("Charting")!), new JsonObject { ["frozen"] = "true" });
         Assert.True(draft.Frozen);
     }
+
+    [Fact]
+    public void Saving_says_what_was_saved()
+    {
+        var freezing = ColleagueDraft.For(Library.Find("Charting")!);
+        freezing.Frozen = true;
+        Assert.Contains("is frozen", freezing.SavedLine);
+
+        var moving = ColleagueDraft.For(Library.Find("Charting")!);
+        moving.Model = "elsewhere";
+        Assert.Contains("next bring", moving.SavedLine);
+    }
 }

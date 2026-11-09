@@ -261,6 +261,7 @@ public sealed class ColleaguesTab
                 return;
             }
             // THE LIBRARY, NOT config.json: nothing running moves, and its next bring reads it.
+            var said = draft.SavedLine;
             string? refused;
             try { refused = draft.Apply(Library, sessions); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -271,7 +272,7 @@ public sealed class ColleaguesTab
             if (refused is not null) { SetStatus($"[{ColorScheme.CautionMarkup}]{MarkupParser.Escape(refused)}[/]"); return; }
             var name = draft.SavedName;
             Reload(name);
-            SetStatus($"[{ColorScheme.AffirmativeMarkup}]✔ {MarkupParser.Escape(name)} saved.[/] [{ColorScheme.MutedMarkup}]Its next bring uses it; one working now keeps its model.[/]");
+            SetStatus($"[{ColorScheme.AffirmativeMarkup}]✔ {MarkupParser.Escape(name)} saved.[/] [{ColorScheme.MutedMarkup}]{MarkupParser.Escape(said)}[/]");
             return;
         }
         if (_general is not { } general) return;
