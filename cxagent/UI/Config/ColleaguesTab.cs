@@ -211,7 +211,9 @@ public sealed class ColleaguesTab
         var naming = new FieldGrid();
         var nameBox = ListDetail.Input(new PromptControl { Input = record.Name, HorizontalAlignment = HorizontalAlignment.Stretch });
         nameBox.InputChanged += (_, text) => { draft.NewName = text; MarkSave(); };
-        naming.Add("Name", ColleagueDraft.NameHelp, nameBox);
+        // THE SECTION IS ITS LABEL: a field called Name under a heading called Name said it twice.
+        naming.AddBare(Help(ColleagueDraft.NameHelp));
+        naming.AddBare(nameBox);
         _detail.AddControl(ListDetail.Section("Name", naming.Control));
         _detail.AddControl(ListDetail.Gap());
 

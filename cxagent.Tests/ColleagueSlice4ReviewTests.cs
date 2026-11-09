@@ -50,6 +50,7 @@ public sealed class ColleagueSlice4ReviewTests : IDisposable
             Tell = _told.Add,
         });
         desk.KeepSuggested += _offered.Add;
+        desk.SuggestDelay = TimeSpan.Zero;
         await desk.Idle();
         return desk;
     }

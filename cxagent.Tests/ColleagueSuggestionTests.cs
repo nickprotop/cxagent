@@ -40,6 +40,7 @@ public sealed class ColleagueSuggestionTests : IDisposable
             OneToOne = oneToOne,
         });
         desk.KeepSuggested += _suggested.Add;
+        desk.SuggestDelay = TimeSpan.Zero;
         await desk.Idle();
         return desk;
     }
@@ -196,5 +197,26 @@ public sealed class ColleagueSuggestionTests : IDisposable
         var root = new System.Text.Json.Nodes.JsonObject();
         draft.Apply(root);
         Assert.False(root["colleagues"]!["suggest"]!.GetValue<bool>());
+    }
+
+    /// <summary>
+    /// The offer comes a moment after the stretch ends: the end is announced before the answer is shown, and an offer
+    /// raised at once drew above the answer it is about.
+    /// </summary>
+    [Fact]
+    public async Task The_offer_waits_for_the_answer_to_be_shown()
+    {
+        using var desk = await Desk();
+        desk.SuggestDelay = TimeSpan.FromMilliseconds(300);
+        var handle = Worker();
+        _workers.NoteSent(handle, fromUser: true);
+        _workers.NoteSent(handle, fromUser: true);
+
+        Stretch(handle);
+        Assert.Empty(_suggested);
+
+        var until = DateTime.UtcNow.AddSeconds(5);
+        while (_suggested.Count == 0 && DateTime.UtcNow < until) await Task.Delay(50);
+        Assert.Single(_suggested);
     }
 }

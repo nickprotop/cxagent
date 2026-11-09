@@ -1025,8 +1025,20 @@ public sealed partial class ColleagueDesk : IDisposable
             : rounds >= SuggestAfterRounds ? $"it has done {rounds} rounds of work here"
             : null;
         if (why is null || !_suggested.TryAdd(kept.Name, 0)) return;
-        // A LISTENER'S FAILURE IS ITS OWN: this runs inside the worker's release, as the round's capture does.
-        try { KeepSuggested.Invoke(new KeepSuggestion(kept.Name, why)); }
+        var offer = new KeepSuggestion(kept.Name, why);
+        if (SuggestDelay <= TimeSpan.Zero) Offer(offer);
+        // A MOMENT LATER, NOT NOW: the end of a stretch is announced inside the worker's release, before whoever asked
+        // has shown its answer — raised now, the offer drew above the answer it is about.
+        else _ = Task.Delay(SuggestDelay).ContinueWith(_ => Offer(offer), TaskScheduler.Default);
+    }
+
+    /// <summary>How long after a stretch ends its offer is made — see <see cref="Weigh"/>.</summary>
+    internal TimeSpan SuggestDelay { get; set; } = TimeSpan.FromSeconds(1);
+
+    private void Offer(KeepSuggestion offer)
+    {
+        // A LISTENER'S FAILURE IS ITS OWN: nothing that offers may take down what ended the stretch.
+        try { KeepSuggested?.Invoke(offer); }
         catch (Exception e) when (e is not OperationCanceledException) { }
     }
 
