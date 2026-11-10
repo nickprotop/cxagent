@@ -142,7 +142,7 @@ public sealed class ColleagueSpendTests : IDisposable
         await desk.Idle();
 
         var run = Assert.Single(saved);
-        Assert.Equal(("distill:Charting", "distil-model", 1200, 300, "session-1"),
+        Assert.Equal(("distill:Charting", "main:distil-model", 1200, 300, "session-1"),
             (run.TypeName, run.ModelId, run.InputTokens, run.OutputTokens, run.ParentAgentId));
     }
 

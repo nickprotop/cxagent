@@ -384,7 +384,10 @@ public sealed partial class Distiller(ColleagueStore store)
         var response = await model.ChatAsync([.. messages], tools: null, ct);
 
         // COUNTED BEFORE THE ANSWER IS JUDGED: a cut-off answer is refused whole, and is the costliest call there is.
-        Count(new DistillSpend(name, model.ModelId, response.Usage.InputTokens, response.Usage.OutputTokens, started, clock.ElapsedMilliseconds));
+        Count(new DistillSpend(name, model.ModelId, response.Usage.InputTokens, response.Usage.OutputTokens, started, clock.ElapsedMilliseconds)
+        {
+            Usage = response.Usage,
+        });
 
         if (response.StopReason is "max_tokens" or "length") throw new CutOffException();
         return Answer.Parse(response.Text ?? "", touched);

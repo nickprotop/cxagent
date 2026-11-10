@@ -751,10 +751,37 @@ public sealed class AgentHost : IDisposable
     /// <para>The same string the UI shows and the same one <c>/stats</c> groups by, so a figure in
     /// the dashboard and a name in the panel do not have to be reconciled by the reader.</para>
     /// </summary>
-    private string SpendLabel =>
-        _runtime.InstanceName is { Length: > 0 } instance
-            ? $"{instance}:{_runtime.Provider.ModelId}"
-            : _runtime.Provider.ModelId;
+    private string SpendLabel => Label(_runtime.InstanceName, _runtime.Provider);
+
+    /// <summary>A model as every figure names it: its provider entry, then the model — or the model alone where no entry
+    /// is named.</summary>
+    public static string Label(string? instance, ILlmProvider provider) =>
+        instance is { Length: > 0 } ? $"{instance}:{provider.ModelId}" : provider.ModelId;
+
+    /// <summary>
+    /// Books spend this session paid for outside any agent — a colleague's distilling, a hook's model — as a worker's: on
+    /// the ledger under <paramref name="label"/>, said to the panel, and in the session's row. Without the row, a
+    /// session where only that happened would leave no trace in the history.
+    /// </summary>
+    public void Spent(LlmUsage usage, string label)
+    {
+        Ledger.Record(usage, label, subAgent: true);
+        TokensUpdated?.Invoke(this, Ledger.TotalTokens);
+        SaveSessionRow();
+    }
+
+    /// <summary>
+    /// The session's row in the usage history, as it stands now. UPSERTED WHENEVER SPEND CHANGES HANDS — a lead's turn,
+    /// a worker's stretch, spend booked from outside — and never only at exit: a crash is exactly when exit does not
+    /// happen.
+    /// </summary>
+    private void SaveSessionRow() =>
+        _stores.History?.SaveSession(new SessionRecord(
+            _agent.Id, _runtime.WorkingDir, SpendLabel, Mode.ToString(),
+            Ledger.InputTokens, Ledger.OutputTokens, Ledger.SubAgentTokens, _turns,
+            _startedAt, DateTimeOffset.UtcNow,
+            Ledger.CachedInputTokens, Ledger.CacheWrittenTokens,
+            Ledger.CacheHitRate is not null, Ledger.TotalCost));
 
     /// <summary>
     /// Points this session at a different model — see <see cref="Agent.SwapProvider"/>.
@@ -843,12 +870,7 @@ public sealed class AgentHost : IDisposable
             // is the only place a question needing MANY sessions can be answered. Upserted every
             // turn for the same reason resume is: a crash is exactly when a final write never comes.
             _turns++;
-            _stores.History?.SaveSession(new SessionRecord(
-                agent.Id, _runtime.WorkingDir, SpendLabel, Mode.ToString(),
-                Ledger.InputTokens, Ledger.OutputTokens, Ledger.SubAgentTokens, _turns,
-                _startedAt, DateTimeOffset.UtcNow,
-                Ledger.CachedInputTokens, Ledger.CacheWrittenTokens,
-                Ledger.CacheHitRate is not null, Ledger.TotalCost));
+            SaveSessionRow();
         };
 
         // OCCUPANCY, which nothing else in this mode observes. Without it the status bar has only the
@@ -872,9 +894,15 @@ public sealed class AgentHost : IDisposable
             r.CallId, r.AgentId, r.ToolName, r.JobType, r.Outcome, r.DurationMs,
             r.ResultChars, r.StartedAt, _runtime.WorkingDir));
 
-        agent.ChildFinished += r => _stores.History?.SaveRun(new RunRecord(
-            r.RunId, r.ParentAgentId, r.TypeName, r.ModelId, r.InputTokens, r.OutputTokens,
-            r.Turns, r.ToolCalls, r.Outcome, r.StartedAt, r.DurationMs, _runtime.WorkingDir));
+        agent.ChildFinished += r =>
+        {
+            _stores.History?.SaveRun(new RunRecord(
+                r.RunId, r.ParentAgentId, r.TypeName, r.ModelId, r.InputTokens, r.OutputTokens,
+                r.Turns, r.ToolCalls, r.Outcome, r.StartedAt, r.DurationMs, _runtime.WorkingDir));
+            // AND THE SESSION'S ROW, which otherwise waits for a turn of the lead's own: a session where only a worker
+            // worked — a colleague spoken to from its tab — would leave no row at all.
+            SaveSessionRow();
+        };
 
         // A CHILD'S SPEND, mid-turn. TokensUpdated otherwise fires only on THIS agent's turn
         // boundaries, and it completes none while blocked inside the spawn tool — so a worker
@@ -999,6 +1027,9 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     public void Dispose()
     {
+        // ITS WORKERS ARE THE NEXT LEAD'S NOW — see Agent.StopHearingWorkers.
+        _agent.StopHearingWorkers();
+
         // THE TURN'S SCOPE IS NOT HERE ANY MORE. It moved to Session with the rest of turn ownership;
         // SessionManager.Close disposes the host and the session together, so the cleanup did not
         // need a new caller — see Session.DisposeTurnScope.

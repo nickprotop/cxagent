@@ -319,6 +319,8 @@ internal static class SessionFactory
             Served = shared.Served,
             Gate = shared.Gate,
             SaveRun = shared.History is { } history ? history.SaveRun : null,
+            // ON THE SESSION'S HOST AS IT IS WHEN THE CALL ENDS: a re-wire replaces the host and its ledger.
+            Spent = (usage, label) => session.Host?.Spent(usage, label),
             Suggest = resolution.ColleagueSuggestions,
         });
 
@@ -641,7 +643,7 @@ internal static class SessionFactory
                     }, ct)).Allowed,
                 Agent = Hooks.HookAgentRunner.RunAsync,
                 // ON THE SESSION'S LEDGER AS IT IS WHEN THE HOOK RUNS: a re-wire replaces the host and its ledger.
-                Spend = (usage, label) => session.Host?.Ledger.Record(usage, label, subAgent: true),
+                Spend = (usage, label) => session.Host?.Spent(usage, label),
             },
         });
         runner.Session = () => new Hooks.HookEventContext(
@@ -672,6 +674,5 @@ internal static class SessionFactory
         return new Colleagues.ModelChoice(provider, Label(name, provider), registry.WindowFor(name), name);
     }
 
-    private static string Label(string? instance, Llm.ILlmProvider provider) =>
-        instance is { Length: > 0 } ? $"{instance}:{provider.ModelId}" : provider.ModelId;
+    private static string Label(string? instance, Llm.ILlmProvider provider) => AgentHost.Label(instance, provider);
 }

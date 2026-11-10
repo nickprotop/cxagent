@@ -139,6 +139,10 @@ public sealed record ColleagueDeskParts
 
     /// <summary>Where each distilling call is recorded for <c>/stats</c> — the usage history; null records nothing.</summary>
     public Action<Storage.RunRecord>? SaveRun { get; init; }
+
+    /// <summary>Books a distilling call on the session's own spend — its ledger, its panel, its row in the usage history —
+    /// under the model's label; null books nothing.</summary>
+    public Action<Llm.LlmUsage, string>? Spent { get; init; }
 }
 
 /// <summary>
@@ -262,10 +266,19 @@ public sealed partial class ColleagueDesk : IDisposable
     /// </summary>
     private void Record(DistillSpend call)
     {
+        // UNDER THE LABEL THE MODEL WAS CHOSEN BY — its provider entry, then the model — as every other figure names it;
+        // the bare model id would split one model into two lines of the per-model spend.
+        var label = call.ModelId is { } id && _labels.TryGetValue(id, out var known) ? known : call.ModelId;
+        try
+        {
+            _parts.Spent?.Invoke(call.Usage ?? new Llm.LlmUsage { InputTokens = call.InputTokens, OutputTokens = call.OutputTokens },
+                label ?? "");
+        }
+        catch (Exception e) when (e is not OutOfMemoryException) { }
         try
         {
             _parts.SaveRun?.Invoke(new Storage.RunRecord(Guid.NewGuid().ToString("N"), _parts.SessionId() ?? "",
-                Storage.StatsQuery.DistillPrefix + call.Colleague, call.ModelId, call.InputTokens, call.OutputTokens,
+                Storage.StatsQuery.DistillPrefix + call.Colleague, label, call.InputTokens, call.OutputTokens,
                 Turns: 1, ToolCalls: 0, Outcome: "completed", call.StartedAt, call.DurationMs, WorkingDir: null));
         }
         catch (Exception e) when (e is not OutOfMemoryException) { }
@@ -843,8 +856,21 @@ public sealed partial class ColleagueDesk : IDisposable
     {
         var record = _parts.Library.Find(name);
         var choice = (record?.DistillInstance ?? record?.Instance) is { } entry ? _parts.Models(entry) ?? _parts.Models(null) : _parts.Models(null);
-        return choice is not null && ExperienceBudget.WindowRefusal(choice.Window, choice.Label) is null ? choice.Provider : null;
+        return choice is not null && ExperienceBudget.WindowRefusal(choice.Window, choice.Label) is null ? Labelled(choice) : null;
     };
+
+    /// <summary>
+    /// The chosen model's provider, its label remembered for the spend its calls report. BY MODEL ID, because that is all
+    /// a call's spend carries back; two entries serving one model id name the same model, and either label is true.
+    /// </summary>
+    private ILlmProvider Labelled(ModelChoice choice)
+    {
+        _labels[choice.Provider.ModelId] = choice.Label;
+        return choice.Provider;
+    }
+
+    /// <summary>Each distilling model's label by its model id — see <see cref="Labelled"/>.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _labels = new(StringComparer.Ordinal);
 
     /// <summary>
     /// The folders a round read beyond the session's codebase: other workplaces it knows — distilled into their codebases
@@ -1115,7 +1141,7 @@ public sealed partial class ColleagueDesk : IDisposable
     {
         var ask = AskDistill(order);
         if (ask.Order is not { } ready) return ask.Text;
-        var provider = ready.Model is { } entry ? (_parts.Models(entry)?.Provider) : null;
+        var provider = ready.Model is { } entry && _parts.Models(entry) is { } named ? Labelled(named) : null;
         Func<string?, ILlmProvider?> providerFor = provider is not null ? _ => provider : DistillModel(ready.Name);
         // SAID HERE AS THIS SESSION'S OWN: the change it makes is announced as "learned from its work", as a round lived
         // here is — the claim is the last round the rerun reaches.

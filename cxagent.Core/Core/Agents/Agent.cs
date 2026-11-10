@@ -2728,18 +2728,53 @@ public sealed class Agent
     /// <summary>
     /// Starts a child's repaint, whatever set it working.
     ///
-    /// <para>IGNORES AN ID IT DOES NOT KNOW, which is ordinary rather than exceptional: the store is
-    /// the session's and announces every claim on it, including claims on children some other agent
-    /// spawned. A handler that treated an unknown id as a fault would fire on every sibling's
-    /// child.</para>
+    /// <para>A WORKER THIS AGENT'S OWN TOOL DID NOT SPAWN IS TAKEN ON HERE, by the session's lead: one brought by the
+    /// user, one brought back on resume, one spoken to from its own tab. Its work is the session's spend all the same,
+    /// and the run, the panel's repaint and the usage row all hang off a tracked run — left untracked, a colleague's
+    /// rounds in a resumed session cost tokens no readout ever showed. Only the lead takes one on: a child has no
+    /// spawner and never hears the store, and a lead a re-wire replaced has stopped listening (see
+    /// <see cref="StopHearingWorkers"/>), or every stretch would be counted once per lead the session ever had.</para>
     /// </summary>
     private void OnChildBegan(string agentId)
     {
-        if (_childRuns.GetValueOrDefault(agentId) is not { } run) return;
+        if ((_childRuns.GetValueOrDefault(agentId) ?? TakeOn(agentId)) is not { } run) return;
 
         // THE FIRST PAINT IS IMMEDIATE, not a second away. A row that reopens and then shows nothing
         // for a full tick is exactly the "is this thing even running" gap the timer exists to close.
         if (run.Begin(_ => ReportChild(run))) ReportChild(run);
+    }
+
+    /// <summary>
+    /// A run for a worker of this session that no spawn of this agent's registered, or null when there is none to take
+    /// on. NO ROW: it was never drawn as one of this agent's calls, so the run reports spend and history only — the
+    /// painter finds no job under an empty id and draws nothing.
+    /// </summary>
+    private ChildRun? TakeOn(string agentId)
+    {
+        if (_isSubAgent || _spawner?.Store is not { } store || store.FindByAgentId(agentId) is not { } kept) return null;
+        var fresh = new ChildRun(kept.Agent, jobId: "");
+        var run = _childRuns.GetOrAdd(agentId, fresh);
+        if (!ReferenceEquals(run, fresh)) return run;
+
+        // THE SAME EVENTS A SPAWN SUBSCRIBES, once, for the run's whole life — see the spawn path.
+        kept.Agent.Agent.TurnCompleted += _ =>
+        {
+            run.Turns++;
+            ReportChild(run);
+        };
+        kept.Agent.Agent.ContextUsed += _ => ReportChild(run);
+        return run;
+    }
+
+    /// <summary>
+    /// Stops listening to the session's workers — for a lead a re-wire has replaced. The new lead hears them from now on,
+    /// and takes on the ones it did not spawn; two listening would count every stretch twice.
+    /// </summary>
+    internal void StopHearingWorkers()
+    {
+        if (_spawner?.Store is not { } claims) return;
+        claims.SendBegan -= OnChildBegan;
+        claims.SendEnded -= OnChildEnded;
     }
 
     /// <summary>

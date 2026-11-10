@@ -112,7 +112,12 @@ public sealed record DistillTotals
 /// <param name="OutputTokens">What it wrote.</param>
 /// <param name="StartedAt">When the call began.</param>
 /// <param name="DurationMs">How long it took.</param>
-public sealed record DistillSpend(string Colleague, string? ModelId, int InputTokens, int OutputTokens, DateTimeOffset StartedAt, long DurationMs);
+public sealed record DistillSpend(string Colleague, string? ModelId, int InputTokens, int OutputTokens, DateTimeOffset StartedAt, long DurationMs)
+{
+    /// <summary>The call's usage as the provider reported it — its cache and its cost too, which the session's ledger
+    /// keeps per model.</summary>
+    public Llm.LlmUsage? Usage { get; init; }
+}
 
 /// <summary>A round the distiller kept refusing and was stepped past.</summary>
 /// <param name="Seq">Its place in the past.</param>
