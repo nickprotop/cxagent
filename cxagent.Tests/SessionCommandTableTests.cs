@@ -579,4 +579,16 @@ public class SessionCommandTableTests
     [InlineData("what to look for", "[what to look for]")]
     public void A_single_argument_hint_is_bracketed_once(string argument, string hint) =>
         Assert.Equal(hint, new SessionCommand("/x", "y", [new CommandArgument(argument, "", Completes: false)]).Hint);
+
+    /// <summary>
+    /// EVERY VERB CORE SERVICES FOR /colleagues IS LISTED, so help and the palette say it exists. rename, freeze and
+    /// unfreeze worked in both front ends and appeared nowhere a user would look.
+    /// </summary>
+    [Theory]
+    [InlineData("rename")]
+    [InlineData("freeze")]
+    [InlineData("unfreeze")]
+    public void Every_colleagues_verb_core_runs_is_listed(string verb) =>
+        Assert.Contains(SessionCommands.All.First(c => c.Name == "/colleagues").Args,
+            a => a.Name.Split(' ', 2)[0] == verb);
 }

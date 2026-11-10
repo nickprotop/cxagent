@@ -68,6 +68,9 @@ public static class SessionCommands
             new("keep <worker> [name]", "keep a worker of this session as a colleague", Completes: false, Values: ValueSources.SpawnedAgents),
             new("bring <name> [task]", "bring a colleague in — with a task, or idle to be given one", Completes: false, Values: ValueSources.Colleagues),
             new("open <name>", "talk with a colleague one-to-one, in a session of its own", Completes: false, Values: ValueSources.Colleagues),
+            new("rename <name> to <new name>", "rename a colleague — its former names still find it", Completes: false, Values: ValueSources.Colleagues),
+            new("freeze <name>", "keep its experience as it is — it works on, and learns nothing", Completes: false, Values: ValueSources.Colleagues),
+            new("unfreeze <name>", "let it learn again, from now on", Completes: false, Values: ValueSources.Colleagues),
         ]),
         // THE TYPEABLE HALF OF WHAT /skills SHOWS THE MODEL'S HALF OF. A bare listing, or one file by
         // name — what /review will actually send, readable before it is run.
