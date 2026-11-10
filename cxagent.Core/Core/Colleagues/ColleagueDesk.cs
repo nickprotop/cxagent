@@ -17,6 +17,15 @@ public sealed record KeepSuggestion(string Handle, string Why)
     public string Line => $"{Handle} — {Why}. Keep it as a colleague? It would learn from its work and could be brought into any session.";
 }
 
+/// <summary>A colleague to distil again: from which round — its last when null — and on which model for this run.</summary>
+/// <param name="Name">The colleague, by any name it has had.</param>
+/// <param name="From">The first round distilled again, or null for its last.</param>
+/// <param name="Model">A provider entry for this run, or null for its own distilling model.</param>
+public sealed record DistillOrder(string Name, long? From, string? Model);
+
+/// <summary>What distilling again asks: the order resolved — its name and round filled in — or null with why not.</summary>
+public sealed record DistillAsk(DistillOrder? Order, string Text);
+
 /// <summary>What forgetting a colleague asks: its name, or null when there is nothing to forget, and the words.</summary>
 public sealed record ForgetAsk(string? Name, string Text);
 
@@ -1063,6 +1072,62 @@ public sealed partial class ColleagueDesk : IDisposable
                 _present.TryRemove(name, out _);
                 _parts.Library.MarkAbsent(name, _holder);
             }
+    }
+
+    /// <summary>
+    /// The question distilling again asks — ONE TEXT FOR BOTH FRONT ENDS — naming the rounds, the model and the
+    /// experience it folds into; or, with no order, why there is nothing to ask. Its last round when none is named.
+    /// </summary>
+    public DistillAsk AskDistill(DistillOrder order)
+    {
+        if (_parts.Library.Find(order.Name.Trim()) is not { } record)
+            return new DistillAsk(null, $"There is no colleague called '{order.Name.Trim()}'. {Known()}");
+        // FROZEN MEANS ITS EXPERIENCE STAYS AS IT IS (user, 2026-11-10): distilling again would change it.
+        if (record.Frozen)
+            return new DistillAsk(null, $"{record.Name} is frozen, so its experience stays as it is — unfreeze it first: /colleagues unfreeze {record.Name}.");
+        var rounds = _parts.Library.RoundCount(record.Name);
+        if (rounds == 0) return new DistillAsk(null, $"{record.Name} has no rounds to distil yet.");
+        var from = order.From ?? rounds;
+        if (from < 1 || from > rounds)
+            return new DistillAsk(null, $"{record.Name} has rounds 1 to {rounds}; there is no round {from}.");
+        // THE MODEL THAT WOULD RUN IT, checked before asking — a named one, or its own distilling model: a yes to a run
+        // that then refuses its model asks for nothing.
+        var own = record.DistillInstance ?? record.Instance;
+        var choice = order.Model is { } entry ? _parts.Models(entry)
+            : (own is not null ? _parts.Models(own) : null) ?? _parts.Models(null);
+        if (choice is null)
+            return new DistillAsk(null, order.Model is { } missing
+                ? $"There is no provider entry called '{missing}'."
+                : $"{record.Name}'s distilling model is not configured here.");
+        if (ExperienceBudget.WindowRefusal(choice.Window, choice.Label) is { } small) return new DistillAsk(null, small);
+        var which = from == rounds ? $"round {from}" : $"rounds {from}–{rounds}";
+        var on = order.Model is { } m ? $"on {m}" : "on its own distilling model";
+        return new DistillAsk(new DistillOrder(record.Name, from, order.Model),
+            $"Distil {which} of {record.Name} again, {on}? What it learns is folded into its current experience "
+            + $"(v{record.ExperienceVersion}), and each round costs a call to the model.");
+    }
+
+    /// <summary>
+    /// Distils the asked rounds again, as the user said yes to — see <see cref="Distiller.RedistilAsync"/> — and answers
+    /// why it could not, or null when it did: what it learned is said like any distilling's, through the session.
+    /// </summary>
+    public async Task<string?> DistillAgainAsync(DistillOrder order)
+    {
+        var ask = AskDistill(order);
+        if (ask.Order is not { } ready) return ask.Text;
+        var provider = ready.Model is { } entry ? (_parts.Models(entry)?.Provider) : null;
+        Func<string?, ILlmProvider?> providerFor = provider is not null ? _ => provider : DistillModel(ready.Name);
+        // SAID HERE AS THIS SESSION'S OWN: the change it makes is announced as "learned from its work", as a round lived
+        // here is — the claim is the last round the rerun reaches.
+        _owned[KeyOf(ready.Name)] = _parts.Library.RoundCount(ready.Name);
+        try
+        {
+            return await _distiller.RedistilAsync(new RedistilRequest(ready.Name, ready.From!.Value, providerFor), CancellationToken.None);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            return $"Could not distil {ready.Name} again: {e.Message}";
+        }
     }
 
     /// <summary>A worker of a colleague that is gone, made an ordinary one — in memory, and recorded for a resume.</summary>

@@ -202,7 +202,7 @@ public sealed class ColleagueTasksTests : IDisposable
     {
         Library.Create(new ColleagueRecord { Name = "Charting", Type = "explore", Created = DateTimeOffset.UtcNow, Instance = "local" });
 
-        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, _ => { }));
+        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, _ => { }, _ => { }));
 
         Assert.DoesNotContain("explore", tab.DetailTextForTest);
         Assert.Contains("on local", tab.DetailTextForTest);

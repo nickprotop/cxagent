@@ -4475,6 +4475,12 @@ public sealed class MainWindow : IDisposable
             {
                 ShowSession(session);
                 ColleagueForgetter?.Invoke(new ColleagueForgetting(session, name, () => tab?.Reload()));
+            },
+            // QUOTED, so a name holding " on " or " from round " is read as the name it is.
+            Distill: name =>
+            {
+                ShowSession(session);
+                ColleagueDistiller?.Invoke(new ColleagueDistilling(session, $"\"{name}\"", () => tab?.Reload()));
             }));
         AddTab("◆ Colleagues", tab.Control, owner: session);
         Tabs.ActiveTabIndex = Tabs.TabCount - 1;
@@ -4488,6 +4494,9 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>What asks whether to forget a colleague; set by the composition root, which owns the conversation's buttons.</summary>
     public Action<ColleagueForgetting>? ColleagueForgetter { get; set; }
+
+    /// <summary>What asks whether to distil a colleague again; set by the composition root, as the forgetter is.</summary>
+    public Action<ColleagueDistilling>? ColleagueDistiller { get; set; }
 
     private StatusBarItem? _distillItem;
 

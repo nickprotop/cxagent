@@ -212,13 +212,18 @@ public sealed partial class Session
             // its buttons; a host with neither has no way to say yes.
             case "forget":
                 return Told("Forgetting asks first, in the terminal or a browser: /colleagues forget <name> there, or Forget in the library.");
+            // DISTILLING AGAIN ASKS FIRST too, for the same reason: it costs a model call and changes the experience.
+            case "distill":
+            case "distil":
+                return Told("Distilling again asks first, in the terminal or a browser: /colleagues distill <name> there, or "
+                            + "Distill again in the library.");
             case "rename":
                 return Rename(desk, rest);
             case "freeze":
             case "unfreeze":
                 return Freeze(desk, Unquoted(rest), verb.Equals("freeze", StringComparison.OrdinalIgnoreCase));
             default:
-                return Told($"/colleagues knows keep, bring, open, rename, freeze, unfreeze and forget, not '{verb}'. /colleagues alone lists them.");
+                return Told($"/colleagues knows keep, bring, open, rename, freeze, unfreeze, distill and forget, not '{verb}'. /colleagues alone lists them.");
         }
     }
 
@@ -308,6 +313,42 @@ public sealed partial class Session
         if (name.Length == 0 || after.Length == 0) return Told(how);
         return Told(desk.Rename(name, after));
     }
+
+    /// <summary>
+    /// What <c>/colleagues distill &lt;name&gt; [from round N] [on &lt;model&gt;]</c> asks for — ONE READING FOR BOTH FRONT
+    /// ENDS, which each put the question. THE NAME MAY HOLD SPACES: the round and the model are taken from the text
+    /// wherever they stand, and what is left is the name, quoted or not.
+    /// </summary>
+    public DistillOrder DistillOrderOf(string text)
+    {
+        var rest = text.Trim();
+        string? model = null;
+        long? from = null;
+        // A QUOTED NAME IS TAKEN AS QUOTED, before anything else is read: "Notes on Charts" holds an "on" of its own.
+        string? quoted = null;
+        if (rest.Length > 1 && rest[0] is '"' or '\'' && rest.IndexOf(rest[0], 1) is var close and > 1)
+        {
+            quoted = rest[1..close].Trim();
+            rest = " " + rest[(close + 1)..];
+        }
+        if (DistillOn().Match(rest) is { Success: true } on)
+        {
+            model = on.Groups[1].Value;
+            rest = rest.Remove(on.Index, on.Length);
+        }
+        if (DistillFrom().Match(rest) is { Success: true } round)
+        {
+            from = long.Parse(round.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+            rest = rest.Remove(round.Index, round.Length);
+        }
+        return new DistillOrder(quoted ?? Unquoted(rest.Trim()), from, model);
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\s+on\s+(\S+)(?=\s|$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex DistillOn();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\s+from\s+round\s+(\d+)(?=\s|$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex DistillFrom();
 
     /// <summary><c>/colleagues freeze|unfreeze &lt;name&gt;</c> — the same switch as F8's and the browser's, through the store.</summary>
     private CommandStatus Freeze(ColleagueDesk desk, string name, bool freeze)

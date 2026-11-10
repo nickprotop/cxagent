@@ -51,7 +51,12 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         // MEMORY AND COLLEAGUES ON, as the app has them by default — so the browser's /memory, its panel rows and its
         // colleagues' library have something to show.
         var resolved = ResolvedConfig.ForTesting(_model);
-        var opener = new ComposerSessionOpener(composer, resolved with { Catalog = resolved.Catalog with { Memory = true, Colleagues = true } }, AgentMode.Single);
+        // A WINDOW FOR THE MODEL, as a configured one has: a colleague distils only on a model of at least 128k.
+        var opener = new ComposerSessionOpener(composer, resolved with
+        {
+            Model = resolved.Model! with { ContextWindow = 200_000 },
+            Catalog = resolved.Catalog with { Memory = true, Colleagues = true },
+        }, AgentMode.Single);
         _hub = new WebSessionHub(new WebHubServices(_manager, _prompts, new FolderSessionStore(_paths), _paths, [Projects], opener, _clock)
         {
             IdleMinutes = 30,
@@ -561,6 +566,33 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         session.Colleagues!.Dismiss("someone");
 
         await tab.NextAsync(m => m["kind"]?.GetValue<string>() == "keepAnswered" && m["handle"]?.GetValue<string>() == "someone");
+    }
+
+    /// <summary>
+    /// Distilling a colleague again from the browser asks first, in the terminal's words, and distils on the page's yes —
+    /// its experience a version on.
+    /// </summary>
+    [Fact]
+    public async Task Distilling_a_colleague_again_from_the_browser_asks_first()
+    {
+        var library = new Core.Colleagues.ColleagueStore(_paths.ConfigDir);
+        library.Create(new Core.Colleagues.ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        library.Append("Charting", new Core.Colleagues.PastRound(0, "S", Work, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+            [new ChatMessage { Role = "user", Content = "chart it" }, new ChatMessage { Role = "assistant", Content = new string('c', 600) }]));
+        library.Update("Charting", r => r with { DistilledThrough = 1, ExperienceVersion = 1 });
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await _manager.Sessions.First(s => s.Id == id).Colleagues!.Idle();
+
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "/colleagues distill Charting")));
+        var ask = await tab.NextAsync(Type("confirmColleagueDistill"));
+        Assert.Contains("Distil round 1 of Charting again", ask["text"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        _model.EnqueueResponse(new LlmResponse { Text = "<core>\n## Lessons\n- Panes first. (observed, round 1)\n</core>", StopReason = "end_turn" });
+        await tab.SendAsync(Msg("colleagueDistill", ("sessionId", id), ("name", "Charting"), ("from", 1), ("confirm", true)));
+        // SAID THROUGH THE SESSION, as any distilling's news is — an event in its log, not a reply to this socket.
+        await tab.NextAsync(m => m["text"]?.GetValue<string>().Contains("Charting learned from its work", StringComparison.Ordinal) == true);
+        Assert.Equal(2, library.Find("Charting")!.ExperienceVersion);
     }
 
     [Fact]

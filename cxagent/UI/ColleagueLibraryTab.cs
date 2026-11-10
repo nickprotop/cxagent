@@ -11,11 +11,17 @@ namespace CxAgent.UI;
 /// <param name="Session">Whose conversation asks, and whose desk forgets.</param>
 /// <param name="Name">The colleague, by any name it has had.</param>
 /// <param name="Then">Run after a yes — a library tab reloading.</param>
+/// <summary>A question to distil a colleague's rounds again, put in <paramref name="Session"/>'s conversation.</summary>
+/// <param name="Session">Whose conversation asks, and whose desk distils.</param>
+/// <param name="Typed">What follows the verb: the name, and perhaps a round and a model.</param>
+/// <param name="Then">Run after the distilling — a library tab reloading.</param>
+public sealed record ColleagueDistilling(CxAgent.Core.Sessions.Session Session, string Typed, Action? Then = null);
+
 public sealed record ColleagueForgetting(CxAgent.Core.Sessions.Session Session, string Name, Action? Then = null);
 
 /// <summary>
 /// The terminal's library: a rail of colleagues and, for the one picked, what it is, what it knows and its experience
-/// — read-only — with Open (one-to-one), Bring in and Forget. The browser's page draws the same <see cref="LibraryView"/>.
+/// — read-only — with Open (one-to-one), Bring in, Distil again and Forget. The browser's page draws the same <see cref="LibraryView"/>.
 /// </summary>
 public sealed class ColleagueLibraryTab
 {
@@ -23,7 +29,8 @@ public sealed class ColleagueLibraryTab
     /// <param name="Bring">Brings it into the session, idle.</param>
     /// <param name="Open">Opens its one-to-one.</param>
     /// <param name="Forget">Asks, in the session's conversation, whether to forget it.</param>
-    public sealed record Actions(Action<string> Bring, Action<string> Open, Action<string> Forget);
+    /// <param name="Distill">Asks, in the session's conversation, whether to distil its last round again.</param>
+    public sealed record Actions(Action<string> Bring, Action<string> Open, Action<string> Forget, Action<string> Distill);
 
     private const int RailCells = 26;
 
@@ -86,10 +93,12 @@ public sealed class ColleagueLibraryTab
 
         var open = Controls.Button(" Open ").OnClick((_, _) => _actions.Open(e.Name)).Build();
         var bring = Controls.Button(" Bring in ").OnClick((_, _) => _actions.Bring(e.Name)).Build();
+        var distill = Controls.Button(" Distil again… ").OnClick((_, _) => _actions.Distill(e.Name)).Build();
         var forget = Controls.Button(" Forget… ").OnClick((_, _) => _actions.Forget(e.Name)).Build();
         var buttons = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         buttons.AddItem(open);
         buttons.AddItem(bring);
+        buttons.AddItem(distill);
         buttons.AddItem(forget);
 
         _detail.AddControl(new MarkupControl(Facts(e)) { Wrap = true });
@@ -121,6 +130,9 @@ public sealed class ColleagueLibraryTab
 
     /// <summary>Test seam: the Bring in button of the one shown.</summary>
     internal void BringForTest() { if (_shown is { } e) _actions.Bring(e.Name); }
+
+    /// <summary>Test seam: the Distil again button of the one shown.</summary>
+    internal void DistillForTest() { if (_shown is { } e) _actions.Distill(e.Name); }
 
     /// <summary>Test seam: the Forget button of the one shown.</summary>
     internal void ForgetForTest() { if (_shown is { } e) _actions.Forget(e.Name); }

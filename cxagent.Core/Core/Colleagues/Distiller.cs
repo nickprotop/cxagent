@@ -46,6 +46,12 @@ public sealed record DistillChange(string Colleague, long Version, bool Core, IR
 /// null when that entry no longer exists.</param>
 public sealed record DistillRequest(string Colleague, Func<string?, ILlmProvider?> ProviderFor);
 
+/// <summary>A colleague's rounds to distil again, from one on, and how to reach the model for this run.</summary>
+/// <param name="Colleague">Its name.</param>
+/// <param name="From">The first round distilled again; every later one follows.</param>
+/// <param name="ProviderFor">The model for this run — see <see cref="DistillRequest.ProviderFor"/>.</param>
+public sealed record RedistilRequest(string Colleague, long From, Func<string?, ILlmProvider?> ProviderFor);
+
 /// <summary>
 /// Folds a colleague's waiting rounds into its experience: one call, given the current experience and the rounds,
 /// answering the whole new text of each part it changed.
@@ -137,6 +143,54 @@ public sealed partial class Distiller(ColleagueStore store)
                 Failed?.Invoke(name, why);
             }
             return failed.Count == 0 ? DistillOutcome.Done : DistillOutcome.Failed;
+        }
+    }
+
+    /// <summary>
+    /// Distils a colleague's rounds again from <see cref="RedistilRequest.From"/> on, into its CURRENT experience, and
+    /// answers why it could not, or null when it did. The watermark moves back to before that round and the colleague is
+    /// drained as any drain would — rounds lived frozen stay unlearned, a refused round is counted as ever.
+    ///
+    /// <para>UNDER THE DISTILLING LOCK, WAITED FOR A MOMENT: a drain that finds nothing to do lets go at once, and one at
+    /// work is not overtaken — it would be distilling the same colleague on another model. A run that fails leaves the
+    /// rounds waiting, and the next drain takes them on the colleague's own model.</para>
+    /// </summary>
+    public async Task<string?> RedistilAsync(RedistilRequest request, CancellationToken ct)
+    {
+        DistillingLock? held;
+        try
+        {
+            held = DistillingLock.TakeWithin(store.Root, DistillingLock.BriefWait);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return $"could not take the distilling lock: {e.Message}";
+        }
+        if (held is null) return "A colleague is being distilled — try again in a moment.";
+
+        using (held)
+        {
+            var name = request.Colleague;
+            // ASKED AGAIN UNDER THE LOCK: frozen since the question was put, it keeps its experience as it is.
+            if (store.Find(name) is not { } record) return $"There is no colleague called '{name}'.";
+            if (record.Frozen) return $"{record.Name} is frozen — unfreeze it first.";
+            try
+            {
+                store.Update(name, r => r with
+                {
+                    DistilledThrough = Math.Min(r.DistilledThrough, request.From - 1),
+                    FailingRound = 0,
+                    Failures = 0,
+                });
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            {
+                return $"its library could not be written: {e.Message}";
+            }
+            var why = await DrainOneAsync(new DistillRequest(name, request.ProviderFor), ct);
+            if (why is null) Finished?.Invoke(name);
+            else Failed?.Invoke(name, why);
+            return why;
         }
     }
 

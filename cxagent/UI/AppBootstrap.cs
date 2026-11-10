@@ -1254,6 +1254,54 @@ public static class AppBootstrap
                 return true;
             });
 
+
+        // A COLLEAGUE'S ROUNDS DISTILLED AGAIN, asked in the conversation with forget's buttons — the browser asks with the
+        // same words, from the same desk (ColleagueDesk.AskDistill). Run off the UI thread: it waits on a model.
+        void AskDistillColleague(ColleagueDistilling distilling)
+        {
+            var current = distilling.Session;
+            if (current.Colleagues is not { } desk)
+            {
+                current.Notify(Session.ColleaguesOff);
+                return;
+            }
+            var ask = desk.AskDistill(current.DistillOrderOf(distilling.Typed));
+            var id = mainWindow.Chat.AddMessage(ChatRole.System, ask.Text);
+            if (ask.Order is not { } order) return;
+            mainWindow.Chat.SetActions(id,
+            [
+                new ChatMessageAction
+                {
+                    Id = "distil", Label = "Distil", AfterPress = ChatActionAfterPress.Hide,
+                    OnClick = ctx =>
+                    {
+                        ctx.SetStatus("distilling…", SharpConsoleUI.Core.NotificationSeverity.Info);
+                        _ = Task.Run(async () =>
+                        {
+                            if (await desk.DistillAgainAsync(order) is { } why) current.Notify(why);
+                            if (distilling.Then is { } then) system.EnqueueOnUIThread(then, "colleagues.distill");
+                        });
+                    },
+                },
+                new ChatMessageAction
+                {
+                    Id = "cancel", Label = "Cancel", AfterPress = ChatActionAfterPress.Hide,
+                    OnClick = ctx => ctx.SetStatus("not distilled", SharpConsoleUI.Core.NotificationSeverity.Info),
+                },
+            ]);
+        }
+        mainWindow.ColleagueDistiller = AskDistillColleague;
+        // BOTH SPELLINGS, as Core reads them: "distill" is the one people type, "distil" the one the app writes.
+        foreach (var verb in new[] { "distill", "distil" })
+            manager.Commands.RegisterVerb("/colleagues",
+                new CommandArgument($"{verb} <name> [from round N] [on <model>]", "distil a colleague's last round again, or from a round on, after confirming",
+                    Completes: false, Values: ValueSources.Colleagues),
+                (current, arguments) =>
+                {
+                    AskDistillColleague(new ColleagueDistilling(current, (arguments ?? "").Split(' ', 2) is [_, var rest] ? rest : ""));
+                    return true;
+                });
+
         // A SAVED SESSION DELETED FOR GOOD, asked in the conversation with memory's buttons — the browser's list asks with
         // the same words, from the same rule (Core.Sessions.SessionDeletion).
         manager.Commands.RegisterVerb("/sessions",

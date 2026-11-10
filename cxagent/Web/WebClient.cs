@@ -23,7 +23,7 @@ namespace CxAgent.Web;
 /// otherwise hold every event of every session it has open in memory. When the queue fills, the socket closes and the
 /// tab reconnects with "since", which replays what it missed.</para>
 /// </summary>
-internal sealed class WebClient : IPromptResponder, IDisposable
+internal sealed partial class WebClient : IPromptResponder, IDisposable
 {
     // ROOM FOR A PASTED SCREENSHOT OR TWO. Images arrive as base64 inside the message that sends them; a 4K screenshot
     // as PNG is several megabytes before it is shrunk, and the shrinking is done here, where the terminal does it.
@@ -346,6 +346,15 @@ internal sealed class WebClient : IPromptResponder, IDisposable
                     if (Str(m, "choice") == "keep") Notice(offered.Id, offering.KeepOffered(offeredHandle), "Info");
                     else offering.Dismiss(offeredHandle);
                 }
+                else Error("No such open session.");
+                break;
+            // DISTIL AGAIN, FROM THE LIBRARY PAGE OR A TYPED /colleagues distill: asked first, then run on the page's yes —
+            // the yes carries the order the question named, so it distils exactly what was asked.
+            case "colleagueDistill":
+                if (LiveSession(Str(m, "sessionId")) is { } redistilling)
+                    DistillColleague(redistilling,
+                        new Core.Colleagues.DistillOrder(Str(m, "name") ?? "", Long(m, "from"), Str(m, "model") is { Length: > 0 } dm ? dm : null),
+                        m["confirm"] is JsonValue dc && dc.TryGetValue<bool>(out var distilYes) && distilYes);
                 else Error("No such open session.");
                 break;
             // FORGET, FROM THE LIBRARY PAGE OR A TYPED /colleagues forget: asked first, then done on the page's yes.
@@ -819,6 +828,10 @@ internal sealed class WebClient : IPromptResponder, IDisposable
             case "/config":
                 ConfigForm("general");
                 return true;
+            // DISTILLING AGAIN, asked here as forgetting is — both spellings, as Core reads them.
+            case "/colleagues" when DistillVerb().Match(args) is { Success: true } verb:
+                DistillColleague(session, session.DistillOrderOf(args[verb.Length..]), confirmed: false);
+                return true;
             // ASKED HERE, with the page's buttons — Core's own answer to forget says a front end must ask.
             case "/colleagues" when args.StartsWith("forget", StringComparison.OrdinalIgnoreCase):
                 ForgetColleague(session, args[6..].Trim().Trim('"', '\''), confirmed: false);
@@ -976,6 +989,34 @@ internal sealed class WebClient : IPromptResponder, IDisposable
         Notice(session.Id, desk.Forget(found), "Info");
         if (_hub.PanelFor(session.Id) is { } panel) SendPanel(session.Id, panel);
     }
+
+    /// <summary>
+    /// Distilling a colleague again: the desk's question, in the terminal's words, until the page says yes; then the run,
+    /// off this socket's loop — it waits on a model — with what it learned said through the session like any distilling.
+    /// </summary>
+    private void DistillColleague(Session session, Core.Colleagues.DistillOrder order, bool confirmed)
+    {
+        if (session.Colleagues is not { } desk) { Notice(session.Id, Session.ColleaguesOff, "Warning"); return; }
+        var ask = desk.AskDistill(order);
+        if (ask.Order is not { } ready) { Notice(session.Id, ask.Text, "Warning"); return; }
+        if (!confirmed)
+        {
+            Send(new JsonObject
+            {
+                ["type"] = "confirmColleagueDistill", ["sessionId"] = session.Id, ["text"] = ask.Text,
+                ["name"] = ready.Name, ["from"] = ready.From, ["model"] = ready.Model,
+            });
+            return;
+        }
+        var id = session.Id;
+        _ = Task.Run(async () =>
+        {
+            if (await desk.DistillAgainAsync(ready) is { } why) Notice(id, why, "Warning");
+        });
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^distill?\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex DistillVerb();
 
     private void ForgetMemory(Session session, string name, bool confirmed)
     {

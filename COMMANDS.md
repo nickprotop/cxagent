@@ -60,6 +60,7 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/colleagues rename <name> to <new name>` | Rename a colleague; its old names still find it |
 | `/colleagues forget <name>` | Forget a colleague for good, after confirming |
 | `/colleagues freeze <name>` · `unfreeze <name>` | Stop a colleague learning, or let it learn again from now on |
+| `/colleagues distill <name> [from round N] [on <model>]` | Distil a colleague's last round again, or from a round on |
 | `/commands` | List your custom commands, and any file that was shadowed or skipped |
 | `/commands <name>` | Show that command's file, as it will be sent |
 | `/<name> [args]` | Run a custom command, or a skill by name — see [`/commands`](#commands) |
@@ -613,7 +614,8 @@ refused. Turn memory off in F8 › General, or with [`memory.enabled`](CONFIG.md
 
 A colleague is a worker you chose to keep. After each task it is given, what it did is distilled into its experience,
 and it brings that experience into any session you call it into. `/colleagues` opens the library, a tab in the
-terminal and a page in the browser; its verbs keep, bring, open, rename, freeze, unfreeze and forget one.
+terminal and a page in the browser; its verbs keep, bring, open, rename, freeze, unfreeze, distil again and forget
+one.
 
 **[COLLEAGUES.md](COLLEAGUES.md)** has all of it: a tutorial from one codebase to the next, ways to use one, and how
 each part works — keeping, bringing, the one-to-one, recall and workplaces, how its experience says what it knows,

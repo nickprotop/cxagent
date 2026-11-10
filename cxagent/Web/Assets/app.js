@@ -158,6 +158,7 @@ function handle(m) {
     case "workerDeleted": { const key = m.sessionId + "~" + m.agentId; if (state.views.has(key)) dropView(key); break; }
     case "confirmForget": confirmForget(m); break;
     case "confirmColleagueForget": confirmColleagueForget(m); break;
+    case "confirmColleagueDistill": confirmColleagueDistill(m); break;
     case "completions": if (m.n === completeN && m.sessionId === activeSessionId()) completion(m.rows); break;
     case "closed": closed(m.sessionId); break;
     case "gone":
@@ -1163,7 +1164,8 @@ function drawColleaguesPage(view) {
     const acts = el("div", "btns");
     acts.append(button("Open", null, () => send({ type: "colleagueOpen", sessionId: view.parent, name: e.name })),
       button("Bring in", null, () => send({ type: "colleagueBring", sessionId: view.parent, name: e.name })),
-      // ASKED FIRST, in the session's conversation — the terminal's Forget… asks there too.
+      // ASKED FIRST, in the session's conversation — the terminal's buttons ask there too.
+      button("Distil again…", null, () => send({ type: "colleagueDistill", sessionId: view.parent, name: e.name })),
       button("Forget…", "danger", () => send({ type: "colleagueForget", sessionId: view.parent, name: e.name })));
     detail.append(acts);
     // READ-ONLY, AS DISTILLED: a colleague is corrected by talking to it (Open), not by editing it behind its back.
@@ -2629,6 +2631,21 @@ function confirmColleagueForget(m) {
     send({ type: "colleagueForget", sessionId: m.sessionId, name: m.name, confirm: true });
     if (state.views.has(COLLEAGUES_ID)) send({ type: "colleagues", sessionId: m.sessionId });
   }), button("Keep", null, () => box.remove()));
+  box.append(btns);
+  $("prompts").append(box);
+}
+
+// A COLLEAGUE'S ROUNDS DISTILLED AGAIN: the desk's question, as the terminal asks it. The yes sends back the order the
+// question named — its round and model — so what runs is what was asked; what it learned is said in the conversation.
+function confirmColleagueDistill(m) {
+  if (activeSessionId() !== m.sessionId) activate(m.sessionId);
+  const box = el("div", "prompt");
+  box.append(el("div", "q", m.text));
+  const btns = el("div", "btns");
+  btns.append(button("Distil", null, () => {
+    box.remove();
+    send({ type: "colleagueDistill", sessionId: m.sessionId, name: m.name, from: m.from, model: m.model, confirm: true });
+  }), button("Cancel", null, () => box.remove()));
   box.append(btns);
   $("prompts").append(box);
 }

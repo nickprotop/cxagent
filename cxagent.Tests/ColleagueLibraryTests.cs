@@ -72,7 +72,7 @@ public sealed class ColleagueLibraryTests : IDisposable
         Charting();
         Library.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow.AddDays(-1) });
 
-        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, _ => { }));
+        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, _ => { }, _ => { }));
 
         Assert.Equal(["Charting", "Parser"], tab.RailNamesForTest);
         Assert.Contains("Panes first.", tab.DetailTextForTest);
@@ -86,7 +86,7 @@ public sealed class ColleagueLibraryTests : IDisposable
         Charting();
         var brought = new List<string>();
         var opened = new List<string>();
-        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(brought.Add, opened.Add, _ => { }));
+        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(brought.Add, opened.Add, _ => { }, _ => { }));
 
         tab.BringForTest();
         tab.OpenForTest();
@@ -119,6 +119,8 @@ public sealed class ColleagueLibraryTests : IDisposable
         Assert.Contains("colleagueBring", js);
         Assert.Contains("type: \"colleagueForget\"", js);
         Assert.Contains("case \"confirmColleagueForget\"", js);
+        Assert.Contains("type: \"colleagueDistill\"", js);
+        Assert.Contains("case \"confirmColleagueDistill\"", js);
         Assert.Contains("e.factsLine", js);
     }
 
@@ -127,10 +129,13 @@ public sealed class ColleagueLibraryTests : IDisposable
     {
         Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
         var forgotten = new List<string>();
-        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, forgotten.Add));
+        var distilled = new List<string>();
+        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, forgotten.Add, distilled.Add));
 
         tab.ForgetForTest();
+        tab.DistillForTest();
 
         Assert.Equal(["Charting"], forgotten);
+        Assert.Equal(["Charting"], distilled);
     }
 }

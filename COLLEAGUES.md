@@ -90,6 +90,13 @@ experience as it was distilled. Every statement ends with how it is known and th
 told. *Concluded* is what a round set out to check and established. The colleague is briefed to rely on concluded, to
 read observed as what was seen at the time, and to check learned before it builds on it.
 
+If a round was distilled badly — a long one boiled down to a few lines, say — distil it again, on a stronger model
+if you have one:
+
+```text
+/colleagues distill SharpConsoleUI Guide on deepseek
+```
+
 ### 4. Bring it into a new app
 
 Open a session in the new repository and bring the colleague in, with a task:
@@ -282,6 +289,13 @@ core. The round behind any statement is a recall away.
 Another worker's output is never fed to it automatically. Showing it someone else's work is your choice, made in the
 one-to-one, where you can correct it in the same conversation.
 
+**Distilling again.** `/colleagues distill <name>`, or **Distil again…** in the library, distils its last round
+again. `from round N` redoes round N and every round after it; `on <model>` runs it on another provider entry this
+once, with the same 128k floor, and leaves its own distilling model as it is. It asks first, naming the rounds and
+the model. What the run learns is folded into its **current** experience: a statement the earlier run got wrong
+stays unless the new run replaces it, so this adds what was missed rather than undoing what was written. Rounds lived
+while frozen stay unlearned, and a frozen colleague is refused until it is unfrozen. `distil` works too.
+
 **Renaming one.** `/colleagues rename <name> to <new name>`, or its *Name* in F8's Colleagues tab or the browser's
 configuration page. Its old names stay with it: a session that knew a worker by an old name still brings back this
 colleague, and no other colleague can take them. Not while its one-to-one is open.
@@ -332,6 +346,7 @@ freeze it. Under *Settings* they turn colleagues and suggestions off, as do
 | `/colleagues open <name>` | Talk with a colleague one-to-one, in a session of its own |
 | `/colleagues rename <name> to <new name>` | Rename a colleague; its old names still find it |
 | `/colleagues freeze <name>` · `unfreeze <name>` | Stop a colleague learning, or let it learn again from now on |
+| `/colleagues distill <name> [from round N] [on <model>]` | Distil its last round again, or from a round on, after confirming |
 | `/colleagues forget <name>` | Forget a colleague for good, after confirming |
 
 The agent's `colleague` tool lists them, brings one in and keeps a worker; keeping always asks you first.
