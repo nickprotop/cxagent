@@ -46,16 +46,9 @@ public sealed record BringOrder(string Name, string Task, string? Model, bool Ba
     public Action<SubAgent>? OnChild { get; init; }
 }
 
-/// <summary>What a front end needs to open a colleague's one-to-one: where, the conversation to return to, and the setup.</summary>
-/// <param name="Folder">Its most recent workplace that still exists — or the session's own folder.</param>
-/// <param name="Resume">Its saved one-to-one, to return to; null the first time.</param>
-/// <param name="Setup">What makes the session its one-to-one — <see cref="Sessions.Session.BecomeOneToOne"/>.</param>
-/// <summary>A one-to-one's conversation as it stands when a turn ends — what <see cref="ColleagueDesk.CaptureOneToOne"/> keeps from.</summary>
-/// <param name="Colleague">Whose one-to-one it is.</param>
-/// <param name="SessionId">The session it is in now.</param>
-/// <param name="Folder">The folder it was opened in.</param>
-/// <param name="Messages">Its conversation.</param>
 /// <summary>What <see cref="ColleagueDesk.ReadsOf"/> sorts: one round's messages, whose colleague, and the folder it ran in.</summary>
+/// <param name="Round">The round's messages, the tool calls and their results among them.</param>
+/// <param name="Record">The colleague whose round it is — its workplaces are what "another workplace" means.</param>
 /// <param name="Folder">The session's folder — its codebase is the one the round is about.</param>
 public sealed record RoundReadsRequest(IReadOnlyList<ChatMessage> Round, ColleagueRecord Record, string Folder)
 {
@@ -74,8 +67,17 @@ public sealed record RoundReadsRequest(IReadOnlyList<ChatMessage> Round, Colleag
 /// <param name="Elsewhere">Folders outside every workplace, by their codebase's root.</param>
 public sealed record RoundReads(IReadOnlyList<string> Workplaces, IReadOnlyList<string> Elsewhere);
 
+/// <summary>A one-to-one's conversation as it stands when a turn ends — what <see cref="ColleagueDesk.CaptureOneToOne"/> keeps from.</summary>
+/// <param name="Colleague">Whose one-to-one it is.</param>
+/// <param name="SessionId">The session it is in now.</param>
+/// <param name="Folder">The folder it was opened in.</param>
+/// <param name="Messages">Its conversation.</param>
 public sealed record OneToOneExchange(string Colleague, string SessionId, string Folder, IReadOnlyList<ChatMessage> Messages);
 
+/// <summary>What a front end needs to open a colleague's one-to-one: where, the conversation to return to, and the setup.</summary>
+/// <param name="Folder">Its most recent workplace that still exists — or the session's own folder.</param>
+/// <param name="Resume">Its saved one-to-one, to return to; null the first time.</param>
+/// <param name="Setup">What makes the session its one-to-one — <see cref="Sessions.Session.BecomeOneToOne"/>.</param>
 public sealed record OneToOneOpening(string Folder, Storage.SessionSnapshot? Resume, Sessions.OneToOne Setup);
 
 /// <summary>A model a colleague can run or be distilled on.</summary>
