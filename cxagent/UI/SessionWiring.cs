@@ -155,6 +155,13 @@ public static class SessionWiring
 
         // A WORKER WORTH KEEPING, offered once in the conversation its answers land in — never a blocking question. The
         // browser shows the same line and buttons from the same event (WebSessionHub).
+        // A DISTILLING THAT ENDS IS SAID AT ONCE: the status line and the panel read who is distilling when they redraw,
+        // and with nothing else to redraw them, "distilling …" stayed after the distilling had ended.
+        session.ColleaguesChanged += () => system.EnqueueOnUIThread(() =>
+        {
+            if (ReferenceEquals(main.ActiveSession, session)) main.RefreshSessionPanel();
+        }, "sessionWiring.Subscribe");
+
         // ANSWERED IN A BROWSER, its buttons go here too — one answer per offer.
         var offers = new System.Collections.Concurrent.ConcurrentDictionary<string, SharpConsoleUI.Controls.ChatMessageId>(StringComparer.Ordinal);
         session.OfferAnswered += handle => system.EnqueueOnUIThread(() =>

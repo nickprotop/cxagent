@@ -209,4 +209,21 @@ public sealed class ColleagueFreezeTests : IDisposable
         moving.Model = "elsewhere";
         Assert.Contains("next bring", moving.SavedLine);
     }
+
+    /// <summary>
+    /// The session says when its colleagues changed — distilling began or ended, one was frozen — so a front end can
+    /// redraw what it shows: the terminal's status line kept "distilling …" after the distilling ended, because nothing
+    /// told it to look again.
+    /// </summary>
+    [Fact]
+    public void The_session_says_when_its_colleagues_changed()
+    {
+        var session = Open();
+        var changed = 0;
+        session.ColleaguesChanged += () => changed++;
+
+        session.ColleaguesCommand("freeze Charting");
+
+        Assert.True(changed > 0);
+    }
 }

@@ -121,7 +121,15 @@ public sealed partial class Session
         Colleagues = new ColleagueDesk(parts);
         Colleagues.KeepSuggested += s => KeepSuggested?.Invoke(s);
         Colleagues.OfferAnswered += h => OfferAnswered?.Invoke(h);
+        Colleagues.StateChanged += () => ColleaguesChanged?.Invoke();
     }
+
+    /// <summary>
+    /// The colleagues changed — a distilling began or ended, one was frozen, renamed or forgotten — for a front end to
+    /// redraw what it shows of them. ON THE SESSION, as <see cref="KeepSuggested"/> is: a front end subscribes once and
+    /// hears it whichever desk a config change gives the session. Raised on whatever thread the change happened on.
+    /// </summary>
+    public event Action? ColleaguesChanged;
 
     /// <summary>An offer to keep a worker was answered, in some front end — each takes its buttons away.</summary>
     public event Action<string>? OfferAnswered;
