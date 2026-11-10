@@ -1516,16 +1516,27 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private GridControl? _sideColumnGrid;
 
-    private GridControl _sideColumn => _sideColumnGrid ??= Controls.Grid()
-        .Columns(GridLength.Star(1))
-        .Rows(GridLength.Star(1), GridLength.Cells(0), GridLength.Cells(1), GridLength.Cells(1))
-        .Place(SessionPanel.Control, 0, 0)
-        .Place(JobsPanel.Control, 1, 0)
-        .Place(_panelBarRule, 2, 0)
-        .Place(PanelBar, 3, 0)
-        .WithVerticalAlignment(VerticalAlignment.Fill)
-        .WithAlignment(HorizontalAlignment.Stretch)
-        .Build();
+    private GridControl _sideColumn => _sideColumnGrid ??= SideColumn();
+
+    /// <summary>
+    /// THE PANEL'S SURFACE UNDER ITS FOOTER TOO: the rule and the bar's margins paint on what holds them, and on the
+    /// window's own darker field they read as a strip laid under the panel rather than as its last line.
+    /// </summary>
+    private GridControl SideColumn()
+    {
+        var grid = Controls.Grid()
+            .Columns(GridLength.Star(1))
+            .Rows(GridLength.Star(1), GridLength.Cells(0), GridLength.Cells(1), GridLength.Cells(1))
+            .Place(SessionPanel.Control, 0, 0)
+            .Place(JobsPanel.Control, 1, 0)
+            .Place(_panelBarRule, 2, 0)
+            .Place(PanelBar, 3, 0)
+            .WithVerticalAlignment(VerticalAlignment.Fill)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .Build();
+        grid.BackgroundColor = ColorScheme.PanelSurface;
+        return grid;
+    }
 
     /// <summary>
     /// The panel's own bottom line: its two views, F3 Session and F7 Tasks, the one showing picked out. THE KEYS THAT
@@ -3813,6 +3824,12 @@ public sealed class MainWindow : IDisposable
         foreach (var composer in _sessionTabs.Select(t => t.Input).Concat(_agentTabs.Values.Select(s => s.Tab.Input)))
             ColourComposer(composer);
         StatusBar.BackgroundColor = ColorScheme.ChatSurface;
+        // THE SIDE PANEL'S FOOTER AND THE COLUMN UNDER IT, on the panel's surface as the theme now has it, and its rule
+        // and view colours from the theme's — see SideColumn.
+        PanelBar.BackgroundColor = ColorScheme.PanelSurface;
+        _panelBarRule.Color = ColorScheme.Separator;
+        if (_sideColumnGrid is { } side) side.BackgroundColor = ColorScheme.PanelSurface;
+        RefreshSessionPanel();
         // NULL UNTIL BuildWindow RUNS, and a config-named theme switches before that.
         if (Window is not null) Window.BackgroundColor = ColorScheme.ChatSurface;
         // NULL BEFORE THE COMPOSER IS BUILT — a theme switch during startup is possible (config names
