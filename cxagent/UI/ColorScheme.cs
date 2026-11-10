@@ -84,6 +84,11 @@ public static class ColorScheme
         // conversation without a header saying "System".
         SystemSurface = PaletteColors.Mix(ChatSurface, ColorRoleResolver.Resolve(ColorRole.Info, theme).Text, SystemTint);
 
+        // AND ITS TEXT A LITTLE DIMMED: the theme's own foreground leaning toward the chat, so a note reads quieter than
+        // the conversation beside it. A colour, not the terminal's faint attribute, which terminals are free to ignore
+        // on true-colour text and some do.
+        SystemText = PaletteColors.Mix(theme.WindowForegroundColor, ChatSurface, SystemTextDim);
+
         // MARKDOWN FOLLOWS THE THEME, UNLESS THE THEME HAS ALREADY CHOSEN. A crimson theme must
         // give crimson headings, not a fixed purple wearing crimson chrome around it — so every
         // theme but cxagent's own derives from AccentRgb rather than adjusting the contrast of a
@@ -477,6 +482,13 @@ public static class ColorScheme
     /// </summary>
     /// <summary>A system note's ground — see where it is derived.</summary>
     public static Color SystemSurface { get; private set; } = PaletteColors.Mix(new Color(0x0d, 0x0d, 0x0d), new Color(0x4f, 0xc3, 0xf7), SystemTint);
+
+    /// <summary>A system note's text — see where it is derived.</summary>
+    public static Color SystemText { get; private set; } = PaletteColors.Mix(new Color(0xee, 0xee, 0xee), new Color(0x0d, 0x0d, 0x0d), SystemTextDim);
+
+    /// <summary>How far a system note's text leans from the foreground toward the chat: "a little dimmed" — still
+    /// comfortably read, plainly quieter than the assistant's answer next to it.</summary>
+    private const double SystemTextDim = 0.35;
 
     /// <summary>How far a system note's ground leans toward the info colour: enough to tell it from the assistant's
     /// ground beside it, not so much that a run of notes reads as a coloured band.</summary>

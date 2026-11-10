@@ -1212,4 +1212,21 @@ public class MainWindowTests
         Assert.True(window.Chat.GetRoleStyle(ChatRole.System).Markdown);
         Assert.True(window.Chat.GetRoleStyle(ChatRole.User).Markdown);
     }
+
+    /// <summary>
+    /// A system note's text is a little dimmed — the theme's foreground leaning toward the chat — set on the role, so
+    /// it follows a theme switch through the restyle every role already gets (user, 2026-11-11).
+    /// </summary>
+    [Fact]
+    public void SystemNotes_DrawTheirTextInTheDimmedSystemColour()
+    {
+        var res = ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock");
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        var style = mw.Chat.GetRoleStyle(SharpConsoleUI.Controls.ChatRole.System);
+
+        Assert.Equal(ColorScheme.SystemText, style.Foreground);
+        Assert.Null(mw.Chat.GetRoleStyle(SharpConsoleUI.Controls.ChatRole.Assistant).Foreground);
+    }
 }

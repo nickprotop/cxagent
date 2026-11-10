@@ -3691,6 +3691,9 @@ public sealed class MainWindow : IDisposable
             HeaderStyle = CollapsibleHeaderStyle.Borderless,
             ShowHeader = false,
             Background = ColorScheme.SystemSurface,
+            // A LITTLE DIMMED, on the role rather than in each note's text, so every note — whoever posted it — takes it,
+            // and a theme switch recolours them all through the same restyle the ground follows.
+            Foreground = ColorScheme.SystemText,
             Collapsible = false,
             // EXPANDED by default. These were StartCollapsed, and it cost real comprehension: the
             // chat's own "Type a goal and press Enter" rendered as "▸ System / expand…", and a
