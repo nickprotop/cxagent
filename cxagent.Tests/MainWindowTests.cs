@@ -101,9 +101,9 @@ public class MainWindowTests
     /// This asserts the bar advertises only F-keys (unambiguous escape sequences) plus Ctrl+Q,
     /// which is verified working.
     /// </summary>
-    /// <summary>F4 sits on the left of the status bar, directly before F3.</summary>
+    /// <summary>F4 sits on the left of the status bar, directly before F5.</summary>
     [Fact]
-    public void StatusBar_PutsF4_DirectlyBeforeF3()
+    public void StatusBar_PutsF4_DirectlyBeforeF5()
     {
         var res = ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock");
         var mw = new MainWindow(Sys(), res, Logs());
@@ -112,7 +112,7 @@ public class MainWindowTests
         mw.ShowPanelItem();
 
         var keys = mw.StatusBar.LeftItems.Select(i => i.Shortcut).ToList();
-        Assert.Equal(keys.IndexOf("F3") - 1, keys.IndexOf("F4"));
+        Assert.Equal(keys.IndexOf("F5") - 1, keys.IndexOf("F4"));
     }
 
     [Fact]
@@ -645,28 +645,6 @@ public class MainWindowTests
         wide.Build();
         wide.RefreshSessionPanel();
         Assert.True(wide.SessionPanel.Control.Visible);
-    }
-
-    [Fact]
-    public void SessionPanel_F3OverridesTheWidthInBothDirections()
-    {
-        // The override must win BOTH ways, and there is a third state: "decide for me". Without it
-        // the first resize after an explicit F3 would silently undo the user's choice.
-        var res = ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock");
-        var mw = new MainWindow(SysOfWidth(80), res, Logs());   // narrow: hidden by default
-        mw.Build();
-        mw.RefreshSessionPanel();
-        Assert.False(mw.SessionPanel.Control.Visible);
-
-        mw.ToggleSessionPanel();                                 // force SHOWN on a narrow terminal
-        Assert.True(mw.SessionPanel.Control.Visible);
-
-        mw.ToggleSessionPanel();                                 // force HIDDEN
-        Assert.False(mw.SessionPanel.Control.Visible);
-
-        mw.ToggleSessionPanel();                                 // back to automatic → narrow → hidden
-        mw.RefreshSessionPanel();
-        Assert.False(mw.SessionPanel.Control.Visible);
     }
 
     [Fact]

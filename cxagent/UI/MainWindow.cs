@@ -1518,12 +1518,39 @@ public sealed class MainWindow : IDisposable
 
     private GridControl _sideColumn => _sideColumnGrid ??= Controls.Grid()
         .Columns(GridLength.Star(1))
-        .Rows(GridLength.Star(1), GridLength.Cells(0))
+        .Rows(GridLength.Star(1), GridLength.Cells(0), GridLength.Cells(1), GridLength.Cells(1))
         .Place(SessionPanel.Control, 0, 0)
         .Place(JobsPanel.Control, 1, 0)
+        .Place(_panelBarRule, 2, 0)
+        .Place(PanelBar, 3, 0)
         .WithVerticalAlignment(VerticalAlignment.Fill)
         .WithAlignment(HorizontalAlignment.Stretch)
         .Build();
+
+    /// <summary>
+    /// The panel's own bottom line: its two views, F3 Session and F7 Tasks, the one showing picked out. THE KEYS THAT
+    /// CHOOSE WHAT THE PANEL SHOWS SIT ON THE PANEL, so the main bar keeps only what changes the screen — F5, which
+    /// shows or hides it. A click does what the key does.
+    /// </summary>
+    public StatusBarControl PanelBar { get; } = new(stickyBottom: false)
+    {
+        BackgroundColor = ColorScheme.PanelSurface,
+        Margin = new Margin(1, 0, 1, 0),
+    };
+
+    /// <summary>
+    /// The line over <see cref="PanelBar"/>, which makes the bar the panel's own footer — on its surface, inside its
+    /// margins — rather than a strip laid beside the main status bar.
+    /// </summary>
+    private readonly RuleControl _panelBarRule = new()
+    {
+        Color = ColorScheme.Separator,
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        Margin = new Margin(1, 0, 1, 0),
+    };
+
+    private StatusBarItem? _sessionViewItem;
+    private StatusBarItem? _tasksViewItem;
 
     /// <summary>Whether the right-hand column is showing at all, whichever panel is in it.</summary>
     private bool ColumnVisible => _panelOverride ?? _system.DesktopDimensions.Width >= UI.SessionPanel.ResponsiveThreshold;
@@ -2766,8 +2793,6 @@ public sealed class MainWindow : IDisposable
     /// <summary>A job tab and the strip page it sits on.</summary>
     private sealed record JobTabSlot(JobTab Tab, SharpConsoleUI.Controls.TabPage Page);
 
-    private StatusBarItem? _jobsItem;
-
     /// <summary>
     /// The status item's text: the key's name, and while anything runs, how much.
     ///
@@ -2943,13 +2968,20 @@ public sealed class MainWindow : IDisposable
     public static string JobsItemLabelFor(Core.Sessions.Session? front, IEnumerable<Core.Sessions.Session> open,
         BackgroundJobBoard board)
     {
-        var owns = front is { } session ? session.Owns : (Func<string, bool>)(_ => false);
-
         // AGENTS AS WELL AS SHELLS — every working agent, foreground children and the user's sends as well as
         // background runs, queued ones included (decision 22): the number matches the running rows the panel
         // shows, and counting shells alone showed nothing while only agents ran.
+        var (mine, elsewhere) = RunningCountsFor(front, open, board);
+        return JobsItemLabel(mine, elsewhere);
+    }
+
+    /// <summary>The running tasks of the session in front, and of every other one — see <see cref="JobsItemLabelFor"/>.</summary>
+    private static (int Mine, int Elsewhere) RunningCountsFor(Core.Sessions.Session? front,
+        IEnumerable<Core.Sessions.Session> open, BackgroundJobBoard board)
+    {
+        var owns = front is { } session ? session.Owns : (Func<string, bool>)(_ => false);
         var agentsElsewhere = open.Where(s => !ReferenceEquals(s, front)).Sum(s => s.RunningAgents);
-        return JobsItemLabel(RunningTasksOf(front, board), board.RunningElsewhere(owns) + agentsElsewhere);
+        return (RunningTasksOf(front, board), board.RunningElsewhere(owns) + agentsElsewhere);
     }
 
     /// <summary>
@@ -2966,13 +2998,7 @@ public sealed class MainWindow : IDisposable
 
     private void RefreshJobs()
     {
-        var label = JobsItemLabelFor(JobsSession,
-            _sessionTabs.Select(t => t.Session).OfType<Core.Sessions.Session>(), Jobs);
-
-        // CREATED ON THE FIRST TICK, not at build: a status-bar change during construction blocks on a
-        // render tick that does not exist yet (see ShowComposerHint).
-        _jobsItem ??= StatusBar.AddLeft(KeyHint("background tasks", "F7"), label, () => ToggleJobsPanel());
-        if (_jobsItem.Label != label) _jobsItem.Label = label;
+        RefreshPanelItem();
 
         foreach (var slot in _jobTabs.Values)
         {
@@ -3246,7 +3272,15 @@ public sealed class MainWindow : IDisposable
         var jobs = column && _sideView == SideView.Jobs;
         SessionPanel.Control.Visible = column && !jobs;
         JobsPanel.Control.Visible = jobs;
-        if (_sideColumnGrid is { } side && side.RowDefinitions.Count == 2)
+        PanelBar.Visible = column;
+        _panelBarRule.Visible = column;
+        if (_sessionViewItem is { } sessionItem && _tasksViewItem is { } tasksItem)
+        {
+            // THE VIEW SHOWING IN THE ACCENT, the other muted — the panel's tabs, as the browser's panel has them.
+            sessionItem.LabelForeground = jobs ? ColorScheme.MutedRgb : ColorScheme.AccentRgb;
+            tasksItem.LabelForeground = jobs ? ColorScheme.AccentRgb : ColorScheme.MutedRgb;
+        }
+        if (_sideColumnGrid is { } side && side.RowDefinitions.Count == 4)
         {
             var info = jobs ? GridLength.Cells(0) : GridLength.Star(1);
             var list = jobs ? GridLength.Star(1) : GridLength.Cells(0);
@@ -3375,58 +3409,60 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public IReadOnlyList<string> LoadedSkills { get; set; } = [];
 
-    /// <summary>F3 — show the panel, hide it, or hand it back to the terminal width.</summary>
-    public void ToggleSessionPanel()
+    /// <summary>
+    /// F5 — shows the panel, or hides it, on whichever view it last showed.
+    ///
+    /// <para>TWO STATES ONCE PRESSED: until then the panel follows the terminal width, and after it the choice holds
+    /// through every resize — a resize silently undoing an explicit F5 reads as a bug.</para>
+    /// </summary>
+    public void TogglePanel()
     {
-        // F3 OVER THE JOBS PANEL SWITCHES TO INFO rather than cycling: the column is up, and what was
-        // asked for is the info panel in it. Hiding it instead would answer a question nobody asked.
-        if (ColumnVisible && _sideView == SideView.Jobs)
-        {
-            _sideView = SideView.Info;
-            RefreshSessionPanel();
-            return;
-        }
-
-        // Cycles through the THREE states rather than flipping two, so a user can get back to
-        // responsive without restarting: shown -> hidden -> automatic.
-        _sideView = SideView.Info;
-        _panelOverride = _panelOverride switch
-        {
-            null => !ColumnVisible,
-            true => false,
-            false => null,
-        };
+        var hiding = ColumnVisible;
+        _panelOverride = !hiding;
         RefreshSessionPanel();
+        RefreshPanelItem();
+
+        // THE KEYBOARD COMES BACK TO THE COMPOSER from rows that just went away, and goes to the rows when the panel
+        // comes back on Tasks — as F7 sends it there.
+        if (hiding) FocusComposer();
+        else if (_sideView == SideView.Jobs) FocusTasks();
     }
 
     /// <summary>
-    /// F7 — the jobs panel, or the column hidden when the jobs panel is what it already shows.
-    ///
-    /// <para>THE KEYBOARD GOES TO THE ROWS on the way in, so ↑ ↓ and Enter work at once; on the way out
-    /// it goes back to the composer, which is where it came from.</para>
-    ///
-    /// <para>SHOWN EVEN WITH NO JOBS. An empty panel that says what would appear there teaches the key;
-    /// a key that does nothing until something runs teaches that it is broken.</para>
+    /// F3 — the panel on its Session view. NOTHING WHILE THE PANEL IS HIDDEN: F3 and F7 choose what the panel shows,
+    /// and only F5 shows or hides it.
     /// </summary>
-    public bool ToggleJobsPanel()
+    public void ShowSessionView()
     {
-        if (ColumnVisible && _sideView == SideView.Jobs)
-        {
-            _panelOverride = false;
-            RefreshSessionPanel();
-            FocusComposer();
-            return true;
-        }
-
-        _sideView = SideView.Jobs;
-        _panelOverride = true;
+        if (!ColumnVisible || _sideView == SideView.Info) return;
+        _sideView = SideView.Info;
         RefreshSessionPanel();
+        FocusComposer();
+    }
+
+    /// <summary>
+    /// F7 — the panel on its Tasks view, the keyboard on its rows so ↑ ↓ and Enter work at once. Nothing while the
+    /// panel is hidden — see <see cref="ShowSessionView"/>.
+    ///
+    /// <para>SHOWN EVEN WITH NO TASKS. An empty view that says what would appear there teaches the key; a key that does
+    /// nothing until something runs teaches that it is broken.</para>
+    /// </summary>
+    public bool ShowTasksView()
+    {
+        if (!ColumnVisible) return true;
+        _sideView = SideView.Jobs;
+        RefreshSessionPanel();
+        FocusTasks();
+        return true;
+    }
+
+    private void FocusTasks()
+    {
         Window?.FocusManager.SetFocus(JobsPanel.Rows, SharpConsoleUI.Controls.FocusReason.Keyboard);
 
         // AGAIN, NOW THE ROWS HAVE THE KEYBOARD, so the selection is drawn at once rather than a tick
         // later — the refresh above ran while focus was still in the composer.
         JobsPanel.Redraw();
-        return true;
     }
 
     /// <summary>Whether the jobs panel's rows have the keyboard — for the window's ↑ ↓ forwarding.</summary>
@@ -3987,8 +4023,28 @@ public sealed class MainWindow : IDisposable
     public void ShowPanelItem()
     {
         if (_panelItem is not null) return;   // idempotent, like the items beside it
-        _panelItem = StatusBar.AddLeft(KeyHint("show or hide the session panel", "F3"), "Panel",
-            ToggleSessionPanel);
+        _panelItem = StatusBar.AddLeft(KeyHint("show or hide the side panel", "F5"), "Panel", TogglePanel);
+        _sessionViewItem = PanelBar.AddLeft(KeyHint("the side panel's session view", "F3"), "Session", ShowSessionView);
+        _tasksViewItem = PanelBar.AddLeft(KeyHint("background tasks", "F7"), "Tasks", () => ShowTasksView());
+        RefreshSessionPanel();
+    }
+
+    /// <summary>
+    /// The main bar's panel item: its name, and while the panel is hidden and something runs, the running tasks — the
+    /// count the panel's own bar shows, which a hidden panel cannot.
+    /// </summary>
+    public static string PanelItemLabel(bool shown, int mine, int elsewhere) =>
+        shown || mine + elsewhere == 0 ? "Panel" : $"Panel · {JobsItemLabel(mine, elsewhere)}";
+
+    /// <summary>Both bars' task figures, as they stand: the panel's Tasks item and the main bar's panel item.</summary>
+    private void RefreshPanelItem()
+    {
+        var (mine, elsewhere) = RunningCountsFor(JobsSession,
+            _sessionTabs.Select(t => t.Session).OfType<Core.Sessions.Session>(), Jobs);
+        var tasks = JobsItemLabel(mine, elsewhere);
+        if (_tasksViewItem is { } item && item.Label != tasks) item.Label = tasks;
+        var panel = PanelItemLabel(ColumnVisible, mine, elsewhere);
+        if (_panelItem is { } main && main.Label != panel) main.Label = panel;
     }
 
     private StatusBarItem? _panelItem;

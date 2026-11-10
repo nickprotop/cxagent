@@ -57,6 +57,7 @@ function setPanel(open) {
   if (wide()) {
     document.body.classList.toggle("no-panel", !open);
     store("cxagent-panel", open ? "1" : "0");
+    drawPanel();
   } else {
     document.body.classList.toggle("show-panel", open);
   }
@@ -2256,6 +2257,11 @@ function drawPanel() {
   const running = panel ? panel.workers.filter((w) => w.running).length + panel.commands.filter((c) => c.state === "Running").length : 0;
   $("tasks-count").hidden = running === 0;
   $("tasks-count").textContent = String(running);
+  // THE COUNT BESIDE ◧ WHILE THE PANEL IS HIDDEN, as the terminal's F5 item carries it: the Tasks tab that shows it is
+  // hidden with the panel.
+  $("panel-count").hidden = running === 0 || !document.body.classList.contains("no-panel");
+  $("panel-count").textContent = String(running);
+  $("panel-toggle").title = running > 0 && !$("panel-count").hidden ? "Side panel · " + running + " running" : "Side panel";
   drawStatusline(panel);
   if (!panel) {
     $("pane-session").replaceChildren(el("p", "none", "Open a session to see its figures."));

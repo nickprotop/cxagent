@@ -110,7 +110,7 @@ public sealed class TasksItemCountTests : IDisposable
         Run(front, "b", BackgroundState.Queued);
         Run(front, "done", BackgroundState.Finished);
 
-        window.ToggleJobsPanel();
+        window.ShowTasksView();
 
         Assert.Equal("Tasks 2", MainWindow.JobsItemLabelFor(front, [front], window.Jobs));
         var panel = MarkupParser.Remove(window.JobsPanel.RenderedText);
@@ -190,7 +190,7 @@ public sealed class TasksItemCountTests : IDisposable
         try
         {
             Assert.True(Poll.Until(() => window.Jobs.For(front.Owns).All(e => e.Finished)).GetAwaiter().GetResult());
-            window.ToggleJobsPanel();
+            window.ShowTasksView();
 
             Assert.True(window.JobsPanel.ActOnSelected());
 
@@ -219,7 +219,7 @@ public sealed class TasksItemCountTests : IDisposable
         window.OpenAgentTab(front, "finder");
         var tabs = window.Tabs.TabCount;
         window.Tabs.ActiveTabIndex = 0;
-        window.ToggleJobsPanel();
+        window.ShowTasksView();
 
         Assert.True(window.JobsPanel.ActOnSelected());
 
@@ -250,7 +250,7 @@ public sealed class TasksItemCountTests : IDisposable
         front.SubAgents.TryClaim("finder");
         front.SubAgents.AnnounceBegin("finder");
         var run = front.SubAgents.BeginForeground("finder", CancellationToken.None);
-        window.ToggleJobsPanel();
+        window.ShowTasksView();
 
         Assert.True(move ? window.JobsPanel.BackgroundSelected() : window.JobsPanel.ActOnSelected());
 
@@ -282,7 +282,7 @@ public sealed class TasksItemCountTests : IDisposable
         front.SubAgents.TryClaim("finder");
         front.SubAgents.AnnounceBegin("finder");
         front.SubAgents.EndSend("finder", "completed");
-        window.ToggleJobsPanel();
+        window.ShowTasksView();
         front.SubAgents.Forget("finder");
 
         window.JobsPanel.Follow($"agent:{child.Agent.Id}");
@@ -332,7 +332,7 @@ public sealed class TasksItemCountTests : IDisposable
             shell.OutputPath));
         try
         {
-            window.ToggleJobsPanel();
+            window.ShowTasksView();
 
             window.JobsPanel.Follow($"delete:agent:{child.Agent.Id}");
 
@@ -374,7 +374,7 @@ public sealed class TasksItemCountTests : IDisposable
         registry.Describe(shell, new BackgroundJob(shell.Pid, childId, "sleep 30", DateTimeOffset.UtcNow, shell.OutputPath));
         try
         {
-            window.ToggleJobsPanel();
+            window.ShowTasksView();
 
             var panel = MarkupParser.Remove(window.JobsPanel.RenderedText);
             Assert.Contains("Tasks · 2 running", panel, StringComparison.Ordinal);

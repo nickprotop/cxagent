@@ -2057,8 +2057,17 @@ public static class AppBootstrap
         // settings dialog that no longer exists and omitted F2 and F9 that the status bar shows.
         var keys = new Shortcuts();
 
+        // F5 SHOWS OR HIDES THE SIDE PANEL; F3 AND F7 ONLY CHOOSE ITS VIEW, and do nothing while it is hidden. Each
+        // declined while the plugin manager is open, whose own F5 refreshes its list.
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F5, "show or hide the side panel",
+            () =>
+            {
+                if (PluginManagerDialog.IsOpen) return false;
+                mainWindow.TogglePanel();
+                return true;
+            });
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F3,
-            "show or hide the session panel", mainWindow.ToggleSessionPanel);
+            "the side panel's session view", mainWindow.ShowSessionView);
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F1, "this help", mainWindow.ShowHelp);
         // F4 FOCUSES THE COMPOSER, and it earns its binding even though most sessions never need
         // it. Two things take focus away deliberately:
@@ -2160,11 +2169,10 @@ public static class AppBootstrap
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F2, "plugins",
             () => TogglePluginManager());
 
-        // F7 IS THE JOBS PANEL, as F3 is the info panel: the right-hand column shows one or the other.
-        // Declined while the plugin manager is open, as F6 is — a global takes its key from every
-        // window, and the dialog's own keys come first.
+        // F7 IS THE SIDE PANEL'S TASKS VIEW, as F3 is its session view. Declined while the plugin manager is open, as
+        // F6 is — a global takes its key from every window, and the dialog's own keys come first.
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F7, "background tasks",
-            () => !PluginManagerDialog.IsOpen && mainWindow.ToggleJobsPanel());
+            () => !PluginManagerDialog.IsOpen && mainWindow.ShowTasksView());
 
         // CTRL+B MOVES WHAT THE TURN WAITS ON TO THE BACKGROUND (Ctrl+B spec): everything, from a session tab; just that
         // agent, from its own tab. tmux's prefix too, which is why the hint says "twice in tmux".

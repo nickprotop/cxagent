@@ -15,7 +15,7 @@ its whole conversation, live, and the composer under it talks to that agent, not
 
 **Sub-agents in the background, with a panel to watch and steer them.** A spawn returns at once; the
 parent carries on, and each report arrives as a message when it is done. `F7` turns the right-hand
-column into the tasks panel: what is running first, then a Finished section. `Enter` on one opens it
+column to its Tasks view: what is running first, then a Finished section. `Enter` on one opens it
 in a tab, and `x` stops a running one or deletes a finished one. `Ctrl+B` moves what the turn is
 waiting on to the background mid-run. A finished sub-agent is kept, and `agent_send` asks it more on
 the same conversation. [Sub-agents](#sub-agents) has the detail.
@@ -82,7 +82,7 @@ place, so the conversation carries on; the `images` key in [CONFIG.md](CONFIG.md
 
 ![The image window over a session on Claude Haiku: a pasted 3500 by 2504 screenshot shrunk to 1568 by 1122, drawn in full in Kitty, its sizes in the title and Open in viewer in the footer, and the composer holding the image's token and the question about it](docs/screenshots/40-images.png)
 
-**A live session panel.** The right-hand column (`F3`) shows the session as it runs: the context
+**A live session panel.** The right-hand column (`F5` shows or hides it, `F3` picks its Session view) shows the session as it runs: the context
 window, turns and tool calls, limits, MCP servers and their tools, agent types, permissions granted,
 tokens by model and by agent, and the git branch and its state. The picture at the top shows it.
 
@@ -339,11 +339,12 @@ See [CONFIG.md](CONFIG.md) for the `agents` block, and [COMMANDS.md](COMMANDS.md
 | `Enter` | Send. During a running turn, queues instead; several queued messages go as one prompt |
 | `Esc` | Stop the running turn. Anything queued goes back into the composer rather than being lost. In btw mode: stop the aside's answer, then leave btw mode |
 | `F1` | Help |
-| `F3` | Session panel (show / hide / automatic) |
+| `F3` | The side panel's Session view (nothing while the panel is hidden) |
 | `F4` | Put the cursor back in the composer |
+| `F5` | Show or hide the side panel. Until pressed, the panel follows the terminal's width; after, your choice holds |
 | `F6` | Focus the tab strip, then `←` `→` to change session, `F6` back to the composer |
 | `Ctrl+B` | Move what the turn is waiting on to the background: every foreground sub-agent and command (twice in tmux) |
-| `F7` | Tasks panel: background commands and sub-agents in the right-hand column; `↑` `↓` choose, `Enter` opens, `x` stops a running one and deletes a finished one. `F7` again hides it |
+| `F7` | Tasks panel: background commands and sub-agents in the right-hand column; `↑` `↓` choose, `Enter` opens, `x` stops a running one and deletes a finished one. Nothing while the panel is hidden |
 | `F8` | Configuration: general settings, providers, MCP servers, agent types |
 | `F12` | Export this conversation as markdown, readable or full, to a file or the clipboard; in an agent's tab, that agent. See [`/export`](COMMANDS.md#export) |
 | `F10` | Next thinking level this model offers; see `/think`. (gnome-terminal opens its own menu on F10 unless that is turned off in its preferences) |

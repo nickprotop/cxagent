@@ -1056,8 +1056,8 @@ looking at a finished agent's report here does not stop the model being sent it.
 same mechanism `/agents send` uses — so nobody has to retype a handle or a pid they just read off a
 `/tasks` row.
 
-**You do not have to ask.** `F7` turns the right-hand column into the Tasks panel, as `F3` is the info
-panel: a card for each of this session's background commands (`▭`) and sub-agents (`◇`, foreground ones
+**You do not have to ask.** `F7` turns the right-hand column to its Tasks view, as `F3` turns it to its
+Session view, and `F5` shows or hides it — F3 and F7 do nothing while it is hidden: a card for each of this session's background commands (`▭`) and sub-agents (`◇`, foreground ones
 included) — the running ones first, under the panel's "Tasks · N running", then a **Finished** heading
 over the ended ones, marked `✓` for success and `✗` for anything else. A card is three lines on a surface
 of its own — the command or what the agent was asked to do; `Shell` or `Agent` with how long it has run,
@@ -1070,12 +1070,13 @@ does — and deletes a finished one: a command's record leaves `/tasks` and `tas
 oldest go — so a command the panel still shows can already be gone from `/tasks`, which keeps 50. A
 sub-agent the parent is waiting on has two: `⇥` moves it to the background and `⏹` stops it alone —
 `b` and `x` from the keyboard; the hint under its card says so. While a turn waits on foreground work, the
-composer's line says so after a few seconds, with Ctrl+B to move all of it to the background. `F7` again hides the column; `F3` switches back to info.
+composer's line says so after a few seconds, with Ctrl+B to move all of it to the background.
 
 A click anywhere on a card selects it, marked by a bar at its left. While the panel has the keyboard,
 `↑` `↓` choose a card, moving on from one section into the next, and `Enter` opens it in a tab, as its
-link does. The status bar shows `F7:Tasks`, with a count of running background commands and agents while any
-run, and other session tabs' as `+N` (`Tasks 2+1`).
+link does. The panel's own bottom line shows `F3 Session` and `F7 Tasks`, the view showing picked out, with a count of
+running background commands and agents while any run, and other session tabs' as `+N` (`Tasks 2+1`). While
+the panel is hidden and something runs, the main status bar carries the count instead: `F5 Panel · Tasks 2`.
 
 **The tab follows the output** as it is written, stops following when you scroll up, and starts again
 at the bottom. **Kill** stops the job; **Copy to transcript** queues its last 8,192 characters to go
@@ -1267,6 +1268,7 @@ type your own. `Space` checks when several answers are allowed. With more than o
 a step indicator, `Alt+←` to go back, and a summary of every answer before any of it is sent.
 `Esc` skips: answers already given are kept, and a skipped question tells the model to decide.
 
-**F3** cycles the session panel — shown, hidden, automatic. It carries context occupancy, spend,
+**F5** shows or hides the side panel, and **F3** turns it to its Session view. Until F5 is pressed the panel
+follows the terminal's width. It carries context occupancy, spend,
 session id, MCP servers, configured agent types, and granted permissions. Spend appears per model
 when more than one model has been used.

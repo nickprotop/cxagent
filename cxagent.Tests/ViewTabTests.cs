@@ -320,7 +320,7 @@ public sealed class ViewTabTests : IDisposable
         _registry.Describe(shell, new CxAgent.Core.Execution.BackgroundJob(shell.Pid, _front.SessionId!, "sleep 30", DateTimeOffset.UtcNow,
             shell.OutputPath));
         _window.Tabs.ActiveTabIndex = 0;
-        _window.ToggleJobsPanel();
+        _window.ShowTasksView();
         _window.JobsPanel.Follow($"job:{shell.Pid}");
         var withJobTab = _window.Tabs.TabCount;
 
