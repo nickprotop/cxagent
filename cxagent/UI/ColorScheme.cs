@@ -80,12 +80,9 @@ public static class ColorScheme
         ThinkingRgb = ThinkingFor(theme.WindowForegroundColor, AccentRgb, ChatSurface);
         ThinkingSurface = PaletteColors.Mix(ChatSurface, AccentRgb, ThinkingTint);
 
-        // A SYSTEM NOTE LEANS TOWARD THE THEME'S INFO COLOUR, ground and rail, so it reads apart from both voices of the
-        // conversation without a header saying "System". The rail is HALF-WAY TO THE CHAT, not the info colour itself:
-        // a note is something to read, not the loudest thing on screen.
-        var info = ColorRoleResolver.Resolve(ColorRole.Info, theme).Text;
-        SystemSurface = PaletteColors.Mix(ChatSurface, info, SystemTint);
-        SystemRail = PaletteColors.Mix(ChatSurface, info, 0.5);
+        // A SYSTEM NOTE'S GROUND LEANS TOWARD THE THEME'S INFO COLOUR, so it reads apart from both voices of the
+        // conversation without a header saying "System".
+        SystemSurface = PaletteColors.Mix(ChatSurface, ColorRoleResolver.Resolve(ColorRole.Info, theme).Text, SystemTint);
 
         // MARKDOWN FOLLOWS THE THEME, UNLESS THE THEME HAS ALREADY CHOSEN. A crimson theme must
         // give crimson headings, not a fixed purple wearing crimson chrome around it — so every
@@ -480,9 +477,6 @@ public static class ColorScheme
     /// </summary>
     /// <summary>A system note's ground — see where it is derived.</summary>
     public static Color SystemSurface { get; private set; } = PaletteColors.Mix(new Color(0x0d, 0x0d, 0x0d), new Color(0x4f, 0xc3, 0xf7), SystemTint);
-
-    /// <summary>A system note's rail — see where it is derived.</summary>
-    public static Color SystemRail { get; private set; } = PaletteColors.Mix(new Color(0x0d, 0x0d, 0x0d), new Color(0x4f, 0xc3, 0xf7), 0.5);
 
     /// <summary>How far a system note's ground leans toward the info colour: enough to tell it from the assistant's
     /// ground beside it, not so much that a run of notes reads as a coloured band.</summary>

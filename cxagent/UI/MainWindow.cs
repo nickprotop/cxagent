@@ -3681,8 +3681,9 @@ public sealed class MainWindow : IDisposable
     /// looks like the first rather than like the control's defaults.</summary>
     private void ApplyRoleStyles(ChatTranscriptControl chat)
     {
-        // NO "SYSTEM" HEADER: a ground and a rail of their own say what a note is, and the header was a line of chrome
-        // over every one of them (user, 2026-11-11).
+        // NO "SYSTEM" HEADER: a ground of its own says what a note is, and the header was a line of chrome over every one
+        // of them. NO RAIL EITHER: a rail is how the user's own message is marked, and a note wearing one reads as
+        // something the user said (user, 2026-11-11).
         chat.SetRoleStyle(ChatRole.System, new ChatRoleStyle
         {
             Markdown = true,
@@ -3690,8 +3691,6 @@ public sealed class MainWindow : IDisposable
             HeaderStyle = CollapsibleHeaderStyle.Borderless,
             ShowHeader = false,
             Background = ColorScheme.SystemSurface,
-            Rail = true,
-            RailColor = ColorScheme.SystemRail,
             Collapsible = false,
             // EXPANDED by default. These were StartCollapsed, and it cost real comprehension: the
             // chat's own "Type a goal and press Enter" rendered as "▸ System / expand…", and a
