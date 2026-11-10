@@ -3681,12 +3681,18 @@ public sealed class MainWindow : IDisposable
     /// looks like the first rather than like the control's defaults.</summary>
     private void ApplyRoleStyles(ChatTranscriptControl chat)
     {
+        // NO "SYSTEM" HEADER: a ground and a rail of their own say what a note is, and the header was a line of chrome
+        // over every one of them (user, 2026-11-11).
         chat.SetRoleStyle(ChatRole.System, new ChatRoleStyle
         {
             Markdown = true,
             ColorRole = ColorRole.Info,
             HeaderStyle = CollapsibleHeaderStyle.Borderless,
-            Collapsible = true,
+            ShowHeader = false,
+            Background = ColorScheme.SystemSurface,
+            Rail = true,
+            RailColor = ColorScheme.SystemRail,
+            Collapsible = false,
             // EXPANDED by default. These were StartCollapsed, and it cost real comprehension: the
             // chat's own "Type a goal and press Enter" rendered as "▸ System / expand…", and a
             // live-drive agent read exactly that, concluded the app "does not accept typed input",
