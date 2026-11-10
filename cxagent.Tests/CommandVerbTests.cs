@@ -264,4 +264,39 @@ public class CommandVerbTests : IDisposable
             manager.Commands.Run(session, "/mcp login context7"));
         Assert.Contains("context7", target, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// A VERB A FRONT END SERVICES OVER ONE THE TABLE DECLARES IS ONE ROW. /colleagues open is in Core's table, so a
+    /// headless consumer knows it exists, and the terminal registers it to open a tab — help listed it twice.
+    /// </summary>
+    [Fact]
+    public void AVerbRegisteredOverATableArgument_IsListedOnce()
+    {
+        using var manager = Manager();
+        var colleagues = SessionCommands.All.First(c => c.Name == "/colleagues");
+        manager.Commands.RegisterVerb("/colleagues",
+            new CommandArgument("open <name>", "talk with a colleague one-to-one", Completes: false), (_, _) => true);
+
+        Assert.Single(manager.Commands.ArgumentsOf(colleagues), a => a.Name.StartsWith("open", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A SECOND SPELLING RUNS BUT IS NOT A ROW. "distil" and "distill" are one verb; help listing both reads as two.
+    /// </summary>
+    [Fact]
+    public void AnUnlistedSpelling_RunsButIsNotListed()
+    {
+        var (manager, session, _) = Wired();
+        using var _ = manager;
+        var colleagues = SessionCommands.All.First(c => c.Name == "/colleagues");
+        var ran = new List<string>();
+        manager.Commands.RegisterVerb("/colleagues",
+            new CommandArgument("distill <name>", "distil again", Completes: false), (_, a) => { ran.Add(a); return true; });
+        manager.Commands.RegisterVerb("/colleagues",
+            new CommandArgument("distil <name>", "distil again", Completes: false, Listed: false), (_, a) => { ran.Add(a); return true; });
+
+        Assert.Equal(CommandRegistry.Dispatch.Ran, manager.Commands.Run(session, "/colleagues distil Care"));
+        Assert.Single(ran);
+        Assert.Single(manager.Commands.ArgumentsOf(colleagues), a => a.Name.StartsWith("distil", StringComparison.Ordinal));
+    }
 }

@@ -1294,8 +1294,9 @@ public static class AppBootstrap
         // BOTH SPELLINGS, as Core reads them: "distill" is the one people type, "distil" the one the app writes.
         foreach (var verb in new[] { "distill", "distil" })
             manager.Commands.RegisterVerb("/colleagues",
+                // ONE ROW: the second spelling runs, but help and the palette list the one people type.
                 new CommandArgument($"{verb} <name> [from round N] [on <model>]", "distil a colleague's last round again, or from a round on, after confirming",
-                    Completes: false, Values: ValueSources.Colleagues),
+                    Completes: false, Values: ValueSources.Colleagues, Listed: verb == "distill"),
                 (current, arguments) =>
                 {
                     AskDistillColleague(new ColleagueDistilling(current, (arguments ?? "").Split(' ', 2) is [_, var rest] ? rest : ""));

@@ -123,10 +123,18 @@ public sealed class CommandRegistry
     /// <para>WHAT HELP AND THE PALETTE MUST READ. Reading <see cref="SessionCommand.Args"/>
     /// directly offers rows that only some front ends service.</para>
     /// </summary>
-    public IReadOnlyList<CommandArgument> ArgumentsOf(SessionCommand command) =>
-        _verbs.TryGetValue(command.Name, out var list)
-            ? [.. command.Args, .. list.Select(v => v.Argument)]
-            : command.Args;
+    public IReadOnlyList<CommandArgument> ArgumentsOf(SessionCommand command)
+    {
+        if (!_verbs.TryGetValue(command.Name, out var list)) return command.Args;
+        var registered = list.Select(v => v.Argument).ToList();
+        // A VERB THE TABLE DECLARES AND A FRONT END SERVICES IS ONE ROW, the front end's: the table says the verb exists
+        // to a consumer that registered nothing, and listing both put /colleagues open in help twice.
+        return [.. command.Args.Where(a => !registered.Any(r => SameVerb(r, a))), .. registered.Where(r => r.Listed)];
+    }
+
+    /// <summary>Whether two arguments are one verb — their first word, the one typed.</summary>
+    private static bool SameVerb(CommandArgument a, CommandArgument b) =>
+        string.Equals(a.Name.Split(' ', 2)[0], b.Name.Split(' ', 2)[0], StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// What a dispatch attempt found.

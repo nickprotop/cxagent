@@ -108,8 +108,12 @@ public readonly record struct SessionCommand(
 /// bound at startup — turning a constant into something assembled. The supplier is keyed on this
 /// string, so an argument that names a missing source simply offers nothing.</para>
 /// </param>
+/// <param name="Listed">
+/// Whether help and the palette show it. FALSE FOR A SECOND SPELLING of a verb listed already — <c>distil</c> beside
+/// <c>distill</c> — which runs when typed but is one verb, and two rows read as two.
+/// </param>
 public readonly record struct CommandArgument(
-    string Name, string Summary, bool Completes = true, string? Values = null);
+    string Name, string Summary, bool Completes = true, string? Values = null, bool Listed = true);
 
 /// <summary>
 /// The named sources a <see cref="CommandArgument"/> can be filled from.
