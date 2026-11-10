@@ -272,7 +272,11 @@ public sealed partial class Session
         if (name.Length == 0) return Told("Say who: /colleagues bring <name> [task]. /colleagues lists them.");
         if (SessionId is not { } lead) return Told("This session has no agent to report to yet.");
 
-        var answer = await desk.BringAsync(new BringOrder(name, task, null, Background: true, lead), CancellationToken.None);
+        // ON A TASK, DOWN THE LEAD'S OWN PATH, so it is drawn as the lead's bring is: a live worker row. Idle, there is no
+        // work to draw, and the desk brings it in directly.
+        var answer = task.Length > 0 && Host is { } host
+            ? await host.BringForUserAsync(name, task, CancellationToken.None)
+            : await desk.BringAsync(new BringOrder(name, task, null, Background: true, lead), CancellationToken.None);
         if (Agents.SubAgentEnvelope.NameOf(answer) is { } handle)
         {
             // NO TASK, IT JOINED IDLE — and the lead is told it is there to be given work.
@@ -283,9 +287,8 @@ public sealed partial class Session
                       + "work with agent_send when there is something it knows.]"
                     : $"[The user brought the colleague {name} in as the worker {handle}, on: {task}. Its report "
                       + "reaches you when it finishes; agent_send reaches it meanwhile.]");
-            return Told(joined
-                ? $"{name} joined as {handle}, idle — give it work in its tab, or the agent will."
-                : $"{name} is working as {handle}.");
+            // AT WORK, ITS ROW SAYS SO; idle, nothing else would.
+            return joined ? Told($"{name} joined as {handle}, idle — give it work in its tab, or the agent will.") : CommandStatus.Reported;
         }
         return Told(answer);
     }

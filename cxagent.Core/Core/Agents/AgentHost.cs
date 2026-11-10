@@ -758,6 +758,10 @@ public sealed class AgentHost : IDisposable
     public static string Label(string? instance, ILlmProvider provider) =>
         instance is { Length: > 0 } ? $"{instance}:{provider.ModelId}" : provider.ModelId;
 
+    /// <summary>The user's bring of a colleague on a task, drawn as a worker row — see <see cref="Agent.BringForUserAsync"/>.</summary>
+    public Task<string> BringForUserAsync(string name, string task, CancellationToken ct) =>
+        _agent.BringForUserAsync(name, task, ct);
+
     /// <summary>
     /// Books spend this session paid for outside any agent — a colleague's distilling, a hook's model — as a worker's: on
     /// the ledger under <paramref name="label"/>, said to the panel, and in the session's row. Without the row, a

@@ -3062,7 +3062,22 @@ public sealed class Agent
         }
     }
 
-    private async Task<string> InvokeAndShowAsync(string agentId, ToolCall call, CancellationToken ct)
+    /// <summary>
+    /// The user's own bring of a colleague on a task, drawn as the lead's bring is — the same worker row, live body and
+    /// spend — by running it down the same path as a call of this agent's (user, 2026-11-11). THE MODEL'S GATES ARE
+    /// LEFT OUT: a pre-tool hook and the turn's tool selection govern what the model may call, and the user typing
+    /// /colleagues bring is not the model calling anything. Nothing reaches this agent's conversation; the session tells
+    /// it of the bring as it always has.
+    /// </summary>
+    internal Task<string> BringForUserAsync(string name, string task, CancellationToken ct) =>
+        InvokeAndShowAsync(Id, new ToolCall
+        {
+            Id = "user-" + Helpers.UlidGenerator.NewId(),
+            Name = Jobs.Tool.Colleague,
+            Arguments = JsonSerializer.SerializeToElement(new { action = "bring", name, task, background = true }),
+        }, ct, byUser: true);
+
+    private async Task<string> InvokeAndShowAsync(string agentId, ToolCall call, CancellationToken ct, bool byUser = false)
     {
         var jobId = Helpers.UlidGenerator.NewId();
         var job = new Job
@@ -3328,7 +3343,7 @@ public sealed class Agent
             // PRE-TOOL HOOKS, BEFORE ANY LINK OF THE CHAIN. Every source — built-ins, MCP, injected and
             // plugin tools, spawns — passes this one line, so a guard cannot be stepped around by calling a
             // tool from another source, nor by delegating to a sub-agent, which dispatches here too.
-            pre = await PreToolHooksAsync(call, ctx, ct);
+            pre = byUser ? null : await PreToolHooksAsync(call, ctx, ct);
             if (pre?.UpdatedInput is { } rewritten)
             {
                 // THE REWRITTEN CALL IS THE CALL from here on: what the permission prompt shows, what runs,
@@ -3337,7 +3352,7 @@ public sealed class Agent
             }
 
             if (pre?.Stops == true) outcome = HookRefusal(pre);
-            else if (Withheld(call.Name) is { } refusal) outcome = refusal;
+            else if (!byUser && Withheld(call.Name) is { } refusal) outcome = refusal;
             else
             outcome = Text(spawned = CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id, _turnTools) : null)
                 // REACHING A KEPT CHILD, beside the tool that made it. The token is THIS turn's, not

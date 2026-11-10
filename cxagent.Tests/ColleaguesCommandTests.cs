@@ -25,6 +25,8 @@ public sealed class ColleaguesCommandTests : IDisposable
 
     private ColleagueStore Library => new(_config);
 
+    private readonly BufferedJobPanel _rows = new();
+
     private Session Open(bool on = true)
     {
         var resolution = ResolvedConfig.ForTesting(new MockLlmProvider()) is var r
@@ -32,7 +34,7 @@ public sealed class ColleaguesCommandTests : IDisposable
             : null!;
         var session = new Session(_project);
         SessionFactory.Wire(session, resolution, new SharedServices { GlobalInstructionsDir = _config },
-            new SessionPorts { Observer = _seen, ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
+            new SessionPorts { Observer = _seen, ToolObserver = _rows }, AgentMode.Single);
         return session;
     }
 
@@ -88,6 +90,26 @@ public sealed class ColleaguesCommandTests : IDisposable
         var note = session.TakeColleagueNote();
         Assert.StartsWith("[The user brought the colleague UI Charting in as the worker ui-charting", note);
         Assert.Contains("on: draw the sales chart", note);
+    }
+
+    /// <summary>
+    /// A colleague the user brings on a task is drawn as the lead's own bring is: a live worker row, with its calls and
+    /// spend — not two notes, "working as" and "finished", with nothing between (user, 2026-11-11). The lead's
+    /// conversation is not touched: it learns of the bring from its note, as before.
+    /// </summary>
+    [Fact]
+    public async Task Bringing_one_on_a_task_draws_its_worker_row()
+    {
+        Library.Create(new ColleagueRecord { Name = "UI Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        var session = Open();
+        var before = session.Host!.Context.Messages.Count;
+
+        await session.BringColleagueAsync("UI Charting draw the sales chart");
+
+        var row = Assert.Single(_rows.Jobs, j => j.JobType == "llm_agent");
+        Assert.Contains("UI Charting", row.DisplayName, StringComparison.Ordinal);
+        Assert.Equal(before, session.Host.Context.Messages.Count);
+        Assert.DoesNotContain(_seen.Notices, n => n.Contains("is working as", StringComparison.Ordinal));
     }
 
     /// <summary>A name with spaces typed in quotes, as a shell would want it: a live use read the quote as part of the name.</summary>
