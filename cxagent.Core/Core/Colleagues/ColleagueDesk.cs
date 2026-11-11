@@ -1171,6 +1171,28 @@ public sealed partial class ColleagueDesk : IDisposable
     }
 
     /// <summary>
+    /// Lets a colleague go from this session — ONE ANSWER FOR EVERY DOOR: the command, its card, its tab and the lead's
+    /// tool. Its worker is let go as any worker is, so it is not resumed and its tab closes; what it learned here is
+    /// already the library's, filed as each of its tasks ended. It can be brought again.
+    ///
+    /// <para>NOT WHILE IT WORKS: a task ended under it would be a stop nobody chose. Stopping is its own step.</para>
+    /// </summary>
+    public string Release(string name)
+    {
+        if (_parts.Library.Find(name.Trim()) is not { } record) return $"There is no colleague called '{name.Trim()}'. {Known()}";
+        if (HandleOf(record) is not { } handle) return $"{record.Name} is not in this session.";
+        return _workers.Forget(handle) switch
+        {
+            Agents.ForgetOutcome.Forgotten =>
+                $"{record.Name} has left this session. Its rounds here are kept; /colleagues bring {record.Name} brings it back.",
+            Agents.ForgetOutcome.Working => $"{record.Name} is working — stop it first (/tasks stop {handle}), then release it.",
+            Agents.ForgetOutcome.ReportOwed =>
+                $"{record.Name} still owes its report to the agent that set it working — release it once that is delivered.",
+            _ => $"{record.Name} is not in this session.",
+        };
+    }
+
+    /// <summary>
     /// The question forgetting asks — ONE TEXT FOR BOTH FRONT ENDS — naming what goes and where it is live; or, with no
     /// name, why there is nothing to ask.
     /// </summary>

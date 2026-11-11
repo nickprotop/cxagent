@@ -195,6 +195,10 @@ public static class SessionWiring
         session.SubAgents.Forgotten += agentId =>
             system.EnqueueOnUIThread(() => tab.JobSink?.ForgetChild(agentId), "sessionWiring.Subscribe");
 
+        // AND ITS TAB CLOSES, whoever let it go — a colleague released by the lead's tool or from a browser included.
+        session.SubAgents.Forgotten += agentId =>
+            system.EnqueueOnUIThread(() => main.CloseAgentTabOf(agentId), "sessionWiring.Subscribe");
+
         session.TokensUpdated += (_, _) => system.EnqueueOnUIThread(() =>
         {
             // THE PARENT'S OWN SPEND, not the event's total. The event carries Ledger.TotalTokens,

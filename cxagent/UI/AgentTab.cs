@@ -50,6 +50,7 @@ public sealed class AgentTab : IDisposable
     internal PromptControl Input => _input;
     private readonly ButtonControl _stop;
     private readonly ButtonControl _move;
+    private readonly ButtonControl _release;
     /// <summary>
     /// The state in capitals at the head of the button row. THE ROW IS NEVER BLANK: Stop and Background are there
     /// only while the agent runs, and without this an idle tab opened on an empty line above a lone rule.
@@ -93,8 +94,20 @@ public sealed class AgentTab : IDisposable
                 button.GetParentWindow()?.FocusManager.SetFocus(MainControl, FocusReason.Programmatic);
             })
             .Build();
+        // RELEASE, ON A COLLEAGUE AT REST: it leaves the session, through /colleagues release — whose answer is said in
+        // the session, and whose let-go closes this tab. On the pool: letting a worker go stops any commands it left.
+        _release = new ButtonBuilder()
+            .WithText(" Release ")
+            .OnClick((object? _, ButtonControl _) =>
+            {
+                if (Session.SubAgents.BadgeOf(Kept.Name) is { } badge)
+                    _ = Task.Run(() => Session.ColleaguesCommand("release " + badge.Name));
+            })
+            .Build();
+        _release.Visible = false;
         var bar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         bar.AddItem(_state);
+        bar.AddItem(_release);
         bar.AddItem(_move);
         bar.AddItem(_stop);
 
@@ -229,6 +242,13 @@ public sealed class AgentTab : IDisposable
     /// <summary>Whether Background is offered: the parent's turn is waiting on this agent, in a session still open.</summary>
     public bool CanMove => _now is { Running: true, Foreground: true } && !Session.SubAgents.Ended;
 
+    /// <summary>Whether Release is offered: a colleague, at rest, in a session still open.</summary>
+    public bool CanRelease => Session.SubAgents.BadgeOf(Kept.Name) is not null && _now is not { Running: true }
+                              && !Session.SubAgents.Ended;
+
+    /// <summary>Test seam: the Release button.</summary>
+    public ButtonControl ReleaseForTest => _release;
+
     /// <summary>Test seam: the Background button.</summary>
     public ButtonControl MoveForTest => _move;
 
@@ -270,6 +290,7 @@ public sealed class AgentTab : IDisposable
         if (moveHadFocus && !_move.Visible)
             _move.GetParentWindow()?.FocusManager.SetFocus(MainControl, FocusReason.Programmatic);
         if (_input.Visible != CanType) _input.Visible = CanType;
+        if (_release.Visible != CanRelease) _release.Visible = CanRelease;
 
         // THE KEYBOARD LEAVES A STOP THAT HAS GONE. Clicked, Stop keeps the focus; hidden, it kept it still, so what
         // was typed next went nowhere and every space pressed the hidden button again.

@@ -497,6 +497,8 @@ function drawWorkerHead() {
       head.append(button("Background", null, () => send({ type: "workerAction", sessionId: view.parent, agentId: view.agentId, action: "background" })));
     head.append(button("Stop", "danger", () => send({ type: "workerAction", sessionId: view.parent, agentId: view.agentId, action: "stop" })));
   }
+  // A COLLEAGUE AT REST MAY BE RELEASED from its own tab, as from its card and the terminal's.
+  else if (view.badge) head.append(button("Release", null, () => send({ type: "colleagueRelease", sessionId: view.parent, name: view.badge.name })));
 }
 
 // ---- a background command's tab ------------------------------------------------------------------------------------
@@ -2435,6 +2437,8 @@ function drawColleagueCards(pane, p, sid) {
     const acts = el("div", "cc-acts");
     acts.append(button("Open", null, open), button("Ask…", null, () => { open(); setTimeout(() => $("input").focus(), 0); }));
     if (w.running) acts.append(button("Stop", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "stop" })));
+    // RELEASE WHILE IDLE: it leaves this session and can be brought again — refused while it works.
+    else acts.append(button("Release", null, () => send({ type: "colleagueRelease", sessionId: sid, name: w.badge.name })));
     card.append(acts);
     pane.append(card);
   }

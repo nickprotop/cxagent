@@ -56,6 +56,7 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/colleagues` | Open the library: every colleague, what it knows, its experience |
 | `/colleagues keep <worker> [name]` | Keep a worker of this session as a colleague |
 | `/colleagues bring <name> [task]` | Bring a colleague in — on a task, or idle to be given one |
+| `/colleagues release <name>` | Let a colleague at rest leave this session; it can be brought again |
 | `/colleagues open <name>` | Talk with a colleague one-to-one, in a session of its own |
 | `/colleagues rename <name> to <new name>` | Rename a colleague; its old names still find it |
 | `/colleagues forget <name>` | Forget a colleague for good, after confirming |

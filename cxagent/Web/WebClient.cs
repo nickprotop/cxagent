@@ -364,6 +364,11 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
                 else Error("No such open session.");
                 break;
             // THE PANE'S BRING: the session's own, the terminal's panel link's — it joins idle, to be given work.
+            // RELEASE, FROM ITS CARD OR ITS TAB: the terminal's /colleagues release, through the same desk.
+            case "colleagueRelease":
+                if (LiveSession(Str(m, "sessionId")) is { } releasing) releasing.ColleaguesCommand("release " + (Str(m, "name") ?? ""));
+                else Error("No such open session.");
+                break;
             case "colleagueBring":
                 if (LiveSession(Str(m, "sessionId")) is { } bringing) _ = bringing.BringColleagueAsync(Str(m, "name") ?? "");
                 else Error("No such open session.");

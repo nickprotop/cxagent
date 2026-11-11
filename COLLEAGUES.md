@@ -234,6 +234,10 @@ go from both. `colleagues.suggest` in config.json turns it off
 agent gets its report. With none, it joins **idle**, to be given work in its tab or by the agent. A name with spaces
 needs no quotes. A colleague already here is not brought twice: the task is passed to it.
 
+**Releasing one.** `/colleagues release <name>`, or **Release** on its card or in its tab, lets a colleague at rest leave
+the session; the agent can release one too. Every task it finished here is already in its past, so nothing is lost,
+and it can be brought again. One still working is refused: stop it first.
+
 **Seeing them.** A session with colleagues says so as it opens.
 
 **Tasks** (`F7`, and the browser's Tasks pane) has a **Colleagues** section of its own, above the workers. Each
@@ -343,6 +347,7 @@ freeze it. Under *Settings* they turn colleagues and suggestions off, as do
 | `/colleagues` | Open the library: every colleague, what it knows, its experience |
 | `/colleagues keep <worker> [name]` | Keep a worker of this session as a colleague |
 | `/colleagues bring <name> [task]` | Bring a colleague in, on a task or idle to be given one |
+| `/colleagues release <name>` | Let a colleague at rest leave this session; it can be brought again |
 | `/colleagues open <name>` | Talk with a colleague one-to-one, in a session of its own |
 | `/colleagues rename <name> to <new name>` | Rename a colleague; its old names still find it |
 | `/colleagues freeze <name>` · `unfreeze <name>` | Stop a colleague learning, or let it learn again from now on |

@@ -2754,6 +2754,15 @@ public sealed class MainWindow : IDisposable
     /// <summary>Closes an agent tab: its view detaches, and the agent works on.</summary>
     public void CloseAgentTab(AgentTab tab) => CloseAgentTab(tab, sessionClosing: false);
 
+    /// <summary>
+    /// Closes the tab of an agent let go — by x, a colleague's release from any door, or the lead's tool — when one is
+    /// open: there is nothing left for it to show.
+    /// </summary>
+    public void CloseAgentTabOf(string agentId)
+    {
+        if (_agentTabs.TryGetValue(agentId, out var open)) CloseAgentTab(open.Tab);
+    }
+
     /// <param name="sessionClosing">Its session is closing, which ends the agent.</param>
     private void CloseAgentTab(AgentTab tab, bool sessionClosing)
     {
@@ -2882,6 +2891,13 @@ public sealed class MainWindow : IDisposable
                 if (choice.Action == JobsPanel.RowAction.Background)
                 {
                     session.MoveToBackground(view.Kept.Name);
+                    break;
+                }
+                // RELEASE, THROUGH /colleagues release — its answer said in the session, refusals included. On the pool:
+                // letting a worker go stops any commands it left running, which can wait on them.
+                if (choice.Action == JobsPanel.RowAction.Release)
+                {
+                    if (view.Badge is { } badge) _ = Task.Run(() => session.ColleaguesCommand("release " + badge.Name));
                     break;
                 }
                 // A REFUSAL IS SAID, as /agents open says it: a card that will not open and stays silent reads as a

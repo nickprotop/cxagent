@@ -98,6 +98,9 @@ public sealed class JobsPanel
 
         /// <summary><c>b</c> or ⇥ on a foreground card — moves it to the background (Ctrl+B spec decision 6′).</summary>
         Background,
+
+        /// <summary>Release on an idle colleague's card — it leaves the session (see ColleagueDesk.Release).</summary>
+        Release,
     }
 
     /// <summary>A card and what was asked of it — for the window, which owns tabs, stops and forgetting.</summary>
@@ -256,6 +259,9 @@ public sealed class JobsPanel
     }
 
     /// <summary>Brings the available colleague at <paramref name="index"/> — what its Bring link does.</summary>
+    /// <summary>Test seam: follows a card's link, as a click on it does.</summary>
+    public void FollowLinkForTest(string key, string url) => AllCards().First(c => c.Row.Key == key).Follow(url);
+
     public void FollowAvailableForTest(int index)
     {
         if (index >= 0 && index < _availableShown.Count) BringChosen?.Invoke(_availableShown[index].Name);
@@ -521,7 +527,7 @@ public sealed class JobsPanel
             Box.MouseClick += (_, _) => _owner.Select(this, focus: true);
             Box.MouseEnter += (_, _) => { _hover = true; Paint(); };
             Box.MouseLeave += (_, _) => { _hover = false; Paint(); };
-            Anchor.LinkClicked += (_, _) => _owner.RowChosen?.Invoke(new RowChoice(Row, RowAction.Open));
+            Anchor.LinkClicked += (_, e) => Follow(e.Url);
             Anchor.GotFocus += (_, _) => _owner.Select(this, focus: false);
             Button.GotFocus += (_, _) => _owner.Select(this, focus: false);
             Button.Click += (_, _) => _owner.RowChosen?.Invoke(new RowChoice(Row, RowAction.StopOrForget));
@@ -576,6 +582,10 @@ public sealed class JobsPanel
 
         private int _usable;
 
+        /// <summary>What a link on the card does: Release lets a colleague go; every other link opens its tab.</summary>
+        public void Follow(string url) =>
+            _owner.RowChosen?.Invoke(new RowChoice(Row, url == "release" ? RowAction.Release : RowAction.Open));
+
         /// <summary>The card's lines, set into its controls and kept as text.</summary>
         private void Redraw()
         {
@@ -591,6 +601,7 @@ public sealed class JobsPanel
             var facts = _shown.Facts.Any() ? $"  {Muted(Cut(string.Join(" · ", _shown.Facts), _usable))}" : null;
             // ASK… OPENS THE SAME TAB AS OPEN: the tab's composer is where a colleague is asked, and it has the keyboard.
             var link = _shown.Ask ? $"  [link=open]{Value(_shown.View)} ›[/]  [link=ask]Ask…[/]" : $"  [link=open]{Value(_shown.View)} ›[/]";
+            if (_shown.Release) link += "  [link=release]Release[/]";
             SetIfChanged(_title, [bar + title]);
             if (_facts.Visible != (facts is not null)) _facts.Visible = facts is not null;
             if (facts is not null) SetIfChanged(_facts, [bar + facts]);
@@ -622,7 +633,7 @@ public sealed class JobsPanel
             if (state is not null) lines.Add(state);
             if (facts is not null) lines.Add(facts);
             if (runsOn is not null) lines.Add(runsOn);
-            lines.Add(_shown.Ask ? $"  {Value(_shown.View)} ›  Ask…" : $"  {Value(_shown.View)} ›");
+            lines.Add((_shown.Ask ? $"  {Value(_shown.View)} ›  Ask…" : $"  {Value(_shown.View)} ›") + (_shown.Release ? "  Release" : ""));
             Text = lines;
         }
 
@@ -661,6 +672,9 @@ public sealed class JobsPanel
 
         /// <summary>Its link line also offers Ask… — a colleague's card.</summary>
         public bool Ask { get; init; }
+
+        /// <summary>Its link line also offers Release — an idle colleague's card.</summary>
+        public bool Release { get; init; }
 
         /// <summary>The folder an agent works in relative to its parent's, shown after <see cref="RunsOn"/>;
         /// null when it works where its parent does.</summary>
@@ -743,6 +757,7 @@ public sealed class JobsPanel
         {
             Status = status,
             Ask = true,
+            Release = !view.Running,
             RunsOn = knows,
             Root = view.Kept.Agent.Root,
         };

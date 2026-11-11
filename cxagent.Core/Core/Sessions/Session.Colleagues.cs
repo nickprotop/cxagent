@@ -219,11 +219,15 @@ public sealed partial class Session
                             + "Distill again in the library.");
             case "rename":
                 return Rename(desk, rest);
+            case "release":
+                return rest.Length == 0
+                    ? Told("Name the colleague: /colleagues release <name>.")
+                    : Told(desk.Release(Unquoted(rest)));
             case "freeze":
             case "unfreeze":
                 return Freeze(desk, Unquoted(rest), verb.Equals("freeze", StringComparison.OrdinalIgnoreCase));
             default:
-                return Told($"/colleagues knows keep, bring, open, rename, freeze, unfreeze, distill and forget, not '{verb}'. /colleagues alone lists them.");
+                return Told($"/colleagues knows keep, bring, release, open, rename, freeze, unfreeze, distill and forget, not '{verb}'. /colleagues alone lists them.");
         }
     }
 

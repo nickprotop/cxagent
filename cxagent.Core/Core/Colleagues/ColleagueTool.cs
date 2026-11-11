@@ -35,13 +35,14 @@ public sealed class ColleagueTool(ColleagueDesk desk,
         + "'list' names them. 'bring' starts one here as a worker on a task — prefer it to a fresh agent when the task "
         + "touches a codebase it knows; afterwards reach it with agent_send, task_output and task_stop like any worker. "
         + "'keep' makes one of this session's workers a colleague; it asks the user first — use it when the user asks, "
-        + "or offer it when a worker built up knowledge worth keeping.",
+        + "or offer it when a worker built up knowledge worth keeping. 'release' lets one brought here leave the session "
+        + "once its work is done.",
         JsonDocument.Parse("""
             {
               "type": "object",
               "properties": {
-                "action": { "type": "string", "enum": ["list", "bring", "keep"] },
-                "name": { "type": "string", "description": "bring: the colleague. keep: the name to give it (optional — one is taken from its work)." },
+                "action": { "type": "string", "enum": ["list", "bring", "keep", "release"] },
+                "name": { "type": "string", "description": "bring, release: the colleague. keep: the name to give it (optional — one is taken from its work)." },
                 "task": { "type": "string", "description": "bring: what it should do, as you would brief a worker. Leave it out to have it join idle and give it work later with agent_send." },
                 "model": { "type": "string", "description": "bring: a provider entry to run it on instead of its own (optional)." },
                 "background": { "type": "boolean", "description": "bring: run in the background and report when done (default true)." },
@@ -68,7 +69,10 @@ public sealed class ColleagueTool(ColleagueDesk desk,
                 "list" => List(),
                 "bring" => await BringAsync(call, onChild, ct),
                 "keep" => await KeepAsync(call, ct),
-                _ => "colleague needs an action: list, bring or keep.",
+                "release" => Arg(call, "name")?.Trim() is { Length: > 0 } name
+                    ? desk.Release(name)
+                    : "release needs the colleague's name.",
+                _ => "colleague needs an action: list, bring, keep or release.",
             };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)

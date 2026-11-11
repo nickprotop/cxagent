@@ -72,6 +72,7 @@ public sealed class WebSessionHub
     private readonly ConcurrentDictionary<string, Action<ToolCallReport>> _calls = new();
     private readonly ConcurrentDictionary<string, IDisposable> _queues = new();
     private readonly ConcurrentDictionary<string, IDisposable> _offers = new();
+    private readonly ConcurrentDictionary<string, IDisposable> _forgets = new();
     private int _listPending;
 
     /// <summary>A hub over <paramref name="services"/>, told whenever the manager closes a session.</summary>
@@ -192,6 +193,8 @@ public sealed class WebSessionHub
         _queues.Clear();
         foreach (var offer in _offers.Values) offer.Dispose();
         _offers.Clear();
+        foreach (var forget in _forgets.Values) forget.Dispose();
+        _forgets.Clear();
     }
 
     /// <summary>
@@ -260,6 +263,7 @@ public sealed class WebSessionHub
         if (_calls.TryRemove(session.Id, out var call)) session.CallFinished -= call;
         if (_queues.TryRemove(session.Id, out var queue)) queue.Dispose();
         if (_offers.TryRemove(session.Id, out var offer)) offer.Dispose();
+        if (_forgets.TryRemove(session.Id, out var forget)) forget.Dispose();
         foreach (var c in _clients.Keys) c.SessionClosed(session.Id);
         ListChanged();
     }
@@ -431,6 +435,16 @@ public sealed class WebSessionHub
                     session.Drained -= drained;
                     session.Cancelled -= cancelled;
                 }
+            }
+            // A WORKER LET GO ANYWHERE — x on its card, a colleague released from the terminal, the lead's tool — closes
+            // its view on every page, as the terminal closes its tab.
+            if (!_forgets.ContainsKey(session.Id))
+            {
+                Action<string> forgotten = agentId =>
+                    Broadcast(new JsonObject { ["type"] = "workerDeleted", ["sessionId"] = session.Id, ["agentId"] = agentId });
+                session.SubAgents.Forgotten += forgotten;
+                if (!_forgets.TryAdd(session.Id, new Unsubscribe(() => session.SubAgents.Forgotten -= forgotten)))
+                    session.SubAgents.Forgotten -= forgotten;
             }
             // A WORKER WORTH KEEPING, offered in the conversation with Keep and Not this one, as the terminal offers it.
             // IN THE LOG, so a tab joining later sees an offer still open — and the answer, which takes it away.

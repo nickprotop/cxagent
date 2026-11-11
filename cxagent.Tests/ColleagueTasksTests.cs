@@ -207,4 +207,33 @@ public sealed class ColleagueTasksTests : IDisposable
         Assert.DoesNotContain("explore", tab.DetailTextForTest);
         Assert.Contains("on local", tab.DetailTextForTest);
     }
+
+    /// <summary>
+    /// RELEASE ON AN IDLE COLLEAGUE'S CARD (user, 2026-11-11), beside Open and Ask… — and not while it works, when ⏹ is
+    /// the card's control: release is refused then anyway, and a link that only refuses is noise.
+    /// </summary>
+    [Fact]
+    public async Task An_idle_colleague_s_card_offers_release()
+    {
+        var session = await WithCharting();
+        var panel = new JobsPanel();
+        var kept = session.SubAgents.Find("charting")!;
+        var row = new JobsPanel.AgentRow(AgentRows.Describe(session.SubAgents, kept, DateTimeOffset.UtcNow) ?? AgentRows.Idle(kept))
+        {
+            Colleague = session.Colleagues!.CardOf("charting"),
+        };
+        var chosen = new List<JobsPanel.RowChoice>();
+        panel.RowChosen += chosen.Add;
+
+        panel.Refresh(new JobsPanel.JobsShown([row], 0), 40);
+        Assert.Contains("Release", panel.RenderedText);
+        panel.FollowLinkForTest(row.Key, "release");
+        panel.FollowLinkForTest(row.Key, "open");
+
+        Assert.Equal([JobsPanel.RowAction.Release, JobsPanel.RowAction.Open], chosen.Select(c => c.Action));
+
+        var working = row with { View = row.View with { State = AgentRowState.Running } };
+        panel.Refresh(new JobsPanel.JobsShown([working], 0), 40);
+        Assert.DoesNotContain("Release", panel.RenderedText);
+    }
 }

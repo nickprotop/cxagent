@@ -202,4 +202,73 @@ public sealed class ColleagueJoinTests : IDisposable
         Assert.Contains("charting (the colleague Charting)", refused, StringComparison.Ordinal);
         Assert.DoesNotContain("task_list", refused, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// RELEASE (user, 2026-11-11: a colleague brought in had no way out short of closing the session). It leaves the
+    /// session — not offered, not resumed — with every round it finished here already filed, and can be brought again.
+    /// </summary>
+    [Fact]
+    public async Task Releasing_an_idle_colleague_takes_it_out_of_the_session()
+    {
+        Charting();
+        var session = Open(new MockLlmProvider());
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+
+        var said = session.Colleagues.Release("Charting");
+
+        Assert.Equal("Charting has left this session. Its rounds here are kept; /colleagues bring Charting brings it back.", said);
+        Assert.Null(session.SubAgents.Find("charting"));
+        Assert.Null(session.Colleagues.HandleHere("Charting"));
+        Assert.Equal("Charting is not in this session.", session.Colleagues.Release("Charting"));
+        Assert.Contains("idle", await session.Colleagues.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None));
+    }
+
+    /// <summary>A colleague at work is not released from under its task: stopping it is a separate, deliberate step.</summary>
+    [Fact]
+    public async Task Releasing_a_working_colleague_is_refused()
+    {
+        Charting();
+        var session = Open(new MockLlmProvider());
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+        Assert.True(session.SubAgents.TryClaim("charting"));
+
+        var said = session.Colleagues.Release("Charting");
+
+        Assert.Equal("Charting is working — stop it first (/tasks stop charting), then release it.", said);
+        Assert.NotNull(session.SubAgents.Find("charting"));
+        session.SubAgents.Release("charting");
+    }
+
+    [Fact]
+    public async Task The_command_and_the_leads_tool_both_release()
+    {
+        Charting();
+        Library.Create(new ColleagueRecord { Name = "Tables", Type = "general", Created = DateTimeOffset.UtcNow });
+        var session = Open(new MockLlmProvider());
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+        await session.Colleagues.BringAsync(new BringOrder("Tables", "", null, true, session.SessionId!), CancellationToken.None);
+
+        session.ColleaguesCommand("release Charting");
+        var tool = await new ColleagueTool(session.Colleagues, null, () => "lead").TryInvokeAsync(
+            new ToolCall { Id = "c", Name = ColleagueTool.ToolName, Arguments = JsonSerializer.SerializeToElement(new { action = "release", name = "Tables" }) },
+            CancellationToken.None);
+
+        Assert.Null(session.SubAgents.Find("charting"));
+        Assert.Null(session.SubAgents.Find("tables"));
+        Assert.StartsWith("Tables has left this session.", tool);
+    }
+
+    /// <summary>Release in the colleague's own tab, at rest — the terminal's door beside its card.</summary>
+    [Fact]
+    public async Task A_colleague_s_tab_offers_release_at_rest()
+    {
+        Charting();
+        var session = Open(new MockLlmProvider());
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+
+        using var tab = new CxAgent.UI.AgentTab(session, session.SubAgents.Find("charting")!,
+            AgentTabTests.Inline(new SharpConsoleUI.Controls.ChatTranscriptControl()));
+
+        Assert.True(tab.ReleaseForTest.Visible);
+    }
 }

@@ -69,6 +69,7 @@ public static class SessionCommands
             new("bring <name> [task]", "bring a colleague in — with a task, or idle to be given one", Completes: false, Values: ValueSources.Colleagues),
             new("open <name>", "talk with a colleague one-to-one, in a session of its own", Completes: false, Values: ValueSources.Colleagues),
             new("rename <name> to <new name>", "rename a colleague — its former names still find it", Completes: false, Values: ValueSources.Colleagues),
+            new("release <name>", "let one brought in here leave this session — it can be brought again", Completes: false, Values: ValueSources.Colleagues),
             new("freeze <name>", "keep its experience as it is — it works on, and learns nothing", Completes: false, Values: ValueSources.Colleagues),
             new("unfreeze <name>", "let it learn again, from now on", Completes: false, Values: ValueSources.Colleagues),
         ]),
