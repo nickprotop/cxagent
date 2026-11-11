@@ -269,6 +269,15 @@ body.no-panel .panel { display: none; }
    so a half-full gauge is calm and only a nearly full one reaches the danger end. The tick is where auto-compress starts. */
 .meter { position: relative; height: 8px; background: linear-gradient(90deg, var(--ok), var(--warn), var(--bad)); border-radius: 4px; overflow: hidden; margin: 6px 0 2px; }
 .meter .rest { position: absolute; top: 0; right: 0; bottom: 0; background: var(--raised); }
+/* THE PER-TURN SPARKLINES: bars filled along a gradient from the theme's variables, as the terminal's are. */
+.spark { margin: 4px 0 6px; }
+.spark svg { display: block; width: 100%; height: 22px; }
+.spark.accent svg rect { fill: var(--accent); }
+.spark.violet svg rect { fill: var(--violet); }
+.spark.cache svg rect { fill: var(--ok); }
+.spark.context svg rect { fill: var(--ok); }
+.spark.context svg rect.warn { fill: var(--warn); }
+.spark.context svg rect.bad { fill: var(--bad); }
 .meter .tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--strong); opacity: .7; }
 .task { display: flex; gap: 8px; align-items: flex-start; padding: 7px 0; border-top: 1px solid var(--line-soft); }
 .task:first-of-type { border-top: none; }

@@ -55,6 +55,22 @@ public sealed class TurnHistory
         catch (IOException) { }
     }
 
+    /// <summary>
+    /// Carries a resumed session's history into the new session's file, before it is opened: a resume starts a new agent
+    /// with logs of its own. Only into a file that does not exist yet — the new session's own points are never replaced.
+    /// </summary>
+    public static void Carry(string from, string to)
+    {
+        if (string.Equals(from, to, StringComparison.Ordinal) || !File.Exists(from) || File.Exists(to)) return;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Copy(from, to);
+        }
+        // BEST EFFORT, as keeping it is: a resume without its picture is still the resume.
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>The points so far, oldest first.</summary>
     public IReadOnlyList<TurnPoint> Points
     {

@@ -2287,6 +2287,32 @@ function drawStatusline(panel) {
     money(panel.tokens.cost), distilling].filter(Boolean).join("  ·  ");
 }
 
+// A SPARKLINE AS INLINE SVG: one bar per point, coloured by a gradient from the theme's own variables — see .spark in
+// app.css — so a theme switch recolours it with everything else.
+function spark(label, values, max, kind) {
+  const box = el("div", "spark " + kind);
+  box.append(el("div", "meta", label));
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  // AT LEAST FORTY SLOTS, filled from the left as the terminal's columns are: four points are four narrow bars, never
+  // four blocks spanning the pane.
+  const n = Math.max(values.length, 40), top = max || Math.max(1, ...values);
+  svg.setAttribute("viewBox", `0 0 ${n} 20`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  values.forEach((v, i) => {
+    const h = Math.max(0, Math.min(1, v / top)) * 20;
+    if (h <= 0) return;
+    const r = document.createElementNS(ns, "rect");
+    r.setAttribute("x", i + 0.1); r.setAttribute("width", 0.8); r.setAttribute("y", 20 - h); r.setAttribute("height", h);
+    // A TALLER BAR IS A STRONGER ONE, as the terminal's rise into their colour; the context's turn caution, then danger.
+    r.setAttribute("fill-opacity", (0.45 + 0.55 * h / 20).toFixed(2));
+    if (kind === "context") r.setAttribute("class", v >= 0.85 ? "bad" : v >= 0.6 ? "warn" : "");
+    svg.append(r);
+  });
+  box.append(svg);
+  return box;
+}
+
 function drawSessionPane(p) {
   const pane = $("pane-session");
   pane.replaceChildren(el("h3", null, "Context"));
@@ -2305,6 +2331,19 @@ function drawSessionPane(p) {
     }
     pane.append(meter);
   } else pane.append(kv("Used", tokens(used)));
+
+  // EACH LEAD RESPONSE, as the terminal's sparklines draw it: tokens, the workers' on a row of their own once they spent,
+  // the cache rate and the context, each labelled with its latest value.
+  const turns = p.turns || [];
+  if (turns.length) {
+    pane.append(el("h3", null, "Per turn"));
+    const last = turns[turns.length - 1];
+    const lastCache = [...turns].reverse().find(t => t.cache != null);
+    pane.append(spark("tokens · last " + tokens(last.tokens), turns.map(t => t.tokens), null, "accent"));
+    if (turns.some(t => t.workers > 0)) pane.append(spark("workers · last " + tokens(last.workers), turns.map(t => t.workers), null, "violet"));
+    pane.append(spark("cache · last " + (lastCache ? Math.round(lastCache.cache * 100) + "%" : "—"), turns.map(t => t.cache || 0), 1, "cache"));
+    pane.append(spark("context · last " + (last.context != null ? Math.round(last.context * 100) + "%" : "—"), turns.map(t => t.context || 0), 1, "context"));
+  }
 
   pane.append(el("h3", null, "Session"));
   const time = kv("Time", "");

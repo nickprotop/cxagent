@@ -65,6 +65,12 @@ public sealed class SessionPanel
 
     private readonly MarkupControl _body = Ctl.Markup().WithMargin(1, 1, 1, 0).Build();
 
+    /// <summary>The live sections above the charts — the context gauge and the charts' heading.</summary>
+    private readonly MarkupControl _top = Ctl.Markup().WithMargin(1, 1, 1, 0).Build();
+
+    /// <summary>The per-turn sparklines, between the live sections and the rest — see <see cref="TurnCharts"/>.</summary>
+    private readonly TurnCharts _charts = new();
+
     /// <summary>
     /// The panel's host. A SCROLLABLE panel because its content is not bounded: the caps block grows
     /// with configuration, and a short terminal would otherwise clip the blocks at the bottom with
@@ -118,6 +124,9 @@ public sealed class SessionPanel
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Build();
         _host.BackgroundColor = ColorScheme.PanelSurface;
+        // LIVE FIRST: the context and the per-turn charts above everything that describes the session.
+        _host.AddControl(_top);
+        _host.AddControl(_charts.Control);
         _host.AddControl(_body);
 
         // Star over Auto: the scrollable body takes everything the git block does not, so the block
@@ -144,13 +153,14 @@ public sealed class SessionPanel
     {
         _host.BackgroundColor = ColorScheme.PanelSurface;
         _layout.BackgroundColor = ColorScheme.PanelSurface;
+        _charts.Recolour();
     }
 
     public IWindowControl Control => _layout;
 
     /// <summary>The rendered block text, for assertions. The body is nested inside the scrollable
     /// host now, so reading Control as a MarkupControl no longer reaches it.</summary>
-    public string RenderedText => _body.Text;
+    public string RenderedText => string.Join("\n", new[] { _top.Text, _charts.Text, _body.Text }.Where(t => t.Length > 0));
 
     /// <summary>
     /// Points the panel at a conversation's tallies.
@@ -221,6 +231,9 @@ public sealed class SessionPanel
         // --- context and spend ---
         public int? ContextUsed { get; init; }
         public int? ContextWindow { get; init; }
+
+        /// <summary>The session's per-turn history, oldest first — the charts' points; null or empty for none yet.</summary>
+        public IReadOnlyList<Core.Sessions.TurnPoint>? Turns { get; init; }
 
         /// <summary>Where auto-compress starts, in tokens — the gauge's tick; null for none.</summary>
         public int? CompressAt { get; init; }
@@ -303,21 +316,30 @@ public sealed class SessionPanel
 
     public void Refresh(SessionPanelState state)
     {
-        var lines = new List<string>();
+        var top = new List<string>();
 
         // THE CONTEXT AS A GAUGE (user, 2026-11-11), first because it is the live state of the session: filled along the
         // theme's calm-to-danger gradient, with a tick where auto-compress starts, and its figures compact under it. The
         // status bar keeps the exact counts and the spend; this is the picture of the same occupancy.
         if (state.ContextWindow is > 0 and var window)
         {
-            Section(lines, "Context");
+            Section(top, "Context");
             var used = state.ContextUsed ?? 0;
-            lines.Add(PanelGauge.Markup(new GaugeReading((double)used / window,
+            top.Add(PanelGauge.Markup(new GaugeReading((double)used / window,
                 state.CompressAt is > 0 and var at ? (double)at / window : null), GaugeWidth(state.Width)));
-            lines.Add(Muted(state.ContextUsed is null
+            top.Add(Muted(state.ContextUsed is null
                 ? $"window {Compact(window)}"
                 : $"{Compact(used)} of {Compact(window)} · {(int)Math.Round(100.0 * used / window)}%"));
         }
+
+        // EACH LEAD RESPONSE, as sparklines under their own heading — once there is one.
+        var turns = state.Turns ?? [];
+        if (turns.Count > 0) Section(top, "Per turn");
+        _top.SetContent(top);
+        if (_top.Visible != (top.Count > 0)) _top.Visible = top.Count > 0;
+        _charts.Update(turns, GaugeWidth(state.Width));
+
+        var lines = new List<string>();
 
         // NO MODEL BLOCK. It moved to the line under the composer, where it sits beside the mode it
         // belongs to. Two places showing one value is how they drift, and the panel is the one that

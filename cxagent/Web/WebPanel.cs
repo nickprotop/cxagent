@@ -27,6 +27,17 @@ internal static class WebPanel
             ["state"] = state,
         };
 
+    // AS MANY POINTS AS THE WIDEST PANE DRAWS; the rest stay in the session's file.
+    private const int TurnsSent = 120;
+
+    /// <summary>The newest points of a session's per-turn history, as the page's sparklines take them.</summary>
+    private static JsonArray Turns(IReadOnlyList<Core.Sessions.TurnPoint>? points) =>
+        [.. (points ?? []).TakeLast(TurnsSent).Select(p => (JsonNode)new JsonObject
+        {
+            ["tokens"] = p.Tokens, ["workers"] = p.WorkerTokens, ["cache"] = p.Cache,
+            ["context"] = p.Window is > 0 and var w ? (double)p.Context / w : null,
+        })];
+
     /// <summary>The panel for <paramref name="session"/>, whose browser log is <paramref name="log"/>.</summary>
     public static JsonObject Build(Session session, SessionEventLog log, SessionManager manager)
     {
@@ -101,6 +112,8 @@ internal static class WebPanel
                 ["compressAt"] = res is null ? null
                     : (res.Orchestrator ?? Core.Llm.OrchestratorSettings.Unbounded).EffectiveCompressThreshold(res.ContextWindow),
             },
+            // THE PER-TURN HISTORY THE TERMINAL'S SPARKLINES DRAW — the newest points, enough for the widest pane.
+            ["turns"] = Turns(session.Turns?.Points),
             ["session"] = new JsonObject
             {
                 // THE SESSION'S OWN TALLY, the one the terminal's panel shows — not this log's, which started when the

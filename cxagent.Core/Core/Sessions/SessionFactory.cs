@@ -543,6 +543,9 @@ internal static class SessionFactory
         var turnsFile = shared.Logs is { } turnLogs && host.SessionId is { Length: > 0 } turnsOf
             ? Path.Combine(turnLogs.DirFor(turnsOf), TurnHistory.FileName)
             : null;
+        // A RESUME STARTS A NEW AGENT, with logs of its own: the history it continues is carried over from the one resumed.
+        if (turnsFile is not null && resumeSnapshot is { Carried: false } resumed && shared.Logs is { } pastLogs)
+            TurnHistory.Carry(Path.Combine(pastLogs.DirFor(resumed.AgentId), TurnHistory.FileName), turnsFile);
         if (session.Turns is not { } turns || turns.KeptAt != turnsFile) session.Turns = turns = new TurnHistory(turnsFile);
         turns.Start(host.Ledger.Read());
         var turnWindow = resolution.ContextWindow;

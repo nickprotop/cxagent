@@ -110,4 +110,26 @@ public sealed class TurnHistoryTests : IDisposable
         Assert.Equal(100_000, point.Window);
         Assert.Single(new TurnHistory(Path.Combine(logs.DirFor(session.SessionId!), TurnHistory.FileName)).Points);
     }
+
+    /// <summary>
+    /// A RESUME STARTS A NEW AGENT, with logs of its own, so the history it continues is carried from the session it
+    /// resumes — and from there to the next resume.
+    /// </summary>
+    [Fact]
+    public void A_resume_carries_the_history_into_the_new_session_s_file()
+    {
+        var before = Path.Combine(_dir, "old", TurnHistory.FileName);
+        var after = Path.Combine(_dir, "new", TurnHistory.FileName);
+        var ledger = new TokenLedger();
+        var past = new TurnHistory(before);
+        ledger.Record(Usage(2_000, 10), "main:m");
+        past.Note(ledger.Read(), window: 100_000);
+
+        TurnHistory.Carry(before, after);
+        var resumed = new TurnHistory(after);
+
+        Assert.Single(resumed.Points);
+        TurnHistory.Carry(before, after);   // never twice: the new session's own points are not overwritten
+        Assert.Single(new TurnHistory(after).Points);
+    }
 }
