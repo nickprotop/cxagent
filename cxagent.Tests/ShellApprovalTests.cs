@@ -143,8 +143,8 @@ public class ShellApprovalTests
         // while ignoring where it runs would be the `cd*` hole (PermissionPolicy.cs, "A CHAIN IS
         // NEVER MATCHED BY A STORED RULE") rebuilt through a third door.
         //
-        // WHICH CLAUSE CATCHES IT is pinned separately below, because it is not the one it looks
-        // like — see ACdTargetIsConfinedByTheBoundaryClause_NotByChangesTo.
+        // WHICH CLAUSE CATCHES IT is pinned separately below — see
+        // ACdTargetLeadingAChain_IsWhereTheChainRuns_AndThatFolderIsConfined.
         var root = MakeTempDir();
         var policy = TrustedAutoPolicy(root);
         var elsewhere = MakeTempDir();
@@ -153,34 +153,20 @@ public class ShellApprovalTests
     }
 
     [Fact]
-    public void ACdTargetIsConfinedByTheBoundaryClause_NotByChangesTo()
+    public void ACdTargetLeadingAChain_IsWhereTheChainRuns_AndThatFolderIsConfined()
     {
-        // MEASURED, NOT ASSUMED, and it contradicts the obvious reading of the bound. Deleting the
-        // `ChangesTo` clause leaves BOTH cd tests passing, so the clause does no work for this
-        // feature's population. Probed directly: for `cd .. && dotnet build | tail`,
-        // CommandSubjects reports ChangesTo=null and the token ".." (joined onto the folder in Paths).
-        //
-        // WHY. `CommandSubjects.Of` populates ChangesTo only when `ReadOnlyCommands.CommandAfterCd`
-        // matches, and that returns null when the remainder is itself a chain. This feature's whole
-        // population is metacharacter-bearing commands, so the remainder virtually always IS a
-        // chain — ChangesTo is therefore structurally null here, and the cd target falls through to
-        // the token loop and is confined as an ordinary path instead.
-        //
-        // THE CLAUSE STAYS ANYWAY. It is the spec's wording, it binds correctly for the chain-free
-        // commands that do populate ChangesTo, and it costs one null check on a path that runs on
-        // nearly every shell command. Removing it as "dead" would be a decision resting on an
-        // internal detail of another type's parse, which is exactly the kind of coupling that put
-        // four holes of the same shape in this system. What must NOT happen is believing the cd
-        // target is confined by a clause that is not the one doing it — hence this test.
+        // A LEADING `cd X &&` IS FOLLOWED through the whole chain (see CommandSubjects.FollowedCd), so its target is
+        // the folder every later path is read from — and that folder is what the boundary holds first. Pinned
+        // because the obvious reading is wrong twice over: the target is not merely another path token, and the
+        // refusal comes from where the chain runs, so a later path that happens to look inside cannot rescue it.
         var root = MakeTempDir();
         var policy = TrustedAutoPolicy(root);
 
         Assert.Equal(ReviewEffect.None, policy.EffectFor(Shell("cd .. && dotnet build | tail")));
 
         var subjects = CommandSubjects.Of("cd .. && dotnet build | tail", new PathResolver(root));
-        Assert.Null(subjects.ChangesTo);
-        Assert.Contains("..", subjects.Tokens);
-        Assert.Contains(Path.Combine(root, ".."), subjects.Paths);
+        Assert.Equal("..", subjects.ChangesTo);
+        Assert.Equal(Path.GetFullPath(Path.Combine(root, "..")).TrimEnd('/'), subjects.After!.TrimEnd('/'));
     }
 
     [Fact]

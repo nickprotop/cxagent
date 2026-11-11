@@ -1243,9 +1243,14 @@ public class PermissionPolicy
             || command.Contains('`', StringComparison.Ordinal))
             return false;
 
-        foreach (var segment in command.Split(CommandSubjects.SegmentSeparators, StringSplitOptions.RemoveEmptyEntries))
+        // SPLIT AS THE SHELL SPLITS — outside quotes, with redirect targets lifted out as files (see
+        // CommandSubjects.Segments): a quoted `|` in a grep pattern is not a pipe into a program, and `2>/dev/null` is not
+        // a program run by path. A line it cannot read is not examinable.
+        if (CommandSubjects.Segments(command) is not { } segments) return false;
+
+        foreach (var segment in segments)
         {
-            var text = segment.Trim();
+            var text = segment.Text;
 
             // AN EMPTY SEGMENT IS THE OTHER HALF OF AN OPERATOR, not a command — `2>&1` leaves one
             // behind when the redirect is split. Nothing runs, so there is nothing to refuse.
