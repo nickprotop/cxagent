@@ -783,19 +783,14 @@ public class MainWindowTests
     }
 
     /// <summary>
-    /// THE PANEL AND THE STATUS BAR CANNOT DISAGREE, because only one of them answers this now.
+    /// THE PANEL AND THE STATUS BAR MUST NOT DISAGREE about how full the context is.
     ///
-    /// <para>They did disagree: RefreshTokenItem read _contextUsed while the panel was handed
-    /// _lastTokens, so one reported 2% and the other 9% of the same session. That was locked by
-    /// asserting both showed the same figure — a guard that only works while someone remembers to
-    /// keep it. Cutting the panel's duplicated Context block replaced the guard with a structure:
-    /// there is one occupancy readout, so there is nothing left to drift.</para>
-    ///
-    /// <para>The assertion is therefore the ABSENCE of a second one. Occupancy figures reaching the
-    /// panel again would be the duplication coming back.</para>
+    /// <para>They did disagree once: one read the occupancy while the other was handed the spend, so one reported 2%
+    /// and the other 9% of the same session. The panel's gauge is the occupancy too, so both must say 10% here — and
+    /// neither the spend's 48%. The exact counts stay on the status bar.</para>
     /// </summary>
     [Fact]
-    public void OnlyTheStatusBar_ReportsOccupancy()
+    public void ThePanelsGauge_AndTheStatusBar_ReportTheSameOccupancy()
     {
         var res = ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock").WithContextWindow(200_000);
         // WIDE: the panel hides itself below a width threshold, and a hidden panel renders nothing.
@@ -806,9 +801,10 @@ public class MainWindowTests
         mw.SetContextUsed(20_000);     // the OCCUPANCY — 10% of the window
 
         var panel = mw.SessionPanel.RenderedText;
+        Assert.Contains("10%", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("48%", panel, StringComparison.Ordinal);
         Assert.DoesNotContain("20,000", panel, StringComparison.Ordinal);
         Assert.DoesNotContain("96,500", panel, StringComparison.Ordinal);
-        Assert.DoesNotContain("%", panel, StringComparison.Ordinal);
 
         // And the status bar still has both, distinctly — occupancy as the percentage, spend as
         // itself. The old bug was the spend BECOMING the percentage; 96,500 of 200,000 is 48%.

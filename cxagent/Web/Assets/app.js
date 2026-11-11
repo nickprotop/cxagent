@@ -2294,10 +2294,15 @@ function drawSessionPane(p) {
   if (p.context.window) {
     const pct = Math.min(100, Math.round(100 * used / p.context.window));
     pane.append(kv(tokens(used) + " of " + tokens(p.context.window), pct + "%"));
-    const meter = el("div", "meter" + (pct >= 80 ? " warn" : ""));
-    const fill = el("i");
-    fill.style.width = pct + "%";
-    meter.append(fill);
+    const meter = el("div", "meter");
+    const rest = el("i", "rest");
+    rest.style.width = (100 - pct) + "%";
+    meter.append(rest);
+    if (p.context.compressAt) {
+      const tick = el("i", "tick");
+      tick.style.left = Math.min(100, 100 * p.context.compressAt / p.context.window) + "%";
+      meter.append(tick);
+    }
     pane.append(meter);
   } else pane.append(kv("Used", tokens(used)));
 

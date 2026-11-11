@@ -104,13 +104,12 @@ public class SessionPanelTests
     }
 
     /// <summary>
-    /// THE PANEL DOES NOT REPEAT THE STATUS BAR. Occupancy, the window, the percentage and the spend
-    /// total all appear in `ctx 4% · 9,140/212,992 · 160,084 spent`, which is always on screen — the
-    /// panel can be hidden. Four duplicated lines is also how two readouts drift apart, which is the
-    /// reason the model block was moved out earlier.
+    /// THE CONTEXT IS A GAUGE HERE, the exact counts the status bar's (user, 2026-11-11: the panel draws the occupancy it
+    /// shares with the bar as a picture). Compact figures sit under the gauge; the exact occupancy and the spend total
+    /// stay on the bar, which is always on screen.
     /// </summary>
     [Fact]
-    public void Refresh_DoesNotRepeatWhatTheStatusBarAlreadyShows()
+    public void Refresh_DrawsTheContextAsAGauge_AndLeavesTheExactCountsToTheStatusBar()
     {
         var panel = new SessionPanel();
         panel.Refresh(new SessionPanel.SessionPanelState
@@ -118,6 +117,8 @@ public class SessionPanelTests
             ContextUsed = 9_140,
             SpentTokens = 160_084,
             ContextWindow = 212_992,
+            CompressAt = 170_393,
+            Width = 30,
             Endpoint = "",
             Rules = 0,
             SpendByModel = new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 160_084 },
@@ -129,9 +130,10 @@ public class SessionPanelTests
 
         var text = panel.RenderedText;
 
-        // Occupancy and the percentage are the status bar's alone.
+        Assert.Contains("│", text, StringComparison.Ordinal);            // the compress tick on the gauge
+        Assert.Contains("of 213.0k · 4%", text, StringComparison.Ordinal);
         Assert.DoesNotContain("9,140", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("%", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("212,992", text, StringComparison.Ordinal);
 
         // The BREAKDOWN stays: the status bar has one total, and what the panel adds is who spent it
         // and how it splits — figures the bar has no room for.

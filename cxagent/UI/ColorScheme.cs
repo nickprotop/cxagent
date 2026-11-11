@@ -227,6 +227,11 @@ public static class ColorScheme
     /// <c>ColorRoleResolver.Resolve</c> — already used for controls — composed with
     /// <c>Color.ToMarkup</c>. Neither is new; nobody had put them together.</para>
     /// </summary>
+    /// <summary>A role's text colour as a Color, for drawing that blends it — a gauge's gradient — rather than naming it in
+    /// markup. The fallback stands in before a theme is set.</summary>
+    public static Color RoleRgb(ColorRole role, Color fallback) =>
+        _theme is { } theme ? ColorRoleResolver.Resolve(role, theme).Text : fallback;
+
     private static string Markup(ColorRole role, string fallback) =>
         _theme is { } theme
             ? ColorRoleResolver.Resolve(role, theme).Text.ToMarkup()

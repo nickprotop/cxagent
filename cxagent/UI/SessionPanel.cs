@@ -221,6 +221,12 @@ public sealed class SessionPanel
         // --- context and spend ---
         public int? ContextUsed { get; init; }
         public int? ContextWindow { get; init; }
+
+        /// <summary>Where auto-compress starts, in tokens — the gauge's tick; null for none.</summary>
+        public int? CompressAt { get; init; }
+
+        /// <summary>The panel's width in columns, which the gauge is drawn to; the narrowest panel when not given.</summary>
+        public int Width { get; init; } = MinWidth;
         public int SpentTokens { get; init; }
         public int InputTokens { get; init; }
         public int OutputTokens { get; init; }
@@ -299,17 +305,18 @@ public sealed class SessionPanel
     {
         var lines = new List<string>();
 
-        // NO CONTEXT BLOCK, for the same reason the model block went: the status bar already carries
-        // `ctx 4% · 9,140/212,992 · 160,084 spent` and is ALWAYS visible, while this panel can be
-        // hidden. Occupancy, the window, the percentage and the spend total were all repeated here
-        // verbatim — four lines of duplication, and the exact drift risk the note below names.
-        //
-        // The window alone is still worth a line before any measurement exists, since the status bar
-        // shows a fraction it has no numerator for yet.
-        if (state.ContextUsed is null && state.ContextWindow is > 0)
+        // THE CONTEXT AS A GAUGE (user, 2026-11-11), first because it is the live state of the session: filled along the
+        // theme's calm-to-danger gradient, with a tick where auto-compress starts, and its figures compact under it. The
+        // status bar keeps the exact counts and the spend; this is the picture of the same occupancy.
+        if (state.ContextWindow is > 0 and var window)
         {
             Section(lines, "Context");
-            lines.Add(Muted($"window {Compact(state.ContextWindow.Value)}"));
+            var used = state.ContextUsed ?? 0;
+            lines.Add(PanelGauge.Markup(new GaugeReading((double)used / window,
+                state.CompressAt is > 0 and var at ? (double)at / window : null), GaugeWidth(state.Width)));
+            lines.Add(Muted(state.ContextUsed is null
+                ? $"window {Compact(window)}"
+                : $"{Compact(used)} of {Compact(window)} · {(int)Math.Round(100.0 * used / window)}%"));
         }
 
         // NO MODEL BLOCK. It moved to the line under the composer, where it sits beside the mode it
@@ -683,6 +690,9 @@ public sealed class SessionPanel
     /// </summary>
     private static string Money(decimal amount) =>
         amount < 1.00m ? $"${DisplayNumber.Fixed(amount, 4)}" : $"${DisplayNumber.Fixed(amount, 2)}";
+
+    // THE BODY'S TWO MARGINS AND A COLUMN FOR THE SCROLLBAR, which appears once the sections outgrow the panel.
+    private static int GaugeWidth(int panelWidth) => Math.Max(4, panelWidth - 3);
 
     private static void Section(List<string> lines, string title)
     {

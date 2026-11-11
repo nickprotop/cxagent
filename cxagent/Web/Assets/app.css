@@ -265,9 +265,11 @@ body.no-panel .panel { display: none; }
 .kv b { color: var(--text); font-weight: 500; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .kv.total b { color: var(--strong); font-weight: 600; }
 .kv.bad b { color: var(--bad); }
-.meter { height: 7px; background: var(--raised); border-radius: 4px; overflow: hidden; margin: 6px 0 2px; }
-.meter i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, white)); border-radius: 4px; }
-.meter.warn i { background: linear-gradient(90deg, var(--warn), color-mix(in srgb, var(--warn) 60%, white)); }
+/* THE TERMINAL'S GAUGE: the gradient runs along the WHOLE bar, calm to danger, and the track covers what is not filled —
+   so a half-full gauge is calm and only a nearly full one reaches the danger end. The tick is where auto-compress starts. */
+.meter { position: relative; height: 8px; background: linear-gradient(90deg, var(--ok), var(--warn), var(--bad)); border-radius: 4px; overflow: hidden; margin: 6px 0 2px; }
+.meter .rest { position: absolute; top: 0; right: 0; bottom: 0; background: var(--raised); }
+.meter .tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--strong); opacity: .7; }
 .task { display: flex; gap: 8px; align-items: flex-start; padding: 7px 0; border-top: 1px solid var(--line-soft); }
 .task:first-of-type { border-top: none; }
 .task .t { flex: 1; min-width: 0; }

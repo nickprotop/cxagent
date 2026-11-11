@@ -94,7 +94,13 @@ internal static class WebPanel
         {
             ["type"] = "panel",
             ["sessionId"] = session.Id,
-            ["context"] = new JsonObject { ["used"] = session.ContextUsed, ["window"] = res?.ContextWindow },
+            // WHERE AUTO-COMPRESS STARTS, resolved as the host resolves it — the gauge's tick, as on the terminal's panel.
+            ["context"] = new JsonObject
+            {
+                ["used"] = session.ContextUsed, ["window"] = res?.ContextWindow,
+                ["compressAt"] = res is null ? null
+                    : (res.Orchestrator ?? Core.Llm.OrchestratorSettings.Unbounded).EffectiveCompressThreshold(res.ContextWindow),
+            },
             ["session"] = new JsonObject
             {
                 // THE SESSION'S OWN TALLY, the one the terminal's panel shows — not this log's, which started when the

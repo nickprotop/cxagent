@@ -3362,6 +3362,9 @@ public sealed class MainWindow : IDisposable
             // than subtracting a session-wide worker total from it.
             OwnTokens = _lastTokens,
             ContextWindow = _resolution.ContextWindow,
+            // WHERE THE HOST WILL COMPRESS, resolved as it resolves it — the configured threshold, or the default share.
+            CompressAt = (_resolution.Orchestrator ?? Core.Llm.OrchestratorSettings.Unbounded).EffectiveCompressThreshold(_resolution.ContextWindow),
+            Width = _panelWidth,
 
             WorkingDirectory = WorkingDirectory,
             SessionId = SessionId,
