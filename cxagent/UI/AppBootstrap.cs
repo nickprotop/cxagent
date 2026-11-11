@@ -1276,9 +1276,17 @@ public static class AppBootstrap
                     OnClick = ctx =>
                     {
                         ctx.SetStatus("distilling…", SharpConsoleUI.Core.NotificationSeverity.Info);
+                        var before = desk.Library.Find(order.Name)?.ExperienceVersion ?? 0;
                         _ = Task.Run(async () =>
                         {
-                            if (await desk.DistillAgainAsync(order) is { } why) current.Notify(why);
+                            var why = await desk.DistillAgainAsync(order);
+                            if (why is not null) current.Notify(why);
+                            // "distilling…" GIVES WAY TO HOW IT ENDED, under the question it answered: left as it was, a
+                            // distil that found nothing new read as one that never finished.
+                            var ended = why ?? desk.DistilledAgainLine(order.Name, before);
+                            system.EnqueueOnUIThread(() => mainWindow.Chat.SetStatus(id, ended,
+                                why is null ? SharpConsoleUI.Core.NotificationSeverity.Success : SharpConsoleUI.Core.NotificationSeverity.Warning),
+                                "colleagues.distill");
                             if (distilling.Then is { } then) system.EnqueueOnUIThread(then, "colleagues.distill");
                         });
                     },

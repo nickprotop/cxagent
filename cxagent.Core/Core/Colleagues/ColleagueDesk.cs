@@ -1139,6 +1139,19 @@ public sealed partial class ColleagueDesk : IDisposable
     }
 
     /// <summary>
+    /// How a distil-again ended, said where it was asked — ONE LINE FOR BOTH FRONT ENDS: the experience's new version, or
+    /// that there was nothing new to keep. Without it the question kept saying "distilling…" after the work was done.
+    /// </summary>
+    /// <param name="name">The colleague.</param>
+    /// <param name="before">Its experience version when the distil began.</param>
+    public string DistilledAgainLine(string name, long before) =>
+        _parts.Library.Find(name.Trim()) is not { } record
+            ? $"{name.Trim()} distilled again."
+            : record.ExperienceVersion > before
+                ? $"{record.Name} distilled again — its experience is now v{record.ExperienceVersion}."
+                : $"{record.Name} distilled again — nothing new to keep, experience still v{record.ExperienceVersion}.";
+
+    /// <summary>
     /// Distils the asked rounds again, as the user said yes to — see <see cref="Distiller.RedistilAsync"/> — and answers
     /// why it could not, or null when it did: what it learned is said like any distilling's, through the session.
     /// </summary>

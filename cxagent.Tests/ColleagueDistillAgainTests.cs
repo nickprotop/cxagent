@@ -215,4 +215,19 @@ public sealed class ColleagueDistillAgainTests : IDisposable
 
         Assert.Equal(new DistillOrder(name, from, model), session.DistillOrderOf(typed));
     }
+
+    /// <summary>
+    /// A RE-DISTIL SAYS HOW IT ENDED (user, 2026-11-11): its question was left saying "distilling…" for good, and one that
+    /// found nothing new said nothing at all — it read as a distil that never finished. One line for both front ends.
+    /// </summary>
+    [Fact]
+    public async Task How_a_distil_again_ended_is_said_in_one_line()
+    {
+        using var desk = await Desk();
+        var before = Library.Find("Care Explorer")!.ExperienceVersion;
+
+        Assert.Equal("Care Explorer distilled again — nothing new to keep, experience still v3.", desk.DistilledAgainLine("Care Explorer", before));
+        Library.Update("Care Explorer", r => r with { ExperienceVersion = 4 });
+        Assert.Equal("Care Explorer distilled again — its experience is now v4.", desk.DistilledAgainLine("Care Explorer", before));
+    }
 }

@@ -1014,9 +1014,12 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
             return;
         }
         var id = session.Id;
+        var before = desk.Library.Find(ready.Name)?.ExperienceVersion ?? 0;
         _ = Task.Run(async () =>
         {
+            // HOW IT ENDED IS SAID EITHER WAY — a distil that found nothing new is not one that never finished.
             if (await desk.DistillAgainAsync(ready) is { } why) Notice(id, why, "Warning");
+            else Notice(id, desk.DistilledAgainLine(ready.Name, before), "Info");
         });
     }
 
