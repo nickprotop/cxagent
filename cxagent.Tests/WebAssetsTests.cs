@@ -186,4 +186,17 @@ public sealed class WebAssetsTests
         foreach (Match m in Regex.Matches(app, @"innerHTML\s*=\s*([^;]+);"))
             Assert.Matches(new Regex(@"^(render\(|""""|''|``|html\b|safe\b)"), m.Groups[1].Value.Trim());
     }
+
+    /// <summary>
+    /// A PROMPT NEVER OUTGROWS THE SCREEN (user, 2026-11-11): a permission carrying a long script pushed its buttons below
+    /// the viewport and nothing could be answered. Measured in a browser: Deny at y=4371 of 863 before, on screen after.
+    /// </summary>
+    [Fact]
+    public void A_prompts_command_scrolls_inside_it_and_the_prompts_are_capped()
+    {
+        var css = Asset("app.css");
+
+        Assert.Matches(@"\.prompt \.what \{[^}]*max-height:[^}]*overflow-y: auto", css);
+        Assert.Matches(@"\.prompts \{[^}]*max-height:[^}]*overflow-y: auto", css);
+    }
 }

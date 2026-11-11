@@ -210,10 +210,13 @@ body.no-panel .panel { display: none; }
 .worker.done > summary .progress { opacity: .6; }
 
 /* ---- prompts ----------------------------------------------------------------------------------------------------- */
-.prompts { flex: none; padding: 0 28px; max-width: 976px; width: 100%; margin: 0 auto; }
+/* NEVER TALLER THAN THE SCREEN CAN ANSWER: a prompt carrying a long script pushed its own buttons out of the viewport,
+   and nothing on the page could be pressed. The command scrolls inside the prompt; the prompts, several at once, scroll
+   as a block — the buttons stay on screen either way. */
+.prompts { flex: none; padding: 0 28px; max-width: 976px; width: 100%; margin: 0 auto; max-height: 70dvh; overflow-y: auto; }
 .prompt { margin: 10px 0; border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); }
 .prompt .q { color: var(--warn); font-weight: 600; }
-.prompt .what { color: var(--strong); white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px var(--mono); margin: 6px 0; }
+.prompt .what { color: var(--strong); white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px var(--mono); margin: 6px 0; max-height: 40dvh; overflow-y: auto; }
 .prompt .why { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .prompt .btns { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .prompt label { display: block; margin: 4px 0; }
