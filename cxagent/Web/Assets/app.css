@@ -269,6 +269,16 @@ body.no-panel .panel { display: none; }
    so a half-full gauge is calm and only a nearly full one reaches the danger end. The tick is where auto-compress starts. */
 .meter { position: relative; height: 8px; background: linear-gradient(90deg, var(--ok), var(--warn), var(--bad)); border-radius: 4px; overflow: hidden; margin: 6px 0 2px; }
 .meter .rest { position: absolute; top: 0; right: 0; bottom: 0; background: var(--raised); }
+/* THE SHARE BARS: an instance's part of the session's tokens, or this agent against its workers — the terminal's order of
+   colours, from the theme's variables. */
+.share { display: flex; height: 6px; background: var(--raised); border-radius: 3px; overflow: hidden; margin: 2px 0 8px; }
+.share i { display: block; height: 100%; }
+.share .c0 { background: var(--accent); }
+.share .c1 { background: var(--violet); }
+.share .c2 { background: color-mix(in srgb, var(--accent) 50%, var(--ok)); }
+.share .c3 { background: color-mix(in srgb, var(--accent) 60%, white); }
+.share .c4 { background: var(--ok); }
+
 /* THE PER-TURN SPARKLINES: bars filled along a gradient from the theme's variables, as the terminal's are. */
 .spark { margin: 4px 0 6px; }
 .spark svg { display: block; width: 100%; height: 22px; }

@@ -2287,6 +2287,18 @@ function drawStatusline(panel) {
     money(panel.tokens.cost), distilling].filter(Boolean).join("  ·  ");
 }
 
+// A SHARE BAR: parts of one whole, each a class naming its colour — see .share in app.css.
+function shareBar(parts) {
+  const bar = el("div", "share");
+  for (const [share, colour] of parts) {
+    if (!(share > 0)) continue;
+    const part = el("i", colour);
+    part.style.width = Math.max(1, Math.min(100, share * 100)) + "%";
+    bar.append(part);
+  }
+  return bar;
+}
+
 // A SPARKLINE AS INLINE SVG: one bar per point, coloured by a gradient from the theme's own variables — see .spark in
 // app.css — so a theme switch recolours it with everything else.
 function spark(label, values, max, kind) {
@@ -2351,12 +2363,22 @@ function drawSessionPane(p) {
   pane.append(time, kv("Turns", String(p.session.turns)), kv("Tool calls", String(p.session.toolCalls)));
 
   pane.append(el("h3", null, "Tokens"));
-  // EACH INSTANCE ITS OWN CACHE RATE, on its own row — as the terminal draws it under each instance.
-  for (const m of p.tokens.models) pane.append(kv(m.name, tokens(m.tokens) + (m.cost != null ? " · " + money(m.cost) : "")
-    + (m.cache != null ? " · cache " + Math.round(m.cache * 100) + "%" : "")));
+  // EACH INSTANCE ITS OWN CACHE RATE, on its own row, and its SHARE AS A BAR in its own colour — the terminal's order of
+  // colours, so the biggest spender is always the first.
+  const everything = Math.max(1, p.tokens.models.reduce((n, m) => n + m.tokens, 0));
+  p.tokens.models.forEach((m, i) => {
+    pane.append(kv(m.name, tokens(m.tokens) + (m.cost != null ? " · " + money(m.cost) : "")
+      + (m.cache != null ? " · cache " + Math.round(m.cache * 100) + "%" : "")));
+    pane.append(shareBar([[m.tokens / everything, "c" + (i % 5)]]));
+  });
   pane.append(kv("In / out", "↑ " + tokens(p.tokens.input) + "  ↓ " + tokens(p.tokens.output)));
   if (p.tokens.cacheHitRate != null) pane.append(kv("Cache hits", Math.round(p.tokens.cacheHitRate * 100) + "%"));
-  if (p.tokens.workers) pane.append(kv("By workers", tokens(p.tokens.workers)));
+  // THIS AGENT AGAINST ITS WORKERS, one split bar, as the terminal's Tokens by agent.
+  if (p.tokens.workers) {
+    const whole = Math.max(1, p.tokens.total);
+    pane.append(shareBar([[(p.tokens.total - p.tokens.workers) / whole, "c0"], [p.tokens.workers / whole, "c1"]]));
+    pane.append(kv("This agent", tokens(p.tokens.total - p.tokens.workers)), kv("By workers", tokens(p.tokens.workers)));
+  }
   if (p.tokens.cost != null) pane.append(kv("Cost", money(p.tokens.cost), "total"));
 
   // F12: the conversation as markdown, chosen in the terminal's export form.

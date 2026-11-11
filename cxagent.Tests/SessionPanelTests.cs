@@ -781,8 +781,8 @@ public class SessionPanelTests
         });
 
         var lines = panel.RenderedText.Split('\n').Select(l => l.Trim()).ToList();
-        var deepseek = lines.FindIndex(l => l.StartsWith("deepseek:v3", StringComparison.Ordinal));
-        var local = lines.FindIndex(l => l.StartsWith("local:qwen", StringComparison.Ordinal));
+        var deepseek = lines.FindIndex(l => l.Contains("deepseek:v3 ·", StringComparison.Ordinal));
+        var local = lines.FindIndex(l => l.Contains("local:qwen ·", StringComparison.Ordinal));
         Assert.Contains(lines.Skip(deepseek + 1).Take(local - deepseek - 1), l => l.Contains("cache 81%", StringComparison.Ordinal));
         Assert.DoesNotContain(lines, l => l.Contains("46%", StringComparison.Ordinal));
     }

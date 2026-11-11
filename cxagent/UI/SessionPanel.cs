@@ -499,9 +499,15 @@ public sealed class SessionPanel
         if (byModel.Count > 0)
         {
             Section(lines, "Tokens by instance");
+            // EACH ITS SHARE AS A BAR, in its own colour, keyed by the ■ before its name (user, 2026-11-11). Colours in a
+            // fixed order down the list — the list is by spend, so the biggest spender is always the first colour.
+            var everything = Math.Max(1, byModel.Sum(m => (long)m.Value));
+            var index = 0;
             foreach (var (modelId, spent) in byModel)
             {
-                lines.Add(Value($"{Short(modelId)} · {DisplayNumber.Grouped(spent)}"));
+                var colour = PanelBars.InstanceColour(index++);
+                lines.Add($"[{colour.ToMarkup()}]■[/] {Value($"{Short(modelId)} · {DisplayNumber.Grouped(spent)}")}");
+                lines.Add(PanelBars.Markup([new BarPart((double)spent / everything, colour)], GaugeWidth(state.Width)));
 
                 // The split, indented under its model. Absent when the provider reported no usage
                 // breakdown — a local llama.cpp build often does not — rather than showing ↑0 ↓0,
@@ -542,7 +548,13 @@ public sealed class SessionPanel
         if (state.SubAgentTokens > 0)
         {
             Section(lines, "Tokens by agent");
-            lines.Add(Value($"workers · {DisplayNumber.Grouped(state.SubAgentTokens)}"));
+            // ONE BAR, SPLIT: this agent against its workers, each keyed by the ■ on its line below.
+            var own = PanelBars.InstanceColour(0);
+            var workers = PanelBars.InstanceColour(1);
+            var whole = Math.Max(1, (long)state.OwnTokens + state.SubAgentTokens);
+            lines.Add(PanelBars.Markup([new BarPart((double)state.OwnTokens / whole, own), new BarPart((double)state.SubAgentTokens / whole, workers)],
+                GaugeWidth(state.Width)));
+            lines.Add($"[{workers.ToMarkup()}]■[/] {Value($"workers · {DisplayNumber.Grouped(state.SubAgentTokens)}")}");
 
             // THE CACHE RATE BESIDE THE TOKENS THAT PAID FOR IT. A parent and its children hold
             // different conversations against one endpoint, and whether that is cheap depends on the
@@ -553,7 +565,7 @@ public sealed class SessionPanel
             if (state.WorkerCacheHitRate is { } workerRate)
                 lines.Add(Muted($"  cache {StatsDashboard.Percent(workerRate)}"));
 
-            lines.Add(Value($"this agent · {DisplayNumber.Grouped(state.OwnTokens)}"));
+            lines.Add($"[{own.ToMarkup()}]■[/] {Value($"this agent · {DisplayNumber.Grouped(state.OwnTokens)}")}");
 
             if (state.OwnCacheHitRate is { } ownRate)
                 lines.Add(Muted($"  cache {StatsDashboard.Percent(ownRate)}"));
