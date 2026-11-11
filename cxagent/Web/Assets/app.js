@@ -2379,10 +2379,15 @@ function drawSessionPane(p) {
   // EACH INSTANCE ITS OWN CACHE RATE, on its own row, and its SHARE AS A BAR in its own colour — the terminal's order of
   // colours, so the biggest spender is always the first.
   const everything = Math.max(1, p.tokens.models.reduce((n, m) => n + m.tokens, 0));
+  // EACH INSTANCE A BLOCK WITH A RAIL IN ITS COLOUR down its left, apart from the next — the terminal's ▎ (user, 2026-11-11).
   p.tokens.models.forEach((m, i) => {
-    pane.append(kv(m.name, tokens(m.tokens) + (m.cost != null ? " · " + money(m.cost) : "")
-      + (m.cache != null ? " · cache " + Math.round(m.cache * 100) + "%" : "")));
-    pane.append(shareBar([[m.tokens / everything, "c" + (i % 5)]]));
+    // THE TERMINAL'S SHAPE: its name, its bar, then its tokens with the cache rate beside them and its cost.
+    const block = el("div", "instance c" + (i % 5));
+    const figures = el("div", "inst-figures");
+    figures.append(el("b", null, tokens(m.tokens)),
+      (m.cache != null ? " · cache " + Math.round(m.cache * 100) + "%" : "") + (m.cost != null ? " · " + money(m.cost) : ""));
+    block.append(el("div", "inst-name", m.name), shareBar([[m.tokens / everything, "c" + (i % 5)]]), figures);
+    pane.append(block);
   });
   pane.append(kv("In / out", "↑ " + tokens(p.tokens.input) + "  ↓ " + tokens(p.tokens.output)));
   if (p.tokens.cacheHitRate != null) pane.append(kv("Cache hits", Math.round(p.tokens.cacheHitRate * 100) + "%"));

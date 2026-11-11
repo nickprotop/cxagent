@@ -47,7 +47,10 @@ public static class PanelBars
         return cells;
     }
 
-    /// <summary>The bar as markup, one background-coloured cell per column.</summary>
+    /// <summary>
+    /// The bar as markup, one coloured █ per column. A GLYPH, NOT A COLOURED SPACE: after an instance's rail the bar is the
+    /// end of its line, and the panel's wrapping trims trailing spaces — a bar of spaces vanished there.
+    /// </summary>
     public static string Markup(IReadOnlyList<BarPart> parts, int width) =>
-        string.Concat(Cells(parts, width).Select(c => $"[on {c.ToMarkup()}] [/]"));
+        string.Concat(Cells(parts, width).Select(c => $"[{c.ToMarkup()}]█[/]"));
 }

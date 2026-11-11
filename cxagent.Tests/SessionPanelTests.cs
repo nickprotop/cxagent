@@ -301,7 +301,7 @@ public class SessionPanelTests
             SpendByModel = new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000, ["qwen3-1b.gguf"] = 500 },
         });
 
-        Assert.Contains("Tokens by instance", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("Tokens\u00A0by\u00A0instance", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("qwen3.6-35b", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("qwen3-1b", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("4,000", panel.RenderedText, StringComparison.Ordinal);
@@ -334,7 +334,7 @@ public class SessionPanelTests
             },
         });
 
-        Assert.Contains("Tokens by instance", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("Tokens\u00A0by\u00A0instance", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("↑3.8k", panel.RenderedText, StringComparison.Ordinal);
     }
 
@@ -372,8 +372,8 @@ public class SessionPanelTests
 
         var text = panel.RenderedText;
 
-        Assert.Contains("Tokens by instance", text, StringComparison.Ordinal);
-        Assert.Contains("Tokens by agent", text, StringComparison.Ordinal);
+        Assert.Contains("Tokens\u00A0by\u00A0instance", text, StringComparison.Ordinal);
+        Assert.Contains("Tokens\u00A0by\u00A0agent", text, StringComparison.Ordinal);
 
         Assert.Contains("workers · 730", text, StringComparison.Ordinal);
         Assert.Contains("this agent · 165", text, StringComparison.Ordinal);
@@ -458,12 +458,13 @@ public class SessionPanelTests
             },
         });
 
+        // THE NAME LINES, each an instance's own: two, and told apart.
         var lines = panel.RenderedText.Split('\n')
-            .Where(l => l.Contains('·') && (l.Contains("600") || l.Contains("300")))
+            .Where(l => l.Contains("qwen3.6", StringComparison.Ordinal))
             .Select(l => l.Trim()).ToList();
 
         Assert.Equal(2, lines.Count);
-        Assert.NotEqual(lines[0].Split('·')[0], lines[1].Split('·')[0]);
+        Assert.NotEqual(lines[0], lines[1]);
     }
 
     /// <summary>A model that spent nothing is not a model that was used — it is a configured type
@@ -488,7 +489,8 @@ public class SessionPanelTests
         // at all.
         // "used", not "used.gguf" — Short() strips the extension every local model carries.
         Assert.DoesNotContain("unused", panel.RenderedText, StringComparison.Ordinal);
-        Assert.Contains("used · 4,000", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("used", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("4,000", panel.RenderedText, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -781,10 +783,60 @@ public class SessionPanelTests
         });
 
         var lines = panel.RenderedText.Split('\n').Select(l => l.Trim()).ToList();
-        var deepseek = lines.FindIndex(l => l.Contains("deepseek:v3 ·", StringComparison.Ordinal));
-        var local = lines.FindIndex(l => l.Contains("local:qwen ·", StringComparison.Ordinal));
+        var deepseek = lines.FindIndex(l => l.Contains("deepseek:v3", StringComparison.Ordinal));
+        var local = lines.FindIndex(l => l.Contains("local:qwen", StringComparison.Ordinal));
         Assert.Contains(lines.Skip(deepseek + 1).Take(local - deepseek - 1), l => l.Contains("cache 81%", StringComparison.Ordinal));
         Assert.DoesNotContain(lines, l => l.Contains("46%", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// EACH INSTANCE IS A BLOCK WITH A RAIL IN ITS COLOUR down its left, a blank line between blocks, and its cache rate
+    /// beside its token count (user, 2026-11-11) — no ■ before the name.
+    /// </summary>
+    [Fact]
+    public void Each_instance_is_a_railed_block_with_its_cache_on_its_token_line()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "", Width = 30,
+            SpendByModel = new Dictionary<string, int> { ["deepseek:v3"] = 314_085, ["local:qwen"] = 87_836 },
+            SplitByModel = new Dictionary<string, (int Input, int Output)> { ["deepseek:v3"] = (300_000, 14_085), ["local:qwen"] = (80_000, 7_836) },
+            CacheByInstance = new Dictionary<string, CxAgent.Core.Llm.InstanceCache> { ["deepseek:v3"] = new(0.81, 0) },
+        });
+
+        // AS IT READS: the text is markup, and a line's first character is what follows its colour tag.
+        var lines = panel.RenderedText.Split('\n').Select(l => System.Text.RegularExpressions.Regex.Replace(l, @"\[[^\]]*\]", "").Trim()).ToList();
+        var deepseek = lines.FindIndex(l => l.Contains("deepseek:v3", StringComparison.Ordinal));
+        var local = lines.FindIndex(l => l.Contains("local:qwen", StringComparison.Ordinal));
+        var first = lines.Skip(deepseek).Take(local - deepseek).ToList();
+
+        Assert.DoesNotContain(lines, l => l.Contains('■'));
+        Assert.All(first.SkipLast(1), l => Assert.StartsWith("▎", l));
+        Assert.Equal("", first[^1]);
+        Assert.Contains(first, l => l.Contains("314,085 · cache 81%", StringComparison.Ordinal));
+        Assert.Contains(first, l => l.Contains("↑300.0k", StringComparison.Ordinal));
+        Assert.StartsWith("▎", lines[local]);
+    }
+
+    /// <summary>
+    /// EACH SECTION'S HEADING IS A RULER WITH ITS TITLE in it (user, 2026-11-11): "── Session ─────", across the panel.
+    /// </summary>
+    [Fact]
+    public void Section_headings_are_rulers_with_their_title()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState { Endpoint = "", Width = 30, ContextUsed = 100, ContextWindow = 1000 });
+
+        var lines = panel.RenderedText.Split('\n').Select(l => System.Text.RegularExpressions.Regex.Replace(l, @"\[[^\]]*\]", "")).ToList();
+        var session = lines.Single(l => l.Contains("Session\u00A0", StringComparison.Ordinal));
+
+        // ONE UNBREAKABLE RUN: a plain space let the panel's wrapping carry the rule's tail onto the next line.
+        Assert.DoesNotContain(' ', session);
+        Assert.StartsWith("──\u00A0Session\u00A0─", session);
+        // THE COLUMNS THE TEXT HAS: the panel less the scrollbar's two and the text's margin of one each side.
+        Assert.Equal(26, session.Length);
+        Assert.Contains(lines, l => l.StartsWith("──\u00A0Context\u00A0─", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -805,8 +857,8 @@ public class SessionPanelTests
         var text = panel.RenderedText;
         int At(string s) => text.IndexOf(s, StringComparison.Ordinal);
 
-        Assert.True(At("Context") < At("Tokens by instance"));
-        Assert.True(At("Tokens by instance") < At("Session["));
+        Assert.True(At("Context") < At("Tokens\u00A0by\u00A0instance"));
+        Assert.True(At("Tokens\u00A0by\u00A0instance") < At("Session["));
         Assert.True(At("Session[") < At("About"));
         Assert.Matches(@"Location\[/\] .*proj", text);
         Assert.Matches(@"Session id\[/\] .*ABC123", text);

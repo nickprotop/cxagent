@@ -46,4 +46,16 @@ public sealed class PanelBarsTests
         Assert.NotEqual(PanelBars.InstanceColour(0), PanelBars.InstanceColour(1));
         Assert.Equal(PanelBars.InstanceColour(0), PanelBars.InstanceColour(PanelBars.Palette));   // the sequence repeats
     }
+    /// <summary>
+    /// EVERY CELL IS A GLYPH, NOT A SPACE: after an instance's rail the bar was trailing whitespace, and the panel's
+    /// wrapping trimmed it away — the bar vanished. A coloured █ draws the same and is never trimmed.
+    /// </summary>
+    [Fact]
+    public void Every_cell_is_drawn_with_a_glyph()
+    {
+        var markup = PanelBars.Markup([new BarPart(0.5, A)], 20);
+
+        Assert.Equal(20, markup.Count(c => c == '█'));
+        Assert.DoesNotContain("[on ", markup, StringComparison.Ordinal);
+    }
 }

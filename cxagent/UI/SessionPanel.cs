@@ -324,7 +324,7 @@ public sealed class SessionPanel
         var turns = state.Turns ?? [];
         if (state.ContextWindow is > 0 and var window)
         {
-            Section(top, "Context");
+            Section(top, "Context", state.Width);
             // BEFORE A NEW READING, THE LAST TURN KEPT: a resumed session has its context from its history, and the gauge
             // read "window" alone while the chart under it showed the fill.
             var known = state.ContextUsed ?? (turns.Count > 0 ? turns[^1].Context : null);
@@ -337,7 +337,7 @@ public sealed class SessionPanel
         }
 
         // EACH LEAD RESPONSE, as sparklines under their own heading — once there is one.
-        if (turns.Count > 0) Section(top, "Per turn");
+        if (turns.Count > 0) Section(top, "Per turn", state.Width);
         _top.SetContent(top);
         if (_top.Visible != (top.Count > 0)) _top.Visible = top.Count > 0;
         _charts.Update(turns, GaugeWidth(state.Width));
@@ -385,40 +385,42 @@ public sealed class SessionPanel
         // everything indented under it.
         if (byModel.Count > 0)
         {
-            Section(lines, "Tokens by instance");
-            // EACH ITS SHARE AS A BAR, in its own colour, keyed by the ■ before its name (user, 2026-11-11). Colours in a
-            // fixed order down the list — the list is by spend, so the biggest spender is always the first colour.
+            Section(lines, "Tokens by instance", state.Width);
+            // EACH INSTANCE A BLOCK WITH A RAIL IN ITS COLOUR down its left, and a blank line between blocks (user,
+            // 2026-11-11): the rail ties the name, the bar and the figures under it into one thing, where a ■ before the
+            // name keyed only the first line. Colours in a fixed order down the list — the list is by spend, so the
+            // biggest spender is always the first colour.
             var everything = Math.Max(1, byModel.Sum(m => (long)m.Value));
             var index = 0;
             foreach (var (modelId, spent) in byModel)
             {
+                if (index > 0) lines.Add("");
                 var colour = PanelBars.InstanceColour(index++);
-                lines.Add($"[{colour.ToMarkup()}]■[/] {Value($"{Short(modelId)} · {DisplayNumber.Grouped(spent)}")}");
-                lines.Add(PanelBars.Markup([new BarPart((double)spent / everything, colour)], GaugeWidth(state.Width)));
+                var rail = $"[{colour.ToMarkup()}]▎[/] ";
+                // THE NAME ALONE ON ITS LINE: with its count beside it the line wrapped, and the wrapped half had no rail.
+                lines.Add(rail + Value(Short(modelId)));
+                // TWO COLUMNS NARROWER than the section's other bars: the rail and its space stand before it.
+                lines.Add(rail + PanelBars.Markup([new BarPart((double)spent / everything, colour)], Math.Max(4, GaugeWidth(state.Width) - 2)));
 
-                // The split, indented under its model. Absent when the provider reported no usage
-                // breakdown — a local llama.cpp build often does not — rather than showing ↑0 ↓0,
-                // which would read as a measurement of nothing rather than the absence of one.
+                // ITS TOKENS AND ITS CACHE RATE ON ONE LINE (user, 2026-11-11): the rate says how much of that count
+                // was cheap. Input dominates a tool loop and grows every turn, so a big count reads as expensive, while
+                // a re-sent prefix that hits the cache costs a fraction of a cold one. ABSENT, NOT ZERO, for an instance
+                // that never reported.
+                CxAgent.Core.Llm.InstanceCache? cache = state.CacheByInstance is not null && state.CacheByInstance.TryGetValue(modelId, out var c) ? c : null;
+                lines.Add(rail + Value(DisplayNumber.Grouped(spent)) + (cache is null ? "" : Muted($" · cache {StatsDashboard.Percent(cache.Rate)}")));
+                // THE SPLIT, absent when the provider reported no usage breakdown — a local llama.cpp build often does
+                // not — rather than ↑0 ↓0, which would read as a measurement of nothing rather than the absence of one.
                 if (state.SplitByModel is not null
                     && state.SplitByModel.TryGetValue(modelId, out var s)
                     && (s.Input > 0 || s.Output > 0))
-                    lines.Add(Muted($"  ↑{Compact(s.Input)} ↓{Compact(s.Output)}"));
+                    lines.Add(rail + Muted($"↑{Compact(s.Input)} ↓{Compact(s.Output)}"));
+                // THE WRITES RIDE ALONG only where warming was billed — a local endpoint fills its own RAM for free.
+                if (cache is { Written: > 0 }) lines.Add(rail + Muted($"wrote {Compact(cache.Written)} to cache"));
 
-                // THIS INSTANCE'S COST, when it reported one. Indented under its row like the ↑/↓
-                // split above, because it describes that row rather than the section.
+                // THIS INSTANCE'S COST, when it reported one, inside its block because it describes that instance.
                 if (state.CostByInstance is not null
                     && state.CostByInstance.TryGetValue(modelId, out var cost))
-                    lines.Add(Muted($"  {Money(cost)}"));
-
-                // ITS CACHE HIT RATE, under the row it describes. WHY IT EARNS THE SPACE: input dominates a tool loop
-                // and grows every turn, so a big ↑ reads as expensive; a re-sent prefix that hits the cache costs a
-                // fraction of a cold one. ABSENT, NOT ZERO, for an instance that never reported. The writes ride
-                // along only where warming was billed — a local endpoint fills its own RAM for free.
-                if (state.CacheByInstance is not null
-                    && state.CacheByInstance.TryGetValue(modelId, out var cache))
-                    lines.Add(Muted(cache.Written > 0
-                        ? $"  cache {StatsDashboard.Percent(cache.Rate)} · wrote {Compact(cache.Written)}"
-                        : $"  cache {StatsDashboard.Percent(cache.Rate)}"));
+                    lines.Add(rail + Muted(Money(cost)));
             }
 
             // THE SESSION TOTAL, unindented like the cache line — both describe the section rather
@@ -434,7 +436,7 @@ public sealed class SessionPanel
         // this" is the question a fan-out session asks, and model identity never answered it.
         if (state.SubAgentTokens > 0)
         {
-            Section(lines, "Tokens by agent");
+            Section(lines, "Tokens by agent", state.Width);
             // ONE BAR, SPLIT: this agent against its workers, each keyed by the ■ on its line below.
             var own = PanelBars.InstanceColour(0);
             var workers = PanelBars.InstanceColour(1);
@@ -459,7 +461,7 @@ public sealed class SessionPanel
         }
 
         // THE SESSION ON ONE LINE: how long, how many model responses, how many tool calls.
-        Section(lines, "Session");
+        Section(lines, "Session", state.Width);
         lines.Add(Value($"{Elapsed()} · {_tally.Turns} turn{(_tally.Turns == 1 ? "" : "s")} · "
                         + $"{_tally.ToolCalls} tool call{(_tally.ToolCalls == 1 ? "" : "s")}"));
 
@@ -601,7 +603,7 @@ public sealed class SessionPanel
             ? Muted("none granted")
             : Value($"{state.Rules} always-allow rule{(state.Rules == 1 ? "" : "s")}"));
 
-        Section(lines, "About");
+        Section(lines, "About", state.Width);
         lines.AddRange(about.Lines);
 
         // GIT LAST, at the foot of the panel. It is the one block about the REPOSITORY rather than
@@ -616,7 +618,7 @@ public sealed class SessionPanel
         var gitLines = new List<string>(3);
         if (CachedGit(state.Folder) is { } git)
         {
-            Section(gitLines, "Git");
+            Section(gitLines, "Git", state.Width);
             gitLines.Add(Value(git.Branch));
             gitLines.Add(Muted(git.Status ?? "clean"));
         }
@@ -733,8 +735,10 @@ public sealed class SessionPanel
     private static string Money(decimal amount) =>
         amount < 1.00m ? $"${DisplayNumber.Fixed(amount, 4)}" : $"${DisplayNumber.Fixed(amount, 2)}";
 
-    // THE BODY'S TWO MARGINS AND A COLUMN FOR THE SCROLLBAR, which appears once the sections outgrow the panel.
-    private static int GaugeWidth(int panelWidth) => Math.Max(4, panelWidth - 3);
+    // THE BODY'S TWO MARGINS AND THE TWO COLUMNS THE SCROLL PANEL KEEPS FOR ITS SCROLLBAR — measured: a 32-column panel
+    // gives its text 30, and the margins leave 28. One column more and a ruler wrapped its last dash onto a line of its
+    // own, while the gauge and the bars lost theirs to clipping.
+    private static int GaugeWidth(int panelWidth) => Math.Max(4, panelWidth - 4);
 
     /// <summary>
     /// The About block's lines: a muted label beside the first value given after it, any further values indented under
@@ -764,10 +768,19 @@ public sealed class SessionPanel
         }
     }
 
-    private static void Section(List<string> lines, string title)
+    /// <summary>
+    /// A section's heading: a ruler across the panel with its title in it — "── Session ─────" (user, 2026-11-11). The
+    /// rule is muted and the title in the accent, so the sections part where the eye looks for them without the rules
+    /// competing with the figures; as wide as the gauge and the bars, so every edge lines up.
+    /// </summary>
+    private static void Section(List<string> lines, string title, int panelWidth)
     {
         if (lines.Count > 0) lines.Add(string.Empty);   // one blank line between blocks
-        lines.Add($"[bold {ColorScheme.AccentMarkup}]{title}[/]");
+        var rest = Math.Max(1, GaugeWidth(panelWidth) - title.Length - 4);
+        // NON-BREAKING SPACES, in the title too: a plain space let the wrapping carry the rule's tail onto the next line,
+        // where it read as a stray dash. As one unbreakable run, a panel narrower than the rule clips it instead.
+        const char hold = '\u00A0';
+        lines.Add($"[{ColorScheme.MutedMarkup}]──{hold}[/][bold {ColorScheme.AccentMarkup}]{Value(title.Replace(' ', hold))}[/][{ColorScheme.MutedMarkup}]{hold}{new string('─', rest)}[/]");
     }
 
     private static string Value(string text) =>
