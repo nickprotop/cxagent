@@ -477,7 +477,10 @@ public sealed class SessionPanel
         // directory only while there is one session per process — the same ambient read the agent
         // itself avoids. Falling back to the process keeps a caller that has no opinion working,
         // exactly as the agent's own fallback does.
-        about.Add(Value(ShortPath(state.Folder)));
+        //
+        // TRIMMED TO THIS PANEL, beside its label: trimmed to the widest panel's width, a long path wrapped in a narrower
+        // one and split its last folder across two lines.
+        about.Add(Value(ShortPath(state.Folder, GaugeWidth(state.Width) - "Location ".Length)));
 
         // CAPS, because they are the invisible thing that ends a run: a goal that stops "for no
         // reason" has almost always hit one.
@@ -842,13 +845,13 @@ public sealed class SessionPanel
         catch (Exception) { return "?"; }
     }
 
-    private static string ShortPath(string path)
+    private static string ShortPath(string path, int max)
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (home.Length > 0 && path.StartsWith(home, StringComparison.Ordinal))
             path = "~" + path[home.Length..];
 
-        var max = MaxWidth - 2;
+        max = Math.Max(8, max);
         return path.Length <= max ? path : "…" + path[^(max - 1)..];
     }
 }

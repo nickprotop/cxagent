@@ -840,6 +840,29 @@ public class SessionPanelTests
     }
 
     /// <summary>
+    /// A LONG LOCATION IS TRIMMED TO THE PANEL IT IS IN, from the left: trimmed to the widest panel's width, it wrapped in
+    /// a narrower one and split its last folder across two lines.
+    /// </summary>
+    [Fact]
+    public void A_long_location_fits_the_panel_it_is_in()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "", Width = 32,
+            WorkingDirectory = "/srv/builds/0176d0cc-7c48-4f89-b05d-1807e0421805/scratchpad/rel-0.10.6",
+        });
+
+        var lines = panel.RenderedText.Split('\n').Select(l => System.Text.RegularExpressions.Regex.Replace(l, @"\[[^\]]*\]", "")).ToList();
+        // THE WHOLE LINE, LABEL AND ALL, within the 28 columns a 32-column panel gives its text.
+        var line = lines.Single(l => l.Contains("rel-0.10.6", StringComparison.Ordinal)).Trim();
+
+        Assert.StartsWith("Location …", line);
+        Assert.EndsWith("/rel-0.10.6", line);
+        Assert.True(line.Length <= 28, $"{line.Length}: {line}");
+    }
+
+    /// <summary>
     /// LIVE FIRST (user, 2026-11-11): the context, the turns and the spend above the session line, and the facts that do
     /// not move in one About block at the end — each label on its value's line.
     /// </summary>
