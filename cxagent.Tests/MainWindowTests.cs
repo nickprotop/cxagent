@@ -326,22 +326,31 @@ public class MainWindowTests
         Assert.Equal(PermissionChoice.Deny, prompt.Completion.Result);
     }
 
-    // A REPLACEMENT PROMPT IS ANSWERABLE EVEN IF THE OUTGOING ONE HAS NOT BEEN RESTORED YET.
-    // RestoreComposer is enqueued onto the UI thread rather than run inline, so a denied prompt
-    // whose turn asks again immediately can have its replacement shown first; the idempotence guard
-    // then skips the swap. Taking the deny action before that guard is what keeps the visible prompt
-    // answerable — behind it, deny once and the next prompt is dead to Escape, as a live drive
-    // showed.
+    // A SECOND PROMPT ON A TAB ALREADY SHOWING ONE WAITS ITS TURN, and is drawn — with Escape bound to it — when the
+    // first is restored (user, 2026-11-11: a lead's question was up while its colleague asked for permission, and the
+    // permission prompt was dropped, its worker waiting on a control never shown). Escape answers what is on screen,
+    // never a prompt the user cannot see.
     [Fact]
-    public void TryDenyPermission_AnswersTheNewestPromptWhenOneArrivesBeforeTheRestore()
+    public void A_second_prompt_waits_for_the_first_and_is_shown_when_it_closes()
     {
         var mw = BuiltMainWindow();
         var first = new PermissionPromptControl(ShellRequest("first"));
         var second = new PermissionPromptControl(ShellRequest("second"));
+        var firstContent = first.BuildContent();
+        var secondContent = second.BuildContent();
 
-        mw.ShowPermissionPrompt(first.BuildContent(), first.TryCancel);
-        mw.ShowPermissionPrompt(second.BuildContent(), second.TryCancel);   // restore not yet run
+        mw.ShowPermissionPrompt(firstContent, first.TryCancel);
+        mw.ShowPermissionPrompt(secondContent, second.TryCancel);
 
+        Assert.Same(firstContent, mw.SessionTabs[0].ActivePrompt);
+        Assert.True(mw.TryDenyPermission());
+        Assert.True(first.Completion.IsCompleted);
+        Assert.Equal(PermissionChoice.Deny, first.Completion.Result);
+        Assert.False(second.Completion.IsCompleted);
+
+        mw.RestoreComposer(firstContent);
+
+        Assert.Same(secondContent, mw.SessionTabs[0].ActivePrompt);
         Assert.True(mw.TryDenyPermission());
         Assert.True(second.Completion.IsCompleted);
         Assert.Equal(PermissionChoice.Deny, second.Completion.Result);

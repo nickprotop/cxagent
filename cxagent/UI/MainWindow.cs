@@ -2463,15 +2463,10 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public void ShowPermissionPrompt(IWindowControl prompt, Action? deny)
     {
-        // THE DENY ACTION IS TAKEN EVEN WHEN THE SWAP IS SKIPPED, and that ordering is the whole
-        // point. Restore is ENQUEUED onto the UI thread rather than run inline, so a denied prompt
-        // whose turn immediately asks again can have its replacement shown BEFORE the outgoing one
-        // is restored — the guard below then fires, and assigning after it would leave a visible
-        // prompt that Escape cannot answer. Observed live: deny once, and the second prompt was
-        // dead to the keyboard.
-        //
-        // Answering the newest prompt is right in either order: the callback belongs to whichever
-        // control the user is looking at, and a stale one is cleared by the restore that follows.
+        // A PROMPT ARRIVING WHILE ANOTHER IS UP ON THAT TAB WAITS — see ShowPromptOn. Restore is ENQUEUED onto the UI
+        // thread rather than run inline, so a denied prompt whose turn immediately asks again can arrive BEFORE the
+        // outgoing one is restored; it is drawn by that restore, with its deny action, so the prompt on screen is
+        // always the one Escape answers.
         //
         // ON THE ASKING TAB, LIKE THE PROMPT ITSELF. Escape answers the conversation in front, so a
         // deny action stored window-wide let Escape in one session refuse another session's
@@ -2489,17 +2484,24 @@ public sealed class MainWindow : IDisposable
     /// </remarks>
     private void ShowPromptOn(SessionTab target, IWindowControl prompt, Action? deny)
     {
+        if (ReferenceEquals(target.ActivePrompt, prompt)) return;
+
+        // ALREADY SHOWING ONE ON THAT TAB: THIS ONE WAITS ITS TURN, and RestoreComposer shows it when the one on screen
+        // closes. Nothing serialises the askers — a lead's question and its worker's permission request arrive together
+        // on one tab — and a prompt dropped here left its agent waiting forever on a control never drawn. Its deny action
+        // waits with it: Escape answers the prompt on screen, never one the user cannot see.
+        if (target.ActivePrompt is not null)
+        {
+            target.WaitingPrompts.Enqueue(new HeldPrompt(prompt, deny));
+            SetWaiting(StripIndexOf(target), waiting: true);
+            return;
+        }
+
         if (deny is not null)
         {
             target.DenyPrompt = deny;
             target.DenyOwner = prompt;
         }
-
-        // ALREADY SHOWING ONE ON THAT TAB — a no-op, not a crash. PER TAB rather than per window:
-        // the gate serialises nothing (its semaphore was removed so several sessions can ask at
-        // once), so a window-wide guard made the SECOND asker a no-op and left its turn waiting
-        // forever on a control that was never shown.
-        if (target.ActivePrompt is not null) return;
 
         // SWAP THE WHOLE PROMPT BOX, not the Input inside it.
         //
@@ -3593,11 +3595,8 @@ public sealed class MainWindow : IDisposable
         // resolve a TaskCompletionSource nobody is waiting on — harmless in itself, but it would
         // also swallow the keystroke and stop Escape reaching the turn it was meant for.
         //
-        // ONLY WHEN THE ACTION STILL BELONGS TO THE PROMPT BEING RESTORED. Matching on the tab's
-        // ActivePrompt is not enough: a replacement shown before this restore ran hits the
-        // idempotence guard in Show, so ActivePrompt is STILL the outgoing content while the deny
-        // action is already the new prompt's — and clearing on that match would take Escape away
-        // from the prompt on screen. A test pins the DenyOwner check.
+        // ONLY WHEN THE ACTION STILL BELONGS TO THE PROMPT BEING RESTORED. A late restore — of a prompt already
+        // replaced on screen — must not take Escape away from the one now showing. A test pins the DenyOwner check.
         //
         // SEARCHED ACROSS TABS rather than read off `owner`, because the swap above may have been
         // skipped (a stale caller whose Show was a no-op) while the deny action still needs clearing.

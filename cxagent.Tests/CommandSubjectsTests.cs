@@ -190,7 +190,7 @@ public class CommandSubjectsTests
     public void AGlobInAFlagValue_IsAFilter_ButABareGlobIsATarget()
     {
         Assert.True(CommandSubjects.Of("grep --include=*.cs -rn TODO .").FullyExamined);
-        Assert.Empty(CommandSubjects.Of("grep --include=*.cs -rn TODO .").Paths.Where(p => p.EndsWith(".cs", StringComparison.Ordinal)));
+        Assert.DoesNotContain(CommandSubjects.Of("grep --include=*.cs -rn TODO .").Paths, p => p.EndsWith(".cs", StringComparison.Ordinal));
         Assert.NotEmpty(CommandSubjects.Of("cat *.pem").Paths);
     }
 
