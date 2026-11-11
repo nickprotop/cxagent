@@ -1,5 +1,20 @@
 namespace CxAgent.Core.Llm;
 
+/// <summary>
+/// The ledger's running totals at one moment, split into the lead's own and the workers' — what a per-turn history
+/// subtracts one from the next to get a turn.
+/// </summary>
+/// <param name="OwnInput">The lead's input tokens so far.</param>
+/// <param name="OwnOutput">The lead's output tokens so far.</param>
+/// <param name="OwnCached">Of the lead's input, what its provider reported served from cache.</param>
+/// <param name="OwnCacheReports">How many of the lead's calls reported a cache at all.</param>
+/// <param name="WorkerTokens">Everything the workers spent so far.</param>
+public sealed record LedgerReading(long OwnInput, long OwnOutput, long OwnCached, int OwnCacheReports, long WorkerTokens)
+{
+    /// <summary>Nothing spent — the reading before any ledger.</summary>
+    public static LedgerReading Zero { get; } = new(0, 0, 0, 0, 0);
+}
+
 /// <summary>One instance's prefix cache: its hit rate over the calls that reported one, and what warming it wrote —
 /// zero where writing is free, which is every local endpoint.</summary>
 public sealed record InstanceCache(double Rate, int Written);
@@ -52,6 +67,24 @@ public sealed class TokenLedger
     }
 
     public int TotalTokens => Volatile.Read(ref _total);
+
+    /// <summary>
+    /// The running totals now, the lead's apart from the workers'. NOT ONE ATOMIC SNAPSHOT: a worker recording between
+    /// two reads lands in this reading or the next, never in neither, so a history built from successive readings
+    /// accounts for every token once.
+    /// </summary>
+    public LedgerReading Read()
+    {
+        var workerInput = Volatile.Read(ref _workerInput);
+        var workers = Volatile.Read(ref _subAgent);
+        return new LedgerReading(
+            OwnInput: Volatile.Read(ref _input) - workerInput,
+            // THE WORKERS' OUTPUT IS NOT KEPT APART, so it is what is left of their total after their input.
+            OwnOutput: Volatile.Read(ref _output) - (workers - workerInput),
+            OwnCached: Volatile.Read(ref _cached) - Volatile.Read(ref _workerCached),
+            OwnCacheReports: Volatile.Read(ref _cacheReports) - Volatile.Read(ref _workerReports),
+            WorkerTokens: workers);
+    }
 
     /// <summary>
     /// Tokens SENT so far — the conversation, re-sent in full on every call.

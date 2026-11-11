@@ -538,6 +538,16 @@ internal static class SessionFactory
         // THE SESSION'S OWN TALLY, kept across re-wires — each new host is subscribed, the tally stays.
         host.TurnCompleted += (_, calls) => session.Tally.Record(calls);
 
+        // ITS PER-TURN HISTORY, beside its logs: kept across a re-wire of the same session, read back when one is resumed —
+        // and measured from this host's ledger as it starts, which a resume seeds with the session's earlier totals.
+        var turnsFile = shared.Logs is { } turnLogs && host.SessionId is { Length: > 0 } turnsOf
+            ? Path.Combine(turnLogs.DirFor(turnsOf), TurnHistory.FileName)
+            : null;
+        if (session.Turns is not { } turns || turns.KeptAt != turnsFile) session.Turns = turns = new TurnHistory(turnsFile);
+        turns.Start(host.Ledger.Read());
+        var turnWindow = resolution.ContextWindow;
+        host.TurnCompleted += (_, _) => turns.Note(host.Ledger.Read(), turnWindow);
+
         // A ONE-TO-ONE'S EVERY EXCHANGE IS A ROUND OF THE COLLEAGUE'S PAST, distilled like any other.
         if (session.OneToOne is { } oneToOne)
         {

@@ -19,6 +19,9 @@ public sealed partial class Session
     /// <summary>What this session has done — turns, tool calls, how long it has been open — for every front end.</summary>
     public SessionTally Tally { get; } = new();
 
+    /// <summary>The per-turn history the side panel draws; null until the session is wired.</summary>
+    public TurnHistory? Turns { get; internal set; }
+
     /// <summary>The notes this session reads and writes, or null when memory is off.</summary>
     public MemoryStore? Memory { get; private set; }
 
