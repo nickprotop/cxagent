@@ -112,4 +112,37 @@ public sealed class AgentTabSendTests : IDisposable
         Assert.Equal(notices, _parent.Notices.Count);
         Assert.Null(s.SubAgents.LastEnd("finder"));
     }
+
+    /// <summary>
+    /// A line starting with a slash is a command attempt, never words for the worker (user, 2026-11-11): a known
+    /// command is refused as not running in a worker's tab, an unknown one as unknown, and neither reaches the
+    /// worker or leaves the parent a trail.
+    /// </summary>
+    [Theory]
+    [InlineData("/clear", "'/clear' does not run in a worker's tab.")]
+    [InlineData("  /celar now", "Unknown command '/celar'.")]
+    public async Task ASlashLine_IsRefused_AndNeverReachesTheWorker(string typed, string refusal)
+    {
+        var s = Open("should not answer");
+        var notices = _parent!.Notices.Count;
+
+        Assert.Equal(refusal, await s.SendFromAgentTab("finder", typed));
+
+        Assert.DoesNotContain(s.SubAgents.Find("finder")!.Agent.Agent.Context.Messages, m => m.Role == "user");
+        Assert.Equal(notices, _parent.Notices.Count);
+        Assert.Null(s.SubAgents.LastEnd("finder"));
+    }
+
+    /// <summary>A skill or command file the session would run is a known command too.</summary>
+    [Fact]
+    public async Task ASkillName_IsRefusedAsNotRunningHere()
+    {
+        var s = Open("should not answer");
+        var commands = Path.Combine(_dir, ".cxagent", "commands");
+        Directory.CreateDirectory(commands);
+        File.WriteAllText(Path.Combine(commands, "review.md"), "Review $ARGUMENTS");
+        Assert.NotNull(s.FindTyped("/review x"));
+
+        Assert.Equal("'/review' does not run in a worker's tab.", await s.SendFromAgentTab("finder", "/review x"));
+    }
 }

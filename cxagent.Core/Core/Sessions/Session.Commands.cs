@@ -602,6 +602,7 @@ public sealed partial class Session
     {
         var text = prompt.Trim();
         if (text.Length == 0) return Task.FromResult<string?>(null);
+        if (TabSlashRefusal(text) is { } refused) return Task.FromResult<string?>(refused);
         if (SubAgents.Find(name) is null)
             return Task.FromResult<string?>(SubAgents.WasForgotten(name)
                 ? Agents.SubAgentStore.Dismissed(name)
@@ -642,6 +643,24 @@ public sealed partial class Session
                 SubAgents.EndUserSend(name, token);
             }
         });
+    }
+
+    /// <summary>
+    /// The refusal for a slash line typed in a worker's tab, or null for a line that is words for the worker.
+    ///
+    /// <para>A SLASH IS A COMMAND ATTEMPT, NEVER A MESSAGE — the rule the session's own composer keeps. A mistyped
+    /// "/celar" sent to a worker as its task, or "/review" arriving as the bare word, is worse than saying no: the
+    /// worker acts on words the user meant for the app. No command runs from a tab, so a name the session would run —
+    /// a built-in, a plugin's, a command file or skill — is told apart from an unknown one only to say which mistake
+    /// it was.</para>
+    /// </summary>
+    private string? TabSlashRefusal(string text)
+    {
+        if (!text.StartsWith('/')) return null;
+        var name = text.Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries)[0];
+        var known = (Manager is { } manager ? SessionCommands.Match(text, manager.Commands) : SessionCommands.Match(text)) is not null
+            || FindTyped(text) is not null;
+        return known ? $"'{name}' does not run in a worker's tab." : $"Unknown command '{name}'.";
     }
 
     /// <summary>Says what changed in this session's working folder, per <c>git diff</c>.</summary>
