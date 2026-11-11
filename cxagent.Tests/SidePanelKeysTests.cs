@@ -104,4 +104,25 @@ public sealed class SidePanelKeysTests
     [InlineData(false, 0, 1, "Panel · Tasks 0+1")]
     public void The_main_bar_names_running_tasks_only_while_the_panel_is_hidden(bool shown, int mine, int elsewhere, string label) =>
         Assert.Equal(label, MainWindow.PanelItemLabel(shown, mine, elsewhere));
+
+    /// <summary>
+    /// THE STATUS BAR'S DISTILLING WORD FOLLOWS THE DISTILLING, panel or no panel (user, 2026-11-11: with the side panel
+    /// hidden or on Tasks, "distilling Charting…" stayed after the colleague had finished learning). The bar is always
+    /// on screen; the panel's refresh is not.
+    /// </summary>
+    [Fact]
+    public void The_distilling_word_comes_and_goes_with_the_panel_hidden()
+    {
+        var mw = Window(80);   // narrow: the panel is hidden
+        Assert.True(Hidden(mw));
+        string Shown() => string.Join(" ", mw.StatusBar.RightItems.Where(i => i.IsVisible).Select(i => i.Label));
+
+        mw.DistillingForTest = () => ["Charting"];
+        mw.RefreshSessionPanel();
+        Assert.Contains("distilling Charting…", Shown());
+
+        mw.DistillingForTest = () => [];
+        mw.RefreshSessionPanel();
+        Assert.DoesNotContain("distilling", Shown());
+    }
 }

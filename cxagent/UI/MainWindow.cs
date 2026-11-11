@@ -3343,6 +3343,10 @@ public sealed class MainWindow : IDisposable
         }
 
         if (jobs) RefreshJobsPanel();
+
+        // THE STATUS BAR'S DISTILLING WORD BEFORE THE PANEL'S EARLY RETURN: the bar is always on screen, and set only past
+        // the return, the word stayed after a colleague finished learning whenever the panel was hidden or on Tasks.
+        SetDistilling(DistillingForTest?.Invoke() ?? ActiveSession?.Colleagues?.Distilling ?? []);
         if (!SessionPanel.Control.Visible) return;
 
         // DisplayName is the instance label ("openai-compatible qwen3.6-…"); ModelId is what the
@@ -3417,8 +3421,10 @@ public sealed class MainWindow : IDisposable
             LoadedSkills = LoadedSkills,
             MemoryNotes = ActiveSession?.Memory?.List(),
         });
-        SetDistilling(ActiveSession?.Colleagues?.Distilling ?? []);
     }
+
+    /// <summary>Test seam: who is distilling, in place of the active session's desk.</summary>
+    internal Func<IReadOnlyList<string>>? DistillingForTest { get; set; }
 
     /// <summary>How many skills discovery found. Set by the composition root, which owns the read.</summary>
     public int SkillCount { get; set; }
