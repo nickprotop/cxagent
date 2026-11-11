@@ -812,4 +812,35 @@ public class SessionPanelTests
         Assert.Matches(@"Session id\[/\] .*ABC123", text);
         Assert.Matches(@"Permissions\[/\] 2 always-allow rules", text);
     }
+
+    /// <summary>
+    /// AFTER A RESUME THE GAUGE STARTS FROM THE LAST TURN KEPT (user, 2026-11-11): it read "window 213.0k" and nothing
+    /// else while the chart under it said 62%.
+    /// </summary>
+    [Fact]
+    public void The_gauge_starts_from_the_last_turn_before_any_new_reading()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = null, ContextWindow = 200_000, Width = 30, Endpoint = "",
+            Turns = [new CxAgent.Core.Sessions.TurnPoint(DateTimeOffset.UtcNow, 125_000, 0, 0.9, 124_000, 200_000)],
+        });
+
+        Assert.Contains("124.0k of 200.0k · 62%", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>THE ABOUT FACTS ARE SPACED (user, 2026-11-11): one blank line between each, so they read as separate facts.</summary>
+    [Fact]
+    public void The_about_facts_are_spaced()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState { Endpoint = "", Rules = 2, WorkingDirectory = "/work/proj", SessionId = "ABC123" });
+
+        var lines = panel.RenderedText.Split('\n').ToList();
+        var location = lines.FindIndex(l => l.Contains("Location", StringComparison.Ordinal));
+        var limits = lines.FindIndex(l => l.Contains("Limits", StringComparison.Ordinal));
+        Assert.True(limits > location + 1);
+        Assert.Equal("", lines[limits - 1].Trim());
+    }
 }

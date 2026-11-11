@@ -321,19 +321,22 @@ public sealed class SessionPanel
         // THE CONTEXT AS A GAUGE (user, 2026-11-11), first because it is the live state of the session: filled along the
         // theme's calm-to-danger gradient, with a tick where auto-compress starts, and its figures compact under it. The
         // status bar keeps the exact counts and the spend; this is the picture of the same occupancy.
+        var turns = state.Turns ?? [];
         if (state.ContextWindow is > 0 and var window)
         {
             Section(top, "Context");
-            var used = state.ContextUsed ?? 0;
+            // BEFORE A NEW READING, THE LAST TURN KEPT: a resumed session has its context from its history, and the gauge
+            // read "window" alone while the chart under it showed the fill.
+            var known = state.ContextUsed ?? (turns.Count > 0 ? turns[^1].Context : null);
+            var used = known ?? 0;
             top.Add(PanelGauge.Markup(new GaugeReading((double)used / window,
                 state.CompressAt is > 0 and var at ? (double)at / window : null), GaugeWidth(state.Width)));
-            top.Add(Muted(state.ContextUsed is null
+            top.Add(Muted(known is null
                 ? $"window {Compact(window)}"
                 : $"{Compact(used)} of {Compact(window)} · {(int)Math.Round(100.0 * used / window)}%"));
         }
 
         // EACH LEAD RESPONSE, as sparklines under their own heading — once there is one.
-        var turns = state.Turns ?? [];
         if (turns.Count > 0) Section(top, "Per turn");
         _top.SetContent(top);
         if (_top.Visible != (top.Count > 0)) _top.Visible = top.Count > 0;
@@ -743,7 +746,12 @@ public sealed class SessionPanel
 
         public List<string> Lines { get; } = [];
 
-        public void Label(string label) => _label = label;
+        // A BLANK LINE BETWEEN FACTS (user, 2026-11-11): run together, seven of them read as one block of text.
+        public void Label(string label)
+        {
+            if (Lines.Count > 0) Lines.Add(string.Empty);
+            _label = label;
+        }
 
         public void Add(string value)
         {

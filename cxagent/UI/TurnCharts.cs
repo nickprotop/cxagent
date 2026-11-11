@@ -87,13 +87,16 @@ public sealed class TurnCharts
         var lines = new List<string>();
         foreach (var s in _series)
         {
-            // THE WORKERS' ROW WAITS FOR A WORKER: an empty chart is a row saying nothing.
-            var on = s.Name != "workers" || points.Any(p => p.WorkerTokens > 0);
+            // THE WORKERS' ROW WAITS FOR A WORKER IN THE TURNS SHOWN: an empty chart is a row saying nothing, and one that
+            // spent only in turns too old to fit draws nothing here.
+            var on = s.Name != "workers" || shown.Any(p => p.WorkerTokens > 0);
             s.Label.Visible = on;
             s.Chart.Visible = on;
             if (!on) continue;
 
             var label = $"{s.Name} · last {s.Latest(points)}";
+            // A GAP IS A RESPONSE THAT REPORTED NO CACHE — named, so the empty cells are not a puzzle.
+            if (s.Name == "cache" && shown.Any(p => p.Cache is null)) label += " · gaps: not reported";
             lines.Add(label);
             s.Label.SetContent([$"[{ColorScheme.MutedMarkup}]{SharpConsoleUI.Parsing.MarkupParser.Escape(label)}[/]"]);
             s.Chart.MaxDataPoints = width;

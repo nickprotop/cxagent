@@ -57,4 +57,29 @@ public sealed class TurnChartsTests
 
         Assert.Equal(Enumerable.Range(81, 20).Select(i => (double)i), charts.DataFor("tokens"));
     }
+
+    /// <summary>
+    /// THE WORKERS' ROW FOLLOWS THE TURNS ON SCREEN (user, 2026-11-11): a session whose workers spent only in turns too
+    /// old to fit drew two empty rows under "workers · last 0".
+    /// </summary>
+    [Fact]
+    public void The_workers_row_is_for_the_turns_shown()
+    {
+        var charts = new TurnCharts();
+        charts.Update([Point(1_000, 5_000, null, 900), .. Enumerable.Range(1, 20).Select(_ => Point(1_000, 0, null, 900))], 20);
+
+        Assert.DoesNotContain("workers", charts.Text);
+    }
+
+    /// <summary>A RESPONSE THAT REPORTED NO CACHE IS A GAP, and the label says so rather than leave it a puzzle.</summary>
+    [Fact]
+    public void Cache_gaps_are_named()
+    {
+        var charts = new TurnCharts();
+        charts.Update([Point(1_000, 0, 0.9, 900), Point(1_000, 0, null, 900)], 20);
+        Assert.Contains("cache · last 90% · gaps: not reported", charts.Text);
+
+        charts.Update([Point(1_000, 0, 0.9, 900), Point(1_000, 0, 0.8, 900)], 20);
+        Assert.DoesNotContain("gaps", charts.Text);
+    }
 }
