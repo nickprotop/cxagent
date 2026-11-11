@@ -10,6 +10,7 @@ namespace CxAgent.Tests;
 /// <c>cd</c> through the whole chain. Each misreading here was refusing a confined command, or could have passed an
 /// unconfined one.
 /// </summary>
+[Collection("working-directory")]
 public sealed class ShellReadingTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("shell-reading-").FullName;
@@ -66,4 +67,50 @@ public sealed class ShellReadingTests : IDisposable
     [InlineData("grep 'abc src/b.cs | head")]
     public void An_unconfined_or_unreadable_command_does_not(string command) =>
         Assert.Equal(ReviewEffect.None, Effect(command));
+
+    /// <summary>
+    /// A PLAIN TILDE IS THE HOME FOLDER, resolved and then held to the boundary like any path (user, 2026-11-11): a
+    /// session in ~/source/ConsoleEx running `cd ~/source/ConsoleEx/x && …` was asked every time. `~user` and
+    /// `$HOME` are the shell's to resolve and keep asking.
+    /// </summary>
+    [Theory]
+    [InlineData("cd ~/{root}/src && grep -n class b.cs | head", ReviewEffect.MayApprove)]
+    [InlineData("cat ~/{root}/src/b.cs", ReviewEffect.MayApprove)]
+    [InlineData("ls ~", ReviewEffect.None)]
+    [InlineData("ls ~/", ReviewEffect.None)]
+    [InlineData("cat ~someone/{root}/src/b.cs", ReviewEffect.None)]
+    [InlineData("echo x > ~/{root}/out.txt", ReviewEffect.MayApprove)]
+    [InlineData("echo x > ~/elsewhere.txt", ReviewEffect.None)]
+    public void A_plain_tilde_is_the_home_folder(string command, ReviewEffect expected)
+    {
+        var before = CommandSubjects.HomeForTest;
+        CommandSubjects.HomeForTest = Path.GetDirectoryName(_root);
+        try
+        {
+            Assert.Equal(expected, Effect(command.Replace("{root}", Path.GetFileName(_root), StringComparison.Ordinal)));
+        }
+        finally { CommandSubjects.HomeForTest = before; }
+    }
+
+    /// <summary>
+    /// A GLOB WITH ITS FOLDER SPELLED OUT IS LISTED NOW, and every match is held to the boundary (user, 2026-11-11). A
+    /// wildcard in the folder part, a bracket class, or a match that is a link out of the project keeps it asking.
+    /// </summary>
+    [Theory]
+    [InlineData("grep -n class src/*.cs | head", ReviewEffect.MayApprove)]
+    [InlineData("cat src/sub/?.cs", ReviewEffect.MayApprove)]
+    [InlineData("ls src/nothing-here/*.cs", ReviewEffect.MayApprove)]
+    [InlineData("cat src/*/a.cs", ReviewEffect.None)]
+    [InlineData("cat src/[ab].cs", ReviewEffect.None)]
+    [InlineData("cat ../*.cs", ReviewEffect.None)]
+    public void A_glob_is_listed_and_each_match_confined(string command, ReviewEffect expected) =>
+        Assert.Equal(expected, Effect(command));
+
+    [Fact]
+    public void A_glob_matching_a_link_out_of_the_project_asks()
+    {
+        File.CreateSymbolicLink(Path.Combine(_root, "src", "leak.cs"), "/etc/hostname");
+
+        Assert.Equal(ReviewEffect.None, Effect("cat src/*.cs"));
+    }
 }

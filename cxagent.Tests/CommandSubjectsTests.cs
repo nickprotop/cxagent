@@ -131,26 +131,32 @@ public class CommandSubjectsTests
         Assert.Contains("/etc/passwd", withSpace.Paths);
     }
 
-    // A TILDE IS A PATH THIS DOES NOT RESOLVE, so it must be reported rather than dropped. Expanding
-    // it is the other tempting fix and it is worse: a second path resolver is how the boundary and
-    // the prompt come to disagree about what is being read.
+    // A PLAIN TILDE IS THE HOME FOLDER and is collected as a path — never dropped, which is how `ls ~/` was once
+    // silent — whether or not anything is there. Any other tilde is the shell's to resolve and stays unexamined.
     [Fact]
-    public void ATilde_IsUnexamined_NotSilentlyIgnored()
+    public void A_plain_tilde_is_the_home_folder_and_any_other_is_unexamined()
     {
-        var subjects = CommandSubjects.Of("ls ~/");
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-        Assert.False(subjects.FullyExamined);
-        Assert.Contains(subjects.Unexamined, u => u.Contains("tilde", StringComparison.Ordinal));
+        Assert.Contains(Path.GetFullPath(home), CommandSubjects.Of("ls ~/").Paths);
+        Assert.Contains(Path.Combine(home, "nothing-here.txt"), CommandSubjects.Of("cat ~/nothing-here.txt").Paths);
+        Assert.Contains(CommandSubjects.Of("ls ~root/").Unexamined, u => u.Contains("tilde", StringComparison.Ordinal));
     }
 
-    // A GLOB NAMES A SET NOBODY ENUMERATED. What `cat *.pem` reads is decided at run time by the
-    // shell, so the string cannot be checked — the classic "inspected one thing, ran another".
+    // A GLOB IS LISTED NOW, its folder and every match collected as paths for the boundary to hold. What the shell
+    // cannot be matched against here — a bracket class, a wildcard in the folder part — stays unexamined.
     [Fact]
-    public void AGlob_IsUnexamined()
+    public void A_glob_is_listed_unless_its_shape_cannot_be()
     {
-        Assert.False(CommandSubjects.Of("cat *.pem").FullyExamined);
-        Assert.False(CommandSubjects.Of("cat conf?.yml").FullyExamined);
-        Assert.False(CommandSubjects.Of("cat [abc].txt").FullyExamined);
+        var dir = Directory.CreateTempSubdirectory("subjects-glob-").FullName;
+        File.WriteAllText(Path.Combine(dir, "a.pem"), "x");
+        var from = new PathResolver(dir);
+
+        var listed = CommandSubjects.Of("cat *.pem", from);
+        Assert.True(listed.FullyExamined);
+        Assert.Contains(Path.Combine(dir, "a.pem"), listed.Paths);
+        Assert.False(CommandSubjects.Of("cat [abc].txt", from).FullyExamined);
+        Assert.False(CommandSubjects.Of("cat */a.pem", from).FullyExamined);
     }
 
     /// <summary>
@@ -173,7 +179,8 @@ public class CommandSubjectsTests
     /// <summary>
     /// A GLOB IN A FLAG VALUE IS A FILTER, NOT A READ TARGET. <c>--include=*.cs</c> narrows what grep
     /// looks at within paths given elsewhere, and those are confined separately — so it cannot name a
-    /// file outside them however it expands. A BARE glob is the opposite: it IS the target.
+    /// file outside them however it expands, and nothing is listed for it. A BARE glob is the opposite: it IS the
+    /// target, and its folder is collected.
     ///
     /// <para>This pair is why the glob check runs after the flag branch rather than before it.
     /// Checking globs first made the two identical and refused the codebase-search idiom, 30
@@ -183,7 +190,8 @@ public class CommandSubjectsTests
     public void AGlobInAFlagValue_IsAFilter_ButABareGlobIsATarget()
     {
         Assert.True(CommandSubjects.Of("grep --include=*.cs -rn TODO .").FullyExamined);
-        Assert.False(CommandSubjects.Of("cat *.pem").FullyExamined);
+        Assert.Empty(CommandSubjects.Of("grep --include=*.cs -rn TODO .").Paths.Where(p => p.EndsWith(".cs", StringComparison.Ordinal)));
+        Assert.NotEmpty(CommandSubjects.Of("cat *.pem").Paths);
     }
 
     // AN UNTERMINATED QUOTE MUST NOT BE GUESSED AT. The shell joins it with whatever follows, so any

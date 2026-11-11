@@ -176,14 +176,20 @@ internal sealed record CommandSubjects
         var token = entry.Text;
         if (token.Length == 0) return;
 
-        // A TILDE IS A PATH THIS DOES NOT RESOLVE. `ls ~/` was silent in a trusted folder for
-        // exactly this reason: the token names the user's home, and nothing here expanded it, so
-        // no path was collected and the confinement check passed on an empty list. Expanding it
-        // would be the other tempting fix and it is worse — it puts a second path resolver in
-        // the system, which is how the boundary and the prompt come to disagree.
-        if (token.StartsWith('~'))
+        // A TILDE IS THE HOME FOLDER, and only a plain one is resolved here. `ls ~/` was once silent in a trusted folder
+        // because the token was collected as no path at all, and the confinement check passed on an empty list; now
+        // `~` and `~/…` become the folder they name and are held to the boundary like any path, so `ls ~/` still asks
+        // while `cat ~/source/proj/x` inside that project does not. `~user` is another user's home, the shell's to find.
+        if (token.StartsWith('~') && !entry.Quoted)
         {
-            into.Unexamined.Add($"tilde: {token}");
+            // HELD WHETHER OR NOT IT EXISTS, as a relative path is (see ReferencedPaths): `~/in.txt` asserts a place, and
+            // "nothing there yet" is not a reason to stop asking about a read of the user's home.
+            if (Tilde(token) is { } home)
+            {
+                into.Paths.Add(Path.GetFullPath(home));
+                into.Tokens.Add(token);
+            }
+            else into.Unexamined.Add($"tilde: {token}");
             return;
         }
 
@@ -230,11 +236,76 @@ internal sealed record CommandSubjects
                 || token.Contains('?', StringComparison.Ordinal)
                 || token.Contains('[', StringComparison.Ordinal)))
         {
-            into.Unexamined.Add($"glob: {token}");
+            Glob(token, into);
             return;
         }
 
         Classify(token, into);
+    }
+
+    /// <summary>The home folder a plain tilde names; a test sets it.</summary>
+    internal static string? HomeForTest { get; set; }
+
+    private static string Home => HomeForTest ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    /// <summary>What <c>~</c> or <c>~/…</c> names, or null for any other tilde — <c>~user</c>, <c>~+</c> — which only
+    /// the shell resolves.</summary>
+    private static string? Tilde(string token) =>
+        token == "~" ? Home
+        : token.StartsWith("~/", StringComparison.Ordinal) && Home.Length > 0 ? Path.Combine(Home, token[2..])
+        : null;
+
+    // MORE MATCHES THAN THIS IS NOT A LIST ANYONE CHECKED — and walking it costs every command that names it.
+    private const int MostGlobMatches = 1000;
+
+    /// <summary>
+    /// An unquoted glob, listed now: its folder part must be spelled out, and that folder and every match are held to
+    /// the boundary. A wildcard in the folder part, a bracket class, or more than <see cref="MostGlobMatches"/> matches
+    /// leaves it unexamined.
+    ///
+    /// <para>WHAT IS LISTED IS WHAT THE SHELL WOULD EXPAND, near enough to hold a boundary: a match the shell would skip
+    /// (a dot file) only adds a path to check, never removes one. The FOLDER is held even when nothing matches —
+    /// <c>../*.cs</c> names a place outside the project whatever is in it.</para>
+    /// </summary>
+    private static void Glob(string token, ClassifyInto into)
+    {
+        var slash = token.LastIndexOf('/');
+        var folderPart = slash < 0 ? "" : token[..(slash + 1)];
+        var pattern = token[(slash + 1)..];
+        if (token.Contains('[', StringComparison.Ordinal) || pattern.Length == 0
+            || folderPart.IndexOfAny(['*', '?']) >= 0)
+        {
+            into.Unexamined.Add($"glob: {token}");
+            return;
+        }
+
+        try
+        {
+            var spelled = folderPart.StartsWith('~') ? Tilde(folderPart.TrimEnd('/')) : folderPart;
+            if (spelled is null)
+            {
+                into.Unexamined.Add($"glob: {token}");
+                return;
+            }
+
+            var folder = Path.GetFullPath(Path.Combine(into.Folder, spelled));
+            into.Paths.Add(folder);
+            if (!Directory.Exists(folder)) return;   // nothing matches: the shell passes the pattern on as text
+
+            var matches = Directory.EnumerateFileSystemEntries(folder, pattern).Take(MostGlobMatches + 1).ToList();
+            if (matches.Count > MostGlobMatches)
+            {
+                into.Unexamined.Add($"glob matching too much: {token}");
+                return;
+            }
+            into.Paths.AddRange(matches);
+            into.Tokens.Add(token);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
+                                      or NotSupportedException)
+        {
+            into.Unexamined.Add($"unreadable glob: {token}");
+        }
     }
 
     // WHERE OUTPUT IS THROWN AWAY OR HANDED BACK — not files a command writes into.
@@ -247,6 +318,7 @@ internal sealed record CommandSubjects
     private static void Redirect(string target, ClassifyInto into)
     {
         if (Discards.Contains(target)) return;
+        if (target.StartsWith('~') && Tilde(target) is { } home) target = home;
         if (target.StartsWith('~') || target.Contains('$', StringComparison.Ordinal)
             || target.Contains('*', StringComparison.Ordinal) || target.Contains('?', StringComparison.Ordinal))
         {
@@ -275,6 +347,7 @@ internal sealed record CommandSubjects
         if (segments.Count < 2 || segments[0].Joiner != "&&" || segments[0].Redirects.Count > 0) return null;
         var words = segments[0].Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (words is not ["cd", var target] || target.IndexOfAny(['"', '\'', '\\']) >= 0) return null;
+        target = Tilde(target) ?? target;
         return segments.Skip(1).Any(s => s.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() is { } verb
                                          && Movers.Contains(verb))
             ? null
@@ -467,7 +540,11 @@ internal sealed record CommandSubjects
                 // EXCEPT ONE WITH A `..` IN IT. That clause keeps an absolute path only when it exists, and
                 // existence is tested on the text collapsed — `/root/link/../secret` is asked about as
                 // `/root/secret`, which may not exist, while the kernel reads beside the link's target.
-                if (text.StartsWith('~')) continue;
+                if (text.StartsWith('~'))
+                {
+                    if (token.Quoted || Tilde(text) is not { } home) continue;
+                    text = home;
+                }
                 if (Path.IsPathRooted(text) && !text.Split('/').Contains("..")) continue;
 
                 var full = Path.Combine(from, text);
