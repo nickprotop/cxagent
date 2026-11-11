@@ -20,7 +20,7 @@ namespace CxAgent.Core.Permissions;
 /// programs that cannot write, and its text contains nothing that could turn it into something
 /// else. Everything not proven safe prompts, which is the direction to fail in.</para>
 /// </summary>
-internal static class ReadOnlyCommands
+internal static partial class ReadOnlyCommands
 {
     /// <summary>
     /// Programs that read and print, and cannot modify anything.
@@ -53,7 +53,6 @@ internal static class ReadOnlyCommands
     /// <see cref="IsPipeOfReads"/>. Everything here still disqualifies the whole line, and `||` and `|&amp;`
     /// with it — the first leaves an empty stage, the second is caught by its `&amp;`.</para>
     /// </summary>
-    private static readonly char[] Dangerous = ['&', ';', '>', '<', '`', '\n', '\r'];
 
     /// <summary>
     /// True when this command reads and nothing more.
@@ -81,42 +80,67 @@ internal static class ReadOnlyCommands
     {
         changesTo = null;
         if (string.IsNullOrWhiteSpace(command)) return false;
-
         var text = command.Trim();
 
-        // `cd <somewhere> && <the real command>` IS THE DOMINANT IDIOM, and it defeated everything:
-        // the `&&` disqualified the whole line, so `cd /repo && ls` prompted while a bare `ls` did
-        // not. Measured across two agentic drives — two of three prompts were this shape, and the
-        // model writes it constantly because it cannot rely on the working directory.
-        //
-        // STRIPPED, NOT IGNORED. The target is handed back so the caller can require it to be inside
-        // the trusted folder: `cd /etc && cat shadow` reads a file the boundary exists to protect,
-        // and the `cat` half looks perfectly innocent on its own.
-        //
-        // ONE `cd` ONLY, and only at the start. A second one later in the line is a chain doing
-        // something this cannot reason about, and the `&&` check below still refuses it.
-        if (TryStripLeadingCd(text, out var target, out var rest))
+        // $( ) AND BACKTICKS run a program whose name never appears in this string — anywhere on the line, since a
+        // substitution can span what looks like two commands.
+        if (text.Contains("$(", StringComparison.Ordinal) || text.Contains('`')) return false;
+
+        // A CHAIN OF READS IS A READ (user, 2026-11-11). The line is split as the shell splits it — at operators outside
+        // quotes, redirects lifted out (CommandSubjects.Segments) — and EVERY command in it must be a read on its own: a
+        // colleague's `cd X && echo … && ls … | grep …` asked every time while each piece was on this list. One command
+        // not on it, and the whole line asks.
+        // AN OPERATOR AT EITHER END IS A LINE NOT FINISHED — `ls |` waits for more, `| wc` has nothing feeding it — and the
+        // splitter below drops the empty piece, so it is refused here, before it can read as a complete chain.
+        if (text[0] is '|' or '&' or ';' || text[^1] is '|' or '&' or ';' || text.EndsWith("\\", StringComparison.Ordinal))
+            return false;
+        if (CommandSubjects.Segments(text) is not { } segments || segments.Count == 0) return false;
+        for (var i = 0; i < segments.Count; i++)
         {
-            changesTo = target;
-            text = rest;
+            var segment = segments[i];
 
-            // `cd /somewhere` with nothing after it. It changes no files and reads nothing, so it is
-            // read-only by any measure — but the caller still has to accept the DIRECTORY, which is
-            // the whole reason the target is reported rather than swallowed.
-            if (text.Length == 0) return true;
+            // IN THE BACKGROUND, a command outlives the line — what it does after is not in this text.
+            if (segment.Joiner == "&") return false;
+
+            // A REDIRECT WRITES, OR READS A FILE IN; only throwing output away is a read.
+            if (segment.Redirects.Any(r => !Discards.Contains(r))) return false;
+
+            var words = Words(segment.Text);
+            if (words.Count == 0) continue;
+
+            // `cd <somewhere>` FIRST, AND ONLY FIRST — the dominant idiom: the model cannot rely on the working directory.
+            // STRIPPED, NOT IGNORED: the target is handed back so the caller can require it inside the trusted folder —
+            // `cd /etc && cat shadow` reads a file the boundary exists to protect, and the `cat` half looks innocent. A
+            // second cd later is the shell moving somewhere this does not follow, so it asks.
+            if (words[0].Text == "cd")
+            {
+                if (i != 0 || words.Count != 2 || words[1].Quoted) return false;
+                changesTo = words[1].Text;
+                continue;
+            }
+
+            if (!IsOneRead(segment.Text, words)) return false;
         }
+        return true;
+    }
 
-        if (text.IndexOfAny(Dangerous) >= 0) return false;
+    private static bool Follows(string text) =>
+        text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1).Any(flag =>
+            flag.StartsWith("--follow", StringComparison.Ordinal)
+            || flag.StartsWith('-') && !flag.StartsWith("--", StringComparison.Ordinal)
+               && flag.AsSpan(1).IndexOfAny('f', 'F') >= 0);
 
-        if (text.Contains('|', StringComparison.Ordinal)) return IsPipeOfReads(text);
+    // WHERE OUTPUT IS THROWN AWAY OR HANDED BACK — the redirects a read may carry.
+    private static readonly HashSet<string> Discards = new(StringComparer.Ordinal) { "/dev/null", "/dev/stdout", "/dev/stderr" };
 
-        // $( ) — command substitution runs a program whose name never appears in this string.
-        if (text.Contains("$(", StringComparison.Ordinal)) return false;
+    /// <summary>Whether one command, alone, only reads.</summary>
+    private static bool IsOneRead(string text, List<Word> words)
+    {
+        var first = words[0].Text;
 
         // A LEADING ASSIGNMENT IS A DIFFERENT PROGRAM. `PATH=/tmp/evil ls` runs whatever /tmp/evil
         // calls ls, so the verb we would check is not the binary that runs.
-        var first = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-        if (first is null || first.Contains('=', StringComparison.Ordinal)) return false;
+        if (first.Contains('=', StringComparison.Ordinal)) return false;
 
         // A PATH, NOT A NAME, IS NOT ON THE LIST. `/tmp/ls` and `./ls` are not the `ls` this list
         // means — the list names programs found on PATH, and anything spelled as a path is a binary
@@ -127,38 +151,57 @@ internal static class ReadOnlyCommands
         // on it — and a command left running after its call is not one its text can vouch for.
         if (first == "tail" && Follows(text)) return false;
 
-        return SafeVerbs.Contains(first);
+        return SafeVerbs.Contains(first) || (first == "sed" && PrintsLines(words));
     }
 
-    private static bool Follows(string text) =>
-        text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1).Any(flag =>
-            flag.StartsWith("--follow", StringComparison.Ordinal)
-            || flag.StartsWith('-') && !flag.StartsWith("--", StringComparison.Ordinal)
-               && flag.AsSpan(1).IndexOfAny('f', 'F') >= 0);
-
     /// <summary>
-    /// Whether a pipeline is only reads: every stage, on its own, a command this class would pass.
+    /// `sed` that only prints lines: `-n` and a script naming a line or a range and `p` — `'1,50p'`, `'$p'`. NOTHING ELSE
+    /// OF sed: `-i` edits the file in place, `w` writes one, `e` runs a command, and a clustered `-ni` is `-i` too.
     /// </summary>
-    /// <remarks>
-    /// <para>A PIPE OF READS IS A READ. `grep -n foo src | head` was the idiom most often asked about, and nothing
-    /// in it writes: the pipe carries one program's output into another's input, and if neither program writes,
-    /// the line does not. Each stage goes through the same check a whole command does, so `| tee out` or `| sh`
-    /// refuses the line as surely as `tee out` alone.</para>
-    ///
-    /// <para>A QUOTE ANYWHERE REFUSES IT. A `|` inside quotes is an argument, not a pipe, and telling the two apart
-    /// is the shell parsing this class does not do — so a line it cannot split with confidence is one it does not
-    /// vouch for. The cost is a prompt for `grep 'a|b' x | wc`; the other mistake runs a command nobody saw.</para>
-    ///
-    /// <para>NO STAGE MAY CHANGE DIRECTORY. A leading `cd` is reported to the caller to confine; one inside a stage
-    /// would not be, and a stage's working directory is not one this class can hand back.</para>
-    ///
-    /// <para>WHAT THE STAGES READ IS STILL CONFINED: the caller's boundary check takes the paths from the whole line
-    /// (see <see cref="CommandSubjects"/>), so a read outside the folder after the pipe asks as one before it does.</para>
-    /// </remarks>
-    private static bool IsPipeOfReads(string text)
+    private static bool PrintsLines(List<Word> words)
     {
-        if (text.IndexOfAny(['"', '\'']) >= 0) return false;
-        return text.Split('|').All(stage => IsReadOnly(stage, out var changesTo) && changesTo is null);
+        var flags = words.Skip(1).Where(w => !w.Quoted && w.Text.StartsWith('-')).Select(w => w.Text).ToList();
+        if (!flags.Contains("-n") && !flags.Contains("--quiet") && !flags.Contains("--silent")) return false;
+        if (flags.Any(f => f.StartsWith("--in-place", StringComparison.Ordinal)
+                           || (!f.StartsWith("--", StringComparison.Ordinal) && f.AsSpan(1).Contains('i')))) return false;
+        if (flags.Any(f => f is not ("-n" or "--quiet" or "--silent"))) return false;
+        var script = words.Skip(1).FirstOrDefault(w => w.Quoted || !w.Text.StartsWith('-'));
+        return script is not null && LineRange().IsMatch(script.Text);
+    }
+
+    // ONE RANGE AND `p`, OR SEVERAL JOINED BY `;` — `'330,350p;415,445p'` prints two stretches of one file.
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(\d+|\$)(,(\d+|\$))?p(;(\d+|\$)(,(\d+|\$))?p)*$")]
+    private static partial System.Text.RegularExpressions.Regex LineRange();
+
+    /// <summary>A command's words, quotes removed, each with whether it was quoted.</summary>
+    private sealed record Word(string Text, bool Quoted);
+
+    private static List<Word> Words(string text)
+    {
+        var words = new List<Word>();
+        var current = new System.Text.StringBuilder();
+        var quote = '\0';
+        var quoted = false;
+        foreach (var c in text)
+        {
+            if (quote != '\0')
+            {
+                if (c == quote) quote = '\0';
+                else current.Append(c);
+                continue;
+            }
+            if (c is '"' or '\'') { quote = c; quoted = true; continue; }
+            if (c == ' ')
+            {
+                if (current.Length > 0 || quoted) words.Add(new Word(current.ToString(), quoted));
+                current.Clear();
+                quoted = false;
+                continue;
+            }
+            current.Append(c);
+        }
+        if (current.Length > 0 || quoted) words.Add(new Word(current.ToString(), quoted));
+        return words;
     }
 
     // PathArguments LIVED HERE AND IS NOW CommandSubjects.Of(...).Paths. It answered "which tokens

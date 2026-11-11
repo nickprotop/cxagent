@@ -6,7 +6,8 @@ machine. The settings behind it are in [CONFIG.md](CONFIG.md).
 ## Permissions
 
 Reading and writing inside the working folder is free, and so are commands that can only look:
-`ls`, `cat`, `grep`, and `cd` into the folder before one. A command that can only look may also read
+`ls`, `cat`, `grep`, `sed -n '10,20p'`, a `cd` into the folder before them, and chains of them joined by
+`&&`, `;` or `|` where every command only looks and nothing is redirected but to `/dev/null`. A command that can only look may also read
 where a file read would not ask: a folder you granted with **Always allow** on a file read, and a
 colleague's own workplaces. Anything that can write, and anything else outside the folder, stops and
 asks with **Allow once**, **Always allow**, or **Deny**.

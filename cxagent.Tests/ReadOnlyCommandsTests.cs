@@ -39,7 +39,8 @@ public class ReadOnlyCommandsTests
 
     /// <summary>
     /// A PIPE OF READS IS A READ: each stage is checked as a command of its own, so `grep | wc` passes and a stage
-    /// that writes, chains or substitutes refuses the whole line.
+    /// that writes or substitutes refuses the whole line. A `|` inside quotes is part of an argument, and `||` between
+    /// reads is still reads (user, 2026-11-11: chains of reads are reads).
     /// </summary>
     [Theory]
     [InlineData("grep foo . | wc -l", true)]
@@ -47,8 +48,8 @@ public class ReadOnlyCommandsTests
     [InlineData("cat file | tee out", false)]
     [InlineData("ls | sh", false)]
     [InlineData("ls | $(cat x)", false)]
-    [InlineData("ls || cat file", false)]
-    [InlineData("grep 'a|b' file | wc -l", false)]
+    [InlineData("ls || cat file", true)]
+    [InlineData("grep 'a|b' file | wc -l", true)]
     [InlineData("ls |", false)]
     [InlineData("ls | cd /etc", false)]
     public void APipe_IsReadOnly_WhenEveryStageIs(string command, bool readOnly) =>

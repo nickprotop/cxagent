@@ -170,18 +170,25 @@ public class ReadOnlyBoundaryTests : IDisposable
     public void APipeReadingOutsideTheFolder_Asks(string command) => Assert.False(Silent(command));
 
     /// <summary>
-    /// A PIPE INTO SOMETHING THAT WRITES, or anything that is not a plain pipe, still asks: `tee` writes, `||` and
-    /// `|&` chain or redirect, and a `|` inside quotes cannot be told from a real one without a shell parser.
+    /// A PIPE INTO SOMETHING THAT WRITES, or a line left unfinished, still asks: `tee` writes, `sh` runs what it is
+    /// given, and an operator at either end is a line the shell would wait on.
     /// </summary>
     [Theory]
     [InlineData("cat notes.txt | tee out.txt")]
-    [InlineData("ls || cat notes.txt")]
-    [InlineData("ls |& cat")]
-    [InlineData("grep 'a|b' notes.txt | wc -l")]
     [InlineData("ls | sh")]
     [InlineData("ls |")]
     [InlineData("| wc -l")]
     public void APipeThatIsNotJustReads_Asks(string command) => Assert.False(Silent(command));
+
+    /// <summary>
+    /// A CHAIN OF READS IS SILENT LIKE ONE READ (user, 2026-11-11): `||`, `|&` and a `|` inside quotes join reads to
+    /// reads, judged command by command.
+    /// </summary>
+    [Theory]
+    [InlineData("ls || cat notes.txt")]
+    [InlineData("ls |& cat")]
+    [InlineData("grep 'a|b' notes.txt | wc -l")]
+    public void AChainOfReads_IsSilent(string command) => Assert.True(Silent(command));
 
     // IN-TREE READS STILL PASS, so the guard cannot swallow the feature it protects — this is the
     // whole point of the read-only free pass and it must keep working.
