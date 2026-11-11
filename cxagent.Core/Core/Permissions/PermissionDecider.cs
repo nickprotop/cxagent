@@ -512,6 +512,12 @@ public sealed class PermissionDecider : IPermissionGate
     /// </summary>
     private async Task<PermissionOutcome> PromptAsync(PermissionRequest request, CancellationToken ct)
     {
+        // NO ALWAYS THAT CANNOT HOLD. Every prompt passes here, in either front end, so this is the one place the button
+        // is decided: a rule the policy would never match — a chain, a path beyond the project — stored nothing useful
+        // and the same command asked again.
+        if (request.AlwaysRule is not null && request.Policy is { } judged && !judged.RuleCouldMatch(request))
+            request = request with { AlwaysRule = null };
+
         // THE HOOKS HEAR OF THE PROMPT FIRST. A PermissionRequest hook may answer it — a deny always, an allow
         // only where a hook's allow may answer at all — and a Notification hook is told someone is waiting.
         if (request.Policy?.Hooks is { } hooks)

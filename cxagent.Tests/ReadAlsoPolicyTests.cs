@@ -50,13 +50,18 @@ public sealed class ReadAlsoPolicyTests : IDisposable
         Assert.False(Session().IsSilentlyAllowed(Read(InWorkplace)));
     }
 
+    /// <summary>
+    /// A WRITE THERE STILL ASKS, from either tool; a command that can only look reads there as the file tools do (user,
+    /// 2026-11-11: one rule for both — a colleague's `grep` in a codebase it knows asked every time).
+    /// </summary>
     [Fact]
-    public void A_write_or_a_command_there_still_asks()
+    public void A_write_there_still_asks_and_a_command_that_only_looks_does_not()
     {
         var policy = Session().WithReadAlso(new([_workplace], null));
 
         Assert.False(policy.IsSilentlyAllowed(new PermissionRequest(PermissionKind.FileWrite, InWorkplace, null)));
-        Assert.False(policy.IsSilentlyAllowed(new PermissionRequest(PermissionKind.Shell, $"cat {InWorkplace}", null)));
+        Assert.False(policy.IsSilentlyAllowed(new PermissionRequest(PermissionKind.Shell, $"touch {InWorkplace}", null, Subject: $"touch {InWorkplace}")));
+        Assert.True(policy.IsSilentlyAllowed(new PermissionRequest(PermissionKind.Shell, $"cat {InWorkplace}", null, Subject: $"cat {InWorkplace}")));
     }
 
     [Theory]

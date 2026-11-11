@@ -6,13 +6,16 @@ machine. The settings behind it are in [CONFIG.md](CONFIG.md).
 ## Permissions
 
 Reading and writing inside the working folder is free, and so are commands that can only look:
-`ls`, `cat`, `grep`, and `cd` into the folder before one. Anything that can write, and anything
-outside the folder, stops and asks with **Allow once**, **Always allow**, or **Deny**.
+`ls`, `cat`, `grep`, and `cd` into the folder before one. A command that can only look may also read
+where a file read would not ask: a folder you granted with **Always allow** on a file read, and a
+colleague's own workplaces. Anything that can write, and anything else outside the folder, stops and
+asks with **Allow once**, **Always allow**, or **Deny**.
 
 **"Always" grants the command's NAME, not the exact string.** Approving `git status` stores
 `git status*`, so the next `git status --short` runs, while `git push` still asks, because a
 subcommand is part of what names a command. The prompt shows the rule it would write before you
-grant it.
+grant it. **Always** is offered only where a rule could take effect: a rule never reaches outside the
+folder or across a chain of commands, so for those the prompt offers **Allow once** and **Deny**.
 
 Grants are remembered per folder, and a folder is identified by more than its path: delete a folder
 and recreate it, and its old grants do not apply to the new one.

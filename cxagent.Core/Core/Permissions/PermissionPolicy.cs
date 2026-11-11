@@ -746,47 +746,14 @@ public class PermissionPolicy
             && ReadOnlyCommands.IsReadOnly(request.What, out _))
         {
             var subjects = SubjectsOf(request);
-            if (subjects.FullyExamined && ShellStaysInside(request))
+            if (subjects.FullyExamined && ShellStaysInside(request, reading: true))
                 return true;
         }
 
         // BEFORE THE RULE CHECK, which returns for any request with no rule — a file read among them.
         if (ReadsAlso(request)) return true;
 
-        if (request.AlwaysRule is null) return false;
-
-        var subject = RuleSubject(request);
-        if (subject is null) return false;   // resolution failed: fail toward asking, never toward silence.
-
-        // A CHAIN IS NEVER MATCHED BY A STORED RULE, however that rule was written. Refusing to
-        // CREATE one (CommandArity.RuleFor) protects the future; this protects the past, because a
-        // store already holding `cd*` would otherwise keep permitting `cd /tmp && rm -rf ~` on every
-        // machine that granted it before the fix. A rule is a statement about one command, and the
-        // text after `&&` is a command nothing here has examined.
-        if (request.Kind == PermissionKind.Shell && CommandArity.IsChain(subject))
-            return false;
-
-        // AND A RULE CANNOT REACH OUTSIDE THE FOLDER EITHER. `cat*` is an honest grant for reading
-        // this project; it was also permitting `cat /etc/passwd`, because a stored rule matched the
-        // command TEXT and never looked at the paths in it. The free pass above was fixed to confine
-        // its arguments and this path walked straight around that fix — verified live: with `cat*`
-        // granted, `cat /etc/passwd` ran silently.
-        //
-        // THE THIRD TIME THIS SHAPE HAS APPEARED. `cd*` matched a prefix and ignored what followed
-        // `&&`; the read-only pass matched a verb and ignored its arguments; a rule matches a
-        // pattern and ignores them too. A grant is permission to run a COMMAND, never permission to
-        // leave the folder — the boundary is not a thing any rule may buy its way past.
-        // AND A STORED RULE IS HELD TO THE SAME STANDARD. `cat*` is an honest grant for reading this
-        // project and was also permitting `cat /etc/passwd`, because a rule matched the command TEXT
-        // and never looked at the paths in it. Asking CommandSubjects here rather than re-deriving
-        // the paths is what keeps the two doors from drifting apart again — they were fixed
-        // separately last time, and that is why one of them still had the flag-value hole.
-        if (request.Kind == PermissionKind.Shell)
-        {
-            var subjects = SubjectsOf(request);
-            if (!subjects.FullyExamined) return false;
-            if (!ShellStaysInside(request)) return false;
-        }
+        if (!RuleCouldMatch(request) || RuleSubject(request) is not { } subject) return false;
 
         // THE PROJECT'S RULES, even for a child narrowed to a folder of its own: a stored Always is a
         // grant for the project, so it can permit a child's write outside the child's folder.
@@ -972,11 +939,18 @@ public class PermissionPolicy
         if (_readAlso is not { } also || request.Kind != PermissionKind.FileRead || request.RemovesSource
             || RootTrust != TrustState.Trusted) return false;
         var resolved = Paths.AsFileTool(request.Display);
-        if (resolved is null) return false;
+        return resolved is not null && InWorkplace(resolved, request.ActsOn);
+    }
+
+    /// <summary>Whether <paramref name="resolved"/> — and the entry it acts on, if any — lies in a colleague's
+    /// workplace this session reads, inside the served roots, in a folder trusted on its own account.</summary>
+    private bool InWorkplace(string resolved, string? actsOn)
+    {
+        if (_readAlso is not { } also || RootTrust != TrustState.Trusted) return false;
         if (also.Served?.Roots is { } served && !served.Any(root => PathResolver.Contains(root, resolved))) return false;
         return also.Folders.Any(folder =>
             PathResolver.Contains(folder, resolved)
-            && (request.ActsOn is not { } entry || PathResolver.Contains(folder, entry))
+            && (actsOn is not { } entry || PathResolver.Contains(folder, entry))
             && Directory.Exists(folder)
             && Path.GetPathRoot(folder) is { Length: > 0 } root
             && Path.TrimEndingDirectorySeparator(root) != Path.TrimEndingDirectorySeparator(folder)
@@ -1088,6 +1062,53 @@ public class PermissionPolicy
     }
 
     /// <summary>
+    /// Whether a stored Always rule could ever let <paramref name="request"/> through — what decides whether a prompt
+    /// offers Always at all.
+    ///
+    /// <para>THE RULE PATH'S OWN CONDITIONS, NOT A COPY: <see cref="IsSilentlyAllowed"/> asks this before it reads the
+    /// store, so the button and the match cannot disagree. Offered where no rule can hold — a chain, a path outside
+    /// the project — Always stored a rule and the next identical command asked again.</para>
+    /// </summary>
+    public bool RuleCouldMatch(PermissionRequest request)
+    {
+        if (request.AlwaysRule is null) return false;
+
+        var subject = RuleSubject(request);
+        if (subject is null) return false;   // resolution failed: fail toward asking, never toward silence.
+
+        // A CHAIN IS NEVER MATCHED BY A STORED RULE, however that rule was written. Refusing to
+        // CREATE one (CommandArity.RuleFor) protects the future; this protects the past, because a
+        // store already holding `cd*` would otherwise keep permitting `cd /tmp && rm -rf ~` on every
+        // machine that granted it before the fix. A rule is a statement about one command, and the
+        // text after `&&` is a command nothing here has examined.
+        if (request.Kind == PermissionKind.Shell && CommandArity.IsChain(subject))
+            return false;
+
+        // AND A RULE CANNOT REACH OUTSIDE THE FOLDER EITHER. `cat*` is an honest grant for reading
+        // this project; it was also permitting `cat /etc/passwd`, because a stored rule matched the
+        // command TEXT and never looked at the paths in it. The free pass above was fixed to confine
+        // its arguments and this path walked straight around that fix — verified live: with `cat*`
+        // granted, `cat /etc/passwd` ran silently.
+        //
+        // THE THIRD TIME THIS SHAPE HAS APPEARED. `cd*` matched a prefix and ignored what followed
+        // `&&`; the read-only pass matched a verb and ignored its arguments; a rule matches a
+        // pattern and ignores them too. A grant is permission to run a COMMAND, never permission to
+        // leave the folder — the boundary is not a thing any rule may buy its way past.
+        // AND A STORED RULE IS HELD TO THE SAME STANDARD. `cat*` is an honest grant for reading this
+        // project and was also permitting `cat /etc/passwd`, because a rule matched the command TEXT
+        // and never looked at the paths in it. Asking CommandSubjects here rather than re-deriving
+        // the paths is what keeps the two doors from drifting apart again — they were fixed
+        // separately last time, and that is why one of them still had the flag-value hole.
+        if (request.Kind == PermissionKind.Shell)
+        {
+            var subjects = SubjectsOf(request);
+            if (!subjects.FullyExamined) return false;
+            if (!ShellStaysInside(request)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
     /// The structural bound on the one widening in this feature: whether a shell command is confined
     /// enough that a classifier ALLOW on it may be honoured.
     ///
@@ -1155,22 +1176,43 @@ public class PermissionPolicy
     /// Neither looked at where a relative path lands or where the command runs, so in a trusted folder
     /// <c>cat ../../secret</c> and <c>ls</c> with <c>working_dir: "/"</c> both read outside it unasked.</para>
     /// </summary>
-    private bool ShellStaysInside(PermissionRequest request)
+    /// <param name="request">The shell request.</param>
+    /// <param name="reading">True for a command that can only look: it may also read where a file read would not ask —
+    /// a folder granted for reading, or a colleague's workplace (see <see cref="ReadableBeyond"/>).</param>
+    private bool ShellStaysInside(PermissionRequest request, bool reading = false)
     {
         // A CUSTOM ENVIRONMENT DECIDES WHERE THINGS LAND — OLDPWD and CDPATH move a cd, PATH picks the binary
         // — and none of it is in the text judged here. See PermissionRequest.CustomEnv.
         if (request.CustomEnv) return false;
 
         var folder = RunFolder(request);
-        if (folder is null || !IsInsideBoundary(folder)) return false;   // unresolvable: fail toward asking
+        bool Inside(string path) => IsInsideBoundaryAsShell(path) || (reading && ReadableBeyond(path));
+        if (folder is null || !(IsInsideBoundary(folder) || (reading && ReadableBeyond(folder)))) return false;   // unresolvable: fail toward asking
 
         // THE PATHS THE COMMAND NAMES, FROM THE FOLDER IT READS THEM IN — where it runs, and past a leading cd,
         // where that went; CommandSubjects returns them joined. Judged from the boundary instead, `ls ..` from
         // `sub` would read as leaving the project when it lists it; judged from before the cd,
         // `cd sub && cat leak.txt` would read the root's `leak.txt`.
         var subjects = CommandSubjects.Of(request.What, new PathResolver(folder));
-        if (subjects.After is not { } after || !IsInsideBoundary(after)) return false;
-        return subjects.Paths.All(IsInsideBoundaryAsShell);
+        if (subjects.After is not { } after || !(IsInsideBoundary(after) || (reading && ReadableBeyond(after)))) return false;
+        return subjects.Paths.All(Inside);
+    }
+
+    /// <summary>
+    /// Whether a path outside the project is one a file read would take without asking: under a folder the user granted
+    /// for reading (Always on a file read), or in a colleague's workplace.
+    ///
+    /// <para>ONLY FOR A COMMAND THAT CAN ONLY LOOK — the caller's to decide. The grant was for reading; a shell command
+    /// that writes is held to the project as ever. ONE ANSWER WITH THE FILE TOOLS: a folder they read silently made the
+    /// same `grep` there ask, the shell holding the user to a question they had already answered.</para>
+    /// </summary>
+    private bool ReadableBeyond(string path)
+    {
+        var resolved = Paths.AsShellArgument(path);
+        if (resolved is null) return false;
+        return _rules.Matches(_root, PermissionKind.FileRead, resolved)
+               || _rules.Matches(_root, PermissionKind.FileRead, Path.TrimEndingDirectorySeparator(resolved) + Path.DirectorySeparatorChar)
+               || InWorkplace(resolved, actsOn: null);
     }
 
     // THE FOLDER A SHELL REQUEST RUNS IN, resolved — its working_dir, or the boundary — or null when it cannot be.

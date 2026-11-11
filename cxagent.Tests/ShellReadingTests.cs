@@ -113,4 +113,69 @@ public sealed class ShellReadingTests : IDisposable
 
         Assert.Equal(ReviewEffect.None, Effect("cat src/*.cs"));
     }
+
+    // ---- reading where a file read would not ask ------------------------------------------------------------------
+
+    private string Elsewhere()
+    {
+        var other = Directory.CreateTempSubdirectory("shell-reading-other-").FullName;
+        File.WriteAllText(Path.Combine(other, "f.cs"), "class F {}");
+        return other;
+    }
+
+    private bool Silent(PermissionPolicy policy, string command) =>
+        policy.IsSilentlyAllowed(new PermissionRequest(PermissionKind.Shell, command, CommandArity.RuleFor(command), Subject: command));
+
+    /// <summary>
+    /// A FOLDER GRANTED FOR READING IS READABLE FROM THE SHELL TOO (user, 2026-11-11): a session holding Always for file
+    /// reads under ~/source still asked for every `grep` and `find` there. Only a read-only command; one that writes
+    /// is held to the project as before.
+    /// </summary>
+    [Fact]
+    public void A_read_only_command_reads_a_folder_granted_for_reading()
+    {
+        var other = Elsewhere();
+        var rules = new PermissionRulesStore(new CxAgent.Core.Storage.AppPaths(Directory.CreateTempSubdirectory("shell-reading-cfg-").FullName));
+        rules.SetTrust(_root, TrustState.Trusted);
+        var policy = new PermissionPolicy(_root, rules, EditMode.AlwaysAsk);
+        Assert.False(Silent(policy, $"grep -n class {other}/f.cs"));
+
+        rules.Add(_root, PermissionKind.FileRead, other + "/");
+
+        Assert.True(Silent(policy, $"grep -n class {other}/f.cs"));
+        Assert.True(Silent(policy, $"cd {other} && ls"));
+        Assert.False(Silent(policy, $"rm {other}/f.cs"));
+        Assert.False(Silent(policy, $"cp {other}/f.cs {other}/g.cs"));
+    }
+
+    /// <summary>
+    /// AND A COLLEAGUE'S WORKPLACE: a colleague brought into a session elsewhere reads the codebases it knows without
+    /// asking through the file tools, and asked for every `grep` there through the shell.
+    /// </summary>
+    [Fact]
+    public void A_read_only_command_reads_a_colleague_s_workplace()
+    {
+        var other = Elsewhere();
+        var rules = new PermissionRulesStore(new CxAgent.Core.Storage.AppPaths(Directory.CreateTempSubdirectory("shell-reading-cfg-").FullName));
+        rules.SetTrust(_root, TrustState.Trusted);
+        rules.SetTrust(other, TrustState.Trusted);
+        var policy = new PermissionPolicy(_root, rules, EditMode.AlwaysAsk).WithReadAlso(new ReadAlso([other], null));
+
+        Assert.True(Silent(policy, $"cat {other}/f.cs"));
+        Assert.True(Silent(policy, $"cd {other} && grep -rn class ."));
+        Assert.False(Silent(policy, $"touch {other}/new.cs"));
+    }
+
+    /// <summary>
+    /// NO ALWAYS THAT CANNOT HOLD (user, 2026-11-11): a stored rule never reaches past the project or across a chain, so
+    /// offering one for such a command stored a rule and asked again next time.
+    /// </summary>
+    [Theory]
+    [InlineData("dotnet test", true)]
+    [InlineData("grep -n class src/b.cs", true)]
+    [InlineData("find /etc -name hosts", false)]
+    [InlineData("cat ~/elsewhere.txt", false)]
+    [InlineData("dotnet build 2>&1 | tail -5", false)]
+    public void Always_is_offered_only_where_a_rule_could_match(string command, bool offered) =>
+        Assert.Equal(offered, _policy.RuleCouldMatch(new PermissionRequest(PermissionKind.Shell, command, CommandArity.RuleFor(command), Subject: command)));
 }
