@@ -38,12 +38,15 @@ internal static class WebPanel
         if (ledger is not null)
         {
             var costs = ledger.CostByInstance;
+            var caches = ledger.CacheByInstance;
             foreach (var (name, tokens) in ledger.ByModel.OrderByDescending(m => m.Value))
                 models.Add(new JsonObject
                 {
                     ["name"] = name,
                     ["tokens"] = tokens,
                     ["cost"] = costs.TryGetValue(name, out var c) ? (double)c : null,
+                    // ABSENT, NOT ZERO, for an instance that never reported — as the terminal's row.
+                    ["cache"] = caches.TryGetValue(name, out var k) ? k.Rate : null,
                 });
         }
 

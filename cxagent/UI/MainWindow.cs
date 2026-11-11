@@ -1660,6 +1660,9 @@ public sealed class MainWindow : IDisposable
         /// <summary>What each instance has cost; absent for instances that reported nothing.</summary>
         public IReadOnlyDictionary<string, decimal>? CostByInstance { get; init; }
 
+        /// <summary>Each instance's cache; absent for instances that never reported one.</summary>
+        public IReadOnlyDictionary<string, InstanceCache>? CacheByInstance { get; init; }
+
         /// <summary>The session total, or null when nothing reported.</summary>
         public decimal? TotalCost { get; init; }
     }
@@ -1691,12 +1694,15 @@ public sealed class MainWindow : IDisposable
         _workerCacheHitRate = reading.CacheByAgent.Workers;
         _cacheWritten = reading.CacheWrittenTokens;
         _costByInstance = reading.CostByInstance;
+        _cacheByInstance = reading.CacheByInstance;
         _totalCost = reading.TotalCost;
         RefreshSessionPanel();
     }
 
     /// <summary>Share of input served from the provider's prefix cache; null when unreported.</summary>
     private double? _cacheHitRate;
+
+    private IReadOnlyDictionary<string, InstanceCache>? _cacheByInstance;
 
     /// <summary>Input tokens written into the provider's cache; zero where warming is free.</summary>
     private int _cacheWritten;
@@ -3358,6 +3364,7 @@ public sealed class MainWindow : IDisposable
             CacheHitRate = _cacheHitRate,
             CacheWrittenTokens = _cacheWritten,
             CostByInstance = _costByInstance,
+            CacheByInstance = _cacheByInstance,
             TotalCost = _totalCost,
             OwnCacheHitRate = _ownCacheHitRate,
             WorkerCacheHitRate = _workerCacheHitRate,

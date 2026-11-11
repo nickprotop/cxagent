@@ -761,4 +761,27 @@ public class SessionPanelTests
 
         Assert.True(timer.Elapsed < TimeSpan.FromSeconds(1), $"the refresh waited {timer.Elapsed} for git");
     }
+
+    /// <summary>
+    /// THE CACHE RATE SITS UNDER THE INSTANCE IT BELONGS TO, and no session-wide figure follows the last row, where it
+    /// read as that row's (user, 2026-11-11).
+    /// </summary>
+    [Fact]
+    public void Each_instance_shows_its_own_cache_rate_under_its_row()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "",
+            SpendByModel = new Dictionary<string, int> { ["deepseek:v3"] = 314_085, ["local:qwen"] = 87_836 },
+            CacheByInstance = new Dictionary<string, CxAgent.Core.Llm.InstanceCache> { ["deepseek:v3"] = new(0.81, 0) },
+            CacheHitRate = 0.46,
+        });
+
+        var lines = panel.RenderedText.Split('\n').Select(l => l.Trim()).ToList();
+        var deepseek = lines.FindIndex(l => l.StartsWith("deepseek:v3", StringComparison.Ordinal));
+        var local = lines.FindIndex(l => l.StartsWith("local:qwen", StringComparison.Ordinal));
+        Assert.Contains(lines.Skip(deepseek + 1).Take(local - deepseek - 1), l => l.Contains("cache 81%", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, l => l.Contains("46%", StringComparison.Ordinal));
+    }
 }

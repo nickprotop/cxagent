@@ -268,4 +268,24 @@ public class TokenLedgerTests
         Assert.Empty(l.CostByInstance);
     }
 
+
+    /// <summary>
+    /// EACH INSTANCE ITS OWN RATE (user, 2026-11-11): one session-wide figure drawn under the instance list read as the
+    /// last instance's, and a DeepSeek worker caching 81% looked like it reported nothing. Only reporting calls count, so
+    /// an instance that never reports has no rate at all.
+    /// </summary>
+    [Fact]
+    public void CacheByInstance_IsEachInstancesOwn_AndAbsentWhereNeverReported()
+    {
+        var l = new TokenLedger();
+        l.Record(new LlmUsage { InputTokens = 1000, CachedInputTokens = 800, CacheReported = true }, "deepseek:v3", subAgent: true);
+        l.Record(new LlmUsage { InputTokens = 1000, CachedInputTokens = 200, CacheReported = true }, "local:qwen");
+        l.Record(new LlmUsage { InputTokens = 1000 }, "local:qwen");
+        l.Record(new LlmUsage { InputTokens = 1000 }, "silent:model");
+
+        var rates = l.CacheByInstance;
+        Assert.Equal(0.8, rates["deepseek:v3"].Rate, 3);
+        Assert.Equal(0.2, rates["local:qwen"].Rate, 3);
+        Assert.False(rates.ContainsKey("silent:model"));
+    }
 }

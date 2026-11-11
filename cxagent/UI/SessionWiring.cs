@@ -220,6 +220,7 @@ public static class SessionWiring
                 CacheByAgent = spend.CacheHitRateByAgent,
                 CacheWrittenTokens = spend.CacheWrittenTokens,
                 CostByInstance = spend.CostByInstance,
+                CacheByInstance = spend.CacheByInstance,
                 TotalCost = spend.TotalCost,
             });
         }, "sessionWiring.Subscribe");

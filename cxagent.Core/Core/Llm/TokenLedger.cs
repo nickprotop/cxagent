@@ -1,5 +1,9 @@
 namespace CxAgent.Core.Llm;
 
+/// <summary>One instance's prefix cache: its hit rate over the calls that reported one, and what warming it wrote —
+/// zero where writing is free, which is every local endpoint.</summary>
+public sealed record InstanceCache(double Rate, int Written);
+
 /// <summary>
 /// Cumulative orchestrator token spend for ONE goal, against an optional budget.
 ///
@@ -184,6 +188,26 @@ public sealed class TokenLedger
     private readonly Dictionary<string, int> _byModel = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (int Input, int Output)> _splitByModel = new(StringComparer.Ordinal);
 
+    // INPUT AND CACHED INPUT OF THE CALLS THAT REPORTED A CACHE, per instance — the rate's two halves.
+    private readonly Dictionary<string, (long Input, long Cached, long Written)> _cacheByModel = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Each instance's own cache hit rate, over the calls where it reported one; an instance that never reported is
+    /// ABSENT, not zero — see <see cref="CacheHitRate"/>.
+    ///
+    /// <para>PER INSTANCE, NOT ONE SESSION FIGURE: a session mixing a caching provider with a local endpoint has two
+    /// different answers, and one number drawn under the list read as the last row's.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, InstanceCache> CacheByInstance
+    {
+        get
+        {
+            lock (_byModel)
+                return _cacheByModel.Where(c => c.Value.Input > 0).ToDictionary(c => c.Key,
+                    c => new InstanceCache((double)c.Value.Cached / c.Value.Input, (int)c.Value.Written), StringComparer.Ordinal);
+        }
+    }
+
     /// <summary>What each instance has cost, for those that reported anything. See CostByInstance.</summary>
     private readonly Dictionary<string, decimal> _costByInstance = new(StringComparer.Ordinal);
 
@@ -248,6 +272,13 @@ public sealed class TokenLedger
                 // map entirely rather than contributing a zero that would read as "free".
                 if (usage.Cost is { } cost)
                     _costByInstance[modelId] = _costByInstance.GetValueOrDefault(modelId) + cost;
+
+                if (usage.CacheReported)
+                {
+                    var (seen, cached, written) = _cacheByModel.GetValueOrDefault(modelId);
+                    _cacheByModel[modelId] = (seen + usage.InputTokens, cached + usage.CachedInputTokens,
+                        written + usage.CacheWriteTokens);
+                }
             }
 
         if (subAgent)

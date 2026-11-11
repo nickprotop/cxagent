@@ -2305,7 +2305,9 @@ function drawSessionPane(p) {
   pane.append(time, kv("Turns", String(p.session.turns)), kv("Tool calls", String(p.session.toolCalls)));
 
   pane.append(el("h3", null, "Tokens"));
-  for (const m of p.tokens.models) pane.append(kv(m.name, tokens(m.tokens) + (m.cost != null ? " · " + money(m.cost) : "")));
+  // EACH INSTANCE ITS OWN CACHE RATE, on its own row — as the terminal draws it under each instance.
+  for (const m of p.tokens.models) pane.append(kv(m.name, tokens(m.tokens) + (m.cost != null ? " · " + money(m.cost) : "")
+    + (m.cache != null ? " · cache " + Math.round(m.cache * 100) + "%" : "")));
   pane.append(kv("In / out", "↑ " + tokens(p.tokens.input) + "  ↓ " + tokens(p.tokens.output)));
   if (p.tokens.cacheHitRate != null) pane.append(kv("Cache hits", Math.round(p.tokens.cacheHitRate * 100) + "%"));
   if (p.tokens.workers) pane.append(kv("By workers", tokens(p.tokens.workers)));

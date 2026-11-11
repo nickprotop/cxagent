@@ -250,6 +250,10 @@ public sealed class SessionPanel
         /// nothing is ABSENT — see TokenLedger.CostByInstance.</summary>
         public IReadOnlyDictionary<string, decimal>? CostByInstance { get; init; }
 
+        /// <summary>Each instance's cache hit rate; absent for instances that never reported — see
+        /// TokenLedger.CacheRateByInstance.</summary>
+        public IReadOnlyDictionary<string, CxAgent.Core.Llm.InstanceCache>? CacheByInstance { get; init; }
+
         /// <summary>The session's total, or null when nothing reported.</summary>
         public decimal? TotalCost { get; init; }
 
@@ -483,27 +487,16 @@ public sealed class SessionPanel
                 if (state.CostByInstance is not null
                     && state.CostByInstance.TryGetValue(modelId, out var cost))
                     lines.Add(Muted($"  {Money(cost)}"));
-            }
 
-            // CACHE HIT RATE, once, under the list rather than per instance — the ledger tracks it
-            // session-wide, and inventing a per-instance figure it does not measure would be worse
-            // than one honest line.
-            //
-            // WHY IT EARNS THE SPACE: input dominates a tool loop and grows every turn, so a big ↑
-            // reads as expensive. It usually is not — a re-sent prefix that hits the cache costs a
-            // fraction of a cold one (43ms against 1,420ms, measured). Without this number the panel
-            // shows the alarming half of the fact and hides the reassuring half.
-            //
-            // ABSENT, NOT ZERO, when nobody reported: see CacheHitRate.
-            if (state.CacheHitRate is { } rate)
-            {
-                // THE WRITES BESIDE THE HITS, but only where warming was billed. A local endpoint
-                // fills its own RAM for free and reports no writes, so this stays a single clean
-                // figure there. On a paid provider — OpenAI charges 1.25x normal input to write,
-                // Anthropic up to 2x — a hit rate alone reads as pure saving when it is not.
-                lines.Add(Muted(state.CacheWrittenTokens > 0
-                    ? $"  cache {StatsDashboard.Percent(rate)} · wrote {Compact(state.CacheWrittenTokens)}"
-                    : $"  cache {StatsDashboard.Percent(rate)}"));
+                // ITS CACHE HIT RATE, under the row it describes. WHY IT EARNS THE SPACE: input dominates a tool loop
+                // and grows every turn, so a big ↑ reads as expensive; a re-sent prefix that hits the cache costs a
+                // fraction of a cold one. ABSENT, NOT ZERO, for an instance that never reported. The writes ride
+                // along only where warming was billed — a local endpoint fills its own RAM for free.
+                if (state.CacheByInstance is not null
+                    && state.CacheByInstance.TryGetValue(modelId, out var cache))
+                    lines.Add(Muted(cache.Written > 0
+                        ? $"  cache {StatsDashboard.Percent(cache.Rate)} · wrote {Compact(cache.Written)}"
+                        : $"  cache {StatsDashboard.Percent(cache.Rate)}"));
             }
 
             // THE SESSION TOTAL, unindented like the cache line — both describe the section rather
