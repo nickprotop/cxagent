@@ -286,6 +286,26 @@ internal static class ProcessRunner
         }
     }
 
+    // WHERE setsid IS, on Linux; null elsewhere, or where it is not installed.
+    private static readonly string? Setsid = OperatingSystem.IsLinux()
+        ? new[] { "/usr/bin/setsid", "/bin/setsid" }.FirstOrDefault(File.Exists)
+        : null;
+
+    /// <summary>
+    /// What to start so <paramref name="spec"/> runs in a session of its own, with no controlling terminal.
+    ///
+    /// <para>REDIRECTED STDIO IS NOT ENOUGH. A command sharing cxagent's session can open <c>/dev/tty</c> itself — any
+    /// terminal program does — and a terminal app the model had just built took over the screen it was drawing on and
+    /// left it broken (user, 2026-11-11). Without a controlling terminal that open fails, and the program reports it
+    /// cannot find one, which the model can read.</para>
+    ///
+    /// <para>NO FORK, SO NOTHING ELSE CHANGES: a process .NET starts is never a group leader, so setsid makes the new
+    /// session and execs in place — the same pid, killed and waited on exactly as before. Where setsid is missing —
+    /// macOS has none — the command runs as it did.</para>
+    /// </summary>
+    internal static (string FileName, IReadOnlyList<string> Arguments) OwnSession(ProcessSpec spec) =>
+        Setsid is { } setsid ? (setsid, [spec.FileName, .. spec.Arguments]) : (spec.FileName, spec.Arguments);
+
     /// <summary>
     /// Runs a command and waits for it, up to <see cref="RunOptions.TimeoutSeconds"/>.
     ///
@@ -304,9 +324,10 @@ internal static class ProcessRunner
     public static async Task<ProcessResult> RunAsync(ProcessSpec spec, IJobContext ctx,
         CancellationToken ct, DetachedProcessRegistry? registry = null)
     {
+        var (fileName, arguments) = OwnSession(spec);
         var psi = new ProcessStartInfo
         {
-            FileName = spec.FileName,
+            FileName = fileName,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             // REDIRECT STDIN AND CLOSE IT (below), so an interactive command gets EOF instead of the
@@ -318,7 +339,7 @@ internal static class ProcessRunner
             UseShellExecute = false,
             WorkingDirectory = spec.Run.WorkingDir ?? Environment.CurrentDirectory,
         };
-        foreach (var arg in spec.Arguments) psi.ArgumentList.Add(arg);
+        foreach (var arg in arguments) psi.ArgumentList.Add(arg);
         if (spec.Run.Unset is not null)
             foreach (var name in spec.Run.Unset) psi.Environment.Remove(name);
         if (spec.Run.Env is not null)
@@ -606,9 +627,10 @@ internal static class ProcessRunner
     public static Task<DetachedProcess> DetachAsync(
         ProcessSpec spec, IJobContext ctx, DetachedProcessRegistry? registry = null)
     {
+        var (fileName, arguments) = OwnSession(spec);
         var psi = new ProcessStartInfo
         {
-            FileName = spec.FileName,
+            FileName = fileName,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             // Same reasoning as RunAsync: an unredirected stdin is inherited from the TUI, so a
@@ -618,7 +640,7 @@ internal static class ProcessRunner
             UseShellExecute = false,
             WorkingDirectory = spec.Run.WorkingDir ?? Environment.CurrentDirectory,
         };
-        foreach (var arg in spec.Arguments) psi.ArgumentList.Add(arg);
+        foreach (var arg in arguments) psi.ArgumentList.Add(arg);
         if (spec.Run.Unset is not null)
             foreach (var name in spec.Run.Unset) psi.Environment.Remove(name);
         if (spec.Run.Env is not null)

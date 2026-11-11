@@ -309,4 +309,49 @@ public class ProcessRunnerTests
         Directory.CreateDirectory(dir);
         return dir;
     }
+
+    // ITS OWN SESSION: field 6 of /proc/<pid>/stat is the session id, and a process that leads its session has the
+    // same number there as its pid. Printed by the shell the command runs in.
+    private const string SessionProbe = "set -- $(cat /proc/$$/stat); [ \"$1\" = \"$6\" ] && echo own-session || echo shared-session";
+
+    /// <summary>
+    /// A COMMAND HAS NO TERMINAL TO TAKE (user, 2026-11-11: the model ran a terminal app it had just built, which opened
+    /// the terminal itself and drew over cxagent's screen). Redirected stdio is not enough — a program can open
+    /// /dev/tty directly while it shares cxagent's session. In a session of its own it has no controlling terminal.
+    /// </summary>
+    [Fact]
+    public async Task A_command_runs_in_a_session_of_its_own()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var ctx = new CollectingContext();
+
+        var result = await ProcessRunner.RunAsync(
+            new ProcessSpec("/bin/sh", ["-c", SessionProbe], new RunOptions(WorkingDir: TestProcesses.WorkingDir)), ctx, CancellationToken.None);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains(ctx.Lines, l => l.Contains("own-session", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_background_command_runs_in_a_session_of_its_own()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var dir = Path.Combine(Path.GetTempPath(), "cxagent-session-" + Guid.NewGuid().ToString("N"));
+        var registry = new DetachedProcessRegistry();
+        try
+        {
+            var detached = await ProcessRunner.DetachAsync(
+                new ProcessSpec("/bin/sh", ["-c", SessionProbe], new RunOptions(WorkingDir: TestProcesses.WorkingDir, SpillDir: dir)),
+                new CollectingContext(), registry);
+
+            Assert.True(await Poll.Until(() => detached.OutputPath is { } path && File.Exists(path)
+                && File.ReadAllText(path).Contains("session", StringComparison.Ordinal)));
+            Assert.Contains("own-session", File.ReadAllText(detached.OutputPath!), StringComparison.Ordinal);
+        }
+        finally
+        {
+            registry.ReapAll();
+            try { Directory.Delete(dir, recursive: true); } catch (Exception) { }
+        }
+    }
 }
