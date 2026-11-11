@@ -654,7 +654,8 @@ internal static class SystemPrompt
         sb.AppendLine("Colleagues are teammates who have worked where you have not. Treat what they know as you would a "
                     + "teammate's: when you are unsure about something in their area, ask before you guess — and "
                     + "especially before you try the same thing again. Bring one in with the colleague tool; one already "
-                    + "here is asked with agent_send. The list was taken when this conversation began.");
+                    + "here is asked with agent_send. It answers each ask from what it has learned, not from earlier asks, "
+                    + "so say in the ask everything it needs. The list was taken when this conversation began.");
         sb.AppendLine();
         sb.Append(CxAgent.Core.Colleagues.ColleagueIndex.Render(colleagues, CxAgent.Core.Colleagues.ColleagueIndex.DefaultCap));
     }

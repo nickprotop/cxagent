@@ -62,16 +62,27 @@ internal static class WebPanel
         }
 
         var workers = new JsonArray();
-        foreach (var row in AgentRows.For(session.SubAgents, now))
+        var rows = AgentRows.For(session.SubAgents, now).Select(r => (Row: r, Folded: false)).ToList();
+        // A COLLEAGUE'S TALK WORKER FOLDED INTO ITS CARD STILL HAS A TAB, and the tab reads its own state from this list:
+        // sent, marked folded, for the tab — the cards and the counts leave it out.
+        foreach (var row in rows.Select(r => r.Row).ToList())
+            if (row.TalkAgentId is { } talkId && talkId != row.AgentId && session.SubAgents.FindByAgentId(talkId) is { } talker)
+                rows.Add(((AgentRows.Describe(session.SubAgents, talker, now) ?? AgentRows.Idle(talker)) with
+                    { Badge = row.Badge, Talking = true, TalkAgentId = talkId }, true));
+        foreach (var (row, folded) in rows)
         {
             // A COLLEAGUE CARRIES ITS CARD AND NO TYPE — the facts F7's card draws, in the terminal's own words.
             var card = row.Badge is null ? null : session.Colleagues?.CardOf(row.Kept.Name);
             workers.Add(new JsonObject
             {
+                ["folded"] = folded,
                 ["agentId"] = row.AgentId,
                 ["name"] = row.Kept.Name,
                 ["type"] = row.Badge is null ? row.Kept.TypeName : null,
-                ["colleague"] = card is null ? null : ColleagueCard(card, AgentRows.ColleagueWord(row.State, card)),
+                ["colleague"] = card is null ? null : ColleagueCard(card, AgentRows.ColleagueWord(row, card)),
+                // ITS TALK WORKER, the card's second door — and whether this card IS one (a kept worker's conversation).
+                ["talkAgentId"] = row.TalkAgentId,
+                ["talk"] = session.SubAgents.KeepsConversation(row.Kept.Name),
                 ["task"] = row.Kept.Description,
                 ["state"] = row.State.ToString(),
                 ["running"] = row.Running,

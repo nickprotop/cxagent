@@ -60,6 +60,8 @@ internal static class BackgroundRunner
                 // never took is left alone — the release below is inside the wait's success.
                 // AN ADOPTED SEND ALREADY HOLDS ITS SLOT AND ANNOUNCED ITS START: waiting again would take a second
                 // slot, and announcing again would open a second stretch for one run.
+                // A RUN ALREADY UNDER WAY — moved here from the foreground — is the same stretch, prepared when it began.
+                if (inFlight is null) await store.PrepareAsync(kept.Name, work.Prompt, run.Token);
                 if (inFlight is null && work.Slot is not null) await work.Slot.WaitAsync(run.Token);
                 try
                 {

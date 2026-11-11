@@ -127,6 +127,39 @@ public sealed class SubAgentStore
     /// <summary>How many foreground children are waiting for a slot.</summary>
     public int QueuedInForeground => _foregroundQueued.Count;
 
+    /// <summary>
+    /// What runs just before a kept agent starts a new stretch of work — before its concurrency slot, its begin
+    /// announcement and its mail. Null does nothing.
+    ///
+    /// <para>A HOOK, SO THIS STORE KNOWS NOTHING OF WHAT USES IT: a colleague's desk starts its incarnation over from its
+    /// knowledge here, after waiting for its own rounds to be distilled. The handle and the run's token are all it is
+    /// given.</para>
+    /// </summary>
+    public Func<string, CancellationToken, Task>? Preparing { get; set; }
+
+    /// <summary>Runs <see cref="Preparing"/> for <paramref name="name"/>, or nothing.</summary>
+    internal Task PrepareAsync(string name, string? asked, CancellationToken ct)
+    {
+        // WHAT IT IS ASKED IS ITS TASK FROM NOW, not from when it starts: a colleague's card waiting to learn named the
+        // ask before this one.
+        if (!string.IsNullOrWhiteSpace(asked)) _asked[name] = asked;
+        return Preparing?.Invoke(name, ct) ?? Task.CompletedTask;
+    }
+
+    // AGENTS WAITING, BEFORE A STRETCH, FOR WHAT THEY KNOW TO CATCH UP — see Preparing; the card says so.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _waitingToLearn = new();
+
+    /// <summary>Notes that <paramref name="name"/> is waiting to learn before it starts; ended when it starts or gives up.</summary>
+    public void BeginWaitingToLearn(string name) => _waitingToLearn[name] = _clock.GetUtcNow();
+
+    public void EndWaitingToLearn(string name) => _waitingToLearn.TryRemove(name, out _);
+
+    /// <summary>Whether <paramref name="name"/> waits to learn before starting a stretch of work.</summary>
+    public bool IsWaitingToLearn(string name) => _waitingToLearn.ContainsKey(name);
+
+    /// <summary>When <paramref name="name"/>'s ask began waiting to learn, or null when it is not waiting.</summary>
+    public DateTimeOffset? WaitingToLearnSince(string name) => _waitingToLearn.TryGetValue(name, out var since) ? since : null;
+
     /// <summary>The foreground children the turn is waiting on, in no particular order.</summary>
     /// <remarks>A child already moved or stopped is left out: its call is being answered, and the turn no longer waits
     /// on it — the hint drops it at once rather than when the call returns.</remarks>
@@ -245,9 +278,33 @@ public sealed class SubAgentStore
     /// <summary>What the worker under <paramref name="name"/> is, when it is more than an ordinary one; else null.</summary>
     public WorkerBadge? BadgeOf(string name) => OriginOf(name) is { } origin ? Badges?.Invoke(origin) : null;
 
-    /// <summary>The handle of the live worker from <paramref name="origin"/>, or null when none is kept now.</summary>
+    /// <summary>
+    /// The handle of the live worker from <paramref name="origin"/> that answers asks, or null when none is kept now. A
+    /// worker that keeps a conversation (<see cref="KeepsConversation"/>) is not it — see <see cref="ConversationOf"/>.
+    /// </summary>
     public string? NameOfOrigin(string origin) =>
-        _origins.FirstOrDefault(o => o.Value == origin && _byName.ContainsKey(o.Key)).Key;
+        _origins.FirstOrDefault(o => o.Value == origin && _byName.ContainsKey(o.Key) && !_conversations.ContainsKey(o.Key)).Key;
+
+    /// <summary>The handle of the live worker from <paramref name="origin"/> that keeps a conversation, or null.</summary>
+    public string? ConversationOf(string origin) =>
+        _origins.FirstOrDefault(o => o.Value == origin && _byName.ContainsKey(o.Key) && _conversations.ContainsKey(o.Key)).Key;
+
+    // WORKERS THAT KEEP THEIR CONVERSATION FROM ONE STRETCH TO THE NEXT — a colleague's Talk worker; every other worker of
+    // an origin starts each stretch over (see Preparing).
+    private readonly ConcurrentDictionary<string, byte> _conversations = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Where a send from an agent to <paramref name="name"/> — a worker that keeps its conversation with the user — goes
+    /// instead: the handle of the worker that answers asks for the same origin, brought in if need be, or null to send as
+    /// addressed. Only the user's own sends reach a conversation.
+    /// </summary>
+    public Func<string, CancellationToken, Task<string?>>? AskInstead { get; set; }
+
+    /// <summary>Marks <paramref name="name"/> as a worker that keeps its conversation.</summary>
+    public void KeepConversation(string name) => _conversations[name] = 0;
+
+    /// <summary>Whether <paramref name="name"/> keeps its conversation from one stretch to the next.</summary>
+    public bool KeepsConversation(string name) => _conversations.ContainsKey(name);
 
     private string Mark(string name, string? origin)
     {

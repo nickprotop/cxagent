@@ -825,8 +825,28 @@ public sealed class Agent
     /// <c>PinnedHeadCount</c> pins index 0, so this survives compaction while a prompt is summarised
     /// away with the older half of the conversation. A long-running child forgets what it was asked
     /// and never forgets what it was told.</para>
+    ///
+    /// <para>REPLACEABLE BETWEEN RUNS ONLY — see <see cref="ReplaceCallerContext"/>: a colleague answers each ask from its
+    /// knowledge as it is at that ask, and this is where that knowledge is.</para>
     /// </summary>
-    private readonly string? _callerContext;
+    private string? _callerContext;
+
+    /// <summary>
+    /// Replaces what this agent is told about its situation, for the next run. A colleague's knowledge is read afresh at
+    /// each ask; unchanged, the text is the same and the cached prefix with it.
+    /// </summary>
+    internal void ReplaceCallerContext(string? context) =>
+        _callerContext = string.IsNullOrWhiteSpace(context) ? null : context.Trim();
+
+    /// <summary>
+    /// Starts this agent over from its starting prompt: its conversation is emptied, and the history notes the clear, so
+    /// a resume brings it back empty as well. What it was told and what its type says stay.
+    /// </summary>
+    internal void StartOver()
+    {
+        Context.Clear();
+        History?.NoteCleared();
+    }
 
     /// <summary>
     /// This agent's conversation, for its whole life — the thing that makes it self-contained.

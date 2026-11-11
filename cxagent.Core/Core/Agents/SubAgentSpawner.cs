@@ -532,6 +532,8 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         string? envelope = null;
         try
         {
+            // PREPARED BEFORE THE SLOT, as a send is — see SubAgentStore.Preparing.
+            if (keptAs is not null) await _store!.PrepareAsync(keptAs, prompt, ct);
             if (slot is not null)
             {
                 // QUEUED IS STILL WAITED ON: the hint counts it, and Ctrl+B says it cannot move it yet.

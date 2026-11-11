@@ -2895,6 +2895,18 @@ public sealed class MainWindow : IDisposable
                 }
                 // RELEASE, THROUGH /colleagues release — its answer said in the session, refusals included. On the pool:
                 // letting a worker go stops any commands it left running, which can wait on them.
+                // TALK ›: the colleague's Talk tab — its conversation with the user here, opened or made.
+                if (choice.Action == JobsPanel.RowAction.Talk)
+                {
+                    if (view.Badge is { } talking) _ = OpenTalkTabAsync(session, talking.Name);
+                    break;
+                }
+                // DON'T WAIT: the ask waiting for what the colleague lived to be learned starts now.
+                if (choice.Action == JobsPanel.RowAction.SkipWait)
+                {
+                    session.Colleagues?.SkipWait(view.Kept.Name);
+                    break;
+                }
                 if (choice.Action == JobsPanel.RowAction.Release)
                 {
                     if (view.Badge is { } badge) _ = Task.Run(() => session.ColleaguesCommand("release " + badge.Name));
@@ -2902,6 +2914,12 @@ public sealed class MainWindow : IDisposable
                 }
                 // A REFUSAL IS SAID, as /agents open says it: a card that will not open and stays silent reads as a
                 // key that does nothing.
+                // ASK… ON A CARD THAT IS ONLY A CONVERSATION — a kept worker's — brings the Ask worker its asks go to.
+                if (choice.Action == JobsPanel.RowAction.Open && view.Badge is { } asking && session.SubAgents.KeepsConversation(view.Kept.Name))
+                {
+                    _ = OpenAskTabAsync(session, asking.Name);
+                    break;
+                }
                 if (choice.Action == JobsPanel.RowAction.Open)
                 {
                     if (OpenAgentTab(session, view.Kept.Name) is { } refusal) session.NotifyWarning(refusal);
@@ -2913,6 +2931,48 @@ public sealed class MainWindow : IDisposable
                 break;
         }
         RefreshJobsPanel();
+    }
+
+    /// <summary>
+    /// Opens a colleague's Talk tab, making its Talk worker first if none is here. Refusals are said in the session.
+    /// </summary>
+    public async Task OpenTalkTabAsync(Session session, string colleague)
+    {
+        if (session.Colleagues is not { } desk || session.SessionId is not { } lead) return;
+        var opened = await Task.Run(() => desk.OpenTalkAsync(colleague, lead, CancellationToken.None));
+        _system.EnqueueOnUIThread(() =>
+        {
+            if (opened.Handle is { } handle && OpenAgentTab(session, handle) is { } refusal) session.NotifyWarning(refusal);
+            else if (opened.Refusal is { } why) session.NotifyWarning(why);
+        }, "colleagues.talk");
+    }
+
+    /// <summary>
+    /// <c>/colleagues ask|talk &lt;name&gt; [text]</c>: Core readies the worker and sends the text; this opens its tab.
+    /// </summary>
+    public async Task OpenColleagueDoorAsync(Session session, string rest, bool talk)
+    {
+        var door = await Task.Run(() => session.OpenColleagueDoorAsync(rest, talk));
+        _system.EnqueueOnUIThread(() =>
+        {
+            // BOTH CAN BE SAID: a --new refused while it answers still opens the tab it was meant for.
+            if (door.Handle is { } handle && OpenAgentTab(session, handle) is { } refusal) session.NotifyWarning(refusal);
+            if (door.Refusal is { } why) session.NotifyWarning(why);
+        }, "colleagues.door");
+    }
+
+    /// <summary>Opens a colleague's Ask tab, bringing its Ask worker in idle first if none is here.</summary>
+    public async Task OpenAskTabAsync(Session session, string colleague)
+    {
+        if (session.Colleagues is not { } desk || session.SessionId is not { } lead) return;
+        var said = desk.HandleHere(colleague) is null
+            ? await Task.Run(() => desk.BringAsync(new Core.Colleagues.BringOrder(colleague, "", null, Background: true, lead), CancellationToken.None))
+            : null;
+        _system.EnqueueOnUIThread(() =>
+        {
+            if (desk.HandleHere(colleague) is { } handle && OpenAgentTab(session, handle) is { } refusal) session.NotifyWarning(refusal);
+            else if (desk.HandleHere(colleague) is null && said is not null) session.NotifyWarning(said);
+        }, "colleagues.ask");
     }
 
     /// <summary>Forgets an ended agent, and closes its tab — there is nothing left for it to show.</summary>

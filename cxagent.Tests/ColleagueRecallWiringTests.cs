@@ -131,8 +131,8 @@ public sealed class ColleagueRecallWiringTests : IDisposable
     }
 
     [Fact]
-    public void The_growth_line_names_recall() =>
-        Assert.Contains("recall", ColleagueDesk.GrowthLine(["/home/dev/source/cxgpu"]));
+    public void The_version_line_names_recall() =>
+        Assert.Contains("recall", ColleagueDesk.VersionLine(8));
 
     [Theory]
     [InlineData("""{"action":"search","query":"legend panes"}""", "recall · search \"legend panes\"")]

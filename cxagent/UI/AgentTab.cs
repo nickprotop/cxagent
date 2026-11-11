@@ -51,6 +51,8 @@ public sealed class AgentTab : IDisposable
     private readonly ButtonControl _stop;
     private readonly ButtonControl _move;
     private readonly ButtonControl _release;
+    private readonly ButtonControl _skipWait;
+    private readonly ButtonControl _newTalk;
     /// <summary>
     /// The state in capitals at the head of the button row. THE ROW IS NEVER BLANK: Stop and Background are there
     /// only while the agent runs, and without this an idle tab opened on an empty line above a lone rule.
@@ -105,8 +107,26 @@ public sealed class AgentTab : IDisposable
             })
             .Build();
         _release.Visible = false;
+        // DON'T WAIT, while an ask waits for what the colleague lived to be learned: it starts now, from what it knew.
+        _skipWait = new ButtonBuilder()
+            .WithText(" Don't wait ")
+            .OnClick((object? _, ButtonControl _) => Session.Colleagues?.SkipWait(Kept.Name))
+            .Build();
+        _skipWait.Visible = false;
+        // A NEW CONVERSATION, IN A TALK TAB AT REST: it starts over from what the colleague has learned. Nothing is asked
+        // first — every exchange is already distilled. A refusal (it began answering meanwhile) is said in the session.
+        _newTalk = new ButtonBuilder()
+            .WithText(" New conversation ")
+            .OnClick((object? _, ButtonControl _) =>
+            {
+                if (Session.Colleagues?.NewConversation(Kept.Name) is { } why) Session.NotifyWarning(why);
+            })
+            .Build();
+        _newTalk.Visible = false;
         var bar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         bar.AddItem(_state);
+        bar.AddItem(_skipWait);
+        bar.AddItem(_newTalk);
         bar.AddItem(_release);
         bar.AddItem(_move);
         bar.AddItem(_stop);
@@ -246,6 +266,9 @@ public sealed class AgentTab : IDisposable
     public bool CanRelease => Session.SubAgents.BadgeOf(Kept.Name) is not null && _now is not { Running: true }
                               && !Session.SubAgents.Ended;
 
+    /// <summary>Whether New conversation is offered: a colleague's Talk tab, at rest, in a session still open.</summary>
+    public bool CanStartOver => CanRelease && Session.SubAgents.KeepsConversation(Kept.Name);
+
     /// <summary>Test seam: the Release button.</summary>
     public ButtonControl ReleaseForTest => _release;
 
@@ -253,7 +276,21 @@ public sealed class AgentTab : IDisposable
     public ButtonControl MoveForTest => _move;
 
     /// <summary>The tab title: the state first, as a job tab's.</summary>
-    public string Title() => TitleFor(Kept, _now, Session.SubAgents.BadgeOf(Kept.Name));
+    public string Title() => TitleFor(Kept, _now, Session.SubAgents.BadgeOf(Kept.Name)) + Door(Session.SubAgents, Kept);
+
+    /// <summary>
+    /// Which of a colleague's two tabs this is, after its title — " · talk" for the conversation with the user, " · ask"
+    /// for its asks — and nothing for any other worker (user, 2026-11-11: separate tabs for Ask and Talk).
+    /// </summary>
+    public static string Door(SubAgentStore store, StoredAgent kept) =>
+        store.BadgeOf(kept.Name) is null ? "" : store.KeepsConversation(kept.Name) ? " · talk" : " · ask";
+
+    /// <summary>
+    /// The same door in the state line's capitals — "ASK" or "TALK" — or "" for any other worker. THE LINE ABOVE THE HEADER
+    /// IS WHERE THE EYE GOES for how a tab stands, and with two tabs of one colleague side by side, which one this is
+    /// belongs beside it (user, 2026-11-11).
+    /// </summary>
+    public static string DoorWord(SubAgentStore store, StoredAgent kept) => Door(store, kept).TrimStart(' ', '·').ToUpperInvariant();
 
     /// <summary>
     /// A worker tab's title: its state first, then — for a colleague — its glyph and its name, which says more than a
@@ -266,7 +303,7 @@ public sealed class AgentTab : IDisposable
     {
         var glyph = now?.State switch
         {
-            AgentRowState.Queued => "○",
+            AgentRowState.Queued or AgentRowState.WaitingToLearn => "○",
             AgentRowState.Running or AgentRowState.WaitingForPermission => "●",
             AgentRowState.Done => "✓",
             null => "·",
@@ -283,6 +320,8 @@ public sealed class AgentTab : IDisposable
     public void Tick(DateTimeOffset now)
     {
         _now = AgentRows.Describe(Session.SubAgents, Kept, now);
+        // A TALK WORKER'S WORK IS THE CONVERSATION — the card's For marks it so, and a tab reads one worker alone.
+        if (_now is not null && Session.SubAgents.KeepsConversation(Kept.Name)) _now = _now with { Talking = true };
         var stopHadFocus = _stop.HasFocus;
         if (_stop.Visible != CanStop) _stop.Visible = CanStop;
         var moveHadFocus = _move.HasFocus;
@@ -291,6 +330,9 @@ public sealed class AgentTab : IDisposable
             _move.GetParentWindow()?.FocusManager.SetFocus(MainControl, FocusReason.Programmatic);
         if (_input.Visible != CanType) _input.Visible = CanType;
         if (_release.Visible != CanRelease) _release.Visible = CanRelease;
+        var waiting = _now is { State: AgentRowState.WaitingToLearn };
+        if (_skipWait.Visible != waiting) _skipWait.Visible = waiting;
+        if (_newTalk.Visible != CanStartOver) _newTalk.Visible = CanStartOver;
 
         // THE KEYBOARD LEAVES A STOP THAT HAS GONE. Clicked, Stop keeps the focus; hidden, it kept it still, so what
         // was typed next went nowhere and every space pressed the hidden button again.
@@ -299,10 +341,13 @@ public sealed class AgentTab : IDisposable
 
         var badge = Session.SubAgents.BadgeOf(Kept.Name);
         var word = StateWord(_now, badge, badge is null ? null : Session.Colleagues?.CardOf(Kept.Name), Session.SubAgents.Ended);
-        if (word != _stateText)
+        var door = DoorWord(Session.SubAgents, Kept);
+        if (word != _stateText || door != _doorText)
         {
             _stateText = word;
-            _state.SetContent([$"[bold {StateColour(_now, Session.SubAgents.Ended)}]{MarkupParser.Escape(word)}[/]"]);
+            _doorText = door;
+            var stated = $"[bold {StateColour(_now, Session.SubAgents.Ended)}]{MarkupParser.Escape(word)}[/]";
+            _state.SetContent([door.Length == 0 ? stated : $"[bold {ColorScheme.AccentMarkup}]{door}[/] {Muted("·")} {stated}"]);
         }
 
         // ONLY WHEN IT CHANGED: this runs every second for every open tab.
@@ -336,6 +381,10 @@ public sealed class AgentTab : IDisposable
     /// <summary>Test seam: the state word the button row shows.</summary>
     internal string StateText => _stateText;
 
+    // THE DOOR LAST DRAWN: a worker kept as a colleague while its tab is open becomes a Talk worker then, so the line is
+    // redrawn when either part changes.
+    private string _doorText = "";
+
     /// <summary>
     /// The button row's state word, in capitals: the same word the header's facts line uses — a colleague's own
     /// (idle between tasks, never done) — so the two never disagree. One never given work is idle.
@@ -343,9 +392,11 @@ public sealed class AgentTab : IDisposable
     public static string StateWord(AgentRowView? now, WorkerBadge? badge, CxAgent.Core.Colleagues.ColleagueCard? card, bool ended)
     {
         if (ended) return "SESSION ENDED";
+        // A COLLEAGUE'S WORD IS ITS CARD'S — "answering an ask", "talking with you" — so the tab and the card agree.
         var word = badge is not null
             ? card is null ? AgentRows.ColleagueWord(now?.State ?? AgentRowState.Done, learning: false)
-                           : AgentRows.ColleagueWord(now?.State ?? AgentRowState.Done, card)
+              : now is not null ? AgentRows.ColleagueWord(now, card)
+              : AgentRows.ColleagueWord(AgentRowState.Done, card)
             : now is null ? "idle" : AgentRows.Word(now.State);
         return word.ToUpperInvariant();
     }
@@ -355,7 +406,7 @@ public sealed class AgentTab : IDisposable
     private static string StateColour(AgentRowView? now, bool ended) => ended ? ColorScheme.MutedMarkup : now?.State switch
     {
         AgentRowState.Running or AgentRowState.Queued => ColorScheme.AccentMarkup,
-        AgentRowState.WaitingForPermission => ColorScheme.CautionMarkup,
+        AgentRowState.WaitingForPermission or AgentRowState.WaitingToLearn => ColorScheme.CautionMarkup,
         AgentRowState.Failed => ColorScheme.DangerMarkup,
         _ => ColorScheme.MutedMarkup,
     };
@@ -373,8 +424,8 @@ public sealed class AgentTab : IDisposable
         var card = badge is null ? null : Session.Colleagues?.CardOf(Kept.Name);
         var facts = FactsFor(Kept, _now, badge, card);
         lines.Add(Muted(facts));
-        // A COLLEAGUE'S WORKER IS DESCRIBED BY ITS NAME, already the header's first line.
-        if (Kept.Description is { Length: > 0 } description && description != badge?.Name) lines.Add(Muted(description));
+        // A COLLEAGUE'S WORKER IS DESCRIBED BY ITS NAME, already the header's first line, and its door by the title.
+        if (badge is null && Kept.Description is { Length: > 0 } description) lines.Add(Muted(description));
         if (Session.SubAgents.Ended) lines.Add(Muted("its session has ended — this agent was stopped with it"));
 
         // A VIEW, AND IT SAYS SO (decision 29): a tab strip mixes these with session and shell tabs, whose closing
@@ -385,7 +436,9 @@ public sealed class AgentTab : IDisposable
             lines.Add(Muted("keeps running when you close this tab · Stop, or x in Tasks (F7), stops it"));
         // A COLLEAGUE BETWEEN TASKS IS NOT A FINISHED TASK: x has nothing to delete on its card.
         else if (badge is not null && _now is not { Running: true })
-            lines.Add(Muted("closing this tab keeps it here · ask it below, or from its card in Tasks (F7)"));
+            lines.Add(Muted(Session.SubAgents.KeepsConversation(Kept.Name)
+                ? "closing this tab keeps the conversation · talk with it below, or reopen it from its card in Tasks (F7)"
+                : "closing this tab keeps it here · ask it below, or from its card in Tasks (F7)"));
         else if (_now is { Running: false })
             lines.Add(Muted("closing this tab keeps it · x in Tasks (F7) deletes it"));
         lines.Add("");
@@ -410,8 +463,8 @@ public sealed class AgentTab : IDisposable
         if (kept.Agent.Root is { } folder) facts += $" · in {folder}";
         if (badge is not null)
         {
-            var state = now?.State ?? AgentRowState.Done;
-            facts += $" · {(card is null ? AgentRows.ColleagueWord(state, learning: false) : AgentRows.ColleagueWord(state, card))}";
+            // THE STATE LINE'S WORD, in lower case — one reading, so the two lines of one tab never disagree.
+            facts += $" · {StateWord(now, badge, card, ended: false).ToLowerInvariant()}";
             if (now is { Running: true } running) facts += $" · {JobsPanel.Clock(running.Elapsed)}";
         }
         else if (now is { } row) facts += $" · {AgentRows.Word(row.State)} · {JobsPanel.Clock(row.Elapsed)}";
@@ -429,7 +482,10 @@ public sealed class AgentTab : IDisposable
             _now is { Foreground: true, Running: true } ? "read-only — the parent is waiting on this agent's answer"
             : Session.SubAgents.Ended ? "its session has ended"
             : _now is { Running: true } ? "Enter tells it — it reads this on its next turn"
-            : "Enter asks it — its answer appears here"));
+            // A COLLEAGUE'S TWO TABS SAY WHAT TYPING DOES: the conversation goes on, or an ask starts from what it knows.
+            : Session.SubAgents.BadgeOf(Kept.Name) is null ? "Enter asks it — its answer appears here"
+            : Session.SubAgents.KeepsConversation(Kept.Name) ? "Enter talks with it — the conversation goes on"
+            : "Enter asks it — fresh from what it has learned"));
 
     private static string Muted(string text) => $"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(text)}[/]";
 }

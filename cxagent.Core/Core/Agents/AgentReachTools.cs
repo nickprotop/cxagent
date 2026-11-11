@@ -67,6 +67,11 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
             return store.WasForgotten(request.To)
                 ? request.FromUser ? SubAgentStore.Dismissed(request.To) : SubAgentStore.DismissedForModel(request.To)
                 : $"error: no sub-agent named '{request.To}' in this session. " + Present();
+        // AN AGENT'S ASK NEVER LANDS IN THE USER'S CONVERSATION: a worker that keeps one is answered by the worker that
+        // answers asks for the same origin — see SubAgentStore.AskInstead.
+        if (!request.FromUser && store.KeepsConversation(stored.Name) && store.AskInstead is { } instead
+            && await instead(stored.Name, ct) is { } other && store.Find(other) is { } asks)
+            stored = asks;
         var name = stored.Name;
         AfterLookupForTest?.Invoke();
 
@@ -199,6 +204,10 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
             // a permit to be told it is wrong.
             //
             // THE ASKING TURN'S TOKEN, so Escape leaves the queue rather than stranding the caller.
+            //
+            // PREPARED BEFORE THE SLOT: a colleague waiting for its own rounds to be distilled must not hold a
+            // concurrency slot another worker could run in. See SubAgentStore.Preparing.
+            await store.PrepareAsync(agentName, prompt, ct);
             if (slot is not null)
                 await slot.WaitAsync(ct);
 
@@ -389,6 +398,10 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
             "Ask a sub-agent you already spawned for more. It REMEMBERS its own work — everything it "
             + "read, ran and concluded — so ask for what is still needed rather than restating what "
             + "it was originally told. Far cheaper than spawning a second agent over the same ground. "
+            // A COLLEAGUE IS THE EXCEPTION (user, 2026-11-11): it answers each ask from what it has learned, so a model
+            // told every agent remembers would leave out what a colleague no longer has.
+            + "A colleague is the exception: it answers each ask from what it has learned, not from earlier asks, so "
+            + "give it everything the ask needs. "
             + "Works while it is still running: a message sent to a busy agent reaches it on its next "
             + "turn, so tell it as soon as you know rather than waiting for it to finish and "
             + "re-spawning. That call confirms delivery instead of answering. "
@@ -422,7 +435,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
             },
             "prompt": {
               "type": "string",
-              "description": "What you need from it now. It still has its own context, so do not repeat the original task."
+              "description": "What you need from it now. A worker still has its own context, so do not repeat its original task; a colleague starts each ask from what it has learned, so say everything it needs."
             }{{BACKGROUND}}
           },
           "required": ["to", "prompt"]

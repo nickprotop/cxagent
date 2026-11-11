@@ -132,6 +132,8 @@ function handle(m) {
     case "sessions": state.rows = m.rows || []; drawSessions(); break;
     case "opened": opened(m); break;
     case "openedWorker": openedWorker(m); break;
+    // A WORKER THE SERVER JUST MADE OR FOUND FOR A CARD — a colleague's Talk or Ask worker — brought to the front.
+    case "showWorker": openWorker(m.sessionId, m.agentId); break;
     case "reset": { const v = state.views.get(m.sessionId); if (v) resetView(v); break; }
     case "event": event(m); break;
     case "panel":
@@ -392,13 +394,14 @@ function openedWorker(m) {
   const fresh = !view;
   if (!view) view = newView(m.sessionId, "worker");
   Object.assign(view, { parent: m.parent, agentId: m.agentId, name: m.name, workerType: m.workerType, task: m.task,
-    model: m.model, folder: m.folder, title: m.name, badge: m.badge || null });
+    model: m.model, folder: m.folder, title: m.name, badge: m.badge || null, door: m.door || null });
   if (fresh || state.active === m.sessionId) activate(m.sessionId);
   else drawTabs();
 }
 
 // A WORKER TAB'S LABEL: the terminal's — a colleague by its glyph and name, any other worker by its handle.
-function workerLabel(view) { return view.badge ? view.badge.glyph + " " + view.badge.name : "⤷ " + view.name; }
+// A COLLEAGUE'S TWO TABS SAY WHICH THEY ARE, as the terminal's: " · ask" and " · talk".
+function workerLabel(view) { return view.badge ? view.badge.glyph + " " + view.badge.name + (view.door ? " · " + view.door : "") : "⤷ " + view.name; }
 
 function openWorker(sessionId, agentId) {
   const key = sessionId + "~" + agentId;
@@ -431,7 +434,11 @@ function activate(id) {
   document.body.classList.toggle("editing", !!view && (view.kind === "file" || view.kind === "shell" || (view.kind === "config" && view.tab === "json")));
   // AND NO MESSAGE BOX AT ALL there: one that cannot send is room taken from the shell, the file or the output.
   document.body.classList.toggle("no-composer", !!view && !conversation);
-  $("input").placeholder = view && view.kind === "worker" ? "Message " + view.name + "…" : "Message, or / for commands";
+  // A COLLEAGUE'S TWO TABS SAY WHAT TYPING DOES, as the terminal's hints: the conversation goes on, or an ask starts fresh.
+  $("input").placeholder = !view || view.kind !== "worker" ? "Message, or / for commands"
+    : view.door === "talk" ? "Talk with " + view.badge.name + " — the conversation goes on…"
+    : view.door === "ask" ? "Ask " + view.badge.name + " — fresh from what it has learned…"
+    : "Message " + view.name + "…";
   // THE FOLDER STAYS IN THE HEADER on a page that is not a conversation — the marketplace, the config page: theirs is
   // the session they were opened from, as the terminal's title keeps its folder whatever dialog is open.
   const where = view && !view.folder && view.parent ? state.views.get(view.parent) : view;
@@ -478,18 +485,24 @@ function drawWorkerHead() {
   head.replaceChildren();
   const w = workerRunning(view);
   const running = !!(w && w.running);
+  // READ-ONLY WHILE THE LEAD WAITS ON IT, as the terminal's tab hides its composer then: a message typed now would join an
+  // answer the lead is owed, from someone the lead did not ask.
+  const held = running && !w.background;
+  $("input").disabled = held;
+  $("send").disabled = held;
   // A COLLEAGUE BETWEEN TASKS IS IDLE, NOT FINISHED: no ✓ or ✗ beside it, as on its terminal tab.
   if (running) head.append(el("span", "spin violet"));
   else if (!view.badge) head.append(el("span", w && w.state === "Failed" ? "mark-bad" : "mark-ok", w && w.state === "Failed" ? "✗" : "✓"));
   // A COLLEAGUE SAYS SO, with its name — the badge the terminal's tab and card show too.
-  head.append(el("span", "tag" + (view.badge ? " colleague" : ""), view.badge ? view.badge.kind : "Worker"),
+  // ITS DOOR BESIDE IT, as the terminal's state line has "ASK" or "TALK": two tabs of one colleague read alike otherwise.
+  head.append(el("span", "tag" + (view.badge ? " colleague" : ""), view.badge ? view.badge.kind + (view.door ? " · " + view.door : "") : "Worker"),
     el("b", null, view.badge ? view.badge.glyph + " " + view.badge.name : view.name));
   // A COLLEAGUE'S FACTS NAME NO TYPE, and its state in the terminal's colleague words (idle, learning, …).
   const said = w ? (w.colleague ? w.colleague.state : w.state.toLowerCase()) + (w.background && w.running ? " · background" : "") : view.badge ? "idle" : "";
   const facts = [view.badge ? view.name : view.workerType, view.model, said].filter(Boolean);
   head.append(el("span", "meta", facts.join(" · ")));
-  // A COLLEAGUE'S WORKER IS DESCRIBED BY ITS NAME, already the header's title — as on its terminal tab.
-  if (view.task && !(view.badge && view.task === view.badge.name)) head.append(el("span", "meta", view.task));
+  // A COLLEAGUE'S WORKER IS DESCRIBED BY ITS NAME, already in the head, and its door by the tag — the terminal's rule.
+  if (view.task && !view.badge) head.append(el("span", "meta", view.task));
   head.append(el("span", "spacer"));
   head.append(button("Back to session", "ghost", () => activate(view.parent)));
   if (running) {
@@ -497,8 +510,13 @@ function drawWorkerHead() {
       head.append(button("Background", null, () => send({ type: "workerAction", sessionId: view.parent, agentId: view.agentId, action: "background" })));
     head.append(button("Stop", "danger", () => send({ type: "workerAction", sessionId: view.parent, agentId: view.agentId, action: "stop" })));
   }
+  if (w && w.state === "WaitingToLearn")
+    head.append(button("Don't wait", null, () => send({ type: "colleagueSkipWait", sessionId: view.parent, agentId: view.agentId })));
   // A COLLEAGUE AT REST MAY BE RELEASED from its own tab, as from its card and the terminal's.
-  else if (view.badge) head.append(button("Release", null, () => send({ type: "colleagueRelease", sessionId: view.parent, name: view.badge.name })));
+  // A NEW CONVERSATION, IN A TALK TAB AT REST — the terminal's button; /clear typed here does the same.
+  if (view.door === "talk" && !running)
+    head.append(button("New conversation", null, () => send({ type: "colleagueNewTalk", sessionId: view.parent, agentId: view.agentId })));
+  if (view.badge && !running) head.append(button("Release", null, () => send({ type: "colleagueRelease", sessionId: view.parent, name: view.badge.name })));
 }
 
 // ---- a background command's tab ------------------------------------------------------------------------------------
@@ -2256,7 +2274,7 @@ function drawPanel() {
   for (const tab of document.querySelectorAll(".ptab")) tab.classList.toggle("on", tab.dataset.pane === state.pane);
   $("pane-session").hidden = state.pane !== "session";
   $("pane-tasks").hidden = state.pane !== "tasks";
-  const running = panel ? panel.workers.filter((w) => w.running).length + panel.commands.filter((c) => c.state === "Running").length : 0;
+  const running = panel ? panel.workers.filter((w) => w.running && !w.folded).length + panel.commands.filter((c) => c.state === "Running").length : 0;
   $("tasks-count").hidden = running === 0;
   $("tasks-count").textContent = String(running);
   // THE COUNT BESIDE ◧ WHILE THE PANEL IS HIDDEN, as the terminal's F5 item carries it: the Tasks tab that shows it is
@@ -2480,7 +2498,7 @@ function taskRow(dot, head, sub, actions) {
 // and the library's others under Available with Bring. Both read from this session, so a switch switches them. No type
 // and never "done": a colleague is what it has learned, and idle between tasks.
 function drawColleagueCards(pane, p, sid) {
-  const here = p.workers.filter((w) => w.colleague);
+  const here = p.workers.filter((w) => w.colleague && !w.folded);
   const away = p.colleagues ? p.colleagues.rows.filter((c) => !c.handle) : [];
   if (!here.length && !away.length) return;
   pane.append(el("h3", null, "Colleagues"));
@@ -2503,7 +2521,12 @@ function drawColleagueCards(pane, p, sid) {
     }
     card.append(el("div", "cc-knows", "v" + c.version + (c.knows.length ? " · knows " + c.knows.join(", ") : "")));
     const acts = el("div", "cc-acts");
-    acts.append(button("Open", null, open), button("Ask…", null, () => { open(); setTimeout(() => $("input").focus(), 0); }));
+    // ITS TWO DOORS (user, 2026-11-11): Ask… its Ask tab, Talk › its Talk tab — opened, or made by the server and shown.
+    const talk = () => { if (w.talkAgentId && !w.talk) openWorker(sid, w.talkAgentId); else if (w.talk) open(); else send({ type: "colleagueTalk", sessionId: sid, name: w.badge.name }); if (!wide()) setPanel(false); };
+    acts.append(button("Ask…", null, () => { if (w.talk) send({ type: "colleagueAsk", sessionId: sid, name: w.badge.name }); else { open(); setTimeout(() => $("input").focus(), 0); } }),
+      button("Talk ›", null, talk));
+    // DON'T WAIT while its ask waits for what it lived to be learned — the terminal card's link.
+    if (w.state === "WaitingToLearn") acts.append(button("Don't wait", null, () => send({ type: "colleagueSkipWait", sessionId: sid, agentId: w.agentId })));
     if (w.running) acts.append(button("Stop", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "stop" })));
     // RELEASE WHILE IDLE: it leaves this session and can be brought again — refused while it works.
     else acts.append(button("Release", null, () => send({ type: "colleagueRelease", sessionId: sid, name: w.badge.name })));
@@ -2523,7 +2546,7 @@ function drawTasksPane(p, sid) {
   pane.replaceChildren();
   drawColleagueCards(pane, p, sid);
   pane.append(el("h3", null, "Workers"));
-  const workers = p.workers.filter((w) => !w.colleague);
+  const workers = p.workers.filter((w) => !w.colleague && !w.folded);
   if (!workers.length) pane.append(el("p", "none", "No workers in this session."));
   for (const w of workers) {
     const acts = [button("Open", null, () => { openWorker(sid, w.agentId); if (!wide()) setPanel(false); })];

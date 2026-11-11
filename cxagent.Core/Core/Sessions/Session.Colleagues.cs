@@ -219,6 +219,16 @@ public sealed partial class Session
                             + "Distill again in the library.");
             case "rename":
                 return Rename(desk, rest);
+            // THE COMMAND'S HALF ONLY: the work is done and the answer is in the worker's tab. A front end catches these
+            // first, to open that tab as well.
+            case "ask":
+            case "talk":
+                var talk = verb.Equals("talk", StringComparison.OrdinalIgnoreCase);
+                _ = OpenColleagueDoorAsync(rest, talk).ContinueWith(t =>
+                {
+                    if (t.Result.Refusal is { } why) Notify(why);
+                }, TaskContinuationOptions.OnlyOnRanToCompletion);
+                return CommandStatus.Reported;
             case "release":
                 return rest.Length == 0
                     ? Told("Name the colleague: /colleagues release <name>.")
@@ -227,7 +237,7 @@ public sealed partial class Session
             case "unfreeze":
                 return Freeze(desk, Unquoted(rest), verb.Equals("freeze", StringComparison.OrdinalIgnoreCase));
             default:
-                return Told($"/colleagues knows keep, bring, release, open, rename, freeze, unfreeze, distill and forget, not '{verb}'. /colleagues alone lists them.");
+                return Told($"/colleagues knows keep, bring, ask, talk, release, open, rename, freeze, unfreeze, distill and forget, not '{verb}'. /colleagues alone lists them.");
         }
     }
 
@@ -254,21 +264,80 @@ public sealed partial class Session
     {
         if (Colleagues is not { } desk) return Told(ColleaguesOff);
 
-        // A QUOTED NAME is taken as quoted — "UI Charting" or 'UI Charting' — the way a shell has taught people to type
-        // a name with spaces; read unquoted, the quote became part of the name and nothing matched.
-        if (rest.Length > 1 && rest[0] is '"' or '\'' && rest.IndexOf(rest[0], 1) is var close and > 1)
-            return await BringNamedAsync(desk, rest[1..close].Trim(), rest[(close + 1)..].Trim());
+        var (name, task) = NameThenText(desk, rest);
+        return await BringNamedAsync(desk, name, task);
+    }
 
-        // THE LONGEST COLLEAGUE NAME THE TEXT IS, OR STARTS WITH — the whole text included, so a name typed with no task is
-        // known as that name and asked for its task, rather than cut at its first space into a name nobody has.
+    /// <summary>
+    /// A colleague's name and the text after it, as <c>bring</c>, <c>ask</c> and <c>talk</c> read them.
+    ///
+    /// <para>A QUOTED NAME is taken as quoted — "UI Charting" or 'UI Charting' — the way a shell has taught people to type
+    /// a name with spaces; read unquoted, the quote became part of the name and nothing matched. Otherwise THE LONGEST
+    /// COLLEAGUE NAME THE TEXT IS, OR STARTS WITH — the whole text included, so a name typed with no task is known as that
+    /// name, rather than cut at its first space into a name nobody has.</para>
+    /// </summary>
+    private static (string Name, string Text) NameThenText(ColleagueDesk desk, string rest)
+    {
+        if (rest.Length > 1 && rest[0] is '"' or '\'' && rest.IndexOf(rest[0], 1) is var close and > 1)
+            return (rest[1..close].Trim(), rest[(close + 1)..].Trim());
         var typed = rest.Trim();
         var match = desk.List().Select(c => c.Name)
             .Where(n => typed.Equals(n, StringComparison.OrdinalIgnoreCase) || typed.StartsWith(n + " ", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(n => n.Length).FirstOrDefault();
-        var (name, task) = match is not null
+        return match is not null
             ? (match, typed[match.Length..].Trim())
             : typed.Split(' ', 2) is [var first, var after] ? (first, after.Trim()) : (typed, "");
-        return await BringNamedAsync(desk, name, task);
+    }
+
+    /// <summary>
+    /// <c>/colleagues ask &lt;name&gt; [question]</c> and <c>/colleagues talk &lt;name&gt; [message]</c>: readies the
+    /// colleague's Ask or Talk worker — bringing it in idle if it is not here — and, with text, sends it from the user, as
+    /// typing in that tab would. Answers the worker whose tab a front end then opens, or why there is none.
+    ///
+    /// <para>ONE PATH FOR BOTH FRONT ENDS, AND FOR A HOST WITH NEITHER: what is asked is the same whichever opens the tab,
+    /// and the send is the tab's own (<see cref="SendFromAgentTab"/>), so an ask from the command starts fresh and waits to
+    /// learn exactly as one typed in the Ask tab.</para>
+    /// </summary>
+    private const string NewFlag = "--new";
+
+    public async Task<ColleagueDoor> OpenColleagueDoorAsync(string rest, bool talk)
+    {
+        var how = talk ? "Say who: /colleagues talk <name> [message]." : "Say who: /colleagues ask <name> [question].";
+        if (Colleagues is not { } desk) return new ColleagueDoor(null, ColleaguesOff);
+        if (SessionId is not { } lead) return new ColleagueDoor(null, "This session has no agent to report to yet.");
+        var (typed, text) = NameThenText(desk, rest);
+        if (typed.Length == 0) return new ColleagueDoor(null, how);
+        // ITS OWN NAME, so the handle is found whatever case it was typed in; one nobody has is the desk's to refuse.
+        var name = desk.List().FirstOrDefault(c => c.Name.Equals(typed, StringComparison.OrdinalIgnoreCase))?.Name ?? typed;
+
+        // --new, FIRST AFTER THE NAME: the Talk tab opens on a new conversation — its New conversation button, typed.
+        var fresh = talk && (text.Equals(NewFlag, StringComparison.OrdinalIgnoreCase) || text.StartsWith(NewFlag + " ", StringComparison.OrdinalIgnoreCase));
+        if (fresh) text = text[NewFlag.Length..].Trim();
+
+        string? handle;
+        if (talk)
+        {
+            var opened = await desk.OpenTalkAsync(name, lead, CancellationToken.None);
+            if (opened.Handle is null) return new ColleagueDoor(null, opened.Refusal);
+            handle = opened.Handle;
+            if (fresh && desk.NewConversation(handle) is { } why) return new ColleagueDoor(handle, why);
+        }
+        else
+        {
+            var said = desk.HandleHere(name) is null
+                ? await desk.BringAsync(new BringOrder(name, "", null, Background: true, lead), CancellationToken.None)
+                : null;
+            if (desk.HandleHere(name) is not { } here) return new ColleagueDoor(null, said);
+            handle = here;
+        }
+
+        // NOT AWAITED: the answer streams into the tab the front end opens; a refusal or a stop is said here.
+        if (text.Length > 0)
+            _ = SendFromAgentTab(handle, text).ContinueWith(t =>
+            {
+                if (t.Result is { } line) Notify(line);
+            }, TaskContinuationOptions.OnlyOnRanToCompletion);
+        return new ColleagueDoor(handle, null);
     }
 
     private async Task<CommandStatus> BringNamedAsync(ColleagueDesk desk, string name, string task)

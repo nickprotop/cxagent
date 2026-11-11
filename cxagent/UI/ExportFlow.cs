@@ -162,6 +162,7 @@ public sealed class ExportFlow(ConsoleWindowSystem system, AppPaths paths, strin
     private static string StateWord(AgentRowState state) => state switch
     {
         AgentRowState.Queued => "queued",
+        AgentRowState.WaitingToLearn => "waiting to learn",
         AgentRowState.Running => "running",
         AgentRowState.WaitingForPermission => "waiting for permission",
         AgentRowState.Done => "done",

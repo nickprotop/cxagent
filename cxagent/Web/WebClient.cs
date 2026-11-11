@@ -364,6 +364,51 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
                 else Error("No such open session.");
                 break;
             // THE PANE'S BRING: the session's own, the terminal's panel link's — it joins idle, to be given work.
+            // TALK ›, FROM ITS CARD: its Talk worker, opened or made, and its tab brought up — the terminal's link.
+            case "colleagueTalk":
+                if (LiveSession(Str(m, "sessionId")) is { } talking && talking.Colleagues is { } talkDesk && talking.SessionId is { } talkLead)
+                {
+                    var talkName = Str(m, "name") ?? "";
+                    var talkId = talking.Id;
+                    _ = Task.Run(async () =>
+                    {
+                        var opened = await talkDesk.OpenTalkAsync(talkName, talkLead, CancellationToken.None).ConfigureAwait(false);
+                        if (opened.Handle is { } handle && talking.SubAgents.Find(handle) is { } talker)
+                            Send(new JsonObject { ["type"] = "showWorker", ["sessionId"] = talkId, ["agentId"] = talker.Agent.Agent.Id });
+                        else if (opened.Refusal is { } why) Notice(talkId, why, "Warning");
+                    });
+                }
+                break;
+            // ASK…, ON A CARD THAT IS ONLY A CONVERSATION — a kept worker's: its Ask worker, brought in idle if need be.
+            case "colleagueAsk":
+                if (LiveSession(Str(m, "sessionId")) is { } asking && asking.Colleagues is { } askDesk && asking.SessionId is { } askLead)
+                {
+                    var askName = Str(m, "name") ?? "";
+                    var askId = asking.Id;
+                    _ = Task.Run(async () =>
+                    {
+                        var said = askDesk.HandleHere(askName) is null
+                            ? await askDesk.BringAsync(new Core.Colleagues.BringOrder(askName, "", null, true, askLead), CancellationToken.None).ConfigureAwait(false)
+                            : null;
+                        if (askDesk.HandleHere(askName) is { } handle && asking.SubAgents.Find(handle) is { } asker)
+                            Send(new JsonObject { ["type"] = "showWorker", ["sessionId"] = askId, ["agentId"] = asker.Agent.Agent.Id });
+                        else if (said is not null) Notice(askId, said, "Warning");
+                    });
+                }
+                break;
+            // NEW CONVERSATION, FROM A TALK TAB'S HEAD: the terminal's button, the same desk; a refusal is said in the session.
+            case "colleagueNewTalk":
+                if (LiveSession(Str(m, "sessionId")) is { } clearing && Str(m, "agentId") is { } clearingId
+                    && clearing.SubAgents.FindByAgentId(clearingId) is { } talker
+                    && clearing.Colleagues?.NewConversation(talker.Name) is { } notNow)
+                    Notice(clearing.Id, notNow, "Warning");
+                break;
+            // DON'T WAIT, FROM ITS CARD OR ITS TAB: the ask waiting to learn starts now — the terminal's link, the same desk.
+            case "colleagueSkipWait":
+                if (LiveSession(Str(m, "sessionId")) is { } waiting && Str(m, "agentId") is { } waitingId
+                    && waiting.SubAgents.FindByAgentId(waitingId) is { } held)
+                    waiting.Colleagues?.SkipWait(held.Name);
+                break;
             // RELEASE, FROM ITS CARD OR ITS TAB: the terminal's /colleagues release, through the same desk.
             case "colleagueRelease":
                 if (LiveSession(Str(m, "sessionId")) is { } releasing) releasing.ColleaguesCommand("release " + (Str(m, "name") ?? ""));
@@ -513,6 +558,8 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
             ["model"] = stored.Agent.ModelId,
             ["folder"] = stored.Agent.Root ?? session.WorkingDirectory,
             ["badge"] = WebPanel.Badge(session.SubAgents.BadgeOf(stored.Name)),
+            // WHICH OF A COLLEAGUE'S TWO TABS — the terminal's " · talk" / " · ask" — and null for any other worker.
+            ["door"] = AgentTab.Door(session.SubAgents, stored) is { Length: > 0 } door ? door.TrimStart(' ', '·') : null,
         });
         log.Subscribe(since, Send, replay =>
         {
@@ -841,6 +888,21 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
             case "/colleagues" when args.StartsWith("forget", StringComparison.OrdinalIgnoreCase):
                 ForgetColleague(session, args[6..].Trim().Trim('"', '\''), confirmed: false);
                 return true;
+            // ASK AND TALK SHOW THE WORKER'S TAB as well as doing the work — Core's half, the path the terminal takes.
+            case "/colleagues" when ColleagueDoorVerb().Match(args) is { Success: true } door && session.Colleagues is not null:
+            {
+                var talk = door.Groups[1].Value.Equals("talk", StringComparison.OrdinalIgnoreCase);
+                var doorId = session.Id;
+                _ = Task.Run(async () =>
+                {
+                    var opened = await session.OpenColleagueDoorAsync(args[door.Length..], talk).ConfigureAwait(false);
+                    // BOTH CAN BE SAID: a --new refused while it answers still shows the tab it was meant for.
+                    if (opened.Handle is { } handle && session.SubAgents.Find(handle) is { } worker)
+                        Send(new JsonObject { ["type"] = "showWorker", ["sessionId"] = doorId, ["agentId"] = worker.Agent.Agent.Id });
+                    if (opened.Refusal is { } why) Notice(doorId, why, "Warning");
+                });
+                return true;
+            }
             case "/colleagues" when args.StartsWith("open", StringComparison.OrdinalIgnoreCase):
                 OpenOneToOne(session, args[4..].Trim().Trim('"', '\''));
                 return true;
@@ -1025,6 +1087,10 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
 
     [System.Text.RegularExpressions.GeneratedRegex(@"^distill?\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
     private static partial System.Text.RegularExpressions.Regex DistillVerb();
+
+    // THE VERB AND THE SPACE AFTER IT, so the match's length is where the name starts; "asking" is not "ask".
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(ask|talk)(\s+|$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex ColleagueDoorVerb();
 
     private void ForgetMemory(Session session, string name, bool confirmed)
     {

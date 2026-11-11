@@ -1176,6 +1176,13 @@ public static class AppBootstrap
         // Core's answer says how to turn them on.
         manager.Commands.Register(SessionCommands.All.First(c => c.Name == "/colleagues"), (current, arguments) =>
         {
+            // ASK AND TALK OPEN THE WORKER'S TAB as well as doing the work — Core's half, the same path the browser takes.
+            if (current.Colleagues is not null && (arguments ?? "").Trim().Split(' ', 2) is [var door, ..] rest
+                && (door.Equals("ask", StringComparison.OrdinalIgnoreCase) || door.Equals("talk", StringComparison.OrdinalIgnoreCase)))
+            {
+                _ = mainWindow.OpenColleagueDoorAsync(current, rest.Length > 1 ? rest[1] : "", talk: door.Equals("talk", StringComparison.OrdinalIgnoreCase));
+                return true;
+            }
             if (!string.IsNullOrWhiteSpace(arguments) || current.Colleagues is null) return current.ColleaguesCommand(arguments).Handled();
             mainWindow.OpenColleagueLibrary(current);
             return true;

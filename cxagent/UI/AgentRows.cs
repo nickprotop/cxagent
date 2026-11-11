@@ -3,7 +3,9 @@ using CxAgent.Core.Agents;
 namespace CxAgent.UI;
 
 /// <summary>How a kept agent stands, as a row says it.</summary>
-public enum AgentRowState { Queued, Running, WaitingForPermission, Done, Stopped, Failed }
+/// <summary>How a kept agent stands. <see cref="WaitingToLearn"/> is a colleague's ask held until what it lived is
+/// distilled — see ColleagueDesk.</summary>
+public enum AgentRowState { Queued, WaitingToLearn, Running, WaitingForPermission, Done, Stopped, Failed }
 
 /// <summary>One kept agent as the Tasks panel and its tab show it.</summary>
 /// <param name="Kept">The agent and the handle it answers to.</param>
@@ -20,7 +22,16 @@ public sealed record AgentRowView(StoredAgent Kept, AgentRowState State, bool Fo
     /// <summary>What it is when more than an ordinary worker — a colleague — or null.</summary>
     public WorkerBadge? Badge { get; init; }
 
-    public bool Running => State is AgentRowState.Queued or AgentRowState.Running or AgentRowState.WaitingForPermission;
+    public bool Running => State is AgentRowState.Queued or AgentRowState.WaitingToLearn or AgentRowState.Running or AgentRowState.WaitingForPermission;
+
+    /// <summary>
+    /// A colleague's Talk worker here, by agent id — the conversation the user holds with it — or null. On the card of
+    /// its Ask worker, which stands for the colleague: one card, both doors.
+    /// </summary>
+    public string? TalkAgentId { get; init; }
+
+    /// <summary>What the card shows is the Talk worker at work — "talking with you" rather than "answering an ask".</summary>
+    public bool Talking { get; init; }
 }
 
 /// <summary>
@@ -52,6 +63,12 @@ public static class AgentRows
             return new(kept, Working(kept), false, now - since, since, null);
         }
 
+        // AN ASK HELD UNTIL WHAT IT LIVED IS LEARNED — before "queued", which a claim with no start would otherwise read as.
+        // ITS CLOCK RUNS FROM WHEN THE WAIT BEGAN, so a long distil shows as long.
+        if (store.WaitingToLearnSince(name) is { } waiting)
+            return new(kept, AgentRowState.WaitingToLearn, Foreground: store.IsBusy(name) && !store.IsUserSend(name),
+                now - waiting, waiting, null);
+
         // A CLAIM WITH NO RUN GOING IS SOMEONE WAITING ON THE ANSWER — the parent's turn, unless it is the user's
         // own send. Unannounced, it is still waiting for a concurrency slot.
         if (store.IsBusy(name))
@@ -75,9 +92,30 @@ public static class AgentRows
     /// <para>NO FILTER HERE. Nothing clears on its own, and what the user forgets has left the store, so the store's
     /// list is the panel's.</para>
     /// </summary>
-    public static IReadOnlyList<AgentRowView> For(SubAgentStore store, DateTimeOffset now) =>
-        [.. store.All().Select(kept => Describe(store, kept, now)
-            ?? (store.BadgeOf(kept.Name) is { } badge ? Idle(kept) with { Badge = badge } : null)).OfType<AgentRowView>()];
+    public static IReadOnlyList<AgentRowView> For(SubAgentStore store, DateTimeOffset now)
+    {
+        var rows = new List<AgentRowView>();
+        foreach (var kept in store.All())
+        {
+            // ONE CARD PER COLLEAGUE: its Talk worker folds into the card of its Ask worker when one is here — and stands
+            // alone when none is, a kept worker's conversation among them.
+            var origin = store.OriginOf(kept.Name);
+            if (store.KeepsConversation(kept.Name) && origin is not null && store.NameOfOrigin(origin) is not null) continue;
+            if (Row(store, kept, now) is not { } row) continue;
+            if (origin is null || store.BadgeOf(kept.Name) is null) { rows.Add(row); continue; }
+
+            var talk = store.KeepsConversation(kept.Name) ? kept : store.ConversationOf(origin) is { } t ? store.Find(t) : null;
+            row = row with { TalkAgentId = talk?.Agent.Agent.Id, Talking = talk is not null && ReferenceEquals(talk, kept) && row.Running };
+            // THE CONVERSATION AT WORK SHOWS ON THE CARD while the asks are at rest: the colleague is busy either way.
+            if (!row.Running && talk is not null && !ReferenceEquals(talk, kept) && Row(store, talk, now) is { Running: true } talking)
+                row = talking with { Kept = kept, TalkAgentId = talk.Agent.Agent.Id, Talking = true, Badge = row.Badge };
+            rows.Add(row);
+        }
+        return rows;
+    }
+
+    private static AgentRowView? Row(SubAgentStore store, StoredAgent kept, DateTimeOffset now) =>
+        Describe(store, kept, now) ?? (store.BadgeOf(kept.Name) is { } badge ? Idle(kept) with { Badge = badge } : null);
 
     /// <summary>
     /// A row for one that has never been given work — as idle as one whose last task ended, which is what a colleague
@@ -90,6 +128,7 @@ public static class AgentRows
     public static string Word(AgentRowState state) => state switch
     {
         AgentRowState.Queued => "queued",
+        AgentRowState.WaitingToLearn => "waiting to learn",
         AgentRowState.Running => "running",
         AgentRowState.WaitingForPermission => "waiting for permission",
         AgentRowState.Done => "done",
@@ -106,6 +145,7 @@ public static class AgentRows
     {
         AgentRowState.Running => "working",
         AgentRowState.Queued => "queued",
+        AgentRowState.WaitingToLearn => "waiting to learn",
         AgentRowState.WaitingForPermission => "waiting for permission",
         _ when learning => "learning",
         AgentRowState.Failed => "idle · last task failed",
@@ -118,6 +158,15 @@ public static class AgentRows
     /// </summary>
     public static string ColleagueWord(AgentRowState state, CxAgent.Core.Colleagues.ColleagueCard card) =>
         ColleagueWord(state, card.Learning && !card.Frozen) + (card.Frozen ? " · frozen" : "");
+
+    /// <summary>
+    /// A colleague card's word — both front ends draw it: what its work is, asks or the conversation with the user, and
+    /// otherwise its state as <see cref="ColleagueWord(AgentRowState, CxAgent.Core.Colleagues.ColleagueCard)"/> says it.
+    /// </summary>
+    public static string ColleagueWord(AgentRowView row, CxAgent.Core.Colleagues.ColleagueCard card) =>
+        row.State is AgentRowState.Running
+            ? (row.Talking ? "talking with you" : "answering an ask") + (card.Frozen ? " · frozen" : "")
+            : ColleagueWord(row.State, card);
 
     private static AgentRowState Working(StoredAgent kept) =>
         kept.Agent.Agent.IsWaitingOnPermission ? AgentRowState.WaitingForPermission : AgentRowState.Running;

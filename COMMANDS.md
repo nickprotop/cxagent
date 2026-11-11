@@ -56,6 +56,8 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/colleagues` | Open the library: every colleague, what it knows, its experience |
 | `/colleagues keep <worker> [name]` | Keep a worker of this session as a colleague |
 | `/colleagues bring <name> [task]` | Bring a colleague in — on a task, or idle to be given one |
+| `/colleagues ask <name> [question]` | Ask a colleague here, fresh from what it has learned; opens its Ask tab |
+| `/colleagues talk <name> [--new] [message]` | Talk with a colleague here, in a conversation that goes on; `--new` starts it over. Opens its Talk tab |
 | `/colleagues release <name>` | Let a colleague at rest leave this session; it can be brought again |
 | `/colleagues open <name>` | Talk with a colleague one-to-one, in a session of its own |
 | `/colleagues rename <name> to <new name>` | Rename a colleague; its old names still find it |
@@ -615,7 +617,7 @@ refused. Turn memory off in F8 › General, or with [`memory.enabled`](CONFIG.md
 
 A colleague is a worker you chose to keep. After each task it is given, what it did is distilled into its experience,
 and it brings that experience into any session you call it into. `/colleagues` opens the library, a tab in the
-terminal and a page in the browser; its verbs keep, bring, open, rename, freeze, unfreeze, distil again and forget
+terminal and a page in the browser; its verbs keep, bring, ask, talk, release, open, rename, freeze, unfreeze, distil again and forget
 one.
 
 **[COLLEAGUES.md](COLLEAGUES.md)** has all of it: a tutorial from one codebase to the next, ways to use one, and how

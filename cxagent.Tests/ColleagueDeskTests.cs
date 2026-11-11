@@ -186,23 +186,30 @@ public sealed class ColleagueDeskTests : IDisposable
         Assert.Empty(Library.List());
     }
 
+    /// <summary>
+    /// EVERY ASK STARTS FRESH FROM ITS KNOWLEDGE AS IT IS NOW (user, 2026-11-11: "a colleague is its distilled knowledge;
+    /// after a round is distilled, that is its starting point"). Nothing of the earlier ask is in the conversation, the
+    /// newer experience is in the prompt, and no "grown elsewhere" note is posted — it would be false in a fresh ask.
+    /// </summary>
     [Fact]
-    public async Task Experience_grown_elsewhere_arrives_as_one_line_at_the_next_run()
+    public async Task Every_ask_starts_fresh_from_the_knowledge_as_it_is_now()
     {
         Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
         var session = Open();
-        await session.Colleagues!.BringAsync(new BringOrder("Charting", "one", null, false, session.SessionId!), CancellationToken.None);
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "FIRST-ASK", null, false, session.SessionId!), CancellationToken.None);
         await session.Colleagues.Idle();
 
         // ANOTHER SESSION, ELSEWHERE, DISTILLED A ROUND MEANWHILE.
+        Library.WriteCore("Charting", "## Lessons\n- NEWER-LESSON (observed, round 1)");
         Library.Update("Charting", r => r with { ExperienceVersion = r.ExperienceVersion + 1, GrownIn = ["/home/dev/source/invoice"] });
-        await Send(session, "charting", "two");
+        await Send(session, "charting", "SECOND-ASK");
         await session.Colleagues.Idle();
 
-        var mail = session.SubAgents.Find("charting")!.Agent.Agent.Mailbox.DrainEntries();
-        var line = Assert.Single(mail);
-        Assert.Contains("grown since", line.Text);
-        Assert.Contains("invoice", line.Text);
+        var sent = string.Join("\n", _model.LastMessages!.Select(m => m.Content));
+        Assert.Contains("SECOND-ASK", sent);
+        Assert.DoesNotContain("FIRST-ASK", sent);
+        Assert.Contains("NEWER-LESSON", sent);
+        Assert.Empty(session.SubAgents.Find("charting")!.Agent.Agent.Mailbox.DrainEntries());
     }
 
     [Fact]
@@ -296,14 +303,19 @@ public sealed class ColleagueDeskTests : IDisposable
         /// <summary>What it answers when asked to distil.</summary>
         public string Distil { get; set; } = "NO CHANGE";
 
-        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct) =>
-            Task.FromResult(new LlmResponse
+        /// <summary>What a worker — not the distiller — was last sent.</summary>
+        public List<ChatMessage>? LastMessages { get; private set; }
+
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct)
+        {
+            var distilling = messages.Any(m => m.Role == "system" && m.Content.StartsWith("You keep the experience", StringComparison.Ordinal));
+            if (!distilling) LastMessages = [.. messages];
+            return Task.FromResult(new LlmResponse
             {
-                Text = messages.Any(m => m.Role == "system" && m.Content.StartsWith("You keep the experience", StringComparison.Ordinal))
-                    ? Distil
-                    : "done — moved it and checked the render",
+                Text = distilling ? Distil : "done — moved it and checked the render",
                 StopReason = "end_turn",
             });
+        }
 
         public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages, List<ToolDefinition>? tools,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
@@ -336,5 +348,79 @@ public sealed class ColleagueDeskTests : IDisposable
         {
             try { Directory.Delete(scratch, recursive: true); } catch (IOException) { }
         }
+    }
+
+    private void UndistilledRound() =>
+        Library.Append("Charting", new PastRound(0, "elsewhere", _project, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+            [new ChatMessage { Role = "user", Content = "chart it" }, new ChatMessage { Role = "assistant", Content = new string('c', 400) }]));
+
+    private async Task<Session> Joined()
+    {
+        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        var session = Open();
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+        await session.Colleagues.Idle();
+        session.Colleagues.BusyRetry = TimeSpan.FromMilliseconds(50);
+        session.Colleagues.LearnPoll = TimeSpan.FromMilliseconds(20);
+        return session;
+    }
+
+    /// <summary>
+    /// AN ASK WAITS UNTIL WHAT THE COLLEAGUE LIVED IS LEARNED, read from the library — here the lock is held as another
+    /// process would hold it — and the card says it is waiting to learn. It goes on once the round is distilled.
+    /// </summary>
+    [Fact]
+    public async Task An_ask_waits_for_its_own_rounds_to_be_distilled()
+    {
+        var session = await Joined();
+        var held = DistillingLock.TryTake(Library.Root)!;
+        UndistilledRound();
+
+        var ask = Send(session, "charting", "next");
+
+        Assert.True(await Poll.Until(() => session.SubAgents.IsWaitingToLearn("charting")));
+        Assert.False(ask.IsCompleted);
+        var row = CxAgent.UI.AgentRows.Describe(session.SubAgents, session.SubAgents.Find("charting")!, DateTimeOffset.UtcNow)!;
+        Assert.Equal(CxAgent.UI.AgentRowState.WaitingToLearn, row.State);
+        Assert.Equal("waiting to learn", CxAgent.UI.AgentRows.ColleagueWord(row.State, learning: true));
+        // THE CARD NAMES THE ASK THAT WAITS, not the one before it.
+        Assert.Equal("next", session.Colleagues!.CardOf("charting")!.Task);
+        // ITS CLOCK RUNS FROM WHEN THE WAIT BEGAN: a card read "waiting to learn 0s" for forty seconds.
+        var later = CxAgent.UI.AgentRows.Describe(session.SubAgents, session.SubAgents.Find("charting")!, DateTimeOffset.UtcNow.AddSeconds(30))!;
+        Assert.True(later.Elapsed >= TimeSpan.FromSeconds(29), $"waited {later.Elapsed}");
+        held.Dispose();
+        await ask.WaitAsync(TimeSpan.FromSeconds(10));
+        // THE EARLIER ROUND WAS LEARNED BEFORE THE ASK RAN; the ask's own round is the next to learn.
+        Assert.DoesNotContain(Library.Undistilled("Charting"), r => r.Session == "elsewhere");
+        Assert.False(session.SubAgents.IsWaitingToLearn("charting"));
+    }
+
+    /// <summary>DON'T WAIT starts the ask at once, from what was learned before.</summary>
+    [Fact]
+    public async Task Dont_wait_starts_the_ask_at_once()
+    {
+        var session = await Joined();
+        using var held = DistillingLock.TryTake(Library.Root)!;
+        UndistilledRound();
+
+        var ask = Send(session, "charting", "next");
+        Assert.True(await Poll.Until(() => session.SubAgents.IsWaitingToLearn("charting")));
+        Assert.True(session.Colleagues!.SkipWait("charting"));
+
+        await ask.WaitAsync(TimeSpan.FromSeconds(10));
+        // STILL WAITING TO BE LEARNED — the ask did not wait for it.
+        Assert.Contains(Library.Undistilled("Charting"), r => r.Session == "elsewhere");
+    }
+
+    /// <summary>A FROZEN COLLEAGUE LEARNS NOTHING, so nothing is waited for.</summary>
+    [Fact]
+    public async Task A_frozen_colleague_never_waits()
+    {
+        var session = await Joined();
+        using var held = DistillingLock.TryTake(Library.Root)!;
+        Library.Freeze("Charting");
+        UndistilledRound();
+
+        await Send(session, "charting", "next").WaitAsync(TimeSpan.FromSeconds(10));
     }
 }

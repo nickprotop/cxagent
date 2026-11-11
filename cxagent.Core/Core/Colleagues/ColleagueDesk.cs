@@ -44,7 +44,19 @@ public sealed record BringOrder(string Name, string Task, string? Model, bool Ba
 {
     /// <summary>Told the child the moment it is built, before it runs — how the lead draws a bring as a live worker row.</summary>
     public Action<SubAgent>? OnChild { get; init; }
+
+    /// <summary>
+    /// Bring its Talk worker — the conversation the user holds with it in this session — rather than the one that answers
+    /// asks. It joins idle, keeps its conversation, and is told it is talking with the user.
+    /// </summary>
+    public bool Talk { get; init; }
 }
+
+/// <summary>A colleague's Talk worker here — its handle — or why there is none.</summary>
+public sealed record TalkOpening(string? Handle, string? Refusal);
+
+/// <summary>The worker a <c>/colleagues ask</c> or <c>talk</c> leads to — its handle, whose tab a front end opens — or why there is none.</summary>
+public sealed record ColleagueDoor(string? Handle, string? Refusal);
 
 /// <summary>What <see cref="ColleagueDesk.ReadsOf"/> sorts: one round's messages, whose colleague, and the folder it ran in.</summary>
 /// <param name="Round">The round's messages, the tool calls and their results among them.</param>
@@ -203,6 +215,8 @@ public sealed partial class ColleagueDesk : IDisposable
         _workers.SendEnded += OnEnded;
         _workers.SendEnded += Weigh;
         _workers.Forgotten += OnWorkerForgotten;
+        _workers.Preparing = PrepareAsync;
+        _workers.AskInstead = AskWorkerForAsync;
         _workers.Badges = BadgeFor;
 
         // ROUNDS LEFT FROM BEFORE — a process that ended mid-drain, a drain that failed — are taken up now.
@@ -311,7 +325,8 @@ public sealed partial class ColleagueDesk : IDisposable
         var distilling = Distilling;
         var rows = all.Select(r =>
         {
-            var handle = HandleOf(r);
+            // HERE IF EITHER OF ITS WORKERS IS: one here only to talk with the user is not to be brought in again.
+            var handle = HandleOf(r) ?? TalkOf(r);
             var busy = distilling.Contains(r.Name, StringComparer.OrdinalIgnoreCase);
             var state = handle is not null && _workers.IsBusy(handle) ? "working" : busy ? "distilling" : handle is null ? "" : "idle";
             if (r.Frozen) state = state.Length == 0 ? "frozen" : state + " · frozen";
@@ -330,6 +345,17 @@ public sealed partial class ColleagueDesk : IDisposable
     private string? HandleOf(ColleagueRecord record) =>
         ColleagueRenaming.Origins(record).Select(_workers.NameOfOrigin).FirstOrDefault(h => h is not null);
 
+    /// <summary>Its Talk worker here, by any name it has had, or null.</summary>
+    private string? TalkOf(ColleagueRecord record) =>
+        ColleagueRenaming.Origins(record).Select(_workers.ConversationOf).FirstOrDefault(h => h is not null);
+
+    /// <summary>Every worker of it here — its Ask worker and its Talk worker, whichever are.</summary>
+    private IEnumerable<string> HandlesOf(ColleagueRecord record) =>
+        new[] { HandleOf(record), TalkOf(record) }.OfType<string>();
+
+    /// <summary>Its Talk worker in this session, by its name now, or null.</summary>
+    public string? TalkHere(string name) => _workers.ConversationOf(OriginPrefix + name);
+
     /// <summary>
     /// Renames a colleague and answers the line to show — see <see cref="ColleagueRenaming"/>. Its incarnation here takes
     /// the new name at once, recorded for a resume, so its card, its rounds and what is said when it learns all follow.
@@ -339,7 +365,8 @@ public sealed partial class ColleagueDesk : IDisposable
         var was = _parts.Library.Find(name.Trim());
         if (ColleagueRenaming.Rename(_parts.Library, _parts.Sessions, new RenameOrder(name, newName)) is { } why) return why;
         var record = _parts.Library.Find(newName.Trim())!;
-        if (HandleOf(record) is { } handle && _workers.Find(handle) is { } kept) Reorigin(kept, record.Name);
+        foreach (var handle in HandlesOf(record))
+            if (_workers.Find(handle) is { } kept) Reorigin(kept, record.Name);
         StateChanged?.Invoke();
         return $"{was?.Name ?? name.Trim()} is now called {record.Name}. Sessions that knew it by its old name still bring it back.";
     }
@@ -455,10 +482,14 @@ public sealed partial class ColleagueDesk : IDisposable
 
         var marked = OriginPrefix + name;
         _workers.SetOrigin(handle, marked);
+        // KEPT, IT IS THE COLLEAGUE'S TALK WORKER HERE: it holds a conversation, and has neither the experience nor the
+        // recall a worker brought as a colleague is built with — its next ask goes to an Ask worker brought for it.
+        _workers.KeepConversation(handle);
         _given[KeyOf(name)] = 0;
         Present(name);
         // IN THE SESSION'S HISTORY, so a resume brings it back as the colleague and not as the worker it was.
         _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, marked));
+        _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, marked) { Talk = true });
         Drain();
         return $"Kept {handle} as the colleague {name}. Its experience is being distilled from its work so far; from now on "
                + "every task it finishes is added.";
@@ -477,7 +508,8 @@ public sealed partial class ColleagueDesk : IDisposable
 
         var origin = OriginPrefix + record.Name;
         if (_parts.Spawner is not { } spawner) return "This session cannot start workers.";
-        if (_workers.NameOfOrigin(origin) is { } live)
+        // ITS ASK WORKER HERE TAKES THE TASK; its Talk worker is a conversation of its own, opened beside it.
+        if (!order.Talk && _workers.NameOfOrigin(origin) is { } live)
         {
             if (order.Task.Trim().Length == 0) return $"{record.Name} is already here as {live} — give it work with agent_send.";
 
@@ -490,14 +522,15 @@ public sealed partial class ColleagueDesk : IDisposable
 
         // ONE BRING AT A TIME PER COLLEAGUE: two at once — the lead's and the user's, or two tool calls in one turn —
         // would both pass the check above and leave two incarnations of one colleague in one session.
-        if (!_bringing.TryAdd(origin, 0)) return $"{record.Name} is already being brought in.";
+        var bringing = order.Talk ? origin + TalkSuffix : origin;
+        if (!_bringing.TryAdd(bringing, 0)) return $"{record.Name} is already being brought in.";
         try
         {
             return await BringAsync(order, record, spawner, ct);
         }
         finally
         {
-            _bringing.TryRemove(origin, out _);
+            _bringing.TryRemove(bringing, out _);
         }
     }
 
@@ -536,13 +569,13 @@ public sealed partial class ColleagueDesk : IDisposable
         // NO TASK, NO RUN: it joins idle, and work reaches it as it reaches any worker.
         var envelope = await spawner.SpawnAsync(new SpawnOrder
         {
-            Prompt = order.Task,
-            Run = order.Task.Trim().Length > 0,
-            Description = record.Name,
+            Prompt = order.Talk ? "" : order.Task,
+            Run = !order.Talk && order.Task.Trim().Length > 0,
+            Description = order.Talk ? TalkDescription(record.Name) : record.Name,
             Type = record.Type,
             Instance = instance,
             Origin = origin,
-            Handle = ColleagueStore.Slug(record.Name),
+            Handle = ColleagueStore.Slug(record.Name) + (order.Talk ? TalkSuffix : ""),
             Background = order.Background,
             ParentAgentId = order.ParentAgentId,
         }, c =>
@@ -566,8 +599,20 @@ public sealed partial class ColleagueDesk : IDisposable
         if (child is not null && handle is not null)
             _parts.NoteWorker(new WorkerMark(child.Agent.Id, refused is null ? origin : null)
             {
-                Name = handle, Type = record.Type, Instance = instance, Description = record.Name,
+                Name = handle, Type = record.Type, Instance = instance,
+                Description = order.Talk ? TalkDescription(record.Name) : record.Name,
             });
+        // WHICH OF ITS TWO IT IS, written down for a resume — see WorkerMark.Talk and WorkerMark.Asks.
+        if (child is not null && handle is not null && refused is null)
+        {
+            _parts.NoteWorker(new WorkerMark(child.Agent.Id, origin) { Talk = order.Talk, Asks = !order.Talk });
+            if (order.Talk)
+            {
+                _workers.KeepConversation(handle);
+                child.Agent.ReplaceCallerContext(Briefing(record, talk: true));
+                _talkGiven[handle] = record.ExperienceVersion;
+            }
+        }
 
         if (refused is not null)
             note = (note is null ? "" : note + " ") + $"It came in without its experience: {refused}.";
@@ -698,23 +743,210 @@ public sealed partial class ColleagueDesk : IDisposable
         var record = _parts.Library.Find(name)
             ?? throw new InvalidOperationException($"there is no colleague called {name} any more");
 
+        Present(record.Name);
+        var here = record.Workplaces.Where(w => Directory.Exists(w.Folder)).Select(w => w.Folder).ToList();
+        return new ChildAugment
+        {
+            Context = Briefing(record),
+            ExtraTools = [new RecallTool(RecallScopeFor(record.Name))],
+            ReadAlso = new Permissions.ReadAlso(here, _parts.Served),
+        };
+    }
+
+    /// <summary>
+    /// Who a colleague is and what it knows NOW — its briefing with its experience as the library holds it, sized to its
+    /// window. Read when it is brought in, and again at the start of every ask.
+    /// </summary>
+    private string Briefing(ColleagueRecord record, bool talk = false)
+    {
         var window = _windows.TryGetValue(KeyOf(record.Name), out var w) ? w
             : (record.Instance is { } own ? _parts.Models(own)?.Window : null) ?? _parts.Models(null)?.Window ?? ExperienceBudget.MinimumWindow;
         var preload = ExperienceBudget.Preload(_parts.Library.ReadExperience(record.Name),
             new ExperienceFocus(Codebase.Key(_parts.Folder), record.Workplaces, ExperienceBudget.For(window)));
         _given[KeyOf(record.Name)] = record.ExperienceVersion;
-        Present(record.Name);
 
         // ITS WORKPLACES AS THEY ARE NOW: one moved or deleted is said in the briefing, never read — a folder that is no
         // longer there is not one the colleague knows the contents of.
-        var here = record.Workplaces.Where(w => Directory.Exists(w.Folder)).Select(w => w.Folder).ToList();
-        var gone = record.Workplaces.Where(w => !Directory.Exists(w.Folder)).Select(w => w.Folder).ToList();
-        return new ChildAugment
+        var here = record.Workplaces.Where(p => Directory.Exists(p.Folder)).Select(p => p.Folder).ToList();
+        var gone = record.Workplaces.Where(p => !Directory.Exists(p.Folder)).Select(p => p.Folder).ToList();
+        return IncarnationBriefing.For(record, preload, new IncarnationSetting(ReadsWorkplaces: here.Count > 0, gone) { TalkingWithUser = talk });
+    }
+
+    // A TALK WORKER'S HANDLE AND ROW: the colleague's own, marked as the conversation.
+    private const string TalkSuffix = "-talk";
+
+    private static string TalkDescription(string name) => $"{name} · talk";
+
+    // THE EXPERIENCE VERSION EACH TALK WORKER LAST HEARD OF — briefed with, or told of since. See PrepareTalk.
+    private readonly ConcurrentDictionary<string, long> _talkGiven = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Opens a colleague's Talk worker here — the conversation the user holds with it in this session — or answers the
+    /// one already here. Its handle, or why not.
+    /// </summary>
+    public async Task<TalkOpening> OpenTalkAsync(string name, string parentAgentId, CancellationToken ct)
+    {
+        if (_parts.Library.Find(name.Trim()) is not { } record)
+            return new TalkOpening(null, $"There is no colleague called '{name.Trim()}'. {Known()}");
+        if (_workers.ConversationOf(OriginPrefix + record.Name) is { } here) return new TalkOpening(here, null);
+        var said = await BringAsync(new BringOrder(record.Name, "", null, Background: true, parentAgentId) { Talk = true }, ct);
+        return _workers.ConversationOf(OriginPrefix + record.Name) is { } opened
+            ? new TalkOpening(opened, null)
+            : new TalkOpening(null, said);
+    }
+
+    /// <summary>
+    /// Readies a colleague's incarnation for a new ask (user, 2026-11-11: "a colleague is its distilled knowledge; after a
+    /// round is distilled, that is its starting point"). Waits until the library shows none of its rounds undistilled,
+    /// then starts it over from its briefing as the library holds it now. Not for any other worker.
+    ///
+    /// <para>NOTHING CARRIED OVER: what it read, ran and answered in earlier asks is in its past, and its recall reads it
+    /// back when it needs it; a conversation carried from ask to ask kept a wrong answer alive and grew every ask's cost.</para>
+    /// </summary>
+    private async Task PrepareAsync(string handle, CancellationToken ct)
+    {
+        if (_workers.Find(handle) is not { } kept || Incarnation(kept.Agent.Agent.Id) is not { } found) return;
+        // A TALK IS A CONVERSATION: it goes on, and never waits — see PrepareTalk.
+        if (IsTalk(handle))
         {
-            Context = IncarnationBriefing.For(record, preload, new IncarnationSetting(ReadsWorkplaces: here.Count > 0, gone)),
-            ExtraTools = [new RecallTool(RecallScopeFor(record.Name))],
-            ReadAlso = new Permissions.ReadAlso(here, _parts.Served),
-        };
+            PrepareTalk(kept, found.Name);
+            return;
+        }
+        await WaitToLearnAsync(found.Name, handle, ct);
+        if (_parts.Library.Find(found.Name) is not { } record) return;
+        kept.Agent.Agent.StartOver();
+        kept.Agent.Agent.ReplaceCallerContext(Briefing(record));
+        // IN ITS TAB, WHERE THE EARLIER ASKS STILL SHOW: this one starts from what it knows, not from them.
+        kept.Agent.Feed.Said(new Commands.Message(FreshLine(record.ExperienceVersion), Commands.Severity.Info));
+    }
+
+    /// <summary>The divider an ask's tab shows where a fresh ask begins.</summary>
+    public static string FreshLine(long version) => $"— a fresh ask, from what it has learned (v{version}) —";
+
+    /// <summary>
+    /// The Ask worker for the colleague whose Talk worker is <paramref name="talk"/> — brought in idle if none is here — or
+    /// null when it is no colleague's.
+    /// </summary>
+    private async Task<string?> AskWorkerForAsync(string talk, CancellationToken ct)
+    {
+        if (_workers.OriginOf(talk) is not { } origin || !origin.StartsWith(OriginPrefix, StringComparison.Ordinal)) return null;
+        if (_workers.NameOfOrigin(origin) is { } asks) return asks;
+        if (_parts.SessionId() is not { } lead) return null;
+        await BringAsync(new BringOrder(origin[OriginPrefix.Length..], "", null, Background: true, lead), ct);
+        return _workers.NameOfOrigin(origin);
+    }
+
+    /// <summary>Whether <paramref name="handle"/> is a colleague's Talk worker, which keeps its conversation; every other
+    /// incarnation answers asks, each fresh from its knowledge.</summary>
+    public bool IsTalk(string handle) => _workers.KeepsConversation(handle);
+
+    /// <summary>
+    /// Readies a Talk worker for the user's next message: briefed as talking with the user, once — a worker brought back
+    /// or kept here was not — and told in one line when its experience grew since: its conversation goes on from where
+    /// it was, so the newer version is a recall away rather than in its prompt.
+    /// </summary>
+    private void PrepareTalk(StoredAgent kept, string name)
+    {
+        if (_parts.Library.Find(name) is not { } record) return;
+        if (!_talkGiven.TryGetValue(kept.Name, out var given))
+        {
+            kept.Agent.Agent.ReplaceCallerContext(Briefing(record, talk: true));
+            _talkGiven[kept.Name] = record.ExperienceVersion;
+            return;
+        }
+        if (record.ExperienceVersion <= given) return;
+        _talkGiven[kept.Name] = record.ExperienceVersion;
+        kept.Agent.Agent.Mailbox.TryEnqueue(VersionLine(record.ExperienceVersion), out _, wakes: false);
+    }
+
+    /// <summary>
+    /// Starts a colleague's Talk conversation over (user, 2026-11-11): its context goes back to its briefing, with the
+    /// knowledge as the library holds it now, and its tab says where the new conversation begins. Null when it did;
+    /// otherwise why not. NOTHING IS LOST, so nothing is asked first: every exchange is already a round, distilled, and
+    /// its past for recall.
+    /// </summary>
+    public string? NewConversation(string handle)
+    {
+        if (_workers.Find(handle) is not { } kept || Incarnation(kept.Agent.Agent.Id) is not { } found)
+            return $"'{handle}' is not a colleague here.";
+        // AN ASK HAS NO CONVERSATION: each one starts over already, so there is nothing to clear.
+        if (!IsTalk(handle)) return $"{found.Name}'s asks each starts fresh from what it has learned — there is no conversation to clear.";
+        if (_workers.IsBusy(handle)) return $"{found.Name} is answering — let it finish, or stop it, then start a new conversation.";
+        if (_parts.Library.Find(found.Name) is not { } record) return $"There is no colleague called '{found.Name}'. {Known()}";
+        kept.Agent.Agent.StartOver();
+        kept.Agent.Agent.ReplaceCallerContext(Briefing(record, talk: true));
+        _talkGiven[handle] = record.ExperienceVersion;
+        kept.Agent.Feed.Said(new Commands.Message(NewTalkLine(record.ExperienceVersion), Commands.Severity.Info));
+        return null;
+    }
+
+    /// <summary>The divider a Talk tab shows where a new conversation begins.</summary>
+    public static string NewTalkLine(long version) => $"— a new conversation, from what it has learned (v{version}) —";
+
+    /// <summary>What a Talk worker is told when its experience grew during the conversation.</summary>
+    public static string VersionLine(long version) =>
+        $"[Your experience is now v{version}: what you learned since this conversation began is in it, and recall reads it.]";
+
+    // WAITS IN PROGRESS, by handle — what Don't wait cancels.
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _waits = new(StringComparer.Ordinal);
+
+    /// <summary>How often a waiting ask looks at the library again.</summary>
+    internal TimeSpan LearnPoll { get; set; } = TimeSpan.FromMilliseconds(400);
+
+    /// <summary>
+    /// Waits until the library shows none of <paramref name="name"/>'s rounds undistilled — read from its record, so a
+    /// distil in another process counts — or until nothing is distilling them: a failed distil ends the wait, and the ask
+    /// starts from the last good version. Don't wait (<see cref="SkipWait"/>) ends it at once.
+    /// </summary>
+    private async Task WaitToLearnAsync(string name, string handle, CancellationToken ct)
+    {
+        if (_parts.Library.Undistilled(name).Count == 0) return;
+        using var skip = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _waits[handle] = skip;
+        _workers.BeginWaitingToLearn(handle);
+        StateChanged?.Invoke();
+        try
+        {
+            var kicked = false;
+            while (_parts.Library.Undistilled(name).Count > 0)
+            {
+                // NOTHING DISTILLING HERE AND NOTHING ELSEWHERE: start a drain once; if that ends with rounds still
+                // waiting, the distil failed, and the ask goes on from what was learned before.
+                if (_drains.IsCompleted && !LockHeldElsewhere())
+                {
+                    if (kicked) break;
+                    kicked = true;
+                    Drain();
+                }
+                await Task.Delay(LearnPoll, skip.Token);
+            }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }   // Don't wait
+        finally
+        {
+            _waits.TryRemove(handle, out _);
+            _workers.EndWaitingToLearn(handle);
+            StateChanged?.Invoke();
+        }
+    }
+
+    /// <summary>Don't wait: the ask <paramref name="handle"/> is waiting with starts now, from what was learned before.</summary>
+    public bool SkipWait(string handle)
+    {
+        if (!_waits.TryGetValue(handle, out var waiting)) return false;
+        try { waiting.Cancel(); } catch (ObjectDisposedException) { return false; }
+        return true;
+    }
+
+    // ANOTHER PROCESS DISTILLING: the lock is taken and let go at once, only to see whether it is free.
+    private bool LockHeldElsewhere()
+    {
+        try
+        {
+            using var held = DistillingLock.TryTake(_parts.Library.Root);
+            return held is null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
     }
 
     private void OnBegan(string agentId)
@@ -731,16 +963,6 @@ public sealed partial class ColleagueDesk : IDisposable
             : null,
     };
 
-    /// <summary>
-    /// What a colleague is told at the start of its next run when its experience grew in other sessions while it worked
-    /// here: its starting experience stays fixed for the session, so where to read the newer one is part of the line.
-    /// </summary>
-    public static string GrowthLine(IReadOnlyList<string> elsewhere) =>
-        $"{GrowthNote} (from sessions in {string.Join(", ", elsewhere)}). "
-        + "What you were given at the start is still yours; what changed is in your colleague's library — recall reads the current version.]";
-
-    /// <summary>The note a colleague is given when its experience grew elsewhere — the desk's own words, not a task.</summary>
-    private const string GrowthNote = "[Your experience has grown since you started here";
 
     private void OnEnded(string agentId, string? outcome)
     {
@@ -776,7 +998,6 @@ public sealed partial class ColleagueDesk : IDisposable
                 AlsoRead = reads.Workplaces,
                 ReadElsewhere = reads.Elsewhere,
             });
-            TellOfGrowth(found, record);
             Drain();
         }
         // EVERYTHING BUT A CANCELLATION: this runs inside the worker's own release, and an exception escaping it would skip
@@ -787,21 +1008,6 @@ public sealed partial class ColleagueDesk : IDisposable
         }
     }
 
-    /// <summary>
-    /// LEARNING ELSEWHERE ARRIVES AT THE END: an incarnation's starting experience heads its cached prompt and never
-    /// changes, so growth from other sessions reaches it as one line in its mail, read at the start of its next run.
-    /// </summary>
-    private void TellOfGrowth(Found found, ColleagueRecord record)
-    {
-        var key = KeyOf(found.Name);
-        var given = _given.GetOrAdd(key, record.ExperienceVersion);
-        if (record.ExperienceVersion <= given) return;
-        var elsewhere = record.GrownIn.Where(f => !string.Equals(f, _parts.Folder, StringComparison.Ordinal)).ToList();
-        _given[key] = record.ExperienceVersion;
-        if (elsewhere.Count == 0) return;
-        found.Kept.Agent.Agent.Mailbox.TryEnqueue(GrowthLine(elsewhere),
-            out _, wakes: false);
-    }
 
     private void Append(string name, PastRound round)
     {
@@ -1101,7 +1307,7 @@ public sealed partial class ColleagueDesk : IDisposable
     private void OnWorkerForgotten(string agentId)
     {
         foreach (var name in _present.Keys)
-            if (_parts.Library.Find(name) is not { } record || HandleOf(record) is null)
+            if (_parts.Library.Find(name) is not { } record || !HandlesOf(record).Any())
             {
                 _present.TryRemove(name, out _);
                 _parts.Library.MarkAbsent(name, _holder);
@@ -1195,17 +1401,31 @@ public sealed partial class ColleagueDesk : IDisposable
     /// </summary>
     public string Release(string name)
     {
+        // ONE RELEASE AT A TIME: each press of a tab's Release runs on its own, and releases that overlapped all found the
+        // workers still here — each let them go and each said so.
+        lock (_releasing) return ReleaseLocked(name);
+    }
+
+    private readonly object _releasing = new();
+
+    private string ReleaseLocked(string name)
+    {
         if (_parts.Library.Find(name.Trim()) is not { } record) return $"There is no colleague called '{name.Trim()}'. {Known()}";
-        if (HandleOf(record) is not { } handle) return $"{record.Name} is not in this session.";
-        return _workers.Forget(handle) switch
-        {
-            Agents.ForgetOutcome.Forgotten =>
-                $"{record.Name} has left this session. Its rounds here are kept; /colleagues bring {record.Name} brings it back.",
-            Agents.ForgetOutcome.Working => $"{record.Name} is working — stop it first (/tasks stop {handle}), then release it.",
-            Agents.ForgetOutcome.ReportOwed =>
-                $"{record.Name} still owes its report to the agent that set it working — release it once that is delivered.",
-            _ => $"{record.Name} is not in this session.",
-        };
+        var handles = HandlesOf(record).ToList();
+        if (handles.Count == 0) return $"{record.Name} is not in this session.";
+        // ITS ASK WORKER AND ITS TALK WORKER BOTH GO — and neither while one works: a release that let one go and left the
+        // other would be half a release.
+        if (handles.FirstOrDefault(_workers.IsBusy) is { } working)
+            return $"{record.Name} is working — stop it first (/tasks stop {working}), then release it.";
+        foreach (var handle in handles)
+            switch (_workers.Forget(handle))
+            {
+                case Agents.ForgetOutcome.Working:
+                    return $"{record.Name} is working — stop it first (/tasks stop {handle}), then release it.";
+                case Agents.ForgetOutcome.ReportOwed:
+                    return $"{record.Name} still owes its report to the agent that set it working — release it once that is delivered.";
+            }
+        return $"{record.Name} has left this session. Its rounds here are kept; /colleagues bring {record.Name} brings it back.";
     }
 
     /// <summary>
@@ -1262,11 +1482,12 @@ public sealed partial class ColleagueDesk : IDisposable
                 foreach (var saved in store.ListTagged(tag))
                     try { store.Delete(saved.Uid); }
                     catch (Exception e) when (e is IOException or UnauthorizedAccessException) { notes.Add($"its one-to-one could not be deleted: {e.Message}"); }
-        if (HandleOf(record) is { } handle && _workers.Find(handle) is { } kept)
-        {
-            Unmark(kept);
-            notes.Add($"{handle} carries on here as an ordinary worker");
-        }
+        foreach (var handle in HandlesOf(record).ToList())
+            if (_workers.Find(handle) is { } kept)
+            {
+                Unmark(kept);
+                notes.Add($"{handle} carries on here as an ordinary worker");
+            }
         _present.TryRemove(record.Name, out _);
         _given.TryRemove(key, out _);
         _windows.TryRemove(key, out _);

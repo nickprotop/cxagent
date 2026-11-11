@@ -101,6 +101,12 @@ public sealed class JobsPanel
 
         /// <summary>Release on an idle colleague's card — it leaves the session (see ColleagueDesk.Release).</summary>
         Release,
+
+        /// <summary>Don't wait on a colleague's card while its ask waits to learn — the ask starts at once.</summary>
+        SkipWait,
+
+        /// <summary>Talk › on a colleague's card — its Talk tab, the conversation the user holds with it, opened or made.</summary>
+        Talk,
     }
 
     /// <summary>A card and what was asked of it — for the window, which owns tabs, stops and forgetting.</summary>
@@ -584,7 +590,13 @@ public sealed class JobsPanel
 
         /// <summary>What a link on the card does: Release lets a colleague go; every other link opens its tab.</summary>
         public void Follow(string url) =>
-            _owner.RowChosen?.Invoke(new RowChoice(Row, url == "release" ? RowAction.Release : RowAction.Open));
+            _owner.RowChosen?.Invoke(new RowChoice(Row, url switch
+            {
+                "release" => RowAction.Release,
+                "skipwait" => RowAction.SkipWait,
+                "talk" => RowAction.Talk,
+                _ => RowAction.Open,
+            }));
 
         /// <summary>The card's lines, set into its controls and kept as text.</summary>
         private void Redraw()
@@ -599,9 +611,10 @@ public sealed class JobsPanel
             if (_state.Visible != (state is not null)) _state.Visible = state is not null;
             if (state is not null) SetIfChanged(_state, [bar + state]);
             var facts = _shown.Facts.Any() ? $"  {Muted(Cut(string.Join(" · ", _shown.Facts), _usable))}" : null;
-            // ASK… OPENS THE SAME TAB AS OPEN: the tab's composer is where a colleague is asked, and it has the keyboard.
-            var link = _shown.Ask ? $"  [link=open]{Value(_shown.View)} ›[/]  [link=ask]Ask…[/]" : $"  [link=open]{Value(_shown.View)} ›[/]";
+            // A COLLEAGUE'S TWO DOORS: Ask… its Ask tab, Talk › its Talk tab (user, 2026-11-11). Every other card: Open.
+            var link = _shown.Ask ? "  [link=ask]Ask…[/]  [link=talk]Talk ›[/]" : $"  [link=open]{Value(_shown.View)} ›[/]";
             if (_shown.Release) link += "  [link=release]Release[/]";
+            if (_shown.SkipWait) link += "  [link=skipwait]Don't wait[/]";
             SetIfChanged(_title, [bar + title]);
             if (_facts.Visible != (facts is not null)) _facts.Visible = facts is not null;
             if (facts is not null) SetIfChanged(_facts, [bar + facts]);
@@ -633,7 +646,8 @@ public sealed class JobsPanel
             if (state is not null) lines.Add(state);
             if (facts is not null) lines.Add(facts);
             if (runsOn is not null) lines.Add(runsOn);
-            lines.Add((_shown.Ask ? $"  {Value(_shown.View)} ›  Ask…" : $"  {Value(_shown.View)} ›") + (_shown.Release ? "  Release" : ""));
+            lines.Add((_shown.Ask ? "  Ask…  Talk ›" : $"  {Value(_shown.View)} ›") + (_shown.Release ? "  Release" : "")
+                      + (_shown.SkipWait ? "  Don't wait" : ""));
             Text = lines;
         }
 
@@ -675,6 +689,9 @@ public sealed class JobsPanel
 
         /// <summary>Its link line also offers Release — an idle colleague's card.</summary>
         public bool Release { get; init; }
+
+        /// <summary>Its link line also offers Don't wait — a colleague whose ask waits to learn.</summary>
+        public bool SkipWait { get; init; }
 
         /// <summary>The folder an agent works in relative to its parent's, shown after <see cref="RunsOn"/>;
         /// null when it works where its parent does.</summary>
@@ -747,7 +764,7 @@ public sealed class JobsPanel
     private static CardText ColleagueCardText(AgentRow row, CxAgent.Core.Colleagues.ColleagueCard card)
     {
         var view = row.View;
-        var word = AgentRows.ColleagueWord(view.State, card);
+        var word = AgentRows.ColleagueWord(view, card);
         var status = view.Running ? $"● {word} {DisplayNumber.Took(view.Elapsed)}" : word;
         // THE VERSION FIRST: the folders it knows grow with every workplace, and the column cuts from the right.
         var knows = card.Knows.Count > 0 ? $"v{card.Version} · knows {string.Join(" · ", card.Knows)}" : $"v{card.Version}";
@@ -758,6 +775,7 @@ public sealed class JobsPanel
             Status = status,
             Ask = true,
             Release = !view.Running,
+            SkipWait = view.State == AgentRowState.WaitingToLearn,
             RunsOn = knows,
             Root = view.Kept.Agent.Root,
         };

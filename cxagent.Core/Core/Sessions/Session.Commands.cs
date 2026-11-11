@@ -602,6 +602,10 @@ public sealed partial class Session
     {
         var text = prompt.Trim();
         if (text.Length == 0) return Task.FromResult<string?>(null);
+        // /clear IN A COLLEAGUE'S TAB starts its conversation over — a Talk tab's; an Ask tab is told its asks start fresh.
+        // Every other command still does not run here.
+        if (text.Equals("/clear", StringComparison.OrdinalIgnoreCase) && SubAgents.BadgeOf(name) is not null && Colleagues is { } desk)
+            return Task.FromResult(desk.NewConversation(name));
         if (TabSlashRefusal(text) is { } refused) return Task.FromResult<string?>(refused);
         if (SubAgents.Find(name) is null)
             return Task.FromResult<string?>(SubAgents.WasForgotten(name)

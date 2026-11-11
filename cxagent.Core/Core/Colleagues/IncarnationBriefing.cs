@@ -45,6 +45,12 @@ public static class IncarnationBriefing
                     .Append(string.Join(", ", setting.GoneWorkplaces)).Append(".\n");
         }
 
+        // A TALK IS WITH THE USER: no lead reads its answers, so what a worker is told about reporting to one does not hold.
+        if (setting.TalkingWithUser)
+            sb.Append("\nHere you are talking with the user directly, in a conversation that goes on: answer them, not an agent ")
+                .Append("that set you to work. Where your instructions speak of reporting to a parent, that does not apply to this ")
+                .Append("conversation.\n");
+
         sb.Append("\n# Your experience\n\n");
         sb.Append(preload.Length > 0 ? preload : "Nothing is distilled yet: this is early in your work.\n");
         return sb.ToString().TrimEnd();
@@ -55,4 +61,8 @@ public static class IncarnationBriefing
 /// <param name="ReadsWorkplaces">Its workplaces' files are readable without asking here — an incarnation's, not a
 /// one-to-one's, where the user is present to answer.</param>
 /// <param name="GoneWorkplaces">Workplaces whose folders are no longer there.</param>
-public sealed record IncarnationSetting(bool ReadsWorkplaces, IReadOnlyList<string> GoneWorkplaces);
+public sealed record IncarnationSetting(bool ReadsWorkplaces, IReadOnlyList<string> GoneWorkplaces)
+{
+    /// <summary>It is the colleague's Talk worker: talking with the user directly, in a conversation that goes on.</summary>
+    public bool TalkingWithUser { get; init; }
+}

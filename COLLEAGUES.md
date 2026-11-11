@@ -132,7 +132,8 @@ the browser:
 
 `/colleagues open SharpConsoleUI Guide`, or **Open** in the library, starts a conversation with the colleague itself,
 in a session of its own. It can read and recall, never write or run anything. Ask it what it knows; teach it; correct
-it. Every exchange is a round and is distilled like any other.
+it. Every exchange is a round and is distilled like any other. To talk with it inside the session you are working in
+instead, use **Talk ›** on its card: see [How it works](#how-it-works).
 
 ```text
 How should diskdash refresh its disk panels every second without losing the user's focus or
@@ -195,7 +196,10 @@ Ask the Billing colleague whether this change to the discount order breaks anyth
 ```
 
 **A second opinion that does not start from zero.** Bring a colleague in idle, with no task, and give it work as the
-conversation goes. It joins the session's workers and keeps what it learns here too.
+conversation goes. It joins the session's workers, and what each ask teaches it is distilled before the next one starts.
+
+**Someone to think aloud with.** **Talk ›** on its card opens a conversation with it beside your work, in this session:
+it answers you from what it knows and keeps the thread from message to message, while the agent's asks go on apart.
 
 ```text
 /colleagues bring SharpConsoleUI Guide
@@ -231,11 +235,32 @@ go from both. `colleagues.suggest` in config.json turns it off
 ([CONFIG.md](CONFIG.md#colleagues--workers-kept-across-sessions)).
 
 **Bringing one in.** `/colleagues bring <name> [task]`. With a task, it starts on it in the background, and the
-agent gets its report. With none, it joins **idle**, to be given work in its tab or by the agent. A name with spaces
+agent gets its report. With none, it joins **idle**, to be given work in its Ask tab or by the agent. A name with spaces
 needs no quotes. A colleague already here is not brought twice: the task is passed to it.
 
+**Every ask starts from what it has learned.** A colleague here answers each ask fresh: its conversation starts over
+from its experience as the library holds it now, and nothing of an earlier ask is carried in. What it did in earlier
+asks reaches it the way all its past does, through what was distilled and through `recall`. So an ask must say
+everything it needs. An ask is the agent's `agent_send`, a task to one already here, `/colleagues ask <name>
+[question]`, or a message in its **Ask** tab, which shows each one under a divider naming the version it started from.
+A message sent while an ask runs joins that ask.
+
+An ask waits until the colleague's earlier rounds are distilled, so it starts from all of them. Its card says *waiting
+to learn* meanwhile; **Don't wait**, on the card or in the tab, starts it at once from the last finished version. A
+frozen colleague never waits.
+
+**Talking with one.** `/colleagues talk <name> [message]`, or **Talk ›** on its card, opens its **Talk** tab: a
+conversation of yours with the colleague, in this session, that goes on from message to message. It is a second
+worker of the same colleague, with the same experience and tools, told that it is talking with you. Each exchange is
+a round and is distilled; when the experience has grown since your last message, the next one tells it the new
+version. Ask and Talk run independently: the agent's asks never reach your conversation. Closing either tab keeps its
+worker; the card reopens it. **New conversation** on the Talk tab, `/clear` typed there, or `/colleagues talk <name>
+--new` starts the conversation over from what it has learned, under a divider naming the version. Nothing is lost:
+every exchange is already distilled, so nothing asks first. A worker you kept as a colleague in this session becomes its Talk worker, since it holds
+a conversation.
+
 **Releasing one.** `/colleagues release <name>`, or **Release** on its card or in its tab, lets a colleague at rest leave
-the session; the agent can release one too. Every task it finished here is already in its past, so nothing is lost,
+the session, its Ask and Talk workers both; the agent can release one too. Every task it finished here is already in its past, so nothing is lost,
 and it can be brought again. One still working is refused: stop it first.
 
 **Seeing them.** A session with colleagues says so as it opens.
@@ -243,16 +268,16 @@ and it can be brought again. One still working is refused: stop it first.
 **Tasks** (`F7`, and the browser's Tasks pane) has a **Colleagues** section of its own, above the workers. Each
 colleague here gets a card showing:
 
-- how it stands: *working*, *queued*, *waiting for permission*, *learning*, *idle* or *idle · last task failed*, never
-  finished, and *frozen* when it is;
+- how it stands: *answering an ask*, *talking with you*, *waiting to learn*, *queued*, *waiting for permission*,
+  *learning*, *idle* or *idle · last task failed*, never finished, and *frozen* when it is;
 - what it was last asked;
 - its version and the folders it knows;
-- **Open**, **Ask…** and, while it works, **Stop**.
+- **Ask…**, which opens its Ask tab, **Talk ›**, which opens its Talk tab, and, while it works, **Stop**.
 
 Under **Available** are the library's other colleagues, each with **Bring**. The section follows the session in front.
 
 A colleague shows no worker type anywhere: it is what it has learned. One at work is marked as a colleague wherever a
-worker shows: *Colleague* on its transcript row, `◆ <name>` on its tab and card.
+worker shows: *Colleague* on its transcript row, `◆ <name>` on its card, and `◆ <name> · ask` or `◆ <name> · talk` on its tabs.
 
 While its experience is being distilled, the status line says *distilling <name>…*. When that ends, the session says
 what it learned, such as *core updated, invoice added (v3)*, or that there was nothing new.
@@ -323,8 +348,8 @@ On yes its folder is deleted, and its one-to-one with it. Where it is live it ca
 at once, in another session when its task ends. Sessions keep their own histories. Not while its one-to-one is open.
 
 **Several sessions at once.** A colleague can work in several sessions at once. Rounds from every session are
-distilled one at a time. One that grew elsewhere while it worked here is told so in a line at the start of its next
-task. A rename or a forget made while a colleague is being distilled waits a moment for it, and otherwise says to try
+distilled one at a time. Each ask here starts from the newest experience, whatever session it grew in; a Talk
+conversation is told the new version in a line with your next message. A rename or a forget made while a colleague is being distilled waits a moment for it, and otherwise says to try
 again.
 
 **Rounds that cannot be learned from.** A round the distiller refuses three times in a row is stepped past. That can
@@ -349,6 +374,8 @@ freeze it. Under *Settings* they turn colleagues and suggestions off, as do
 | `/colleagues` | Open the library: every colleague, what it knows, its experience |
 | `/colleagues keep <worker> [name]` | Keep a worker of this session as a colleague |
 | `/colleagues bring <name> [task]` | Bring a colleague in, on a task or idle to be given one |
+| `/colleagues ask <name> [question]` | Ask a colleague here, fresh from what it has learned; opens its Ask tab |
+| `/colleagues talk <name> [--new] [message]` | Talk with a colleague here, in a conversation that goes on; `--new` starts it over. Opens its Talk tab |
 | `/colleagues release <name>` | Let a colleague at rest leave this session; it can be brought again |
 | `/colleagues open <name>` | Talk with a colleague one-to-one, in a session of its own |
 | `/colleagues rename <name> to <new name>` | Rename a colleague; its old names still find it |

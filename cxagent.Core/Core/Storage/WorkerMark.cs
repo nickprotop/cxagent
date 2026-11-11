@@ -44,4 +44,16 @@ public sealed record WorkerMark(
     /// offer again a worker the user already turned down. A line that says only this changes nothing else about it.
     /// </summary>
     [JsonPropertyName("declined")] public bool Declined { get; init; }
+
+    /// <summary>
+    /// It keeps a conversation with the user — a colleague's Talk worker — and is brought back as one. A line that says
+    /// only this changes nothing else about it.
+    /// </summary>
+    [JsonPropertyName("talk")] public bool Talk { get; init; }
+
+    /// <summary>
+    /// It answers asks, each fresh from what it has learned — a colleague's Ask worker. A colleague's worker marked
+    /// neither way was brought in before asks started fresh, and is brought back as its Talk worker, conversation and all.
+    /// </summary>
+    [JsonPropertyName("asks")] public bool Asks { get; init; }
 }

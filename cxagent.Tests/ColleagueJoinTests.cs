@@ -271,4 +271,253 @@ public sealed class ColleagueJoinTests : IDisposable
 
         Assert.True(tab.ReleaseForTest.Visible);
     }
+
+    // ---- Talk: the conversation the user holds with a colleague here -------------------------------------------------
+
+    private static string Sent(MockLlmProvider model) => string.Join("\n", model.LastMessages!.Select(m => m.Content));
+
+    private static Task<string> FromUser(Session session, string to, string prompt) =>
+        new AgentReachTools(session.SubAgents).SendAsync(
+            new SendRequest(To: to, Prompt: prompt, Background: false, ParentAgentId: null, FromUser: true), CancellationToken.None);
+
+    private static Task<string> FromLead(Session session, string to, string prompt) =>
+        new AgentReachTools(session.SubAgents).SendAsync(
+            new SendRequest(To: to, Prompt: prompt, Background: false, ParentAgentId: null, FromUser: false), CancellationToken.None);
+
+    private async Task<(Session Session, MockLlmProvider Model, string Talk)> Talking()
+    {
+        Charting();
+        var model = new MockLlmProvider();
+        for (var i = 0; i < 6; i++) model.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn" });
+        var session = Open(model);
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+        var opened = await session.Colleagues.OpenTalkAsync("Charting", session.SessionId!, CancellationToken.None);
+        Assert.Null(opened.Refusal);
+        return (session, model, opened.Handle!);
+    }
+
+    /// <summary>
+    /// TALK KEEPS ITS CONVERSATION; AN ASK STARTS FRESH (user, 2026-11-11). The user's second message to the Talk worker
+    /// carries the first; the lead's ask to the Ask worker carries neither.
+    /// </summary>
+    [Fact]
+    public async Task Talk_keeps_its_conversation_while_asks_start_fresh()
+    {
+        var (session, model, talk) = await Talking();
+        Assert.NotEqual("charting", talk);
+        Assert.Equal("charting", session.Colleagues!.HandleHere("Charting"));
+        Assert.Equal(talk, session.Colleagues.TalkHere("Charting"));
+
+        await FromUser(session, talk, "the word is PELICAN");
+        await FromUser(session, talk, "which word?");
+        Assert.Contains("PELICAN", Sent(model));
+        Assert.Contains("talking with the user directly", Sent(model));
+
+        await FromLead(session, "charting", "a question from the lead");
+        Assert.DoesNotContain("PELICAN", Sent(model));
+        Assert.DoesNotContain("talking with the user directly", Sent(model));
+    }
+
+    /// <summary>A LEAD'S SEND TO THE TALK WORKER IS ANSWERED BY THE ASK WORKER: the user's conversation is the user's.</summary>
+    [Fact]
+    public async Task A_leads_send_to_the_talk_worker_goes_to_the_ask_worker()
+    {
+        var (session, model, talk) = await Talking();
+
+        await FromLead(session, talk, "LEAD-ASK");
+
+        Assert.Contains(session.SubAgents.Find("charting")!.Agent.Agent.Context.Messages, m => m.Content.Contains("LEAD-ASK"));
+        Assert.DoesNotContain(session.SubAgents.Find(talk)!.Agent.Agent.Context.Messages, m => m.Content.Contains("LEAD-ASK"));
+    }
+
+    /// <summary>GROWN MEANWHILE, the Talk worker is told the new version in one line; its conversation goes on.</summary>
+    [Fact]
+    public async Task Talk_is_told_when_the_experience_grew()
+    {
+        var (session, model, talk) = await Talking();
+        await FromUser(session, talk, "first");
+
+        Library.Update("Charting", r => r with { ExperienceVersion = r.ExperienceVersion + 3 });
+        await FromUser(session, talk, "second");
+
+        Assert.Contains(ColleagueDesk.VersionLine(Library.Find("Charting")!.ExperienceVersion), Sent(model));
+        Assert.Contains("first", Sent(model));
+    }
+
+    /// <summary>RELEASE LETS BOTH GO: its Ask worker and its Talk worker.</summary>
+    [Fact]
+    public async Task Release_lets_both_workers_go()
+    {
+        var (session, _, talk) = await Talking();
+
+        Assert.StartsWith("Charting has left this session.", session.Colleagues!.Release("Charting"));
+
+        Assert.Null(session.SubAgents.Find("charting"));
+        Assert.Null(session.SubAgents.Find(talk));
+    }
+    // ---- /colleagues ask and talk: the command's half, which both front ends call before opening the tab -------------
+
+    /// <summary>The send is not awaited by the verb — its answer streams into the tab — so the test waits for it.</summary>
+    private static async Task Until(Func<bool> done)
+    {
+        for (var i = 0; i < 200 && !done(); i++) await Task.Delay(25);
+        Assert.True(done());
+    }
+
+    /// <summary>ASK, TYPED IN ANY CASE: its Ask worker is brought in, and the question goes to it from the user.</summary>
+    [Fact]
+    public async Task The_ask_verb_brings_the_ask_worker_and_asks_it()
+    {
+        Charting();
+        var model = new MockLlmProvider();
+        model.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn" });
+        var session = Open(model);
+
+        var door = await session.OpenColleagueDoorAsync("charting which axis?", talk: false);
+
+        Assert.Null(door.Refusal);
+        Assert.Equal("charting", door.Handle);
+        Assert.Null(session.Colleagues!.TalkHere("Charting"));
+        await Until(() => model.LastMessages?.Any(m => m.Content.Contains("which axis?")) == true);
+    }
+
+    /// <summary>TALK OPENS ITS TALK WORKER, and a second talk goes on in the same conversation.</summary>
+    [Fact]
+    public async Task The_talk_verb_opens_the_talk_worker_and_goes_on()
+    {
+        Charting();
+        var model = new MockLlmProvider();
+        for (var i = 0; i < 2; i++) model.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn" });
+        var session = Open(model);
+
+        var first = await session.OpenColleagueDoorAsync("Charting the word is PELICAN", talk: true);
+        await Until(() => model.ChatCallCount == 1 && !session.SubAgents.IsBusy(first.Handle!));
+        var second = await session.OpenColleagueDoorAsync("Charting which word?", talk: true);
+        await Until(() => model.ChatCallCount == 2);
+
+        Assert.Equal(first.Handle, second.Handle);
+        Assert.Equal(session.Colleagues!.TalkHere("Charting"), first.Handle);
+        Assert.Contains("PELICAN", Sent(model));
+    }
+
+    /// <summary>NO TEXT, NOTHING SENT: the tab opens for the user to type in.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_door_without_text_only_opens(bool talk)
+    {
+        Charting();
+        var model = new MockLlmProvider();
+        var session = Open(model);
+
+        var door = await session.OpenColleagueDoorAsync("Charting", talk);
+
+        Assert.NotNull(door.Handle);
+        Assert.Equal(0, model.ChatCallCount);
+    }
+
+    /// <summary>A NAME NOBODY HAS is refused with the names there are, and nothing is brought in.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_door_to_nobody_is_refused(bool talk)
+    {
+        Charting();
+        var session = Open(new MockLlmProvider());
+
+        var door = await session.OpenColleagueDoorAsync("Nobody hello", talk);
+
+        Assert.Null(door.Handle);
+        Assert.Contains("Nobody", door.Refusal);
+        Assert.Null(session.Colleagues!.HandleHere("Charting"));
+    }
+    /// <summary>
+    /// RELEASES AT ONCE LET IT GO ONCE: a held key on the tab's Release ran seven releases together, and every one said
+    /// "has left". One says so; the rest find it gone.
+    /// </summary>
+    [Fact]
+    public async Task Releases_at_once_let_it_go_once()
+    {
+        var (session, _, _) = await Talking();
+
+        var said = await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => Task.Run(() => session.Colleagues!.Release("Charting"))));
+
+        Assert.Single(said, s => s.StartsWith("Charting has left this session.", StringComparison.Ordinal));
+    }
+    /// <summary>ONLY ITS TALK WORKER HERE, IT IS STILL HERE: the panel names that worker, and offers no Bring.</summary>
+    [Fact]
+    public async Task A_colleague_here_only_to_talk_is_not_available()
+    {
+        Charting();
+        var session = Open(new MockLlmProvider());
+        var talk = (await session.Colleagues!.OpenTalkAsync("Charting", session.SessionId!, CancellationToken.None)).Handle;
+
+        var row = Assert.Single(session.Colleagues.Panel()!.Rows);
+
+        Assert.Equal(talk, row.Handle);
+        Assert.Empty(CxAgent.UI.JobsPanel.AvailableOf(session.Colleagues.Panel()));
+    }
+    // ---- A new conversation: the Talk worker starts over from what it has learned (user, 2026-11-11) -----------------
+
+    /// <summary>A NEW CONVERSATION FORGETS THE OLD ONE: the next message carries neither it nor more than one briefing.</summary>
+    [Fact]
+    public async Task A_new_conversation_starts_the_talk_over()
+    {
+        var (session, model, talk) = await Talking();
+        await FromUser(session, talk, "the word is PELICAN");
+
+        Assert.Null(session.Colleagues!.NewConversation(talk));
+        await FromUser(session, talk, "which word?");
+
+        Assert.DoesNotContain("PELICAN", Sent(model));
+        Assert.Contains("talking with the user directly", Sent(model));
+    }
+
+    /// <summary>ONLY A TALK HAS A CONVERSATION TO CLEAR: an ask starts fresh anyway, and says so.</summary>
+    [Fact]
+    public async Task An_ask_worker_has_no_conversation_to_clear()
+    {
+        var (session, _, _) = await Talking();
+
+        Assert.Contains("starts fresh", session.Colleagues!.NewConversation("charting"));
+    }
+
+    /// <summary>/clear IN THE TALK TAB is the new conversation; it never reaches the model.</summary>
+    [Fact]
+    public async Task Clear_typed_in_the_talk_tab_starts_it_over()
+    {
+        var (session, model, talk) = await Talking();
+        await FromUser(session, talk, "the word is PELICAN");
+        var calls = model.ChatCallCount;
+
+        Assert.Null(await session.SendFromAgentTab(talk, "/clear"));
+        Assert.Equal(calls, model.ChatCallCount);
+        await FromUser(session, talk, "which word?");
+
+        Assert.DoesNotContain("PELICAN", Sent(model));
+    }
+
+    /// <summary>/clear in the Ask tab is answered, not sent: every ask starts fresh already.</summary>
+    [Fact]
+    public async Task Clear_typed_in_the_ask_tab_says_asks_start_fresh()
+    {
+        var (session, model, _) = await Talking();
+
+        Assert.Contains("starts fresh", await session.SendFromAgentTab("charting", "/clear"));
+        Assert.Equal(0, model.ChatCallCount);
+    }
+
+    /// <summary>/colleagues talk NAME --new opens the Talk tab on a new conversation.</summary>
+    [Fact]
+    public async Task The_talk_verb_with_new_starts_over()
+    {
+        var (session, model, talk) = await Talking();
+        await FromUser(session, talk, "the word is PELICAN");
+
+        var door = await session.OpenColleagueDoorAsync("Charting --new", talk: true);
+        Assert.Equal(talk, door.Handle);
+        await FromUser(session, talk, "which word?");
+
+        Assert.DoesNotContain("PELICAN", Sent(model));
+    }
 }

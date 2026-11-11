@@ -236,4 +236,105 @@ public sealed class ColleagueTasksTests : IDisposable
         panel.Refresh(new JobsPanel.JobsShown([working], 0), 40);
         Assert.DoesNotContain("Release", panel.RenderedText);
     }
+    // ---- Ask and Talk: one card, two tabs (user, 2026-11-11) ---------------------------------------------------------
+
+    /// <summary>A COLLEAGUE'S TWO DOORS on its card: Ask… opens its Ask tab, Talk › its Talk tab — never Open.</summary>
+    [Fact]
+    public async Task The_card_offers_ask_and_talk()
+    {
+        var session = await WithCharting();
+        var panel = new JobsPanel();
+        var kept = session.SubAgents.Find("charting")!;
+        var row = new JobsPanel.AgentRow(AgentRows.Idle(kept) with { Badge = session.SubAgents.BadgeOf("charting") })
+        {
+            Colleague = session.Colleagues!.CardOf("charting"),
+        };
+        var chosen = new List<JobsPanel.RowChoice>();
+        panel.RowChosen += chosen.Add;
+
+        panel.Refresh(new JobsPanel.JobsShown([row], 0), 40);
+        panel.FollowLinkForTest(row.Key, "ask");
+        panel.FollowLinkForTest(row.Key, "talk");
+
+        Assert.Contains("Ask…", panel.RenderedText);
+        Assert.Contains("Talk ›", panel.RenderedText);
+        Assert.DoesNotContain("Open ›", panel.RenderedText);
+        Assert.Equal([JobsPanel.RowAction.Open, JobsPanel.RowAction.Talk], chosen.Select(c => c.Action));
+    }
+
+    /// <summary>ITS TWO WORKERS ARE ONE CARD: the Talk worker folds into the Ask worker's row, which names it.</summary>
+    [Fact]
+    public async Task Ask_and_talk_are_one_card()
+    {
+        var session = await WithCharting();
+        var talk = (await session.Colleagues!.OpenTalkAsync("Charting", session.SessionId!, CancellationToken.None)).Handle!;
+
+        var rows = AgentRows.For(session.SubAgents, DateTimeOffset.UtcNow);
+
+        var card = Assert.Single(rows, r => r.Badge is not null);
+        Assert.Equal("charting", card.Kept.Name);
+        Assert.Equal(session.SubAgents.Find(talk)!.Agent.Agent.Id, card.TalkAgentId);
+        Assert.False(card.Talking);
+    }
+
+    /// <summary>A KEPT WORKER'S CONVERSATION WITH NO ASK WORKER YET stands alone, as the colleague's card.</summary>
+    [Fact]
+    public async Task A_talk_worker_alone_is_the_card()
+    {
+        var session = await WithCharting();
+        session.SubAgents.KeepConversation("charting");
+
+        var card = Assert.Single(AgentRows.For(session.SubAgents, DateTimeOffset.UtcNow), r => r.Badge is not null);
+
+        Assert.Equal(card.Kept.Agent.Agent.Id, card.TalkAgentId);
+    }
+
+    /// <summary>EACH TAB SAYS WHICH DOOR IT IS; any other worker's tab says nothing.</summary>
+    [Fact]
+    public async Task Each_tab_names_its_door()
+    {
+        var session = await WithCharting();
+        var talk = (await session.Colleagues!.OpenTalkAsync("Charting", session.SessionId!, CancellationToken.None)).Handle!;
+
+        Assert.Equal(" · ask", AgentTab.Door(session.SubAgents, session.SubAgents.Find("charting")!));
+        Assert.Equal(" · talk", AgentTab.Door(session.SubAgents, session.SubAgents.Find(talk)!));
+    }
+
+    /// <summary>AT WORK, THE CARD SAYS WHICH WORK: an ask, or the conversation with the user.</summary>
+    [Theory]
+    [InlineData(false, "answering an ask")]
+    [InlineData(true, "talking with you")]
+    public async Task The_card_says_which_work(bool talking, string word)
+    {
+        var session = await WithCharting();
+        var kept = session.SubAgents.Find("charting")!;
+        var row = AgentRows.Idle(kept) with { State = AgentRowState.Running, Talking = talking };
+
+        Assert.Equal(word, AgentRows.ColleagueWord(row, session.Colleagues!.CardOf("charting")!));
+    }
+    /// <summary>
+    /// THE STATE LINE NAMES THE DOOR TOO (user, 2026-11-11): "ASK" or "TALK" before the state, where the eye already is;
+    /// any other worker's line is its state alone.
+    /// </summary>
+    [Fact]
+    public async Task The_state_line_names_the_door()
+    {
+        var session = await WithCharting();
+        var talk = (await session.Colleagues!.OpenTalkAsync("Charting", session.SessionId!, CancellationToken.None)).Handle!;
+
+        Assert.Equal("ASK", AgentTab.DoorWord(session.SubAgents, session.SubAgents.Find("charting")!));
+        Assert.Equal("TALK", AgentTab.DoorWord(session.SubAgents, session.SubAgents.Find(talk)!));
+    }
+    /// <summary>THE TAB SAYS WHAT THE CARD SAYS: "answering an ask" or "talking with you", never a bare "working".</summary>
+    [Theory]
+    [InlineData(false, "ANSWERING AN ASK")]
+    [InlineData(true, "TALKING WITH YOU")]
+    public async Task The_tab_s_state_word_is_the_card_s(bool talking, string word)
+    {
+        var session = await WithCharting();
+        var kept = session.SubAgents.Find("charting")!;
+        var row = AgentRows.Idle(kept) with { State = AgentRowState.Running, Talking = talking };
+
+        Assert.Equal(word, AgentTab.StateWord(row, session.SubAgents.BadgeOf("charting"), session.Colleagues!.CardOf("charting"), ended: false));
+    }
 }

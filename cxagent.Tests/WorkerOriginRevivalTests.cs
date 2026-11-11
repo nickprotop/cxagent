@@ -270,4 +270,35 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         Assert.Null(store.OriginOf("charting"));
         Assert.Null(store.Find("charting")!.Agent.Agent.Setup.Brief.CallerContext);
     }
+
+    /// <summary>
+    /// A COLLEAGUE'S TALK WORKER COMES BACK KEEPING ITS CONVERSATION, its Ask worker comes back answering asks — and one
+    /// brought in before asks started fresh, marked neither way, comes back as the Talk worker: its conversation is the
+    /// user's to go on with (user, 2026-11-11).
+    /// </summary>
+    [Theory]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    public void A_colleagues_worker_comes_back_as_talk_or_asks(bool talk, bool asks, bool keepsConversation)
+    {
+        var parent = Parent();
+        parent.NoteWorker(new WorkerMark("CHILD01", "colleague:Charting") { Name = "charting", Type = "general", Description = "Charting" });
+        if (talk || asks) parent.NoteWorker(new WorkerMark("CHILD01", "colleague:Charting") { Talk = talk, Asks = asks });
+
+        var (store, _) = Revive(_ => new ChildAugment { Context = "EXP" });
+
+        Assert.Equal(keepsConversation, store.KeepsConversation("charting"));
+        Assert.Equal("colleague:Charting", store.OriginOf("charting"));
+    }
+
+    [Fact]
+    public void An_ordinary_worker_never_keeps_a_conversation()
+    {
+        Parent().Record(SpawnedByTool());
+
+        var (store, _) = Revive(null);
+
+        Assert.False(store.KeepsConversation("charting"));
+    }
 }
