@@ -590,6 +590,9 @@ public sealed partial class ColleagueDesk : IDisposable
     /// </summary>
     public string? OneToOneTag(string name) => _parts.Library.Find(name.Trim()) is { } record ? OriginPrefix + record.Name : null;
 
+    /// <summary>The handle the colleague named <paramref name="name"/> answers to in this session, or null when it is not here.</summary>
+    public string? HandleHere(string name) => _workers.NameOfOrigin(OriginPrefix + name);
+
     /// <summary>
     /// What it takes to open <paramref name="name"/>'s one-to-one, or null with why not — ONE ANSWER FOR BOTH FRONT ENDS,
     /// which each only open a session with it: the terminal in a tab, the browser as a session.

@@ -22,14 +22,16 @@ public class AgentReachToolsTests
     }
 
     [Fact]
-    public async Task Sending_to_a_name_nobody_holds_points_at_the_listing_tool()
+    public async Task Sending_to_a_name_nobody_holds_says_which_there_are()
     {
         var tools = new AgentReachTools(new SubAgentStore());
 
         var answer = await tools.SendAsync(Ask("ghost", "hello"), CancellationToken.None);
 
         Assert.Contains("ghost", answer);
-        Assert.Contains("task_list", answer);
+        Assert.Contains("There are no sub-agents in this session.", answer);
+        // NOT A TOOL TO LOOK THEM UP WITH: not every agent that can send has one.
+        Assert.DoesNotContain("task_list", answer);
     }
 
     [Fact]

@@ -161,4 +161,45 @@ public sealed class ColleagueJoinTests : IDisposable
         Assert.StartsWith("error: 'prompt' is required", answer);
         Assert.Empty(store.All());
     }
+
+    /// <summary>
+    /// THE LISTING SAYS WHO IS HERE AND HOW TO REACH THEM (user, 2026-11-11): a lead that listed the library after
+    /// bringing one in saw only display names, sent to "Explore SharpConsoleUI API", and was refused — the handle was
+    /// said once, in the bring note, and nowhere it looked again.
+    /// </summary>
+    [Fact]
+    public async Task The_list_marks_a_colleague_in_this_session_with_its_handle()
+    {
+        Charting();
+        Library.Create(new ColleagueRecord { Name = "Tables", Type = "general", Created = DateTimeOffset.UtcNow });
+        var session = Open(new MockLlmProvider());
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+
+        var list = await new ColleagueTool(session.Colleagues, null, () => "lead").TryInvokeAsync(
+            new ToolCall { Id = "c", Name = ColleagueTool.ToolName, Arguments = JsonSerializer.SerializeToElement(new { action = "list" }) },
+            CancellationToken.None);
+
+        var lines = list!.Split('\n');
+        Assert.Contains("here as charting — reach it with agent_send", Assert.Single(lines, l => l.StartsWith("Charting", StringComparison.Ordinal)));
+        Assert.DoesNotContain("here as", Assert.Single(lines, l => l.StartsWith("Tables", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// A SEND TO A NAME NOBODY HOLDS NAMES THE ONES THAT EXIST, a colleague's with its own name beside it — not a tool
+    /// to look them up with, which the lead in that session did not have.
+    /// </summary>
+    [Fact]
+    public async Task A_send_to_a_wrong_name_lists_the_handles_there_are()
+    {
+        Charting();
+        var session = Open(new MockLlmProvider());
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+
+        var refused = await new AgentReachTools(session.SubAgents).SendAsync(
+            new SendRequest(To: "Charting Expert", Prompt: "chart", Background: false, ParentAgentId: null, FromUser: false), CancellationToken.None);
+
+        Assert.StartsWith("error: no sub-agent named 'Charting Expert' in this session.", refused, StringComparison.Ordinal);
+        Assert.Contains("charting (the colleague Charting)", refused, StringComparison.Ordinal);
+        Assert.DoesNotContain("task_list", refused, StringComparison.Ordinal);
+    }
 }

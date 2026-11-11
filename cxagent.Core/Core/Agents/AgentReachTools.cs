@@ -56,8 +56,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
     public async Task<string> SendAsync(SendRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.To))
-            return "error: 'to' is required — which sub-agent should answer? Call task_list to see the "
-                 + "names.";
+            return "error: 'to' is required — which sub-agent should answer? " + Present();
 
         // A HANDLE OR AN AGENT ID: the handle is what the receipt and task_list show, the id is what an
         // envelope carries, and a model holding either should not have to translate. NAMES THE REMEDY,
@@ -67,8 +66,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
         if (stored is null)
             return store.WasForgotten(request.To)
                 ? request.FromUser ? SubAgentStore.Dismissed(request.To) : SubAgentStore.DismissedForModel(request.To)
-                : $"error: no sub-agent named '{request.To}' in this session. "
-                  + "Call task_list to see which ones there are.";
+                : $"error: no sub-agent named '{request.To}' in this session. " + Present();
         var name = stored.Name;
         AfterLookupForTest?.Invoke();
 
@@ -353,6 +351,21 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
             : $"delivered to '{agentName}' — it is mid-task and will see this on its next turn. It will "
               + "not answer here: what it makes of this comes back with the work it is already doing. "
               + "task_list shows whether it is still working.";
+    }
+
+    /// <summary>
+    /// The handles there are, a colleague's with its own name beside it.
+    ///
+    /// <para>THE NAMES THEMSELVES, NOT A TOOL TO FIND THEM WITH: not every agent that can send has task_list, and a
+    /// remedy naming a tool it lacks is a dead end. A colleague's name sits beside its handle because that name is
+    /// what the lead saw last — the library lists colleagues by it.</para>
+    /// </summary>
+    private string Present()
+    {
+        var all = store.All();
+        if (all.Count == 0) return "There are no sub-agents in this session.";
+        return "There are: " + string.Join(", ", all.Select(a =>
+            store.BadgeOf(a.Name) is { } badge ? $"{a.Name} (the {badge.Kind.ToLowerInvariant()} {badge.Name})" : a.Name)) + ".";
     }
 
     /// <summary>The send tool as this agent is offered it — see <see cref="DefinitionsFor"/>.</summary>

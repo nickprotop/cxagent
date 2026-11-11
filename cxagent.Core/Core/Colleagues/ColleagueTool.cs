@@ -84,7 +84,11 @@ public sealed class ColleagueTool(ColleagueDesk desk,
         var sb = new StringBuilder();
         foreach (var line in all.Select(ColleagueLine.Of))
             sb.Append(line.Name).Append(line.Description.Length > 0 ? " — " + line.Description : "")
-              .Append(line.Knows.Count > 0 ? " · knows: " + string.Join(", ", line.Knows) : "").Append('\n');
+              .Append(line.Knows.Count > 0 ? " · knows: " + string.Join(", ", line.Knows) : "")
+              // WHO IS ALREADY HERE, AND UNDER WHAT HANDLE: the bring result says it once, and a lead that lists the
+              // library afterwards otherwise sees only the colleague's name — which agent_send does not answer to.
+              .Append(desk.HandleHere(line.Name) is { } handle ? $" · here as {handle} — reach it with agent_send" : "")
+              .Append('\n');
         return sb.ToString().TrimEnd();
     }
 
