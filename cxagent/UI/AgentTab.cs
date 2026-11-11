@@ -50,6 +50,12 @@ public sealed class AgentTab : IDisposable
     internal PromptControl Input => _input;
     private readonly ButtonControl _stop;
     private readonly ButtonControl _move;
+    /// <summary>
+    /// The state in capitals at the head of the button row. THE ROW IS NEVER BLANK: Stop and Background are there
+    /// only while the agent runs, and without this an idle tab opened on an empty line above a lone rule.
+    /// </summary>
+    private readonly MarkupControl _state = Controls.Markup().WithMargin(1, 0, 0, 0).Build();
+    private string _stateText = "";
     private string _headerText = "";
     private string _hintText = "";
     private AgentRowView? _now;
@@ -88,6 +94,7 @@ public sealed class AgentTab : IDisposable
             })
             .Build();
         var bar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
+        bar.AddItem(_state);
         bar.AddItem(_move);
         bar.AddItem(_stop);
 
@@ -269,6 +276,14 @@ public sealed class AgentTab : IDisposable
         if (stopHadFocus && !_stop.Visible)
             _stop.GetParentWindow()?.FocusManager.SetFocus(MainControl, FocusReason.Programmatic);
 
+        var badge = Session.SubAgents.BadgeOf(Kept.Name);
+        var word = StateWord(_now, badge, badge is null ? null : Session.Colleagues?.CardOf(Kept.Name), Session.SubAgents.Ended);
+        if (word != _stateText)
+        {
+            _stateText = word;
+            _state.SetContent([$"[bold {StateColour(_now, Session.SubAgents.Ended)}]{MarkupParser.Escape(word)}[/]"]);
+        }
+
         // ONLY WHEN IT CHANGED: this runs every second for every open tab.
         var header = HeaderLines();
         var text = string.Join("\n", header);
@@ -296,6 +311,33 @@ public sealed class AgentTab : IDisposable
     }
 
     public void Dispose() => _attached.Dispose();
+
+    /// <summary>Test seam: the state word the button row shows.</summary>
+    internal string StateText => _stateText;
+
+    /// <summary>
+    /// The button row's state word, in capitals: the same word the header's facts line uses — a colleague's own
+    /// (idle between tasks, never done) — so the two never disagree. One never given work is idle.
+    /// </summary>
+    public static string StateWord(AgentRowView? now, WorkerBadge? badge, CxAgent.Core.Colleagues.ColleagueCard? card, bool ended)
+    {
+        if (ended) return "SESSION ENDED";
+        var word = badge is not null
+            ? card is null ? AgentRows.ColleagueWord(now?.State ?? AgentRowState.Done, learning: false)
+                           : AgentRows.ColleagueWord(now?.State ?? AgentRowState.Done, card)
+            : now is null ? "idle" : AgentRows.Word(now.State);
+        return word.ToUpperInvariant();
+    }
+
+    // WORKING IN THE ACCENT, AN ASK IN CAUTION, AN END BY HOW IT WENT; resting is muted — it is the usual state and
+    // should not shout.
+    private static string StateColour(AgentRowView? now, bool ended) => ended ? ColorScheme.MutedMarkup : now?.State switch
+    {
+        AgentRowState.Running or AgentRowState.Queued => ColorScheme.AccentMarkup,
+        AgentRowState.WaitingForPermission => ColorScheme.CautionMarkup,
+        AgentRowState.Failed => ColorScheme.DangerMarkup,
+        _ => ColorScheme.MutedMarkup,
+    };
 
     /// <summary>Test seam: the header's lines as the tab draws them.</summary>
     internal List<string> HeaderLinesForTest() => HeaderLines();

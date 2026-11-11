@@ -410,4 +410,42 @@ public sealed class AgentTabTests : IDisposable
 
         Assert.Contains(tab.HeaderLinesForTest(), l => l.Contains("general · mock-model · in sub", StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// THE ROW ABOVE THE HEADER IS NEVER BLANK (user, 2026-11-11): Stop and Background live there only while the agent
+    /// runs, and the row said nothing at all the rest of the time. It names the state in capitals, before any button.
+    /// </summary>
+    [Fact]
+    public async Task TheButtonRow_NamesTheState_IdleBeforeWork_DoneAfter()
+    {
+        _front.SubAgents.Keep(Child(Says("found it")), "finder");
+        using var tab = new AgentTab(_front, _front.SubAgents.Find("finder")!, Inline(new ChatTranscriptControl()));
+        Assert.Equal("IDLE", tab.StateText);
+
+        await Ask(_front, "look");
+        tab.Tick(DateTimeOffset.UtcNow);
+
+        Assert.Equal("DONE", tab.StateText);
+    }
+
+    /// <summary>A colleague's own words, as its header has them: idle between tasks, never done.</summary>
+    [Theory]
+    [InlineData(AgentRowState.Done, "IDLE")]
+    [InlineData(AgentRowState.Running, "WORKING")]
+    [InlineData(AgentRowState.Failed, "IDLE · LAST TASK FAILED")]
+    public void AColleaguesStateWord_IsItsOwn(AgentRowState state, string word)
+    {
+        _front.SubAgents.Keep(Child(Says()), "finder");
+        var kept = _front.SubAgents.Find("finder")!;
+        var now = new AgentRowView(kept, state, false, TimeSpan.Zero, DateTimeOffset.UtcNow, null);
+
+        Assert.Equal(word, AgentTab.StateWord(now, new CxAgent.Core.Agents.WorkerBadge("Colleague", "Charting", "◆"), null, ended: false));
+    }
+
+    [Fact]
+    public void AnEndedSession_SaysSo()
+    {
+        _front.SubAgents.Keep(Child(Says()), "finder");
+        Assert.Equal("SESSION ENDED", AgentTab.StateWord(null, null, null, ended: true));
+    }
 }
