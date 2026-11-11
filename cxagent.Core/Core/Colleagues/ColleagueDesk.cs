@@ -806,6 +806,9 @@ public sealed partial class ColleagueDesk : IDisposable
     private void Append(string name, PastRound round)
     {
         _owned[KeyOf(name)] = _parts.Library.Append(name, round);
+
+        // A SCRATCH FOLDER IS NO WORKPLACE: the round is kept in the past all the same — see Codebase.IsProject.
+        if (!Codebase.IsProject(_parts.Folder)) return;
         var key = Codebase.Key(_parts.Folder);
         var firstHere = _counted.TryAdd(name + "\u0001" + key, 0);
         _parts.Library.Update(name, r =>

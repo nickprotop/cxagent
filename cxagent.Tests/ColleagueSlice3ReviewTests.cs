@@ -30,6 +30,9 @@ public sealed class ColleagueSlice3ReviewTests : IDisposable
         _project = Path.Combine(_root, "invoice");
         _workplace = Path.Combine(_root, "consoleex");
         foreach (var d in new[] { _config, _project, _workplace }) Directory.CreateDirectory(d);
+        // BOTH ARE PROJECTS — only a project is a codebase (see Codebase.IsProject).
+        TestProject.Mark(_project);
+        TestProject.Mark(_workplace);
         File.WriteAllText(Path.Combine(_workplace, "a.cs"), "x");
         _paths = new AppPaths(_config);
         _paths.EnsureCreated();

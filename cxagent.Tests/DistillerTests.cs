@@ -12,7 +12,7 @@ namespace CxAgent.Tests;
 public sealed class DistillerTests : IDisposable
 {
     private readonly string _config = Directory.CreateTempSubdirectory("distiller-").FullName;
-    private readonly string _project = Directory.CreateTempSubdirectory("distiller-project-").FullName;
+    private readonly string _project = TestProject.New("distiller-project-");
     private readonly ColleagueStore _store;
     private readonly MockLlmProvider _model = new();
 
@@ -295,7 +295,7 @@ public sealed class DistillerTests : IDisposable
     [Fact]
     public async Task A_round_that_read_another_workplace_is_distilled_into_both()
     {
-        var library = Directory.CreateTempSubdirectory("distiller-library-").FullName;
+        var library = TestProject.New("distiller-library-");
         try
         {
             var libraryKey = Codebase.Key(library);

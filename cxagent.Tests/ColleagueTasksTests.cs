@@ -15,7 +15,7 @@ namespace CxAgent.Tests;
 public sealed class ColleagueTasksTests : IDisposable
 {
     private readonly string _config = Directory.CreateTempSubdirectory("colleague-tasks-config-").FullName;
-    private readonly string _project = Directory.CreateTempSubdirectory("colleague-tasks-proj-").FullName;
+    private readonly string _project = TestProject.New("colleague-tasks-proj-");
 
     public void Dispose()
     {

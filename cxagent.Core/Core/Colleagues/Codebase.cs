@@ -26,6 +26,37 @@ public static partial class Codebase
         return start;
     }
 
+    // THE FILES THAT MAKE A FOLDER A PROJECT, outside git — a build or package manifest of the common toolchains.
+    private static readonly string[] ProjectFiles =
+    [
+        "*.csproj", "*.fsproj", "*.vbproj", "*.sln", "*.slnx", "package.json", "Cargo.toml", "go.mod", "pyproject.toml",
+        "setup.py", "requirements.txt", "pom.xml", "build.gradle", "build.gradle.kts", "CMakeLists.txt", "Makefile",
+        "Gemfile", "composer.json", "mix.exs", "deno.json",
+    ];
+
+    /// <summary>
+    /// Whether <paramref name="folder"/> is a project — inside a git repository, or holding a project file of its own —
+    /// and so a codebase a colleague keeps experience of.
+    ///
+    /// <para>NOT EVERY FOLDER A SESSION RAN IN (user, 2026-11-11): one run in /tmp gave a colleague a "tmp" codebase,
+    /// experience of a scratch folder that is not one thing. Work there still counts: it is kept in the colleague's past,
+    /// and what holds generally reaches its core.</para>
+    /// </summary>
+    public static bool IsProject(string folder)
+    {
+        try
+        {
+            var start = RealPath(folder);
+            for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
+            {
+                var dotGit = Path.Combine(dir.FullName, ".git");
+                if (Directory.Exists(dotGit) || File.Exists(dotGit)) return true;
+            }
+            return Directory.Exists(start) && ProjectFiles.Any(pattern => Directory.EnumerateFiles(start, pattern).Any());
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { return false; }
+    }
+
     /// <summary>
     /// The key a codebase's experience file is named by: the root's own name, readable to a person browsing the
     /// library, and a hash of its whole path, so two repositories of one name stay apart.

@@ -267,7 +267,8 @@ other. Opening it again returns to the same conversation. It is never listed by 
 - **Recall** searches its past for words, reads one round whole, or reads the current version of its experience — the
   newest, if it grew in another session meanwhile. A recall shows in its tab as `recall · search "…"`,
   `recall · round 9` or `recall · experience <codebase>`.
-- **Workplaces**, the folders it has worked in, it reads without asking while each is still trusted, with the file
+- **Workplaces**, the projects it has worked in (a folder in a git repository, or one holding a project file; a
+  scratch folder like `/tmp` is not one, though what it learned there still reaches its core), it reads without asking while each is still trusted, with the file
   tools and with commands that can only look (`cat`, `grep`, `ls`). A write, a move or any other command there
   asks as anywhere else. A workplace that has moved or been deleted is named in its briefing as
   gone.

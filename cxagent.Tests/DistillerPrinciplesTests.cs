@@ -116,6 +116,22 @@ public sealed class DistillerPrinciplesTests : IDisposable
             IncarnationBriefing.For(Library.Find("Charting")!, "", new IncarnationSetting(true, [])));
     }
 
+    /// <summary>
+    /// WHAT IS WORTH ITS ROOM (user, 2026-11-11): judgment over what one read returns, nothing tied to one moment, nothing
+    /// the colleague only asserted, and an experience that agrees with itself.
+    /// </summary>
+    [Fact]
+    public void The_instructions_say_what_is_worth_keeping()
+    {
+        var text = Distiller.InstructionsForTest;
+
+        Assert.Contains("Keep what would cost the colleague a search or a mistake to find again", text);
+        Assert.Contains("What the code states plainly and one read returns is not worth keeping", text);
+        Assert.Contains("is a moment, not experience", text);
+        Assert.Contains("what the colleague asserted in its answer without having read or run it is not evidence", text);
+        Assert.Contains("make the experience agree with itself", text);
+    }
+
     [Fact]
     public void The_old_correction_line_is_replaced() =>
         Assert.DoesNotContain("When a round shows an earlier statement was wrong, correct it", Distiller.InstructionsForTest);

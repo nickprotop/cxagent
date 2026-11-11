@@ -14,7 +14,7 @@ namespace CxAgent.Tests;
 public sealed class ColleagueDeskTests : IDisposable
 {
     private readonly string _config = Directory.CreateTempSubdirectory("desk-config-").FullName;
-    private readonly string _project = Directory.CreateTempSubdirectory("desk-project-").FullName;
+    private readonly string _project = TestProject.New("desk-project-");
     private readonly Scripted _model = new();
 
     public void Dispose()
@@ -25,12 +25,12 @@ public sealed class ColleagueDeskTests : IDisposable
 
     private ColleagueStore Library => new(_config);
 
-    private Session Open(int? window = 200_000, bool on = true)
+    private Session Open(int? window = 200_000, bool on = true, string? folder = null)
     {
         var resolution = ResolvedConfig.ForTesting(_model) is var r
             ? r with { Model = r.Model! with { ContextWindow = window }, Catalog = r.Catalog with { Colleagues = on } }
             : null!;
-        var session = new Session(_project);
+        var session = new Session(folder ?? _project);
         SessionFactory.Wire(session, resolution, new SharedServices { GlobalInstructionsDir = _config },
             new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
         return session;
@@ -310,6 +310,31 @@ public sealed class ColleagueDeskTests : IDisposable
         {
             var r = await ChatAsync(messages, tools, ct);
             yield return new LlmStreamChunk(r.Text, null, true, null, r.StopReason);
+        }
+    }
+
+    /// <summary>
+    /// A SCRATCH FOLDER IS NO WORKPLACE (user, 2026-11-11): work kept from a session in a folder that is not a project
+    /// is in the colleague's past all the same, but the folder becomes no codebase of it.
+    /// </summary>
+    [Fact]
+    public async Task Work_in_a_folder_that_is_not_a_project_adds_no_workplace()
+    {
+        var scratch = Directory.CreateTempSubdirectory("desk-scratch-").FullName;
+        try
+        {
+            var session = Open(folder: scratch);
+            var handle = Worker(session);
+
+            session.Colleagues!.Keep(new KeepOrder(handle, "Charting"));
+            await session.Colleagues.Idle();
+
+            Assert.Empty(Library.Find("Charting")!.Workplaces);
+            Assert.Single(Library.Past("Charting"));
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch (IOException) { }
         }
     }
 }

@@ -367,7 +367,9 @@ public sealed partial class Distiller(ColleagueStore store)
     private static Dictionary<string, string> Touched(List<PastRound> batch)
     {
         var touched = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var folder in batch.SelectMany(r => r.AlsoRead.Prepend(r.Folder)))
+        // ONLY PROJECTS ARE CODEBASES: a round in a scratch folder touches none, and what it taught reaches the core only
+        // if it holds generally — see Codebase.IsProject.
+        foreach (var folder in batch.SelectMany(r => r.AlsoRead.Prepend(r.Folder)).Where(Codebase.IsProject))
             touched.TryAdd(Codebase.Key(folder), folder);
         return touched;
     }
@@ -440,6 +442,14 @@ public sealed partial class Distiller(ColleagueStore store)
         + "way, how each codebase is built and why. Not a diary of what happened; what is true and useful now. Merge "
         + "what overlaps; drop what is no longer useful. Never write secrets — keys, passwords, tokens — even when the "
         + "round shows one.\n\n"
+        // WHAT IS WORTH ITS ROOM, in general words (user, 2026-11-11): an experience filled with member lists one read of
+        // the code returns, with commit hashes, and with the worker's own unread claims kept as lessons.
+        + "Keep what would cost the colleague a search or a mistake to find again: judgments, pitfalls, why things are as "
+        + "they are, where to look first. What the code states plainly and one read returns is not worth keeping; a list "
+        + "of a type's members goes stale with its next release. Keep what stays true beyond the round: a commit, the "
+        + "state of a working tree, or a version seen once is a moment, not experience. A statement is worth what the "
+        + "round shows for it: what the colleague asserted in its answer without having read or run it is not evidence, "
+        + "and is not kept.\n\n"
         // THE PRINCIPLES IN GENERAL WORDS, as the user approved them (2026-11-08, the kinds 2026-11-09): a rule tailored to
         // a bug seen in one language or tool teaches yesterday's mistake and carries nowhere else. THREE KINDS, NOT TWO:
         // "concluded" once covered every inference, and an inference written as a finding is how a guess became knowledge;
@@ -454,7 +464,9 @@ public sealed partial class Distiller(ColleagueStore store)
         + "older \"seen\" mark means observed, an older \"concluded\" means learned.\n\n"
         + "Newer evidence wins. When a statement no longer holds, move it: under ## Mistaken if it was never true — what "
         + "was believed, what is true, the round; under ## Superseded if it held and stopped holding — what held, what "
-        + "holds now, from when, the round. Keep only the few that still matter.\n\n"
+        + "holds now, from when, the round. Keep only the few that still matter. Before answering, make the experience "
+        + "agree with itself: of two statements that cannot both hold, keep the one with newer evidence and move the "
+        + "other.\n\n"
         + "File each statement where it is true: about a codebase in that codebase's experience; what holds everywhere in "
         + "the core. You can write only the core and the codebases listed below; what belongs to another waits until it "
         + "is listed. A round names the folders it read outside every codebase listed — keep what was learned there in "

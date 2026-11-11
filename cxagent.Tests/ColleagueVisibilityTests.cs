@@ -14,7 +14,7 @@ namespace CxAgent.Tests;
 public sealed class ColleagueVisibilityTests : IDisposable
 {
     private readonly string _config = Directory.CreateTempSubdirectory("colleague-vis-config-").FullName;
-    private readonly string _project = Directory.CreateTempSubdirectory("colleague-vis-proj-").FullName;
+    private readonly string _project = TestProject.New("colleague-vis-proj-");
     private readonly BufferedChatSink _seen = new();
     private readonly Scripted _model = new();
 
