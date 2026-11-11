@@ -786,4 +786,30 @@ public class SessionPanelTests
         Assert.Contains(lines.Skip(deepseek + 1).Take(local - deepseek - 1), l => l.Contains("cache 81%", StringComparison.Ordinal));
         Assert.DoesNotContain(lines, l => l.Contains("46%", StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// LIVE FIRST (user, 2026-11-11): the context, the turns and the spend above the session line, and the facts that do
+    /// not move in one About block at the end — each label on its value's line.
+    /// </summary>
+    [Fact]
+    public void The_live_sections_come_first_and_the_facts_share_one_block()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 9_000, ContextWindow = 200_000, Width = 30,
+            Endpoint = "", Rules = 2, WorkingDirectory = "/work/proj", SessionId = "ABC123",
+            SpendByModel = new Dictionary<string, int> { ["main:m"] = 9_000 },
+        });
+
+        var text = panel.RenderedText;
+        int At(string s) => text.IndexOf(s, StringComparison.Ordinal);
+
+        Assert.True(At("Context") < At("Tokens by instance"));
+        Assert.True(At("Tokens by instance") < At("Session["));
+        Assert.True(At("Session[") < At("About"));
+        Assert.Matches(@"Location\[/\] .*proj", text);
+        Assert.Matches(@"Session id\[/\] .*ABC123", text);
+        Assert.Matches(@"Permissions\[/\] 2 always-allow rules", text);
+    }
 }

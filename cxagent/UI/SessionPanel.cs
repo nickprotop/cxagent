@@ -340,124 +340,8 @@ public sealed class SessionPanel
         _charts.Update(turns, GaugeWidth(state.Width));
 
         var lines = new List<string>();
+        var about = new Facts();
 
-        // NO MODEL BLOCK. It moved to the line under the composer, where it sits beside the mode it
-        // belongs to. Two places showing one value is how they drift, and the panel is the one that
-        // can be hidden.
-
-        Section(lines, "Session");
-        lines.Add(Value($"{Elapsed()} · {_tally.Turns} turn{(_tally.Turns == 1 ? "" : "s")}"));
-        lines.Add(Muted($"{_tally.ToolCalls} tool call{(_tally.ToolCalls == 1 ? "" : "s")}"));
-
-        // WHERE, which prevents the worst class of mistake there is: editing the wrong checkout.
-        Section(lines, "Location");
-        // NO BRANCH HERE: it belongs to the Git block at the foot of the panel, where it reads with
-        // the working-tree state it goes with rather than as a footnote to the path.
-        // GIVEN, NOT READ. Calling Directory.GetCurrentDirectory() here yields the session's
-        // directory only while there is one session per process — the same ambient read the agent
-        // itself avoids. Falling back to the process keeps a caller that has no opinion working,
-        // exactly as the agent's own fallback does.
-        lines.Add(Value(ShortPath(state.Folder)));
-
-        // CAPS, because they are the invisible thing that ends a run: a goal that stops "for no
-        // reason" has almost always hit one.
-        //
-        // SHOWN UNCONDITIONALLY. Gating this on the orchestrator CONFIG block means that with no
-        // such block — the common case — nothing renders and the caps stay invisible. The limits
-        // apply either way.
-        Section(lines, "Limits");
-
-        // THE CEILING THAT BINDS THE SESSION'S OWN AGENT, resolved by the caller the way the host
-        // resolves it: the configured number, or 0 — "no turn cap" — when none is set or 0 was.
-        //
-        // THE CAP IS PER GOAL; THE COUNTER ABOVE IS PER SESSION. Rendering "{Turns}/{max}" pairs a
-        // session-lifetime count with a limit that resets on every prompt — a long session then
-        // reads "290/300 turns" and looks one prompt from death while the current goal has taken
-        // three. Two different denominators sharing one slash.
-        //
-        // The cap is stated ALONE, as the rule it is. The session's own turn count already has a
-        // home in the Session block above, where it is not standing next to a limit it is not
-        // measured against.
-        lines.Add(state.HasTurnCap
-            ? Value($"{state.MaxTurns} turns per goal")
-            : Muted("no turn cap"));
-
-        lines.Add(Muted($"{Compact(MaxToolResultChars)} tool result"));
-
-        // THE SESSION ID, last and muted. It is not glanceable information — nobody reads a ULID —
-        // but it is the ONE string that connects what is on screen to the logs on disk, and without
-        // it a user who wants to look at a session afterwards has to guess which directory by
-        // timestamp.
-        if (state.SessionId.Length > 0)
-        {
-            Section(lines, "Session id");
-            lines.Add(Muted(state.SessionId));
-        }
-
-        // MCP SERVERS, when any are configured and switched on.
-        //
-        // A DISABLED server is absent: it is off on purpose, and a line reporting a decision the
-        // user already made is noise. A FAILED one is shown, because hiding it is indistinguishable
-        // from never having configured it — and they did configure it, so silence is the one outcome
-        // that leaves them nothing to act on. The reason itself needs more room than 24 columns, so
-        // this says THAT it failed and /mcp says why.
-        //
-        // Absent entirely when there is nothing to say, like the session-id block above rather than
-        // a heading over an empty list.
-        var servers = (state.McpServers ?? []).Where(s => s.Enabled).ToList();
-        if (servers.Count > 0)
-        {
-            Section(lines, "MCP");
-            foreach (var server in servers)
-                lines.Add(server.IsConnected
-                    ? Value($"{server.Name} · {server.ToolCount} tool{(server.ToolCount == 1 ? "" : "s")}")
-                    : Muted($"{server.Name} · failed"));
-        }
-
-        // SKILLS: HOW MANY EXIST, AND WHICH ARE IN FORCE RIGHT NOW.
-        //
-        // THE LOADED ONES ARE THE POINT. A skill loaded ten turns ago is still shaping every answer
-        // with nothing on screen saying so — and when compaction removes its body it silently stops,
-        // which is a behaviour change with no visible cause. This is the only surface that reports
-        // that, and it reports it by DERIVING from the window rather than remembering, so the line
-        // disappears exactly when the skill stops applying.
-        //
-        // THE COUNT IS MUTED AND THE NAMES ARE VALUED, following the MCP rows above: otherwise a
-        // reader sees five lines and cannot tell which are available from which are active.
-        //
-        // THE PARENT'S ONLY. A child's skills live and die inside its own row, which already names
-        // them, and a child is gone by the next turn while this panel persists — attributing one to
-        // the session would be worse than omitting it, because a skill is not a quantity to total.
-        if (state.SkillCount > 0)
-        {
-            Section(lines, "Skills");
-            lines.Add(Muted($"{state.SkillCount} available"));
-            foreach (var skill in state.LoadedSkills ?? [])
-                lines.Add(Value(skill));
-        }
-
-        // MEMORY: HOW MANY NOTES, AND WHOSE — "1 system · 2 project". Counts, not names — a column this narrow cannot hold a list worth reading,
-        // and /memory is one command away. FROM THE FILES, not the prompt's snapshot: this answers what is kept, and a
-        // note the user just forgot must leave the panel at once. Absent entirely when memory is off.
-        if (state.MemoryNotes is { } notes)
-        {
-            Section(lines, "Memory");
-            var mine = notes.Count(n => n.Scope == Core.Memory.MemoryScope.System);
-            var project = notes.Count - mine;
-            lines.Add(notes.Count == 0 ? Muted("no notes yet") : Value($"{mine} system · {project} project"));
-        }
-
-        // NO COLLEAGUES HERE: they have a section of their own in Tasks (F7) — the ones here as cards, the rest with
-        // Bring — and a second list in this column said the same thing again.
-
-        // THE MODEL'S PLAN IS NOT HERE, DELIBERATELY. It was, briefly, and the panel is the wrong
-        // surface for it three ways: this column is 24 characters wide and a plan item is a
-        // sentence; the panel shows NOW while the interesting thing about a plan is that step three
-        // appeared after the model read the code; and a plan is model OUTPUT, which belongs in the
-        // transcript with everything else the model produces.
-        //
-        // It renders as its own tool row instead — expanded, with the whole list in the body — so
-        // each revision is visible in the order it happened. See TodoRow.
 
         // SPEND PER MODEL, when more than one model has spent anything.
         //
@@ -571,6 +455,124 @@ public sealed class SessionPanel
                 lines.Add(Muted($"  cache {StatsDashboard.Percent(ownRate)}"));
         }
 
+        // THE SESSION ON ONE LINE: how long, how many model responses, how many tool calls.
+        Section(lines, "Session");
+        lines.Add(Value($"{Elapsed()} · {_tally.Turns} turn{(_tally.Turns == 1 ? "" : "s")} · "
+                        + $"{_tally.ToolCalls} tool call{(_tally.ToolCalls == 1 ? "" : "s")}"));
+
+        // THE FACTS THAT DO NOT MOVE, IN ONE BLOCK (user, 2026-11-11): each a muted label beside its first value, so seven
+        // sections that took most of the panel's height take a line or two each, below the live state. NO MODEL: it sits on
+        // the line under the composer, beside the mode it belongs to, and two places showing one value is how they drift.
+
+        // WHERE, which prevents the worst class of mistake there is: editing the wrong checkout.
+        about.Label("Location");
+        // NO BRANCH HERE: it belongs to the Git block at the foot of the panel, where it reads with
+        // the working-tree state it goes with rather than as a footnote to the path.
+        // GIVEN, NOT READ. Calling Directory.GetCurrentDirectory() here yields the session's
+        // directory only while there is one session per process — the same ambient read the agent
+        // itself avoids. Falling back to the process keeps a caller that has no opinion working,
+        // exactly as the agent's own fallback does.
+        about.Add(Value(ShortPath(state.Folder)));
+
+        // CAPS, because they are the invisible thing that ends a run: a goal that stops "for no
+        // reason" has almost always hit one.
+        //
+        // SHOWN UNCONDITIONALLY. Gating this on the orchestrator CONFIG block means that with no
+        // such block — the common case — nothing renders and the caps stay invisible. The limits
+        // apply either way.
+        about.Label("Limits");
+
+        // THE CEILING THAT BINDS THE SESSION'S OWN AGENT, resolved by the caller the way the host
+        // resolves it: the configured number, or 0 — "no turn cap" — when none is set or 0 was.
+        //
+        // THE CAP IS PER GOAL; THE COUNTER ABOVE IS PER SESSION. Rendering "{Turns}/{max}" pairs a
+        // session-lifetime count with a limit that resets on every prompt — a long session then
+        // reads "290/300 turns" and looks one prompt from death while the current goal has taken
+        // three. Two different denominators sharing one slash.
+        //
+        // The cap is stated ALONE, as the rule it is. The session's own turn count already has a
+        // home in the Session block above, where it is not standing next to a limit it is not
+        // measured against.
+        about.Add(state.HasTurnCap
+            ? Value($"{state.MaxTurns} turns per goal")
+            : Muted("no turn cap"));
+
+        about.Add(Muted($"{Compact(MaxToolResultChars)} tool result"));
+
+        // THE SESSION ID, last and muted. It is not glanceable information — nobody reads a ULID —
+        // but it is the ONE string that connects what is on screen to the logs on disk, and without
+        // it a user who wants to look at a session afterwards has to guess which directory by
+        // timestamp.
+        if (state.SessionId.Length > 0)
+        {
+            about.Label("Session id");
+            about.Add(Muted(state.SessionId));
+        }
+
+        // MCP SERVERS, when any are configured and switched on.
+        //
+        // A DISABLED server is absent: it is off on purpose, and a line reporting a decision the
+        // user already made is noise. A FAILED one is shown, because hiding it is indistinguishable
+        // from never having configured it — and they did configure it, so silence is the one outcome
+        // that leaves them nothing to act on. The reason itself needs more room than 24 columns, so
+        // this says THAT it failed and /mcp says why.
+        //
+        // Absent entirely when there is nothing to say, like the session-id block above rather than
+        // a heading over an empty list.
+        var servers = (state.McpServers ?? []).Where(s => s.Enabled).ToList();
+        if (servers.Count > 0)
+        {
+            about.Label("MCP");
+            foreach (var server in servers)
+                about.Add(server.IsConnected
+                    ? Value($"{server.Name} · {server.ToolCount} tool{(server.ToolCount == 1 ? "" : "s")}")
+                    : Muted($"{server.Name} · failed"));
+        }
+
+        // SKILLS: HOW MANY EXIST, AND WHICH ARE IN FORCE RIGHT NOW.
+        //
+        // THE LOADED ONES ARE THE POINT. A skill loaded ten turns ago is still shaping every answer
+        // with nothing on screen saying so — and when compaction removes its body it silently stops,
+        // which is a behaviour change with no visible cause. This is the only surface that reports
+        // that, and it reports it by DERIVING from the window rather than remembering, so the line
+        // disappears exactly when the skill stops applying.
+        //
+        // THE COUNT IS MUTED AND THE NAMES ARE VALUED, following the MCP rows above: otherwise a
+        // reader sees five lines and cannot tell which are available from which are active.
+        //
+        // THE PARENT'S ONLY. A child's skills live and die inside its own row, which already names
+        // them, and a child is gone by the next turn while this panel persists — attributing one to
+        // the session would be worse than omitting it, because a skill is not a quantity to total.
+        if (state.SkillCount > 0)
+        {
+            about.Label("Skills");
+            about.Add(Muted($"{state.SkillCount} available"));
+            foreach (var skill in state.LoadedSkills ?? [])
+                about.Add(Value(skill));
+        }
+
+        // MEMORY: HOW MANY NOTES, AND WHOSE — "1 system · 2 project". Counts, not names — a column this narrow cannot hold a list worth reading,
+        // and /memory is one command away. FROM THE FILES, not the prompt's snapshot: this answers what is kept, and a
+        // note the user just forgot must leave the panel at once. Absent entirely when memory is off.
+        if (state.MemoryNotes is { } notes)
+        {
+            about.Label("Memory");
+            var mine = notes.Count(n => n.Scope == Core.Memory.MemoryScope.System);
+            var project = notes.Count - mine;
+            about.Add(notes.Count == 0 ? Muted("no notes yet") : Value($"{mine} system · {project} project"));
+        }
+
+        // NO COLLEAGUES HERE: they have a section of their own in Tasks (F7) — the ones here as cards, the rest with
+        // Bring — and a second list in this column said the same thing again.
+
+        // THE MODEL'S PLAN IS NOT HERE, DELIBERATELY. It was, briefly, and the panel is the wrong
+        // surface for it three ways: this column is 24 characters wide and a plan item is a
+        // sentence; the panel shows NOW while the interesting thing about a plan is that step three
+        // appeared after the model read the code; and a plan is model OUTPUT, which belongs in the
+        // transcript with everything else the model produces.
+        //
+        // It renders as its own tool row instead — expanded, with the whole list in the body — so
+        // each revision is visible in the order it happened. See TodoRow.
         // EVERY TYPE THE MODEL CAN SPAWN, INCLUDING `general`.
         //
         // Filtering `general` out — on the reasoning that a permanent one-line section is noise on
@@ -584,17 +586,20 @@ public sealed class SessionPanel
         var types = state.AgentTypes ?? [];
         if (types.Count > 0)
         {
-            Section(lines, "Agent types");
-            lines.Add(Value(string.Join(", ", types)));
+            about.Label("Agent types");
+            about.Add(Value(string.Join(", ", types)));
         }
 
         // PERMISSIONS as a COUNT. What was granted is a security surface, and it was invisible
         // unless the user opened Settings — you granted them, you should be able to see that you
         // did. The detail stays in Settings; this is the reminder that there is detail.
-        Section(lines, "Permissions");
-        lines.Add(state.Rules == 0
+        about.Label("Permissions");
+        about.Add(state.Rules == 0
             ? Muted("none granted")
             : Value($"{state.Rules} always-allow rule{(state.Rules == 1 ? "" : "s")}"));
+
+        Section(lines, "About");
+        lines.AddRange(about.Lines);
 
         // GIT LAST, at the foot of the panel. It is the one block about the REPOSITORY rather than
         // the session, and it is what you check before committing rather than while working — so it
@@ -727,6 +732,29 @@ public sealed class SessionPanel
 
     // THE BODY'S TWO MARGINS AND A COLUMN FOR THE SCROLLBAR, which appears once the sections outgrow the panel.
     private static int GaugeWidth(int panelWidth) => Math.Max(4, panelWidth - 3);
+
+    /// <summary>
+    /// The About block's lines: a muted label beside the first value given after it, any further values indented under
+    /// it — so a fact takes one line, and a list of them (MCP servers) a line each beneath its label.
+    /// </summary>
+    private sealed class Facts
+    {
+        private string? _label;
+
+        public List<string> Lines { get; } = [];
+
+        public void Label(string label) => _label = label;
+
+        public void Add(string value)
+        {
+            if (_label is { } label)
+            {
+                Lines.Add($"{Muted(label)} {value}");
+                _label = null;
+            }
+            else Lines.Add("  " + value);
+        }
+    }
 
     private static void Section(List<string> lines, string title)
     {

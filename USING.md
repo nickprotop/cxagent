@@ -82,9 +82,11 @@ place, so the conversation carries on; the `images` key in [CONFIG.md](CONFIG.md
 
 ![The image window over a session on Claude Haiku: a pasted 3500 by 2504 screenshot shrunk to 1568 by 1122, drawn in full in Kitty, its sizes in the title and Open in viewer in the footer, and the composer holding the image's token and the question about it](docs/screenshots/40-images.png)
 
-**A live session panel.** The right-hand column (`F5` shows or hides it, `F3` picks its Session view) shows the session as it runs: the context
-window, turns and tool calls, limits, MCP servers and their tools, agent types, permissions granted,
-tokens by model and by agent, and the git branch and its state. The picture at the top shows it.
+**A live session panel.** The right-hand column (`F5` shows or hides it, `F3` picks its Session view) shows the session as it runs. At the
+top, live: the context as a gauge with a tick where auto-compress starts, sparklines of each turn's tokens (and the
+workers' beside them), cache rate and context, and each model's share of the tokens as a bar with its own cache rate.
+Below: the session line, then an About block of the folder, limits, MCP servers, memory, agent types and permissions,
+and the git branch and its state at the foot. Its colours follow the theme. The picture at the top shows it.
 
 
 ## Working in a folder

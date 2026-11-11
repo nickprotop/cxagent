@@ -2357,11 +2357,6 @@ function drawSessionPane(p) {
     pane.append(spark("context · last " + (last.context != null ? Math.round(last.context * 100) + "%" : "—"), turns.map(t => t.context || 0), 1, "context"));
   }
 
-  pane.append(el("h3", null, "Session"));
-  const time = kv("Time", "");
-  time.querySelector("b").append(ticking(null, new Date(p.session.since).getTime()));
-  pane.append(time, kv("Turns", String(p.session.turns)), kv("Tool calls", String(p.session.toolCalls)));
-
   pane.append(el("h3", null, "Tokens"));
   // EACH INSTANCE ITS OWN CACHE RATE, on its own row, and its SHARE AS A BAR in its own colour — the terminal's order of
   // colours, so the biggest spender is always the first.
@@ -2380,6 +2375,13 @@ function drawSessionPane(p) {
     pane.append(kv("This agent", tokens(p.tokens.total - p.tokens.workers)), kv("By workers", tokens(p.tokens.workers)));
   }
   if (p.tokens.cost != null) pane.append(kv("Cost", money(p.tokens.cost), "total"));
+
+  // LIVE FIRST, as the terminal's panel: the spend above the session line.
+  pane.append(el("h3", null, "Session"));
+  const time = kv("Time", "");
+  time.querySelector("b").append(ticking(null, new Date(p.session.since).getTime()));
+  pane.append(time, kv("Turns", String(p.session.turns)), kv("Tool calls", String(p.session.toolCalls)));
+
 
   // F12: the conversation as markdown, chosen in the terminal's export form.
   pane.append(el("h3", null, "Export"));
@@ -2434,7 +2436,7 @@ function drawSessionPane(p) {
     pane.append(el("p", "none", "Changed in the terminal: F8 › Web › Browser access."));
   }
 
-  pane.append(el("h3", null, "Here"));
+  pane.append(el("h3", null, "About"));
   const folder = kv("Folder", shortFolder(p.here.folder));
   folder.title = p.here.folder;
   pane.append(folder);
