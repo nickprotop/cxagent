@@ -22,7 +22,8 @@ namespace CxAgent.UI;
 /// </summary>
 public sealed class TurnCharts
 {
-    // ROWS PER CHART: one reads as noise at this width, three crowds the panel.
+    // ROWS PER CHART: one reads as noise at this width, three crowds the panel. Drawn in Braille, whose
+    // dots read as a fine line in the narrow panel where full blocks read as a solid wall.
     private const int ChartHeight = 2;
 
     private sealed record Series(string Name, Func<TurnPoint, double> Value, Func<IReadOnlyList<TurnPoint>, string> Latest,
@@ -42,7 +43,7 @@ public sealed class TurnCharts
             new(name, value, latest, ratio)
             {
                 Label = Controls.Markup().WithMargin(1, 0, 1, 0).Build(),
-                Chart = new SparklineBuilder().WithHeight(ChartHeight).WithMode(SparklineMode.Block).WithMinValue(0)
+                Chart = new SparklineBuilder().WithHeight(ChartHeight).WithMode(SparklineMode.Braille).WithMinValue(0)
                     .WithMargin(1, 0, 1, 0).Build(),
             };
 
