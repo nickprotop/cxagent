@@ -1,12 +1,12 @@
 # Colleagues
 
-A colleague is a worker you chose to keep. After each task it is given, what it did is distilled into its
+A colleague is kept from what a worker learned. After each task it is given, what it did is distilled into its
 **experience**: how it works, and what it knows about each codebase it has worked in. It brings that experience into
 any session you call it into. It lives in cxagent's own folder, belongs to no session, and is never stored in your
 repositories.
 
-A worker is gone when its session ends. A colleague carries on. Keep the worker that spent an afternoon learning a
-library, and next week bring it into a new app that uses the same library: it starts from what it learned.
+A worker is gone when its session ends. A colleague carries on. Keep what a worker learned in an afternoon with a
+library, and next week bring the colleague into a new app that uses the same library: it starts from what it learned.
 
 - [A tutorial: from one codebase to the next](#a-tutorial-from-one-codebase-to-the-next)
 - [Ways to use one](#ways-to-use-one)
@@ -61,8 +61,9 @@ Press **Keep**, or type it yourself, with a name of your choice:
 /colleagues keep study-sharpconsoleui-dashboard SharpConsoleUI Guide
 ```
 
-The worker is now the colleague. Its conversation so far is the first round of its past, and it is distilled into its
-first experience straight away. When that finishes, the session says what it learned:
+The colleague is new, and takes nothing of the worker but what it learned: the worker's conversation is the first
+round of its past, distilled into its first experience straight away. It runs on the session's model until you choose
+another, and the worker stays an ordinary worker of this session. When that finishes, the session says what it learned:
 
 ```text
 Study SharpConsoleUI dashboard learned from its work: core updated, cxgpu added (v1).
@@ -218,8 +219,10 @@ cost so far, and its experience to read. **Open** starts a one-to-one, **Bring i
 **Forget…** asks whether to forget it.
 
 **Keeping one.** `/colleagues keep <worker> [name]` keeps one of this session's workers; typing it is your yes.
-Without a name, one is taken from what the worker was doing. From then on the worker *is* the colleague: its
-conversation so far is the first round of its past, and every later task it finishes is another. When the agent wants
+Without a name, one is taken from what the worker was doing. The worker's conversation becomes the first round of
+the colleague's past, and that is all it takes: no briefing, no model, nothing of the kind of worker it was. The worker
+stays an ordinary worker, and what it does next is not the colleague's; bring the colleague in to work with it. A
+worker's work is kept once. When the agent wants
 to keep one it asks you, with **Keep** or **Don't keep**. A worker that cannot be kept, such as one that already is
 a colleague, is refused without asking.
 
@@ -256,8 +259,7 @@ a round and is distilled; when the experience has grown since your last message,
 version. Ask and Talk run independently: the agent's asks never reach your conversation. Closing either tab keeps its
 worker; the card reopens it. **New conversation** on the Talk tab, `/clear` typed there, or `/colleagues talk <name>
 --new` starts the conversation over from what it has learned, under a divider naming the version. Nothing is lost:
-every exchange is already distilled, so nothing asks first. A worker you kept as a colleague in this session becomes its Talk worker, since it holds
-a conversation.
+every exchange is already distilled, so nothing asks first.
 
 **Releasing one.** `/colleagues release <name>`, or **Release** on its card or in its tab, lets a colleague at rest leave
 the session, its Ask and Talk workers both; the agent can release one too. Every task it finished here is already in its past, so nothing is lost,
@@ -361,8 +363,8 @@ the past word for word, is not learned from, and you are told once.
 **Rounds that did not finish.** A round stopped before it answered, or ended at its turn limit, is kept marked so. The
 distiller reads it as what was tried, not as what worked, and recall shows the mark too.
 
-**Models and settings.** A colleague runs on the model it was kept on, or on the session's model when that entry is not
-configured here; the agent may name another model for one bring. Either must have at least a 128k window; a quarter of
+**Models and settings.** A colleague runs on the session's model unless you choose another for it, and on the
+session's when that entry is not configured here; the agent may name another model for one bring. Either must have at least a 128k window; a quarter of
 that window, at most 100k, is loaded as its experience when it is brought in. A colleague already here stays on the
 model it came on: a bring naming another sends it nothing, and says to release it first. F8's **Colleagues** tab, and
 the Colleagues tab of the browser's configuration page, change where each one runs and where it distils, rename it and
@@ -379,7 +381,7 @@ freeze it. Under *Settings* they turn colleagues and suggestions off, as do
 | Command | What it does |
 |---------|--------------|
 | `/colleagues` | Open the library: every colleague, what it knows, its experience |
-| `/colleagues keep <worker> [name]` | Keep a worker of this session as a colleague |
+| `/colleagues keep <worker> [name]` | Make a colleague from what a worker of this session learned |
 | `/colleagues bring <name> [task]` | Bring a colleague in, on a task or idle to be given one |
 | `/colleagues ask <name> [question]` | Ask a colleague here, fresh from what it has learned; opens its Ask tab |
 | `/colleagues talk <name> [--new] [message]` | Talk with a colleague here, in a conversation that goes on; `--new` starts it over. Opens its Talk tab |

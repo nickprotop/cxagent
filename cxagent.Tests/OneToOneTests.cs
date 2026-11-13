@@ -38,7 +38,7 @@ public sealed class OneToOneTests : IDisposable
 
     private void Charting()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         Library.Update("Charting", r => r with { Workplaces = [new Workplace(Codebase.Key(_project), _project, 1, DateTimeOffset.UtcNow)] });
         Library.WriteCore("Charting", "## Lessons\nPanes first.");
     }
@@ -146,7 +146,7 @@ public sealed class OneToOneTests : IDisposable
     public async Task Nothing_is_brought_in_or_kept_there()
     {
         Charting();
-        Library.Create(new ColleagueRecord { Name = "Builder", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Builder", Created = DateTimeOffset.UtcNow });
         var (session, _) = Opened(new MockLlmProvider());
 
         var bring = await session.Colleagues!.BringAsync(new BringOrder("Builder", "fix it", null, true, session.SessionId ?? "x"), CancellationToken.None);

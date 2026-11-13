@@ -19,7 +19,7 @@ public sealed class DistillerTests : IDisposable
     public DistillerTests()
     {
         _store = new ColleagueStore(_config);
-        _store.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        _store.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
     }
 
     public void Dispose()
@@ -62,7 +62,7 @@ public sealed class DistillerTests : IDisposable
     [Fact]
     public async Task Each_colleague_is_finished_as_its_own_rounds_are_done()
     {
-        _store.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow });
+        _store.Create(new ColleagueRecord { Name = "Parser", Created = DateTimeOffset.UtcNow });
         Append();
         _store.Append("Parser", new PastRound(0, "s", _project, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
             [new ChatMessage { Role = "user", Content = "parse" }, new ChatMessage { Role = "assistant", Content = new string('p', 400) }]));
@@ -352,7 +352,7 @@ public sealed class DistillerTests : IDisposable
     [Fact]
     public async Task A_drain_takes_every_colleague_s_waiting_rounds()
     {
-        _store.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow });
+        _store.Create(new ColleagueRecord { Name = "Parser", Created = DateTimeOffset.UtcNow });
         Append();
         _store.Append("Parser", new PastRound(0, "s2", _project, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
             [new ChatMessage { Role = "user", Content = "parse it" }, new ChatMessage { Role = "assistant", Content = new string('p', 400) }]));
@@ -368,7 +368,7 @@ public sealed class DistillerTests : IDisposable
     [Fact]
     public async Task One_colleague_s_failure_does_not_stop_another_s()
     {
-        _store.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow });
+        _store.Create(new ColleagueRecord { Name = "Parser", Created = DateTimeOffset.UtcNow });
         Append();
         _store.Append("Parser", new PastRound(0, "s2", _project, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
             [new ChatMessage { Role = "user", Content = "parse it" }, new ChatMessage { Role = "assistant", Content = new string('p', 400) }]));

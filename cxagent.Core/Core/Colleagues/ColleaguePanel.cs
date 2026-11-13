@@ -22,8 +22,7 @@ public sealed record ColleaguePanelRow(string Name, string Description, string? 
 
 /// <summary>
 /// One colleague here as the Tasks panel's card says it — what makes it a colleague rather than a worker. ONE RECORD FOR
-/// BOTH FRONT ENDS, so F7's card and the browser's Tasks pane say the same. It carries no type: a colleague is what it
-/// has learned, not the kind of worker it was kept from.
+/// BOTH FRONT ENDS, so F7's card and the browser's Tasks pane say the same. A colleague is what it has learned.
 /// </summary>
 /// <param name="Knows">The folders it has worked in, by their own names, most recent first.</param>
 /// <param name="Version">Its experience's version.</param>

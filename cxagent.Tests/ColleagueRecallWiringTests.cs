@@ -46,7 +46,7 @@ public sealed class ColleagueRecallWiringTests : IDisposable
 
     private void Charting(params string[] workplaces)
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         Library.Update("Charting", r => r with
         {
             Workplaces = [.. workplaces.Select((w, i) => new Workplace(Codebase.Key(w), w, 1, DateTimeOffset.UtcNow.AddDays(-i)))],

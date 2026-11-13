@@ -440,7 +440,7 @@ public sealed partial class Session
     {
         var all = desk.List();
         var sb = new StringBuilder();
-        if (all.Count == 0) sb.Append("No colleagues yet. `/colleagues keep <worker> [name]` keeps a worker of this session as one.\n");
+        if (all.Count == 0) sb.Append("No colleagues yet. `/colleagues keep <worker> [name]` makes one from what a worker of this session learned.\n");
         foreach (var line in all.Select(ColleagueLine.Of))
             sb.Append("- **").Append(line.Name).Append("**").Append(line.Description.Length > 0 ? " — " + line.Description : "")
               .Append(line.Knows.Count > 0 ? " · knows: " + string.Join(", ", line.Knows) : "").Append('\n');

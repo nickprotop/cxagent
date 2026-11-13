@@ -432,7 +432,8 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         // same class of silent-wrong as a mode that quietly stays single. A blank or absent name IS
         // `general`, which is what makes a bare spawn ordinary rather than special.
         var requested = order.Type;
-        var type = _types.Resolve(requested);
+        // A WORKER OF AN ORIGIN HAS NO TYPE — see AgentTypeCatalog.Untyped.
+        var type = order.Origin is not null ? AgentTypeCatalog.Untyped : _types.Resolve(requested);
         if (type is null)
             return $"error: unknown agent type '{requested?.Trim()}'. Valid: {_types.Names}.";
 

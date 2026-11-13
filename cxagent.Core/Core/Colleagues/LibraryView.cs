@@ -14,9 +14,8 @@ public sealed record LibraryEntry(string Name, string Description, IReadOnlyList
 /// <param name="Rounds">Rounds in its past.</param>
 /// <param name="Distilled">Rounds distilled so far.</param>
 /// <param name="Skipped">Rounds stepped past without being learned from.</param>
-/// <param name="Type">The agent type it works as.</param>
 /// <param name="Model">The provider entry it runs on, or null for the session's.</param>
-public sealed record LibraryFacts(long Version, long Rounds, long Distilled, int Skipped, string Type, string? Model)
+public sealed record LibraryFacts(long Version, long Rounds, long Distilled, int Skipped, string? Model)
 {
     /// <summary>What distilling it has cost, every process's calls together.</summary>
     public DistillTotals Spend { get; init; } = new();
@@ -58,7 +57,7 @@ public static class LibraryView
                 // they are counted on their own, as never learned from.
                 new LibraryFacts(r.ExperienceVersion, store.RoundCount(r.Name),
                     r.DistilledThrough - r.Unlearned.Sum(u => Math.Max(0, Math.Min(u.Through, r.DistilledThrough) - u.From + 1)),
-                    r.Skipped.Count, r.Type, r.Instance)
+                    r.Skipped.Count, r.Instance)
                 {
                     Spend = r.Spend,
                     Frozen = r.Frozen,

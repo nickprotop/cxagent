@@ -27,7 +27,7 @@ public sealed class ColleagueTasksTests : IDisposable
 
     private async Task<Session> WithCharting(string? task = null, params LlmResponse[] before)
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "explore", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         Library.Update("Charting", r => r with
         {
             ExperienceVersion = 6,
@@ -140,7 +140,7 @@ public sealed class ColleagueTasksTests : IDisposable
     [Fact]
     public async Task F7_lists_the_ones_not_here_as_available_with_bring()
     {
-        Library.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow.AddDays(-2), Description = "reads invoices" });
+        Library.Create(new ColleagueRecord { Name = "Parser", Created = DateTimeOffset.UtcNow.AddDays(-2), Description = "reads invoices" });
         var session = await WithCharting();
         var panel = new JobsPanel();
         var brought = new List<string>();
@@ -200,7 +200,7 @@ public sealed class ColleagueTasksTests : IDisposable
     [Fact]
     public void The_library_names_no_type()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "explore", Created = DateTimeOffset.UtcNow, Instance = "local" });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow, Instance = "local" });
 
         var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, _ => { }, _ => { }));
 

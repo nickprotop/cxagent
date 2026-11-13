@@ -78,7 +78,7 @@ public sealed class ColleagueLibraryTab
         {
             _detail.ClearContents();
             _detail.AddControl(ListDetail.Empty("No colleagues yet.",
-                "Keep a worker of a session as one: /colleagues keep <worker> [name], or ask the agent to."));
+                "Make one from what a worker of a session learned: /colleagues keep <worker> [name], or ask the agent to."));
             return;
         }
         // THE COLLEAGUE IT WAS ON STAYS SHOWN: Distil again and Forget reload the tab, and going back to the first

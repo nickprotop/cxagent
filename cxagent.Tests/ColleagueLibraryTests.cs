@@ -24,7 +24,7 @@ public sealed class ColleagueLibraryTests : IDisposable
 
     private void Charting()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "explore", Created = DateTimeOffset.UtcNow, Description = "lays out charts", Instance = "local" });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow, Description = "lays out charts", Instance = "local" });
         Library.Update("Charting", r => r with
         {
             ExperienceVersion = 3,
@@ -50,7 +50,7 @@ public sealed class ColleagueLibraryTests : IDisposable
         Assert.Equal("Charting", entry.Name);
         Assert.Equal("lays out charts", entry.Description);
         Assert.Equal(["cxgpu"], entry.Knows);
-        Assert.Equal(new LibraryFacts(Version: 3, Rounds: 2, Distilled: 2, Skipped: 1, Type: "explore", Model: "local"), entry.Facts);
+        Assert.Equal(new LibraryFacts(Version: 3, Rounds: 2, Distilled: 2, Skipped: 1, Model: "local"), entry.Facts);
         Assert.Equal("Core", entry.Experience[0].Title);
         Assert.Equal("## Lessons\nPanes first.", entry.Experience[0].Markdown);
     }
@@ -70,7 +70,7 @@ public sealed class ColleagueLibraryTests : IDisposable
     public void The_terminal_tab_lists_them_and_shows_the_one_picked()
     {
         Charting();
-        Library.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow.AddDays(-1) });
+        Library.Create(new ColleagueRecord { Name = "Parser", Created = DateTimeOffset.UtcNow.AddDays(-1) });
 
         var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, _ => { }, _ => { }));
 
@@ -88,7 +88,7 @@ public sealed class ColleagueLibraryTests : IDisposable
     public void The_terminal_tab_keeps_the_one_picked_when_read_again()
     {
         Charting();
-        Library.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow.AddDays(-1) });
+        Library.Create(new ColleagueRecord { Name = "Parser", Created = DateTimeOffset.UtcNow.AddDays(-1) });
         var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, _ => { }, _ => { }));
 
         tab.PickForTest(1);
@@ -144,7 +144,7 @@ public sealed class ColleagueLibraryTests : IDisposable
     [Fact]
     public void The_terminal_library_has_Forget()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         var forgotten = new List<string>();
         var distilled = new List<string>();
         var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, forgotten.Add, distilled.Add));

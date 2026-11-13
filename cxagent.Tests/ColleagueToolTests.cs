@@ -61,7 +61,7 @@ public sealed class ColleagueToolTests : IDisposable
     [Fact]
     public async Task List_names_each_colleague_with_its_description()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow, Description = "lays out charts" });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow, Description = "lays out charts" });
         var tool = new ColleagueTool(Open().Colleagues!, null, () => "lead");
 
         var answer = await tool.TryInvokeAsync(Call(new { action = "list" }), CancellationToken.None);
@@ -150,7 +150,7 @@ public sealed class ColleagueToolTests : IDisposable
     [Fact]
     public async Task Bring_returns_the_spawn_envelope()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         var session = Open();
         var tool = new ColleagueTool(session.Colleagues!, null, () => session.SessionId!);
 
@@ -166,7 +166,7 @@ public sealed class ColleagueToolTests : IDisposable
     [Fact]
     public async Task Bring_without_a_name_points_to_the_list_to_choose_from()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         var session = Open();
         var tool = new ColleagueTool(session.Colleagues!, null, () => session.SessionId!);
 

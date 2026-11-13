@@ -96,7 +96,9 @@ internal static class WorkerRevival
         // confined it to — a worker revived unconfined could write where it never could. A type since removed or
         // disabled, a provider no longer offered, or a folder no longer allowed leaves it in the past, where its rows
         // still show it.
-        if (types.Resolve(spawn.Type) is not { } type) return $"no type '{spawn.Type}'";
+        // A WORKER OF AN ORIGIN COMES BACK AS IT WAS SPAWNED: with no type — see AgentTypeCatalog.Untyped.
+        var type = spawn.Origin is not null ? AgentTypeCatalog.Untyped : types.Resolve(spawn.Type);
+        if (type is null) return $"no type '{spawn.Type}'";
         TypeRouting routing;
         if (spawn.Instance is { } instance)
         {

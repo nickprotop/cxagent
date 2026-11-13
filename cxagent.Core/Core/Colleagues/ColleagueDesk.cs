@@ -188,6 +188,9 @@ public sealed partial class ColleagueDesk : IDisposable
     /// <summary>The experience version each incarnation here started from (or last learned of), by origin.</summary>
     private readonly ConcurrentDictionary<string, long> _given = new(StringComparer.Ordinal);
 
+    /// <summary>The colleague each worker of this session was kept as, by handle — see <see cref="Checked"/>.</summary>
+    private readonly ConcurrentDictionary<string, string> _keptAs = new(StringComparer.Ordinal);
+
     /// <summary>The window each incarnation brought in here runs on, by origin — what its preload is sized to.</summary>
     private readonly ConcurrentDictionary<string, int> _windows = new(StringComparer.Ordinal);
 
@@ -426,9 +429,13 @@ public sealed partial class ColleagueDesk : IDisposable
     }
 
     /// <summary>
-    /// Keeps a worker of this session as a colleague, and answers the line to show. The worker becomes the colleague's
-    /// incarnation here at once: its conversation so far is the first round of its past, distilled now, and its later
-    /// runs are rounds.
+    /// Keeps a worker of this session as a colleague, and answers the line to show.
+    ///
+    /// <para>A COLLEAGUE IS NOT A WORKER (user, 2026-11-13). What the worker did — its conversation, without its system
+    /// prompt — is the first round of the colleague's past, distilled into its experience; that knowledge is all it
+    /// takes. Not the worker's type, model, briefing or label: the record starts on the session's model, with no
+    /// description until it is distilled. The worker stays the ordinary worker it was, and its later runs are not the
+    /// colleague's; the colleague works here when it is brought in, as itself.</para>
     /// </summary>
     /// <summary>
     /// Why <paramref name="order"/> cannot be kept, or null when it can — asked by the colleague tool BEFORE it puts the
@@ -455,6 +462,8 @@ public sealed partial class ColleagueDesk : IDisposable
             return $"{handle} is already the colleague {origin[OriginPrefix.Length..]}.";
         // NOT WHILE IT WORKS: the run under way would be split between the kept round and the next one.
         if (_workers.IsBusy(handle)) return $"{handle} is working; keep it when it has finished.";
+        // ONE COLLEAGUE PER WORKER'S WORK: kept again, the same rounds would be learned twice, under two names.
+        if (_keptAs.TryGetValue(handle, out var already)) return $"{handle}'s work is already the colleague {already}.";
 
         name = (order.Name ?? NameFrom(kept)).Trim();
         if (ColleagueStore.NameRefusal(name) is { } bad) return bad;
@@ -469,14 +478,7 @@ public sealed partial class ColleagueDesk : IDisposable
         var handle = kept.Name;
 
         var now = DateTimeOffset.UtcNow;
-        var record = new ColleagueRecord
-        {
-            Name = name,
-            Type = kept.TypeName,
-            Instance = kept.Agent.Instance,
-            Created = now,
-            Description = kept.Description ?? "",
-        };
+        var record = new ColleagueRecord { Name = name, Created = now };
         try
         {
             _parts.Library.Create(record);
@@ -486,8 +488,8 @@ public sealed partial class ColleagueDesk : IDisposable
             return $"Could not keep {handle}: {e.Message}";
         }
 
-        // ALL OR NOTHING: a colleague with no past, and a worker not marked as it, would be refused a second keep under
-        // the same name — so a keep that fails after the folder exists takes the folder away again.
+        // ALL OR NOTHING: a colleague with no past would be refused a second keep under the same name — so a keep that
+        // fails after the folder exists takes the folder away again.
         try
         {
             var messages = kept.Agent.Agent.Context.Messages.Where(m => m.Role != "system").ToList();
@@ -500,19 +502,12 @@ public sealed partial class ColleagueDesk : IDisposable
             return $"Could not keep {handle}: {e.Message}";
         }
 
-        var marked = OriginPrefix + name;
-        _workers.SetOrigin(handle, marked);
-        // KEPT, IT IS THE COLLEAGUE'S TALK WORKER HERE: it holds a conversation, and has neither the experience nor the
-        // recall a worker brought as a colleague is built with — its next ask goes to an Ask worker brought for it.
-        _workers.KeepConversation(handle);
-        _given[KeyOf(name)] = 0;
-        Present(name);
-        // IN THE SESSION'S HISTORY, so a resume brings it back as the colleague and not as the worker it was.
-        _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, marked));
-        _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, marked) { Talk = true });
+        // KEPT, NEVER OFFERED AGAIN — here or after a resume: its work is already the colleague's.
+        _workers.Decline(handle);
+        _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, null) { Declined = true });
         Drain();
-        return $"Kept {handle} as the colleague {name}. Its experience is being distilled from its work so far; from now on "
-               + "every task it finishes is added.";
+        _keptAs[handle] = name;
+        return $"Kept {name} as a colleague, learning from that work. Bring it in to work with it.";
     }
 
     /// <summary>Brings a colleague into this session as a worker, and answers the spawn's envelope or why not.</summary>
@@ -606,7 +601,6 @@ public sealed partial class ColleagueDesk : IDisposable
             Prompt = order.Talk ? "" : order.Task,
             Run = !order.Talk && order.Task.Trim().Length > 0,
             Description = order.Talk ? TalkDescription(record.Name) : record.Name,
-            Type = record.Type,
             Instance = instance,
             Origin = origin,
             Handle = ColleagueStore.Slug(record.Name) + (order.Talk ? TalkSuffix : ""),
@@ -633,7 +627,7 @@ public sealed partial class ColleagueDesk : IDisposable
         if (child is not null && handle is not null)
             _parts.NoteWorker(new WorkerMark(child.Agent.Id, refused is null ? origin : null)
             {
-                Name = handle, Type = record.Type, Instance = instance,
+                Name = handle, Instance = instance,
                 Description = order.Talk ? TalkDescription(record.Name) : record.Name,
             });
         // WHICH OF ITS TWO IT IS, written down for a resume — see WorkerMark.Talk and WorkerMark.Asks.

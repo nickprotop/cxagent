@@ -883,7 +883,7 @@ each folder is trusted (`/trust`) and still there — reads only. While `cxagent
 read outside the `web.roots` folders asks, and so does recalling what was read there.
 
 **Each colleague's models are its own,** in its `colleague.json`, not here: where it runs — the
-entry it was kept on, or the session's model — and where its rounds are distilled — its own model unless
+session's model unless one is chosen — and where its rounds are distilled — its own model unless
 set. F8's Colleagues tab and the browser's page choose both from the provider entries, and refuse one
 whose `contextWindow` is under 128k. A save there is used at its next bring; one already working keeps
 its model. The same page renames it — its old names still find it — and sets whether it **learns** or is **frozen** — frozen, its rounds are kept and none is

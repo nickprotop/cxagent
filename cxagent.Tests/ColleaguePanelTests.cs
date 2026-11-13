@@ -34,7 +34,7 @@ public sealed class ColleaguePanelTests : IDisposable
     }
 
     private void Kept(string name, string description) =>
-        Library.Create(new ColleagueRecord { Name = name, Type = "general", Created = DateTimeOffset.UtcNow, Description = description });
+        Library.Create(new ColleagueRecord { Name = name, Created = DateTimeOffset.UtcNow, Description = description });
 
     private async Task<ColleaguePanel> TwoColleaguesOneHere()
     {

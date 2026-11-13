@@ -37,7 +37,7 @@ public sealed class ColleagueMarkerTests : IDisposable
     }
 
     private void Charting() =>
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
 
     private async Task<(Session Session, StoredAgent Kept)> Brought()
     {

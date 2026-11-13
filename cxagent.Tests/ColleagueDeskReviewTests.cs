@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CxAgent.Core.Agents;
 using CxAgent.Core.Colleagues;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
@@ -40,7 +41,7 @@ public sealed class ColleagueDeskReviewTests : IDisposable
     });
 
     private void Charting() =>
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow, Instance = "main" });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow, Instance = "main" });
 
     private static BringOrder Bring(string? model = null) => new("Charting", "chart it", model, false, "lead");
 
@@ -100,7 +101,7 @@ public sealed class ColleagueDeskReviewTests : IDisposable
     [Fact]
     public async Task A_distilling_model_with_no_known_window_is_said_to_be_that()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow, Instance = "main", DistillInstance = "slow" });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow, Instance = "main", DistillInstance = "slow" });
         var said = new List<string>();
         using var desk = new ColleagueDesk(new ColleagueDeskParts
         {
@@ -152,20 +153,35 @@ public sealed class ColleagueDeskReviewTests : IDisposable
         Assert.Null(_marks.Single().Origin);
     }
 
+    /// <summary>NOTHING OF THE WORKER (user, 2026-11-13): it starts on the session's model, described by nothing yet.</summary>
     [Fact]
-    public void Keep_records_the_entry_the_worker_ran_on_not_a_guess_from_its_model_id()
+    public void Keep_takes_neither_the_worker_s_model_nor_its_label()
     {
         var desk = Desk(new Recording(_workers));
-        var named = Child(new MockLlmProvider("qwen3:32b"), instance: "local");
-        var unnamed = Child(new MockLlmProvider("qwen3:32b"), instance: null);
-        var a = _workers.Keep(named, "a");
-        var b = _workers.Keep(unnamed, "b");
+        var a = _workers.Keep(Child(new MockLlmProvider("qwen3:32b"), instance: "local"), "chart the GPU load");
 
         desk.Keep(new KeepOrder(a, "Named"));
-        desk.Keep(new KeepOrder(b, "Unnamed"));
 
-        Assert.Equal("local", Library.Find("Named")!.Instance);
-        Assert.Null(Library.Find("Unnamed")!.Instance);
+        Assert.Null(Library.Find("Named")!.Instance);
+        Assert.Equal("", Library.Find("Named")!.Description);
+    }
+
+    /// <summary>
+    /// A COLLEAGUE IS SPAWNED WITH NO TYPE: config's own <c>general</c> may carry a briefing, and laid under a colleague's
+    /// it would speak over what the colleague learned.
+    /// </summary>
+    [Fact]
+    public void A_worker_of_an_origin_is_spawned_with_no_type()
+    {
+        var catalog = new AgentTypeCatalog(new Dictionary<string, AgentTypeConfig>
+        {
+            ["general"] = new("Never edit anything."),
+        }, null);
+
+        Assert.Equal("Never edit anything.", catalog.Resolve(null)!.Briefing);
+        Assert.Equal("", AgentTypeCatalog.Untyped.Briefing);
+        Assert.Null(AgentTypeCatalog.Untyped.Tools);
+        Assert.Null(AgentTypeCatalog.Untyped.MaxTurns);
     }
 
     [Fact]
@@ -207,7 +223,7 @@ public sealed class ColleagueDeskReviewTests : IDisposable
         {
             var record = new ColleagueRecord
             {
-                Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow,
+                Name = "Charting", Created = DateTimeOffset.UtcNow,
                 Workplaces = [new Workplace(Codebase.Key(other), other, 1, DateTimeOffset.UtcNow)],
             };
             ChatMessage Read(string path) => new()

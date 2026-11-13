@@ -32,7 +32,7 @@ public sealed class ColleagueConfigTests : IDisposable
         """, new Dictionary<string, string>());
 
     private void Charting(string? instance = "big", string? distil = null) =>
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "explore", Created = DateTimeOffset.UtcNow, Instance = instance, DistillInstance = distil });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow, Instance = instance, DistillInstance = distil });
 
     [Fact]
     public void The_draft_reads_both_models_and_writes_only_what_changed()

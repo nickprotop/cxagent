@@ -17,10 +17,7 @@ public sealed record ColleagueRecord
     /// </summary>
     public IReadOnlyList<string> FormerNames { get; init; } = [];
 
-    /// <summary>The agent type it was kept as, resolved against the catalog as configured when it is brought in.</summary>
-    public required string Type { get; init; }
-
-    /// <summary>The provider entry it runs on by default — the one it was kept on — or null for the session's.</summary>
+    /// <summary>The provider entry it runs on, as the user set it, or null for the session's.</summary>
     public string? Instance { get; init; }
 
     /// <summary>The entry distilling uses, or null for <see cref="Instance"/>.</summary>

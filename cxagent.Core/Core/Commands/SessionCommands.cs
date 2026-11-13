@@ -65,7 +65,7 @@ public static class SessionCommands
         // yes the tool has to ask for — and bringing one in, the same in the terminal and the browser.
         new("/colleagues", "list the colleagues kept across sessions",
         [
-            new("keep <worker> [name]", "keep a worker of this session as a colleague", Completes: false, Values: ValueSources.SpawnedAgents),
+            new("keep <worker> [name]", "make a colleague from what a worker of this session learned", Completes: false, Values: ValueSources.SpawnedAgents),
             new("bring <name> [task]", "bring a colleague in — with a task, or idle to be given one", Completes: false, Values: ValueSources.Colleagues),
             new("ask <name> [question]", "ask a colleague here — fresh from what it has learned; opens its Ask tab", Completes: false, Values: ValueSources.Colleagues),
             new("talk <name> [--new] [message]", "talk with a colleague here, in a conversation that goes on — --new starts it over; opens its Talk tab", Completes: false, Values: ValueSources.Colleagues),

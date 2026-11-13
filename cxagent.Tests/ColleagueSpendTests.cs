@@ -23,7 +23,7 @@ public sealed class ColleagueSpendTests : IDisposable
     {
         _project = Path.Combine(_config, "invoice");
         Directory.CreateDirectory(_project);
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
     }
 
     public void Dispose()

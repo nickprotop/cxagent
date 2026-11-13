@@ -77,6 +77,36 @@ public sealed class SpawnOrderTests
         Assert.Equal("charting", store.NameOfOrigin("colleague:Charting"));
     }
 
+    /// <summary>
+    /// A WORKER OF AN ORIGIN HAS NO TYPE (user, 2026-11-13): config's <c>general</c> briefs every ordinary worker, and
+    /// a colleague is not one — nothing of a type reaches its prompt.
+    /// </summary>
+    [Fact]
+    public async Task An_order_with_origin_carries_no_type_s_briefing()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+        var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = provider, Ledger = new TokenLedger(), MaxTurns = 5, ContextWindow = 200_000,
+            Tools = new AgentTools(JobRegistry.CreateWithBuiltins()),
+        });
+        var types = new CxAgent.Core.Agents.AgentTypeCatalog(
+            new Dictionary<string, AgentTypeConfig> { ["general"] = new("BRIEFED: never edit anything.") }, null);
+        var spawner = new SubAgentSpawner(factory, types, new SubAgentStore());
+        string SystemSent() => string.Join("\n", provider.LastMessages!.Where(m => m.Role == "system").Select(m => m.Content));
+
+        await spawner.SpawnAsync(new SpawnOrder { Prompt = "look", Description = "Look", Background = false }, null, CancellationToken.None);
+        Assert.Contains("BRIEFED", SystemSent());
+
+        await spawner.SpawnAsync(new SpawnOrder
+        {
+            Prompt = "look", Description = "Charting", Background = false, Origin = "colleague:Charting", Handle = "charting",
+        }, null, CancellationToken.None);
+        Assert.DoesNotContain("BRIEFED", SystemSent());
+    }
+
     [Fact]
     public void Handle_is_taken_when_free_and_suffixed_when_held_by_an_ordinary_worker()
     {

@@ -23,7 +23,7 @@ public sealed class ColleagueRenameTests : IDisposable
     private readonly BufferedChatSink _seen = new();
 
     public ColleagueRenameTests() =>
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow, Instance = "main" });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow, Instance = "main" });
 
     public void Dispose()
     {
@@ -89,12 +89,12 @@ public sealed class ColleagueRenameTests : IDisposable
     [Fact]
     public void A_name_held_by_another_now_or_before_is_refused()
     {
-        Library.Create(new ColleagueRecord { Name = "Maps", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Maps", Created = DateTimeOffset.UtcNow });
         Rename("Charting", "Plotter");
 
         Assert.Contains("already a colleague called 'Maps'", Rename("Plotter", "maps"));
         Assert.Contains("Plotter", Rename("Maps", "Charting"));
-        Assert.Throws<ArgumentException>(() => Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow }));
+        Assert.Throws<ArgumentException>(() => Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow }));
         Assert.NotNull(Rename("Plotter", "../x"));
         Assert.Null(Rename("Plotter", "Charting"));
         Assert.Equal("Charting", Library.Find("Plotter")!.Name);
@@ -230,7 +230,7 @@ public sealed class ColleagueRenameTests : IDisposable
     [Fact]
     public void A_draft_with_a_taken_name_writes_nothing()
     {
-        Library.Create(new ColleagueRecord { Name = "Maps", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Maps", Created = DateTimeOffset.UtcNow });
         var draft = ColleagueDraft.For(Library.Find("Charting")!);
         draft.NewName = "Maps";
         draft.Model = null;

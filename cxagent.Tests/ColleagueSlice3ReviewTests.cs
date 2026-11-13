@@ -39,7 +39,7 @@ public sealed class ColleagueSlice3ReviewTests : IDisposable
         _rules = new PermissionRulesStore(_paths);
         _rules.SetTrust(_project, TrustState.Trusted);
         _rules.SetTrust(_workplace, TrustState.Trusted);
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         Library.Update("Charting", r => r with
         {
             Workplaces = [new Workplace(Codebase.Key(_project), _project, 1, DateTimeOffset.UtcNow),

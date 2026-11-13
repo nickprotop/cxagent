@@ -18,7 +18,7 @@ public sealed class RecallToolTests : IDisposable
 
     public RecallToolTests()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         Library.Update("Charting", r => r with
         {
             Workplaces = [new Workplace("invoice-11111111", _invoice, 1, DateTimeOffset.UtcNow),

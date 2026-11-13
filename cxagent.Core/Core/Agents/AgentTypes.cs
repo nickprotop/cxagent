@@ -250,6 +250,15 @@ public sealed class AgentTypeCatalog
                         .Select(kv => kv.Value)];
     }
 
+    /// <summary>
+    /// What a worker that carries an origin is spawned and revived as: no briefing, no toolset and no turn limit of a
+    /// type. Its origin's module writes its whole prompt — a colleague is its own briefing and its experience — and
+    /// a type laid under that would speak over it with the highest authority in the prompt: an explorer's "do not edit
+    /// anything" told a colleague what it may not do whatever it had learned. NOT <c>general</c> FROM THE CATALOG,
+    /// which config may give a briefing of its own.
+    /// </summary>
+    public static AgentType Untyped => new(DefaultTypeName, "", TypeRouting.Inherited);
+
     /// <summary>The names a caller may use, for an error message that says what IS valid rather than
     /// only that something was not.</summary>
     public string Names => string.Join(", ", All.Select(t => t.Name));

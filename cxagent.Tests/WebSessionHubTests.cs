@@ -505,7 +505,7 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
     public async Task Forgetting_a_colleague_from_the_browser_asks_first()
     {
         var library = new Core.Colleagues.ColleagueStore(_paths.ConfigDir);
-        library.Create(new Core.Colleagues.ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        library.Create(new Core.Colleagues.ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         var (tab, id) = await CreatedAsync();
         await using var _ = tab;
         await _manager.Sessions.First(s => s.Id == id).Colleagues!.Idle();
@@ -550,7 +550,7 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
 
         await tab.SendAsync(Msg("keepSuggestion", ("sessionId", id), ("handle", handle), ("choice", "keep")));
         await tab.NextAsync(m => m["kind"]?.GetValue<string>() == "keepAnswered" && m["handle"]?.GetValue<string>() == handle);
-        Assert.NotNull(session.SubAgents.OriginOf(handle));
+        Assert.True(session.SubAgents.Declined(handle));
     }
 
     /// <summary>An offer answered in the terminal leaves the browser too — the desk announces the answer, not the page.</summary>
@@ -576,7 +576,7 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
     public async Task Distilling_a_colleague_again_from_the_browser_asks_first()
     {
         var library = new Core.Colleagues.ColleagueStore(_paths.ConfigDir);
-        library.Create(new Core.Colleagues.ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        library.Create(new Core.Colleagues.ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         library.Append("Charting", new Core.Colleagues.PastRound(0, "S", Work, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
             [new ChatMessage { Role = "user", Content = "chart it" }, new ChatMessage { Role = "assistant", Content = new string('c', 600) }]));
         library.Update("Charting", r => r with { DistilledThrough = 1, ExperienceVersion = 1 });

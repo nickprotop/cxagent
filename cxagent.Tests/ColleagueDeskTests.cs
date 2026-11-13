@@ -56,8 +56,12 @@ public sealed class ColleagueDeskTests : IDisposable
         new AgentReachTools(session.SubAgents).SendAsync(
             new SendRequest(To: handle, Prompt: prompt, Background: false, ParentAgentId: null, FromUser: true), CancellationToken.None);
 
+    /// <summary>
+    /// A COLLEAGUE IS NOT A WORKER (user, 2026-11-13): it takes what the worker did, distilled, and nothing of the worker
+    /// itself — no model, no label — and the worker stays an ordinary one, never offered again.
+    /// </summary>
     [Fact]
-    public async Task Keep_makes_the_worker_a_colleague_with_its_conversation_as_round_one()
+    public async Task Keep_makes_a_colleague_from_the_worker_s_work_and_leaves_the_worker_a_worker()
     {
         var session = Open();
         var handle = Worker(session);
@@ -67,11 +71,12 @@ public sealed class ColleagueDeskTests : IDisposable
 
         Assert.Contains("Charting", said);
         var record = Library.Find("Charting")!;
-        Assert.Equal(AgentTypeCatalog.DefaultTypeName, record.Type);
+        Assert.Null(record.Instance);
         Assert.Equal(Codebase.Key(_project), Assert.Single(record.Workplaces).Codebase);
         var round = Assert.Single(Library.Past("Charting"));
         Assert.Contains(round.Messages, m => m.Content.Contains("three panes", StringComparison.Ordinal));
-        Assert.Equal("colleague:Charting", session.SubAgents.OriginOf(handle));
+        Assert.Null(session.SubAgents.OriginOf(handle));
+        Assert.True(session.SubAgents.Declined(handle));
         Assert.Equal(1, Library.Find("Charting")!.DistilledThrough);   // the scripted distiller answered NO CHANGE
     }
 
@@ -92,7 +97,7 @@ public sealed class ColleagueDeskTests : IDisposable
     [Fact]
     public async Task Bring_spawns_a_worker_whose_prompt_carries_its_experience()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         Library.WriteCore("Charting", "## Lessons\nLegends follow the series.");
         var session = Open();
 
@@ -112,7 +117,7 @@ public sealed class ColleagueDeskTests : IDisposable
     [Fact]
     public async Task Bring_of_one_already_here_passes_the_task_to_it()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         var session = Open();
         await session.Colleagues!.BringAsync(new BringOrder("Charting", "one", null, false, session.SessionId!), CancellationToken.None);
 
@@ -126,7 +131,7 @@ public sealed class ColleagueDeskTests : IDisposable
     [Fact]
     public async Task Bring_twice_returns_the_live_handle()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         var session = Open();
         await session.Colleagues!.BringAsync(new BringOrder("Charting", "one", null, false, session.SessionId!), CancellationToken.None);
 
@@ -139,7 +144,7 @@ public sealed class ColleagueDeskTests : IDisposable
     [Fact]
     public async Task Bring_onto_a_small_window_is_refused()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         var session = Open(window: 64_000);
 
         var answer = await session.Colleagues!.BringAsync(new BringOrder("Charting", "one", null, false, session.SessionId!), CancellationToken.None);
@@ -159,7 +164,7 @@ public sealed class ColleagueDeskTests : IDisposable
     }
 
     [Fact]
-    public async Task A_finished_run_of_a_marked_worker_is_a_round()
+    public async Task A_kept_worker_s_later_runs_are_not_the_colleague_s()
     {
         var session = Open();
         var handle = Worker(session);
@@ -168,10 +173,7 @@ public sealed class ColleagueDeskTests : IDisposable
         await Send(session, handle, "now move the legend under the plot");
         await session.Colleagues.Idle();
 
-        var past = Library.Past("Charting");
-        Assert.Equal(2, past.Count);
-        Assert.Contains(past[1].Messages, m => m.Content.Contains("move the legend", StringComparison.Ordinal));
-        Assert.DoesNotContain(past[1].Messages, m => m.Content.Contains("three panes", StringComparison.Ordinal));
+        Assert.Single(Library.Past("Charting"));
     }
 
     [Fact]
@@ -194,7 +196,7 @@ public sealed class ColleagueDeskTests : IDisposable
     [Fact]
     public async Task Every_ask_starts_fresh_from_the_knowledge_as_it_is_now()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         var session = Open();
         await session.Colleagues!.BringAsync(new BringOrder("Charting", "FIRST-ASK", null, false, session.SessionId!), CancellationToken.None);
         await session.Colleagues.Idle();
@@ -215,7 +217,7 @@ public sealed class ColleagueDeskTests : IDisposable
     [Fact]
     public async Task A_round_left_from_before_is_distilled_when_the_desk_opens()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         Library.Append("Charting", new PastRound(0, "old", _project, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
             [new ChatMessage { Role = "user", Content = "chart it" }, new ChatMessage { Role = "assistant", Content = new string('c', 400) }]));
 
@@ -228,7 +230,7 @@ public sealed class ColleagueDeskTests : IDisposable
     [Fact]
     public async Task A_held_lock_is_waited_out_while_rounds_wait()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         var held = DistillingLock.TryTake(Library.Root)!;
         Library.Append("Charting", new PastRound(0, "old", _project, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
             [new ChatMessage { Role = "user", Content = "chart it" }, new ChatMessage { Role = "assistant", Content = new string('c', 400) }]));
@@ -252,7 +254,7 @@ public sealed class ColleagueDeskTests : IDisposable
     public async Task Its_own_distilling_is_not_told_as_growth_elsewhere()
     {
         // AN EARLIER LIFE ELSEWHERE, as the live one had: its growth list already names another folder.
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         Library.Update("Charting", r => r with { GrownIn = ["/home/dev/source/ConsoleEx"] });
         _model.Distil = $"<core>\nPanes first.\n</core>\n<description>charts</description>";
         var session = Open();
@@ -282,7 +284,7 @@ public sealed class ColleagueDeskTests : IDisposable
     [Fact]
     public void Augment_equips_a_known_colleague_and_refuses_a_forgotten_one()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         Library.WriteCore("Charting", "## Lessons\nPanes first.");
         var session = Open();
 
@@ -356,7 +358,7 @@ public sealed class ColleagueDeskTests : IDisposable
 
     private async Task<Session> Joined()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         var session = Open();
         await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
         await session.Colleagues.Idle();

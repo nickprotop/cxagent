@@ -32,7 +32,7 @@ public sealed class DistillerPrinciplesTests : IDisposable
         Directory.CreateDirectory(Path.Combine(_workplace, ".git", "worktrees", "wt"));
         File.WriteAllText(Path.Combine(_workplace, ".git", "worktrees", "wt", "commondir"), "../..");
         File.WriteAllText(Path.Combine(_worktree, ".git"), $"gitdir: {Path.Combine(_workplace, ".git", "worktrees", "wt")}");
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         Library.Update("Charting", r => r with { Workplaces = [new Workplace(Codebase.Key(_workplace), _workplace, 1, DateTimeOffset.UtcNow)] });
     }
 

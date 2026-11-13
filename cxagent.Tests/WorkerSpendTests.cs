@@ -53,7 +53,7 @@ public sealed class WorkerSpendTests : IDisposable
         new() { Text = text, StopReason = "end_turn", Usage = new LlmUsage { InputTokens = input, OutputTokens = output } };
 
     private void Colleague() =>
-        Library.Create(new ColleagueRecord { Name = "Care Explorer", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Care Explorer", Created = DateTimeOffset.UtcNow });
 
     private static Task<string> Bring(Session session) =>
         session.Colleagues!.BringAsync(new BringOrder("Care Explorer", "look around", null, Background: false, session.Host!.SessionId),

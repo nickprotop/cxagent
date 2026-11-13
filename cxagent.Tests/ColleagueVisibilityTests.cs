@@ -39,7 +39,7 @@ public sealed class ColleagueVisibilityTests : IDisposable
 
     private void Charting(params string[] knows)
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow, Description = "lays out charts" });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow, Description = "lays out charts" });
         // ONE MOMENT FOR ALL, so the line's order — most recently worked first — is the order given here.
         var at = DateTimeOffset.UtcNow;
         Library.Update("Charting", r => r with

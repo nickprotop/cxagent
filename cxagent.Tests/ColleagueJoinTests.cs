@@ -47,7 +47,7 @@ public sealed class ColleagueJoinTests : IDisposable
     }
 
     private void Charting() =>
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
 
     [Fact]
     public async Task Bring_without_a_task_joins_idle_and_marked()
@@ -171,7 +171,7 @@ public sealed class ColleagueJoinTests : IDisposable
     public async Task The_list_marks_a_colleague_in_this_session_with_its_handle()
     {
         Charting();
-        Library.Create(new ColleagueRecord { Name = "Tables", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Tables", Created = DateTimeOffset.UtcNow });
         var session = Open(new MockLlmProvider());
         await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
 
@@ -243,7 +243,7 @@ public sealed class ColleagueJoinTests : IDisposable
     public async Task The_command_and_the_leads_tool_both_release()
     {
         Charting();
-        Library.Create(new ColleagueRecord { Name = "Tables", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Tables", Created = DateTimeOffset.UtcNow });
         var session = Open(new MockLlmProvider());
         await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
         await session.Colleagues.BringAsync(new BringOrder("Tables", "", null, true, session.SessionId!), CancellationToken.None);

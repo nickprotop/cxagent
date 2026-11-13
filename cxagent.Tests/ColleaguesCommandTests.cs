@@ -59,7 +59,7 @@ public sealed class ColleaguesCommandTests : IDisposable
         session.ColleaguesCommand(null);
         Assert.Contains(_seen.Notices, n => n.Contains("No colleagues yet", StringComparison.Ordinal));
 
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow, Description = "lays out charts" });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow, Description = "lays out charts" });
         session.ColleaguesCommand("");
         Assert.Contains(_seen.Notices, n => n.Contains("Charting — lays out charts", StringComparison.Ordinal));
     }
@@ -79,7 +79,7 @@ public sealed class ColleaguesCommandTests : IDisposable
     [Fact]
     public async Task Bring_verb_brings_a_colleague_in_and_tells_the_lead_next()
     {
-        Library.Create(new ColleagueRecord { Name = "UI Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "UI Charting", Created = DateTimeOffset.UtcNow });
         var session = Open();
 
         await session.BringColleagueAsync("UI Charting draw the sales chart");
@@ -100,7 +100,7 @@ public sealed class ColleaguesCommandTests : IDisposable
     [Fact]
     public async Task Bringing_one_on_a_task_draws_its_worker_row()
     {
-        Library.Create(new ColleagueRecord { Name = "UI Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "UI Charting", Created = DateTimeOffset.UtcNow });
         var session = Open();
         var before = session.Host!.Context.Messages.Count;
 
@@ -118,7 +118,7 @@ public sealed class ColleaguesCommandTests : IDisposable
     [InlineData("'UI Charting' draw the sales chart")]
     public async Task Bring_takes_a_quoted_name(string typed)
     {
-        Library.Create(new ColleagueRecord { Name = "UI Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "UI Charting", Created = DateTimeOffset.UtcNow });
         var session = Open();
 
         await session.BringColleagueAsync(typed);
@@ -137,7 +137,7 @@ public sealed class ColleaguesCommandTests : IDisposable
     [InlineData("\"Explore SharpConsoleUI API\"")]
     public async Task Bring_with_a_name_and_no_task_joins_idle(string typed)
     {
-        Library.Create(new ColleagueRecord { Name = "Explore SharpConsoleUI API", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Explore SharpConsoleUI API", Created = DateTimeOffset.UtcNow });
         var session = Open();
 
         await session.BringColleagueAsync(typed);
@@ -149,7 +149,7 @@ public sealed class ColleaguesCommandTests : IDisposable
     [Fact]
     public async Task Bring_matches_a_name_in_any_case()
     {
-        Library.Create(new ColleagueRecord { Name = "Explore SharpConsoleUI API", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Explore SharpConsoleUI API", Created = DateTimeOffset.UtcNow });
         var session = Open();
 
         await session.BringColleagueAsync("explore sharpconsoleui api look at the dialogs");
@@ -171,7 +171,7 @@ public sealed class ColleaguesCommandTests : IDisposable
     [Fact]
     public void Completion_offers_worker_handles_after_keep_and_colleagues_after_bring()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         var session = Open();
         var handle = Worker(session);
 

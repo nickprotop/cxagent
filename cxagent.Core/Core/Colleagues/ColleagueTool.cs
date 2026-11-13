@@ -31,11 +31,12 @@ public sealed class ColleagueTool(ColleagueDesk desk,
 
     public ToolDefinition Definition => new(
         ToolName,
-        "Colleagues are workers the user chose to keep across sessions; each starts from what it learned before. "
+        "Colleagues are kept across sessions; each starts from what it learned before. "
         + "'list' names them. 'bring' starts one here as a worker on a task — prefer it to a fresh agent when the task "
         + "touches a codebase it knows; afterwards reach it with agent_send, task_output and task_stop like any worker. It answers each ask from "
         + "what it has learned, not from earlier asks, so every task and send must carry what that ask needs. "
-        + "'keep' makes one of this session's workers a colleague; it asks the user first — use it when the user asks, "
+        + "'keep' makes a new colleague, learning from what one of this session's workers did — the worker stays as it "
+        + "was. It asks the user first — use it when the user asks, "
         + "or offer it when a worker built up knowledge worth keeping. 'release' lets one brought here leave the session "
         + "once its work is done.",
         JsonDocument.Parse("""

@@ -21,7 +21,7 @@ public sealed class ColleagueStoreTests : IDisposable
     private static ColleagueRecord Record(string name) => new()
     {
         Name = name,
-        Type = "general",
+        
         Created = DateTimeOffset.UtcNow,
     };
 

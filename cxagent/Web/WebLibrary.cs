@@ -15,7 +15,7 @@ public static class WebLibrary
             ["facts"] = new JsonObject
             {
                 ["version"] = e.Facts.Version, ["rounds"] = e.Facts.Rounds, ["distilled"] = e.Facts.Distilled,
-                ["skipped"] = e.Facts.Skipped, ["type"] = e.Facts.Type, ["model"] = e.Facts.Model,
+                ["skipped"] = e.Facts.Skipped, ["model"] = e.Facts.Model,
                 ["spendCalls"] = e.Facts.Spend.Calls,
                 ["spendTokens"] = e.Facts.Spend.InputTokens + e.Facts.Spend.OutputTokens,
             },

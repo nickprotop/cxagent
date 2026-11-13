@@ -23,7 +23,7 @@ public sealed class ColleagueForgetTests : IDisposable
 
     public ColleagueForgetTests()
     {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
         Library.Update("Charting", r => r with { Workplaces = [new Workplace("proj-11111111", _project, 1, DateTimeOffset.UtcNow)] });
     }
 
@@ -158,7 +158,7 @@ public sealed class ColleagueForgetTests : IDisposable
         _workers.Find(handle)!.Agent.Agent.Context.Add(new ChatMessage { Role = "assistant", Content = "charted" });
 
         Directory.Delete(Library.FolderOf("Charting"), recursive: true);
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow.AddMinutes(1) });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow.AddMinutes(1) });
         _workers.EndSend(handle);
         await desk.Idle();
 

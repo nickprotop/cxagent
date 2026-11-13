@@ -23,7 +23,7 @@ public sealed class ColleagueDistillAgainTests : IDisposable
 
     public ColleagueDistillAgainTests()
     {
-        Library.Create(new ColleagueRecord { Name = "Care Explorer", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Care Explorer", Created = DateTimeOffset.UtcNow });
         foreach (var said in new[] { "ROUND-ONE", "ROUND-TWO", "ROUND-THREE" }) Round(said);
         Library.Update("Care Explorer", r => r with { DistilledThrough = 3, ExperienceVersion = 3 });
         Library.WriteCore("Care Explorer", "## Lessons\n- Old lesson. (learned, round 1)");

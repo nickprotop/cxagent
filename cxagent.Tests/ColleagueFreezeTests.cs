@@ -22,7 +22,7 @@ public sealed class ColleagueFreezeTests : IDisposable
     private readonly BufferedChatSink _seen = new();
 
     public ColleagueFreezeTests() =>
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
 
     public void Dispose()
     {

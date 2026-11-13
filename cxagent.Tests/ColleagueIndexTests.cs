@@ -25,7 +25,7 @@ public sealed class ColleagueIndexTests : IDisposable
 
     private void Colleague(string name, string description)
     {
-        Library.Create(new ColleagueRecord { Name = name, Type = "general", Created = DateTimeOffset.UtcNow, Description = description });
+        Library.Create(new ColleagueRecord { Name = name, Created = DateTimeOffset.UtcNow, Description = description });
         Library.Update(name, r => r with { Workplaces = [new Workplace("cxgpu-12345678", "/home/dev/source/cxgpu", 1, DateTimeOffset.UtcNow)] });
     }
 

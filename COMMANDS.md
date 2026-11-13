@@ -54,7 +54,7 @@ listed: `/model local` uses `local` when `local2` is configured too — arrow to
 | `/memory open <name>` | Open a note in a tab, to read or edit |
 | `/memory forget <name>` | Delete a note, after confirming |
 | `/colleagues` | Open the library: every colleague, what it knows, its experience |
-| `/colleagues keep <worker> [name]` | Keep a worker of this session as a colleague |
+| `/colleagues keep <worker> [name]` | Make a colleague from what a worker of this session learned |
 | `/colleagues bring <name> [task]` | Bring a colleague in — on a task, or idle to be given one |
 | `/colleagues ask <name> [question]` | Ask a colleague here, fresh from what it has learned; opens its Ask tab |
 | `/colleagues talk <name> [--new] [message]` | Talk with a colleague here, in a conversation that goes on; `--new` starts it over. Opens its Talk tab |
@@ -615,7 +615,7 @@ refused. Turn memory off in F8 › General, or with [`memory.enabled`](CONFIG.md
 
 ## `/colleagues`
 
-A colleague is a worker you chose to keep. After each task it is given, what it did is distilled into its experience,
+A colleague is kept from what a worker learned. After each task it is given, what it did is distilled into its experience,
 and it brings that experience into any session you call it into. `/colleagues` opens the library, a tab in the
 terminal and a page in the browser; its verbs keep, bring, ask, talk, release, open, rename, freeze, unfreeze, distil again and forget
 one.

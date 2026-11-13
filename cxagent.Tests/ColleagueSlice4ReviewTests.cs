@@ -24,7 +24,7 @@ public sealed class ColleagueSlice4ReviewTests : IDisposable
     private readonly List<string> _told = [];
 
     public ColleagueSlice4ReviewTests() =>
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
 
     public void Dispose()
     {
@@ -153,7 +153,7 @@ public sealed class ColleagueSlice4ReviewTests : IDisposable
     [Fact]
     public void A_name_refused_is_found_before_a_save()
     {
-        Library.Create(new ColleagueRecord { Name = "Maps", Type = "general", Created = DateTimeOffset.UtcNow });
+        Library.Create(new ColleagueRecord { Name = "Maps", Created = DateTimeOffset.UtcNow });
         var draft = ColleagueDraft.For(Library.Find("Charting")!);
         draft.NewName = "maps";
 

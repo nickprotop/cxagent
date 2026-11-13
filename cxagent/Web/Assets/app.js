@@ -1201,7 +1201,7 @@ function drawColleaguesPage(view) {
   const detail = el("div", "detail");
   box.append(rail, detail);
   if (!view.data.rows.length)
-    detail.append(el("p", "none", "No colleagues yet. Keep a worker of a session as one: /colleagues keep <worker> [name], or ask the agent to."));
+    detail.append(el("p", "none", "No colleagues yet. Make one from what a worker of a session learned: /colleagues keep <worker> [name], or ask the agent to."));
   for (const r of view.data.rows) {
     const item = el("div", "item" + (r.name === view.picked ? " on" : ""), r.name);
     item.addEventListener("click", () => { view.picked = r.name; drawColleaguesPage(view); });
