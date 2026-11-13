@@ -285,7 +285,8 @@ body.no-panel .panel { display: none; }
 /* AN INSTANCE'S RAIL: the share bar's own colour down the block's left, the terminal's ▎. */
 .instance { border-left: 3px solid var(--accent); padding: 2px 0 0 8px; margin-bottom: 10px; }
 .instance .share { margin: 3px 0; }
-.instance .inst-name { color: var(--strong); overflow-wrap: anywhere; }
+/* ONE LINE, CUT WITH AN ELLIPSIS: wrapped, a long name broke its block (user, 2026-11-13); the title carries it whole. */
+.instance .inst-name { color: var(--strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .instance .inst-figures { color: var(--muted); font-variant-numeric: tabular-nums; }
 .instance .inst-figures b { color: var(--strong); font-weight: 600; }
 .instance.c1 { border-left-color: var(--violet); }

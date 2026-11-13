@@ -1,3 +1,4 @@
+using CxAgent.Core.Llm;
 using CxAgent.UI;
 using Xunit;
 
@@ -580,12 +581,11 @@ public class SessionPanelTests
     }
 
     /// <summary>
-    /// NOTHING REPORTED, NOTHING SHOWN. A local-only session must not read "$0.00" — that claims a
-    /// measurement never made, the same way a 0% cache rate would for a provider that never
-    /// reported one.
+    /// NOTHING REPORTED IS SAID, NEVER PRICED (user, 2026-11-13). A local-only session must not read "$0.00" — that
+    /// claims a measurement never made — and silence read as a cost line that went missing.
     /// </summary>
     [Fact]
-    public void Refresh_WithNoCostReported_ShowsNoCostAtAll()
+    public void Refresh_WithNoCostReported_SaysSoWithNoFigure()
     {
         var panel = new SessionPanel();
         panel.Refresh(new SessionPanel.SessionPanelState
@@ -598,6 +598,58 @@ public class SessionPanelTests
 
         Assert.DoesNotContain("$", text, StringComparison.Ordinal);
         Assert.DoesNotContain("session", text, StringComparison.Ordinal);
+        Assert.Equal(2, text.Split(CostWords.NotReported).Length);   // once, in its block: one model needs no section line
+    }
+
+    [Fact]
+    public void Refresh_WithNoCostReportedByTwoModels_SaysSoForTheSessionToo()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "", Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["local:qwen3"] = 120_400, ["anthropic:claude"] = 9_000 },
+        });
+
+        Assert.Equal(4, panel.RenderedText.Split(CostWords.NotReported).Length);   // each block, and the section's line
+    }
+
+    /// <summary>A TOTAL OF SOME, NOT ALL: the session line says how many models it covers.</summary>
+    [Fact]
+    public void Refresh_WithSomeReported_TheTotalSaysHowManyItCovers()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "", Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["local:qwen3"] = 120_400, ["openrouter:gemini"] = 33_416 },
+            CostByInstance = new Dictionary<string, decimal> { ["openrouter:gemini"] = 0.0026m },
+            TotalCost = 0.0026m,
+        });
+
+        var text = panel.RenderedText;
+
+        Assert.Contains("session $0.0026", text, StringComparison.Ordinal);
+        Assert.Contains("1 of 2 models reported", text, StringComparison.Ordinal);
+        Assert.Contains(CostWords.NotReported, text, StringComparison.Ordinal);
+    }
+
+    /// <summary>A LONG NAME IS CUT, NEVER WRAPPED (user, 2026-11-13): its wrapped half had no rail and broke the block.</summary>
+    [Fact]
+    public void Refresh_ALongInstanceName_FitsOnItsLine()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "", Rules = 0, Width = 30,
+            SpendByModel = new Dictionary<string, int> { ["anthropic-workstation:claude-sonnet-4-6-20260101"] = 1_000 },
+        });
+
+        var name = System.Text.RegularExpressions.Regex.Replace(
+            panel.RenderedText.Split('\n').Single(l => l.Contains("anthropic", StringComparison.Ordinal)), @"\[[^\]]*\]", "");
+
+        Assert.True(name.TrimEnd().Length <= 30 - 4, $"'{name}' is {name.TrimEnd().Length} wide");
+        Assert.Contains("…", name, StringComparison.Ordinal);
     }
 
     /// <summary>

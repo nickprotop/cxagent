@@ -1,3 +1,4 @@
+using CxAgent.Core.Llm;
 using CxAgent.Core.Commands;
 using System.Diagnostics;
 using CxAgent.Core.Permissions;
@@ -397,8 +398,9 @@ public sealed class SessionPanel
                 if (index > 0) lines.Add("");
                 var colour = PanelBars.InstanceColour(index++);
                 var rail = $"[{colour.ToMarkup()}]▎[/] ";
-                // THE NAME ALONE ON ITS LINE: with its count beside it the line wrapped, and the wrapped half had no rail.
-                lines.Add(rail + Value(Short(modelId)));
+                // THE NAME ALONE ON ITS LINE, AND CUT TO IT: wrapped, the second half had no rail and broke the block
+                // (user, 2026-11-13). The rail and its space take two columns of the section's width.
+                lines.Add(rail + Value(Fit(Short(modelId), GaugeWidth(state.Width) - 2)));
                 // TWO COLUMNS NARROWER than the section's other bars: the rail and its space stand before it.
                 lines.Add(rail + PanelBars.Markup([new BarPart((double)spent / everything, colour)], Math.Max(4, GaugeWidth(state.Width) - 2)));
 
@@ -417,17 +419,19 @@ public sealed class SessionPanel
                 // THE WRITES RIDE ALONG only where warming was billed — a local endpoint fills its own RAM for free.
                 if (cache is { Written: > 0 }) lines.Add(rail + Muted($"wrote {Compact(cache.Written)} to cache"));
 
-                // THIS INSTANCE'S COST, when it reported one, inside its block because it describes that instance.
-                if (state.CostByInstance is not null
-                    && state.CostByInstance.TryGetValue(modelId, out var cost))
-                    lines.Add(rail + Muted(Money(cost)));
+                // THIS INSTANCE'S COST, inside its block because it describes that instance — and when it reported none,
+                // that is said rather than left blank: see CostWords.
+                lines.Add(rail + Muted(state.CostByInstance is not null && state.CostByInstance.TryGetValue(modelId, out var cost)
+                    ? Money(cost) : CostWords.NotReported));
             }
 
             // THE SESSION TOTAL, unindented like the cache line — both describe the section rather
             // than any one row. Shown even on a single-instance session: a reader should not have to
             // know whether one row or five produced the figure.
-            if (state.TotalCost is { } total)
-                lines.Add(Muted($"session {Money(total)}"));
+            // A TOTAL OF SOME MODELS SAYS HOW MANY, on a line of its own: beside the figure it wrapped at the panel's width.
+            if (state.TotalCost is { } total) lines.Add(Muted($"session {Money(total)}"));
+            var reported = byModel.Count(m => state.CostByInstance?.ContainsKey(m.Key) == true);
+            if (CostWords.SessionNote(state.TotalCost is not null, reported, byModel.Count) is { } note) lines.Add(Muted(note));
         }
 
         // WORKERS, WHENEVER THEY SPENT ANYTHING — the one split the model breakdown cannot express.
@@ -810,6 +814,18 @@ public sealed class SessionPanel
     /// what distinguishes two models; the quantisation suffix rarely does, so the tail is what goes.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// <paramref name="text"/> cut to <paramref name="room"/> columns, keeping both ends — the instance before and the
+    /// model's distinguishing tail after the "…", for the reason <see cref="Short"/> keeps both.
+    /// </summary>
+    private static string Fit(string text, int room)
+    {
+        if (text.Length <= room) return text;
+        if (room <= 1) return "…";
+        var tail = Math.Min(7, (room - 1) / 2);
+        return text[..(room - 1 - tail)] + "…" + text[^tail..];
+    }
+
     private static string Short(string label)
     {
         // THE INSTANCE IS KEPT WHOLE, and the model is what gets shortened. The label is

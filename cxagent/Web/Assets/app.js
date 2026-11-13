@@ -2416,8 +2416,10 @@ function drawSessionPane(p) {
     const block = el("div", "instance c" + (i % 5));
     const figures = el("div", "inst-figures");
     figures.append(el("b", null, tokens(m.tokens)),
-      (m.cache != null ? " · cache " + Math.round(m.cache * 100) + "%" : "") + (m.cost != null ? " · " + money(m.cost) : ""));
-    block.append(el("div", "inst-name", m.name), shareBar([[m.tokens / everything, "c" + (i % 5)]]), figures);
+      (m.cache != null ? " · cache " + Math.round(m.cache * 100) + "%" : "") + (m.cost != null ? " · " + money(m.cost) : m.costNote ? " · " + m.costNote : ""));
+    const name = el("div", "inst-name", m.name);
+    name.title = m.name;
+    block.append(name, shareBar([[m.tokens / everything, "c" + (i % 5)]]), figures);
     pane.append(block);
   });
   pane.append(kv("In / out", "↑ " + tokens(p.tokens.input) + "  ↓ " + tokens(p.tokens.output)));
@@ -2428,7 +2430,9 @@ function drawSessionPane(p) {
     pane.append(shareBar([[(p.tokens.total - p.tokens.workers) / whole, "c0"], [p.tokens.workers / whole, "c1"]]));
     pane.append(kv("This agent", tokens(p.tokens.total - p.tokens.workers)), kv("By workers", tokens(p.tokens.workers)));
   }
-  if (p.tokens.cost != null) pane.append(kv("Cost", money(p.tokens.cost), "total"));
+  // A FIGURE WITH WHAT IT COVERS, OR THAT THERE IS NONE — the terminal's session line.
+  if (p.tokens.cost != null) pane.append(kv("Cost", money(p.tokens.cost) + (p.tokens.costNote ? " · " + p.tokens.costNote : ""), "total"));
+  else if (p.tokens.costNote) pane.append(kv("Cost", p.tokens.costNote));
 
   // LIVE FIRST, as the terminal's panel: the spend above the session line.
   pane.append(el("h3", null, "Session"));

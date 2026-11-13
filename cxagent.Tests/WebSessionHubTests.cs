@@ -661,6 +661,10 @@ public sealed partial class WebSessionHubTests : IAsyncLifetime
         _hub.PushPanels();
         var panel = await tab.NextAsync(m => m["type"]?.GetValue<string>() == "panel" && m["session"]!["turns"]!.GetValue<int>() == 1);
         Assert.True(panel["tokens"]!["total"]!.GetValue<int>() > 0);
+        // A PROVIDER THAT REPORTED NO COST is said to have, in the terminal's words — never priced at zero.
+        Assert.Null(panel["tokens"]!["cost"]);
+        Assert.Null(panel["tokens"]!["costNote"]);   // one model: its own note says it
+        Assert.All(panel["tokens"]!["models"]!.AsArray(), m => Assert.Equal(Core.Llm.CostWords.NotReported, m!["costNote"]!.GetValue<string>()));
     }
 
     [Fact]

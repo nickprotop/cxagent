@@ -56,6 +56,8 @@ internal static class WebPanel
                     ["name"] = name,
                     ["tokens"] = tokens,
                     ["cost"] = costs.TryGetValue(name, out var c) ? (double)c : null,
+                    // THE TERMINAL'S WORDS where no figure exists — see CostWords.
+                    ["costNote"] = costs.ContainsKey(name) ? null : Core.Llm.CostWords.NotReported,
                     // ABSENT, NOT ZERO, for an instance that never reported — as the terminal's row.
                     ["cache"] = caches.TryGetValue(name, out var k) ? k.Rate : null,
                 });
@@ -162,6 +164,10 @@ internal static class WebPanel
                 ["workers"] = ledger?.SubAgentTokens ?? 0,
                 ["cacheHitRate"] = ledger?.CacheHitRate,
                 ["cost"] = ledger?.TotalCost is { } cost ? (double)cost : null,
+                // WHAT THE TOTAL COVERS, or that there is none — the terminal's session line, in the same words.
+                ["costNote"] = ledger is null ? null
+                    : Core.Llm.CostWords.SessionNote(ledger.TotalCost is not null,
+                        ledger.ByModel.Count(m => m.Value > 0 && ledger.CostByInstance.ContainsKey(m.Key)), ledger.ByModel.Count(m => m.Value > 0)),
             },
             ["workers"] = workers,
             ["commands"] = commands,
