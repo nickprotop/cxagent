@@ -49,6 +49,12 @@ public sealed class TokenLedger
     private int _workerCached;
     private int _workerReports;
 
+    // THE INPUT OF CALLS THAT REPORTED A CACHE — the only input a hit rate may be taken over. A resumed session's ledger
+    // starts from the restored totals, history with no cache figures at all: divided by those, a lead whose every call
+    // came from cache read 2% while the same calls, by instance, read 97%.
+    private long _reportedInput;
+    private long _workerReportedInput;
+
     public TokenLedger() { }
 
     /// <summary>
@@ -151,7 +157,7 @@ public sealed class TokenLedger
     {
         get
         {
-            var workerInput = Volatile.Read(ref _workerInput);
+            var workerInput = Interlocked.Read(ref _workerReportedInput);
             var workerCached = Volatile.Read(ref _workerCached);
             var workers = Volatile.Read(ref _workerReports) == 0 ? (double?)null
                 : workerInput == 0 ? 0
@@ -159,7 +165,7 @@ public sealed class TokenLedger
 
             // OWN IS THE REMAINDER, not a separate tally: every recorded call is either this agent's
             // or a worker's, so subtracting is exact and cannot drift from the totals above.
-            var ownInput = InputTokens - workerInput;
+            var ownInput = Interlocked.Read(ref _reportedInput) - workerInput;
             var ownCached = CachedInputTokens - workerCached;
             var own = Volatile.Read(ref _cacheReports) - Volatile.Read(ref _workerReports) == 0
                 ? (double?)null
@@ -175,7 +181,7 @@ public sealed class TokenLedger
         get
         {
             if (Volatile.Read(ref _cacheReports) == 0) return null;
-            var input = InputTokens;
+            var input = Interlocked.Read(ref _reportedInput);
             return input == 0 ? 0 : (double)CachedInputTokens / input;
         }
     }
@@ -321,6 +327,7 @@ public sealed class TokenLedger
             if (usage.CacheReported)
             {
                 Interlocked.Add(ref _workerCached, usage.CachedInputTokens);
+                Interlocked.Add(ref _workerReportedInput, usage.InputTokens);
                 Interlocked.Increment(ref _workerReports);
             }
         }
@@ -333,6 +340,7 @@ public sealed class TokenLedger
         {
             Interlocked.Add(ref _cached, usage.CachedInputTokens);
             Interlocked.Add(ref _cacheWritten, usage.CacheWriteTokens);
+            Interlocked.Add(ref _reportedInput, usage.InputTokens);
             Interlocked.Increment(ref _cacheReports);
         }
         Interlocked.Add(ref _output, usage.OutputTokens);

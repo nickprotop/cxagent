@@ -23,6 +23,7 @@ internal static class PastRounds
         if (round.AlsoRead.Count > 0) sb.Append("Also read in: ").Append(string.Join(", ", round.AlsoRead)).Append('\n');
         if (round.ReadElsewhere.Count > 0)
             sb.Append("Read outside every codebase listed: ").Append(string.Join(", ", round.ReadElsewhere)).Append('\n');
+        if (EndedLine(round.Outcome) is { } ended) sb.Append(ended).Append('\n');
         foreach (var m in round.Messages)
         {
             if (m.Role == "system") continue;
@@ -41,6 +42,16 @@ internal static class PastRounds
         var half = Distiller.MaxRoundChars / 2;
         return text[..half] + $"\n[… {text.Length - Distiller.MaxRoundChars} characters of this round left out …]\n" + text[^half..];
     }
+
+    /// <summary>How a round that did not finish ended, in a line, or null for one that answered.</summary>
+    internal static string? EndedLine(string? outcome) => outcome switch
+    {
+        null or "completed" => null,
+        "cancelled" => "Ended: stopped before it finished — what it did is here; it gave no answer.",
+        "capped" => "Ended: at its turn limit, with the work unfinished.",
+        "stuck" => "Ended: stuck, with the work unfinished.",
+        _ => $"Ended: without finishing ({outcome}).",
+    };
 
     private static string Clip(string result)
     {

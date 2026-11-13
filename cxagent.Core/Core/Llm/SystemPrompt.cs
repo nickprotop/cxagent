@@ -655,7 +655,9 @@ internal static class SystemPrompt
                     + "teammate's: when you are unsure about something in their area, ask before you guess — and "
                     + "especially before you try the same thing again. Bring one in with the colleague tool; one already "
                     + "here is asked with agent_send. It answers each ask from what it has learned, not from earlier asks, "
-                    + "so say in the ask everything it needs. The list was taken when this conversation began.");
+                    + "so say in the ask everything it needs. Each ask is a whole run of its own: one narrow question is "
+                    + "answered quickly, while several at once become research; one running long is narrowed by sending it "
+                    + "what you need most. The list was taken when this conversation began.");
         sb.AppendLine();
         sb.Append(CxAgent.Core.Colleagues.ColleagueIndex.Render(colleagues, CxAgent.Core.Colleagues.ColleagueIndex.DefaultCap));
     }

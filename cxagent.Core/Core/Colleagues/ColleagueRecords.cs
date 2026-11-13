@@ -150,6 +150,15 @@ public sealed record PastRound(long Seq, string Session, string Folder, DateTime
     /// learned there is not filed under the session's codebase. Empty for rounds kept before it was recorded.
     /// </summary>
     public IReadOnlyList<string> ReadElsewhere { get; init; } = [];
+
+    /// <summary>
+    /// How the round ended when it did not finish — "cancelled", "capped", "stuck", "error" — or null for one that
+    /// answered, and for rounds kept before it was recorded.
+    ///
+    /// <para>KEPT FOR THE DISTILLER AND RECALL: a round the user stopped for running long read as one that finished, so
+    /// what it showed about the work's scope could never be learned.</para>
+    /// </summary>
+    public string? Outcome { get; init; }
 }
 
 /// <summary>What a colleague has distilled: its core, and one text per codebase key.</summary>

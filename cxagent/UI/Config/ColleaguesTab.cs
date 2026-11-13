@@ -202,7 +202,7 @@ public sealed class ColleaguesTab
         {
             MarkupParser.Escape(record.Description.Length > 0 ? record.Description : "Not distilled yet."),
             $"[{ColorScheme.MutedMarkup}]v{record.ExperienceVersion}{(line.Knows.Count > 0 ? " · knows " + MarkupParser.Escape(string.Join(", ", line.Knows)) : "")}[/]",
-            $"[{ColorScheme.MutedMarkup}]Its description is rewritten by every distilling, from what it has learned.[/]",
+            $"[{ColorScheme.MutedMarkup}]{ColleagueDraft.DescriptionHelp}[/]",
         };
         _detail.AddControl(ListDetail.Section("What it is", new MarkupControl(about) { Wrap = true }));
         _detail.AddControl(ListDetail.Gap());

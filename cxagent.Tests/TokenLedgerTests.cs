@@ -90,6 +90,21 @@ public class TokenLedgerTests
     }
 
     /// <summary>
+    /// A RESUMED SESSION'S HISTORY IS NOT IN THE RATE: its restored totals carry no cache figures, and taken over them a
+    /// lead whose every call came from cache read 2% beside the same calls at 97% by instance.
+    /// </summary>
+    [Fact]
+    public void CacheHitRate_OfAResumedSession_IsTakenOverTheCallsThatReportedOne()
+    {
+        var l = new TokenLedger(54_000_000, 380_000);
+
+        l.Record(new LlmUsage { InputTokens = 1000, OutputTokens = 10, CachedInputTokens = 970, CacheReported = true });
+
+        Assert.Equal(0.97, l.CacheHitRateByAgent.Own!.Value, 3);
+        Assert.Equal(0.97, l.CacheHitRate!.Value, 3);
+    }
+
+    /// <summary>
     /// OWN IS THE REMAINDER, not a separate tally — so it cannot drift from the totals. With no
     /// workers at all, this agent's rate IS the session rate.
     /// </summary>

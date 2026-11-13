@@ -1148,6 +1148,9 @@ public sealed class SessionManager : IDisposable
         // too unless the user chose to keep them — then they run on, silenced, past the tab.
         session.EndBackgroundWork(keepCommands);
 
+        // ITS COLLEAGUES ARE NO LONGER LIVE IN IT, whatever else this process goes on running.
+        session.Colleagues?.LeaveSession();
+
         // AN ASIDE IS NOT A TURN, so IsBusy does not hold the close for it — and left running, it
         // would keep calling the model and raising permission prompts for a tab that is gone.
         session.LeaveAside();

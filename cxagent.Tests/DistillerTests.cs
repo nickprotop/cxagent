@@ -554,4 +554,44 @@ public sealed class DistillerTests : IDisposable
         Assert.EndsWith("terminal…", said);
         Assert.Equal("short and whole", Distiller.OneLine("short\n and   whole"));
     }
+
+    /// <summary>
+    /// A BATCH REFUSED FOR LENGTH IS TRIED SMALLER, down to one round: classed with a model that is down, it was never
+    /// stepped past, every drain failed on it, and every ask waited on that.
+    /// </summary>
+    [Fact]
+    public async Task A_batch_too_long_for_the_model_is_tried_smaller()
+    {
+        Append();
+        Append();
+        Append();
+        var model = new OneRoundAtATime();
+
+        Assert.Equal(DistillOutcome.Done, await new Distiller(_store).DrainAllAsync(_ => _ => model, CancellationToken.None));
+
+        Assert.Equal(3, _store.Find("Charting")!.DistilledThrough);
+        Assert.Equal(4, model.Calls);
+    }
+
+    /// <summary>Refuses for length any call carrying more than one round; answers NO CHANGE to one.</summary>
+    private sealed class OneRoundAtATime : ILlmProvider
+    {
+        public int Calls { get; private set; }
+        public string ProviderId => "small";
+        public string DisplayName => "Small";
+        public string ModelId => "small";
+        public bool SupportsToolCalling => false;
+        public bool SupportsStreaming => false;
+
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct)
+        {
+            Calls++;
+            var rounds = System.Text.RegularExpressions.Regex.Matches(messages[^1].Content, "I laid the chart out").Count;
+            if (rounds > 1) throw new LlmProviderException("small", 400, null, "context_length_exceeded: the prompt is too long");
+            return Task.FromResult(new LlmResponse { Text = "NO CHANGE", StopReason = "end_turn" });
+        }
+
+        public IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct) =>
+            throw new NotSupportedException();
+    }
 }

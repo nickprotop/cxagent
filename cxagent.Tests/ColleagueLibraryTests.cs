@@ -80,6 +80,23 @@ public sealed class ColleagueLibraryTests : IDisposable
         Assert.Contains("v3", tab.DetailTextForTest);
     }
 
+    /// <summary>
+    /// READ AGAIN, IT STAYS ON THE ONE PICKED: Distil again and Forget reload the tab, and going back to the first hid the
+    /// version just made.
+    /// </summary>
+    [Fact]
+    public void The_terminal_tab_keeps_the_one_picked_when_read_again()
+    {
+        Charting();
+        Library.Create(new ColleagueRecord { Name = "Parser", Type = "general", Created = DateTimeOffset.UtcNow.AddDays(-1) });
+        var tab = new ColleagueLibraryTab(Library, new ColleagueLibraryTab.Actions(_ => { }, _ => { }, _ => { }, _ => { }));
+
+        tab.PickForTest(1);
+        tab.Reload();
+
+        Assert.Equal("Parser", tab.ShownForTest);
+    }
+
     [Fact]
     public void The_terminal_tab_brings_and_opens_the_one_picked()
     {

@@ -320,7 +320,10 @@ public sealed partial class Session
             var opened = await desk.OpenTalkAsync(name, lead, CancellationToken.None);
             if (opened.Handle is null) return new ColleagueDoor(null, opened.Refusal);
             handle = opened.Handle;
-            if (fresh && desk.NewConversation(handle) is { } why) return new ColleagueDoor(handle, why);
+            // REFUSED, THE MESSAGE IS SAID NOT SENT: sent into the conversation it asked to leave, it would answer from
+            // what --new was there to drop; dropped without a word, it had to be noticed and typed again.
+            if (fresh && desk.NewConversation(handle) is { } why)
+                return new ColleagueDoor(handle, text.Length > 0 ? $"{why} Your message was not sent." : why);
         }
         else
         {
@@ -349,7 +352,7 @@ public sealed partial class Session
         // work to draw, and the desk brings it in directly.
         var answer = task.Length > 0 && Host is { } host
             ? await host.BringForUserAsync(name, task, CancellationToken.None)
-            : await desk.BringAsync(new BringOrder(name, task, null, Background: true, lead), CancellationToken.None);
+            : await desk.BringAsync(new BringOrder(name, task, null, Background: true, lead) { FromUser = true }, CancellationToken.None);
         if (Agents.SubAgentEnvelope.NameOf(answer) is { } handle)
         {
             // NO TASK, IT JOINED IDLE — and the lead is told it is there to be given work.

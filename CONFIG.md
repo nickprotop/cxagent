@@ -865,7 +865,7 @@ An application built on cxagent.Core has memory **off** unless it sets `AgentCon
 F8's **Colleagues** tab sets it too, under *Settings*, and so does the browser's config page.
 
 **On when absent.** The session's agent gets the `colleague` tool — list, bring one in, keep a worker,
-which asks you first — and, when there are any, a list of the colleagues in its system prompt.
+which asks you first, release one — and, when there are any, a list of the colleagues in its system prompt.
 `false` removes both; colleagues already kept stay on disk. A value that is not `true` or `false`
 warns at startup and leaves colleagues on.
 

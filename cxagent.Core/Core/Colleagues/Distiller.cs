@@ -65,6 +65,9 @@ public sealed record RedistilRequest(string Colleague, long From, Func<string?, 
 /// </summary>
 public sealed partial class Distiller(ColleagueStore store)
 {
+    /// <summary>Why a batch was not distilled when no model was given — a caller that knows more says that instead.</summary>
+    public const string NoModel = "its distilling model is not configured here";
+
     /// <summary>A round shorter than this, with no tool calls, has nothing to learn from and costs no call.</summary>
     public const int TrivialChars = 300;
 
@@ -210,13 +213,20 @@ public sealed partial class Distiller(ColleagueStore store)
         try
         {
             if (store.Undistilled(name).Count > 0) Started?.Invoke(name);
+            // AS MANY ROUNDS AS FIT: halved each time the model refuses a batch for length, down to one.
+            var most = int.MaxValue;
             while (store.Undistilled(name) is { Count: > 0 } waiting)
             {
-                var batch = Batch(waiting);
+                var batch = Batch(waiting).Take(most).ToList();
                 var failure = await DistilAsync(request, batch, ct);
                 if (failure is null)
                 {
                     if (store.Find(name) is { Failures: > 0 }) store.Update(name, r => r with { FailingRound = 0, Failures = 0 });
+                    continue;
+                }
+                if (failure.TooLong && batch.Count > 1)
+                {
+                    most = batch.Count / 2;
                     continue;
                 }
                 if (!failure.AboutTheRound || !StepPast(name, batch[0].Seq, failure.Why)) return failure.Why;
@@ -260,7 +270,11 @@ public sealed partial class Distiller(ColleagueStore store)
     }
 
     /// <summary>Why a batch was not distilled, and whether the round itself is the reason rather than the model or the disk.</summary>
-    private sealed record Failure(string Why, bool AboutTheRound);
+    private sealed record Failure(string Why, bool AboutTheRound)
+    {
+        /// <summary>The model refused the call for length — a smaller batch may fit.</summary>
+        public bool TooLong { get; init; }
+    }
 
     /// <summary>The waiting rounds one call can take, in order — at least one.</summary>
     private static List<PastRound> Batch(IReadOnlyList<PastRound> waiting)
@@ -290,7 +304,7 @@ public sealed partial class Distiller(ColleagueStore store)
             return null;
         }
 
-        if (request.ProviderFor(null) is not { } model) return new Failure("its distilling model is not configured here", false);
+        if (request.ProviderFor(null) is not { } model) return new Failure(NoModel, false);
 
         var experience = store.ReadExperience(name);
         var touched = Touched(batch);
@@ -322,6 +336,13 @@ public sealed partial class Distiller(ColleagueStore store)
         catch (CutOffException)
         {
             return new Failure("the distiller's answer was cut off before it ended; nothing of it is kept", true);
+        }
+        // REFUSED FOR LENGTH: the batch did not fit the distilling model's window. About the batch, not the model — so a
+        // smaller one is tried, and a single round that still does not fit counts as a refusal of that round. Classed
+        // with a model that is down, it was never stepped past: every drain failed on it, and every ask waited on that.
+        catch (LlmProviderException e) when (ContextOverflow.IsOverflow(e.Message, e.HttpStatus, e.VendorBody))
+        {
+            return new Failure("the rounds and its experience did not fit the distilling model's window", true) { TooLong = true };
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -466,6 +487,13 @@ public sealed partial class Distiller(ColleagueStore store)
         + "state of a working tree, or a version seen once is a moment, not experience. A statement is worth what the "
         + "round shows for it: what the colleague asserted in its answer without having read or run it is not evidence, "
         + "and is not kept.\n\n"
+        // PROPORTION AND UNFINISHED WORK, in general words: every way of working kept is paid on every later task, so an
+        // experience of checks each worth doing once made every ask a research run; and a round ended before it finished
+        // shows what was tried and how large the work was, not what worked.
+        + "A way of working costs every task that follows it: keep a check or a procedure with when it is worth doing, "
+        + "fold those that overlap into one, and keep as a habit only what nearly every task needs. A round marked as "
+        + "ended before it finished shows what was tried, not what worked; what it shows about how large the work was, "
+        + "or why it ran long, can be worth keeping.\n\n"
         // THE PRINCIPLES IN GENERAL WORDS, as the user approved them (2026-11-08, the kinds 2026-11-09): a rule tailored to
         // a bug seen in one language or tool teaches yesterday's mistake and carries nowhere else. THREE KINDS, NOT TWO:
         // "concluded" once covered every inference, and an inference written as a finding is how a guess became knowledge;

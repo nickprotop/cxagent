@@ -4640,6 +4640,14 @@ public sealed class MainWindow : IDisposable
     public void OpenColleagueLibrary(Session session)
     {
         if (session.Colleagues is not { } desk) return;
+        // ONE LIBRARY TAB PER SESSION: a second /colleagues brings back the one open, read again — each opened another
+        // "◆ Colleagues" beside the last.
+        if (_libraries.TryGetValue(session, out var open) && IndexOfContent(open.Control) is { } at)
+        {
+            open.Reload();
+            Tabs.ActiveTabIndex = at;
+            return;
+        }
         ColleagueLibraryTab? tab = null;
         tab = new ColleagueLibraryTab(desk.Library, new ColleagueLibraryTab.Actions(
             Bring: name => _ = session.BringColleagueAsync(name),
@@ -4658,7 +4666,19 @@ public sealed class MainWindow : IDisposable
                 ColleagueDistiller?.Invoke(new ColleagueDistilling(session, $"\"{name}\"", () => tab?.Reload()));
             }));
         AddTab("◆ Colleagues", tab.Control, owner: session);
+        _libraries.AddOrUpdate(session, tab);
         Tabs.ActiveTabIndex = Tabs.TabCount - 1;
+    }
+
+    /// <summary>Each session's colleague library tab, while it may still be open — looked for in the strip before use.</summary>
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Session, ColleagueLibraryTab> _libraries = new();
+
+    /// <summary>The position of the tab showing <paramref name="content"/>, or null when none does.</summary>
+    private int? IndexOfContent(IWindowControl content)
+    {
+        for (var i = 0; i < Tabs.TabCount; i++)
+            if (ReferenceEquals(Tabs.GetTab(i)?.Content, content)) return i;
+        return null;
     }
 
     /// <summary>Opens a colleague's one-to-one — the composition root's, which can open a session tab.</summary>

@@ -93,6 +93,38 @@ public sealed class ColleagueDeskReviewTests : IDisposable
         Assert.Single(spawner.Orders);
     }
 
+    /// <summary>
+    /// A DISTILLING MODEL WHOSE WINDOW IS NOT KNOWN is said to be that, with its remedy — not "not configured", said of an
+    /// entry that was configured and only needed contextWindow set.
+    /// </summary>
+    [Fact]
+    public async Task A_distilling_model_with_no_known_window_is_said_to_be_that()
+    {
+        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow, Instance = "main", DistillInstance = "slow" });
+        var said = new List<string>();
+        using var desk = new ColleagueDesk(new ColleagueDeskParts
+        {
+            Library = Library, Workers = _workers, Spawner = new Recording(_workers), Folder = _project, SessionId = () => "session",
+            NoteWorker = _marks.Add, Notify = said.Add,
+            Models = name => name switch
+            {
+                null or "main" => new ModelChoice(_main, "main:m", 200_000, "main"),
+                "slow" => new ModelChoice(new MockLlmProvider("s"), "slow:s", null, "slow"),
+                _ => null,
+            },
+        });
+        await desk.BringAsync(new BringOrder("Charting", "", null, true, "lead"), CancellationToken.None);
+        Assert.True(_workers.TryClaim("charting"));
+        _workers.AnnounceBegin("charting", "chart it");
+        _workers.Find("charting")!.Agent.Agent.Context.Add(new ChatMessage { Role = "assistant", Content = new string('c', 600) });
+
+        _workers.EndSend("charting");
+        await desk.Idle();
+
+        Assert.Contains(said, s => s.Contains("slow:s's context window is not known", StringComparison.Ordinal));
+        Assert.DoesNotContain(said, s => s.Contains("not configured", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Two_brings_at_once_make_one_incarnation()
     {

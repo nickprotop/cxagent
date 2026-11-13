@@ -424,7 +424,8 @@ internal static class WebConfigForms
         form["sections"] = new JsonArray(
             Section("◆ " + record.Name,
                 Field("name", "Name", "text", record.Name, ColleagueDraft.NameHelp),
-                Field("about", "What it is", "info", record.Description.Length > 0 ? record.Description : "Not distilled yet."),
+                Field("about", "What it is", "info", record.Description.Length > 0 ? record.Description : "Not distilled yet.",
+                    ColleagueDraft.DescriptionHelp),
                 Field("facts", "Experience", "info", $"v{record.ExperienceVersion}" + (line.Knows.Count > 0 ? " · knows " + string.Join(", ", line.Knows) : ""))),
             Section("Models",
                 Select("model", "Runs on", draft.Model ?? "", [("", ColleagueDraft.SessionModel), .. options], ColleagueDraft.ModelHelp),

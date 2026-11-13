@@ -144,6 +144,28 @@ public sealed class ColleagueForgetTests : IDisposable
     /// Another session forgot it: a round ending here keeps nothing, recreates nothing, and the worker carries on plain —
     /// recorded so, so a resume does not bring it back as a colleague nobody has.
     /// </summary>
+    /// <summary>
+    /// FORGOTTEN ELSEWHERE AND ANOTHER KEPT UNDER ITS NAME while it worked: the round is the forgotten one's, and the new
+    /// colleague does not learn from work it never did.
+    /// </summary>
+    [Fact]
+    public async Task A_round_ending_after_its_name_was_given_to_another_feeds_nothing()
+    {
+        using var desk = await Desk();
+        var handle = Incarnation();
+        Assert.True(_workers.TryClaim(handle));
+        _workers.AnnounceBegin(handle, "chart it");
+        _workers.Find(handle)!.Agent.Agent.Context.Add(new ChatMessage { Role = "assistant", Content = "charted" });
+
+        Directory.Delete(Library.FolderOf("Charting"), recursive: true);
+        Library.Create(new ColleagueRecord { Name = "Charting", Type = "general", Created = DateTimeOffset.UtcNow.AddMinutes(1) });
+        _workers.EndSend(handle);
+        await desk.Idle();
+
+        Assert.Empty(Library.Past("Charting"));
+        Assert.Null(_workers.OriginOf(handle));
+    }
+
     [Fact]
     public async Task A_round_ending_after_a_forget_elsewhere_keeps_nothing()
     {

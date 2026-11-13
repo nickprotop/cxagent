@@ -81,8 +81,11 @@ public sealed class ColleagueLibraryTab
                 "Keep a worker of a session as one: /colleagues keep <worker> [name], or ask the agent to."));
             return;
         }
-        _rail.SelectedIndex = 0;
-        Show(0);
+        // THE COLLEAGUE IT WAS ON STAYS SHOWN: Distil again and Forget reload the tab, and going back to the first
+        // colleague hid the version just made — or, after a Forget, showed its neighbour rather than the first.
+        var at = _shown is { } was ? Math.Max(0, _entries.ToList().FindIndex(e => string.Equals(e.Name, was.Name, StringComparison.Ordinal))) : 0;
+        _rail.SelectedIndex = at;
+        Show(at);
     }
 
     private void Show(int index)
@@ -129,6 +132,12 @@ public sealed class ColleagueLibraryTab
     internal string DetailTextForTest => string.Join("\n", _detail.Children.SelectMany(TextOf));
 
     /// <summary>Test seam: the Bring in button of the one shown.</summary>
+    /// <summary>Test seam: picks the colleague at <paramref name="index"/> in the rail.</summary>
+    internal void PickForTest(int index) => _rail.SelectedIndex = index;
+
+    /// <summary>Test seam: the colleague shown.</summary>
+    internal string? ShownForTest => _shown?.Name;
+
     internal void BringForTest() { if (_shown is { } e) _actions.Bring(e.Name); }
 
     /// <summary>Test seam: the Distil again button of the one shown.</summary>

@@ -137,6 +137,13 @@ function handle(m) {
     case "reset": { const v = state.views.get(m.sessionId); if (v) resetView(v); break; }
     case "event": event(m); break;
     case "panel":
+      {
+        // A DISTILLING THAT ENDED changes what the library shows — a new version, a new description — so an open library
+        // page is read again then, as the terminal's tab is after Distil again; read at the click, it showed nothing new.
+        const before = state.panels.get(m.sessionId);
+        if (before && before.distilling && !m.distilling && state.views.has(COLLEAGUES_ID))
+          send({ type: "colleagues", sessionId: m.sessionId });
+      }
       state.panels.set(m.sessionId, m);
       followWorkers(m);
       liveCards(m.sessionId);

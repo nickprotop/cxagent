@@ -159,6 +159,9 @@ public sealed class ColleagueDraft
 
     public const string ModelHelp = "Where it works when brought in. A bring that names a model overrides this.";
     /// <summary>What renaming does — the words F8's field and the browser's both show.</summary>
+    /// <summary>What both front ends say under a colleague's description — one text, so neither words it differently.</summary>
+    public const string DescriptionHelp = "Its description is rewritten by every distilling, from what it has learned.";
+
     public const string NameHelp =
         "Renamed, it is still found by its old names: a session that knew it by one brings it back.";
 

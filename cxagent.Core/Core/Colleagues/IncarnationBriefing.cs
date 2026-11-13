@@ -51,6 +51,13 @@ public static class IncarnationBriefing
                 .Append("that set you to work. Where your instructions speak of reporting to a parent, that does not apply to this ")
                 .Append("conversation.\n");
 
+        // AN ASK HAS SOMEONE WAITING, and is told so, as a Talk worker is told its situation: told only to check what it
+        // knows, an Ask worker re-established its experience on every ask — minutes of tool calls for one question, until
+        // the lead stopped it and did the work itself.
+        if (setting.AnsweringAsks)
+            sb.Append("\nHere you answer asks: each comes from an agent that waits on your answer. Answer what was asked from ")
+                .Append("what you know, and check only what your answer rests on.\n");
+
         sb.Append("\n# Your experience\n\n");
         sb.Append(preload.Length > 0 ? preload : "Nothing is distilled yet: this is early in your work.\n");
         return sb.ToString().TrimEnd();
@@ -65,4 +72,7 @@ public sealed record IncarnationSetting(bool ReadsWorkplaces, IReadOnlyList<stri
 {
     /// <summary>It is the colleague's Talk worker: talking with the user directly, in a conversation that goes on.</summary>
     public bool TalkingWithUser { get; init; }
+
+    /// <summary>It is the colleague's Ask worker: each run answers an ask whose sender waits on it.</summary>
+    public bool AnsweringAsks { get; init; }
 }

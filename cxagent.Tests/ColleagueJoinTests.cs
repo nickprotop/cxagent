@@ -562,4 +562,60 @@ public sealed class ColleagueJoinTests : IDisposable
 
         Assert.DoesNotContain("PELICAN", Sent(model));
     }
+
+    /// <summary>
+    /// --new REFUSED WHILE IT ANSWERS SAYS THE MESSAGE WAS NOT SENT: dropped without a word, it had to be noticed and typed
+    /// again.
+    /// </summary>
+    [Fact]
+    public async Task The_talk_verb_with_new_refused_says_the_message_was_not_sent()
+    {
+        var (session, model, talk) = await Talking();
+        session.SubAgents.TryClaim(talk);
+
+        var door = await session.OpenColleagueDoorAsync("Charting --new hello again", talk: true);
+
+        Assert.EndsWith("Your message was not sent.", door.Refusal);
+        Assert.Equal(0, model.ChatCallCount);
+    }
+
+    /// <summary>
+    /// ALREADY HERE, THE USER IS TOLD THEIR WAYS TO ASK IT — not agent_send, the model's tool; the lead's own bring is
+    /// still told agent_send.
+    /// </summary>
+    [Fact]
+    public async Task Bringing_one_already_here_tells_the_user_how_to_ask_it()
+    {
+        Charting();
+        var session = Open(new MockLlmProvider());
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+
+        var user = await session.Colleagues.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!) { FromUser = true }, CancellationToken.None);
+        var lead = await session.Colleagues.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+
+        Assert.Contains("/colleagues ask Charting", user);
+        Assert.DoesNotContain("agent_send", user);
+        Assert.Contains("agent_send", lead);
+    }
+
+    /// <summary>
+    /// A CLOSED SESSION IS NO LONGER ONE IT IS LIVE IN, though the process goes on: Forget counted closed sessions of a
+    /// living web server or terminal as sessions the colleague was still live in.
+    /// </summary>
+    [Fact]
+    public async Task A_closed_session_takes_its_live_mark_down()
+    {
+        Charting();
+        using var manager = SessionManager.Create(new AppPaths(_config));
+        var resolution = ResolvedConfig.ForTesting(new MockLlmProvider()) is var r
+            ? r with { Model = r.Model! with { ContextWindow = 200_000 }, Catalog = r.Catalog with { Colleagues = true } }
+            : null!;
+        var session = manager.Open(_project, resolution, new SessionPorts { Observer = _seen, ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+        Assert.Equal(1, Library.LiveSessions("Charting"));
+
+        Assert.True(manager.Close(session));
+
+        Assert.Equal(0, Library.LiveSessions("Charting"));
+    }
 }

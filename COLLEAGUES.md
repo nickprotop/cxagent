@@ -261,7 +261,8 @@ a conversation.
 
 **Releasing one.** `/colleagues release <name>`, or **Release** on its card or in its tab, lets a colleague at rest leave
 the session, its Ask and Talk workers both; the agent can release one too. Every task it finished here is already in its past, so nothing is lost,
-and it can be brought again. One still working is refused: stop it first.
+and it can be brought again. Release is offered only while both its workers are at rest; one still working is refused:
+stop it first.
 
 **Seeing them.** A session with colleagues says so as it opens.
 
@@ -270,9 +271,10 @@ colleague here gets a card showing:
 
 - how it stands: *answering an ask*, *talking with you*, *waiting to learn*, *queued*, *waiting for permission*,
   *learning*, *idle* or *idle · last task failed*, never finished, and *frozen* when it is;
-- what it was last asked;
+- what it was last asked — or, while it talks with you, what you last said;
 - its version and the folders it knows;
-- **Ask…**, which opens its Ask tab, **Talk ›**, which opens its Talk tab, and, while it works, **Stop**.
+- **Ask…**, which opens its Ask tab, **Talk ›**, which opens its Talk tab, and, while it works, **Stop** — which stops
+  the work the card shows, its conversation with you included — and **Background** while the agent waits on it.
 
 Under **Available** are the library's other colleagues, each with **Bring**. The section follows the session in front.
 
@@ -356,8 +358,13 @@ again.
 happen when the round seems to hold a key or a password, or when the distiller's answer never fits. The round stays in
 the past word for word, is not learned from, and you are told once.
 
-**Models and settings.** A colleague runs on the model it was kept on, which must have at least a 128k window; a
-quarter of that window, at most 100k, is loaded as its experience when it is brought in. F8's **Colleagues** tab, and
+**Rounds that did not finish.** A round stopped before it answered, or ended at its turn limit, is kept marked so. The
+distiller reads it as what was tried, not as what worked, and recall shows the mark too.
+
+**Models and settings.** A colleague runs on the model it was kept on, or on the session's model when that entry is not
+configured here; the agent may name another model for one bring. Either must have at least a 128k window; a quarter of
+that window, at most 100k, is loaded as its experience when it is brought in. A colleague already here stays on the
+model it came on: a bring naming another sends it nothing, and says to release it first. F8's **Colleagues** tab, and
 the Colleagues tab of the browser's configuration page, change where each one runs and where it distils, rename it and
 freeze it. Under *Settings* they turn colleagues and suggestions off, as do
 [`colleagues.enabled` and `colleagues.suggest`](CONFIG.md#colleagues--workers-kept-across-sessions) in config.json.
@@ -383,4 +390,4 @@ freeze it. Under *Settings* they turn colleagues and suggestions off, as do
 | `/colleagues distill <name> [from round N] [on <model>]` | Distil its last round again, or from a round on, after confirming |
 | `/colleagues forget <name>` | Forget a colleague for good, after confirming |
 
-The agent's `colleague` tool lists them, brings one in and keeps a worker; keeping always asks you first.
+The agent's `colleague` tool lists them, brings one in, keeps a worker and releases one; keeping always asks you first.

@@ -46,6 +46,12 @@ public sealed record BringOrder(string Name, string Task, string? Model, bool Ba
     public Action<SubAgent>? OnChild { get; init; }
 
     /// <summary>
+    /// The user asked — a command, a card, the library — not the lead's tool: what is said back names the user's ways
+    /// in, not the model's.
+    /// </summary>
+    public bool FromUser { get; init; }
+
+    /// <summary>
     /// Bring its Talk worker — the conversation the user holds with it in this session — rather than the one that answers
     /// asks. It joins idle, keeps its conversation, and is told it is talking with the user.
     /// </summary>
@@ -199,6 +205,9 @@ public sealed partial class ColleagueDesk : IDisposable
         _distiller.Failed += (name, why) =>
         {
             Distilled(name);
+            // THE REASON NO MODEL COULD BE USED, when the desk knows it: "not configured" was said of an entry that was
+            // configured, whose window was only unknown — and setting contextWindow was the remedy.
+            if (why == Distiller.NoModel && _noDistillModel.TryGetValue(KeyOf(name), out var because)) why = because;
             _parts.Notify?.Invoke($"Could not distil {name}'s latest work: {why}");
         };
         _distiller.Started += name =>
@@ -523,7 +532,10 @@ public sealed partial class ColleagueDesk : IDisposable
         // BY ANY NAME IT HAS HAD: one brought in before a rename elsewhere is still this colleague, not room for another.
         if (!order.Talk && HandleOf(record) is { } live)
         {
-            if (order.Task.Trim().Length == 0) return $"{record.Name} is already here as {live} — give it work with agent_send.";
+            if (order.Task.Trim().Length == 0)
+                return order.FromUser
+                    ? $"{record.Name} is already here — ask it from its card in Tasks, or /colleagues ask {record.Name} <question>."
+                    : $"{record.Name} is already here as {live} — give it work with agent_send.";
 
             // ALREADY HERE ON ANOTHER MODEL THAN THE ONE ASKED FOR: the task is not sent. Sent, it ran on the model the
             // worker was brought on — a paid one, where the user had asked for the local — and nothing said so.
@@ -790,7 +802,7 @@ public sealed partial class ColleagueDesk : IDisposable
         // longer there is not one the colleague knows the contents of.
         var here = record.Workplaces.Where(p => Directory.Exists(p.Folder)).Select(p => p.Folder).ToList();
         var gone = record.Workplaces.Where(p => !Directory.Exists(p.Folder)).Select(p => p.Folder).ToList();
-        return IncarnationBriefing.For(record, preload, new IncarnationSetting(ReadsWorkplaces: here.Count > 0, gone) { TalkingWithUser = talk });
+        return IncarnationBriefing.For(record, preload, new IncarnationSetting(ReadsWorkplaces: here.Count > 0, gone) { TalkingWithUser = talk, AnsweringAsks = !talk });
     }
 
     // A TALK WORKER'S HANDLE AND ROW: the colleague's own, marked as the conversation.
@@ -983,7 +995,8 @@ public sealed partial class ColleagueDesk : IDisposable
     private void OnBegan(string agentId)
     {
         if (Incarnation(agentId) is not { } found) return;
-        _rounds[agentId] = new RoundStart(Held.Of(found.Kept.Agent.Agent.Context.Messages), DateTimeOffset.UtcNow);
+        _rounds[agentId] = new RoundStart(Held.Of(found.Kept.Agent.Agent.Context.Messages), DateTimeOffset.UtcNow,
+            _parts.Library.Find(found.Name)?.Created);
     }
 
     /// <summary>A colleague's recall: its library, the served folders, and the session's gate to ask through.</summary>
@@ -1009,7 +1022,9 @@ public sealed partial class ColleagueDesk : IDisposable
 
             // FORGOTTEN — HERE OR IN ANOTHER SESSION — IT CARRIES ON AS AN ORDINARY WORKER: nothing is kept, no folder is
             // made, and the plain origin is recorded so a resume does not bring back a colleague nobody has.
-            if (_parts.Library.Find(found.Name) is not { } record)
+            // NOT THE COLLEAGUE IT BEGAN AS — forgotten while it worked, and another kept under its name meanwhile — it is
+            // the forgotten one's round, and the new colleague must not learn from work it never did.
+            if (_parts.Library.Find(found.Name) is not { } record || (start.Of is { } began && record.Created != began))
             {
                 Unmark(found.Kept);
                 return;
@@ -1024,6 +1039,7 @@ public sealed partial class ColleagueDesk : IDisposable
             {
                 AlsoRead = reads.Workplaces,
                 ReadElsewhere = reads.Elsewhere,
+                Outcome = outcome is null or "completed" ? null : outcome,
             });
             Drain();
         }
@@ -1097,8 +1113,17 @@ public sealed partial class ColleagueDesk : IDisposable
     {
         var record = _parts.Library.Find(name);
         var choice = (record?.DistillInstance ?? record?.Instance) is { } entry ? _parts.Models(entry) ?? _parts.Models(null) : _parts.Models(null);
-        return choice is not null && ExperienceBudget.WindowRefusal(choice.Window, choice.Label) is null ? Labelled(choice) : null;
+        if (choice is not null && ExperienceBudget.WindowRefusal(choice.Window, choice.Label) is { } refused)
+        {
+            _noDistillModel[KeyOf(name)] = refused;
+            return null;
+        }
+        _noDistillModel.TryRemove(KeyOf(name), out _);
+        return choice is null ? null : Labelled(choice);
     };
+
+    /// <summary>Why a colleague's distilling model could not be used, when it was there but its window was not enough.</summary>
+    private readonly ConcurrentDictionary<string, string> _noDistillModel = new(StringComparer.Ordinal);
 
     /// <summary>
     /// The chosen model's provider, its label remembered for the spend its calls report. BY MODEL ID, because that is all
@@ -1548,6 +1573,16 @@ public sealed partial class ColleagueDesk : IDisposable
         _parts.NoteWorker(new WorkerMark(kept.Agent.Agent.Id, origin));
     }
 
+    /// <summary>
+    /// Takes down this session's marks that its colleagues are live in it — the session is closing. ONLY THE MARKS: its
+    /// workers' last rounds may still be ending, and are still kept. In a process that lives on — a web server, several
+    /// tabs — a closed session's marks were counted by Forget as sessions the colleague is live in.
+    /// </summary>
+    public void LeaveSession()
+    {
+        foreach (var name in _present.Keys) _parts.Library.MarkAbsent(name, _holder);
+    }
+
     public void Dispose()
     {
         if (_workers.Badges == (Func<string, WorkerBadge?>)BadgeFor) _workers.Badges = null;
@@ -1558,7 +1593,8 @@ public sealed partial class ColleagueDesk : IDisposable
         foreach (var name in _present.Keys) _parts.Library.MarkAbsent(name, _holder);
     }
 
-    private readonly record struct RoundStart(Held Held, DateTimeOffset At);
+    /// <summary>Where a round began: what the worker held, when, and which colleague it was — by when it was made.</summary>
+    private readonly record struct RoundStart(Held Held, DateTimeOffset At, DateTimeOffset? Of);
 
     /// <summary>
     /// The messages a conversation held at a moment — the start of a run, the last exchange kept — to tell what came
