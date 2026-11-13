@@ -140,6 +140,29 @@ public sealed class WorkerOriginRevivalTests : IDisposable
         Assert.False(store.LastEnd("charting")!.Succeeded);
     }
 
+    /// <summary>
+    /// A background run stopped before it finished comes back stopped, as its delivered report says: its own history
+    /// ends mid-tool with no answer, and read alone that made a colleague the agent had stopped come back "idle · last
+    /// task failed".
+    /// </summary>
+    [Fact]
+    public void A_run_its_delivered_report_says_was_stopped_comes_back_stopped()
+    {
+        new HistoryRecorder(Path.Combine(_parent, "CHILD01", "history.jsonl")).Record([M("user", "again"),
+            new() { Role = "assistant", Content = "", ToolCalls = [new ToolCall { Id = "t1", Name = "glob", Arguments = JsonDocument.Parse("{}").RootElement.Clone() }] }]);
+        var parent = Parent();
+        parent.NoteWorker(new WorkerMark("CHILD01", "colleague:Charting") { Name = "charting", Type = "general", Description = "Charting" });
+        Thread.Sleep(20);
+        var report = M("user", "The background agent 'charting' was stopped before it finished.\nYou asked it: again\n"
+            + """<sub_agent id="CHILD01" name="charting" state="cancelled">This agent was cancelled before finishing.</sub_agent>""");
+        parent.Label(report, Core.Agents.Incoming.Delivery);
+        parent.Record([report]);
+
+        var (store, _) = Revive(_ => new ChildAugment { Context = "EXP" });
+
+        Assert.Equal("cancelled", store.LastEnd("charting")!.Outcome);
+    }
+
     private sealed class Recall : IAgentTool
     {
         public ToolDefinition Definition { get; } = new("recall", "past", JsonSerializer.SerializeToElement(new { type = "object" }));

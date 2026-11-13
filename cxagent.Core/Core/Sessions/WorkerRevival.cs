@@ -298,6 +298,16 @@ internal static class WorkerRevival
                 continue;
             }
 
+            // A BACKGROUND RUN'S REPORT, DELIVERED: how a run asked in the background ended — a stopped one above all,
+            // whose own history ends mid-tool with nothing in it saying it was stopped, and read alone came back failed.
+            if (e is { From: Incoming.Delivery, Message.Content: { } delivered }
+                && ReportedSpawn(delivered, spawns) is var (reportedSpawn, state))
+            {
+                reportedSpawn.LastState = state;
+                reportedSpawn.LastStateAt = e.At;
+                continue;
+            }
+
             foreach (var call in e.Message?.ToolCalls ?? [])
             {
                 if (call.Name is not (Tool.Agent or Tool.AgentSend) || call.Id is null
@@ -322,6 +332,25 @@ internal static class WorkerRevival
             }
         }
         return [.. spawns.Values];
+    }
+
+    /// <summary>
+    /// The spawn a delivered report is about and the state its envelope gives, or null for a delivery that is no worker's
+    /// report — a command's exit — or about a worker this session no longer rebuilds.
+    ///
+    /// <para>THE FIRST ENVELOPE NAMING A KNOWN WORKER: the report opens with a line of prose and the brief it was asked,
+    /// and an envelope's attributes read only from its own opening tag, so each candidate tag is tried in turn.</para>
+    /// </summary>
+    private static (Spawn Spawn, string? State)? ReportedSpawn(string report, Dictionary<string, Spawn> spawns)
+    {
+        for (var i = report.IndexOf("<sub_agent ", StringComparison.Ordinal); i >= 0;
+             i = report.IndexOf("<sub_agent ", i + 1, StringComparison.Ordinal))
+        {
+            var envelope = report[i..];
+            if (SubAgentEnvelope.IdOf(envelope) is { } id && spawns.TryGetValue(id, out var spawn))
+                return (spawn, SubAgentEnvelope.StateOf(envelope));
+        }
+        return null;
     }
 
     private static string? Arg(ToolCall call, string name) =>
