@@ -139,76 +139,13 @@ public sealed class ColleagueConfigTests : IDisposable
         var form = WebConfigForms.Colleagues(Settings(), Library, "Charting").ToJsonString();
         Assert.Contains("\"model\"", form);
         Assert.Contains("\"distillModel\"", form);
+        Assert.DoesNotContain("explore", form);
 
         var draft = WebConfigForms.SetColleague(ColleagueDraft.For(Library.Find("Charting")!),
             new JsonObject { ["model"] = "", ["distillModel"] = "blind" });
 
         Assert.Null(draft.Model);
         Assert.Equal("blind", draft.DistillModel);
-    }
-
-    private static ProviderSettings WithTypes() => ProviderConfigLoader.Parse("""
-        { "providers": {
-            "big": { "kind": "ollama", "model": "qwen", "baseUrl": "http://localhost:1/v1", "contextWindow": 200000 } },
-          "defaultProvider": "big",
-          "agents": { "designer": { "briefing": "You design.", "description": "when a design is wanted" } } }
-        """, new Dictionary<string, string>());
-
-    /// <summary>ITS TYPE IS THE USER'S TO CHANGE (user, 2026-11-13): saved to its record, used at its next bring.</summary>
-    [Fact]
-    public void The_draft_changes_its_type_and_says_when_it_takes_effect()
-    {
-        Charting();
-        var draft = ColleagueDraft.For(Library.Find("Charting")!);
-        Assert.Equal("explore", draft.Type);
-
-        draft.Type = "designer";
-
-        Assert.True(draft.IsDirty);
-        Assert.Null(draft.Problem(WithTypes()));
-        Assert.Contains("designer from its next bring", draft.SavedLine, StringComparison.Ordinal);
-        Assert.Null(draft.Apply(Library, null));
-        Assert.Equal("designer", Library.Find("Charting")!.Type);
-        Assert.Equal("big", Library.Find("Charting")!.Instance);
-    }
-
-    [Fact]
-    public void A_type_that_is_not_one_here_is_refused_but_the_one_it_holds_stays_allowed()
-    {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "retired", Created = DateTimeOffset.UtcNow });
-        var draft = ColleagueDraft.For(Library.Find("Charting")!);
-        Assert.Null(draft.Problem(WithTypes()));
-
-        draft.Type = "nonsense";
-
-        Assert.Contains("nonsense", draft.Problem(WithTypes()));
-    }
-
-    [Fact]
-    public void The_type_picker_offers_general_the_shipped_the_configured_and_the_one_it_holds()
-    {
-        Library.Create(new ColleagueRecord { Name = "Charting", Type = "retired", Created = DateTimeOffset.UtcNow });
-
-        var options = ColleagueDraft.TypeOptions(WithTypes(), ColleagueDraft.For(Library.Find("Charting")!));
-        var values = options.Select(o => o.Value).ToList();
-
-        Assert.Equal("general", values[0]);
-        Assert.Contains("explore", values);
-        Assert.Contains("designer", values);
-        Assert.Contains(options, o => o.Value == "retired" && o.Label.Contains("not configured", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void The_browser_form_picks_the_type_through_the_same_draft()
-    {
-        Charting();
-        var form = WebConfigForms.Colleagues(WithTypes(), Library, "Charting").ToJsonString();
-        Assert.Contains("\"type\"", form);
-        Assert.Contains("designer", form);
-
-        var draft = WebConfigForms.SetColleague(ColleagueDraft.For(Library.Find("Charting")!), new JsonObject { ["type"] = "designer" });
-
-        Assert.Equal("designer", draft.Type);
     }
 
     [Fact]

@@ -1,4 +1,3 @@
-using CxAgent.Core.Agents;
 using CxAgent.Core.Colleagues;
 using CxAgent.Core.Llm;
 
@@ -10,8 +9,8 @@ namespace CxAgent.UI.Config;
 public sealed record ColleagueModelOption(string Value, string Label);
 
 /// <summary>
-/// One colleague's settings being edited — what kind of worker it is, where it runs and where it distils, the things
-/// about it that are the user's to choose. Built here, UI-free, for F8's Colleagues tab and the browser's page alike.
+/// One colleague's settings being edited — where it runs and where it distils, the two things about it that are the
+/// user's to choose. Built here, UI-free, for F8's Colleagues tab and the browser's page alike.
 ///
 /// <para>IN THE LIBRARY, NOT config.json: a colleague is a record in <c>colleagues/&lt;name&gt;/colleague.json</c>, and
 /// its models travel with it. A save there reaches its next bring; an incarnation already working keeps the model it was
@@ -31,7 +30,6 @@ public sealed class ColleagueDraft
         Original = original;
         Model = original.Instance;
         DistillModel = original.DistillInstance;
-        Type = original.Type;
         Frozen = original.Frozen;
     }
 
@@ -49,12 +47,6 @@ public sealed class ColleagueDraft
     public string? DistillModel { get; set; }
 
     /// <summary>
-    /// The agent type it is brought in as: the type's briefing and tools, never its provider list — a bring names the
-    /// colleague's own model, which wins over the type's. Kept from the worker it was kept from until changed here.
-    /// </summary>
-    public string Type { get; set; }
-
-    /// <summary>
     /// Frozen: it works and its rounds are kept, but it learns nothing. Applied through the store's Freeze and Unfreeze,
     /// never written onto the record — unfreezing records the stretch lived frozen, so it is never learned from.
     /// </summary>
@@ -66,15 +58,11 @@ public sealed class ColleagueDraft
     private bool Renaming => Blank(NewName?.Trim()) is { } to && !string.Equals(to, Original.Name, StringComparison.Ordinal);
 
     public bool IsDirty => Blank(Model) != Original.Instance || Blank(DistillModel) != Original.DistillInstance || Frozen != Original.Frozen
-                           || SavedType != Original.Type || Renaming;
-
-    /// <summary>The type it is saved with: a blank choice keeps the one it has.</summary>
-    private string SavedType => Blank(Type) ?? Original.Type;
+                           || Renaming;
 
     /// <summary>Why this cannot be saved as it stands, against the entries configured now, or null.</summary>
     public string? Problem(ProviderSettings settings) =>
-        UnofferedType(settings)
-        ?? Unoffered(settings, Blank(Model)) ?? Unoffered(settings, Blank(DistillModel))
+        Unoffered(settings, Blank(Model)) ?? Unoffered(settings, Blank(DistillModel))
         ?? TooSmall(settings, Blank(Model)) ?? TooSmall(settings, Blank(DistillModel));
 
     /// <summary>
@@ -85,19 +73,6 @@ public sealed class ColleagueDraft
         entry is null || settings.Providers.ContainsKey(entry) || entry == Original.Instance || entry == Original.DistillInstance
             ? null
             : $"'{entry}' is not a provider entry in config.json.";
-
-    /// <summary>
-    /// Why the type is not one the picker offers, or null. A bring of a colleague whose type is gone is refused as an
-    /// unknown type, so a name nothing here defines is not written; the one it already holds stays allowed, as a model's
-    /// does, so a save of its other settings is not blocked by a type removed from config.json.
-    /// </summary>
-    private string? UnofferedType(ProviderSettings settings) =>
-        TypeOptions(settings, this).Any(o => o.Value == SavedType && (o.Value == Original.Type || Known(settings, o.Value)))
-            ? null
-            : $"'{SavedType}' is not an agent type here. Types: {string.Join(", ", TypeOptions(settings).Select(o => o.Value))}.";
-
-    private static bool Known(ProviderSettings settings, string type) =>
-        type == AgentTypeCatalog.DefaultTypeName || BuiltinAgentTypes.IsBuiltin(type) || settings.AgentTypes.ContainsKey(type);
 
     private static string? TooSmall(ProviderSettings settings, string? entry) =>
         entry is not null && settings.Providers.TryGetValue(entry, out var cfg) && cfg.ContextWindow is { } window
@@ -124,8 +99,6 @@ public sealed class ColleagueDraft
             if (Renaming) said.Add($"{Original.Name} is now called {SavedName}; its old names still find it.");
             if (Blank(Model) != Original.Instance || Blank(DistillModel) != Original.DistillInstance)
                 said.Add("Its models are used at its next bring; one working now keeps its own.");
-            if (SavedType != Original.Type)
-                said.Add($"It is brought in as {SavedType} from its next bring; one working now stays {Original.Type}.");
             if (Frozen != Original.Frozen)
                 said.Add(Frozen ? ColleagueDesk.FrozenLine(SavedName) : ColleagueDesk.UnfrozenLine(SavedName));
             return string.Join(" ", said);
@@ -148,8 +121,7 @@ public sealed class ColleagueDraft
         var name = SavedName;
         var model = Blank(Model);
         var distil = Blank(DistillModel);
-        var type = SavedType;
-        library.Update(name, r => r with { Instance = model, DistillInstance = distil, Type = type });
+        library.Update(name, r => r with { Instance = model, DistillInstance = distil });
         if (Frozen != Original.Frozen)
         {
             if (Frozen) library.Freeze(name);
@@ -181,46 +153,9 @@ public sealed class ColleagueDraft
         return options;
     }
 
-    /// <summary>
-    /// The agent types a colleague can be brought in as, in the catalog's order — <c>general</c> first, then the rest by
-    /// name — each with what it is for. With <paramref name="draft"/>, a type it holds that is no longer defined is
-    /// offered too, marked, as a model picker offers an entry no longer configured.
-    /// </summary>
-    public static IReadOnlyList<ColleagueModelOption> TypeOptions(ProviderSettings settings, ColleagueDraft? draft = null)
-    {
-        var names = BuiltinAgentTypes.All.Select(t => t.Name).Concat(settings.AgentTypes.Keys)
-            .Where(n => n != AgentTypeCatalog.DefaultTypeName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal);
-        var options = names.Prepend(AgentTypeCatalog.DefaultTypeName).Select(n => new ColleagueModelOption(n, TypeLabel(settings, n))).ToList();
-        if (draft?.Original.Type is { } held && options.All(o => o.Value != held))
-            options.Add(new ColleagueModelOption(held, $"{held} — not configured"));
-        return options;
-    }
-
-    /// <summary>A type's name and the start of what it is for — the shipped text for a built-in, config's for the rest.</summary>
-    private static string TypeLabel(ProviderSettings settings, string name)
-    {
-        var about = BuiltinAgentTypes.Find(name)?.Description
-                    ?? (settings.AgentTypes.TryGetValue(name, out var cfg) ? cfg.Description : null)
-                    ?? (name == AgentTypeCatalog.DefaultTypeName ? "an ordinary worker, with no briefing of its own" : null);
-        return about is { Length: > 0 } ? $"{name} — {Cut(about, 60)}" : name;
-    }
-
-    /// <summary>The text up to its first full stop, or cut at a word within <paramref name="most"/> characters with "…" —
-    /// a description runs to a paragraph, and a dropdown row has one line.</summary>
-    private static string Cut(string text, int most)
-    {
-        var line = text.Split('.', 2)[0].Trim();
-        if (line.Length <= most) return line;
-        var space = line.LastIndexOf(' ', most);
-        return line[..(space > 0 ? space : most)].TrimEnd(',', ';', ' ') + "…";
-    }
-
     /// <summary>What the inherited choice of each picker is called.</summary>
     public const string SessionModel = "The session's model";
     public const string OwnModel = "Its own model";
-
-    public const string TypeHelp =
-        "The kind of worker it is brought in as: that type's briefing and tools. Used at its next bring.";
 
     public const string ModelHelp = "Where it works when brought in. A bring that names a model overrides this.";
     /// <summary>What renaming does — the words F8's field and the browser's both show.</summary>

@@ -427,10 +427,6 @@ internal static class WebConfigForms
                 Field("about", "What it is", "info", record.Description.Length > 0 ? record.Description : "Not distilled yet.",
                     ColleagueDraft.DescriptionHelp),
                 Field("facts", "Experience", "info", $"v{record.ExperienceVersion}" + (line.Knows.Count > 0 ? " · knows " + string.Join(", ", line.Knows) : ""))),
-            // THE SAME CHOICES AND WORDS AS F8's — both set ColleagueDraft.Type.
-            Section("Worker",
-                Select("type", "Brought in as", draft.Type,
-                    ColleagueDraft.TypeOptions(settings, draft).Select(o => (o.Value, o.Label)), ColleagueDraft.TypeHelp)),
             Section("Models",
                 Select("model", "Runs on", draft.Model ?? "", [("", ColleagueDraft.SessionModel), .. options], ColleagueDraft.ModelHelp),
                 Select("distillModel", "Distils on", draft.DistillModel ?? "", [("", ColleagueDraft.OwnModel), .. options], ColleagueDraft.DistillHelp)),
@@ -449,7 +445,6 @@ internal static class WebConfigForms
         if (Str(v, "distillModel") is { } distil) d.DistillModel = distil.Length == 0 ? null : distil;
         if (Bool(v, "frozen") is { } frozen) d.Frozen = frozen;
         if (Str(v, "name") is { } name) d.NewName = name;
-        if (Str(v, "type") is { Length: > 0 } type) d.Type = type;
         return d;
     }
 

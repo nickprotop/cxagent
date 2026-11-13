@@ -217,16 +217,6 @@ public sealed class ColleaguesTab
         _detail.AddControl(ListDetail.Section("Name", naming.Control));
         _detail.AddControl(ListDetail.Gap());
 
-        // THE SAME CHOICES AND WORDS AS THE BROWSER'S PAGE — both set ColleagueDraft.Type.
-        var types = ColleagueDraft.TypeOptions(_settings!, draft);
-        var worker = new FieldGrid();
-        var typeBox = new DropdownControl("", types.Select(o => o.Label).ToList()) { HorizontalAlignment = HorizontalAlignment.Left };
-        typeBox.SelectedIndex = Math.Max(0, types.ToList().FindIndex(o => o.Value == draft.Type));
-        typeBox.SelectedIndexChanged += (_, i) => { if (i >= 0) draft.Type = types[i].Value; MarkSave(); };
-        worker.Add("Brought in as", ColleagueDraft.TypeHelp, typeBox);
-        _detail.AddControl(ListDetail.Section("Worker", worker.Control));
-        _detail.AddControl(ListDetail.Gap());
-
         var options = ColleagueDraft.Options(_settings!, draft);
         var models = new FieldGrid();
         models.Add("Runs on", ColleagueDraft.ModelHelp, Picker(ColleagueDraft.SessionModel, options, draft.Model, v => draft.Model = v));
