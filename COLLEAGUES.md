@@ -365,8 +365,9 @@ distiller reads it as what was tried, not as what worked, and recall shows the m
 configured here; the agent may name another model for one bring. Either must have at least a 128k window; a quarter of
 that window, at most 100k, is loaded as its experience when it is brought in. A colleague already here stays on the
 model it came on: a bring naming another sends it nothing, and says to release it first. F8's **Colleagues** tab, and
-the Colleagues tab of the browser's configuration page, change where each one runs and where it distils, rename it and
-freeze it. Under *Settings* they turn colleagues and suggestions off, as do
+the Colleagues tab of the browser's configuration page, change the type it is brought in as, where it runs and where it
+distils, rename it and freeze it. It keeps the type of the worker it was kept from until you change it there: an
+explorer kept for its research can be brought in as a planner. Under *Settings* they turn colleagues and suggestions off, as do
 [`colleagues.enabled` and `colleagues.suggest`](CONFIG.md#colleagues--workers-kept-across-sessions) in config.json.
 
 **Where they live.** Under `colleagues/` in cxagent's folder, one folder each: who it is, its experience and its past

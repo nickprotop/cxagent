@@ -152,7 +152,7 @@ public static class ConfigDialog
             foreach (var b in ActiveActions()) footer.Buttons.AddItem(b);
             // WHEN A SAVE TAKES EFFECT, which differs by tab: General's settings are read as a tab opens, the
             // rest reach running tabs at once.
-            footer.Hints.SetContent([$"[{DialogLook.Palette.Muted.ToMarkup()}]{(Active switch { ConfigTab.General => "Saved changes apply to tabs opened after saving", ConfigTab.Web => "Saved changes apply when /web or cxagent web next starts", ConfigTab.Colleagues => "The switch applies to tabs opened after saving, a colleague's models at its next bring", ConfigTab.Project => "Trust applies at once", _ => "Saved changes apply at once" })} · Esc closes[/]"]);
+            footer.Hints.SetContent([$"[{DialogLook.Palette.Muted.ToMarkup()}]{(Active switch { ConfigTab.General => "Saved changes apply to tabs opened after saving", ConfigTab.Web => "Saved changes apply when /web or cxagent web next starts", ConfigTab.Colleagues => "The switch applies to tabs opened after saving, a colleague's type and models at its next bring", ConfigTab.Project => "Trust applies at once", _ => "Saved changes apply at once" })} · Esc closes[/]"]);
             footer.Buttons.AddItem(close);
             MarkActiveSave();
         }
