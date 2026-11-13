@@ -138,6 +138,7 @@ function handle(m) {
     case "event": event(m); break;
     case "panel":
       state.panels.set(m.sessionId, m);
+      followWorkers(m);
       liveCards(m.sessionId);
       {
         // THE LIST IS SENT WHEN SESSIONS COME AND GO, not when a turn ends; the panel says whether one is working now.
@@ -307,7 +308,9 @@ function sessionRow(r) {
 function workerRunning(view) {
   const panel = state.panels.get(view.parent);
   const w = panel && (panel.workers || []).find((x) => x.agentId === view.agentId);
-  return w || null;
+  // A COLLEAGUE'S CARD SHOWING ITS CONVERSATION AT WORK carries the Ask worker's own state beside it: its tab reads that,
+  // not the conversation's — or an Ask tab at rest showed "talking with you", a Stop that stopped nothing and no Release.
+  return w ? (w.own ? { ...w, ...w.own } : w) : null;
 }
 
 // WHICH VIEWS THE STRIP HOLDS. Wide, the sidebar switches sessions, so the strip is the session in front and what was
@@ -415,6 +418,30 @@ function activeSessionId() {
   return v ? (v.kind === "session" ? v.id : v.parent) : null;
 }
 
+// A COLLEAGUE'S TWO TABS SAY WHAT TYPING DOES, as the terminal's hints: the conversation goes on, or an ask starts fresh.
+function placeholderFor(view) {
+  return !view || view.kind !== "worker" ? "Message, or / for commands"
+    : view.door === "talk" && view.badge ? "Talk with " + view.badge.name + " — the conversation goes on…"
+    : view.door === "ask" && view.badge ? "Ask " + view.badge.name + " — fresh from what it has learned…"
+    : "Message " + view.name + "…";
+}
+
+// AN OPEN WORKER TAB FOLLOWS WHAT ITS WORKER BECOMES, as the terminal's tab re-reads it each tick: kept from its tab, it is
+// a colleague's Talk worker from then on; forgotten, it is an ordinary worker again — set once at opening, the tab stayed
+// half worker, half colleague until it was reopened.
+function followWorkers(m) {
+  for (const [id, v] of state.views) {
+    if (v.kind !== "worker" || v.parent !== m.sessionId) continue;
+    const row = (m.workers || []).find((x) => x.agentId === v.agentId);
+    if (!row) continue;
+    const badge = row.badge || null, door = row.door || null;
+    if (JSON.stringify(v.badge || null) === JSON.stringify(badge) && (v.door || null) === door) continue;
+    v.badge = badge;
+    v.door = door;
+    if (state.active === id) $("input").placeholder = placeholderFor(v);
+  }
+}
+
 function activate(id) {
   const view = id ? state.views.get(id) : null;
   // AN APP PAGE BELONGS TO THE SESSION IN FRONT when it is brought up: kept on the one it was opened from, clicking its
@@ -434,11 +461,7 @@ function activate(id) {
   document.body.classList.toggle("editing", !!view && (view.kind === "file" || view.kind === "shell" || (view.kind === "config" && view.tab === "json")));
   // AND NO MESSAGE BOX AT ALL there: one that cannot send is room taken from the shell, the file or the output.
   document.body.classList.toggle("no-composer", !!view && !conversation);
-  // A COLLEAGUE'S TWO TABS SAY WHAT TYPING DOES, as the terminal's hints: the conversation goes on, or an ask starts fresh.
-  $("input").placeholder = !view || view.kind !== "worker" ? "Message, or / for commands"
-    : view.door === "talk" ? "Talk with " + view.badge.name + " — the conversation goes on…"
-    : view.door === "ask" ? "Ask " + view.badge.name + " — fresh from what it has learned…"
-    : "Message " + view.name + "…";
+  $("input").placeholder = placeholderFor(view);
   // THE FOLDER STAYS IN THE HEADER on a page that is not a conversation — the marketplace, the config page: theirs is
   // the session they were opened from, as the terminal's title keeps its folder whatever dialog is open.
   const where = view && !view.folder && view.parent ? state.views.get(view.parent) : view;
@@ -516,7 +539,8 @@ function drawWorkerHead() {
   // A NEW CONVERSATION, IN A TALK TAB AT REST — the terminal's button; /clear typed here does the same.
   if (view.door === "talk" && !running)
     head.append(button("New conversation", null, () => send({ type: "colleagueNewTalk", sessionId: view.parent, agentId: view.agentId })));
-  if (view.badge && !running) head.append(button("Release", null, () => send({ type: "colleagueRelease", sessionId: view.parent, name: view.badge.name })));
+  // RELEASE WITH BOTH DOORS AT REST: the desk refuses it while the colleague's other worker is busy.
+  if (view.badge && !running && !(w && w.otherBusy)) head.append(button("Release", null, () => send({ type: "colleagueRelease", sessionId: view.parent, name: view.badge.name })));
 }
 
 // ---- a background command's tab ------------------------------------------------------------------------------------
@@ -2300,7 +2324,7 @@ function drawStatusline(panel) {
   const c = panel.context;
   const pct = c.used && c.window ? Math.round(100 * c.used / c.window) + "% context" : "";
   // WHO IS BEING DISTILLED, as the terminal's status bar says it.
-  const distilling = panel.colleagues && panel.colleagues.distilling.length ? "distilling " + panel.colleagues.distilling.join(", ") + "…" : "";
+  const distilling = panel.distilling || "";
   line.textContent = [shortFolder(panel.here.folder), panel.here.git, panel.model, pct, tokens(panel.tokens.total) + " tokens",
     money(panel.tokens.cost), distilling].filter(Boolean).join("  ·  ");
 }
@@ -2532,7 +2556,10 @@ function drawColleagueCards(pane, p, sid) {
       button("Talk ›", null, talk));
     // DON'T WAIT while its ask waits for what it lived to be learned — the terminal card's link.
     if (w.state === "WaitingToLearn") acts.append(button("Don't wait", null, () => send({ type: "colleagueSkipWait", sessionId: sid, agentId: w.agentId })));
-    if (w.running) acts.append(button("Stop", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "stop" })));
+    // BACKGROUND while the lead's turn waits on it — the terminal card's ⇥: from a phone, the only other way out was Stop.
+    if (w.running && !w.background) acts.append(button("Background", null, () => send({ type: "workerAction", sessionId: sid, agentId: w.actingAgentId || w.agentId, action: "background" })));
+    // THE RUN THE CARD SHOWS is what stops — its Talk worker while the conversation is at work.
+    if (w.running) acts.append(button("Stop", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.actingAgentId || w.agentId, action: "stop" })));
     // RELEASE WHILE IDLE: it leaves this session and can be brought again — refused while it works.
     else acts.append(button("Release", null, () => send({ type: "colleagueRelease", sessionId: sid, name: w.badge.name })));
     card.append(acts);
@@ -2555,6 +2582,8 @@ function drawTasksPane(p, sid) {
   if (!workers.length) pane.append(el("p", "none", "No workers in this session."));
   for (const w of workers) {
     const acts = [button("Open", null, () => { openWorker(sid, w.agentId); if (!wide()) setPanel(false); })];
+    // BACKGROUND, as F7's ⇥ on a worker the turn waits on.
+    if (w.running && !w.background) acts.push(button("Background", null, () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "background" })));
     if (w.running) acts.push(button("Stop", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "stop" })));
     // F7's x ON A FINISHED CARD: the worker and its conversation go; the server asks first if its commands still run.
     else acts.push(button("Delete", "danger", () => send({ type: "workerAction", sessionId: sid, agentId: w.agentId, action: "delete" })));

@@ -82,9 +82,9 @@ public sealed class ColleaguePanelTests : IDisposable
     [Fact]
     public void Status_text_names_who_is_distilling()
     {
-        Assert.Equal("distilling Charting…", MainWindow.DistillingText(["Charting"]));
-        Assert.Equal("distilling Charting, Parser…", MainWindow.DistillingText(["Charting", "Parser"]));
-        Assert.Null(MainWindow.DistillingText([]));
+        Assert.Equal("distilling Charting…", CxAgent.Core.Colleagues.ColleagueDesk.DistillingText(["Charting"]));
+        Assert.Equal("distilling Charting, Parser…", CxAgent.Core.Colleagues.ColleagueDesk.DistillingText(["Charting", "Parser"]));
+        Assert.Null(CxAgent.Core.Colleagues.ColleagueDesk.DistillingText([]));
     }
 
     [Fact]

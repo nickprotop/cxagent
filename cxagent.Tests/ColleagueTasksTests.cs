@@ -277,6 +277,27 @@ public sealed class ColleagueTasksTests : IDisposable
         Assert.False(card.Talking);
     }
 
+    /// <summary>
+    /// THE CONVERSATION AT WORK ON THE CARD acts as its Talk worker — Stop and the task line reach that run — while the
+    /// card stays the Ask worker's, with its own state kept for its tab. Stopping the card stopped the Ask worker at rest
+    /// ("nothing to stop") while the conversation ran on.
+    /// </summary>
+    [Fact]
+    public async Task A_card_showing_its_conversation_acts_as_the_talk_worker()
+    {
+        var session = await WithCharting();
+        var talk = (await session.Colleagues!.OpenTalkAsync("Charting", session.SessionId!, CancellationToken.None)).Handle!;
+        session.SubAgents.TryClaim(talk);
+        session.SubAgents.AnnounceBegin(talk);
+
+        var card = Assert.Single(AgentRows.For(session.SubAgents, DateTimeOffset.UtcNow), r => r.Badge is not null);
+
+        Assert.True(card.Talking);
+        Assert.Equal("charting", card.Kept.Name);
+        Assert.Equal(talk, card.Acting.Name);
+        Assert.False(card.Own!.Running);
+    }
+
     /// <summary>A KEPT WORKER'S CONVERSATION WITH NO ASK WORKER YET stands alone, as the colleague's card.</summary>
     [Fact]
     public async Task A_talk_worker_alone_is_the_card()

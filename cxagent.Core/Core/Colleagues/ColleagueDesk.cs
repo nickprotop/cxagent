@@ -226,6 +226,13 @@ public sealed partial class ColleagueDesk : IDisposable
     /// <summary>The library this desk keeps colleagues in.</summary>
     public ColleagueStore Library => _parts.Library;
 
+    /// <summary>
+    /// What every front end says while colleagues are distilled — the terminal's status bar and the page's panel line —
+    /// or null when none is: one text, so neither words it differently.
+    /// </summary>
+    public static string? DistillingText(IReadOnlyList<string> names) =>
+        names.Count == 0 ? null : $"distilling {string.Join(", ", names)}…";
+
     /// <summary>Colleagues being distilled now, by this desk's drains.</summary>
     public IReadOnlyList<string> Distilling
     {
@@ -353,8 +360,12 @@ public sealed partial class ColleagueDesk : IDisposable
     private IEnumerable<string> HandlesOf(ColleagueRecord record) =>
         new[] { HandleOf(record), TalkOf(record) }.OfType<string>();
 
-    /// <summary>Its Talk worker in this session, by its name now, or null.</summary>
-    public string? TalkHere(string name) => _workers.ConversationOf(OriginPrefix + name);
+    /// <summary>
+    /// Its Talk worker in this session, by any name it has had, or null — a rename made elsewhere leaves the worker its
+    /// old name until it next begins or ends, and asked by the new one alone a second was brought in beside it.
+    /// </summary>
+    public string? TalkHere(string name) =>
+        _parts.Library.Find(name.Trim()) is { } record ? TalkOf(record) : _workers.ConversationOf(OriginPrefix + name);
 
     /// <summary>
     /// Renames a colleague and answers the line to show — see <see cref="ColleagueRenaming"/>. Its incarnation here takes
@@ -509,9 +520,20 @@ public sealed partial class ColleagueDesk : IDisposable
         var origin = OriginPrefix + record.Name;
         if (_parts.Spawner is not { } spawner) return "This session cannot start workers.";
         // ITS ASK WORKER HERE TAKES THE TASK; its Talk worker is a conversation of its own, opened beside it.
-        if (!order.Talk && _workers.NameOfOrigin(origin) is { } live)
+        // BY ANY NAME IT HAS HAD: one brought in before a rename elsewhere is still this colleague, not room for another.
+        if (!order.Talk && HandleOf(record) is { } live)
         {
             if (order.Task.Trim().Length == 0) return $"{record.Name} is already here as {live} — give it work with agent_send.";
+
+            // ALREADY HERE ON ANOTHER MODEL THAN THE ONE ASKED FOR: the task is not sent. Sent, it ran on the model the
+            // worker was brought on — a paid one, where the user had asked for the local — and nothing said so.
+            if (order.Model is { Length: > 0 } wanted && _workers.Find(live) is { } here)
+            {
+                if (_parts.Models(wanted) is not { } asked) return $"There is no provider entry '{wanted}' here.";
+                if (!RunsOn(here.Agent, asked))
+                    return $"{record.Name} is already here as {live}, on {LabelOf(here.Agent)} — the task was not sent. To "
+                        + $"run it on {asked.Label}, release {record.Name} first, then bring it with that model.";
+            }
 
             // ALREADY HERE, AND A TASK FOR IT: the task goes to it, as agent_send would take it. Answered "use
             // agent_send" instead, a lead went on without sending it, and the work was lost (user, 2026-11-08).
@@ -636,7 +658,8 @@ public sealed partial class ColleagueDesk : IDisposable
     public string? OneToOneTag(string name) => _parts.Library.Find(name.Trim()) is { } record ? OriginPrefix + record.Name : null;
 
     /// <summary>The handle the colleague named <paramref name="name"/> answers to in this session, or null when it is not here.</summary>
-    public string? HandleHere(string name) => _workers.NameOfOrigin(OriginPrefix + name);
+    public string? HandleHere(string name) =>
+        _parts.Library.Find(name.Trim()) is { } record ? HandleOf(record) : _workers.NameOfOrigin(OriginPrefix + name);
 
     /// <summary>
     /// What it takes to open <paramref name="name"/>'s one-to-one, or null with why not — ONE ANSWER FOR BOTH FRONT ENDS,
@@ -689,14 +712,14 @@ public sealed partial class ColleagueDesk : IDisposable
     /// <para>BY COLLEAGUE, NOT SESSION ID: a resume and a re-wire each give the session a new id, and a mark under the old
     /// one was missed, so the whole conversation was appended again and distilled a second time.</para>
     /// </summary>
-    private readonly ConcurrentDictionary<string, ChatMessage?> _oneToOneKept = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Held> _oneToOneKept = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Marks everything a one-to-one holds as already kept — called as it is wired, which is always between turns: what a
     /// resume restored was kept by the process that lived it, and a re-wire's copy of the conversation holds nothing new.
     /// </summary>
     public void OneToOneWired(string name, IReadOnlyList<ChatMessage> messages) =>
-        _oneToOneKept[name] = messages.LastOrDefault(m => m.Role != "system");
+        _oneToOneKept[name] = Held.Of(messages);
 
     /// <summary>
     /// Keeps a one-to-one's latest exchange as a round of its colleague's past, and distils it. Everything after the last
@@ -707,12 +730,10 @@ public sealed partial class ColleagueDesk : IDisposable
         var name = exchange.Colleague;
         try
         {
-            var all = exchange.Messages.Where(m => m.Role != "system").ToList();
-            var at = _oneToOneKept.TryGetValue(name, out var last) && last is not null
-                ? all.FindLastIndex(m => ReferenceEquals(m, last)) : -1;
-            var round = all.Skip(at + 1).ToList();
+            var round = _oneToOneKept.TryGetValue(name, out var kept) ? kept.Since(exchange.Messages)
+                : exchange.Messages.Where(m => m.Role != "system").ToList();
             if (round.Count == 0 || _parts.Library.Find(name) is null) return;
-            _oneToOneKept[name] = round[^1];
+            _oneToOneKept[name] = Held.Of(exchange.Messages);
             // A ONE-TO-ONE READS ACROSS FOLDERS TOO, and what it learned there belongs where it was read.
             var reads = _parts.Library.Find(name) is { } record
                 ? ReadsOf(new RoundReadsRequest(round, record, exchange.Folder) { Ignore = Path.GetDirectoryName(_parts.Library.Root) })
@@ -788,9 +809,9 @@ public sealed partial class ColleagueDesk : IDisposable
     {
         if (_parts.Library.Find(name.Trim()) is not { } record)
             return new TalkOpening(null, $"There is no colleague called '{name.Trim()}'. {Known()}");
-        if (_workers.ConversationOf(OriginPrefix + record.Name) is { } here) return new TalkOpening(here, null);
+        if (TalkOf(record) is { } here) return new TalkOpening(here, null);
         var said = await BringAsync(new BringOrder(record.Name, "", null, Background: true, parentAgentId) { Talk = true }, ct);
-        return _workers.ConversationOf(OriginPrefix + record.Name) is { } opened
+        return TalkOf(record) is { } opened
             ? new TalkOpening(opened, null)
             : new TalkOpening(null, said);
     }
@@ -820,6 +841,14 @@ public sealed partial class ColleagueDesk : IDisposable
         kept.Agent.Feed.Said(new Commands.Message(FreshLine(record.ExperienceVersion), Commands.Severity.Info));
     }
 
+    /// <summary>Whether a worker runs on the entry and model <paramref name="choice"/> names.</summary>
+    private static bool RunsOn(SubAgent agent, ModelChoice choice) =>
+        string.Equals(agent.Instance, choice.Instance, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(agent.ModelId, choice.Provider.ModelId, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Where a worker runs, as a person names it — <c>entry:model</c>.</summary>
+    private static string LabelOf(SubAgent agent) => agent.Instance is { Length: > 0 } i ? $"{i}:{agent.ModelId}" : agent.ModelId;
+
     /// <summary>The divider an ask's tab shows where a fresh ask begins.</summary>
     public static string FreshLine(long version) => $"— a fresh ask, from what it has learned (v{version}) —";
 
@@ -830,10 +859,12 @@ public sealed partial class ColleagueDesk : IDisposable
     private async Task<string?> AskWorkerForAsync(string talk, CancellationToken ct)
     {
         if (_workers.OriginOf(talk) is not { } origin || !origin.StartsWith(OriginPrefix, StringComparison.Ordinal)) return null;
-        if (_workers.NameOfOrigin(origin) is { } asks) return asks;
+        // BY THE COLLEAGUE, NOT THE NAME ITS ORIGIN CARRIES: renamed elsewhere, its Ask worker may carry the other one.
+        if (_parts.Library.Find(origin[OriginPrefix.Length..]) is not { } record) return _workers.NameOfOrigin(origin);
+        if (HandleOf(record) is { } asks) return asks;
         if (_parts.SessionId() is not { } lead) return null;
-        await BringAsync(new BringOrder(origin[OriginPrefix.Length..], "", null, Background: true, lead), ct);
-        return _workers.NameOfOrigin(origin);
+        await BringAsync(new BringOrder(record.Name, "", null, Background: true, lead), ct);
+        return HandleOf(record);
     }
 
     /// <summary>Whether <paramref name="handle"/> is a colleague's Talk worker, which keeps its conversation; every other
@@ -952,7 +983,7 @@ public sealed partial class ColleagueDesk : IDisposable
     private void OnBegan(string agentId)
     {
         if (Incarnation(agentId) is not { } found) return;
-        _rounds[agentId] = new RoundStart(found.Kept.Agent.Agent.Context.Messages.LastOrDefault(m => m.Role != "system"), DateTimeOffset.UtcNow);
+        _rounds[agentId] = new RoundStart(Held.Of(found.Kept.Agent.Agent.Context.Messages), DateTimeOffset.UtcNow);
     }
 
     /// <summary>A colleague's recall: its library, the served folders, and the session's gate to ask through.</summary>
@@ -972,12 +1003,8 @@ public sealed partial class ColleagueDesk : IDisposable
         // release, and must never throw into it.
         try
         {
-            // EVERYTHING AFTER THE LAST MESSAGE IT HELD WHEN THE RUN BEGAN — found by the message itself, not a count: the
-            // agent writes its system prompt in at the front when a run starts, which moves every index. Not found, a
-            // compaction replaced it mid-round, and what remains — the summary and what followed — is the round.
-            var messages = found.Kept.Agent.Agent.Context.Messages.Where(m => m.Role != "system").ToList();
-            var at = start.Last is null ? -1 : messages.FindLastIndex(m => ReferenceEquals(m, start.Last));
-            var round = messages.Skip(at + 1).ToList();
+            // WHAT IT DID NOT HOLD WHEN THE RUN BEGAN — see Held.Since.
+            var round = start.Held.Since(found.Kept.Agent.Agent.Context.Messages);
             if (round.Count == 0) return;
 
             // FORGOTTEN — HERE OR IN ANOTHER SESSION — IT CARRIES ON AS AN ORDINARY WORKER: nothing is kept, no folder is
@@ -1531,7 +1558,42 @@ public sealed partial class ColleagueDesk : IDisposable
         foreach (var name in _present.Keys) _parts.Library.MarkAbsent(name, _holder);
     }
 
-    private readonly record struct RoundStart(ChatMessage? Last, DateTimeOffset At);
+    private readonly record struct RoundStart(Held Held, DateTimeOffset At);
+
+    /// <summary>
+    /// The messages a conversation held at a moment — the start of a run, the last exchange kept — to tell what came
+    /// after.
+    /// </summary>
+    internal sealed class Held
+    {
+        private readonly ChatMessage? _last;
+        private readonly HashSet<ChatMessage> _all;
+
+        private Held(ChatMessage? last, HashSet<ChatMessage> all) => (_last, _all) = (last, all);
+
+        /// <summary>What <paramref name="messages"/> holds now, by the messages themselves.</summary>
+        public static Held Of(IEnumerable<ChatMessage> messages)
+        {
+            var all = new HashSet<ChatMessage>(messages.Where(m => m.Role != "system"), ReferenceEqualityComparer.Instance);
+            return new Held(messages.LastOrDefault(m => m.Role != "system"), all);
+        }
+
+        /// <summary>
+        /// What <paramref name="messages"/> holds that came after.
+        ///
+        /// <para>EVERYTHING AFTER THE LAST MESSAGE HELD — found by the message itself, not a count: the agent writes its
+        /// system prompt in at the front when a run starts, which moves every index. NOT FOUND, a compaction replaced it,
+        /// and the round is what was not held: the summary and what followed — never the tail the compaction kept from
+        /// before, which the past already has. Taking everything after the summary copied whole earlier rounds into the
+        /// next, and the distiller read old evidence as new.</para>
+        /// </summary>
+        public List<ChatMessage> Since(IEnumerable<ChatMessage> messages)
+        {
+            var all = messages.Where(m => m.Role != "system").ToList();
+            var at = _last is null ? -1 : all.FindLastIndex(m => ReferenceEquals(m, _last));
+            return at >= 0 ? all.Skip(at + 1).ToList() : all.Where(m => !_all.Contains(m)).ToList();
+        }
+    }
 
     private sealed record Found(StoredAgent Kept, string Name);
 }

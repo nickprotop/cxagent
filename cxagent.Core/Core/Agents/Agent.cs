@@ -737,17 +737,21 @@ public sealed class Agent
     /// same reason /model has never compacted.</para>
     ///
     /// <para>A CONFIGURED compressAbove IS NOT TOUCHED. That is a user's token budget, not a fact
-    /// about the model, and a switch has no business rewriting it.</para>
+    /// about the model, and a switch has no business rewriting it. ONE DERIVED FROM THE WINDOW MOVES
+    /// WITH IT — <paramref name="compressAbove"/>, given by the caller that knows which it is: kept at
+    /// the old model's, a session moved from a 212k local model to a 1M one went on compressing at
+    /// the local model's point.</para>
     ///
     /// <para>NOT MID-TURN. The caller refuses while a turn runs, and must keep doing so: swapping
     /// between two calls of one turn would send half a conversation to one model and half to
     /// another.</para>
     /// </summary>
-    public void SwapProvider(ILlmProvider provider, string? instanceName, int? contextWindow)
+    public void SwapProvider(ILlmProvider provider, string? instanceName, int? contextWindow, int? compressAbove = null)
     {
         _provider = provider;
         _instanceName = instanceName;
         if (contextWindow is not null) _context.Window = contextWindow;
+        if (compressAbove is not null) _compressAbove = compressAbove;
         Setup = Setup with { Model = Setup.Model with { Provider = provider, InstanceName = instanceName } };
     }
 
@@ -1059,7 +1063,10 @@ public sealed class Agent
     /// RunAsync that loops internally, so the check fired after the run that blew past it. Measured
     /// live at 1.16M input tokens against a 40,000 threshold, never once compressing.</para>
     /// </summary>
-    private readonly int? _compressAbove;
+    private int? _compressAbove;
+
+    /// <summary>Test seam: where this agent compresses its context now.</summary>
+    internal int? CompressAboveForTest => _compressAbove;
 
     /// <summary>
     /// Builds an agent from its <see cref="AgentSetup"/> — what it talks to, where it reports, who it is, what it may

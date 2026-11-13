@@ -342,6 +342,10 @@ public sealed partial class Distiller(ColleagueStore store)
         if (answer.Texts().Any(MemoryStore.LooksSecret))
             return new Failure("the distilled experience looked like it held a secret; the previous one is kept", true);
 
+        // FROZEN WHILE THE MODEL ANSWERED: freezing keeps the experience as it is, so the answer is set aside unwritten and
+        // the rounds stay where they were — learned from once it is unfrozen, as every round lived before the freeze is.
+        if (store.Find(name) is { Frozen: true }) return null;
+
         if (answer.Core is { } core) store.WriteCore(name, core);
         foreach (var (key, text) in answer.Codebases) store.WriteCodebase(name, key, text);
 
@@ -414,11 +418,23 @@ public sealed partial class Distiller(ColleagueStore store)
 
     private sealed class CutOffException : Exception;
 
-    /// <summary>A description is one line in the prompt's list: whitespace collapsed, at most 200 characters.</summary>
-    private static string OneLine(string text)
+    /// <summary>How long a description may be — said to the model, and held to here.</summary>
+    internal const int DescriptionLimit = 200;
+
+    /// <summary>
+    /// A description is one line in the prompt's list: whitespace collapsed, at most <see cref="DescriptionLimit"/>
+    /// characters.
+    ///
+    /// <para>CUT AT A WORD, MARKED AS CUT: the model is told the limit, and one that runs past it still reads as a sentence
+    /// that stops — not "…terminal U", which every card and list showed.</para>
+    /// </summary>
+    internal static string OneLine(string text)
     {
         var line = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        return line[..Math.Min(line.Length, 200)];
+        if (line.Length <= DescriptionLimit) return line;
+        var cut = line[..(DescriptionLimit - 1)];
+        var space = cut.LastIndexOf(' ');
+        return (space > DescriptionLimit / 2 ? cut[..space] : cut).TrimEnd(' ', ',', ';', ':', '-', '—') + "…";
     }
 
     private static string? Oversized(Answer answer)
@@ -434,7 +450,7 @@ public sealed partial class Distiller(ColleagueStore store)
     /// <summary>Test seam: what the distiller is told.</summary>
     internal static string InstructionsForTest => Instructions;
 
-    private const string Instructions =
+    private static readonly string Instructions =
         "You keep the experience of a colleague: an AI worker that lives across many sessions and projects. After each "
         + "round of its work you fold what it learned into its experience, which is what every new session of it starts "
         + "from.\n\n"
@@ -479,8 +495,8 @@ public sealed partial class Distiller(ColleagueStore store)
         // core and the description, word for word.
         + "Answer with tagged parts, each rewritten whole. Put the complete new core between <core> and </core>. For "
         + "each codebase listed below whose experience changed, put its complete new text between <codebase key=\"KEY\"> "
-        + "and </codebase>, with KEY exactly as listed. Put one line saying what this colleague is good at between "
-        + "<description> and </description>. Leave out a part that did not change.\n\n"
+        + "and </codebase>, with KEY exactly as listed. Put one line of at most "
+        + $"{DescriptionLimit} characters saying what this colleague is good at between <description> and </description>. Leave out a part that did not change.\n\n"
         + "If the rounds teach nothing worth keeping, answer only: NO CHANGE";
 
     private static string Ask(Experience experience, Dictionary<string, string> touched, List<PastRound> batch)

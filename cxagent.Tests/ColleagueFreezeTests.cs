@@ -83,7 +83,10 @@ public sealed class ColleagueFreezeTests : IDisposable
         Assert.Equal(1, Library.Find("Charting")!.FrozenAfter);
     }
 
-    /// <summary>A freeze reaches a drain already under way: the rounds after it wait, as every frozen round does.</summary>
+    /// <summary>
+    /// A freeze reaches a drain already under way: the answer in flight is set aside — freezing keeps the experience as
+    /// it is — and the round it was for waits, as a round lived before a freeze does, to be learned once unfrozen.
+    /// </summary>
     [Fact]
     public async Task Freezing_during_a_drain_stops_it()
     {
@@ -93,7 +96,8 @@ public sealed class ColleagueFreezeTests : IDisposable
         await new Distiller(Library).DrainAllAsync(_ => _ => freezing, CancellationToken.None);
 
         Assert.Equal(1, freezing.Calls);
-        Assert.Equal(1, Library.Find("Charting")!.DistilledThrough);
+        Assert.Equal(0, Library.Find("Charting")!.DistilledThrough);
+        Assert.Equal(0, Library.Find("Charting")!.ExperienceVersion);
     }
 
     /// <summary>Answers once, freezing the colleague and living another round while the distiller waits on it.</summary>

@@ -2193,15 +2193,18 @@ public class SubAgentSpawnerTests
         Assert.Contains("- broken: Breaks things. (disabled: provider 'typo' is not a configured provider)", d, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// PROVIDER IS ALWAYS IN THE SCHEMA, which is built once while the types can change: a session whose config gave its
+    /// types providers mid-session was told of types that need one named, with no field to name it in.
+    /// </summary>
     [Fact]
-    public void Schema_OffersProvider_AsSoonAsAnyTypeListsOne()
+    public void Schema_OffersProvider_EvenBeforeAnyTypeListsOne()
     {
         static bool HasProvider(AgentTypeCatalog c) => new SubAgentSpawner(FactoryOver(Answering("x")), c)
             .Definition.InputSchema.GetProperty("properties").TryGetProperty("provider", out _);
 
         Assert.True(HasProvider(TwoProviderCatalog()));
-        Assert.True(HasProvider(ProviderCatalog(("scout", new AgentTypeConfig("Search.", "local") { Providers = ["local"] }))));
-        Assert.False(HasProvider(Catalog(("scout", "Search."))));
+        Assert.True(HasProvider(Catalog(("scout", "Search."))));
     }
 
     [Fact]

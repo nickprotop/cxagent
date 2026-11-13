@@ -559,7 +559,7 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
             ["folder"] = stored.Agent.Root ?? session.WorkingDirectory,
             ["badge"] = WebPanel.Badge(session.SubAgents.BadgeOf(stored.Name)),
             // WHICH OF A COLLEAGUE'S TWO TABS — the terminal's " · talk" / " · ask" — and null for any other worker.
-            ["door"] = AgentTab.Door(session.SubAgents, stored) is { Length: > 0 } door ? door.TrimStart(' ', '·') : null,
+            ["door"] = WebPanel.DoorOf(session, stored),
         });
         log.Subscribe(since, Send, replay =>
         {

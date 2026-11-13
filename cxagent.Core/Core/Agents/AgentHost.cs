@@ -92,6 +92,9 @@ public sealed class AgentHost : IDisposable
     /// <summary>What this host's agent was built from — for tests that check every runtime value reached it.</summary>
     internal AgentSetup AgentSetup => _agent.Setup;
 
+    /// <summary>Test seam: where the agent compresses its context now.</summary>
+    internal int? CompressAboveForTest => _agent.CompressAboveForTest;
+
 
     // The whole settings record rather than the one field read today: the compaction threshold is
     // derived from it per-agent (see BuildAgent), and the turn ceiling reads MaxTurns.
@@ -804,7 +807,13 @@ public sealed class AgentHost : IDisposable
             ContextWindow = model.ContextWindow ?? _runtime.ContextWindow,
         };
 
-        _agent.SwapProvider(model.Provider, model.InstanceName, model.ContextWindow);
+        // THE COMPRESS POINT MOVES WITH THE WINDOW when it is derived from it; a configured one is the user's budget and
+        // stays — see Agent.SwapProvider.
+        var orchestrator = _runtime.Orchestrator ?? OrchestratorSettings.Unbounded;
+        var compressAbove = orchestrator.ContextCompressThreshold is null && model.ContextWindow is not null
+            ? orchestrator.EffectiveCompressThreshold(_runtime.ContextWindow)
+            : null;
+        _agent.SwapProvider(model.Provider, model.InstanceName, model.ContextWindow, compressAbove);
     }
 
     private Agent BuildAgent()

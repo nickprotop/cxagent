@@ -327,9 +327,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         """;
 
     /// <summary>
-    /// The `provider` argument, offered as soon as any type lists a provider — even one, so a config
-    /// edit adding a second mid-session rarely meets a schema without it (the schema is built once, for
-    /// the prompt cache). With no lists at all there is nothing to choose.
+    /// The `provider` argument — ALWAYS OFFERED. The schema is built once, for the prompt cache, and the types are
+    /// not: a config edit mid-session that gave every type `"provider": "all"` announced types that need a provider
+    /// named, to a model whose schema had no field to name one with, and it concluded sub-agents cannot be started on
+    /// a chosen model. A type with nothing to choose refuses a provider it does not offer, and says which it does.
     /// </summary>
     private const string ProviderProperty =
         """
@@ -344,8 +345,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         JsonDocument.Parse(
             SchemaTemplate.Replace("{{BACKGROUND}}", CanBackground ? BackgroundProperty.Trim() : "",
                     StringComparison.Ordinal)
-                .Replace("{{PROVIDER}}", _types.All.Any(t => t.Offers.Count > 0) ? ProviderProperty.Trim() : "",
-                    StringComparison.Ordinal)).RootElement);
+                .Replace("{{PROVIDER}}", ProviderProperty.Trim(), StringComparison.Ordinal)).RootElement);
 
     /// <summary>The spawn tool's argument schema, with a slot for the background flag.</summary>
     private const string SchemaTemplate =

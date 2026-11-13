@@ -120,6 +120,30 @@ public sealed class ColleagueStoreTests : IDisposable
         Assert.Equal([2L, 3L], store.Undistilled("Charting").Select(r => r.Seq));
     }
 
+    /// <summary>
+    /// ROUNDS ALREADY LEARNED FROM ARE NOT READ: a line before the watermark is passed over on its seq — here one no
+    /// reader could parse — and with nothing after the watermark the past is not opened at all.
+    /// </summary>
+    [Fact]
+    public void Rounds_already_learned_from_are_passed_over_unread()
+    {
+        var store = Store();
+        store.Create(Record("Charting"));
+        store.Append("Charting", Round());
+        store.Append("Charting", Round());
+        var past = Path.Combine(_config, "colleagues", "charting", "past.jsonl");
+        var lines = File.ReadAllLines(past);
+        File.WriteAllLines(past, [lines[0][..20] + "NOT JSON", lines[1]]);
+
+        store.Save(store.Find("Charting")! with { DistilledThrough = 1 });
+        Assert.Equal([2L], store.Undistilled("Charting").Select(r => r.Seq));
+        Assert.Equal([2L], store.Past("Charting", after: 1).Select(r => r.Seq));
+
+        store.Save(store.Find("Charting")! with { DistilledThrough = 2 });
+        File.WriteAllText(past, "NOT A PAST AT ALL");
+        Assert.Empty(store.Undistilled("Charting"));
+    }
+
     [Fact]
     public void Experience_round_trips_core_and_codebases()
     {

@@ -344,6 +344,48 @@ public sealed class ColleagueJoinTests : IDisposable
         Assert.Contains("first", Sent(model));
     }
 
+    /// <summary>
+    /// A HANDLE THAT RETURNS COMES BACK WITHOUT THE OLD MARK: a worker kept from its tab is the colleague's conversation;
+    /// released and brought again under the same handle, the new worker is its Ask worker — still marked, its asks were
+    /// not fresh and the lead's sends went into the user's conversation.
+    /// </summary>
+    [Fact]
+    public async Task A_conversation_released_does_not_mark_the_worker_brought_back()
+    {
+        Charting();
+        var session = Open(new MockLlmProvider());
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+        session.SubAgents.KeepConversation("charting");
+        Assert.StartsWith("Charting has left this session.", session.Colleagues.Release("Charting"));
+
+        await session.Colleagues.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+
+        Assert.NotNull(session.SubAgents.Find("charting"));
+        Assert.False(session.SubAgents.KeepsConversation("charting"));
+        Assert.Equal("charting", session.Colleagues.HandleHere("Charting"));
+    }
+
+    /// <summary>
+    /// RENAMED ELSEWHERE, IT IS STILL THE ONE HERE: its worker carries the old name until it next runs, and asked by the
+    /// new one a second worker was brought in beside it, both adding rounds.
+    /// </summary>
+    [Fact]
+    public async Task A_colleague_renamed_elsewhere_is_still_the_one_here()
+    {
+        Charting();
+        var session = Open(new MockLlmProvider());
+        await session.Colleagues!.BringAsync(new BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+        var talk = (await session.Colleagues.OpenTalkAsync("Charting", session.SessionId!, CancellationToken.None)).Handle;
+
+        Assert.Null(ColleagueRenaming.Rename(Library, null, new RenameOrder("Charting", "Plotter")));
+
+        Assert.Equal("charting", session.Colleagues.HandleHere("Plotter"));
+        Assert.Equal(talk, session.Colleagues.TalkHere("Plotter"));
+        Assert.Equal(talk, (await session.Colleagues.OpenTalkAsync("Plotter", session.SessionId!, CancellationToken.None)).Handle);
+        await session.Colleagues.BringAsync(new BringOrder("Plotter", "", null, true, session.SessionId!), CancellationToken.None);
+        Assert.Equal(2, session.SubAgents.All().Count);
+    }
+
     /// <summary>RELEASE LETS BOTH GO: its Ask worker and its Talk worker.</summary>
     [Fact]
     public async Task Release_lets_both_workers_go()

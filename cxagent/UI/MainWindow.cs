@@ -2890,7 +2890,7 @@ public sealed class MainWindow : IDisposable
                 // b OR ⇥ MOVES A FOREGROUND AGENT TO THE BACKGROUND; x OR ⏹ STOPS IT ALONE (Ctrl+B spec 6′, 11).
                 if (choice.Action == JobsPanel.RowAction.Background)
                 {
-                    session.MoveToBackground(view.Kept.Name);
+                    session.MoveToBackground(view.Acting.Name);
                     break;
                 }
                 // RELEASE, THROUGH /colleagues release — its answer said in the session, refusals included. On the pool:
@@ -2925,8 +2925,9 @@ public sealed class MainWindow : IDisposable
                     if (OpenAgentTab(session, view.Kept.Name) is { } refusal) session.NotifyWarning(refusal);
                 }
                 // ALONE IF THE TURN WAITS ON IT, THROUGH /tasks stop OTHERWISE — decided by StopAgent, not this view,
-                // which can still say foreground for a second after a move.
-                else if (view.Running) _ = Task.Run(() => session.StopAgent(view.Kept.Name));
+                // which can still say foreground for a second after a move. THE RUN THE ROW SHOWS is what stops: a
+                // colleague's card showing its conversation at work stops the Talk worker, not the Ask worker at rest.
+                else if (view.Running) _ = Task.Run(() => session.StopAgent(view.Acting.Name));
                 else Forget(session, view);
                 break;
         }
@@ -3042,7 +3043,8 @@ public sealed class MainWindow : IDisposable
         var agents = AgentRows.For(session.SubAgents, DateTimeOffset.UtcNow)
             .Select(a => (JobsPanel.PanelRow)new JobsPanel.AgentRow(a)
             {
-                Colleague = a.Badge is null ? null : session.Colleagues?.CardOf(a.Kept.Name),
+                // THE TASK OF THE RUN SHOWN: beside "talking with you", what was said in the conversation, not the last ask.
+                Colleague = a.Badge is null ? null : session.Colleagues?.CardOf(a.Acting.Name),
             });
         JobsPanel.Refresh(new JobsPanel.JobsShown(JobsPanel.Order(shells.Concat(agents)), RunningTasksOf(session, Jobs))
         {
@@ -4673,14 +4675,10 @@ public sealed class MainWindow : IDisposable
 
     private StatusBarItem? _distillItem;
 
-    /// <summary>The status bar's distilling word, or null when nothing is distilling — the browser's status line says the same.</summary>
-    public static string? DistillingText(IReadOnlyList<string> names) =>
-        names.Count == 0 ? null : $"distilling {string.Join(", ", names)}…";
-
     /// <summary>Shows who is being distilled, or hides the word when nobody is.</summary>
     private void SetDistilling(IReadOnlyList<string> names)
     {
-        if (DistillingText(names) is not { } text)
+        if (CxAgent.Core.Colleagues.ColleagueDesk.DistillingText(names) is not { } text)
         {
             if (_distillItem is not null) _distillItem.IsVisible = false;
             return;

@@ -540,4 +540,18 @@ public sealed class DistillerTests : IDisposable
 
         Assert.DoesNotContain("elsewhere-12345678", _store.ReadExperience("Charting").Codebases.Keys);
     }
+
+    /// <summary>
+    /// A DESCRIPTION OVER THE LIMIT STOPS AT A WORD, marked as cut — every card and list showed "…terminal U" — and the
+    /// model is told the limit it is held to.
+    /// </summary>
+    [Fact]
+    public void A_long_description_is_cut_at_a_word()
+    {
+        var said = Distiller.OneLine(string.Join(' ', Enumerable.Repeat("terminal", 40)));
+
+        Assert.True(said.Length <= Distiller.DescriptionLimit);
+        Assert.EndsWith("terminal…", said);
+        Assert.Equal("short and whole", Distiller.OneLine("short\n and   whole"));
+    }
 }

@@ -423,4 +423,21 @@ public sealed class ColleagueDeskTests : IDisposable
 
         await Send(session, "charting", "next").WaitAsync(TimeSpan.FromSeconds(10));
     }
+
+    /// <summary>
+    /// A ROUND A COMPACTION CUT INTO is the summary and what followed — never the tail kept from before it, which the past
+    /// already has: taking everything copied earlier rounds into the next, and the distiller read old evidence as new.
+    /// </summary>
+    [Fact]
+    public void A_compacted_round_keeps_only_what_was_not_held()
+    {
+        ChatMessage M(string text) => new() { Role = "user", Content = text };
+        var (a, b, c) = (M("a"), M("b"), M("c"));
+        var held = ColleagueDesk.Held.Of([new ChatMessage { Role = "system", Content = "s" }, a, b, c]);
+        var (summary, d, e) = (M("summary"), M("d"), M("e"));
+
+        // THE RUN'S START SUMMARIZED AWAY, an older message kept: the round is the summary and what is new, not "b".
+        Assert.Equal(["summary", "d", "e"], held.Since([summary, b, d, e]).Select(m => m.Content));
+        Assert.Equal(["d", "e"], held.Since([a, b, c, d, e]).Select(m => m.Content));
+    }
 }

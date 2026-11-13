@@ -72,11 +72,30 @@ internal static class WebPanel
         foreach (var (row, folded) in rows)
         {
             // A COLLEAGUE CARRIES ITS CARD AND NO TYPE — the facts F7's card draws, in the terminal's own words.
-            var card = row.Badge is null ? null : session.Colleagues?.CardOf(row.Kept.Name);
+            // THE TASK OF THE RUN SHOWN, as on the terminal's card: the conversation's while it is at work.
+            var card = row.Badge is null ? null : session.Colleagues?.CardOf(row.Acting.Name);
             workers.Add(new JsonObject
             {
                 ["folded"] = folded,
                 ["agentId"] = row.AgentId,
+                // WHAT A STOP OR A MOVE ON THE CARD REACHES: the worker whose run it shows — a colleague's Talk worker
+                // while its conversation is at work, though the card is its Ask worker's.
+                ["actingAgentId"] = row.Acting.Agent.Agent.Id,
+                // WHICH DOOR, AND WHETHER THE OTHER IS AT WORK: an open tab re-reads both each panel, as the terminal's tab
+                // re-reads them each tick — a worker kept from its tab becomes a Talk worker then, and one forgotten loses
+                // its badge; the desk refuses Release while either door is busy, so the tab does not offer it then.
+                ["door"] = DoorOf(session, row.Kept),
+                ["otherBusy"] = AgentRows.OtherDoorBusy(session.SubAgents, row.Kept, now),
+                // THE ASK WORKER'S OWN STATE when the card shows another's run — what its tab reads, so an Ask tab does not
+                // take on the conversation's state, its Stop and its hidden Release.
+                ["own"] = row.Own is { } own && card is not null ? new JsonObject
+                {
+                    ["state"] = own.State.ToString(),
+                    ["running"] = own.Running,
+                    ["background"] = !own.Foreground,
+                    ["seconds"] = (int)own.Elapsed.TotalSeconds,
+                    ["colleague"] = ColleagueCard(session.Colleagues?.CardOf(row.Kept.Name) ?? card, AgentRows.ColleagueWord(own, card)),
+                } : null,
                 ["name"] = row.Kept.Name,
                 ["type"] = row.Badge is null ? row.Kept.TypeName : null,
                 ["colleague"] = card is null ? null : ColleagueCard(card, AgentRows.ColleagueWord(row, card)),
@@ -171,6 +190,9 @@ internal static class WebPanel
                 : null,
             // THE SAME ROWS THE TERMINAL'S SECTION DRAWS; null with no colleagues, so the pane leaves it out.
             ["colleagues"] = Colleagues(session.Colleagues?.Panel()),
+            // WHO IS BEING DISTILLED, in the terminal status bar's words — apart from the colleagues section, which a
+            // one-to-one leaves out: there every exchange is distilled, and the page said nothing of it.
+            ["distilling"] = Core.Colleagues.ColleagueDesk.DistillingText(session.Colleagues?.Distilling ?? []),
             ["model"] = res?.InstanceName,
             ["thinking"] = new JsonObject
             {
@@ -196,6 +218,10 @@ internal static class WebPanel
             },
         };
     }
+
+    /// <summary>Which of a colleague's two tabs a worker is — "talk" or "ask" — or null for any other worker.</summary>
+    internal static string? DoorOf(Session session, Core.Agents.StoredAgent stored) =>
+        AgentTab.Door(session.SubAgents, stored) is { Length: > 0 } door ? door.TrimStart(' ', '·') : null;
 
     /// <summary>A worker's badge as the page reads it — the same three facts the terminal shows — or null.</summary>
     internal static JsonObject? Badge(Core.Agents.WorkerBadge? badge) =>

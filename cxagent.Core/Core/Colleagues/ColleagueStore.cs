@@ -134,6 +134,11 @@ public sealed partial class ColleagueStore(string configDir)
         // A LAST LINE WITH NO NEWLINE — a process that died mid-append — is ended first, so this round is a line of its
         // own rather than the tail of a line no reader can parse.
         var line = JsonSerializer.Serialize(round with { Seq = seq }, Line) + "\n";
+
+        // THE PLACE IS TAKEN BEFORE THE LINE IS WRITTEN: a process that dies between the two leaves a number unused — a
+        // gap nothing minds — where the other order left the next round the same number as one already learned from,
+        // and so never learned from at all.
+        File.WriteAllText(seqPath, seq.ToString(System.Globalization.CultureInfo.InvariantCulture));
         using (var stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read))
         {
             if (stream.Length > 0)
@@ -145,7 +150,6 @@ public sealed partial class ColleagueStore(string configDir)
             stream.Write(Encoding.UTF8.GetBytes(line));
             stream.Flush(flushToDisk: true);
         }
-        File.WriteAllText(seqPath, seq.ToString(System.Globalization.CultureInfo.InvariantCulture));
         return seq;
     }
 
@@ -167,7 +171,11 @@ public sealed partial class ColleagueStore(string configDir)
     {
         if (Find(name) is not { } record) return [];
         if (record.Frozen) return [];
-        return Past(name).Where(r => r.Seq > record.DistilledThrough && !record.Unlearned.Any(u => u.Holds(r.Seq))).ToList();
+        // NOTHING PAST THE WATERMARK, NOTHING READ: this is asked at every ask, every few hundred milliseconds while one
+        // waits to learn, and around every distilling — and a past is never trimmed, so reading it whole each time made
+        // every ask slower as the colleague grew. Unlearned ranges only ever leave rounds out, never add one.
+        if (RoundCount(name) <= record.DistilledThrough) return [];
+        return Past(name, after: record.DistilledThrough).Where(r => !record.Unlearned.Any(u => u.Holds(r.Seq))).ToList();
     }
 
     /// <summary>
@@ -204,7 +212,13 @@ public sealed partial class ColleagueStore(string configDir)
     }
 
     /// <summary>Every round, in order. A line that cannot be read is skipped: one damaged round costs that round.</summary>
-    public IReadOnlyList<PastRound> Past(string name)
+    public IReadOnlyList<PastRound> Past(string name) => Past(name, after: 0);
+
+    /// <summary>
+    /// Its rounds after <paramref name="after"/>, in order. A line at or before it is passed over on its seq alone — read
+    /// from the line's start, as <see cref="LastSeq"/> does — so the rounds already learned from are never deserialized.
+    /// </summary>
+    public IReadOnlyList<PastRound> Past(string name, long after)
     {
         var path = Path.Combine(FolderOf(name), "past.jsonl");
         if (!File.Exists(path)) return [];
@@ -213,6 +227,7 @@ public sealed partial class ColleagueStore(string configDir)
         while (reader.ReadLine() is { } line)
         {
             if (line.Length == 0) continue;
+            if (after > 0 && SeqOf(line) is { } seq && seq <= after) continue;
             try
             {
                 if (JsonSerializer.Deserialize<PastRound>(line, Line) is { } round) rounds.Add(round);
@@ -432,16 +447,23 @@ public sealed partial class ColleagueStore(string configDir)
         if (!File.Exists(path)) return 0;
         long last = 0;
         foreach (var line in File.ReadLines(path))
-        {
-            // ONLY THE SEQ IS WANTED, so only the start of each line is parsed — a round can be megabytes.
-            var at = line.IndexOf("\"seq\":", StringComparison.Ordinal);
-            if (at < 0) continue;
-            var start = at + 6;
-            var end = start;
-            while (end < line.Length && char.IsAsciiDigit(line[end])) end++;
-            if (long.TryParse(line.AsSpan(start, end - start), out var seq) && seq > last) last = seq;
-        }
+            if (SeqOf(line) is { } seq && seq > last) last = seq;
         return last;
+    }
+
+    /// <summary>
+    /// A round line's seq, read from its start — the first property written — or null for a line that has none there.
+    /// ONLY THE SEQ IS WANTED, so only the start of the line is looked at: a round can be megabytes.
+    /// </summary>
+    private static long? SeqOf(string line)
+    {
+        const string marker = "\"seq\":";
+        var at = line.IndexOf(marker, 0, Math.Min(line.Length, 64), StringComparison.Ordinal);
+        if (at < 0) return null;
+        var start = at + marker.Length;
+        var end = start;
+        while (end < line.Length && char.IsAsciiDigit(line[end])) end++;
+        return long.TryParse(line.AsSpan(start, end - start), out var seq) ? seq : null;
     }
 
     /// <summary>

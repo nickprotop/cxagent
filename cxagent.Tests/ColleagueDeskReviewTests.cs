@@ -63,6 +63,36 @@ public sealed class ColleagueDeskReviewTests : IDisposable
         Assert.Equal("main", _marks.First(m => m.Name is not null).Instance);
     }
 
+    /// <summary>
+    /// ALREADY HERE ON ANOTHER MODEL, A BRING NAMING A MODEL SENDS NOTHING: the task went to the worker here, on the model
+    /// it was brought on — a paid one, where the user had asked for the local — and nothing said so.
+    /// </summary>
+    [Fact]
+    public async Task A_bring_naming_another_model_for_a_colleague_here_is_refused()
+    {
+        Charting();
+        var spawner = new Recording(_workers);
+        var desk = new ColleagueDesk(new ColleagueDeskParts
+        {
+            Library = Library, Workers = _workers, Spawner = spawner, Folder = _project, SessionId = () => "session",
+            NoteWorker = _marks.Add,
+            Models = name => name switch
+            {
+                null or "main" => new ModelChoice(_main, "main:m", 200_000, "main"),
+                "local" => new ModelChoice(new MockLlmProvider("q"), "local:q", 200_000, "local"),
+                _ => null,
+            },
+        });
+        await desk.BringAsync(new BringOrder("Charting", "", null, true, "lead"), CancellationToken.None);
+
+        var said = await desk.BringAsync(Bring("local"), CancellationToken.None);
+
+        Assert.Contains("the task was not sent", said);
+        Assert.Contains("local:q", said);
+        Assert.Contains("There is no provider entry 'nowhere'", await desk.BringAsync(Bring("nowhere"), CancellationToken.None));
+        Assert.Single(spawner.Orders);
+    }
+
     [Fact]
     public async Task Two_brings_at_once_make_one_incarnation()
     {

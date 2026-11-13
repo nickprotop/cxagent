@@ -262,8 +262,9 @@ public sealed class AgentTab : IDisposable
     /// <summary>Whether Background is offered: the parent's turn is waiting on this agent, in a session still open.</summary>
     public bool CanMove => _now is { Running: true, Foreground: true } && !Session.SubAgents.Ended;
 
-    /// <summary>Whether Release is offered: a colleague, at rest, in a session still open.</summary>
+    /// <summary>Whether Release is offered: a colleague, at rest through both its doors, in a session still open.</summary>
     public bool CanRelease => Session.SubAgents.BadgeOf(Kept.Name) is not null && _now is not { Running: true }
+                              && !AgentRows.OtherDoorBusy(Session.SubAgents, Kept, DateTimeOffset.UtcNow)
                               && !Session.SubAgents.Ended;
 
     /// <summary>Whether New conversation is offered: a colleague's Talk tab, at rest, in a session still open.</summary>

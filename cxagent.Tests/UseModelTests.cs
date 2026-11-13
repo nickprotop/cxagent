@@ -140,6 +140,29 @@ public class UseModelTests : IDisposable
         Assert.NotSame(first, session.Provider);
     }
 
+    /// <summary>
+    /// THE COMPRESS POINT MOVES WITH THE WINDOW when derived from it — kept at the old model's, a session moved from a
+    /// 212k model to a 1M one went on compressing at the small one's point — and a configured one, the user's budget,
+    /// stays where it was set.
+    /// </summary>
+    [Theory]
+    [InlineData(null, 25_600, 102_400)]
+    [InlineData(10_000, 10_000, 10_000)]
+    public void Use_ByName_MovesADerivedCompressPointWithTheWindow(int? configured, int before, int after)
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var registry = TwoInstances(out _, out _);
+        var session = manager.Open(_dir,
+            new ResolvedConfig(registry.Use("one"), new ProviderCatalog(registry,
+                Orchestrator: new OrchestratorSettings(ContextCompressThreshold: configured)), []),
+            Ports(), AgentMode.Single);
+        Assert.Equal(before, session.Host!.CompressAboveForTest);
+
+        Assert.Equal(CommandStatus.Changed, session.Use("two"));
+
+        Assert.Equal(after, session.Host!.CompressAboveForTest);
+    }
+
     /// <summary>A name the catalog does not know is refused, and the session says so — one speaker
     /// per outcome, which is why Use returns null rather than announcing anything itself.</summary>
     [Fact]

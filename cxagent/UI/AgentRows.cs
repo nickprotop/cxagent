@@ -32,6 +32,24 @@ public sealed record AgentRowView(StoredAgent Kept, AgentRowState State, bool Fo
 
     /// <summary>What the card shows is the Talk worker at work — "talking with you" rather than "answering an ask".</summary>
     public bool Talking { get; init; }
+
+    /// <summary>
+    /// The worker whose run this row shows — <see cref="Kept"/>, unless a colleague's card shows its Talk worker at work.
+    ///
+    /// <para>WHAT A STOP OR A TASK LINE MEANS: the card stays the Ask worker's, its doors and identity, but the run on it
+    /// is the Talk worker's — stopping the Ask worker there answered "nothing to stop" while the conversation ran on, and
+    /// the task shown beside "talking with you" was the last ask's.</para>
+    /// </summary>
+    public StoredAgent Acting => ActingOverride ?? Kept;
+
+    /// <summary>The worker set to act for the card — its Talk worker — or null for <see cref="Kept"/> itself.</summary>
+    public StoredAgent? ActingOverride { get; init; }
+
+    /// <summary>
+    /// The Ask worker's own row when the card shows another's run, else null — what its own tab reads, so an Ask tab
+    /// does not take on the conversation's state.
+    /// </summary>
+    public AgentRowView? Own { get; init; }
 }
 
 /// <summary>
@@ -108,10 +126,23 @@ public static class AgentRows
             row = row with { TalkAgentId = talk?.Agent.Agent.Id, Talking = talk is not null && ReferenceEquals(talk, kept) && row.Running };
             // THE CONVERSATION AT WORK SHOWS ON THE CARD while the asks are at rest: the colleague is busy either way.
             if (!row.Running && talk is not null && !ReferenceEquals(talk, kept) && Row(store, talk, now) is { Running: true } talking)
-                row = talking with { Kept = kept, TalkAgentId = talk.Agent.Agent.Id, Talking = true, Badge = row.Badge };
+                row = talking with { Kept = kept, TalkAgentId = talk.Agent.Agent.Id, Talking = true, Badge = row.Badge, ActingOverride = talk, Own = row };
             rows.Add(row);
         }
         return rows;
+    }
+
+    /// <summary>
+    /// Whether a colleague's OTHER worker here — the Talk worker for an Ask tab, the Ask worker for a Talk tab — is at
+    /// work. The desk lets a colleague go only with both at rest, so a tab offering Release on its own worker's rest alone
+    /// offered a press that was refused.
+    /// </summary>
+    public static bool OtherDoorBusy(SubAgentStore store, StoredAgent kept, DateTimeOffset now)
+    {
+        if (store.OriginOf(kept.Name) is not { } origin) return false;
+        var other = store.KeepsConversation(kept.Name) ? store.NameOfOrigin(origin) : store.ConversationOf(origin);
+        return other is not null && other != kept.Name && store.Find(other) is { } found
+            && Describe(store, found, now) is { Running: true };
     }
 
     private static AgentRowView? Row(SubAgentStore store, StoredAgent kept, DateTimeOffset now) =>

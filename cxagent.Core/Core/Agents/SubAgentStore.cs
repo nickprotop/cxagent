@@ -336,6 +336,7 @@ public sealed class SubAgentStore
             }
             _forgotten.Clear();
             _origins.Clear();
+            _conversations.Clear();
         }
     }
 
@@ -493,6 +494,9 @@ public sealed class SubAgentStore
         _foreground.TryRemove(name, out _);
         _foregroundStops.TryRemove(name, out _);
         _busy.TryRemove(name, out _);
+        // WHAT IT WAS GOES WITH IT: a colleague brought back under this handle is its Ask worker, and the mark of the
+        // conversation it was made its asks not fresh and sent the lead's work into the user's conversation.
+        _conversations.TryRemove(name, out _);
 
         Forgotten?.Invoke(agentId);
         return ForgetOutcome.Forgotten;
