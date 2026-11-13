@@ -548,8 +548,11 @@ internal static class SessionFactory
             TurnHistory.Carry(Path.Combine(pastLogs.DirFor(resumed.AgentId), TurnHistory.FileName), turnsFile);
         if (session.Turns is not { } turns || turns.KeptAt != turnsFile) session.Turns = turns = new TurnHistory(turnsFile);
         turns.Start(host.Ledger.Read());
-        var turnWindow = resolution.ContextWindow;
-        host.TurnCompleted += (_, _) => turns.Note(host.Ledger.Read(), turnWindow);
+        // THE WINDOW AS IT IS AT EACH TURN, not as it was wired: a /model switch swaps the window in place without a
+        // re-wire, and a session moved to a 1M model went on plotting its context against the 212k one it left — 64% on
+        // the per-turn line beside 14% on the gauge above it.
+        var wiredWindow = resolution.ContextWindow;
+        host.TurnCompleted += (_, _) => turns.Note(host.Ledger.Read(), host.Context.Window ?? wiredWindow);
 
         // A ONE-TO-ONE'S EVERY EXCHANGE IS A ROUND OF THE COLLEAGUE'S PAST, distilled like any other.
         if (session.OneToOne is { } oneToOne)

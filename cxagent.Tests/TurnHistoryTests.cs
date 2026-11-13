@@ -112,6 +112,31 @@ public sealed class TurnHistoryTests : IDisposable
     }
 
     /// <summary>
+    /// A TURN RECORDS THE WINDOW IT RAN AGAINST: after a /model switch to a 1M model, not the 212k one the session was wired
+    /// with — the per-turn context line read 64% beside the gauge's 14%.
+    /// </summary>
+    [Fact]
+    public async Task A_turn_after_a_model_switch_records_the_new_window()
+    {
+        var paths = new CxAgent.Core.Storage.AppPaths(Path.Combine(_dir, "config"));
+        paths.EnsureCreated();
+        var small = new MockLlmProvider("small");
+        var big = new MockLlmProvider("big");
+        big.EnqueueResponse(new LlmResponse { Text = "hi", StopReason = "end_turn", Usage = Usage(4_000, 20, cached: 3_000) });
+        var session = new Session(Path.Combine(_dir, "work"));
+        Directory.CreateDirectory(session.WorkingDirectory);
+        SessionFactory.Wire(session, ResolvedConfig.ForTesting(small) is var r ? r with { Model = r.Model! with { ContextWindow = 212_992 } } : null!,
+            new SharedServices { GlobalInstructionsDir = paths.ConfigDir, Logs = new CxAgent.Core.Storage.LogFileManager(paths) },
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
+        session.Use(new ActiveModel(big, "big", "big", 1_000_000));
+
+        session.Submit("say hi");
+
+        Assert.True(await Poll.Until(() => session.Turns!.Points.Count == 1));
+        Assert.Equal(1_000_000, session.Turns!.Points[0].Window);
+    }
+
+    /// <summary>
     /// A RESUME STARTS A NEW AGENT, with logs of its own, so the history it continues is carried from the session it
     /// resumes — and from there to the next resume.
     /// </summary>
