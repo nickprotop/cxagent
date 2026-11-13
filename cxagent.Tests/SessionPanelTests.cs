@@ -634,6 +634,28 @@ public class SessionPanelTests
         Assert.Contains(CostWords.NotReported, text, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// THE SESSION LINE BREAKS BETWEEN ITS PARTS, NEVER INSIDE ONE (user, 2026-11-13): "0 tool" at the end of one line and
+    /// "calls" alone on the next read as two facts.
+    /// </summary>
+    [Theory]
+    [InlineData(30, 2)]
+    [InlineData(60, 1)]
+    public void Refresh_TheSessionLine_BreaksOnlyBetweenItsParts(int width, int lines)
+    {
+        var panel = new SessionPanel();
+        panel.Follow(new CxAgent.Core.Sessions.SessionTally { Turns = 12, ToolCalls = 140 });
+        panel.Refresh(new SessionPanel.SessionPanelState { Endpoint = "", Rules = 0, Width = width });
+
+        var text = System.Text.RegularExpressions.Regex.Replace(panel.RenderedText, @"\[[^\]]*\]", "").Split('\n');
+        var at = Array.FindIndex(text, l => l.Contains("12 turns", StringComparison.Ordinal));
+        var block = text.Skip(at).Take(lines).ToList();
+
+        Assert.Contains(block, l => l.Contains("140 tool calls", StringComparison.Ordinal));
+        Assert.All(block, l => Assert.True(l.TrimEnd().Length <= width - 4, $"'{l}' is {l.TrimEnd().Length} wide"));
+        if (lines == 1) Assert.Contains("12 turns · 140 tool calls", block[0], StringComparison.Ordinal);
+    }
+
     /// <summary>A LONG NAME IS CUT, NEVER WRAPPED (user, 2026-11-13): its wrapped half had no rail and broke the block.</summary>
     [Fact]
     public void Refresh_ALongInstanceName_FitsOnItsLine()

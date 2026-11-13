@@ -464,10 +464,13 @@ public sealed class SessionPanel
                 lines.Add(Muted($"  cache {StatsDashboard.Percent(ownRate)}"));
         }
 
-        // THE SESSION ON ONE LINE: how long, how many model responses, how many tool calls.
+        // THE SESSION ON ONE LINE: how long, how many model responses, how many tool calls — BROKEN ONLY BETWEEN THEM where
+        // the panel is too narrow (user, 2026-11-13): wrapped by the control, "0 tool" ended one line and "calls" stood
+        // alone on the next.
         Section(lines, "Session", state.Width);
-        lines.Add(Value($"{Elapsed()} · {_tally.Turns} turn{(_tally.Turns == 1 ? "" : "s")} · "
-                        + $"{_tally.ToolCalls} tool call{(_tally.ToolCalls == 1 ? "" : "s")}"));
+        foreach (var line in Packed(GaugeWidth(state.Width), Elapsed(), $"{_tally.Turns} turn{(_tally.Turns == 1 ? "" : "s")}",
+                     $"{_tally.ToolCalls} tool call{(_tally.ToolCalls == 1 ? "" : "s")}"))
+            lines.Add(Value(line));
 
         // THE FACTS THAT DO NOT MOVE, IN ONE BLOCK (user, 2026-11-11): each a muted label beside its first value, so seven
         // sections that took most of the panel's height take a line or two each, below the live state. NO MODEL: it sits on
@@ -795,6 +798,25 @@ public sealed class SessionPanel
 
     private static string Muted(string text) =>
         $"[{ColorScheme.MutedMarkup}]{SharpConsoleUI.Parsing.MarkupParser.Escape(text)}[/]";
+
+    /// <summary>
+    /// <paramref name="parts"/> joined with " · " into as few lines as fit <paramref name="room"/> columns, each part
+    /// kept whole; a part wider than the room alone gets a line of its own.
+    /// </summary>
+    private static IEnumerable<string> Packed(int room, params string[] parts)
+    {
+        var line = "";
+        foreach (var part in parts)
+        {
+            if (line.Length > 0 && line.Length + 3 + part.Length > room)
+            {
+                yield return line;
+                line = "";
+            }
+            line = line.Length == 0 ? part : line + " · " + part;
+        }
+        if (line.Length > 0) yield return line;
+    }
 
     private string Elapsed()
     {
