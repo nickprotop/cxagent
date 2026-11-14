@@ -1312,6 +1312,56 @@ public sealed partial class ColleagueDesk : IDisposable
         _workers.Find(handle) is { } kept && Incarnation(kept.Agent.Agent.Id) is { } found ? Freeze(found.Name, freeze) : null;
 
     /// <summary>
+    /// Whether the Ask tab's <b>Send to session</b> is offered: a colleague's Ask worker at rest, whose last run the user
+    /// started and which completed, not already handed over (user, 2026-11-14).
+    ///
+    /// <para>THE USER'S OWN ASK ONLY. An answer to the model's ask is already the model's; the user's never reaches it
+    /// (AgentReachTools), and this is the by-hand way it may. ASK ONLY: a Talk conversation is the user's own. ONCE PER
+    /// ANSWER, so a press does not hand the same answer over twice. Cheap — no conversation is read — since a tab asks
+    /// on every tick.</para>
+    /// </summary>
+    public bool CanHandOver(string handle) =>
+        _workers.BadgeOf(handle) is not null && !IsTalk(handle) && !_workers.IsBusy(handle)
+        && _workers.LastRunByUser(handle)
+        && _workers.LastEnd(handle) is { Succeeded: true } end
+        && !(_handed.TryGetValue(handle, out var at) && at == end.At);
+
+    /// <summary>
+    /// The user's last ask of this colleague and its answer, as one block for the session's composer, and marks it handed
+    /// over; null when <see cref="CanHandOver"/> says no or there is no answer to give. THE QUESTION GOES WITH IT: an
+    /// answer alone ("yes, the second one") means nothing to a session that never saw what was asked.
+    /// </summary>
+    public Models.PastedText? HandOver(string handle)
+    {
+        if (!CanHandOver(handle) || _workers.Find(handle) is not { } kept || Incarnation(kept.Agent.Agent.Id) is not { } found
+            || _workers.AskedOf(handle) is not { } question || LastAnswer(kept) is not { } answer
+            || _workers.LastEnd(handle) is not { } end)
+            return null;
+        _handed[handle] = end.At;
+        var text = $"I asked {found.Name}, a colleague: {question.Trim()}\n\n{found.Name} answered:\n{answer.Trim()}";
+        var lines = text.Count(c => c == '\n') + 1;
+        return new Models.PastedText($"[{found.Name}'s answer +{lines} lines]", text);
+    }
+
+    /// <summary>
+    /// The worker's final reply: its last assistant text after the last user message. READ ONLY AT REST — the caller has
+    /// checked it is not busy, so its loop is not appending to the list being read.
+    /// </summary>
+    private static string? LastAnswer(StoredAgent kept)
+    {
+        var messages = kept.Agent.Agent.Context.Messages;
+        for (var i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i].Role == "user") return null;
+            if (messages[i].Role == "assistant" && !string.IsNullOrWhiteSpace(messages[i].Content)) return messages[i].Content;
+        }
+        return null;
+    }
+
+    // WHICH ANSWER WAS HANDED OVER, by handle: the end time of the run it came from.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _handed = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// At the end of each stretch of a worker's work, whether it has earned an offer: steered twice by the user, followed
     /// up three times by the agent, or four rounds here (spec §9, thresholds conservative). ONCE PER WORKER, and never for
     /// a colleague's own worker, in a one-to-one, or with suggestions or colleagues off.

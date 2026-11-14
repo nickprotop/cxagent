@@ -53,6 +53,13 @@ public sealed class AgentTab : IDisposable
     private readonly ButtonControl _release;
     private readonly ButtonControl _skipWait;
     private readonly ButtonControl _newTalk;
+    private readonly ButtonControl _handOver;
+
+    /// <summary>
+    /// <b>Send to session</b> was pressed: the user's last ask and its answer, for the window to put in the session's
+    /// composer. An event, because the tab does not know the window that holds the session's tab.
+    /// </summary>
+    public event Action<Core.Models.PastedText>? HandedOver;
     /// <summary>
     /// The state in capitals at the head of the button row. THE ROW IS NEVER BLANK: Stop and Background are there
     /// only while the agent runs, and without this an idle tab opened on an empty line above a lone rule.
@@ -123,10 +130,21 @@ public sealed class AgentTab : IDisposable
             })
             .Build();
         _newTalk.Visible = false;
+        // SEND TO SESSION, IN AN ASK TAB AT REST after the user's own ask (user, 2026-11-14): the question and its answer
+        // go to the session's composer as one block, for the user to say what to do with it — never sent by itself.
+        _handOver = new ButtonBuilder()
+            .WithText(" Send to session ")
+            .OnClick((object? _, ButtonControl _) =>
+            {
+                if (Session.Colleagues?.HandOver(Kept.Name) is { } block) HandedOver?.Invoke(block);
+            })
+            .Build();
+        _handOver.Visible = false;
         var bar = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
         bar.AddItem(_state);
         bar.AddItem(_skipWait);
         bar.AddItem(_newTalk);
+        bar.AddItem(_handOver);
         bar.AddItem(_release);
         bar.AddItem(_move);
         bar.AddItem(_stop);
@@ -276,6 +294,9 @@ public sealed class AgentTab : IDisposable
     /// <summary>Test seam: the Release button.</summary>
     public ButtonControl ReleaseForTest => _release;
 
+    /// <summary>Test seam: the Send to session button.</summary>
+    public ButtonControl HandOverForTest => _handOver;
+
     /// <summary>Test seam: the Background button.</summary>
     public ButtonControl MoveForTest => _move;
 
@@ -337,6 +358,11 @@ public sealed class AgentTab : IDisposable
         var waiting = _now is { State: AgentRowState.WaitingToLearn };
         if (_skipWait.Visible != waiting) _skipWait.Visible = waiting;
         if (_newTalk.Visible != CanStartOver) _newTalk.Visible = CanStartOver;
+        var handOver = Session.Colleagues?.CanHandOver(Kept.Name) == true;
+        var handOverHadFocus = _handOver.HasFocus;
+        if (_handOver.Visible != handOver) _handOver.Visible = handOver;
+        if (handOverHadFocus && !_handOver.Visible)
+            _handOver.GetParentWindow()?.FocusManager.SetFocus(MainControl, FocusReason.Programmatic);
 
         // THE KEYBOARD LEAVES A STOP THAT HAS GONE. Clicked, Stop keeps the focus; hidden, it kept it still, so what
         // was typed next went nowhere and every space pressed the hidden button again.

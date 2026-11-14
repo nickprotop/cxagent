@@ -535,6 +535,15 @@ public sealed class SubAgentStore
     private readonly ConcurrentDictionary<string, string> _asked = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// Whether this worker's latest run was started by the user — a send from its tab or a <c>/colleagues ask</c> they
+    /// typed — rather than by the model. Set as every run begins, so the model's next run clears it: what the model
+    /// asked, it already has the answer to.
+    /// </summary>
+    public bool LastRunByUser(string name) => _byUser.GetValueOrDefault(name);
+
+    private readonly ConcurrentDictionary<string, bool> _byUser = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Counts one accepted send to this worker, by who sent it — the user's steers and the lead's follow-ups, which is how
     /// a session learns which workers it keeps coming back to. COUNTED WHERE THE SEND IS ACCEPTED, a message left for a
     /// running worker included; a refused one counts for nothing.
@@ -676,10 +685,11 @@ public sealed class SubAgentStore
     /// begins working. Pairing it with <see cref="EndSend"/> is what keeps the begin/end announcements
     /// balanced; announcing twice for one claim would start two runs and archive one.</para>
     /// </summary>
-    internal void AnnounceBegin(string name, string? asked = null)
+    internal void AnnounceBegin(string name, string? asked = null, bool byUser = false)
     {
         _since[name] = _clock.GetUtcNow();
         if (!string.IsNullOrWhiteSpace(asked)) _asked[name] = asked;
+        _byUser[name] = byUser;
 
         // ANNOUNCED, BECAUSE NOTHING ELSE MARKS THE START OF A SEND. agent_send never becomes a job,
         // so no row is created for it and no tool report fires until the child's first call FINISHES

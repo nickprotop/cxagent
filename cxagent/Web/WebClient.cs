@@ -93,6 +93,8 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
             ["login"] = Token is not null,
             ["banners"] = new JsonArray([.. _hub.Banners.Select(b => (JsonNode)b)]),
             ["commands"] = new JsonArray([.. WebCommands.AllowedWith(S.Allow).Select(c => (JsonNode)c)]),
+            // THE TERMINAL'S PASTE RULE, so a paste becomes one block at the same size here as there (PasteTokens).
+            ["paste"] = new JsonObject { ["minLines"] = CxAgent.UI.PasteTokens.MinLines, ["minChars"] = CxAgent.UI.PasteTokens.MinChars },
 
             // THE SWITCHES, FOR THE PAGE TO SHOW. Read-only there: only the terminal's F8 changes them.
             ["access"] = new JsonObject
@@ -218,7 +220,7 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
                 Create(Str(m, "folder"));
                 break;
             case "say":
-                Say(Str(m, "sessionId"), Str(m, "text"), m["images"] as JsonArray);
+                Say(Str(m, "sessionId"), Str(m, "text"), m["images"] as JsonArray, m["pastes"] as JsonArray);
                 break;
             case "complete":
                 if (LiveSession(Str(m, "sessionId")) is { } typing)
@@ -405,6 +407,17 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
                     && clearing.SubAgents.FindByAgentId(clearingId) is { } talker
                     && clearing.Colleagues?.NewConversation(talker.Name) is { } notNow)
                     Notice(clearing.Id, notNow, "Warning");
+                break;
+            // SEND TO SESSION, FROM AN ASK TAB'S HEAD: the user's last ask and its answer, back to this page as one block for
+            // the session's composer — the terminal's button, the same desk. Nothing is sent to the model here.
+            case "colleagueHandOver":
+                if (LiveSession(Str(m, "sessionId")) is { } handing && Str(m, "agentId") is { } handingId
+                    && handing.SubAgents.FindByAgentId(handingId) is { } asked)
+                {
+                    if (handing.Colleagues?.HandOver(asked.Name) is { } block)
+                        Send(new JsonObject { ["type"] = "handOver", ["sessionId"] = handing.Id, ["label"] = block.Label, ["text"] = block.Text });
+                    else Notice(handing.Id, "There is no answer of yours to send — ask it something first.", "Warning");
+                }
                 break;
             // DON'T WAIT, FROM ITS CARD OR ITS TAB: the ask waiting to learn starts now — the terminal's link, the same desk.
             case "colleagueSkipWait":
@@ -762,8 +775,21 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
             if (prompt.SessionId == sessionId) _shown.TryRemove(id, out _);
     }
 
-    private void Say(string? sessionId, string? text, JsonArray? images = null)
+    private void Say(string? sessionId, string? text, JsonArray? images = null, JsonArray? pastes = null)
     {
+        // PASTED BLOCKS FIRST, THEN WHAT WAS TYPED: the model reads each block's text, the row shows its label — the
+        // terminal's paste token, labelled by the same rule (PasteTokens) unless the block brings its own, as a
+        // colleague's answer handed over does.
+        var blocks = Blocks(pastes);
+        string? echo = null;
+        if (blocks.Count > 0)
+        {
+            var typed = (text ?? "").Trim();
+            string Join(IEnumerable<string> parts) => string.Join("\n", typed.Length == 0 ? parts : parts.Append(typed));
+            text = Join(blocks.Select(b => b.Text));
+            echo = Join(blocks.Select(b => b.Label));
+        }
+
         if (images is { Count: > 0 } && sessionId?.Contains('~') == true)
         {
             Notice(sessionId, "A worker takes text only; send the image in the session.", "Warning");
@@ -777,7 +803,8 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
             {
                 _ = Task.Run(async () =>
                 {
-                    if (await parent.SendFromAgentTab(worker.Name, text).ConfigureAwait(false) is { } refused)
+                    if (await parent.SendFromAgentTab(worker.Name, text, echo,
+                            blocks.Count > 0 ? Core.Models.Attachments.Of(blocks) : null).ConfigureAwait(false) is { } refused)
                         Notice(sessionId, refused, "Warning");
                 });
                 return;
@@ -786,7 +813,8 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
         // AN IMAGE ALONE IS A MESSAGE: a pasted screenshot with nothing typed asks about the screenshot.
         if (Live(sessionId) is not { } session || (string.IsNullOrWhiteSpace(text) && images is not { Count: > 0 })) { Error("Nothing to send."); return; }
         text ??= "";
-        if (text.TrimStart().StartsWith('/'))
+        // A LINE THAT STARTS WITH A BLOCK IS NEVER A COMMAND: the slash, if any, is in what was pasted.
+        if (blocks.Count == 0 && text.TrimStart().StartsWith('/'))
         {
             if (WebCommands.Refusal(text, S.Allow, t => session.FindTyped(t) is not null) is { } refused) { Notice(session.Id, refused, "Warning"); return; }
             if (WebCommands.IsHelp(text)) { Notice(session.Id, WebCommands.Help(S.Allow), "Info"); return; }
@@ -800,14 +828,16 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
                 Notice(session.Id, why ?? "That image could not be read.", "Warning");
                 return;
             }
-            attached = new Core.Models.Attachments([], prepared);
+            attached = new Core.Models.Attachments(blocks, prepared);
 
             // THE LABELS GO IN THE TEXT, as the terminal's tokens sit in its line: the model reads "[Image #1 …]" and
             // the picture beside it, and a message can say "compare #1 with #2".
             var labels = string.Join(" ", prepared.Select(i => i.Label));
             text = text.Trim().Length == 0 ? labels : text.TrimEnd() + "\n" + labels;
+            if (echo is not null) echo = echo.TrimEnd() + "\n" + labels;
         }
-        switch (session.Submit(text, attachments: attached))
+        else if (blocks.Count > 0) attached = Core.Models.Attachments.Of(blocks);
+        switch (session.Submit(text, echo, attachments: attached))
         {
             case Session.SubmitOutcome.Refused r:
                 Notice(session.Id, r.Reason, "Warning");
@@ -817,6 +847,23 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
                 break;
         }
         _hub.ListChanged();
+    }
+
+    /// <summary>
+    /// The pasted blocks a message brings, each labelled: its own label when it has one, else the terminal's
+    /// <c>[Pasted text #n …]</c>, numbered in the message. Empty text is dropped.
+    /// </summary>
+    private static List<Core.Models.PastedText> Blocks(JsonArray? pastes)
+    {
+        var blocks = new List<Core.Models.PastedText>();
+        foreach (var p in pastes ?? [])
+        {
+            if (p?["text"]?.GetValue<string>() is not { } raw || CxAgent.UI.PasteTokens.Folded(raw) is not { Length: > 0 } body) continue;
+            var label = p["label"]?.GetValue<string>() is { Length: > 0 } own ? own
+                : CxAgent.UI.PasteTokens.LabelFor(blocks.Count(b => b.Label.StartsWith("[Pasted text", StringComparison.Ordinal)) + 1, body);
+            blocks.Add(new Core.Models.PastedText(label, body));
+        }
+        return blocks;
     }
 
     /// <summary>

@@ -1151,7 +1151,8 @@ The browser has the terminal's tabs and commands:
 
 - **The conversation:** the model, edit mode, thinking level and sandbox are picked under the message
   box; `/btw` asks on the side, in a block of its own, until **Leave btw** or Esc; an image pasted or
-  dropped on the message box goes with the message; **Export** in the session panel, or `/export`
+  dropped on the message box goes with the message, and a long paste sits there as one block, as in the
+  terminal; **Export** in the session panel, or `/export`
   (`/export full` for everything the model saw), downloads the conversation as markdown.
 - **Workers and commands:** a tab per worker, with its messages, Stop and Background; a background
   command's **Open** in the Tasks panel shows its output as it is written, with Kill and Copy to

@@ -125,7 +125,8 @@ public static class SessionReplay
 
             if (IsUserTurn(entry, options.ForWorker))
             {
-                chat.UserTurnAdded(new ChatMessageId(NextId()), m.Content);
+                // AS IT WAS SHOWN LIVE: a pasted block as its label, not the lines the model read.
+                chat.UserTurnAdded(new ChatMessageId(NextId()), m.Shown ?? m.Content);
                 continue;
             }
             if (m.Role != "assistant" || m.Content.StartsWith(SessionCompressor.SummaryMarker, StringComparison.Ordinal))

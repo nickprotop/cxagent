@@ -93,6 +93,78 @@ public sealed partial class WebSessionHubTests
         Assert.Contains(_model.LastMessages!, m => m.Images is { Count: 1 });
     }
 
+    /// <summary>
+    /// A PASTED BLOCK GOES WITH THE MESSAGE AS ITS TEXT, AND IS SHOWN AS ITS LABEL — the terminal's paste token: the model
+    /// reads every line, the row shows "[Pasted text #1 +3 lines]" where the block sat, before what was typed.
+    /// </summary>
+    [Fact]
+    public async Task A_pasted_block_goes_with_the_message_and_is_shown_as_its_label()
+    {
+        _model.EnqueueResponse(Reply("read it"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", "fix this"),
+            ("pastes", new JsonArray(new JsonObject { ["text"] = "line one\nline two\nline three" }))));
+
+        var user = await tab.NextAsync(Kind("user"));
+        Assert.Equal("[Pasted text #1 +3 lines]\nfix this", user["text"]!.GetValue<string>());
+        await TurnDoneAsync(tab);
+        Assert.Contains(_model.LastMessages!, m => m.Role == "user" && m.Content.Contains("line two") && m.Content.Contains("fix this"));
+    }
+
+    /// <summary>A BLOCK WITH ITS OWN LABEL keeps it — a colleague's answer handed over is "[Charting's answer +N lines]".</summary>
+    [Fact]
+    public async Task A_labelled_block_keeps_its_label()
+    {
+        _model.EnqueueResponse(Reply("ok"));
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        await tab.SendAsync(Msg("say", ("sessionId", id), ("text", ""),
+            ("pastes", new JsonArray(new JsonObject { ["label"] = "[Charting's answer +4 lines]", ["text"] = "a\nb\nc\nd" }))));
+
+        var user = await tab.NextAsync(Kind("user"));
+        Assert.Equal("[Charting's answer +4 lines]", user["text"]!.GetValue<string>());
+    }
+
+    /// <summary>THE PAGE IS TOLD THE TERMINAL'S PASTE RULE, so a paste becomes a block at the same size in both.</summary>
+    [Fact]
+    public async Task Hello_carries_the_paste_rule()
+    {
+        await using var tab = await Tab.OpenAsync(_server.Bound.Port);
+        var hello = await tab.NextAsync(m => m["type"]?.GetValue<string>() == "hello");
+        Assert.Equal(CxAgent.UI.PasteTokens.MinLines, hello["paste"]!["minLines"]!.GetValue<int>());
+        Assert.Equal(CxAgent.UI.PasteTokens.MinChars, hello["paste"]!["minChars"]!.GetValue<int>());
+    }
+
+    /// <summary>
+    /// SEND TO SESSION FROM AN ASK TAB: offered on the worker's row after the user's own ask, and pressed it answers with
+    /// the block for the page to put in the session's composer — never sent by itself.
+    /// </summary>
+    [Fact]
+    public async Task Send_to_session_hands_the_user_s_ask_to_the_page()
+    {
+        new CxAgent.Core.Colleagues.ColleagueStore(_paths.ConfigDir)
+            .Create(new CxAgent.Core.Colleagues.ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        var session = _manager.Sessions.Single(s => s.Id == id);
+        await session.Colleagues!.BringAsync(new CxAgent.Core.Colleagues.BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+        _model.EnqueueResponse(Reply("the left pane"));
+        await session.SendFromAgentTab("charting", "which pane?");
+
+        var agentId = session.SubAgents.Find("charting")!.Agent.Agent.Id;
+        var row = _hub.PanelFor(id)!["workers"]!.AsArray().Single(w => w!["agentId"]!.GetValue<string>() == agentId)!;
+        Assert.True(row["canHandOver"]!.GetValue<bool>());
+
+        await tab.SendAsync(Msg("colleagueHandOver", ("sessionId", id), ("agentId", agentId)));
+        var handed = await tab.NextAsync(Type("handOver"));
+        Assert.Equal(id, handed["sessionId"]!.GetValue<string>());
+        Assert.StartsWith("[Charting's answer", handed["label"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Contains("which pane?", handed["text"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Contains("the left pane", handed["text"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Equal(0, session.Tally.Turns);
+    }
+
     [Fact]
     public async Task An_image_that_is_not_one_is_refused_and_nothing_is_sent()
     {

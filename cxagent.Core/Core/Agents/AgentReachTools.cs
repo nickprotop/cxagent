@@ -219,7 +219,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
                 // SET BEFORE THE CALL, not after: a listener that throws from SendBegan has already
                 // started the row, and an end must still be announced to settle it.
                 announced = true;
-                store.AnnounceBegin(agentName, prompt);
+                store.AnnounceBegin(agentName, prompt, request.FromUser);
                 // ANYTHING WAITING GOES FIRST. A message queued while this child was running, on a
                 // lap it never took, would otherwise arrive after a prompt that was sent later — and
                 // two corrections read in the wrong order are worse than one arriving late.

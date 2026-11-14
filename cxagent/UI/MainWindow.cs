@@ -2681,6 +2681,19 @@ public sealed class MainWindow : IDisposable
     /// reads and fills this one, so a list opened in a worker's tab never writes into a session's composer.</summary>
     public PromptControl ComposerInFront => ActiveAgentTab?.Input ?? Input;
 
+    /// <summary>
+    /// A colleague's answer handed to its session: that session's tab comes forward with the block in its composer, as
+    /// one paste token, and the keyboard there — the user says what to do with it and sends it. A token, not text: an
+    /// answer runs to dozens of lines, and the box would scroll through them.
+    /// </summary>
+    private void HandToSession(Core.Sessions.Session session, Core.Models.PastedText block)
+    {
+        if (TabFor(session) is not { } tab) return;
+        Tabs.ActiveTabIndex = StripIndexOf(tab);
+        tab.Input.InsertToken(new SharpConsoleUI.Controls.PromptToken(block.Label, block.Text, PasteTokens.Tag));
+        FocusComposer();
+    }
+
     /// <summary>An agent tab and the strip page it sits on.</summary>
     private sealed record AgentTabSlot(AgentTab Tab, SharpConsoleUI.Controls.TabPage Page);
 
@@ -2716,6 +2729,7 @@ public sealed class MainWindow : IDisposable
         _agentTabs[tab.AgentId] = new AgentTabSlot(tab, Tabs.GetTab(placed)!);
         // ITS COMPOSER HEARS THE SLASH MENU TOO: a colleague's tab completes its own commands.
         WireOnce(tab.Input);
+        tab.HandedOver += block => HandToSession(session, block);
         FocusAgentTab(tab);
         return null;
     }

@@ -585,6 +585,81 @@ public sealed class ColleagueJoinTests : IDisposable
         Assert.Equal(0, model.ChatCallCount);
     }
 
+    // ---- Send to session: the user's own ask, handed to the session by hand (user, 2026-11-14) -----------------------
+
+    /// <summary>THE USER'S ASK, AT REST, IS OFFERED: their question and its answer, as one block named for the colleague.</summary>
+    [Fact]
+    public async Task The_user_s_own_ask_can_be_handed_to_the_session()
+    {
+        var (session, _, _) = await Talking();
+        await FromUser(session, "charting", "which pane holds the legend?");
+
+        Assert.True(session.Colleagues!.CanHandOver("charting"));
+        var block = session.Colleagues.HandOver("charting")!;
+
+        Assert.Contains("which pane holds the legend?", block.Text);
+        Assert.Contains("ok", block.Text);
+        Assert.StartsWith("[Charting's answer", block.Label);
+    }
+
+    /// <summary>THE LEAD'S ASK IS NOT OFFERED: the model already has that answer.</summary>
+    [Fact]
+    public async Task The_lead_s_ask_is_not_handed_over()
+    {
+        var (session, _, _) = await Talking();
+        await FromLead(session, "charting", "a question from the lead");
+
+        Assert.False(session.Colleagues!.CanHandOver("charting"));
+        Assert.Null(session.Colleagues.HandOver("charting"));
+    }
+
+    /// <summary>ONCE, UNTIL THE NEXT ASK: one answer is not handed over twice.</summary>
+    [Fact]
+    public async Task A_handed_answer_is_not_offered_again_until_the_next_ask()
+    {
+        var (session, _, _) = await Talking();
+        await FromUser(session, "charting", "first?");
+        Assert.NotNull(session.Colleagues!.HandOver("charting"));
+
+        Assert.False(session.Colleagues.CanHandOver("charting"));
+
+        await FromUser(session, "charting", "second?");
+        Assert.Contains("second?", session.Colleagues.HandOver("charting")!.Text);
+    }
+
+    /// <summary>THE ASK TAB'S BUTTON: shown after the user's ask, and pressed it hands the block over and hides.</summary>
+    [Fact]
+    public async Task The_ask_tab_offers_send_to_session_after_the_user_s_ask()
+    {
+        var (session, _, _) = await Talking();
+        using var tab = new CxAgent.UI.AgentTab(session, session.SubAgents.Find("charting")!,
+            AgentTabTests.Inline(new SharpConsoleUI.Controls.ChatTranscriptControl()));
+        Assert.False(tab.HandOverForTest.Visible);
+
+        await FromUser(session, "charting", "which pane?");
+        tab.Tick(DateTimeOffset.UtcNow);
+        Assert.True(tab.HandOverForTest.Visible);
+
+        CxAgent.Core.Models.PastedText? handed = null;
+        tab.HandedOver += b => handed = b;
+        tab.HandOverForTest.ProcessMouseEvent(new SharpConsoleUI.Events.MouseEventArgs(
+            [SharpConsoleUI.Drivers.MouseFlags.Button1Clicked], new System.Drawing.Point(1, 0), new System.Drawing.Point(1, 0), new System.Drawing.Point(1, 0)));
+        tab.Tick(DateTimeOffset.UtcNow);
+
+        Assert.Contains("which pane?", handed!.Text);
+        Assert.False(tab.HandOverForTest.Visible);
+    }
+
+    /// <summary>ASK ONLY: a Talk tab's conversation is the user's own, and never offered.</summary>
+    [Fact]
+    public async Task A_talk_is_not_handed_over()
+    {
+        var (session, _, talk) = await Talking();
+        await FromUser(session, talk, "hello");
+
+        Assert.False(session.Colleagues!.CanHandOver(talk));
+    }
+
     /// <summary>/colleagues talk NAME --new opens the Talk tab on a new conversation.</summary>
     [Fact]
     public async Task The_talk_verb_with_new_starts_over()

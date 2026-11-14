@@ -104,6 +104,8 @@ internal static class WebPanel
                 // ITS TALK WORKER, the card's second door — and whether this card IS one (a kept worker's conversation).
                 ["talkAgentId"] = row.TalkAgentId,
                 ["talk"] = session.SubAgents.KeepsConversation(row.Kept.Name),
+                // SEND TO SESSION in its Ask tab: the user's own ask at rest, not yet handed over — the desk's one rule.
+                ["canHandOver"] = session.Colleagues?.CanHandOver(row.Kept.Name) == true,
                 ["task"] = row.Kept.Description,
                 ["state"] = row.State.ToString(),
                 ["running"] = row.Running,

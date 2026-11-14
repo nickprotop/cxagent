@@ -35,17 +35,30 @@ internal sealed class PasteTokens
     /// <summary>The token for a paste, or null when it should paste as text.</summary>
     internal PromptToken? For(string pasted)
     {
-        // THE VALUE IS WHAT THE MODEL READS, so a Windows clipboard's \r\n is folded here, the same
-        // as the control folds a paste it keeps as text.
-        var text = pasted.Replace("\r\n", "\n").Replace('\r', '\n');
-        var lines = LineCount(text);
-        if (lines < MinLines && text.Length < MinChars) return null;
-
+        var text = Folded(pasted);
+        if (!IsBlock(text)) return null;
         _count++;
+        return new PromptToken(LabelFor(_count, text), text, Tag);
+    }
+
+    /// <summary>
+    /// THE VALUE IS WHAT THE MODEL READS, so a Windows clipboard's \r\n is folded, the same as the control folds a
+    /// paste it keeps as text.
+    /// </summary>
+    internal static string Folded(string pasted) => pasted.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    /// <summary>Whether a paste becomes one block rather than text — the rule both composers keep; the browser is sent
+    /// <see cref="MinLines"/> and <see cref="MinChars"/> to make the same call as it is pasted into.</summary>
+    internal static bool IsBlock(string text) => LineCount(text) >= MinLines || text.Length >= MinChars;
+
+    /// <summary>The block's label: <c>[Pasted text #2 +18 lines]</c>, or its size in characters for one long line.</summary>
+    internal static string LabelFor(int number, string text)
+    {
+        var lines = LineCount(text);
         var size = lines >= MinLines
             ? $"+{lines} lines"
             : string.Create(CultureInfo.InvariantCulture, $"{text.Length:N0} chars");
-        return new PromptToken($"[Pasted text #{_count} {size}]", text, Tag);
+        return $"[Pasted text #{number} {size}]";
     }
 
     /// <summary>
@@ -53,7 +66,7 @@ internal sealed class PasteTokens
     /// Copying whole lines from an editor brings that newline along, and "+3 lines" over two would
     /// read as a miscount.
     /// </summary>
-    private static int LineCount(string text)
+    internal static int LineCount(string text)
     {
         var body = text.EndsWith('\n') ? text[..^1] : text;
         return body.Count(c => c == '\n') + 1;

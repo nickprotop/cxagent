@@ -72,6 +72,24 @@ public sealed class SessionReplayTests : IDisposable
         Assert.Equal(1, shown.Turns);
     }
 
+    /// <summary>
+    /// A PASTED BLOCK REPLAYS AS ITS LABEL, as it was shown live: the message keeps the line as shown beside what the
+    /// model read, and a restored session or a browser joining late drew the whole block instead.
+    /// </summary>
+    [Fact]
+    public void A_replay_shows_a_pasted_block_as_its_label()
+    {
+        History("A1").Record([new ChatMessage
+        {
+            Role = "user", Content = "line one\nline two\nline three fix this", Shown = "[Pasted text #1 +3 lines] fix this",
+            Pastes = [new PastedText("[Pasted text #1 +3 lines]", "line one\nline two\nline three")],
+        }, Said("done")]);
+
+        var (log, _) = Play("A1");
+
+        Assert.Equal("[Pasted text #1 +3 lines] fix this", log.Since(0).Events.First(e => Kind(e) == "user")["text"]!.GetValue<string>());
+    }
+
     [Fact]
     public void A_replay_follows_every_resume_back_to_the_start()
     {

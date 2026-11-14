@@ -125,10 +125,19 @@ function handle(m) {
   switch (m.type) {
     case "hello":
       state.access = m.access || null;
+      state.paste = m.paste || { minLines: 3, minChars: 800 };
       document.querySelector(".logout").hidden = !m.login;
       showBanners(m.banners || []);
       break;
     case "banner": showBanners([m.text]); break;
+    // A COLLEAGUE'S ANSWER HANDED OVER from its Ask tab: its session comes forward with the block in the composer, for the
+    // user to say what to do with it — the terminal's token in its Chat tab.
+    case "handOver":
+      activate(m.sessionId);
+      pasted.push({ label: m.label, text: m.text });
+      drawAttachments();
+      input.focus();
+      break;
     case "sessions": state.rows = m.rows || []; drawSessions(); break;
     case "opened": opened(m); break;
     case "openedWorker": openedWorker(m); break;
@@ -546,6 +555,9 @@ function drawWorkerHead() {
   // A NEW CONVERSATION, IN A TALK TAB AT REST — the terminal's button; /clear typed here does the same.
   if (view.door === "talk" && !running)
     head.append(button("New conversation", null, () => send({ type: "colleagueNewTalk", sessionId: view.parent, agentId: view.agentId })));
+  // SEND TO SESSION, IN AN ASK TAB AT REST after the user's own ask: the question and its answer to the session's composer.
+  if (view.door === "ask" && !running && w && w.canHandOver)
+    head.append(button("Send to session", null, () => send({ type: "colleagueHandOver", sessionId: view.parent, agentId: view.agentId })));
   // RELEASE WITH BOTH DOORS AT REST: the desk refuses it while the colleague's other worker is busy.
   if (view.badge && !running && !(w && w.otherBusy)) head.append(button("Release", null, () => send({ type: "colleagueRelease", sessionId: view.parent, name: view.badge.name })));
 }
@@ -2861,11 +2873,45 @@ const input = $("input");
 // ---- images in the composer: pasted or dropped, shown as chips, sent with the message ----------------------------
 
 const attached = [];   // { name, data (base64), url }
+// PASTED BLOCKS, the terminal's paste tokens: a long paste is one chip, sent as its text and shown as its label, which
+// the server gives by the terminal's rule unless the block brings its own (a colleague's answer handed over).
+const pasted = [];     // { label?, text }
+
+function lineCount(text) {
+  const body = text.endsWith("\n") ? text.slice(0, -1) : text;
+  return body.split("\n").length;
+}
+
+// THE TERMINAL'S RULE, sent in hello (PasteTokens): enough lines, or one line long enough to fill the box.
+function isBlock(text) {
+  const rule = state.paste || { minLines: 3, minChars: 800 };
+  return lineCount(text) >= rule.minLines || text.length >= rule.minChars;
+}
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
 
 function drawAttachments() {
   const box = $("attachments");
-  box.replaceChildren(...attached.map((a, i) => {
+  const blocks = pasted.map((p, i) => {
+    const chip = el("span", "chip text");
+    // CLICKED, IT BECOMES TEXT AGAIN, as a terminal token does — to edit what was pasted.
+    const name = el("button", "ghost", p.label || ("Pasted text · " + lineCount(p.text) + " lines"));
+    name.type = "button";
+    name.title = "Turn back into text";
+    name.addEventListener("click", () => {
+      pasted.splice(i, 1);
+      input.setRangeText(p.text, input.selectionStart, input.selectionEnd, "end");
+      drawAttachments();
+      resize();
+      input.focus();
+    });
+    const x = el("button", "x icon", "×");
+    x.type = "button";
+    x.title = "Remove this block";
+    x.addEventListener("click", () => { pasted.splice(i, 1); drawAttachments(); });
+    chip.append(name, x);
+    return chip;
+  });
+  box.replaceChildren(...blocks, ...attached.map((a, i) => {
     const chip = el("span", "chip");
     const img = el("img");
     img.src = a.url;
@@ -2877,7 +2923,7 @@ function drawAttachments() {
     chip.append(img, el("span", null, a.name), x);
     return chip;
   }));
-  box.hidden = attached.length === 0;
+  box.hidden = attached.length === 0 && pasted.length === 0;
 }
 
 function attachFiles(files) {
@@ -2898,7 +2944,15 @@ function attachFiles(files) {
 input.addEventListener("paste", (e) => {
   const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
   // TEXT WINS, as in the terminal: a spreadsheet copies its cells and a picture of them, and the cells were meant.
-  if (!files.length || (e.clipboardData.getData("text/plain") || "").trim()) return;
+  const text = (e.clipboardData?.getData("text/plain") || "").replace(/\r\n?/g, "\n");
+  if (text.trim()) {
+    if (!isBlock(text)) return;
+    e.preventDefault();
+    pasted.push({ text });
+    drawAttachments();
+    return;
+  }
+  if (!files.length) return;
   e.preventDefault();
   attachFiles(files);
 });
@@ -2914,7 +2968,7 @@ $("composer").addEventListener("drop", (e) => {
 $("composer").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value;
-  if ((!text.trim() && !attached.length) || !state.active) return;
+  if ((!text.trim() && !attached.length && !pasted.length) || !state.active) return;
   // THE SERVER TAKES 24 MB A MESSAGE, base64 and all: over it, the images stay here to be trimmed rather than lost.
   const size = attached.reduce((n, a) => n + a.data.length, 0);
   if (size > 22 * 1024 * 1024) { flash("These images are too large to send together — remove one or two."); return; }
@@ -2922,8 +2976,12 @@ $("composer").addEventListener("submit", (e) => {
   if (attached.length) {
     message.images = attached.map((a) => ({ name: a.name, data: a.data }));
     attached.length = 0;
-    drawAttachments();
   }
+  if (pasted.length) {
+    message.pastes = pasted.map((p) => (p.label ? { label: p.label, text: p.text } : { text: p.text }));
+    pasted.length = 0;
+  }
+  drawAttachments();
   send(message);
   remember(text);
   input.value = "";

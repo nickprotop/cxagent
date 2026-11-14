@@ -252,6 +252,11 @@ An ask waits until the colleague's earlier rounds are distilled, so it starts fr
 to learn* meanwhile; **Don't wait**, on the card or in the tab, starts it at once from the last finished version. A
 frozen colleague never waits.
 
+**Handing an answer to the session.** What you ask in the Ask tab is answered there, never to the session's agent.
+When the colleague has answered your own ask, **Send to session** in the tab puts your question and its answer in
+the session's message box as one block — `[Charting's answer +12 lines]` — for you to say what to do with it and
+send. Nothing is sent by itself. An answer to the agent's own ask is not offered: the agent already has it.
+
 **Talking with one.** `/colleagues talk <name> [message]`, or **Talk ›** on its card, opens its **Talk** tab: a
 conversation of yours with the colleague, in this session, that goes on from message to message. It is a second
 worker of the same colleague, with the same experience and tools, told that it is talking with you. Each exchange is

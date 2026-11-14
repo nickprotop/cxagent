@@ -407,6 +407,10 @@ body.in-aside .composer-box { border-color: var(--warn-line); }
 .attachments .chip img { width: 34px; height: 34px; object-fit: cover; border-radius: 5px; }
 .attachments .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachments .chip .x { padding: 0 4px; font-size: 14px; }
+/* A PASTED BLOCK'S CHIP: its label, as the terminal's token reads; clicked, it turns back into text. */
+.attachments .chip.text { padding: 2px 4px 2px 8px; }
+.attachments .chip.text .ghost { border: 0; padding: 2px 0; font-family: var(--mono); font-size: 12px;
+  max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer.drop .composer-box { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
 .user .images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .user .images img { max-width: 220px; max-height: 160px; border-radius: 6px; border: 1px solid var(--user-line); cursor: zoom-in; }
