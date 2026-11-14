@@ -365,10 +365,14 @@ public static class SubAgentEnvelope
 
     /// <summary>
     /// What a child did, for a parent deciding what to make of a run: how many tool calls, and the latest few.
+    ///
+    /// <para>THE RUN'S OWN, FROM <paramref name="since"/>: a kept child's registry holds every run it has had, and a
+    /// resumed run reported its earlier runs' calls as its own. Null counts them all — right for a spawn's first run,
+    /// which is all the child has done.</para>
     /// </summary>
-    public static string WorkOf(SubAgent child)
+    public static string WorkOf(SubAgent child, DateTimeOffset? since = null)
     {
-        var jobs = child.Jobs.Jobs;
+        var jobs = since is { } from ? [.. child.Jobs.Jobs.Where(j => j.CreatedAt >= from)] : child.Jobs.Jobs;
         var latest = jobs.OrderBy(j => j.CreatedAt).TakeLast(3).Select(j => j.DisplayName).ToList();
         var count = jobs.Count == 1 ? "1 tool call" : $"{jobs.Count} tool calls";
         return latest.Count == 0 ? count : $"{count}; latest: {string.Join(", ", latest)}";

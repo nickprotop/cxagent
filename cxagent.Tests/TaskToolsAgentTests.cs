@@ -190,6 +190,42 @@ public class TaskToolsAgentTests
         gate.SetResult();
     }
 
+    /// <summary>AN IDLE WORKER'S LAST RUN is told by that run's calls, not every call it ever made.</summary>
+    [Fact]
+    public async Task TaskOutput_OnAnIdleWorker_CountsItsLastRunOnly()
+    {
+        var child = new ScriptThenHold(Task.CompletedTask,
+            LlmResponse.WithToolCall("glob", new { pattern = "*.cs" }),
+            new LlmResponse { Text = "first done", StopReason = "end_turn" },
+            new LlmResponse { Text = "second done", StopReason = "end_turn" });
+        var r = Wired(child);
+        await Spawn(r, background: false);
+        await new AgentReachTools(r.Store, delivery: r.Delivery).SendAsync(
+            new SendRequest(To: "find-thing", Prompt: "again", Background: false, ParentAgentId: "session", FromUser: false),
+            CancellationToken.None);
+
+        var output = await Call(r, Tool.TaskOutput, new { id = "find-thing" });
+        Assert.True(output.Contains("after 0 tool calls"), output);
+    }
+
+    /// <summary>A RESUMED RUN THAT ANSWERED NOTHING says what THAT run did before it went quiet.</summary>
+    [Fact]
+    public async Task A_silent_resumed_run_counts_its_own_calls()
+    {
+        var child = new ScriptThenHold(Task.CompletedTask,
+            LlmResponse.WithToolCall("glob", new { pattern = "*.cs" }),
+            new LlmResponse { Text = "first done", StopReason = "end_turn" },
+            new LlmResponse { Text = "", StopReason = "end_turn" });
+        var r = Wired(child);
+        await Spawn(r, background: false);
+        await new AgentReachTools(r.Store, delivery: r.Delivery).SendAsync(
+            new SendRequest(To: "find-thing", Prompt: "again", Background: true, ParentAgentId: "session", FromUser: false),
+            CancellationToken.None);
+
+        var told = await r.Delivery.Next();
+        Assert.True(told.Notice.ForModel.Contains("Before that it made 0 tool calls"), told.Notice.ForModel);
+    }
+
     /// <summary>Answers its script in order, then holds every later request until released.</summary>
     private sealed class ScriptThenHold(Task release, params LlmResponse[] script) : ILlmProvider
     {

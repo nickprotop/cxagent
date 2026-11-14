@@ -487,9 +487,11 @@ internal sealed class TaskTools(TaskSources sources)
     private static string LastRun(Agents.SubAgentStore agents, string handle)
     {
         var kept = agents.Find(handle)!;
-        var work = Agents.SubAgentEnvelope.WorkOf(kept.Agent);
-        if (agents.IsBusy(handle)) return $"'{handle}' is working in the foreground · {work}.";
+        // THE RUN'S OWN CALLS — the one under way, or the last one — as the words around them describe that run.
+        if (agents.IsBusy(handle))
+            return $"'{handle}' is working in the foreground · {Agents.SubAgentEnvelope.WorkOf(kept.Agent, agents.WorkingSince(handle))}.";
         if (agents.LastEnd(handle) is not { } end) return $"'{handle}' has not run yet; {Tool.AgentSend} asks it something.";
+        var work = Agents.SubAgentEnvelope.WorkOf(kept.Agent, end.Began);
 
         var why = end.Outcome == "no-answer" && kept.Agent.Agent.LastEmptyReply is { } reason ? $" — {reason}" : "";
         return $"'{handle}' is idle. Its last run ended {end.Outcome ?? "without a recorded outcome"}{why}, after {work}. "

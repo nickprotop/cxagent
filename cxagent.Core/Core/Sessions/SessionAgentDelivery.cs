@@ -219,6 +219,8 @@ internal sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore
         {
             Agents.SendResult result;
             IReadOnlyList<string> waiting = [];
+            // WHEN THIS RUN BEGAN, so its report counts its own tool calls, not the child's earlier runs'.
+            DateTimeOffset? began = null;
             try
             {
                 // DRAINED, NOT READ THEN DRAINED. A second delivery cannot be running concurrently —
@@ -231,6 +233,7 @@ internal sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore
                 // the token of the turn that asked, so Escape cancels it; nothing asked for this one,
                 // and there is no token in scope that cancelling would be about.
                 kept.Agent.Agent.History?.NoteIncoming(Agents.Incoming.Delivery);
+                began = DateTimeOffset.UtcNow;
                 result = await kept.Agent.Agent.SendAsync(string.Join("\n\n", waiting),
                     CancellationToken.None);
             }
@@ -254,7 +257,7 @@ internal sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore
                         + string.Join("\n\n", waiting)
                         + "\n\nIt acted on it and answered:\n"
                         + Agents.SubAgentEnvelope.Render(Agents.EnvelopeChild.Of(kept.Agent), kept.Name, result,
-                            Agents.SubAgentEnvelope.WorkOf(kept.Agent)));
+                            Agents.SubAgentEnvelope.WorkOf(kept.Agent, began)));
             }
             catch
             {

@@ -135,7 +135,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
                 new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(delivery, parent, name)));
             _ = BackgroundRunner.Start(new BackgroundWork(store, stored, run, request.Prompt, slot, delivery,
                 result => SubAgentEnvelope.Render(EnvelopeChild.Of(stored.Agent), name, result,
-                    SubAgentEnvelope.WorkOf(stored.Agent))));
+                    SubAgentEnvelope.WorkOf(stored.Agent, run.Started))));
             return earlier + $"'{name}' is working on it in the background — its answer will come to you as a "
                  + $"message.\nIf your next step cannot go on without it: task_output {{\"id\": \"{name}\", "
                  + "\"wait\": true}";
@@ -254,6 +254,8 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
 
                     if (released == ForegroundRelease.Move && delivery is not null && request.ParentAgentId is { } parent)
                     {
+                        // THE RUN BEGAN IN THE FOREGROUND, before this move: its report counts from then.
+                        var began = store.WorkingSince(agentName);
                         var run = store.BeginBackground(new BackgroundStart(Name: agentName, ParentAgentId: parent,
                                 Brief: prompt, Description: null, IsResume: true),
                             new Jobs.ResultHandoff(BackgroundRunner.LeaveFor(delivery, parent, agentName)));
@@ -261,7 +263,7 @@ internal sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot =
                         adopted = true;
                         _ = BackgroundRunner.Adopt(new BackgroundWork(store, stored, run, prompt, slot, delivery,
                                 r => SubAgentEnvelope.Render(EnvelopeChild.Of(stored.Agent), agentName, r,
-                                    SubAgentEnvelope.WorkOf(stored.Agent))), send)
+                                    SubAgentEnvelope.WorkOf(stored.Agent, began ?? run.Started))), send)
                             .ContinueWith(_ => foreground.Dispose(), TaskScheduler.Default);
                         return SubAgentEnvelope.Moved(EnvelopeChild.Of(stored.Agent), agentName, canWrite: true);
                     }
