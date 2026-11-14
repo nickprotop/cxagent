@@ -117,6 +117,20 @@ public sealed class DistillerPrinciplesTests : IDisposable
     }
 
     /// <summary>
+    /// AN ASK ANSWERS FIRST, THEN OFFERS TO DIG (user, 2026-11-14): a part of the question beyond what the colleague knows
+    /// is named as open, with what would settle it, and left to the asker — a question touching new ground ran minutes of
+    /// tracing before any answer, and the lead stopped it with nothing.
+    /// </summary>
+    [Fact]
+    public void An_ask_answers_what_it_knows_and_leaves_new_ground_to_the_asker()
+    {
+        var briefing = IncarnationBriefing.For(Library.Find("Charting")!, "", new IncarnationSetting(true, []) { AnsweringAsks = true });
+
+        Assert.Contains("Where part of a question reaches beyond what you know, do not go and find out", briefing);
+        Assert.Contains("say what is still open and what you would check to settle it", briefing);
+    }
+
+    /// <summary>
     /// WHAT IS WORTH ITS ROOM (user, 2026-11-11): judgment over what one read returns, nothing tied to one moment, nothing
     /// the colleague only asserted, and an experience that agrees with itself.
     /// </summary>

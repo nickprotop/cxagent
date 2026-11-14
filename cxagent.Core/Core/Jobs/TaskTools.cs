@@ -499,7 +499,9 @@ internal sealed class TaskTools(TaskSources sources)
     private string Progress(string handle, Agents.BackgroundRun run)
     {
         var state = run.State == Agents.BackgroundState.Queued ? "queued" : "running";
-        var rows = sources.Agents?.Find(handle)?.Agent.Jobs.Jobs ?? [];
+        // THIS RUN'S CALLS, as the age beside them is this run's: a kept worker's registry holds every run it has had,
+        // and a resumed colleague read "7m · 223 tool calls" after 37 — which the model took for a runaway and stopped.
+        var rows = (sources.Agents?.Find(handle)?.Agent.Jobs.Jobs ?? []).Where(j => j.CreatedAt >= run.Started).ToList();
         var latest = rows.OrderBy(j => j.CreatedAt).TakeLast(3).Select(j => j.DisplayName).ToList();
         var text = $"'{handle}' is {state} · {Age(run.Started)} · {rows.Count} tool calls.";
         return latest.Count == 0 ? text : text + " Latest: " + string.Join(", ", latest);

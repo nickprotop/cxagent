@@ -1,3 +1,4 @@
+using CxAgent.Core.Models;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Execution;
 using CxAgent.Core.Jobs;
@@ -164,6 +165,58 @@ public class TaskToolsAgentTests
         Assert.True(await Poll.Until(() => held.Calls == 1));
         Assert.Contains("is running", await Call(r, Tool.TaskOutput, new { id = "find-thing" }));
         held.Release();
+    }
+
+    /// <summary>
+    /// THE COUNT IS THIS RUN'S, as the age beside it is. A kept worker's earlier runs counted too, so a resumed run of a
+    /// colleague read "7m · 223 tool calls" after 37 — and the model stopped it as a runaway.
+    /// </summary>
+    [Fact]
+    public async Task TaskOutput_CountsOnlyTheRunInProgress()
+    {
+        var gate = new TaskCompletionSource();
+        var child = new ScriptThenHold(gate.Task,
+            LlmResponse.WithToolCall("glob", new { pattern = "*.cs" }),
+            new LlmResponse { Text = "first done", StopReason = "end_turn" });
+        var r = Wired(child);
+        await Spawn(r, background: false);
+
+        await new AgentReachTools(r.Store, delivery: r.Delivery).SendAsync(
+            new SendRequest(To: "find-thing", Prompt: "again", Background: true, ParentAgentId: "session", FromUser: false),
+            CancellationToken.None);
+        Assert.True(await Poll.Until(() => child.Calls == 3));
+
+        Assert.Contains("· 0 tool calls", await Call(r, Tool.TaskOutput, new { id = "find-thing" }));
+        gate.SetResult();
+    }
+
+    /// <summary>Answers its script in order, then holds every later request until released.</summary>
+    private sealed class ScriptThenHold(Task release, params LlmResponse[] script) : ILlmProvider
+    {
+        private readonly Queue<LlmResponse> _script = new(script);
+        private int _calls;
+        public int Calls => Volatile.Read(ref _calls);
+        public string ProviderId => "scripted";
+        public string ModelId => "scripted";
+        public string DisplayName => "Scripted";
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => false;
+
+        public async Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct)
+        {
+            Interlocked.Increment(ref _calls);
+            lock (_script) if (_script.TryDequeue(out var next)) return next;
+            await release.WaitAsync(ct);
+            return new LlmResponse { Text = "released", StopReason = "end_turn" };
+        }
+
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages, List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            var r = await ChatAsync(messages, tools, ct);
+            foreach (var call in r.ToolCalls ?? []) yield return new LlmStreamChunk(null, call, false);
+            yield return new LlmStreamChunk(r.Text, null, true, StopReason: r.StopReason);
+        }
     }
 
     [Fact]

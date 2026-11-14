@@ -54,9 +54,15 @@ public static class IncarnationBriefing
         // AN ASK HAS SOMEONE WAITING, and is told so, as a Talk worker is told its situation: told only to check what it
         // knows, an Ask worker re-established its experience on every ask — minutes of tool calls for one question, until
         // the lead stopped it and did the work itself.
+        //
+        // AND NEW GROUND IS THE ASKER'S TO SEND IT TO (user, 2026-11-14). A question with one part beyond its experience
+        // turned into minutes of tracing that part before any answer — the parts it knew included — and the lead stopped
+        // it with nothing. Answered first, the open part named with what would settle it, the asker decides.
         if (setting.AnsweringAsks)
             sb.Append("\nHere you answer asks: each comes from an agent that waits on your answer. Answer what was asked from ")
-                .Append("what you know, and check only what your answer rests on.\n");
+                .Append("what you know, and check only what your answer rests on. Where part of a question reaches beyond what ")
+                .Append("you know, do not go and find out: answer the rest, say what is still open and what you would check to ")
+                .Append("settle it, and leave it to the asker whether to send you to find out.\n");
 
         sb.Append("\n# Your experience\n\n");
         sb.Append(preload.Length > 0 ? preload : "Nothing is distilled yet: this is early in your work.\n");
