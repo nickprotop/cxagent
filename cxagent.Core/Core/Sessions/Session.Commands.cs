@@ -3,6 +3,7 @@ using CxAgent.Core.Llm;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Execution;
 using CxAgent.Core.Storage;
+using TabCommands = CxAgent.Core.Colleagues.ColleagueTabCommands;
 
 namespace CxAgent.Core.Sessions;
 
@@ -602,10 +603,10 @@ public sealed partial class Session
     {
         var text = prompt.Trim();
         if (text.Length == 0) return Task.FromResult<string?>(null);
-        // /clear IN A COLLEAGUE'S TAB starts its conversation over — a Talk tab's; an Ask tab is told its asks start fresh.
-        // Every other command still does not run here.
-        if (text.Equals("/clear", StringComparison.OrdinalIgnoreCase) && SubAgents.BadgeOf(name) is not null && Colleagues is { } desk)
-            return Task.FromResult(desk.NewConversation(name));
+        // A COLLEAGUE'S TAB RUNS ITS OWN FEW COMMANDS (ColleagueTabCommands), for the colleague in front — the tab already
+        // says who. /clear starts a Talk's conversation over, and an Ask tab is told its asks start fresh; /freeze and
+        // /unfreeze are /colleagues freeze|unfreeze. Every other command still does not run here.
+        if (TabCommands.Of(text) is { } own) return Task.FromResult(TabCommand(name, own));
         if (TabSlashRefusal(text) is { } refused) return Task.FromResult<string?>(refused);
         if (SubAgents.Find(name) is null)
             return Task.FromResult<string?>(SubAgents.WasForgotten(name)
@@ -647,6 +648,22 @@ public sealed partial class Session
                 SubAgents.EndUserSend(name, token);
             }
         });
+    }
+
+    /// <summary>
+    /// What a colleague tab's command answers, or null when it ran with nothing to say — a new conversation draws its
+    /// own divider. In a plain worker's tab /clear is refused as any session command is, and /freeze and /unfreeze,
+    /// which no other composer runs, say where they do.
+    /// </summary>
+    private string? TabCommand(string name, string command)
+    {
+        var desk = SubAgents.BadgeOf(name) is not null ? Colleagues : null;
+        return command switch
+        {
+            TabCommands.Clear => desk is null ? TabSlashRefusal(command) : desk.NewConversation(name),
+            _ => desk?.FreezeFromTab(name, command == TabCommands.Freeze)
+                 ?? $"'{command}' runs only in a colleague's tab.",
+        };
     }
 
     /// <summary>

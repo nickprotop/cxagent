@@ -338,6 +338,8 @@ colleague, and no other colleague can take them. Not while its one-to-one is ope
 **Freezing one.** `/colleagues freeze <name>`, or *Frozen* on its page in F8's Colleagues tab or the browser's
 configuration page, keeps its experience as it is. It works as before and its rounds are kept, but none is distilled.
 Its card, tab and library entry say *frozen*. `/colleagues unfreeze <name>` lets it learn again **from that moment**.
+`/freeze` and `/unfreeze` typed in its Ask or Talk tab do the same for the colleague in front of you; `/` there lists
+those two and `/clear`, the commands a colleague's tab runs.
 What it did while frozen stays in its past for recall and is never learned from. Rounds still waiting from before the
 freeze are.
 
@@ -389,6 +391,7 @@ freeze it. Under *Settings* they turn colleagues and suggestions off, as do
 | `/colleagues open <name>` | Talk with a colleague one-to-one, in a session of its own |
 | `/colleagues rename <name> to <new name>` | Rename a colleague; its old names still find it |
 | `/colleagues freeze <name>` · `unfreeze <name>` | Stop a colleague learning, or let it learn again from now on |
+| `/freeze` · `/unfreeze`, in a colleague's tab | The same, for the colleague whose tab it is |
 | `/colleagues distill <name> [from round N] [on <model>]` | Distil its last round again, or from a round on, after confirming |
 | `/colleagues forget <name>` | Forget a colleague for good, after confirming |
 

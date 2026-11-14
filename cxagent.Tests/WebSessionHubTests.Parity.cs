@@ -1055,6 +1055,32 @@ public sealed partial class WebSessionHubTests
 
     private static List<string> Labels(JsonArray rows) => [.. rows.Select(r => r!["label"]!.GetValue<string>())];
 
+    /// <summary>
+    /// A COLLEAGUE'S TAB OFFERS ITS OWN COMMANDS, as the terminal's does — /clear, /freeze, /unfreeze, and no session
+    /// command, since none runs there. A plain worker's tab offers nothing.
+    /// </summary>
+    [Fact]
+    public async Task Completion_in_a_colleague_s_tab_offers_its_commands_only()
+    {
+        new CxAgent.Core.Colleagues.ColleagueStore(_paths.ConfigDir)
+            .Create(new CxAgent.Core.Colleagues.ColleagueRecord { Name = "Charting", Created = DateTimeOffset.UtcNow });
+        var (tab, id) = await CreatedAsync();
+        await using var _ = tab;
+        var session = _manager.Sessions.Single(s => s.Id == id);
+        await session.Colleagues!.BringAsync(new CxAgent.Core.Colleagues.BringOrder("Charting", "", null, true, session.SessionId!), CancellationToken.None);
+
+        async Task<List<string>> In(string worker, string text, int n)
+        {
+            var agentId = session.SubAgents.Find(worker)?.Agent.Agent.Id ?? "no-such-agent";
+            await tab.SendAsync(Msg("complete", ("sessionId", id), ("agentId", agentId), ("text", text), ("caret", text.Length), ("n", n)));
+            return Labels((await tab.NextAsync(m => m["type"]?.GetValue<string>() == "completions" && m["n"]?.GetValue<int>() == n))["rows"]!.AsArray());
+        }
+
+        Assert.Equal(["/clear", "/freeze", "/unfreeze"], await In("charting", "/", 1));
+        Assert.Equal(["/freeze"], await In("charting", "/fr", 2));
+        Assert.Empty(await In("nobody", "/", 3));
+    }
+
     [Fact]
     public async Task Completion_offers_commands_with_summaries_their_verbs_and_values()
     {

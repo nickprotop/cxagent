@@ -549,6 +549,42 @@ public sealed class ColleagueJoinTests : IDisposable
         Assert.Equal(0, model.ChatCallCount);
     }
 
+    /// <summary>/freeze IN THE TALK TAB freezes the colleague talked with; it never reaches the model.</summary>
+    [Fact]
+    public async Task Freeze_typed_in_the_talk_tab_freezes_the_colleague()
+    {
+        var (session, model, talk) = await Talking();
+        var calls = model.ChatCallCount;
+
+        Assert.Equal(ColleagueDesk.FrozenLine("Charting"), await session.SendFromAgentTab(talk, "/freeze"));
+
+        Assert.True(Library.Find("Charting")!.Frozen);
+        Assert.Equal(calls, model.ChatCallCount);
+    }
+
+    /// <summary>/unfreeze in the Talk tab lets it learn again.</summary>
+    [Fact]
+    public async Task Unfreeze_typed_in_the_talk_tab_lets_it_learn_again()
+    {
+        var (session, _, talk) = await Talking();
+        await session.SendFromAgentTab(talk, "/freeze");
+
+        Assert.Equal(ColleagueDesk.UnfrozenLine("Charting"), await session.SendFromAgentTab(talk, "/UNFREEZE"));
+
+        Assert.False(Library.Find("Charting")!.Frozen);
+    }
+
+    /// <summary>THE SAME COLLEAGUE FROM ITS ASK TAB: freezing is about the colleague, not the conversation.</summary>
+    [Fact]
+    public async Task Freeze_typed_in_the_ask_tab_freezes_the_colleague_too()
+    {
+        var (session, model, _) = await Talking();
+
+        Assert.Equal(ColleagueDesk.FrozenLine("Charting"), await session.SendFromAgentTab("charting", "/freeze"));
+        Assert.True(Library.Find("Charting")!.Frozen);
+        Assert.Equal(0, model.ChatCallCount);
+    }
+
     /// <summary>/colleagues talk NAME --new opens the Talk tab on a new conversation.</summary>
     [Fact]
     public async Task The_talk_verb_with_new_starts_over()

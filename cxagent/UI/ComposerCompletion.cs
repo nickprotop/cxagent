@@ -85,6 +85,13 @@ public static class ComposerCompletion
     }
 
     /// <summary>
+    /// What a colleague's Ask or Talk tab offers: its own commands, from the table its send runs
+    /// (<see cref="Core.Colleagues.ColleagueTabCommands"/>), and nothing else — no session command runs there.
+    /// </summary>
+    public static IReadOnlyList<ComposerRow> ColleagueTab(string text) =>
+        [.. Core.Colleagues.ColleagueTabCommands.Matching(text).Select(c => Row(c.Name, c.Summary, c.Name))];
+
+    /// <summary>
     /// The paths an <c>@</c> reference can complete to. A DIRECTORY KEEPS THE <c>@</c>, so the list goes on to what is
     /// inside it; a FILE DROPS IT, since the reference is then complete and the model is sent an ordinary path in an
     /// ordinary sentence. The text after the caret is kept.

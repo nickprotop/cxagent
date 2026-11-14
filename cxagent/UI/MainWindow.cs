@@ -2677,6 +2677,10 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private readonly Dictionary<string, AgentTabSlot> _agentTabs = new(StringComparer.Ordinal);
 
+    /// <summary>The composer the user types in now: the worker tab's in front, else the session tab's. The slash menu
+    /// reads and fills this one, so a list opened in a worker's tab never writes into a session's composer.</summary>
+    public PromptControl ComposerInFront => ActiveAgentTab?.Input ?? Input;
+
     /// <summary>An agent tab and the strip page it sits on.</summary>
     private sealed record AgentTabSlot(AgentTab Tab, SharpConsoleUI.Controls.TabPage Page);
 
@@ -2710,6 +2714,8 @@ public sealed class MainWindow : IDisposable
         var placed = InsertViewTab(session, tab.Title(), tab.Content);
         SetTabMainControl(tab.Content, tab.MainControl);
         _agentTabs[tab.AgentId] = new AgentTabSlot(tab, Tabs.GetTab(placed)!);
+        // ITS COMPOSER HEARS THE SLASH MENU TOO: a colleague's tab completes its own commands.
+        WireOnce(tab.Input);
         FocusAgentTab(tab);
         return null;
     }

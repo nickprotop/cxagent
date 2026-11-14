@@ -2948,13 +2948,17 @@ function wantsCompletion(text, caret) {
 
 function requestCompletion() {
   clearTimeout(completeTimer);
-  // A WORKER TAKES MESSAGES, NOT COMMANDS — no list in its tab.
+  // A WORKER TAKES MESSAGES, NOT COMMANDS — except a colleague's tab, which runs and offers its own few (the server
+  // answers from the table the tab's send runs). No @ paths in any worker's tab, as in the terminal.
   const view = state.views.get(state.active);
   const text = input.value, caret = input.selectionStart ?? text.length;
-  if (!view || view.kind === "worker" || !wantsCompletion(text, caret)) { completion(false); return; }
+  const worker = view && view.kind === "worker";
+  if (!view || (worker && (!view.badge || !text.startsWith("/"))) || !wantsCompletion(text, caret)) { completion(false); return; }
   const n = ++completeN;
+  const ask = { type: "complete", sessionId: activeSessionId(), text, caret, n };
+  if (worker) ask.agentId = view.agentId;
   // A SHORT PAUSE, as the terminal's walk waits: a typed word costs one request, not one per letter.
-  completeTimer = setTimeout(() => send({ type: "complete", sessionId: activeSessionId(), text, caret, n }), 80);
+  completeTimer = setTimeout(() => send(ask), 80);
 }
 
 function completion(rows) {

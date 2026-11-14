@@ -222,7 +222,10 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
                 break;
             case "complete":
                 if (LiveSession(Str(m, "sessionId")) is { } typing)
-                    Complete(typing, Str(m, "text") ?? "", m["caret"]?.GetValue<int>() ?? 0, m["n"]?.GetValue<int>() ?? 0);
+                {
+                    if (Str(m, "agentId") is { } agentId) CompleteInTab(typing, agentId, Str(m, "text") ?? "", m["n"]?.GetValue<int>() ?? 0);
+                    else Complete(typing, Str(m, "text") ?? "", m["caret"]?.GetValue<int>() ?? 0, m["n"]?.GetValue<int>() ?? 0);
+                }
                 break;
             case "cycleMode":
                 // SHIFT+TAB, AS IN THE TERMINAL — Session.CycleEditMode, the one rule both keys run. The panel is sent at
@@ -817,6 +820,27 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
     }
 
     /// <summary>
+    /// What a worker's tab offers, as the terminal's does: a colleague's tab its own commands
+    /// (<see cref="CxAgent.UI.ComposerCompletion.ColleagueTab"/>), any other worker's tab nothing.
+    /// </summary>
+    private void CompleteInTab(Session session, string agentId, string text, int n)
+    {
+        var rows = session.SubAgents.FindByAgentId(agentId) is { } worker && session.SubAgents.BadgeOf(worker.Name) is not null
+            ? CxAgent.UI.ComposerCompletion.ColleagueTab(text) : [];
+        SendCompletions(session, n, rows);
+    }
+
+    private void SendCompletions(Session session, int n, IEnumerable<CxAgent.UI.ComposerRow> rows) =>
+        Send(new JsonObject
+        {
+            ["type"] = "completions", ["sessionId"] = session.Id, ["n"] = n,
+            ["rows"] = new JsonArray([.. rows.Select(r => (JsonNode)new JsonObject
+            {
+                ["label"] = r.Label, ["summary"] = r.Summary, ["text"] = r.Text, ["caret"] = r.Caret,
+            })]),
+        });
+
+    /// <summary>
     /// What the composer offers for what is typed — the terminal's own rows, from <see cref="CxAgent.UI.ComposerCompletion"/>,
     /// less what a browser may not run: a refused command or verb is not offered, and an <c>@</c> path only inside the
     /// folders this server opens (anywhere with <c>openAnywhere</c>), never in cxagent's own folder — a directory
@@ -841,14 +865,7 @@ internal sealed partial class WebClient : IPromptResponder, IDisposable
         var paths = CxAgent.UI.AtToken.At(text, caret) is not null;
         var rows = CxAgent.UI.ComposerCompletion.For(text, caret, sources)
             .Where(r => paths ? Reachable(r.Label) : r.Text is null || WebCommands.Refusal(r.Text, S.Allow, Custom) is null);
-        Send(new JsonObject
-        {
-            ["type"] = "completions", ["sessionId"] = session.Id, ["n"] = n,
-            ["rows"] = new JsonArray([.. rows.Select(r => (JsonNode)new JsonObject
-            {
-                ["label"] = r.Label, ["summary"] = r.Summary, ["text"] = r.Text, ["caret"] = r.Caret,
-            })]),
-        });
+        SendCompletions(session, n, rows);
 
         bool Reachable(string label)
         {

@@ -1712,12 +1712,21 @@ public static class AppBootstrap
             // THE ACTIVE TAB'S, READ WHEN NEEDED. A fixed reference replayed captured keystrokes
             // into the first tab's composer while the menu's events came from the active one — the
             // first letter of a word in one conversation, the next in another.
-            ComposerOf = () => mainWindow.Input,
+            ComposerOf = () => mainWindow.ComposerInFront,
 
             // RUNS WHAT IS TYPED when a row cannot be completed. The menu cannot reach the submit
             // path itself — it is guarded by Input.HasFocus, and the portal holds the keyboard — so
             // it asks. See CommandMenu.Submit for what was broken without it.
-            Submit = SubmitComposer,
+            Submit = () =>
+            {
+                // A WORKER'S TAB SENDS ITS OWN WAY — to its worker, through Session.SendFromAgentTab.
+                if (mainWindow.ActiveAgentTab is { } agentTab) _ = agentTab.SubmitComposer();
+                else SubmitComposer();
+            },
+
+            // A COLLEAGUE'S TAB OFFERS ITS OWN COMMANDS, a plain worker's tab none; null leaves a session's list.
+            TabRows = text => mainWindow.ActiveAgentTab is not { } agentTab ? null
+                : agentTab.IsColleagueTab ? ComposerCompletion.ColleagueTab(text) : [],
             // THE SAME LOOKUP DISPATCH USES, so a verb this process registers — /stats clear —
             // appears here at the moment it becomes real, not from a second copy of the table.
             Registry = manager.Commands,
@@ -1759,7 +1768,7 @@ public static class AppBootstrap
             //
             // The text is now whatever the ROW completes to — "/mcp" from the command list, or
             // "/mcp reload" when the user descended into its arguments.
-            mainWindow.Input.Input = completion;
+            mainWindow.ComposerInFront.Input = completion;
         };
         // EVERY SESSION TAB'S COMPOSER, NOT JUST THE FIRST. `mainWindow.Input` resolves to the
         // active tab, so the menu's own reads follow the user — but a SUBSCRIPTION binds to the
@@ -1808,7 +1817,7 @@ public static class AppBootstrap
             // THE MENU HEARS EVERY KEY THE COMPOSER IS ABOUT TO GET, so it can tell a history recall from
             // typing — see CommandMenu.NoteKey. Only looked at, never claimed: the composer still walks
             // its history. While the menu is open it has the keyboard and this is not reached.
-            if (mainWindow.Input.HasFocus) commandMenu.NoteKey(e.KeyInfo);
+            if (mainWindow.ComposerInFront.HasFocus) commandMenu.NoteKey(e.KeyInfo);
 
             // A COPY SAYS SO. The framework copies the selection right after this preview, if it is left
             // unhandled — so the key is only looked at, never claimed, and the copy itself stays the

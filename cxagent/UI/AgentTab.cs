@@ -256,6 +256,9 @@ public sealed class AgentTab : IDisposable
             _views.Transcript.Said(new Message(line, Severity.Info));
     }
 
+    /// <summary>Whether this is a colleague's Ask or Talk tab, whose composer runs and offers the colleague's commands.</summary>
+    public bool IsColleagueTab => Session.SubAgents.BadgeOf(Kept.Name) is not null;
+
     /// <summary>Whether Stop is offered: running, in the background, in a session still open.</summary>
     public bool CanStop => _now is { Running: true } && !Session.SubAgents.Ended;
 

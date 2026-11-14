@@ -1304,6 +1304,14 @@ public sealed partial class ColleagueDesk : IDisposable
     }
 
     /// <summary>
+    /// <c>/freeze</c> and <c>/unfreeze</c> typed in a colleague's Ask or Talk tab: the colleague that tab's worker is,
+    /// by its name as the library has it now. Null when the tab is not a colleague's, so the caller refuses the line.
+    /// FREEZING IS THE COLLEAGUE'S, NOT THE CONVERSATION'S, so either tab does it and both say so.
+    /// </summary>
+    public string? FreezeFromTab(string handle, bool freeze) =>
+        _workers.Find(handle) is { } kept && Incarnation(kept.Agent.Agent.Id) is { } found ? Freeze(found.Name, freeze) : null;
+
+    /// <summary>
     /// At the end of each stretch of a worker's work, whether it has earned an offer: steered twice by the user, followed
     /// up three times by the agent, or four rounds here (spec §9, thresholds conservative). ONCE PER WORKER, and never for
     /// a colleague's own worker, in a one-to-one, or with suggestions or colleagues off.

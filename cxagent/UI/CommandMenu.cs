@@ -187,6 +187,15 @@ public sealed class CommandMenu
     /// </summary>
     public Func<IReadOnlyList<SessionCommand>>? Custom { get; set; }
 
+    /// <summary>
+    /// The rows for the worker tab in front, or null while a session's composer is in front and the full list applies.
+    ///
+    /// <para>A WORKER'S TAB IS NOT A SESSION'S: no session command runs there, so it never sees that list. A colleague's
+    /// tab is offered its own few commands, and a plain worker's tab nothing — an empty list keeps the menu shut. Read
+    /// per keystroke, as the tab in front changes.</para>
+    /// </summary>
+    public Func<string, IReadOnlyList<ComposerRow>?>? TabRows { get; set; }
+
     private IReadOnlyList<SessionCommand> _custom = [];
 
     /// <summary>Whether the menu is currently on screen.</summary>
@@ -242,6 +251,15 @@ public sealed class CommandMenu
         {
             if (text == _chosenText) return;
             _suppressUntilEdit = false;
+        }
+
+        // A WORKER'S TAB IN FRONT: its rows or none, and no @ paths — they belong to a session's composer.
+        if (TabRows?.Invoke(text) is { } tab)
+        {
+            _at = null;
+            _lineIsComplete = false;
+            Render([.. tab.Select(r => new Row(r.Label, r.Summary, r.Text))]);
+            return;
         }
 
         // THE @ BRANCH IS ANCHORED TO THE CARET, the slash branch to the start of the text, so the

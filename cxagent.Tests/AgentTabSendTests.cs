@@ -121,6 +121,8 @@ public sealed class AgentTabSendTests : IDisposable
     [Theory]
     [InlineData("/clear", "'/clear' does not run in a worker's tab.")]
     [InlineData("  /celar now", "Unknown command '/celar'.")]
+    [InlineData("/freeze", "'/freeze' runs only in a colleague's tab.")]
+    [InlineData("/unfreeze", "'/unfreeze' runs only in a colleague's tab.")]
     public async Task ASlashLine_IsRefused_AndNeverReachesTheWorker(string typed, string refusal)
     {
         var s = Open("should not answer");
